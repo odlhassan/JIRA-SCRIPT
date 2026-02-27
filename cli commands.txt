@@ -1,0 +1,56 @@
+AT RISK
+as of now, 40 hours should have been invest, but today only 10 hours invested.
+
+
+rom your codebase, these are the CLI commands that actually fetch/build data, plus their variants.
+
+Primary Jira fetch commands
+
+python run_all_exports.py
+Variations: --incremental, --skip-work-items, --skip-worklogs, --skip-rollup, --skip-nested-view
+Source: [run_all_exports.py](E:/JIRA SCRIPT/run_all_exports.py)
+
+python export_jira_work_items.py
+Variations: default full fetch, or --incremental
+Source: [export_jira_work_items.py](E:/JIRA SCRIPT/export_jira_work_items.py)
+
+python export_jira_subtask_worklogs.py
+Variations: default full fetch, or --incremental
+Source: [export_jira_subtask_worklogs.py](E:/JIRA SCRIPT/export_jira_subtask_worklogs.py)
+
+python export_jira_nested_view.py
+Variations: default full fetch, or --incremental
+Source: [export_jira_nested_view.py](E:/JIRA SCRIPT/export_jira_nested_view.py)
+
+python export_jira_subtask_worklog_rollup.py
+Variations: no CLI flags; behavior varies via env paths (JIRA_SUBTASK_WORKLOG_INPUT_XLSX_PATH, JIRA_SUBTASK_ROLLUP_XLSX_PATH)
+Source: [export_jira_subtask_worklog_rollup.py](E:/JIRA SCRIPT/export_jira_subtask_worklog_rollup.py)
+
+python generate_rlt_leave_report.py
+Variations: --project-key, --project-name, --from-date, --to-date, --window, --xlsx-out, --html-out, --md-out, --start-date-field-id, --incremental
+Source: [generate_rlt_leave_report.py](E:/JIRA SCRIPT/generate_rlt_leave_report.py)
+
+Orchestrators / wrappers
+
+python run_all.py
+Runs full pipeline (includes export/fetch steps), with skip/resume/server options.
+Source: [run_all.py](E:/JIRA SCRIPT/run_all.py)
+
+python run_html_only.py --include-dashboard
+Rebuilds HTML and includes dashboard build path (comment says it may call Jira APIs).
+Source: [run_html_only.py](E:/JIRA SCRIPT/run_html_only.py)
+
+python fetch_jira_dashboard.py
+Default builds dashboard from exported XLSX; server mode via --server or -s.
+Source: [fetch_jira_dashboard.py](E:/JIRA SCRIPT/fetch_jira_dashboard.py)
+
+Key variation knobs (env)
+
+Incremental/full mode: JIRA_INCREMENTAL_DISABLE (1 full, 0 incremental)
+Incremental tuning: JIRA_INCREMENTAL_OVERLAP_MINUTES, JIRA_FORCE_FULL_SYNC_DAYS, JIRA_INCREMENTAL_BOOTSTRAP_DAYS
+Project scope: JIRA_PROJECT_KEYS
+Output paths: JIRA_EXPORT_XLSX_PATH, JIRA_WORKLOG_XLSX_PATH, JIRA_SUBTASK_ROLLUP_XLSX_PATH, JIRA_NESTED_VIEW_XLSX_PATH
+Jira connection: JIRA_SITE, JIRA_EMAIL, JIRA_API_TOKEN, JIRA_BOARD
+If you want, I can give you a short “recommended command set” for daily run vs fast incremental run vs full refresh.
+
+

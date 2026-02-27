@@ -1,0 +1,1807 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RMI Dashboard</title>
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet">
+    <script>
+        (function () {
+            const storageKey = 'rmi-dashboard-theme';
+            const stored = localStorage.getItem(storageKey);
+            const theme = (stored === 'dark' || stored === 'light') ? stored : 'light';
+            document.documentElement.setAttribute('data-theme', theme);
+        })();
+    </script>
+    <style>
+        :root { color-scheme: light; }
+        html[data-theme="dark"] { color-scheme: dark; }
+        * { box-sizing: border-box; }
+        html, body { margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f7fb; color: #1f2937; }
+        .container { width: 100%; padding: 0; }
+        .top-date-range-wrap { position: sticky; top: 0; z-index: 80; display: flex; justify-content: center; padding: .35rem .65rem 0; pointer-events: none; }
+        .top-date-range-chip { pointer-events: auto; display: inline-flex; align-items: center; gap: .42rem; flex-wrap: wrap; padding: .3rem .52rem; border-radius: 999px; border: 1px solid #7a4b24; background: #8b5e34; box-shadow: 0 6px 16px rgba(17, 24, 39, .14); }
+        .date-chip-segment { display: inline-flex; align-items: center; gap: .26rem; color: #fff7ed; font-size: .68rem; font-weight: 700; line-height: 1; }
+        .date-chip-segment .material-icons-outlined { font-size: .85rem; }
+        .date-chip-input { border: 1px solid #f3e8d8; border-radius: 999px; padding: .15rem .42rem; background: #fff7ed; color: #7c2d12; font-size: .67rem; font-weight: 700; min-height: 1.45rem; }
+        .date-chip-input:focus { outline: none; border-color: #fcd7aa; box-shadow: 0 0 0 2px rgba(255, 237, 213, .38); }
+        .date-chip-reset { display: inline-flex; align-items: center; gap: .2rem; border: 1px solid #f3e8d8; border-radius: 999px; background: #fff7ed; color: #7c2d12; font-size: .66rem; font-weight: 700; padding: .16rem .42rem; cursor: pointer; line-height: 1; }
+        .date-chip-reset .material-icons-outlined { font-size: .78rem; }
+        .date-chip-reset:hover { background: #ffedd5; }
+        .date-chip-reset:focus { outline: none; border-color: #fcd7aa; box-shadow: 0 0 0 2px rgba(255, 237, 213, .38); }
+        .header { position: sticky; top: 0; z-index: 50; background: #fff; border: 0; border-bottom: 1px solid #e5e7eb; border-radius: 0; padding: 1rem 1.25rem; margin-bottom: 1rem; }
+        .header-toolbar { display: flex; align-items: center; justify-content: space-between; gap: .6rem; margin-bottom: .75rem; }
+        .header-toolbar-left { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+        .header-toolbar-right { display: flex; align-items: center; gap: .5rem; }
+        .header-link-btn { display: inline-flex; align-items: center; border: 1px solid #bfdbfe; border-radius: 999px; background: #eff6ff; color: #1d4ed8; font-size: .78rem; font-weight: 700; padding: .28rem .62rem; text-decoration: none; }
+        .header-link-btn:hover { background: #dbeafe; border-color: #93c5fd; }
+        .header-toggle { border: 1px solid #d1d5db; border-radius: 999px; background: #fff; color: #374151; font-size: .78rem; font-weight: 700; padding: .28rem .62rem; cursor: pointer; }
+        .header-toggle:hover { background: #f8fafc; }
+        .header-toggle .material-icons-outlined { font-size: .92rem; vertical-align: -2px; margin-right: .2rem; }
+        #theme-toggle { background: rgba(191, 219, 254, .45); border-color: #93c5fd; color: #1e3a8a; }
+        #theme-toggle .material-icons-outlined { color: #1d4ed8; }
+        #theme-toggle:hover { background: rgba(191, 219, 254, .62); }
+        html[data-theme="dark"] #theme-toggle { background: rgba(254, 243, 199, .45); border-color: #fcd34d; color: #fff; }
+        html[data-theme="dark"] #theme-toggle .material-icons-outlined { color: #facc15; }
+        html[data-theme="dark"] #theme-toggle:hover { background: rgba(254, 243, 199, .62); }
+        .header.collapsed .header-toolbar { margin-bottom: 0; }
+        .header.collapsed .header-grid { display: none; }
+        .header-grid { display: grid; grid-template-columns: 30% 70%; gap: 1rem; align-items: start; }
+        @media (max-width: 1200px) { .header-grid { grid-template-columns: 1fr; } }
+        .meta { color: #6b7280; font-size: 0.9rem; margin-top: 0.4rem; }
+        .subtitle { color: #4b5563; font-size: 0.9rem; margin-top: 0.25rem; }
+        .filters { margin-top: 0.9rem; display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; }
+        .search-wrap { margin-top: 0.75rem; }
+        .search-input { width: 100%; max-width: 420px; border: 1px solid #d1d5db; border-radius: 8px; padding: 0.5rem 0.65rem; font-size: 0.9rem; color: #111827; background: #fff; }
+        .search-input:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59,130,246,.15); }
+        .project-chip { display: inline-flex; align-items: center; gap: .4rem; padding: .3rem .55rem; border: 1px solid #d1d5db; border-radius: 999px; background: #fff; font-size: .85rem; }
+
+        .dashboard-layout { display: grid; grid-template-columns: 50% 25% 25%; gap: 1rem; align-items: start; padding: 0 1.25rem 1.25rem; }
+        @media (max-width: 1200px) { .dashboard-layout { grid-template-columns: 1fr 1fr; } .lane-subtasks { grid-column: 1 / -1; } }
+        @media (max-width: 900px) { .dashboard-layout { grid-template-columns: 1fr; } .lane-subtasks { grid-column: auto; } }
+
+        .lane { background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: .85rem; }
+        .lane-epics { background: #f3e8ff; border-color: #d8b4fe; }
+        .lane-stories { background: #dbeafe; border-color: #93c5fd; }
+        .lane-subtasks { background: #dcfce7; border-color: #86efac; }
+        .lane-header { display: flex; align-items: center; justify-content: space-between; gap: .65rem; margin: 0 0 .7rem 0; flex-wrap: wrap; }
+        .lane h2 { margin: 0; font-size: 1rem; color: #111827; }
+        .cards { display: grid; gap: .8rem; }
+        .orphan-block { margin-top: .85rem; border-top: 1px dashed #e5e7eb; padding-top: .7rem; }
+        .orphan-title { margin: 0 0 .6rem 0; font-size: .85rem; color: #475569; }
+        .lane-section { margin-top: .75rem; }
+        .lane-section:first-child { margin-top: 0; }
+        .lane-section-title { margin: 0 0 .55rem 0; font-size: .85rem; color: #475569; }
+        .lane-selection-context { margin: 0 0 .65rem 0; font-size: .78rem; font-weight: 700; color: #1e40af; min-height: 1.1rem; }
+        .lane-filter-group { display: flex; align-items: center; gap: .45rem; flex-wrap: wrap; }
+        .lane-assignee-filter { position: relative; display: inline-flex; align-items: center; gap: .35rem; padding: .24rem 1.6rem .24rem .55rem; border: 1px solid #d1d5db; border-radius: 999px; background: #f8fafc; }
+        .lane-assignee-filter::after { content: '▾'; position: absolute; right: .55rem; color: #64748b; font-size: .72rem; pointer-events: none; }
+        .lane-assignee-filter-label { font-size: .73rem; font-weight: 700; color: #475569; white-space: nowrap; }
+        .lane-assignee-select { appearance: none; -webkit-appearance: none; -moz-appearance: none; border: 0; background: transparent; color: #0f172a; font-size: .78rem; font-weight: 700; padding: 0; padding-right: .15rem; max-width: 150px; cursor: pointer; }
+        .lane-assignee-select:focus { outline: none; }
+        .lane-assignee-filter:focus-within { border-color: #60a5fa; box-shadow: 0 0 0 2px rgba(59,130,246,.14); }
+        .status-chip-dropdown { position: relative; display: inline-flex; }
+        .status-chip-trigger { display: inline-flex; align-items: center; gap: .35rem; border: 1px solid #d1d5db; border-radius: 999px; background: #ffffff; color: #1f2937; font-size: .74rem; font-weight: 700; line-height: 1; padding: .35rem .52rem; cursor: pointer; }
+        .status-chip-trigger:hover { background: #f8fafc; border-color: #93c5fd; }
+        .status-chip-trigger:focus { outline: none; border-color: #60a5fa; box-shadow: 0 0 0 2px rgba(59,130,246,.14); }
+        .status-chip-trigger .chip-label { color: #475569; }
+        .status-chip-trigger .chip-value { color: #0f172a; }
+        .status-chip-trigger .chip-caret { color: #64748b; font-size: .72rem; }
+        .status-chip-dropdown.open .status-chip-trigger { border-color: #60a5fa; box-shadow: 0 0 0 2px rgba(59,130,246,.14); }
+        .status-chip-menu { position: absolute; top: calc(100% + .3rem); right: 0; min-width: 210px; max-height: 260px; overflow: auto; border: 1px solid #d1d5db; border-radius: 12px; background: #fff; box-shadow: 0 12px 26px rgba(15, 23, 42, .16); padding: .32rem; z-index: 60; opacity: 0; transform: scale(.98); transform-origin: top right; transition: opacity .16s ease, transform .16s ease; pointer-events: none; }
+        .status-chip-dropdown.open .status-chip-menu { opacity: 1; transform: scale(1); pointer-events: auto; }
+        .status-chip-option { width: 100%; text-align: left; display: flex; align-items: center; justify-content: space-between; gap: .4rem; border: 0; border-radius: 8px; background: transparent; color: #1f2937; font-size: .78rem; font-weight: 700; padding: .42rem .52rem; cursor: pointer; }
+        .status-chip-option:hover { background: #eff6ff; color: #1d4ed8; }
+        .status-chip-option:focus { outline: none; background: #dbeafe; color: #1d4ed8; }
+        .status-chip-option.selected { background: #eff6ff; color: #1d4ed8; }
+        .status-chip-option.selected::after { content: '✓'; font-size: .76rem; font-weight: 800; }
+        .risk-chip-dropdown { position: relative; display: inline-flex; }
+        .risk-chip-trigger { display: inline-flex; align-items: center; gap: .35rem; border: 1px solid #fdba74; border-radius: 999px; background: #fff7ed; color: #9a3412; font-size: .74rem; font-weight: 700; line-height: 1; padding: .35rem .52rem; cursor: pointer; }
+        .risk-chip-trigger:hover { background: #ffedd5; border-color: #fb923c; }
+        .risk-chip-trigger:focus { outline: none; border-color: #f97316; box-shadow: 0 0 0 2px rgba(249,115,22,.16); }
+        .risk-chip-trigger .chip-label { color: #9a3412; }
+        .risk-chip-trigger .chip-value { color: #7c2d12; }
+        .risk-chip-trigger .chip-caret { color: #c2410c; font-size: .72rem; }
+        .risk-chip-dropdown.open .risk-chip-trigger { border-color: #f97316; box-shadow: 0 0 0 2px rgba(249,115,22,.16); }
+        .risk-chip-menu { position: absolute; top: calc(100% + .3rem); right: 0; min-width: 190px; max-height: 260px; overflow: auto; border: 1px solid #fdba74; border-radius: 12px; background: #fff7ed; box-shadow: 0 12px 26px rgba(124, 45, 18, .18); padding: .32rem; z-index: 60; opacity: 0; transform: scale(.98); transform-origin: top right; transition: opacity .16s ease, transform .16s ease; pointer-events: none; }
+        .risk-chip-dropdown.open .risk-chip-menu { opacity: 1; transform: scale(1); pointer-events: auto; }
+        .risk-chip-option { width: 100%; text-align: left; display: flex; align-items: center; justify-content: space-between; gap: .4rem; border: 0; border-radius: 8px; background: transparent; color: #9a3412; font-size: .78rem; font-weight: 700; padding: .42rem .52rem; cursor: pointer; }
+        .risk-chip-option:hover { background: #fed7aa; color: #7c2d12; }
+        .risk-chip-option:focus { outline: none; background: #fdba74; color: #7c2d12; }
+        .risk-chip-option.selected { background: #fed7aa; color: #7c2d12; }
+        .risk-chip-option.selected::after { content: '✓'; font-size: .76rem; font-weight: 800; }
+
+        .card { border: 1px solid #e5e7eb; border-radius: 8px; padding: .8rem; background: #fafafa; transition: border-color .2s ease, box-shadow .2s ease; }
+        .card-selectable { cursor: pointer; }
+        .card-selectable:hover { border-color: #93c5fd; }
+        .card-selected { position: sticky; top: 57px; border: 1.75px solid #2563eb; box-shadow: 0 0 0 2px rgba(37,99,235,.12); }
+        .card-status-todo { background: #f9fafb; border-color: #d1d5db; }
+        .card-status-on-hold { background: #fff7ed; border-color: #fdba74; }
+        .card-status-in-progress { background: #eff6ff; border-color: #93c5fd; }
+        .card-status-resolved { background: #f0fdf4; border-color: #86efac; }
+        .card-status-at-risk { background: #fef2f2; border-color: #fca5a5; }
+        .card-header { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .6rem; align-items: start; }
+        .card-type { margin-bottom: .25rem; font-size: .72rem; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: .04em; }
+        .card-title-row { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+        .card-title { margin: 0; font-size: .95rem; font-weight: 700; color: #0f172a; }
+        .card-count-chip { display: inline-flex; align-items: center; padding: .2rem .45rem; border-radius: 999px; font-size: .7rem; font-weight: 700; line-height: 1; white-space: nowrap; border: 1px solid #cbd5e1; background: #f8fafc; color: #334155; }
+        .card-count-chip.epic { border-color: #93c5fd; background: #eff6ff; color: #1d4ed8; }
+        .card-count-chip.story { border-color: #a7f3d0; background: #ecfdf5; color: #047857; }
+        .card-actions { display: flex; align-items: flex-start; justify-content: flex-end; gap: .4rem; }
+        .card-copy-btn { display: inline-flex; align-items: center; justify-content: center; width: 1.9rem; height: 1.9rem; border-radius: 6px; border: 1px solid #cbd5e1; background: #fff; color: #334155; font-size: .88rem; cursor: pointer; }
+        .card-copy-btn:hover { background: #f1f5f9; border-color: #93c5fd; color: #1d4ed8; }
+        .card-copy-btn.copied { border-color: #86efac; background: #ecfdf5; color: #166534; }
+        .card-link-label { display: inline-flex; align-items: center; padding: .3rem .5rem; border-radius: 6px; border: 1px solid #bfdbfe; background: #eff6ff; font-size: .72rem; letter-spacing: .02em; font-weight: 700; color: #1d4ed8; text-decoration: none; white-space: nowrap; }
+        .card-link-label:hover { background: #dbeafe; border-color: #93c5fd; }
+        .meta-lines { margin-top: .65rem; display: grid; gap: .5rem; font-size: .82rem; color: #374151; }
+        .meta-line strong { color: #111827; }
+        .assignee-chip { display: inline-flex; align-items: center; padding: .2rem .45rem; border-radius: 999px; border: 1px solid #bfdbfe; background: #eff6ff; color: #1d4ed8; font-size: .72rem; font-weight: 700; line-height: 1; }
+        .assignee-chip.missing { border-color: #fecaca; background: #fef2f2; color: #b91c1c; }
+        .danger-chip { display: inline-flex; align-items: center; padding: .16rem .42rem; border-radius: 999px; border: 1px solid #fecaca; background: #fef2f2; color: #b91c1c; font-size: .7rem; font-weight: 700; line-height: 1; }
+        .dates-table { width: 100%; border-collapse: collapse; font-size: .78rem; color: #374151; }
+        .dates-table th, .dates-table td { border: 1px solid #e5e7eb; padding: .25rem .35rem; text-align: left; vertical-align: top; }
+        .dates-table th { background: #f8fafc; font-weight: 700; color: #111827; }
+        .dates-table td:first-child { font-weight: 700; color: #111827; width: 24%; }
+        .dates-table tr.ipp-date-mismatch td { color: #b91c1c; font-weight: 700; }
+        .dates-table td.mismatch-planner { color: #b91c1c; font-weight: 700; }
+        .dates-table td.mismatch-planned { color: #ffffff; background: #dc2626; font-weight: 700; }
+        .badge-row { margin-top: .65rem; display: flex; flex-wrap: wrap; gap: .45rem; }
+        .badge { display: inline-block; padding: .2rem .45rem; border-radius: 999px; font-size: .72rem; font-weight: 600; line-height: 1; }
+        .yes { background: #dcfce7; color: #166534; }
+        .no { background: #e5e7eb; color: #374151; }
+        .sync-ok { background: #dcfce7; color: #166534; }
+        .sync-bad { background: #fee2e2; color: #991b1b; }
+        .risk-low { background: #dcfce7; color: #166534; }
+        .risk-can-be { background: #fef9c3; color: #854d0e; }
+        .risk-medium { background: #ffedd5; color: #9a3412; }
+        .risk-high { background: #fee2e2; color: #991b1b; }
+        .badge-tip-wrap { position: relative; display: inline-flex; align-items: center; }
+        .badge-tip {
+            position: absolute;
+            bottom: calc(100% + 8px);
+            left: 50%;
+            transform: translateX(-50%);
+            min-width: 220px;
+            max-width: 300px;
+            padding: .45rem .55rem;
+            border: 1px solid #fca5a5;
+            border-radius: 8px;
+            background: #fff;
+            color: #7f1d1d;
+            font-size: .71rem;
+            line-height: 1.35;
+            font-weight: 600;
+            box-shadow: 0 8px 20px rgba(15, 23, 42, .18);
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+            transition: opacity .14s ease;
+            z-index: 40;
+        }
+        .badge-tip::after {
+            content: "";
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            border-width: 6px;
+            border-style: solid;
+            border-color: #fca5a5 transparent transparent transparent;
+        }
+        .badge-tip-wrap:hover .badge-tip,
+        .badge-tip-wrap:focus-within .badge-tip {
+            opacity: 1;
+            visibility: visible;
+        }
+        .alert { margin-top: .6rem; border: 1px solid #fecaca; background: #fef2f2; color: #991b1b; border-radius: 6px; padding: .45rem .55rem; font-size: .78rem; font-weight: 600; }
+        .mismatch-alert { display: flex; align-items: center; justify-content: space-between; gap: .45rem; }
+        .mismatch-planner-btn { display: inline-flex; align-items: center; justify-content: center; width: 1.7rem; height: 1.7rem; border-radius: 999px; border: 1px solid #fca5a5; background: #fff; color: #991b1b; text-decoration: none; flex: 0 0 auto; }
+        .mismatch-planner-btn:hover { background: #fee2e2; border-color: #ef4444; }
+        .mismatch-planner-btn .material-icons-outlined { font-size: 1rem; }
+        .info-note { margin-top: .45rem; border: 1px solid #86efac; background: #ecfdf5; color: #166534; border-radius: 6px; padding: .45rem .55rem; font-size: .78rem; font-weight: 600; display: flex; align-items: flex-start; gap: .38rem; }
+        .info-note .material-icons-outlined { font-size: .95rem; line-height: 1; margin-top: .05rem; }
+        .empty { color: #6b7280; font-size: .9rem; font-style: italic; }
+
+        .gantt-panel-header h3 { margin: 0; font-size: 1rem; color: #0f172a; }
+        .gantt-panel-subtitle { margin: .3rem 0 .55rem 0; font-size: .8rem; color: #475569; }
+        .gantt-legend { margin-top: .4rem; display: flex; flex-wrap: wrap; gap: .45rem; font-size: .72rem; color: #334155; }
+        .legend-pill { display: inline-flex; align-items: center; gap: .32rem; padding: .2rem .4rem; border-radius: 999px; background: #f8fafc; border: 1px solid #e2e8f0; }
+        .legend-swatch { width: 10px; height: 10px; border-radius: 999px; }
+        .legend-planned { background: #3b82f6; }
+        .legend-missing { background: #fef2f2; border: 1px solid #fecaca; }
+        .gantt-axis-row { margin-top: .55rem; display: grid; grid-template-columns: minmax(180px, 42%) minmax(0, 58%); align-items: center; gap: .5rem; }
+        .gantt-axis-spacer { min-height: 1px; }
+        .gantt-axis-track { position: relative; min-height: 28px; border: 1px solid #e2e8f0; border-radius: 8px; background: #fcfdff; overflow: visible; }
+        .gantt-axis-tick { position: absolute; top: 0; bottom: 0; width: 0; pointer-events: none; }
+        .gantt-axis-tick::before { content: ''; position: absolute; top: 12px; bottom: 4px; left: 0; width: 1px; background: #cbd5e1; }
+        .gantt-axis-label { position: absolute; top: 1px; left: 0; transform: translateX(-50%); font-size: .66rem; color: #64748b; font-weight: 700; white-space: nowrap; line-height: 1; background: #fcfdff; padding: 0 .18rem; border-radius: 4px; }
+        .gantt-axis-tick.start .gantt-axis-label { transform: translateX(0); }
+        .gantt-axis-tick.end .gantt-axis-label { transform: translateX(-100%); }
+        .gantt-grid { margin-top: .55rem; display: grid; gap: .35rem; max-height: 320px; overflow: auto; padding-right: .2rem; }
+        .gantt-row { display: grid; grid-template-columns: minmax(180px, 42%) minmax(0, 58%); align-items: center; gap: .5rem; }
+        .gantt-label-col { min-width: 0; font-size: .73rem; color: #1f2937; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .gantt-track-col { position: relative; min-height: 26px; border: 1px solid #e2e8f0; border-radius: 6px; background: #f8fafc; overflow: visible; }
+        .gantt-bar { position: absolute; top: 3px; bottom: 3px; border-radius: 5px; background: linear-gradient(90deg, #2563eb 0%, #3b82f6 100%); color: #fff; display: flex; align-items: center; justify-content: center; padding: 0 .35rem; font-size: .67rem; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .gantt-bar-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .gantt-date-label { position: absolute; top: 50%; transform: translateY(-50%); font-size: .62rem; color: #334155; font-weight: 700; line-height: 1; white-space: nowrap; pointer-events: none; background: rgba(248, 250, 252, .95); padding: 0 .16rem; border-radius: 4px; }
+        .gantt-date-start { transform: translate(calc(-100% - 6px), -50%); }
+        .gantt-date-end { transform: translate(6px, -50%); }
+        .gantt-bar-empty { display: inline-flex; align-items: center; padding: .18rem .38rem; border-radius: 999px; border: 1px solid #fecaca; background: #fef2f2; color: #b91c1c; font-size: .64rem; font-weight: 700; margin: 3px 0 0 6px; }
+        .gantt-today-marker { position: absolute; top: 0; bottom: 0; width: 2px; background: #dc2626; opacity: .85; pointer-events: none; }
+        .gantt-empty { color: #6b7280; font-size: .9rem; font-style: italic; }
+        @media (max-width: 1200px) { .gantt-row, .gantt-axis-row { grid-template-columns: minmax(150px, 45%) minmax(0, 55%); } }
+        .active-filter-row { margin-top: .7rem; display: flex; flex-wrap: wrap; gap: .45rem; align-items: center; }
+        .active-filter-chip { display: inline-flex; align-items: center; gap: .35rem; padding: .23rem .5rem; border: 1px solid #bfdbfe; border-radius: 999px; background: #eff6ff; color: #1d4ed8; font-size: .73rem; font-weight: 700; }
+        .active-filter-clear { border: 0; background: transparent; color: #1d4ed8; font-size: .8rem; font-weight: 700; cursor: pointer; line-height: 1; padding: 0; }
+        .active-filter-clear:hover { color: #1e40af; }
+        .clear-all-filters { border: 1px solid #d1d5db; border-radius: 999px; background: #fff; color: #374151; font-size: .73rem; font-weight: 700; padding: .23rem .5rem; cursor: pointer; }
+        .clear-all-filters:hover { background: #f8fafc; }
+
+        html[data-theme="dark"] body { background: #0b1220; color: #e5e7eb; }
+        html[data-theme="dark"] .header { background: #111827; border-bottom-color: #1f2937; }
+        html[data-theme="dark"] .meta,
+        html[data-theme="dark"] .subtitle,
+        html[data-theme="dark"] .empty,
+        html[data-theme="dark"] .orphan-title,
+        html[data-theme="dark"] .lane-section-title,
+        html[data-theme="dark"] .gantt-panel-subtitle { color: #9ca3af; }
+        html[data-theme="dark"] .lane-selection-context { color: #93c5fd; }
+        html[data-theme="dark"] .header-link-btn { border-color: #1e40af; background: #172554; color: #bfdbfe; }
+        html[data-theme="dark"] .header-link-btn:hover { background: #1e3a8a; border-color: #2563eb; }
+        html[data-theme="dark"] .header-toggle,
+        html[data-theme="dark"] .clear-all-filters { border-color: #374151; background: #111827; color: #d1d5db; }
+        html[data-theme="dark"] .header-toggle:hover,
+        html[data-theme="dark"] .clear-all-filters:hover { background: #1f2937; }
+        html[data-theme="dark"] .search-input { border-color: #374151; background: #0f172a; color: #e5e7eb; }
+        html[data-theme="dark"] .search-input:focus { border-color: #60a5fa; box-shadow: 0 0 0 2px rgba(96, 165, 250, .25); }
+        html[data-theme="dark"] .project-chip,
+        html[data-theme="dark"] .lane-assignee-filter { border-color: #374151; background: #0f172a; color: #d1d5db; }
+        html[data-theme="dark"] .lane-assignee-filter::after,
+        html[data-theme="dark"] .lane-assignee-filter-label { color: #9ca3af; }
+        html[data-theme="dark"] .lane-assignee-select { color: #e5e7eb; }
+        html[data-theme="dark"] .lane-assignee-filter:focus-within { border-color: #60a5fa; box-shadow: 0 0 0 2px rgba(96, 165, 250, .2); }
+        html[data-theme="dark"] .status-chip-trigger { border-color: #374151; background: #0f172a; color: #e5e7eb; }
+        html[data-theme="dark"] .status-chip-trigger .chip-label,
+        html[data-theme="dark"] .status-chip-trigger .chip-caret { color: #9ca3af; }
+        html[data-theme="dark"] .status-chip-trigger .chip-value { color: #f3f4f6; }
+        html[data-theme="dark"] .status-chip-trigger:hover { background: #1f2937; border-color: #60a5fa; }
+        html[data-theme="dark"] .status-chip-dropdown.open .status-chip-trigger { border-color: #60a5fa; box-shadow: 0 0 0 2px rgba(96, 165, 250, .2); }
+        html[data-theme="dark"] .status-chip-menu { border-color: #334155; background: #111827; box-shadow: 0 12px 30px rgba(2, 6, 23, .5); }
+        html[data-theme="dark"] .status-chip-option { color: #d1d5db; }
+        html[data-theme="dark"] .status-chip-option:hover,
+        html[data-theme="dark"] .status-chip-option:focus,
+        html[data-theme="dark"] .status-chip-option.selected { background: #1e3a8a; color: #bfdbfe; }
+        html[data-theme="dark"] .risk-chip-trigger { border-color: #9a3412; background: #3f1d0f; color: #fed7aa; }
+        html[data-theme="dark"] .risk-chip-trigger .chip-label,
+        html[data-theme="dark"] .risk-chip-trigger .chip-caret { color: #fdba74; }
+        html[data-theme="dark"] .risk-chip-trigger .chip-value { color: #ffedd5; }
+        html[data-theme="dark"] .risk-chip-trigger:hover { background: #7c2d12; border-color: #fb923c; }
+        html[data-theme="dark"] .risk-chip-dropdown.open .risk-chip-trigger { border-color: #fb923c; box-shadow: 0 0 0 2px rgba(251,146,60,.2); }
+        html[data-theme="dark"] .risk-chip-menu { border-color: #7c2d12; background: #3f1d0f; box-shadow: 0 12px 30px rgba(124, 45, 18, .45); }
+        html[data-theme="dark"] .risk-chip-option { color: #fed7aa; }
+        html[data-theme="dark"] .risk-chip-option:hover,
+        html[data-theme="dark"] .risk-chip-option:focus,
+        html[data-theme="dark"] .risk-chip-option.selected { background: #7c2d12; color: #ffedd5; }
+        html[data-theme="dark"] .lane { background: #111827; border-color: #1f2937; }
+        html[data-theme="dark"] .lane-epics { background: #2e1f4f; border-color: #9333ea; }
+        html[data-theme="dark"] .lane-stories { background: #1f2d4d; border-color: #2563eb; }
+        html[data-theme="dark"] .lane-subtasks { background: #0f3a2c; border-color: #16a34a; }
+        html[data-theme="dark"] .lane h2,
+        html[data-theme="dark"] .card-title,
+        html[data-theme="dark"] .meta-line strong,
+        html[data-theme="dark"] .dates-table td:first-child,
+        html[data-theme="dark"] .dates-table th,
+        html[data-theme="dark"] .gantt-panel-header h3 { color: #f3f4f6; }
+        html[data-theme="dark"] .orphan-block { border-top-color: #334155; }
+        html[data-theme="dark"] .card { border-color: #334155; background: #0f172a; }
+        html[data-theme="dark"] .card-selectable:hover { border-color: #60a5fa; }
+        html[data-theme="dark"] .card-selected { border-color: #60a5fa; box-shadow: 0 0 0 2px rgba(96, 165, 250, .28); }
+        html[data-theme="dark"] .card-status-todo { background: #111827; border-color: #374151; }
+        html[data-theme="dark"] .card-status-on-hold { background: #2b2110; border-color: #b45309; }
+        html[data-theme="dark"] .card-status-in-progress { background: #172554; border-color: #1d4ed8; }
+        html[data-theme="dark"] .card-status-resolved { background: #052e16; border-color: #15803d; }
+        html[data-theme="dark"] .card-status-at-risk { background: #3f1d1d; border-color: #ef4444; }
+        html[data-theme="dark"] .card-type,
+        html[data-theme="dark"] .meta-lines,
+        html[data-theme="dark"] .dates-table,
+        html[data-theme="dark"] .gantt-label-col,
+        html[data-theme="dark"] .gantt-legend { color: #cbd5e1; }
+        html[data-theme="dark"] .card-count-chip,
+        html[data-theme="dark"] .legend-pill { border-color: #334155; background: #111827; color: #cbd5e1; }
+        html[data-theme="dark"] .card-count-chip.epic,
+        html[data-theme="dark"] .assignee-chip,
+        html[data-theme="dark"] .active-filter-chip,
+        html[data-theme="dark"] .card-link-label { border-color: #1d4ed8; background: #172554; color: #bfdbfe; }
+        html[data-theme="dark"] .card-count-chip.story { border-color: #15803d; background: #052e16; color: #86efac; }
+        html[data-theme="dark"] .card-copy-btn { border-color: #475569; background: #111827; color: #d1d5db; }
+        html[data-theme="dark"] .card-copy-btn:hover { background: #1f2937; border-color: #60a5fa; color: #bfdbfe; }
+        html[data-theme="dark"] .card-copy-btn.copied { border-color: #15803d; background: #052e16; color: #86efac; }
+        html[data-theme="dark"] .card-link-label:hover { background: #1e3a8a; border-color: #2563eb; }
+        html[data-theme="dark"] .assignee-chip.missing,
+        html[data-theme="dark"] .danger-chip,
+        html[data-theme="dark"] .alert,
+        html[data-theme="dark"] .gantt-bar-empty,
+        html[data-theme="dark"] .legend-missing { border-color: #b91c1c; background: #450a0a; color: #fecaca; }
+        html[data-theme="dark"] .info-note { border-color: #15803d; background: #052e16; color: #86efac; }
+        html[data-theme="dark"] .dates-table th { background: #111827; }
+        html[data-theme="dark"] .dates-table td,
+        html[data-theme="dark"] .dates-table th { border-color: #334155; }
+        html[data-theme="dark"] .dates-table tr.ipp-date-mismatch td { color: #fecaca; }
+        html[data-theme="dark"] .dates-table td.mismatch-planner { color: #fca5a5; }
+        html[data-theme="dark"] .dates-table td.mismatch-planned { color: #ffffff; background: #b91c1c; }
+        html[data-theme="dark"] .gantt-axis-track { border-color: #334155; background: #0f172a; }
+        html[data-theme="dark"] .gantt-axis-tick::before { background: #475569; }
+        html[data-theme="dark"] .gantt-axis-label { color: #94a3b8; background: #0f172a; }
+        html[data-theme="dark"] .gantt-track-col { border-color: #334155; background: #111827; }
+        html[data-theme="dark"] .gantt-date-label { color: #cbd5e1; background: rgba(15, 23, 42, .9); }
+        html[data-theme="dark"] .active-filter-clear { color: #93c5fd; }
+        html[data-theme="dark"] .active-filter-clear:hover { color: #bfdbfe; }
+        html[data-theme="dark"] .badge-tip {
+            border-color: #ef4444;
+            background: #1f2937;
+            color: #fecaca;
+            box-shadow: 0 10px 24px rgba(2, 6, 23, .55);
+        }
+        html[data-theme="dark"] .badge-tip::after { border-color: #ef4444 transparent transparent transparent; }
+</style>
+  <link rel="stylesheet" href="shared-nav.css">
+</head>
+<body>
+<div class="top-date-range-wrap">
+    <div class="top-date-range-chip" aria-label="Date range filter">
+        <span class="date-chip-segment"><span class="material-icons-outlined" aria-hidden="true">date_range</span>range</span>
+        <span class="date-chip-segment"><span class="material-icons-outlined" aria-hidden="true">west</span>from</span>
+        <input id="date-filter-from" class="date-chip-input" type="month" aria-label="From month">
+        <span class="date-chip-segment"><span class="material-icons-outlined" aria-hidden="true">east</span>to</span>
+        <input id="date-filter-to" class="date-chip-input" type="month" aria-label="To month">
+        <button id="date-filter-reset" class="date-chip-reset" type="button" aria-label="Reset date range"><span class="material-icons-outlined" aria-hidden="true">refresh</span>reset</button>
+    </div>
+</div>
+<div class="container">
+    <div class="header" id="dashboard-header">
+        <div class="header-toolbar">
+            <div class="header-toolbar-left">
+            </div>
+            <div class="header-toolbar-right">
+                <button id="theme-toggle" class="header-toggle" type="button" aria-label="Toggle dark mode"><span class="material-icons-outlined" aria-hidden="true">dark_mode</span>Dark mode</button>
+                <button id="remove-filters-btn" class="header-toggle" type="button" aria-label="Remove all filters">remove filters</button>
+                <button id="header-toggle" class="header-toggle" type="button" aria-expanded="true" aria-controls="header-content">Collapse header</button>
+            </div>
+        </div>
+        <div class="header-grid" id="header-content">
+            <div class="header-main">
+                <h1 style="margin:0;">RMI Dashboard</h1>
+                <div class="subtitle">Hierarchy: Epic -> Story -> (Subtask + Bug Subtask)</div>
+                <div class="meta">Generated: <span id="generated-at"></span></div>
+                <div class="filters"><strong>Projects:</strong><span id="project-filters"></span></div>
+                <div class="search-wrap"><input id="workitem-search" class="search-input" type="text" placeholder="Search (key, summary, status...)" /></div>
+                <div id="assignee-filter-summary" class="active-filter-row"></div>
+            </div>
+            <div class="header-calendar">
+                <div id="calendar-panel"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="dashboard-layout">
+        <section class="lane lane-epics">
+            <div class="lane-header">
+                <h2 id="epics-title">Epics</h2>
+                <div class="lane-filter-group">
+                    <label class="lane-assignee-filter">
+                        <span class="lane-assignee-filter-label">Filter by Assignee</span>
+                        <select id="epic-assignee-filter" class="lane-assignee-select"></select>
+                    </label>
+                    <div id="epic-status-filter" class="status-chip-dropdown" data-kind="epic">
+                        <button type="button" class="status-chip-trigger" aria-haspopup="listbox" aria-expanded="false" aria-controls="epic-status-filter-menu">
+                            <span class="chip-label">Filter by Status</span>
+                            <span class="chip-value">All Statuses</span>
+                            <span class="chip-caret" aria-hidden="true">▾</span>
+                        </button>
+                        <div id="epic-status-filter-menu" class="status-chip-menu" role="listbox" aria-label="Epic status filter"></div>
+                    </div>
+                    <div id="epic-risk-filter" class="risk-chip-dropdown" data-kind="epic">
+                        <button type="button" class="risk-chip-trigger" aria-haspopup="listbox" aria-expanded="false" aria-controls="epic-risk-filter-menu">
+                            <span class="chip-label">Filter by Risk</span>
+                            <span class="chip-value">All Risk</span>
+                            <span class="chip-caret" aria-hidden="true">▾</span>
+                        </button>
+                        <div id="epic-risk-filter-menu" class="risk-chip-menu" role="listbox" aria-label="Epic risk filter"></div>
+                    </div>
+                </div>
+            </div>
+            <div id="epics-list" class="cards"></div>
+        </section>
+
+        <section class="lane lane-stories">
+            <div class="lane-header">
+                <h2 id="stories-title">Stories</h2>
+                <div class="lane-filter-group">
+                    <label class="lane-assignee-filter">
+                        <span class="lane-assignee-filter-label">Filter by Assignee</span>
+                        <select id="story-assignee-filter" class="lane-assignee-select"></select>
+                    </label>
+                    <div id="story-status-filter" class="status-chip-dropdown" data-kind="story">
+                        <button type="button" class="status-chip-trigger" aria-haspopup="listbox" aria-expanded="false" aria-controls="story-status-filter-menu">
+                            <span class="chip-label">Filter by Status</span>
+                            <span class="chip-value">All Statuses</span>
+                            <span class="chip-caret" aria-hidden="true">▾</span>
+                        </button>
+                        <div id="story-status-filter-menu" class="status-chip-menu" role="listbox" aria-label="Story status filter"></div>
+                    </div>
+                    <div id="story-risk-filter" class="risk-chip-dropdown" data-kind="story">
+                        <button type="button" class="risk-chip-trigger" aria-haspopup="listbox" aria-expanded="false" aria-controls="story-risk-filter-menu">
+                            <span class="chip-label">Filter by Risk</span>
+                            <span class="chip-value">All Risk</span>
+                            <span class="chip-caret" aria-hidden="true">▾</span>
+                        </button>
+                        <div id="story-risk-filter-menu" class="risk-chip-menu" role="listbox" aria-label="Story risk filter"></div>
+                    </div>
+                </div>
+            </div>
+            <div id="stories-selection-context" class="lane-selection-context"></div>
+            <div id="stories-list" class="cards"></div>
+            <div id="orphan-stories-block" class="orphan-block">
+                <p class="orphan-title">Orphan Stories</p>
+                <div id="orphan-stories-list" class="cards"></div>
+            </div>
+        </section>
+
+        <section class="lane lane-subtasks">
+            <div class="lane-header">
+                <h2 id="subtasks-title">Subtasks</h2>
+                <div class="lane-filter-group">
+                    <label class="lane-assignee-filter">
+                        <span class="lane-assignee-filter-label">Filter by Assignee</span>
+                        <select id="subtask-assignee-filter" class="lane-assignee-select"></select>
+                    </label>
+                    <div id="subtask-status-filter" class="status-chip-dropdown" data-kind="subtask">
+                        <button type="button" class="status-chip-trigger" aria-haspopup="listbox" aria-expanded="false" aria-controls="subtask-status-filter-menu">
+                            <span class="chip-label">Filter by Status</span>
+                            <span class="chip-value">All Statuses</span>
+                            <span class="chip-caret" aria-hidden="true">▾</span>
+                        </button>
+                        <div id="subtask-status-filter-menu" class="status-chip-menu" role="listbox" aria-label="Subtask status filter"></div>
+                    </div>
+                    <div id="subtask-risk-filter" class="risk-chip-dropdown" data-kind="subtask">
+                        <button type="button" class="risk-chip-trigger" aria-haspopup="listbox" aria-expanded="false" aria-controls="subtask-risk-filter-menu">
+                            <span class="chip-label">Filter by Risk</span>
+                            <span class="chip-value">All Risk</span>
+                            <span class="chip-caret" aria-hidden="true">▾</span>
+                        </button>
+                        <div id="subtask-risk-filter-menu" class="risk-chip-menu" role="listbox" aria-label="Subtask risk filter"></div>
+                    </div>
+                </div>
+            </div>
+            <div id="subtasks-selection-context" class="lane-selection-context"></div>
+            <div id="subtasks-list" class="cards"></div>
+            <div class="orphan-block">
+                <p class="orphan-title">Orphan Subtasks</p>
+                <div id="orphan-subtasks-list" class="cards"></div>
+            </div>
+            <div class="orphan-block">
+                <p class="orphan-title">Bug Subtasks</p>
+                <div id="bug-subtasks-list" class="cards"></div>
+            </div>
+            <div class="orphan-block">
+                <p class="orphan-title">Orphan Bug Subtasks</p>
+                <div id="orphan-bug-subtasks-list" class="cards"></div>
+            </div>
+        </section>
+    </div>
+</div>
+
+<script>
+const dashboardData = __DASHBOARD_DATA__;
+const allEpics = dashboardData.epics || [];
+const allStories = dashboardData.stories || [];
+const allSubtasks = dashboardData.subtasks || [];
+const allBugSubtasks = dashboardData.bug_subtasks || [];
+const allProjects = dashboardData.projects || [];
+const orphans = dashboardData.orphans || { stories: [], subtasks: [], bug_subtasks: [] };
+const selectedProjects = new Set(allProjects.includes('O2') ? ['O2'] : []);
+const DEFAULT_DATE_FROM_MONTH = '2026-01';
+const DEFAULT_DATE_TO_MONTH = '2026-02';
+let selectedDateFromMonth = DEFAULT_DATE_FROM_MONTH;
+let selectedDateToMonth = DEFAULT_DATE_TO_MONTH;
+let searchQuery = '';
+let selectedEpicKey = '';
+let selectedStoryKey = '';
+const ASSIGNEE_ALL = '__ALL__';
+const ASSIGNEE_UNASSIGNED = '__UNASSIGNED__';
+const STATUS_ALL = '__ALL__';
+const RISK_ALL = '__ALL__';
+let selectedEpicAssignee = ASSIGNEE_ALL;
+let selectedStoryAssignee = ASSIGNEE_ALL;
+let selectedSubtaskAssignee = ASSIGNEE_ALL;
+let selectedEpicStatus = STATUS_ALL;
+let selectedStoryStatus = STATUS_ALL;
+let selectedSubtaskStatus = STATUS_ALL;
+let selectedEpicRisk = RISK_ALL;
+let selectedStoryRisk = RISK_ALL;
+let selectedSubtaskRisk = RISK_ALL;
+const themeToggleButton = document.getElementById('theme-toggle');
+const headerContainer = document.getElementById('dashboard-header');
+const headerToggleButton = document.getElementById('header-toggle');
+const removeFiltersButton = document.getElementById('remove-filters-btn');
+const THEME_STORAGE_KEY = 'rmi-dashboard-theme';
+const HEADER_COLLAPSE_STORAGE_KEY = 'rmi-dashboard-header-collapsed';
+document.getElementById('generated-at').textContent = dashboardData.generated_at || '-';
+
+const asText = (v) => String(v || '').trim();
+const asYesNo = (v) => asText(v).toLowerCase() === 'yes' ? 'Yes' : 'No';
+const asKey = (item) => asText(item.issue_key || item.epic_key || item.epic_key_legacy);
+const itemStatus = (item) => asText(item.status || item.epic_status);
+const itemHours = (item) => { const n = Number(item.subtask_hours_logged_total || item.total_hours_logged || 0); return Number.isFinite(n) ? n : 0; };
+const storyEpicKey = (story) => asText(story && (story.epic_key || story.parent_issue_key));
+const subtaskStoryKey = (subtask) => asText(subtask && (subtask.story_key || subtask.parent_issue_key));
+function normalizeAssignee(value) {
+    const text = asText(value);
+    return (!text || text.toLowerCase() === 'unassigned') ? ASSIGNEE_UNASSIGNED : text;
+}
+function assigneeLabel(value) {
+    if (value === ASSIGNEE_ALL) return 'All';
+    if (value === ASSIGNEE_UNASSIGNED) return 'Unassigned';
+    return value;
+}
+function normalizeStatus(value) {
+    const text = asText(value).toLowerCase();
+    if (!text) return '';
+    const compact = text.replace(/[^a-z0-9]+/g, ' ').trim();
+    if (!compact) return '';
+    if (compact.includes('at risk')) return 'at_risk';
+    if (compact.includes('in progress')) return 'in_progress';
+    if (compact === 'todo' || compact === 'to do' || compact.includes('to do')) return 'to_do';
+    if (compact.includes('on hold')) return 'on_hold';
+    if (compact.includes('resolved') || compact === 'done') return 'resolved';
+    return compact.replace(/\s+/g, '_');
+}
+function statusLabel(value) {
+    if (value === STATUS_ALL) return 'All Statuses';
+    const labels = {
+        at_risk: 'AT RISK',
+        in_progress: 'In Progress',
+        to_do: 'To Do',
+        on_hold: 'On Hold',
+        resolved: 'Resolved',
+    };
+    if (labels[value]) return labels[value];
+    return asText(value)
+        .split('_')
+        .filter(Boolean)
+        .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(' ');
+}
+function normalizeRisk(item) {
+    const level = asText(item && item.risk_level).toLowerCase();
+    if (level === 'low' || level === 'can_be' || level === 'medium' || level === 'high') return level;
+    const score = Number(item && item.risk_score_final);
+    const safeScore = Number.isFinite(score) ? Math.max(0, Math.round(score)) : 0;
+    if (safeScore >= 4) return 'high';
+    if (safeScore >= 2) return 'medium';
+    if (safeScore === 1) return 'can_be';
+    return 'low';
+}
+function riskLabel(value) {
+    if (value === RISK_ALL) return 'All Risk';
+    const labels = {
+        high: 'Highly At Risk',
+        medium: 'Medium Risk',
+        can_be: 'Can Be',
+        low: 'Low',
+    };
+    return labels[value] || 'Low';
+}
+function buildAssigneeOptions(items) {
+    const set = new Set();
+    items.forEach(item => {
+        const normalized = normalizeAssignee(item.assignee);
+        if (normalized !== ASSIGNEE_UNASSIGNED) set.add(normalized);
+    });
+    const named = Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+    return [ASSIGNEE_ALL, ...named, ASSIGNEE_UNASSIGNED];
+}
+function buildStatusOptions(items) {
+    const values = new Set();
+    items.forEach(item => {
+        const normalized = normalizeStatus(itemStatus(item));
+        if (normalized) values.add(normalized);
+    });
+    const sorted = Array.from(values).sort((a, b) => statusLabel(a).localeCompare(statusLabel(b), undefined, { sensitivity: 'base' }));
+    return [STATUS_ALL, ...sorted];
+}
+function buildRiskOptions(items) {
+    const values = new Set();
+    items.forEach(item => {
+        values.add(normalizeRisk(item));
+    });
+    const order = ['high', 'medium', 'can_be', 'low'];
+    const sorted = order.filter(value => values.has(value));
+    return [RISK_ALL, ...sorted];
+}
+const epicAssigneeOptions = buildAssigneeOptions(allEpics);
+const storyAssigneeOptions = buildAssigneeOptions(allStories);
+const subtaskAssigneeOptions = buildAssigneeOptions(allSubtasks.concat(allBugSubtasks));
+const epicStatusOptions = buildStatusOptions(allEpics);
+const storyStatusOptions = buildStatusOptions(allStories);
+const subtaskStatusOptions = buildStatusOptions(allSubtasks.concat(allBugSubtasks));
+const epicRiskOptions = buildRiskOptions(allEpics);
+const storyRiskOptions = buildRiskOptions(allStories);
+const subtaskRiskOptions = buildRiskOptions(allSubtasks.concat(allBugSubtasks));
+const storyCountByEpic = new Map();
+const subtaskCountByStory = new Map();
+allStories.forEach(story => {
+    const epicKey = asText(story.epic_key || story.parent_issue_key);
+    if (!epicKey) return;
+    storyCountByEpic.set(epicKey, (storyCountByEpic.get(epicKey) || 0) + 1);
+});
+allSubtasks.forEach(subtask => {
+    const storyKey = asText(subtask.story_key || subtask.parent_issue_key);
+    if (!storyKey) return;
+    subtaskCountByStory.set(storyKey, (subtaskCountByStory.get(storyKey) || 0) + 1);
+});
+allBugSubtasks.forEach(subtask => {
+    const storyKey = asText(subtask.story_key || subtask.parent_issue_key);
+    if (!storyKey) return;
+    subtaskCountByStory.set(storyKey, (subtaskCountByStory.get(storyKey) || 0) + 1);
+});
+
+function escapeHtml(text) { const div = document.createElement('div'); div.textContent = text || ''; return div.innerHTML; }
+function formatDateDisplay(value) {
+    const text = asText(value);
+    if (!text) return '-';
+    const m = text.match(/^(\d{4})-(\d{2})-(\d{2})$/) || text.match(/^(\d{4})-(\d{2})-(\d{2})T/);
+    if (!m) return text;
+    const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return Number(m[3]) + ' ' + monthNames[Number(m[2]) - 1] + ' ' + Number(m[1]);
+}
+function formatDateDisplayFromDate(dateValue) {
+    if (!(dateValue instanceof Date) || Number.isNaN(dateValue.getTime())) return '-';
+    const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return `${dateValue.getDate()} ${monthNames[dateValue.getMonth()]} ${dateValue.getFullYear()}`;
+}
+function estimateToDays(value) {
+    const text = asText(value);
+    if (!text) return null;
+    const tokenPattern = /(\d+(?:\.\d+)?)\s*([wdhm])/gi;
+    let match, weeks = 0, days = 0, hours = 0, minutes = 0;
+    while ((match = tokenPattern.exec(text)) !== null) {
+        const amount = Number(match[1]);
+        const unit = match[2].toLowerCase();
+        if (unit === 'w') weeks += amount;
+        else if (unit === 'd') days += amount;
+        else if (unit === 'h') hours += amount;
+        else if (unit === 'm') minutes += amount;
+    }
+    const totalDays = (weeks * 5) + days + (hours / 8) + (minutes / 480);
+    return Number.isFinite(totalDays) && totalDays > 0 ? totalDays : null;
+}
+function formatDayValue(value) { if (value === null || value === undefined || value === '') return '-'; const n = Number(value); return Number.isFinite(n) ? String(Number(n.toFixed(2))).replace(/\.00$/, '') : '-'; }
+function parseDateValue(value) {
+    const text = asText(value);
+    if (!text) return null;
+    const m = text.match(/^(\d{4})-(\d{2})-(\d{2})$/) || text.match(/^(\d{4})-(\d{2})-(\d{2})T/);
+    if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    const d = new Date(text);
+    if (Number.isNaN(d.getTime())) return null;
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+function parseMonthValue(value) {
+    const text = asText(value);
+    const m = text.match(/^(\d{4})-(\d{2})$/);
+    if (!m) return null;
+    const year = Number(m[1]);
+    const monthIndex = Number(m[2]) - 1;
+    if (!Number.isFinite(year) || !Number.isFinite(monthIndex) || monthIndex < 0 || monthIndex > 11) return null;
+    return { year, monthIndex };
+}
+function monthStart(value) {
+    const parsed = parseMonthValue(value);
+    if (!parsed) return null;
+    return new Date(parsed.year, parsed.monthIndex, 1);
+}
+function monthEnd(value) {
+    const parsed = parseMonthValue(value);
+    if (!parsed) return null;
+    return new Date(parsed.year, parsed.monthIndex + 1, 0);
+}
+function normalizeDateMonths() {
+    if (selectedDateFromMonth > selectedDateToMonth) {
+        const tmp = selectedDateFromMonth;
+        selectedDateFromMonth = selectedDateToMonth;
+        selectedDateToMonth = tmp;
+    }
+    const fromInput = document.getElementById('date-filter-from');
+    const toInput = document.getElementById('date-filter-to');
+    if (fromInput) fromInput.value = selectedDateFromMonth;
+    if (toInput) toInput.value = selectedDateToMonth;
+}
+function getDateFilterBounds() {
+    normalizeDateMonths();
+    const start = monthStart(selectedDateFromMonth) || monthStart(DEFAULT_DATE_FROM_MONTH);
+    const end = monthEnd(selectedDateToMonth) || monthEnd(DEFAULT_DATE_TO_MONTH);
+    return { start, end };
+}
+function rangesOverlap(startA, endA, startB, endB) {
+    if (!startA || !endA || !startB || !endB) return false;
+    return startA.getTime() <= endB.getTime() && startB.getTime() <= endA.getTime();
+}
+function itemDateRange(item) {
+    const plannedStart = parseDateValue(item && item.jira_start_date);
+    const plannedEnd = parseDateValue(item && item.jira_end_date);
+    if (plannedStart || plannedEnd) return { start: plannedStart || plannedEnd, end: plannedEnd || plannedStart };
+    const actualStart = parseDateValue(item && item.actual_start_date);
+    const actualEnd = parseDateValue(item && item.actual_end_date);
+    if (actualStart || actualEnd) return { start: actualStart || actualEnd, end: actualEnd || actualStart };
+    return null;
+}
+function formatMonthInputValue(dateValue) {
+    const year = dateValue.getFullYear();
+    const month = String(dateValue.getMonth() + 1).padStart(2, '0');
+    return `${year}-${month}`;
+}
+function collectAllItems() {
+    return []
+        .concat(allEpics || [], allStories || [], allSubtasks || [], allBugSubtasks || [])
+        .concat((orphans && orphans.stories) || [], (orphans && orphans.subtasks) || [], (orphans && orphans.bug_subtasks) || []);
+}
+function deriveFullDateMonthBounds(items) {
+    let minDate = null;
+    let maxDate = null;
+    items.forEach((item) => {
+        const range = itemDateRange(item);
+        if (!range) return;
+        if (range.start && (!minDate || range.start.getTime() < minDate.getTime())) minDate = range.start;
+        if (range.end && (!maxDate || range.end.getTime() > maxDate.getTime())) maxDate = range.end;
+    });
+    if (!minDate || !maxDate) {
+        return { fromMonth: DEFAULT_DATE_FROM_MONTH, toMonth: DEFAULT_DATE_TO_MONTH };
+    }
+    return {
+        fromMonth: formatMonthInputValue(minDate),
+        toMonth: formatMonthInputValue(maxDate),
+    };
+}
+function matchesDateFilter(item) {
+    const range = itemDateRange(item);
+    if (!range) return false;
+    const bounds = getDateFilterBounds();
+    return rangesOverlap(bounds.start, bounds.end, range.start, range.end);
+}
+function addMonths(baseDate, delta) { return new Date(baseDate.getFullYear(), baseDate.getMonth() + delta, 1); }
+function isSameDay(a, b) { return !!a && !!b && a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
+function isWithinRange(day, start, end) {
+    if (!day || !start || !end) return false;
+    const d = new Date(day.getFullYear(), day.getMonth(), day.getDate()).getTime();
+    const s = new Date(start.getFullYear(), start.getMonth(), start.getDate()).getTime();
+    const e = new Date(end.getFullYear(), end.getMonth(), end.getDate()).getTime();
+    return d >= Math.min(s, e) && d <= Math.max(s, e);
+}
+function getStatusClass(status) {
+    const text = asText(status).toLowerCase();
+    if (!text) return 'card-status-todo';
+    if (text.includes('at risk')) return 'card-status-at-risk';
+    if (text.includes('on hold')) return 'card-status-on-hold';
+    if (text.includes('in progress') || text.includes('in-progress')) return 'card-status-in-progress';
+    if (text.includes('resolved')) return 'card-status-resolved';
+    return 'card-status-todo';
+}
+function markdownEscape(value) {
+    return String(value || '')
+        .replace(/\\/g, '\\\\')
+        .replace(/\|/g, '\\|')
+        .replace(/\[/g, '\\[')
+        .replace(/\]/g, '\\]')
+        .replace(/\r?\n/g, ' ');
+}
+function toMarkdownLink(label, url) {
+    const safeLabel = markdownEscape(label);
+    const safeUrl = asText(url);
+    return safeUrl ? `[${safeLabel}](${safeUrl})` : safeLabel;
+}
+function formatSyncState(item) {
+    return asYesNo(item.jira_ipp_rmi_dates_altered || 'No') === 'Yes' ? 'Out of Sync' : 'Synced';
+}
+function plannerMatchLabel(value) {
+    const normalized = asText(value).toUpperCase();
+    if (normalized === 'YES') return 'Matched';
+    if (normalized === 'NO') return 'Mismatch';
+    return 'N/A';
+}
+function formatScheduleRow(label, startDate, endDate, manDays) {
+    return `| ${markdownEscape(label)} | ${markdownEscape(startDate)} | ${markdownEscape(endDate)} | ${markdownEscape(manDays)} |`;
+}
+function buildRelatedMarkdown(items, title) {
+    if (!items.length) return [];
+    const lines = [`### ${title}`];
+    items.forEach((item) => {
+        const key = asKey(item) || '-';
+        const summary = asText(item.summary) || '-';
+        lines.push(`- ${toMarkdownLink(key, item.jira_url)}: ${markdownEscape(summary)}`);
+    });
+    return lines.concat(['']);
+}
+function buildCardMarkdown(item, kind) {
+    const kindLabel = kind === 'epic' ? 'Epic' : (kind === 'story' ? 'Story' : (kind === 'bug_subtask' ? 'Bug Subtask' : 'Subtask'));
+    const key = asKey(item) || '-';
+    const summary = asText(item.summary) || '-';
+    const status = itemStatus(item) || '-';
+    const assigneeValue = normalizeAssignee(item.assignee);
+    const assignee = assigneeLabel(assigneeValue);
+    const project = asText(item.project_key) || '-';
+    const latestIpp = asYesNo(item.latest_ipp_meeting || 'No');
+    const plannedDays = estimateToDays(item.original_estimate);
+    const actualDays = itemHours(item) > 0 ? itemHours(item) / 8 : 0;
+    const plannerStatus = asText(item.planner_validation_status) || 'No Planner Entry';
+    const plannerDays = item.planner_planned_hours == null ? '-' : formatDayValue(Number(item.planner_planned_hours) / 8);
+    const plannerDatesMatch = plannerMatchLabel(item.planner_dates_match);
+    const plannerHoursMatch = plannerMatchLabel(item.planner_hours_match);
+    const lines = [
+        `## ${kindLabel} ${markdownEscape(key)}: ${markdownEscape(summary)}`,
+        '',
+        '### Overview',
+        `- **Issue Key:** ${toMarkdownLink(key, item.jira_url)}`,
+        `- **Type:** ${markdownEscape(kindLabel)}`,
+        `- **Project:** ${markdownEscape(project)}`,
+        `- **Status:** ${markdownEscape(status)}`,
+        `- **Assignee:** ${markdownEscape(assignee)}`,
+        '',
+        '### Schedule',
+        '| Timeline | Start | End | Man-days |',
+        '| --- | --- | --- | --- |',
+        formatScheduleRow('Planned', formatDateDisplay(item.jira_start_date), formatDateDisplay(item.jira_end_date), plannedDays === null ? '-' : formatDayValue(plannedDays)),
+        ...(kind === 'epic'
+            ? [
+                formatScheduleRow(
+                    'Planner',
+                    formatDateDisplay(item.planner_planned_start_date),
+                    formatDateDisplay(item.planner_planned_end_date),
+                    plannerDays,
+                ),
+            ]
+            : []),
+        formatScheduleRow('Actual', formatDateDisplay(item.actual_start_date), formatDateDisplay(item.actual_end_date), formatDayValue(actualDays)),
+        '',
+        '### Flags',
+        `- **Latest IPP Meeting:** ${markdownEscape(latestIpp)}`,
+        `- **Jira/IPP Date Sync:** ${markdownEscape(formatSyncState(item))}`,
+        ...(kind === 'epic'
+            ? [
+                `- **Planner Validation:** ${markdownEscape(plannerStatus)}`,
+                `- **Planner Dates Check:** ${markdownEscape(plannerDatesMatch)}`,
+                `- **Planner Hours Check:** ${markdownEscape(plannerHoursMatch)}`,
+            ]
+            : []),
+        '',
+    ];
+    if (kind === 'story') {
+        lines.splice(7, 0, `- **Epic:** ${markdownEscape(storyEpicKey(item) || '-')}`);
+    }
+    if (kind === 'subtask') {
+        lines.splice(7, 0, `- **Parent Story:** ${markdownEscape(subtaskStoryKey(item) || '-')}`);
+    }
+    if (kind === 'bug_subtask') {
+        lines.splice(7, 0, `- **Parent Story:** ${markdownEscape(subtaskStoryKey(item) || '-')}`);
+    }
+    if (kind === 'epic') {
+        const stories = allStories.filter(story => storyEpicKey(story) === key);
+        lines.push(...buildRelatedMarkdown(stories, `Related Stories (${stories.length})`));
+    } else if (kind === 'story') {
+        const subtasks = allSubtasks.filter(subtask => subtaskStoryKey(subtask) === key);
+        lines.push(...buildRelatedMarkdown(subtasks, `Related Subtasks (${subtasks.length})`));
+        const bugSubtasks = allBugSubtasks.filter(subtask => subtaskStoryKey(subtask) === key);
+        lines.push(...buildRelatedMarkdown(bugSubtasks, `Related Bug Subtasks (${bugSubtasks.length})`));
+    }
+    const showPlannerMismatch = kind === 'epic' && plannerStatus === 'Mismatch';
+    if (showPlannerMismatch) {
+        lines.push('### Notes');
+        lines.push('- Jira planned schedule differs from Epics Planner epic plan.');
+        lines.push(`- Dates check: ${markdownEscape(plannerDatesMatch)}`);
+        lines.push(`- Hours check: ${markdownEscape(plannerHoursMatch)}`);
+        lines.push('');
+    }
+    return lines.join('\n').trim();
+}
+function findItem(kind, key) {
+    if (!key) return null;
+    if (kind === 'epic') return allEpics.find(item => asKey(item) === key) || null;
+    if (kind === 'story') return allStories.find(item => asKey(item) === key) || null;
+    if (kind === 'subtask') return allSubtasks.find(item => asKey(item) === key) || null;
+    if (kind === 'bug_subtask') return allBugSubtasks.find(item => asKey(item) === key) || null;
+    return null;
+}
+function copyText(value) {
+    const text = String(value || '');
+    if (!text) return Promise.resolve(false);
+    if (navigator.clipboard && window.isSecureContext) {
+        return navigator.clipboard.writeText(text)
+            .then(() => true)
+            .catch(() => fallbackCopyText(text));
+    }
+    return Promise.resolve(fallbackCopyText(text));
+}
+function fallbackCopyText(text) {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    let copied = false;
+    try { copied = document.execCommand('copy'); } catch (error) { copied = false; }
+    document.body.removeChild(textarea);
+    return copied;
+}
+function markCopyButtonState(button, copied) {
+    const originalTitle = button.getAttribute('title') || 'Copy as Markdown';
+    button.classList.toggle('copied', copied);
+    button.setAttribute('title', copied ? 'Copied Markdown' : 'Copy failed');
+    if (button.dataset.resetTimer) clearTimeout(Number(button.dataset.resetTimer));
+    const timerId = setTimeout(() => {
+        button.classList.remove('copied');
+        button.setAttribute('title', originalTitle);
+        button.removeAttribute('data-reset-timer');
+    }, 1200);
+    button.dataset.resetTimer = String(timerId);
+}
+function matchesSearch(item) {
+    if (!searchQuery) return true;
+    const haystack = [asKey(item), asText(item.summary), itemStatus(item), asText(item.project_key)].join(' ').toLowerCase();
+    return haystack.includes(searchQuery);
+}
+function matchesAssignee(item, selectedAssignee) {
+    if (selectedAssignee === ASSIGNEE_ALL) return true;
+    return normalizeAssignee(item.assignee) === selectedAssignee;
+}
+function matchesStatus(item, selectedStatus) {
+    if (selectedStatus === STATUS_ALL) return true;
+    return normalizeStatus(itemStatus(item)) === selectedStatus;
+}
+function matchesRisk(item, selectedRisk) {
+    if (selectedRisk === RISK_ALL) return true;
+    return normalizeRisk(item) === selectedRisk;
+}
+function resetAllFilters() {
+    selectedProjects.clear();
+    allProjects.forEach((project) => selectedProjects.add(project));
+    searchQuery = '';
+    selectedEpicAssignee = ASSIGNEE_ALL;
+    selectedStoryAssignee = ASSIGNEE_ALL;
+    selectedSubtaskAssignee = ASSIGNEE_ALL;
+    selectedEpicStatus = STATUS_ALL;
+    selectedStoryStatus = STATUS_ALL;
+    selectedSubtaskStatus = STATUS_ALL;
+    selectedEpicRisk = RISK_ALL;
+    selectedStoryRisk = RISK_ALL;
+    selectedSubtaskRisk = RISK_ALL;
+    normalizeDateMonths();
+    selectedEpicKey = '';
+    selectedStoryKey = '';
+    const searchField = document.getElementById('workitem-search');
+    if (searchField) searchField.value = '';
+    renderProjectFilters();
+    renderAssigneeFilterControls();
+    renderStatusFilterControls();
+    renderRiskFilterControls();
+    closeAllStatusDropdowns();
+    closeAllRiskDropdowns();
+    renderAll();
+}
+
+function renderProjectFilters() {
+    const host = document.getElementById('project-filters');
+    if (!allProjects.length) { host.innerHTML = '<span class="empty">No projects found</span>'; return; }
+    host.innerHTML = allProjects.map(p => `<label class="project-chip"><input type="checkbox" data-project="${escapeHtml(p)}" ${selectedProjects.has(p) ? 'checked' : ''}><span>${escapeHtml(p)}</span></label>`).join('');
+    host.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+        cb.addEventListener('change', () => {
+            const project = cb.getAttribute('data-project');
+            if (cb.checked) selectedProjects.add(project); else selectedProjects.delete(project);
+            renderAll();
+        });
+    });
+}
+function renderAssigneeSelect(selectId, options, selectedValue) {
+    const select = document.getElementById(selectId);
+    if (!select) return;
+    select.innerHTML = options.map(value => `<option value="${escapeHtml(value)}">${escapeHtml(assigneeLabel(value))}</option>`).join('');
+    select.value = selectedValue;
+}
+function renderAssigneeFilterControls() {
+    renderAssigneeSelect('epic-assignee-filter', epicAssigneeOptions, selectedEpicAssignee);
+    renderAssigneeSelect('story-assignee-filter', storyAssigneeOptions, selectedStoryAssignee);
+    renderAssigneeSelect('subtask-assignee-filter', subtaskAssigneeOptions, selectedSubtaskAssignee);
+}
+function statusOptionsByKind(kind) {
+    if (kind === 'epic') return epicStatusOptions;
+    if (kind === 'story') return storyStatusOptions;
+    return subtaskStatusOptions;
+}
+function selectedStatusByKind(kind) {
+    if (kind === 'epic') return selectedEpicStatus;
+    if (kind === 'story') return selectedStoryStatus;
+    return selectedSubtaskStatus;
+}
+function setSelectedStatusByKind(kind, value) {
+    if (kind === 'epic') selectedEpicStatus = value;
+    if (kind === 'story') selectedStoryStatus = value;
+    if (kind === 'subtask') selectedSubtaskStatus = value;
+}
+function renderStatusFilterControl(kind) {
+    const root = document.getElementById(`${kind}-status-filter`);
+    if (!root) return;
+    const trigger = root.querySelector('.status-chip-trigger');
+    const valueHost = root.querySelector('.chip-value');
+    const menu = root.querySelector('.status-chip-menu');
+    if (!trigger || !valueHost || !menu) return;
+    const selectedValue = selectedStatusByKind(kind);
+    valueHost.textContent = statusLabel(selectedValue);
+    const options = statusOptionsByKind(kind);
+    menu.innerHTML = options
+        .map((value) => `<button type="button" class="status-chip-option${value === selectedValue ? ' selected' : ''}" data-status-value="${escapeHtml(value)}" role="option" aria-selected="${value === selectedValue ? 'true' : 'false'}">${escapeHtml(statusLabel(value))}</button>`)
+        .join('');
+}
+function renderStatusFilterControls() {
+    renderStatusFilterControl('epic');
+    renderStatusFilterControl('story');
+    renderStatusFilterControl('subtask');
+}
+function riskOptionsByKind(kind) {
+    if (kind === 'epic') return epicRiskOptions;
+    if (kind === 'story') return storyRiskOptions;
+    return subtaskRiskOptions;
+}
+function selectedRiskByKind(kind) {
+    if (kind === 'epic') return selectedEpicRisk;
+    if (kind === 'story') return selectedStoryRisk;
+    return selectedSubtaskRisk;
+}
+function setSelectedRiskByKind(kind, value) {
+    if (kind === 'epic') selectedEpicRisk = value;
+    if (kind === 'story') selectedStoryRisk = value;
+    if (kind === 'subtask') selectedSubtaskRisk = value;
+}
+function renderRiskFilterControl(kind) {
+    const root = document.getElementById(`${kind}-risk-filter`);
+    if (!root) return;
+    const trigger = root.querySelector('.risk-chip-trigger');
+    const valueHost = root.querySelector('.chip-value');
+    const menu = root.querySelector('.risk-chip-menu');
+    if (!trigger || !valueHost || !menu) return;
+    const selectedValue = selectedRiskByKind(kind);
+    valueHost.textContent = riskLabel(selectedValue);
+    const options = riskOptionsByKind(kind);
+    menu.innerHTML = options
+        .map((value) => `<button type="button" class="risk-chip-option${value === selectedValue ? ' selected' : ''}" data-risk-value="${escapeHtml(value)}" role="option" aria-selected="${value === selectedValue ? 'true' : 'false'}">${escapeHtml(riskLabel(value))}</button>`)
+        .join('');
+}
+function renderRiskFilterControls() {
+    renderRiskFilterControl('epic');
+    renderRiskFilterControl('story');
+    renderRiskFilterControl('subtask');
+}
+function closeAllStatusDropdowns() {
+    document.querySelectorAll('.status-chip-dropdown.open').forEach(root => {
+        root.classList.remove('open');
+        const trigger = root.querySelector('.status-chip-trigger');
+        if (trigger) trigger.setAttribute('aria-expanded', 'false');
+    });
+}
+function closeAllRiskDropdowns() {
+    document.querySelectorAll('.risk-chip-dropdown.open').forEach(root => {
+        root.classList.remove('open');
+        const trigger = root.querySelector('.risk-chip-trigger');
+        if (trigger) trigger.setAttribute('aria-expanded', 'false');
+    });
+}
+function openStatusDropdown(root) {
+    if (!root) return;
+    const alreadyOpen = root.classList.contains('open');
+    closeAllStatusDropdowns();
+    if (alreadyOpen) return;
+    root.classList.add('open');
+    const trigger = root.querySelector('.status-chip-trigger');
+    if (trigger) trigger.setAttribute('aria-expanded', 'true');
+}
+function openRiskDropdown(root) {
+    if (!root) return;
+    const alreadyOpen = root.classList.contains('open');
+    closeAllRiskDropdowns();
+    if (alreadyOpen) return;
+    root.classList.add('open');
+    const trigger = root.querySelector('.risk-chip-trigger');
+    if (trigger) trigger.setAttribute('aria-expanded', 'true');
+}
+function focusStatusOption(root, index) {
+    if (!root) return;
+    const options = Array.from(root.querySelectorAll('.status-chip-option'));
+    if (!options.length) return;
+    const nextIndex = Math.max(0, Math.min(options.length - 1, index));
+    options[nextIndex].focus();
+}
+function focusRiskOption(root, index) {
+    if (!root) return;
+    const options = Array.from(root.querySelectorAll('.risk-chip-option'));
+    if (!options.length) return;
+    const nextIndex = Math.max(0, Math.min(options.length - 1, index));
+    options[nextIndex].focus();
+}
+function initializeStatusFilterDropdowns() {
+    document.addEventListener('click', (event) => {
+        const trigger = event.target.closest('.status-chip-trigger');
+        if (trigger) {
+            const root = trigger.closest('.status-chip-dropdown');
+            openStatusDropdown(root);
+            return;
+        }
+        const option = event.target.closest('.status-chip-option');
+        if (option) {
+            const root = option.closest('.status-chip-dropdown');
+            if (!root) return;
+            const kind = root.getAttribute('data-kind');
+            const next = option.getAttribute('data-status-value') || STATUS_ALL;
+            setSelectedStatusByKind(kind, next);
+            renderStatusFilterControls();
+            closeAllStatusDropdowns();
+            renderAll();
+            return;
+        }
+        if (!event.target.closest('.status-chip-dropdown')) closeAllStatusDropdowns();
+    });
+    document.addEventListener('keydown', (event) => {
+        const dropdown = event.target.closest('.status-chip-dropdown');
+        if (event.key === 'Escape') {
+            if (dropdown) {
+                closeAllStatusDropdowns();
+                const trigger = dropdown.querySelector('.status-chip-trigger');
+                if (trigger) trigger.focus();
+            }
+            return;
+        }
+        const trigger = event.target.closest('.status-chip-trigger');
+        if (trigger && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+            event.preventDefault();
+            const root = trigger.closest('.status-chip-dropdown');
+            openStatusDropdown(root);
+            const selected = root ? root.querySelector('.status-chip-option.selected') : null;
+            if (selected) selected.focus();
+            else focusStatusOption(root, event.key === 'ArrowDown' ? 0 : 9999);
+            return;
+        }
+        const option = event.target.closest('.status-chip-option');
+        if (!option || !dropdown) return;
+        const options = Array.from(dropdown.querySelectorAll('.status-chip-option'));
+        const index = options.indexOf(option);
+        if (event.key === 'ArrowDown') { event.preventDefault(); focusStatusOption(dropdown, index + 1); }
+        if (event.key === 'ArrowUp') { event.preventDefault(); focusStatusOption(dropdown, index - 1); }
+        if (event.key === 'Home') { event.preventDefault(); focusStatusOption(dropdown, 0); }
+        if (event.key === 'End') { event.preventDefault(); focusStatusOption(dropdown, options.length - 1); }
+    });
+}
+function initializeRiskFilterDropdowns() {
+    document.addEventListener('click', (event) => {
+        const trigger = event.target.closest('.risk-chip-trigger');
+        if (trigger) {
+            const root = trigger.closest('.risk-chip-dropdown');
+            openRiskDropdown(root);
+            return;
+        }
+        const option = event.target.closest('.risk-chip-option');
+        if (option) {
+            const root = option.closest('.risk-chip-dropdown');
+            if (!root) return;
+            const kind = root.getAttribute('data-kind');
+            const next = option.getAttribute('data-risk-value') || RISK_ALL;
+            setSelectedRiskByKind(kind, next);
+            renderRiskFilterControls();
+            closeAllRiskDropdowns();
+            renderAll();
+            return;
+        }
+        if (!event.target.closest('.risk-chip-dropdown')) closeAllRiskDropdowns();
+    });
+    document.addEventListener('keydown', (event) => {
+        const dropdown = event.target.closest('.risk-chip-dropdown');
+        if (event.key === 'Escape') {
+            if (dropdown) {
+                closeAllRiskDropdowns();
+                const trigger = dropdown.querySelector('.risk-chip-trigger');
+                if (trigger) trigger.focus();
+            }
+            return;
+        }
+        const trigger = event.target.closest('.risk-chip-trigger');
+        if (trigger && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+            event.preventDefault();
+            const root = trigger.closest('.risk-chip-dropdown');
+            openRiskDropdown(root);
+            const selected = root ? root.querySelector('.risk-chip-option.selected') : null;
+            if (selected) selected.focus();
+            else focusRiskOption(root, event.key === 'ArrowDown' ? 0 : 9999);
+            return;
+        }
+        const option = event.target.closest('.risk-chip-option');
+        if (!option || !dropdown) return;
+        const options = Array.from(dropdown.querySelectorAll('.risk-chip-option'));
+        const index = options.indexOf(option);
+        if (event.key === 'ArrowDown') { event.preventDefault(); focusRiskOption(dropdown, index + 1); }
+        if (event.key === 'ArrowUp') { event.preventDefault(); focusRiskOption(dropdown, index - 1); }
+        if (event.key === 'Home') { event.preventDefault(); focusRiskOption(dropdown, 0); }
+        if (event.key === 'End') { event.preventDefault(); focusRiskOption(dropdown, options.length - 1); }
+    });
+}
+function renderAssigneeFilterSummary() {
+    const host = document.getElementById('assignee-filter-summary');
+    if (!host) return;
+    const filters = [
+        { key: 'epic', label: 'Epic', value: selectedEpicAssignee },
+        { key: 'story', label: 'Story', value: selectedStoryAssignee },
+        { key: 'subtask', label: 'Subtask', value: selectedSubtaskAssignee },
+    ];
+    const active = filters.filter(f => f.value !== ASSIGNEE_ALL);
+    if (!active.length) {
+        host.innerHTML = '';
+        return;
+    }
+    const chips = active.map(f => `<span class="active-filter-chip">${escapeHtml(f.label)}: ${escapeHtml(assigneeLabel(f.value))}<button class="active-filter-clear" data-clear-filter="${escapeHtml(f.key)}" aria-label="Clear ${escapeHtml(f.label)} filter">x</button></span>`).join('');
+    host.innerHTML = `${chips}<button class="clear-all-filters" data-clear-filter="all">Clear all assignee filters</button>`;
+}
+
+function setTheme(theme) {
+    const nextTheme = theme === 'dark' ? 'dark' : 'light';
+    document.documentElement.setAttribute('data-theme', nextTheme);
+    localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
+    updateThemeToggleLabel(nextTheme);
+}
+
+function getInitialTheme() {
+    const stored = localStorage.getItem(THEME_STORAGE_KEY);
+    if (stored === 'dark' || stored === 'light') return stored;
+    return 'light';
+}
+
+function updateThemeToggleLabel(theme) {
+    if (!themeToggleButton) return;
+    themeToggleButton.innerHTML = theme === 'dark'
+        ? '<span class="material-icons-outlined" aria-hidden="true">light_mode</span>Light mode'
+        : '<span class="material-icons-outlined" aria-hidden="true">dark_mode</span>Dark mode';
+}
+
+function initializeThemeToggle() {
+    const initialTheme = getInitialTheme();
+    document.documentElement.setAttribute('data-theme', initialTheme);
+    updateThemeToggleLabel(initialTheme);
+    if (!themeToggleButton) return;
+    themeToggleButton.addEventListener('click', () => {
+        const currentTheme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+        setTheme(currentTheme === 'dark' ? 'light' : 'dark');
+    });
+}
+
+function setHeaderCollapsed(collapsed) {
+    if (!headerContainer || !headerToggleButton) return;
+    headerContainer.classList.toggle('collapsed', collapsed);
+    headerToggleButton.textContent = collapsed ? 'Expand header' : 'Collapse header';
+    headerToggleButton.setAttribute('aria-expanded', String(!collapsed));
+}
+
+function initializeHeaderToggle() {
+    if (!headerContainer || !headerToggleButton) return;
+    const stored = localStorage.getItem(HEADER_COLLAPSE_STORAGE_KEY);
+    const initialCollapsed = stored === '1';
+    setHeaderCollapsed(initialCollapsed);
+    headerToggleButton.addEventListener('click', () => {
+        const nextCollapsed = !headerContainer.classList.contains('collapsed');
+        setHeaderCollapsed(nextCollapsed);
+        localStorage.setItem(HEADER_COLLAPSE_STORAGE_KEY, nextCollapsed ? '1' : '0');
+    });
+}
+
+function addDays(baseDate, delta) {
+    return new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate() + delta);
+}
+function diffDaysInclusive(start, end) {
+    const dayMs = 24 * 60 * 60 * 1000;
+    const s = new Date(start.getFullYear(), start.getMonth(), start.getDate()).getTime();
+    const e = new Date(end.getFullYear(), end.getMonth(), end.getDate()).getTime();
+    return Math.max(1, Math.floor((e - s) / dayMs) + 1);
+}
+function getEpicStoriesForGantt(epicKey) {
+    if (!epicKey) return [];
+    return allStories
+        .filter(story =>
+            selectedProjects.has(asText(story.project_key)) &&
+            matchesSearch(story) &&
+            matchesAssignee(story, selectedStoryAssignee) &&
+            matchesStatus(story, selectedStoryStatus) &&
+            matchesRisk(story, selectedStoryRisk) &&
+            matchesDateFilter(story) &&
+            storyEpicKey(story) === epicKey
+        );
+}
+function normalizeStoryPlannedDates(story) {
+    const rawStart = parseDateValue(story && story.jira_start_date);
+    const rawEnd = parseDateValue(story && story.jira_end_date);
+    if (!rawStart && !rawEnd) return null;
+    const start = rawStart || rawEnd;
+    const end = rawEnd || rawStart;
+    if (!start || !end) return null;
+    return start.getTime() <= end.getTime()
+        ? { start, end }
+        : { start: end, end: start };
+}
+function getPlannedRangeForStories(stories) {
+    const plannedRanges = stories
+        .map(story => normalizeStoryPlannedDates(story))
+        .filter(Boolean);
+    if (!plannedRanges.length) return null;
+    let minStart = plannedRanges[0].start;
+    let maxEnd = plannedRanges[0].end;
+    for (const range of plannedRanges) {
+        if (range.start.getTime() < minStart.getTime()) minStart = range.start;
+        if (range.end.getTime() > maxEnd.getTime()) maxEnd = range.end;
+    }
+    let paddedStart = minStart;
+    let paddedEnd = addDays(maxEnd, 10);
+    if (diffDaysInclusive(paddedStart, paddedEnd) < 2) {
+        paddedEnd = addDays(paddedStart, 1);
+    }
+    return { start: paddedStart, end: paddedEnd };
+}
+function buildGanttRows(stories, range) {
+    const totalSpanDays = range ? diffDaysInclusive(range.start, range.end) : 1;
+    const rows = stories.map(story => {
+        const storyRange = normalizeStoryPlannedDates(story);
+        const key = asKey(story);
+        const summary = asText(story.summary) || '-';
+        const assignee = assigneeLabel(normalizeAssignee(story.assignee));
+        const label = `${key}: ${summary}`;
+        if (!storyRange || !range) {
+            return {
+                key,
+                label,
+                assignee,
+                hasPlannedRange: false,
+                sortTime: Number.MAX_SAFE_INTEGER,
+            };
+        }
+        const offsetDays = diffDaysInclusive(range.start, storyRange.start) - 1;
+        const widthDays = diffDaysInclusive(storyRange.start, storyRange.end);
+        const leftPct = Math.max(0, Math.min(100, (offsetDays / totalSpanDays) * 100));
+        const widthPct = Math.max(1.8, Math.min(100 - leftPct, (widthDays / totalSpanDays) * 100));
+        return {
+            key,
+            label,
+            assignee,
+            hasPlannedRange: true,
+            leftPct,
+            widthPct,
+            endPct: Math.max(0, Math.min(100, leftPct + widthPct)),
+            sortTime: storyRange.start.getTime(),
+            plannedStartText: formatDateDisplayFromDate(storyRange.start),
+            plannedEndText: formatDateDisplayFromDate(storyRange.end),
+            plannedStartShort: formatAxisDateLabel(storyRange.start),
+            plannedEndShort: formatAxisDateLabel(storyRange.end),
+        };
+    });
+    return rows.sort((a, b) => {
+        if (a.hasPlannedRange && !b.hasPlannedRange) return -1;
+        if (!a.hasPlannedRange && b.hasPlannedRange) return 1;
+        if (a.sortTime !== b.sortTime) return a.sortTime - b.sortTime;
+        return a.label.localeCompare(b.label, undefined, { sensitivity: 'base' });
+    });
+}
+function formatAxisDateLabel(dateValue) {
+    const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return `${monthNames[dateValue.getMonth()]} ${dateValue.getDate()}`;
+}
+function buildGanttAxisTicks(range) {
+    if (!range) return [];
+    const ticks = [];
+    const totalSpanDays = diffDaysInclusive(range.start, range.end);
+    const step = 7;
+    for (let i = 0; i < totalSpanDays; i += step) {
+        const tickDate = addDays(range.start, i);
+        ticks.push({
+            label: formatAxisDateLabel(tickDate),
+            pct: Math.max(0, Math.min(100, (i / totalSpanDays) * 100)),
+        });
+    }
+    const endLabel = formatAxisDateLabel(range.end);
+    const hasEndTick = ticks.some(tick => tick.label === endLabel && Math.abs(tick.pct - 100) < 0.001);
+    if (!hasEndTick) {
+        ticks.push({
+            label: endLabel,
+            pct: 100,
+        });
+    }
+    return ticks;
+}
+function getTodayMarkerPercent(range) {
+    if (!range) return null;
+    const today = new Date();
+    const todayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    if (todayDate.getTime() < range.start.getTime() || todayDate.getTime() > range.end.getTime()) return null;
+    const totalSpanDays = diffDaysInclusive(range.start, range.end);
+    const offsetDays = diffDaysInclusive(range.start, todayDate) - 1;
+    return Math.max(0, Math.min(100, (offsetDays / totalSpanDays) * 100));
+}
+function renderGantt(epic) {
+    const host = document.getElementById('calendar-panel');
+    if (!epic) {
+        host.innerHTML = '<div class="gantt-empty">Select an epic to view timeline.</div>';
+        return;
+    }
+    const epicKey = asKey(epic);
+    const stories = getEpicStoriesForGantt(epicKey);
+    if (!stories.length) {
+        host.innerHTML = `<div class="gantt-panel-header"><h3>Epic Mini Gantt</h3><p class="gantt-panel-subtitle"><strong>${escapeHtml(epicKey)}</strong> - ${escapeHtml(asText(epic.summary))}</p></div><div class="gantt-empty">No stories for selected epic and filters.</div>`;
+        return;
+    }
+    const plannedRange = getPlannedRangeForStories(stories);
+    const rows = buildGanttRows(stories, plannedRange);
+    const axisTicks = buildGanttAxisTicks(plannedRange);
+    const todayMarkerPercent = getTodayMarkerPercent(plannedRange);
+    let html = `<div class="gantt-panel-header"><h3>Epic Mini Gantt</h3><p class="gantt-panel-subtitle"><strong>${escapeHtml(epicKey)}</strong> - ${escapeHtml(asText(epic.summary))}</p></div>`;
+    html += '<div class="gantt-legend"><span class="legend-pill"><span class="legend-swatch legend-planned"></span>Planned dates</span><span class="legend-pill"><span class="legend-swatch legend-missing"></span>Missing planned dates</span></div>';
+    if (axisTicks.length) {
+        html += `<div class="gantt-axis-row"><div class="gantt-axis-spacer"></div><div class="gantt-axis-track">${axisTicks.map((tick, idx) => {
+            const edgeClass = idx === 0 ? ' start' : (idx === axisTicks.length - 1 ? ' end' : '');
+            return `<span class="gantt-axis-tick${edgeClass}" style="left:${tick.pct}%;" aria-hidden="true"><span class="gantt-axis-label">${escapeHtml(tick.label)}</span></span>`;
+        }).join('')}</div></div>`;
+    }
+    html += '<div class="gantt-grid">';
+    for (const row of rows) {
+        html += `<div class="gantt-row"><div class="gantt-label-col" title="${escapeHtml(row.label)}">${escapeHtml(row.label)}</div><div class="gantt-track-col">`;
+        if (row.hasPlannedRange) {
+            if (todayMarkerPercent !== null) html += `<span class="gantt-today-marker" style="left:${todayMarkerPercent}%;"></span>`;
+            const barTitle = `${row.label}\nAssignee: ${row.assignee}\nPlanned: ${row.plannedStartText} - ${row.plannedEndText}`;
+            html += `<span class="gantt-date-label gantt-date-start" style="left:${row.leftPct}%;" title="${escapeHtml(row.plannedStartText)}">${escapeHtml(row.plannedStartShort)}</span>`;
+            html += `<div class="gantt-bar" style="left:${row.leftPct}%;width:${row.widthPct}%;" title="${escapeHtml(barTitle)}"><span class="gantt-bar-text">${escapeHtml(row.assignee)}</span></div>`;
+            html += `<span class="gantt-date-label gantt-date-end" style="left:${row.endPct}%;" title="${escapeHtml(row.plannedEndText)}">${escapeHtml(row.plannedEndShort)}</span>`;
+        } else {
+            html += '<span class="gantt-bar-empty" title="Missing planned start/end dates">Missing planned dates</span>';
+        }
+        html += '</div></div>';
+    }
+    html += '</div>';
+    host.innerHTML = html;
+}
+
+function renderWorkItemCard(item, kind, isSelected) {
+    const latestIpp = asYesNo(item.latest_ipp_meeting || 'No');
+    const altered = asYesNo(item.jira_ipp_rmi_dates_altered || 'No');
+    const plannerStatus = asText(item.planner_validation_status) || 'No Planner Entry';
+    const plannerDatesMatchRaw = asText(item.planner_dates_match);
+    const plannerHoursMatchRaw = asText(item.planner_hours_match);
+    const plannerDatesMatch = plannerMatchLabel(plannerDatesMatchRaw);
+    const plannerHoursMatch = plannerMatchLabel(plannerHoursMatchRaw);
+    const status = itemStatus(item) || '-';
+    const plannedDays = estimateToDays(item.original_estimate);
+    const actualDays = itemHours(item) > 0 ? itemHours(item) / 8 : 0;
+    const plannedStartCell = asText(item.jira_start_date)
+        ? escapeHtml(formatDateDisplay(item.jira_start_date))
+        : '<span class="danger-chip">No entry</span>';
+    const plannedEndCell = asText(item.jira_end_date)
+        ? escapeHtml(formatDateDisplay(item.jira_end_date))
+        : '<span class="danger-chip">No entry</span>';
+    const plannedDaysCell = plannedDays === null
+        ? '<span class="danger-chip">No entry</span>'
+        : escapeHtml(formatDayValue(plannedDays));
+    const plannerStartCell = asText(item.planner_planned_start_date)
+        ? escapeHtml(formatDateDisplay(item.planner_planned_start_date))
+        : '<span class="danger-chip">No entry</span>';
+    const plannerEndCell = asText(item.planner_planned_end_date)
+        ? escapeHtml(formatDateDisplay(item.planner_planned_end_date))
+        : '<span class="danger-chip">No entry</span>';
+    const plannerDays = item.planner_planned_hours == null
+        ? '<span class="danger-chip">No entry</span>'
+        : escapeHtml(formatDayValue(Number(item.planner_planned_hours) / 8));
+    const storyPlannerStartCell = asText(item.planner_story_start_date)
+        ? escapeHtml(formatDateDisplay(item.planner_story_start_date))
+        : '<span class="danger-chip">No entry</span>';
+    const storyPlannerEndCell = asText(item.planner_story_end_date)
+        ? escapeHtml(formatDateDisplay(item.planner_story_end_date))
+        : '<span class="danger-chip">No entry</span>';
+    const storyPlannerDays = item.planner_story_planned_hours == null
+        ? '<span class="danger-chip">No entry</span>'
+        : escapeHtml(formatDayValue(Number(item.planner_story_planned_hours) / 8));
+    const isDateMismatch = kind === 'epic' && plannerDatesMatchRaw === 'No';
+    const isHoursMismatch = kind === 'epic' && plannerHoursMatchRaw === 'No';
+    const plannedDateCellClass = isDateMismatch ? ' class="mismatch-planned"' : '';
+    const plannedHoursCellClass = isHoursMismatch ? ' class="mismatch-planned"' : '';
+    const plannerDateCellClass = isDateMismatch ? ' class="mismatch-planner"' : '';
+    const plannerHoursCellClass = isHoursMismatch ? ' class="mismatch-planner"' : '';
+    const plannedScheduleRow = `<tr><td>Planned</td><td${plannedDateCellClass}>${plannedStartCell}</td><td${plannedDateCellClass}>${plannedEndCell}</td><td${plannedHoursCellClass}>${plannedDaysCell}</td></tr>`;
+    const plannerScheduleRow = kind === 'epic'
+        ? `<tr><td>Planner</td><td${plannerDateCellClass}>${plannerStartCell}</td><td${plannerDateCellClass}>${plannerEndCell}</td><td${plannerHoursCellClass}>${plannerDays}</td></tr>`
+        : (kind === 'story'
+            ? `<tr><td>Planner</td><td>${storyPlannerStartCell}</td><td>${storyPlannerEndCell}</td><td>${storyPlannerDays}</td></tr>`
+            : '')
+    const key = asKey(item);
+    const assigneeValue = normalizeAssignee(item.assignee);
+    const missingAssignee = assigneeValue === ASSIGNEE_UNASSIGNED;
+    const relatedCount = kind === 'epic'
+        ? (storyCountByEpic.get(key) || 0)
+        : (kind === 'story' ? (subtaskCountByStory.get(key) || 0) : null);
+    const countChip = relatedCount === null
+        ? ''
+        : `<span class="card-count-chip ${kind === 'epic' ? 'epic' : 'story'}">${relatedCount} ${kind === 'epic' ? 'Stories' : 'Subtasks'}</span>`;
+    const selectable = kind === 'epic' || kind === 'story';
+    const kindLabel = kind === 'bug_subtask' ? 'BUG SUBTASK' : kind.toUpperCase();
+    let html = `<div class="card ${getStatusClass(status)}${isSelected ? ' card-selected' : ''}${selectable ? ' card-selectable' : ''}" data-kind="${kind}" data-issue-key="${escapeHtml(key)}" ${selectable ? 'tabindex="0" role="button"' : ''}>`;
+    html += `<div class="card-header"><div><div class="card-type">${escapeHtml(kindLabel)}</div><div class="card-title-row"><p class="card-title">${escapeHtml(asText(item.summary) || '-')}</p>${countChip}</div></div><div class="card-actions"><button type="button" class="card-copy-btn" data-copy-kind="${escapeHtml(kind)}" data-copy-key="${escapeHtml(key)}" title="Copy as Markdown" aria-label="Copy ${escapeHtml(kind)} ${escapeHtml(key)} as Markdown">&#128203;</button><a href="${escapeHtml(asText(item.jira_url))}" target="_blank" class="card-link-label">JIRA Link</a></div></div>`;
+    let metaTop = `<div class="meta-line"><strong>Status:</strong> ${escapeHtml(status)}</div>`;
+    metaTop += `<div class="meta-line"><strong>Assignee:</strong> <span class="assignee-chip${missingAssignee ? ' missing' : ''}">${escapeHtml(assigneeLabel(assigneeValue))}</span></div>`;
+    html += `<div class="meta-lines">${metaTop}<table class="dates-table"><thead><tr><th>Dates</th><th>Start</th><th>End</th><th>Man-days</th></tr></thead><tbody>${plannedScheduleRow}${plannerScheduleRow}<tr><td>Actual</td><td>${escapeHtml(formatDateDisplay(item.actual_start_date))}</td><td>${escapeHtml(formatDateDisplay(item.actual_end_date))}</td><td>${escapeHtml(formatDayValue(actualDays))}</td></tr></tbody></table></div>`;
+    const riskScore = Number(item.risk_score_final);
+    const riskScoreSafe = Number.isFinite(riskScore) ? Math.max(0, Math.round(riskScore)) : 0;
+    const riskLevelKeyRaw = asText(item.risk_level).toLowerCase();
+    const riskLevelKey = (riskLevelKeyRaw === 'can_be' || riskLevelKeyRaw === 'medium' || riskLevelKeyRaw === 'high' || riskLevelKeyRaw === 'low')
+        ? riskLevelKeyRaw
+        : (riskScoreSafe >= 4 ? 'high' : (riskScoreSafe >= 2 ? 'medium' : (riskScoreSafe === 1 ? 'can_be' : 'low')));
+    const riskLabelConfigured = asText(item.risk_level_label);
+    const riskLabel = riskLabelConfigured || (riskLevelKey === 'high'
+        ? 'Highly At Risk'
+        : (riskLevelKey === 'medium' ? 'Medium Risk' : (riskLevelKey === 'can_be' ? 'Can Be' : 'Low')));
+    const riskClass = riskLevelKey === 'high'
+        ? 'risk-high'
+        : (riskLevelKey === 'medium' ? 'risk-medium' : (riskLevelKey === 'can_be' ? 'risk-can-be' : 'risk-low'));
+    const riskReasons = Array.isArray(item.risk_reasons) ? item.risk_reasons : [];
+    const inheritedFrom = asText(item.risk_inherited_from);
+    const riskTipLines = [
+        `Risk Score: ${riskScoreSafe}`,
+        `Level: ${riskLabel}`,
+    ];
+    if (riskReasons.length) {
+        riskTipLines.push("Indicators applied:");
+        riskReasons.forEach((reason) => riskTipLines.push(`- ${asText(reason)}`));
+    } else {
+        riskTipLines.push("Indicators applied: none");
+    }
+    if (inheritedFrom) {
+        riskTipLines.push(`Inherited risk: ${inheritedFrom}`);
+    }
+    riskTipLines.push("Rule note: resolved items are excluded.");
+    const riskTipHtml = riskTipLines.map((line) => escapeHtml(line)).join("<br>");
+    const plannerStatusClass = plannerStatus === 'Mismatch'
+        ? 'sync-bad'
+        : (plannerStatus === 'Matched' ? 'sync-ok' : 'no');
+    const plannerDatesClass = plannerDatesMatchRaw === 'No'
+        ? 'sync-bad'
+        : (plannerDatesMatchRaw === 'Yes' ? 'sync-ok' : 'no');
+    const plannerHoursClass = plannerHoursMatchRaw === 'No'
+        ? 'sync-bad'
+        : (plannerHoursMatchRaw === 'Yes' ? 'sync-ok' : 'no');
+    html += `<div class="badge-row"><span class="badge ${latestIpp === 'Yes' ? 'yes' : 'no'}">Latest IPP Meeting: ${latestIpp}</span><span class="badge ${altered === 'Yes' ? 'sync-bad' : 'sync-ok'}">${altered === 'Yes' ? 'Out of Sync' : 'Synced'}</span><span class="badge-tip-wrap"><span class="badge ${riskClass}" tabindex="0">RISK: ${escapeHtml(riskLabel)} (${riskScoreSafe})</span><span class="badge-tip">${riskTipHtml}</span></span>${kind === 'epic' ? `<span class="badge ${plannerStatusClass}">Planner Validation: ${escapeHtml(plannerStatus)}</span><span class="badge ${plannerDatesClass}">Planner Dates: ${escapeHtml(plannerDatesMatch)}</span><span class="badge ${plannerHoursClass}">Planner Hours: ${escapeHtml(plannerHoursMatch)}</span>` : ''}</div>`;
+    if (kind === 'epic' && plannerStatus === 'Mismatch') {
+        const epicsPlannerHref = `/settings/epics-management?epic_key=${encodeURIComponent(key)}&source=dashboard&reason=planner_mismatch`;
+        html += `<div class="alert mismatch-alert"><span>Alert: Jira planned dates/hours differ from Epics Planner epic plan.</span><a href="${epicsPlannerHref}" target="_blank" rel="noopener noreferrer" class="mismatch-planner-btn" title="Open this epic in Epics Planner" aria-label="Open this epic in Epics Planner"><span class="material-icons-outlined" aria-hidden="true">open_in_new</span></a></div>`;
+    }
+    return html + '</div>';
+}
+
+function attachSelectionHandlers() {
+    document.querySelectorAll('.card.card-selectable').forEach(card => {
+        const kind = card.getAttribute('data-kind');
+        const key = card.getAttribute('data-issue-key') || '';
+        const select = () => {
+            if (kind === 'epic') { selectedEpicKey = key; selectedStoryKey = ''; }
+            if (kind === 'story') selectedStoryKey = key;
+            renderAll();
+        };
+        card.addEventListener('click', (event) => { if (!event.target.closest('a') && !event.target.closest('button')) select(); });
+        card.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); select(); }
+        });
+    });
+}
+function attachCopyHandlers() {
+    document.querySelectorAll('.card-copy-btn').forEach(button => {
+        button.addEventListener('click', async (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            const kind = asText(button.getAttribute('data-copy-kind'));
+            const key = asText(button.getAttribute('data-copy-key'));
+            const item = findItem(kind, key);
+            if (!item) return;
+            const markdown = buildCardMarkdown(item, kind);
+            const copied = await copyText(markdown);
+            markCopyButtonState(button, copied);
+        });
+    });
+}
+
+function renderList(hostId, items, kind, selectedKey, emptyText) {
+    const host = document.getElementById(hostId);
+    if (!items.length) { host.innerHTML = `<div class="empty">${escapeHtml(emptyText)}</div>`; return; }
+    host.innerHTML = items.map(item => renderWorkItemCard(item, kind, asKey(item) === selectedKey)).join('');
+}
+
+function renderEpicsLane(epics, selectedKey) {
+    const host = document.getElementById('epics-list');
+    const ippMeetingEpics = epics.filter(item => asYesNo(item.latest_ipp_meeting || 'No') === 'Yes');
+    const otherEpics = epics.filter(item => asYesNo(item.latest_ipp_meeting || 'No') !== 'Yes');
+    const renderSection = (title, items, emptyText) => {
+        const body = items.length
+            ? `<div class="cards">${items.map(item => renderWorkItemCard(item, 'epic', asKey(item) === selectedKey)).join('')}</div>`
+            : `<div class="empty">${escapeHtml(emptyText)}</div>`;
+        return `<div class="lane-section"><h3 class="lane-section-title">${escapeHtml(title)} (${items.length})</h3>${body}</div>`;
+    };
+    host.innerHTML = [
+        renderSection('IPP Meeting RMIs', ippMeetingEpics, 'No IPP Meeting RMIs for selected filters.'),
+        renderSection('Other RMIs', otherEpics, 'No Other RMIs for selected filters.'),
+    ].join('');
+}
+
+function renderAll() {
+    const epicBase = allEpics.filter(e => selectedProjects.has(asText(e.project_key)) && matchesSearch(e) && matchesAssignee(e, selectedEpicAssignee) && matchesDateFilter(e));
+    const visibleEpics = epicBase.filter(e => matchesStatus(e, selectedEpicStatus) && matchesRisk(e, selectedEpicRisk));
+    if (!visibleEpics.length) {
+        selectedEpicKey = '';
+        selectedStoryKey = '';
+    } else if (selectedEpicKey && !visibleEpics.some(e => asKey(e) === selectedEpicKey)) {
+        selectedEpicKey = '';
+        selectedStoryKey = '';
+    }
+    const selectedEpic = visibleEpics.find(e => asKey(e) === selectedEpicKey) || null;
+    const selectedEpicScopeKey = selectedEpic ? asKey(selectedEpic) : '';
+
+    const storyBase = allStories.filter(s => selectedProjects.has(asText(s.project_key)) && matchesSearch(s) && matchesAssignee(s, selectedStoryAssignee) && matchesDateFilter(s));
+    const storiesInEpicScope = selectedEpicScopeKey
+        ? storyBase.filter(s => storyEpicKey(s) === selectedEpicScopeKey)
+        : storyBase;
+    const visibleStories = storiesInEpicScope.filter(s => matchesStatus(s, selectedStoryStatus) && matchesRisk(s, selectedStoryRisk));
+    if (!selectedStoryKey || !visibleStories.some(s => asKey(s) === selectedStoryKey)) selectedStoryKey = '';
+    const selectedStory = selectedStoryKey
+        ? (visibleStories.find(s => asKey(s) === selectedStoryKey) || null)
+        : null;
+    const selectedEpicStoryKeys = selectedEpicScopeKey
+        ? new Set(storyBase.filter(s => storyEpicKey(s) === selectedEpicScopeKey).map(asKey))
+        : new Set();
+
+    const subtaskBase = allSubtasks.filter(t => selectedProjects.has(asText(t.project_key)) && matchesSearch(t) && matchesAssignee(t, selectedSubtaskAssignee) && matchesDateFilter(t));
+    const bugSubtaskBase = allBugSubtasks.filter(t => selectedProjects.has(asText(t.project_key)) && matchesSearch(t) && matchesAssignee(t, selectedSubtaskAssignee) && matchesDateFilter(t));
+    const subtasksInStoryScope = selectedStoryKey
+        ? subtaskBase.filter(t => subtaskStoryKey(t) === selectedStoryKey)
+        : (selectedEpicScopeKey
+            ? subtaskBase.filter(t => selectedEpicStoryKeys.has(subtaskStoryKey(t)))
+            : subtaskBase);
+    const bugSubtasksInStoryScope = selectedStoryKey
+        ? bugSubtaskBase.filter(t => subtaskStoryKey(t) === selectedStoryKey)
+        : (selectedEpicScopeKey
+            ? bugSubtaskBase.filter(t => selectedEpicStoryKeys.has(subtaskStoryKey(t)))
+            : bugSubtaskBase);
+    const visibleSubtasks = subtasksInStoryScope.filter(t => matchesStatus(t, selectedSubtaskStatus) && matchesRisk(t, selectedSubtaskRisk));
+    const visibleBugSubtasks = bugSubtasksInStoryScope.filter(t => matchesStatus(t, selectedSubtaskStatus) && matchesRisk(t, selectedSubtaskRisk));
+
+    const orphanStories = (orphans.stories || []).filter(s => selectedProjects.has(asText(s.project_key)) && matchesSearch(s) && matchesAssignee(s, selectedStoryAssignee) && matchesDateFilter(s) && matchesStatus(s, selectedStoryStatus) && matchesRisk(s, selectedStoryRisk));
+    const orphanSubtasks = (orphans.subtasks || []).filter(t => selectedProjects.has(asText(t.project_key)) && matchesSearch(t) && matchesAssignee(t, selectedSubtaskAssignee) && matchesDateFilter(t) && matchesStatus(t, selectedSubtaskStatus) && matchesRisk(t, selectedSubtaskRisk));
+    const orphanBugSubtasks = (orphans.bug_subtasks || []).filter(t => selectedProjects.has(asText(t.project_key)) && matchesSearch(t) && matchesAssignee(t, selectedSubtaskAssignee) && matchesDateFilter(t) && matchesStatus(t, selectedSubtaskStatus) && matchesRisk(t, selectedSubtaskRisk));
+
+    document.getElementById('epics-title').textContent = `Epics (${visibleEpics.length})`;
+    document.getElementById('stories-title').textContent = `Stories (${visibleStories.length})`;
+    document.getElementById('subtasks-title').textContent = `Subtasks (${visibleSubtasks.length}) | Bug Subtasks (${visibleBugSubtasks.length})`;
+    const storiesSelectionContext = document.getElementById('stories-selection-context');
+    if (storiesSelectionContext) {
+        storiesSelectionContext.textContent = selectedEpic
+            ? `Selected Epic: ${asText(selectedEpic.summary) || asKey(selectedEpic) || '-'}`
+            : '';
+    }
+    const subtasksSelectionContext = document.getElementById('subtasks-selection-context');
+    if (subtasksSelectionContext) {
+        subtasksSelectionContext.textContent = selectedStory
+            ? `Selected Story: ${asText(selectedStory.summary) || asKey(selectedStory) || '-'}`
+            : '';
+    }
+
+    renderEpicsLane(visibleEpics, selectedEpicKey);
+    const storiesEmptyText = selectedEpicScopeKey
+        ? 'No stories for selected epic and filters.'
+        : 'No stories for selected filters.';
+    const subtasksEmptyText = selectedStoryKey
+        ? 'No subtasks for selected story and filters.'
+        : (selectedEpicScopeKey ? 'No subtasks for selected epic and filters.' : 'No subtasks for selected filters.');
+    const bugSubtasksEmptyText = selectedStoryKey
+        ? 'No bug subtasks for selected story and filters.'
+        : (selectedEpicScopeKey ? 'No bug subtasks for selected epic and filters.' : 'No bug subtasks for selected filters.');
+
+    renderList('stories-list', visibleStories, 'story', selectedStoryKey, storiesEmptyText);
+    renderList('subtasks-list', visibleSubtasks, 'subtask', '', subtasksEmptyText);
+    renderList('bug-subtasks-list', visibleBugSubtasks, 'bug_subtask', '', bugSubtasksEmptyText);
+    renderList('orphan-stories-list', orphanStories, 'story', '', 'No orphan stories.');
+    renderList('orphan-subtasks-list', orphanSubtasks, 'subtask', '', 'No orphan subtasks.');
+    renderList('orphan-bug-subtasks-list', orphanBugSubtasks, 'bug_subtask', '', 'No orphan bug subtasks.');
+    renderStatusFilterControls();
+    renderRiskFilterControls();
+    renderAssigneeFilterSummary();
+    renderGantt(selectedEpic);
+    attachSelectionHandlers();
+    attachCopyHandlers();
+}
+
+renderProjectFilters();
+renderAssigneeFilterControls();
+initializeStatusFilterDropdowns();
+initializeRiskFilterDropdowns();
+initializeThemeToggle();
+initializeHeaderToggle();
+const dateFilterFromInput = document.getElementById('date-filter-from');
+const dateFilterToInput = document.getElementById('date-filter-to');
+const dateFilterResetButton = document.getElementById('date-filter-reset');
+if (dateFilterFromInput) dateFilterFromInput.value = selectedDateFromMonth;
+if (dateFilterToInput) dateFilterToInput.value = selectedDateToMonth;
+if (dateFilterFromInput) {
+    dateFilterFromInput.addEventListener('change', () => {
+        selectedDateFromMonth = dateFilterFromInput.value || DEFAULT_DATE_FROM_MONTH;
+        normalizeDateMonths();
+        renderAll();
+    });
+}
+if (dateFilterToInput) {
+    dateFilterToInput.addEventListener('change', () => {
+        selectedDateToMonth = dateFilterToInput.value || DEFAULT_DATE_TO_MONTH;
+        normalizeDateMonths();
+        renderAll();
+    });
+}
+if (dateFilterResetButton) {
+    dateFilterResetButton.addEventListener('click', () => {
+        selectedDateFromMonth = DEFAULT_DATE_FROM_MONTH;
+        selectedDateToMonth = DEFAULT_DATE_TO_MONTH;
+        normalizeDateMonths();
+        renderAll();
+    });
+}
+const searchInput = document.getElementById('workitem-search');
+if (searchInput) {
+    searchInput.addEventListener('input', () => {
+        searchQuery = String(searchInput.value || '').trim().toLowerCase();
+        renderAll();
+    });
+}
+const epicAssigneeFilter = document.getElementById('epic-assignee-filter');
+if (epicAssigneeFilter) {
+    epicAssigneeFilter.addEventListener('change', () => {
+        selectedEpicAssignee = epicAssigneeFilter.value || ASSIGNEE_ALL;
+        renderAll();
+    });
+}
+const storyAssigneeFilter = document.getElementById('story-assignee-filter');
+if (storyAssigneeFilter) {
+    storyAssigneeFilter.addEventListener('change', () => {
+        selectedStoryAssignee = storyAssigneeFilter.value || ASSIGNEE_ALL;
+        renderAll();
+    });
+}
+const subtaskAssigneeFilter = document.getElementById('subtask-assignee-filter');
+if (subtaskAssigneeFilter) {
+    subtaskAssigneeFilter.addEventListener('change', () => {
+        selectedSubtaskAssignee = subtaskAssigneeFilter.value || ASSIGNEE_ALL;
+        renderAll();
+    });
+}
+const assigneeSummaryHost = document.getElementById('assignee-filter-summary');
+if (assigneeSummaryHost) {
+    assigneeSummaryHost.addEventListener('click', (event) => {
+        const target = event.target.closest('[data-clear-filter]');
+        if (!target) return;
+        const filterType = target.getAttribute('data-clear-filter');
+        if (filterType === 'epic' || filterType === 'all') selectedEpicAssignee = ASSIGNEE_ALL;
+        if (filterType === 'story' || filterType === 'all') selectedStoryAssignee = ASSIGNEE_ALL;
+        if (filterType === 'subtask' || filterType === 'all') selectedSubtaskAssignee = ASSIGNEE_ALL;
+        renderAssigneeFilterControls();
+        renderAll();
+    });
+}
+if (removeFiltersButton) {
+    removeFiltersButton.addEventListener('click', () => {
+        resetAllFilters();
+    });
+}
+renderAll();
+</script>
+<script src="shared-nav.js"></script>
+</body>
+</html>

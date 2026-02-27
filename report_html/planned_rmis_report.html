@@ -1,0 +1,562 @@
+<!doctype html>
+<html lang='en'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>Planned RMIs</title>
+<link rel='stylesheet' href='shared-nav.css'>
+<link rel='stylesheet' href='https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,500,0,0'>
+<style>
+:root{--bg:#f3f6f9;--panel:#ffffff;--text:#1f2937;--muted:#6b7280;--line:#dbe3ea;--head:#0f4c5c;--head-text:#ffffff;--left1:420px;--left2:150px}
+*{box-sizing:border-box}body{margin:0;padding:18px;font-family:"Segoe UI",Tahoma,Verdana,sans-serif;color:var(--text);background:radial-gradient(1000px 280px at 10% -5%, #d7eef6 0%, transparent 60%),linear-gradient(180deg, #eef4f7, var(--bg))}
+.page{max-width:1500px;margin:0 auto;display:grid;gap:12px}.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.title{margin:0;font-size:1.25rem;font-weight:700;color:#0b3142}.meta{margin:0;color:var(--muted);font-size:.9rem}
+.toolbar{margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:end}.control{display:grid;gap:4px}.control label{font-size:.74rem;color:#355564;text-transform:uppercase;font-weight:700}.control input,.control select{border:1px solid #b6c7d2;border-radius:8px;padding:7px 9px;font-size:.86rem;min-width:150px;background:#fff;color:#12313f}
+.btn{display:inline-flex;align-items:center;gap:6px;border:1px solid #255f73;background:#0f4c5c;color:#fff;border-radius:8px;padding:7px 12px;font-size:.9rem;cursor:pointer}.btn.alt{background:#fff;color:#255f73}
+.scorecards{margin-top:10px;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px}.score{border:1px solid #d7e3ea;border-radius:10px;background:#f8fbfd;padding:8px 10px;min-height:66px}.sl{color:#355564;font-size:.75rem;font-weight:700;text-transform:uppercase}.sv{color:#0b3142;margin-top:3px;font-size:1.15rem;font-weight:800}
+#score-projects-card{background:#ecfeff;border-color:#99f6e4}.scorecards #score-projects-card .sv{color:#0f766e}
+#score-planned-epics-card{background:#ecfdf3;border-color:#86efac}.scorecards #score-planned-epics-card .sv{color:#166534}
+#score-not-planned-epics-card{background:#fff1f2;border-color:#fda4af}.scorecards #score-not-planned-epics-card .sv{color:#be123c}
+#score-planned-hours-card{background:#eff6ff;border-color:#93c5fd}.scorecards #score-planned-hours-card .sv{color:#1d4ed8}
+#score-not-planned-hours-card{background:#fef2f2;border-color:#fecaca}.scorecards #score-not-planned-hours-card .sv{color:#b91c1c}
+#score-capacity-card{background:#fffbeb;border-color:#fcd34d}.scorecards #score-capacity-card .sv{color:#a16207}
+#score-actual-hours-card{background:#f3e8ff;border-color:#d8b4fe}.scorecards #score-actual-hours-card .sv{color:#7c3aed}
+.gw{background:var(--panel);border:1px solid var(--line);border-radius:12px;max-height:calc(100vh - 220px);overflow:auto;width:100%}.g{width:max-content;min-width:calc(var(--left1)+var(--left2)+900px)}
+.r{display:grid;grid-template-columns:var(--left1) var(--left2) 1fr;min-height:40px;border-bottom:1px solid var(--line)}.r.h{position:sticky;top:0;z-index:30}.c{padding:8px 10px;font-size:.82rem}
+.s1{position:sticky;left:0;z-index:20;background:#fff;border-right:1px solid var(--line)}.s2{position:sticky;left:var(--left1);z-index:20;background:#fff;border-right:1px solid var(--line);text-align:right;font-variant-numeric:tabular-nums}
+.r.h .c{font-size:.9rem;background:var(--head);color:var(--head-text);text-align:left;padding:10px 10px;border-bottom:1px solid #0a3946}.r.h .s1,.r.h .s2{z-index:40;background:var(--head)}
+.row-project .s1,.row-project .s2{background:#dbeeff}.row-group .s1,.row-group .s2{background:#f8fbfd}.group-planned .s1{border-left:3px solid #2da365}.group-not-planned .s1{border-left:3px solid #d4677f}
+.rmi{display:flex;align-items:center;gap:6px;min-width:0}.lbl{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.focus-link{border:none;background:transparent;padding:0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;color:#0b4a6f;font-weight:700;cursor:pointer}
+.focus-link:hover{text-decoration:underline}.focus-link:focus{outline:2px solid rgba(15,76,92,.25);outline-offset:2px;border-radius:4px}
+.toggle{width:22px;height:22px;border:1px solid #adc0d8;border-radius:6px;background:#fff;color:#334155;cursor:pointer;line-height:1}.toggle.placeholder{visibility:hidden}
+.ch{border-radius:999px;font-size:.66rem;font-weight:700;padding:2px 7px;border:1px solid transparent}.ch.p{background:#e8f7ed;border-color:#8fd6a1;color:#1a6e3e}.ch.u{background:#ffeef0;border-color:#f5b3bc;color:#8d3146}
+.th{position:relative;min-height:54px;background:#f8fbfd;border-left:1px solid var(--line)}.months,.weeks{position:absolute;left:0;right:0;overflow:hidden;color:#334a67}.months{top:0;height:27px;border-bottom:1px solid var(--line);font-size:.68rem}.weeks{top:27px;height:27px;font-size:.62rem}
+.mb,.wb{position:absolute;top:0;bottom:0;display:flex;align-items:center;justify-content:center;border-right:1px solid #cfdaea;white-space:nowrap;padding:0 4px}.wb{background:rgba(255,255,255,.5);color:#607793}
+.tc{border-left:1px solid var(--line);position:relative}.slot{position:relative;min-height:40px}.wl{position:absolute;top:0;bottom:0;width:1px;background:#e4ebf5}
+.bar{position:absolute;top:10px;height:20px;border-radius:999px;border:1px solid rgba(19,71,180,.35);background:linear-gradient(180deg,#3f7bff,#2157d6);box-shadow:0 2px 6px rgba(33,87,214,.24)}.bar.project{background:linear-gradient(180deg,#3bc8de,#0b8ca8);border-color:rgba(11,140,168,.45);top:13px;height:14px;opacity:.65}.bar.no{background:#c6d3e3;border-color:#b4c3d8;box-shadow:none}
+.empty{padding:14px;color:var(--muted);font-size:.88rem}
+</style>
+</head>
+<body>
+<div class='page'><section class='panel'>
+<h1 class='title'>Planned RMIs</h1>
+<p class='meta'>Generated: <span id='gen'></span> | Source: <span id='src'></span> | Visible Epics: <span id='ve'></span></p>
+<div class='toolbar'>
+<div class='control'><label for='actual-hours-mode'>Actual Hours Mode</label><select id='actual-hours-mode'><option value='log_date'>By Log Date</option><option value='planned_dates'>By Planned Dates</option></select></div>
+<div class='control'><label for='from'>From</label><input id='from' type='date'></div>
+<div class='control'><label for='to'>To</label><input id='to' type='date'></div>
+<button id='apply' class='btn alt' type='button'><span class='material-symbols-outlined'>filter_alt</span>Apply</button>
+<button id='reset' class='btn' type='button'><span class='material-symbols-outlined'>restart_alt</span>Reset</button>
+<button id='collapse' class='btn alt' type='button'><span class='material-symbols-outlined'>unfold_less</span>Collapse Projects</button>
+<button id='expand' class='btn alt' type='button'><span class='material-symbols-outlined'>unfold_more</span>Expand All</button>
+<span id='actual-hours-status' class='meta'></span>
+</div>
+<div class='scorecards'>
+<div class='score' id='score-projects-card'><div class='sl'>Projects In View</div><div class='sv' id='sp'>0</div></div>
+<div class='score' id='score-planned-epics-card'><div class='sl'>Planned Epics</div><div class='sv' id='se'>0</div></div>
+<div class='score' id='score-not-planned-epics-card'><div class='sl'>Not Planned Yet Epics</div><div class='sv' id='su'>0</div></div>
+<div class='score' id='score-planned-hours-card'><div class='sl'>Planned Hours (Planned)</div><div class='sv' id='sh'>0</div></div>
+<div class='score' id='score-not-planned-hours-card'><div class='sl'>Planned Hours (Not Planned)</div><div class='sv' id='shu'>0</div></div>
+<div class='score' id='score-capacity-card'><div class='sl'>Capacity (Hours Required)</div><div class='sv' id='scap'>0</div></div>
+<div class='score' id='score-actual-hours-card'><div class='sl'>Actual Hours</div><div class='sv' id='sact'>0</div></div>
+</div></section><section class='gw'><div class='g' id='root'></div></section></div>
+<script>
+const d={"rows": [{"id": 1, "parent_id": null, "level": 1, "row_kind": "project", "group_type": "", "rmi_label": "DIGITALLOG - Digital Log", "planned_hours": 2160.0, "actual_hours": 1441.0, "planned_start": "2025-09-22", "planned_end": "2026-03-30", "has_range": true, "start_ordinal": 739516, "end_ordinal": 739705, "project_key": "DIGITALLOG"}, {"id": 2, "parent_id": 1, "level": 2, "row_kind": "group", "group_type": "planned", "rmi_label": "Planned Epics", "planned_hours": 1632.0, "actual_hours": 1441.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "DIGITALLOG"}, {"id": 3, "parent_id": 2, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "Domain Migration to Branded Domain of ODL", "jira_key": "DIGITALLOG-154", "planned_hours": 96.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "2026-01-07", "planned_end": "2026-02-20", "has_range": true, "start_ordinal": 739623, "end_ordinal": 739667, "project_key": "DIGITALLOG"}, {"id": 4, "parent_id": 2, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "Digital Log Enhancements & Integration", "jira_key": "DIGITALLOG-65", "planned_hours": 320.0, "actual_hours": 16.0, "original_actual_hours": 16.0, "planned_start": "2026-01-07", "planned_end": "2026-02-20", "has_range": true, "start_ordinal": 739623, "end_ordinal": 739667, "project_key": "DIGITALLOG"}, {"id": 5, "parent_id": 2, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "Holidays Management \u2013 manage the start and end time for the holiday", "jira_key": "DIGITALLOG-220", "planned_hours": 184.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "2026-02-23", "planned_end": "2026-03-30", "has_range": true, "start_ordinal": 739670, "end_ordinal": 739705, "project_key": "DIGITALLOG"}, {"id": 6, "parent_id": 2, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "Log Chat Integration", "jira_key": "DIGITALLOG-192", "planned_hours": 80.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "2026-01-07", "planned_end": "2026-02-20", "has_range": true, "start_ordinal": 739623, "end_ordinal": 739667, "project_key": "DIGITALLOG"}, {"id": 7, "parent_id": 2, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "Digital Log Journal Operator", "jira_key": "DIGITALLOG-150", "planned_hours": 240.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "2026-01-07", "planned_end": "2026-02-20", "has_range": true, "start_ordinal": 739623, "end_ordinal": 739667, "project_key": "DIGITALLOG"}, {"id": 8, "parent_id": 2, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "Journal for Mobile App", "jira_key": "DIGITALLOG-219", "planned_hours": 440.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "2026-02-23", "planned_end": "2026-03-30", "has_range": true, "start_ordinal": 739670, "end_ordinal": 739705, "project_key": "DIGITALLOG"}, {"id": 9, "parent_id": 2, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "PowerPoint/Demo", "jira_key": "DIGITALLOG-218", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "2026-02-19", "planned_end": "2026-02-19", "has_range": true, "start_ordinal": 739666, "end_ordinal": 739666, "project_key": "DIGITALLOG"}, {"id": 10, "parent_id": 2, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "Default Reports Generation Via LogChat", "jira_key": "DIGITALLOG-234", "planned_hours": 104.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "2026-02-23", "planned_end": "2026-03-30", "has_range": true, "start_ordinal": 739670, "end_ordinal": 739705, "project_key": "DIGITALLOG"}, {"id": 11, "parent_id": 2, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "Digital Log Read API", "jira_key": "DIGITALLOG-146", "planned_hours": 168.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "2026-01-07", "planned_end": "2026-02-20", "has_range": true, "start_ordinal": 739623, "end_ordinal": 739667, "project_key": "DIGITALLOG"}, {"id": 12, "parent_id": 2, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "Technical Support", "jira_key": "DIGITALLOG-196", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "2026-02-12", "planned_end": "2026-02-12", "has_range": true, "start_ordinal": 739659, "end_ordinal": 739659, "project_key": "DIGITALLOG"}, {"id": 13, "parent_id": 2, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "Checklist Stats Enhancements + Dashboard  User Activity Logs", "jira_key": "DIGITALLOG-35", "planned_hours": 0.0, "actual_hours": 669.0, "original_actual_hours": 669.0, "planned_start": "2025-11-11", "planned_end": "2026-01-06", "has_range": true, "start_ordinal": 739566, "end_ordinal": 739622, "project_key": "DIGITALLOG"}, {"id": 14, "parent_id": 2, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "Dashboard, Data & Mobile Improvements", "jira_key": "DIGITALLOG-27", "planned_hours": 0.0, "actual_hours": 496.0, "original_actual_hours": 496.0, "planned_start": "2025-10-13", "planned_end": "2025-11-10", "has_range": true, "start_ordinal": 739537, "end_ordinal": 739565, "project_key": "DIGITALLOG"}, {"id": 15, "parent_id": 2, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "Holidays Feature / Mobile App SSO Integration", "jira_key": "DIGITALLOG-1", "planned_hours": 0.0, "actual_hours": 260.0, "original_actual_hours": 260.0, "planned_start": "2025-09-22", "planned_end": "2025-10-10", "has_range": true, "start_ordinal": 739516, "end_ordinal": 739534, "project_key": "DIGITALLOG"}, {"id": 16, "parent_id": 1, "level": 2, "row_kind": "group", "group_type": "not_planned", "rmi_label": "Not Planned Yet Epics", "planned_hours": 528.0, "actual_hours": 0.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "DIGITALLOG"}, {"id": 17, "parent_id": 16, "level": 3, "row_kind": "epic", "group_type": "not_planned", "rmi_label": "Checklist E-Signature", "jira_key": "DIGITALLOG-223", "planned_hours": 168.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "DIGITALLOG"}, {"id": 18, "parent_id": 16, "level": 3, "row_kind": "epic", "group_type": "not_planned", "rmi_label": "Checklist time based schedules", "jira_key": "DIGITALLOG-222", "planned_hours": 240.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "DIGITALLOG"}, {"id": 19, "parent_id": 16, "level": 3, "row_kind": "epic", "group_type": "not_planned", "rmi_label": "LogChat for Journals", "jira_key": "DIGITALLOG-259", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "DIGITALLOG"}, {"id": 20, "parent_id": 16, "level": 3, "row_kind": "epic", "group_type": "not_planned", "rmi_label": "Submit \u2013 Return (record(s) change & comments) history", "jira_key": "DIGITALLOG-221", "planned_hours": 120.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "DIGITALLOG"}, {"id": 21, "parent_id": 16, "level": 3, "row_kind": "epic", "group_type": "not_planned", "rmi_label": "No RMI", "jira_key": "", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "DIGITALLOG"}, {"id": 22, "parent_id": null, "level": 1, "row_kind": "project", "group_type": "", "rmi_label": "FF - Fintech Fuel", "planned_hours": 1744.0, "actual_hours": 1110.0, "planned_start": "2025-08-19", "planned_end": "2026-03-06", "has_range": true, "start_ordinal": 739482, "end_ordinal": 739681, "project_key": "FF"}, {"id": 23, "parent_id": 22, "level": 2, "row_kind": "group", "group_type": "planned", "rmi_label": "Planned Epics", "planned_hours": 1744.0, "actual_hours": 1110.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "FF"}, {"id": 24, "parent_id": 23, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "No RMI", "jira_key": "", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "2026-01-26", "planned_end": "2026-01-30", "has_range": true, "start_ordinal": 739642, "end_ordinal": 739646, "project_key": "FF"}, {"id": 25, "parent_id": 23, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "ALSONs device integration (read only)", "jira_key": "FF-292", "planned_hours": 120.0, "actual_hours": 144.0, "original_actual_hours": 144.0, "planned_start": "2026-02-09", "planned_end": "2026-03-06", "has_range": true, "start_ordinal": 739656, "end_ordinal": 739681, "project_key": "FF"}, {"id": 26, "parent_id": 23, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "Configurable Alarms and Sites, Notifications", "jira_key": "FF-314", "planned_hours": 544.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "2026-02-06", "planned_end": "2026-02-27", "has_range": true, "start_ordinal": 739653, "end_ordinal": 739674, "project_key": "FF"}, {"id": 27, "parent_id": 23, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "Fintech Fuel Read API", "jira_key": "FF-271", "planned_hours": 184.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "2026-01-21", "planned_end": "2026-02-27", "has_range": true, "start_ordinal": 739637, "end_ordinal": 739674, "project_key": "FF"}, {"id": 28, "parent_id": 23, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "Site Diagnostics Dashboard", "jira_key": "FF-274", "planned_hours": 336.0, "actual_hours": 51.0, "original_actual_hours": 51.0, "planned_start": "2026-01-28", "planned_end": "2026-02-27", "has_range": true, "start_ordinal": 739644, "end_ordinal": 739674, "project_key": "FF"}, {"id": 29, "parent_id": 23, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "Fintech Fuel - Regression", "jira_key": "FF-373", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "2026-02-23", "planned_end": "2026-02-27", "has_range": true, "start_ordinal": 739670, "end_ordinal": 739674, "project_key": "FF"}, {"id": 30, "parent_id": 23, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "Fintech Fuel : Version 2", "jira_key": "FF-7", "planned_hours": 0.0, "actual_hours": 300.0, "original_actual_hours": 300.0, "planned_start": "2025-09-19", "planned_end": "2025-10-17", "has_range": true, "start_ordinal": 739513, "end_ordinal": 739541, "project_key": "FF"}, {"id": 31, "parent_id": 23, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "Fintech Fuel : Version 3", "jira_key": "FF-16", "planned_hours": 0.0, "actual_hours": 217.0, "original_actual_hours": 217.0, "planned_start": "2025-10-17", "planned_end": "2025-11-03", "has_range": true, "start_ordinal": 739541, "end_ordinal": 739558, "project_key": "FF"}, {"id": 32, "parent_id": 23, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "Fintech Fuel: Version 1", "jira_key": "FF-1", "planned_hours": 0.0, "actual_hours": 159.0, "original_actual_hours": 159.0, "planned_start": "2025-08-19", "planned_end": "2025-09-18", "has_range": true, "start_ordinal": 739482, "end_ordinal": 739512, "project_key": "FF"}, {"id": 33, "parent_id": 23, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "Mobile App", "jira_key": "FF-119", "planned_hours": 560.0, "actual_hours": 239.0, "original_actual_hours": 239.0, "planned_start": "2025-11-17", "planned_end": "2026-02-12", "has_range": true, "start_ordinal": 739572, "end_ordinal": 739659, "project_key": "FF"}, {"id": 34, "parent_id": 23, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "No RMI", "jira_key": "", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "2025-12-02", "planned_end": "2026-02-27", "has_range": true, "start_ordinal": 739587, "end_ordinal": 739674, "project_key": "FF"}, {"id": 35, "parent_id": 22, "level": 2, "row_kind": "group", "group_type": "not_planned", "rmi_label": "Not Planned Yet Epics", "planned_hours": 0.0, "actual_hours": 0.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "FF"}, {"id": 36, "parent_id": 35, "level": 3, "row_kind": "epic", "group_type": "not_planned", "rmi_label": "Fuel price write back", "jira_key": "FF-302", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "FF"}, {"id": 37, "parent_id": 35, "level": 3, "row_kind": "epic", "group_type": "not_planned", "rmi_label": "Alsons", "jira_key": "FF-325", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "FF"}, {"id": 38, "parent_id": 35, "level": 3, "row_kind": "epic", "group_type": "not_planned", "rmi_label": "Automated Site Configuration", "jira_key": "FF-297", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "FF"}, {"id": 39, "parent_id": 35, "level": 3, "row_kind": "epic", "group_type": "not_planned", "rmi_label": "Diagnostics", "jira_key": "FF-313", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "FF"}, {"id": 40, "parent_id": 35, "level": 3, "row_kind": "epic", "group_type": "not_planned", "rmi_label": "FuelChat", "jira_key": "FF-312", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "FF"}, {"id": 41, "parent_id": 35, "level": 3, "row_kind": "epic", "group_type": "not_planned", "rmi_label": "Technical Support", "jira_key": "FF-343", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "FF"}, {"id": 42, "parent_id": 35, "level": 3, "row_kind": "epic", "group_type": "not_planned", "rmi_label": "ZDT on Fintech", "jira_key": "FF-88", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "FF"}, {"id": 43, "parent_id": null, "level": 1, "row_kind": "project", "group_type": "", "rmi_label": "MN - Omni Chat", "planned_hours": 2880.0, "actual_hours": 112.0, "planned_start": "2025-12-17", "planned_end": "2026-05-01", "has_range": true, "start_ordinal": 739602, "end_ordinal": 739737, "project_key": "MN"}, {"id": 44, "parent_id": 43, "level": 2, "row_kind": "group", "group_type": "planned", "rmi_label": "Planned Epics", "planned_hours": 1600.0, "actual_hours": 112.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "MN"}, {"id": 45, "parent_id": 44, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "Forgot Password Functionality", "jira_key": "MN-53", "planned_hours": 80.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "2026-02-16", "planned_end": "2026-02-27", "has_range": true, "start_ordinal": 739663, "end_ordinal": 739674, "project_key": "MN"}, {"id": 46, "parent_id": 44, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "Omni Chat Onboarding", "jira_key": "MN-1", "planned_hours": 360.0, "actual_hours": 112.0, "original_actual_hours": 112.0, "planned_start": "2025-12-17", "planned_end": "2026-03-31", "has_range": true, "start_ordinal": 739602, "end_ordinal": 739706, "project_key": "MN"}, {"id": 47, "parent_id": 44, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "Dashboard-level Filtering", "jira_key": "MN-30", "planned_hours": 160.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "2026-03-02", "planned_end": "2026-04-10", "has_range": true, "start_ordinal": 739677, "end_ordinal": 739716, "project_key": "MN"}, {"id": 48, "parent_id": 44, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "OmniChat Front-End Bugs Fixing", "jira_key": "MN-78", "planned_hours": 416.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "2026-01-07", "planned_end": "2026-03-13", "has_range": true, "start_ordinal": 739623, "end_ordinal": 739688, "project_key": "MN"}, {"id": 49, "parent_id": 44, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "OmniChat Regression", "jira_key": "MN-94", "planned_hours": 480.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "2026-03-02", "planned_end": "2026-04-10", "has_range": true, "start_ordinal": 739677, "end_ordinal": 739716, "project_key": "MN"}, {"id": 50, "parent_id": 44, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "Auto Dataset Selection", "jira_key": "MN-29", "planned_hours": 104.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "2026-04-13", "planned_end": "2026-05-01", "has_range": true, "start_ordinal": 739719, "end_ordinal": 739737, "project_key": "MN"}, {"id": 51, "parent_id": 43, "level": 2, "row_kind": "group", "group_type": "not_planned", "rmi_label": "Not Planned Yet Epics", "planned_hours": 1280.0, "actual_hours": 0.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "MN"}, {"id": 52, "parent_id": 51, "level": 3, "row_kind": "epic", "group_type": "not_planned", "rmi_label": "Enterprise Communication Channels Support", "jira_key": "MN-33", "planned_hours": 360.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "MN"}, {"id": 53, "parent_id": 51, "level": 3, "row_kind": "epic", "group_type": "not_planned", "rmi_label": "Panel-level Filtering", "jira_key": "MN-75", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "MN"}, {"id": 54, "parent_id": 51, "level": 3, "row_kind": "epic", "group_type": "not_planned", "rmi_label": "2FA Integration", "jira_key": "MN-90", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "MN"}, {"id": 55, "parent_id": 51, "level": 3, "row_kind": "epic", "group_type": "not_planned", "rmi_label": "Advanced Relationships for Multiple Datasets", "jira_key": "MN-32", "planned_hours": 568.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "MN"}, {"id": 56, "parent_id": 51, "level": 3, "row_kind": "epic", "group_type": "not_planned", "rmi_label": "Auto Dashboard Sharing", "jira_key": "MN-77", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "MN"}, {"id": 57, "parent_id": 51, "level": 3, "row_kind": "epic", "group_type": "not_planned", "rmi_label": "No RMI", "jira_key": "", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "MN"}, {"id": 58, "parent_id": 51, "level": 3, "row_kind": "epic", "group_type": "not_planned", "rmi_label": "Panel Resizing", "jira_key": "MN-76", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "MN"}, {"id": 59, "parent_id": 51, "level": 3, "row_kind": "epic", "group_type": "not_planned", "rmi_label": "Team Collaborative Chat", "jira_key": "MN-31", "planned_hours": 352.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "MN"}, {"id": 60, "parent_id": 51, "level": 3, "row_kind": "epic", "group_type": "not_planned", "rmi_label": "Technical Support", "jira_key": "MN-42", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "MN"}, {"id": 61, "parent_id": null, "level": 1, "row_kind": "project", "group_type": "", "rmi_label": "O2 - OmniConnect", "planned_hours": 9305.14, "actual_hours": 5407.3, "planned_start": "2025-04-01", "planned_end": "2026-12-31", "has_range": true, "start_ordinal": 739342, "end_ordinal": 739981, "project_key": "O2"}, {"id": 62, "parent_id": 61, "level": 2, "row_kind": "group", "group_type": "planned", "rmi_label": "Planned Epics", "planned_hours": 9105.14, "actual_hours": 5386.3, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "O2"}, {"id": 63, "parent_id": 62, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "Azure Cost, Reservation, & Subscription Management", "jira_key": "O2-1109", "planned_hours": 152.0, "actual_hours": 2.0, "original_actual_hours": 2.0, "planned_start": "2026-01-01", "planned_end": "2026-02-27", "has_range": true, "start_ordinal": 739617, "end_ordinal": 739674, "project_key": "O2"}, {"id": 64, "parent_id": 62, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "Project Management", "jira_key": "O2-798", "planned_hours": 400.0, "actual_hours": 29.67, "original_actual_hours": 29.67, "planned_start": "2025-12-01", "planned_end": "2026-02-27", "has_range": true, "start_ordinal": 739586, "end_ordinal": 739674, "project_key": "O2"}, {"id": 65, "parent_id": 62, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "Subscription Management", "jira_key": "O2-857", "planned_hours": 520.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "2026-01-07", "planned_end": "2026-03-06", "has_range": true, "start_ordinal": 739623, "end_ordinal": 739681, "project_key": "O2"}, {"id": 66, "parent_id": 62, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "( Demo / Presentation) Assignments", "jira_key": "O2-221", "planned_hours": 0.0, "actual_hours": 396.6, "original_actual_hours": 396.6, "planned_start": "2025-10-21", "planned_end": "2026-02-27", "has_range": true, "start_ordinal": 739545, "end_ordinal": 739674, "project_key": "O2"}, {"id": 67, "parent_id": 62, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "Anomaly Detection Engine Enrichment", "jira_key": "O2-37", "planned_hours": 0.0, "actual_hours": 452.5, "original_actual_hours": 452.5, "planned_start": "2025-09-15", "planned_end": "2026-02-23", "has_range": true, "start_ordinal": 739509, "end_ordinal": 739670, "project_key": "O2"}, {"id": 68, "parent_id": 62, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "APX Health Module Update (P)", "jira_key": "O2-459", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "2025-12-26", "planned_end": "2026-01-30", "has_range": true, "start_ordinal": 739611, "end_ordinal": 739646, "project_key": "O2"}, {"id": 69, "parent_id": 62, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "APX Performance Module Enhancements", "jira_key": "O2-458", "planned_hours": 0.0, "actual_hours": 20.0, "original_actual_hours": 20.0, "planned_start": "2025-09-01", "planned_end": "2025-09-07", "has_range": true, "start_ordinal": 739495, "end_ordinal": 739501, "project_key": "O2"}, {"id": 70, "parent_id": 62, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "APX Pump \u2013 Variable Speed Dashboard", "jira_key": "O2-887", "planned_hours": 240.0, "actual_hours": 8.0, "original_actual_hours": 8.0, "planned_start": "2025-12-23", "planned_end": "2026-02-06", "has_range": true, "start_ordinal": 739608, "end_ordinal": 739653, "project_key": "O2"}, {"id": 71, "parent_id": 62, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "APX Template Enhancement", "jira_key": "O2-33", "planned_hours": 0.0, "actual_hours": 85.0, "original_actual_hours": 85.0, "planned_start": "2025-09-15", "planned_end": "2026-01-19", "has_range": true, "start_ordinal": 739509, "end_ordinal": 739635, "project_key": "O2"}, {"id": 72, "parent_id": 62, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "APX Visualisations Enhancements", "jira_key": "O2-457", "planned_hours": 440.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "2026-01-26", "planned_end": "2026-03-03", "has_range": true, "start_ordinal": 739642, "end_ordinal": 739678, "project_key": "O2"}, {"id": 73, "parent_id": 62, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "Ashghal Release", "jira_key": "O2-941", "planned_hours": 368.0, "actual_hours": 474.0, "original_actual_hours": 474.0, "planned_start": "2026-01-19", "planned_end": "2026-01-27", "has_range": true, "start_ordinal": 739635, "end_ordinal": 739643, "project_key": "O2"}, {"id": 74, "parent_id": 62, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "Auxiliary Load Advisor", "jira_key": "O2-460", "planned_hours": 0.0, "actual_hours": 110.0, "original_actual_hours": 110.0, "planned_start": "2025-10-30", "planned_end": "2025-11-07", "has_range": true, "start_ordinal": 739554, "end_ordinal": 739562, "project_key": "O2"}, {"id": 75, "parent_id": 62, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "Batch/Bpm modify Existing ADX IT Table", "jira_key": "O2-810", "planned_hours": 480.0, "actual_hours": 124.0, "original_actual_hours": 124.0, "planned_start": "2025-12-30", "planned_end": "2026-02-06", "has_range": true, "start_ordinal": 739615, "end_ordinal": 739653, "project_key": "O2"}, {"id": 76, "parent_id": 62, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "Batch/BPM V3 (Box re-usable, Mix and Match)", "jira_key": "O2-9", "planned_hours": 0.0, "actual_hours": 25.5, "original_actual_hours": 25.5, "planned_start": "2025-10-06", "planned_end": "2025-10-24", "has_range": true, "start_ordinal": 739530, "end_ordinal": 739548, "project_key": "O2"}, {"id": 77, "parent_id": 62, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "Batch/BPM V4 \u2013 GitHub Integration", "jira_key": "O2-2", "planned_hours": 0.0, "actual_hours": 72.0, "original_actual_hours": 72.0, "planned_start": "2025-10-27", "planned_end": "2025-11-21", "has_range": true, "start_ordinal": 739551, "end_ordinal": 739576, "project_key": "O2"}, {"id": 78, "parent_id": 62, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "Boiler", "jira_key": "O2-453", "planned_hours": 0.0, "actual_hours": 120.0, "original_actual_hours": 120.0, "planned_start": "2025-09-23", "planned_end": "2025-10-16", "has_range": true, "start_ordinal": 739517, "end_ordinal": 739540, "project_key": "O2"}, {"id": 79, "parent_id": 62, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "Boiler What-If", "jira_key": "O2-992", "planned_hours": 0.0, "actual_hours": 40.0, "original_actual_hours": 40.0, "planned_start": "2025-12-23", "planned_end": "2026-02-10", "has_range": true, "start_ordinal": 739608, "end_ordinal": 739657, "project_key": "O2"}, {"id": 80, "parent_id": 62, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "BPM Editable & Reusability Enhancement", "jira_key": "O2-714", "planned_hours": 0.0, "actual_hours": 64.0, "original_actual_hours": 64.0, "planned_start": "2025-12-01", "planned_end": "2025-12-19", "has_range": true, "start_ordinal": 739586, "end_ordinal": 739604, "project_key": "O2"}, {"id": 81, "parent_id": 62, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "Calculated Tags Enhancements (With No Code)", "jira_key": "O2-697", "planned_hours": 304.0, "actual_hours": 48.0, "original_actual_hours": 48.0, "planned_start": "2026-01-28", "planned_end": "2026-03-13", "has_range": true, "start_ordinal": 739644, "end_ordinal": 739688, "project_key": "O2"}, {"id": 82, "parent_id": 62, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "Centrifugal Compressor (Fixed Speed)", "jira_key": "O2-398", "planned_hours": 0.0, "actual_hours": 80.0, "original_actual_hours": 80.0, "planned_start": "2025-06-30", "planned_end": "2025-07-13", "has_range": true, "start_ordinal": 739432, "end_ordinal": 739445, "project_key": "O2"}, {"id": 83, "parent_id": 62, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "Centrifugal Compressor (Multi Speed)", "jira_key": "O2-408", "planned_hours": 0.0, "actual_hours": 80.0, "original_actual_hours": 80.0, "planned_start": "2025-07-28", "planned_end": "2025-08-10", "has_range": true, "start_ordinal": 739460, "end_ordinal": 739473, "project_key": "O2"}, {"id": 84, "parent_id": 62, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "Centrifugal Compressor - Health (Fixed / Variable Speed)", "jira_key": "O2-1044", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "2025-12-15", "planned_end": "2026-02-10", "has_range": true, "start_ordinal": 739600, "end_ordinal": 739657, "project_key": "O2"}, {"id": 85, "parent_id": 62, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "Centrifugal Compressor What-If (Fixed / Variable Speed)", "jira_key": "O2-1005", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "2026-01-30", "planned_end": "2026-02-04", "has_range": true, "start_ordinal": 739646, "end_ordinal": 739651, "project_key": "O2"}, {"id": 86, "parent_id": 62, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "Cooling Tower", "jira_key": "O2-452", "planned_hours": 0.0, "actual_hours": 7.0, "original_actual_hours": 7.0, "planned_start": "2025-09-15", "planned_end": "2026-03-06", "has_range": true, "start_ordinal": 739509, "end_ordinal": 739681, "project_key": "O2"}, {"id": 87, "parent_id": 62, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "Cooling Tower What-If", "jira_key": "O2-1018", "planned_hours": 0.0, "actual_hours": 1.5, "original_actual_hours": 1.5, "planned_start": "2025-11-03", "planned_end": "2026-02-13", "has_range": true, "start_ordinal": 739558, "end_ordinal": 739660, "project_key": "O2"}, {"id": 88, "parent_id": 62, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "Electric Motor - Health", "jira_key": "O2-1028", "planned_hours": 0.0, "actual_hours": 2.0, "original_actual_hours": 2.0, "planned_start": "2026-01-15", "planned_end": "2026-02-28", "has_range": true, "start_ordinal": 739631, "end_ordinal": 739675, "project_key": "O2"}, {"id": 89, "parent_id": 62, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "Heat Exchangers What-If", "jira_key": "O2-1303", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "2026-02-12", "planned_end": "2026-02-12", "has_range": true, "start_ordinal": 739659, "end_ordinal": 739659, "project_key": "O2"}, {"id": 90, "parent_id": 62, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "IT Table to OT Tag Conversion - Phase 1", "jira_key": "O2-713", "planned_hours": 0.0, "actual_hours": 56.0, "original_actual_hours": 56.0, "planned_start": "2025-12-15", "planned_end": "2026-01-19", "has_range": true, "start_ordinal": 739600, "end_ordinal": 739635, "project_key": "O2"}, {"id": 91, "parent_id": 62, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "MPCL - APX", "jira_key": "O2-600", "planned_hours": 0.0, "actual_hours": 1232.0, "original_actual_hours": 1232.0, "planned_start": "2025-04-01", "planned_end": "2025-11-30", "has_range": true, "start_ordinal": 739342, "end_ordinal": 739585, "project_key": "O2"}, {"id": 92, "parent_id": 62, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "No RMI", "jira_key": "", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "2025-12-02", "planned_end": "2026-12-31", "has_range": true, "start_ordinal": 739587, "end_ordinal": 739981, "project_key": "O2"}, {"id": 93, "parent_id": 62, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "OC Intuitive UI/UX", "jira_key": "O2-892", "planned_hours": 368.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "2026-01-15", "planned_end": "2026-03-31", "has_range": true, "start_ordinal": 739631, "end_ordinal": 739706, "project_key": "O2"}, {"id": 94, "parent_id": 62, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "OC Security - Enhancement and Documentations", "jira_key": "O2-133", "planned_hours": 800.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "2025-10-06", "planned_end": "2026-04-03", "has_range": true, "start_ordinal": 739530, "end_ordinal": 739709, "project_key": "O2"}, {"id": 95, "parent_id": 62, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "OmniAgent Phase 2.1 ( APX Perf, What-if, Health )", "jira_key": "O2-35", "planned_hours": 0.0, "actual_hours": 298.0, "original_actual_hours": 298.0, "planned_start": "2025-10-23", "planned_end": "2025-11-21", "has_range": true, "start_ordinal": 739547, "end_ordinal": 739576, "project_key": "O2"}, {"id": 96, "parent_id": 62, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "OmniOEE pre-URS working (P)", "jira_key": "O2-1302", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "2026-02-11", "planned_end": "2026-03-06", "has_range": true, "start_ordinal": 739658, "end_ordinal": 739681, "project_key": "O2"}, {"id": 97, "parent_id": 62, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "Process Eng. tasks: working, review and management", "jira_key": "O2-1070", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "2026-01-01", "planned_end": "2026-02-27", "has_range": true, "start_ordinal": 739617, "end_ordinal": 739674, "project_key": "O2"}, {"id": 98, "parent_id": 62, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "Process Team Sales / marketing Tasks", "jira_key": "O2-1595", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "2026-01-01", "planned_end": "2026-02-27", "has_range": true, "start_ordinal": 739617, "end_ordinal": 739674, "project_key": "O2"}, {"id": 99, "parent_id": 62, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "Recompute for existing Batch/Bpm Jobs", "jira_key": "O2-818", "planned_hours": 0.97, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "2026-02-11", "planned_end": "2026-03-13", "has_range": true, "start_ordinal": 739658, "end_ordinal": 739688, "project_key": "O2"}, {"id": 100, "parent_id": 62, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "Simple Heat Exchangers", "jira_key": "O2-418", "planned_hours": 0.0, "actual_hours": 48.0, "original_actual_hours": 48.0, "planned_start": "2025-09-15", "planned_end": "2025-10-12", "has_range": true, "start_ordinal": 739509, "end_ordinal": 739536, "project_key": "O2"}, {"id": 101, "parent_id": 62, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "Water Cooled Steam Condenser", "jira_key": "O2-441", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "2025-09-15", "planned_end": "2026-01-21", "has_range": true, "start_ordinal": 739509, "end_ordinal": 739637, "project_key": "O2"}, {"id": 102, "parent_id": 62, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "OC Faster", "jira_key": "O2-108", "planned_hours": 0.0, "actual_hours": 133.53, "original_actual_hours": 133.53, "planned_start": "2025-09-15", "planned_end": "2025-11-07", "has_range": true, "start_ordinal": 739509, "end_ordinal": 739562, "project_key": "O2"}, {"id": 103, "parent_id": 62, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "Real-time Tag Streaming", "jira_key": "O2-793", "planned_hours": 416.0, "actual_hours": 232.0, "original_actual_hours": 232.0, "planned_start": "2025-12-23", "planned_end": "2026-02-06", "has_range": true, "start_ordinal": 739608, "end_ordinal": 739653, "project_key": "O2"}, {"id": 104, "parent_id": 62, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "Scheduled Pulls from Data Source (REST API)", "jira_key": "O2-94", "planned_hours": 0.0, "actual_hours": 24.0, "original_actual_hours": 24.0, "planned_start": "2025-09-22", "planned_end": "2025-10-15", "has_range": true, "start_ordinal": 739516, "end_ordinal": 739539, "project_key": "O2"}, {"id": 105, "parent_id": 62, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "Scheduled Pulls from Data Source (SFTP)", "jira_key": "O2-95", "planned_hours": 0.0, "actual_hours": 57.0, "original_actual_hours": 57.0, "planned_start": "2025-10-20", "planned_end": "2025-10-31", "has_range": true, "start_ordinal": 739544, "end_ordinal": 739555, "project_key": "O2"}, {"id": 106, "parent_id": 62, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "Scheduled Pulls from Data Source (SQL OT)", "jira_key": "O2-34", "planned_hours": 0.0, "actual_hours": 100.0, "original_actual_hours": 100.0, "planned_start": "2025-09-15", "planned_end": "2025-10-03", "has_range": true, "start_ordinal": 739509, "end_ordinal": 739527, "project_key": "O2"}, {"id": 107, "parent_id": 62, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "OmniAgent - Multi-agent system", "jira_key": "O2-1340", "planned_hours": 128.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "2026-02-02", "planned_end": "2026-02-28", "has_range": true, "start_ordinal": 739649, "end_ordinal": 739675, "project_key": "O2"}, {"id": 108, "parent_id": 62, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "OmniAgent Phase 2.0", "jira_key": "O2-151", "planned_hours": 0.0, "actual_hours": 136.0, "original_actual_hours": 136.0, "planned_start": "2025-09-22", "planned_end": "2025-10-17", "has_range": true, "start_ordinal": 739516, "end_ordinal": 739541, "project_key": "O2"}, {"id": 109, "parent_id": 62, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "OmniChat Integration with OmniAgent", "jira_key": "O2-1461", "planned_hours": 472.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "2026-02-23", "planned_end": "2026-03-26", "has_range": true, "start_ordinal": 739670, "end_ordinal": 739701, "project_key": "O2"}, {"id": 110, "parent_id": 62, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "Read API - Handling Deleted Sites", "jira_key": "O2-1453", "planned_hours": 56.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "2026-02-17", "planned_end": "2026-02-24", "has_range": true, "start_ordinal": 739664, "end_ordinal": 739671, "project_key": "O2"}, {"id": 111, "parent_id": 62, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "Read API - Nanosecond Support", "jira_key": "O2-1521", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "2026-01-01", "planned_end": "2026-01-15", "has_range": true, "start_ordinal": 739617, "end_ordinal": 739631, "project_key": "O2"}, {"id": 112, "parent_id": 62, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "Read API - Query Optimisation", "jira_key": "O2-1525", "planned_hours": 0.17, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "2026-01-02", "planned_end": "2026-01-23", "has_range": true, "start_ordinal": 739618, "end_ordinal": 739639, "project_key": "O2"}, {"id": 113, "parent_id": 62, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "Read API - Support for Long and Wide Response Layouts", "jira_key": "O2-1523", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "2026-02-04", "planned_end": "2026-02-06", "has_range": true, "start_ordinal": 739651, "end_ordinal": 739653, "project_key": "O2"}, {"id": 114, "parent_id": 62, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "Read API Enhancement", "jira_key": "O2-130", "planned_hours": 800.0, "actual_hours": 400.0, "original_actual_hours": 400.0, "planned_start": "2025-11-03", "planned_end": "2025-12-31", "has_range": true, "start_ordinal": 739558, "end_ordinal": 739616, "project_key": "O2"}, {"id": 115, "parent_id": 62, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "Trending in OmniAgent", "jira_key": "O2-861", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "2026-01-07", "planned_end": "2026-01-08", "has_range": true, "start_ordinal": 739623, "end_ordinal": 739624, "project_key": "O2"}, {"id": 116, "parent_id": 62, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "Trigger API", "jira_key": "O2-164", "planned_hours": 200.0, "actual_hours": 28.0, "original_actual_hours": 28.0, "planned_start": "2025-09-19", "planned_end": "2025-10-17", "has_range": true, "start_ordinal": 739513, "end_ordinal": 739541, "project_key": "O2"}, {"id": 117, "parent_id": 62, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "Technical Support", "jira_key": "O2-199", "planned_hours": 0.0, "actual_hours": 352.0, "original_actual_hours": 352.0, "planned_start": "2025-10-13", "planned_end": "2026-02-12", "has_range": true, "start_ordinal": 739537, "end_ordinal": 739659, "project_key": "O2"}, {"id": 118, "parent_id": 62, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "APX Health multiple asset configuration", "jira_key": "O2-1545", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "2026-02-23", "planned_end": "2026-02-25", "has_range": true, "start_ordinal": 739670, "end_ordinal": 739672, "project_key": "O2"}, {"id": 119, "parent_id": 62, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "OC Regression 2026", "jira_key": "O2-1395", "planned_hours": 2920.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "2026-01-01", "planned_end": "2026-12-31", "has_range": true, "start_ordinal": 739617, "end_ordinal": 739981, "project_key": "O2"}, {"id": 120, "parent_id": 62, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "OC Security - Azure Key Vault Integration", "jira_key": "O2-1460", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "2025-10-06", "planned_end": "2025-12-05", "has_range": true, "start_ordinal": 739530, "end_ordinal": 739590, "project_key": "O2"}, {"id": 121, "parent_id": 62, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "OC Security - Defender for Cloud", "jira_key": "O2-1459", "planned_hours": 40.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "2026-02-02", "planned_end": "2026-02-27", "has_range": true, "start_ordinal": 739649, "end_ordinal": 739674, "project_key": "O2"}, {"id": 122, "parent_id": 62, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": "OmniOEE", "jira_key": "O2-1318", "planned_hours": 0.0, "actual_hours": 48.0, "original_actual_hours": 48.0, "planned_start": "2026-01-28", "planned_end": "2026-01-30", "has_range": true, "start_ordinal": 739644, "end_ordinal": 739646, "project_key": "O2"}, {"id": 123, "parent_id": 61, "level": 2, "row_kind": "group", "group_type": "not_planned", "rmi_label": "Not Planned Yet Epics", "planned_hours": 200.0, "actual_hours": 21.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "O2"}, {"id": 124, "parent_id": 123, "level": 3, "row_kind": "epic", "group_type": "not_planned", "rmi_label": "Batch/BPM V5 (Code reusability)", "jira_key": "O2-10", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "O2"}, {"id": 125, "parent_id": 123, "level": 3, "row_kind": "epic", "group_type": "not_planned", "rmi_label": "Batch/BPM V6 (SQL)", "jira_key": "O2-11", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "O2"}, {"id": 126, "parent_id": 123, "level": 3, "row_kind": "epic", "group_type": "not_planned", "rmi_label": "Cooling Tower Advisor", "jira_key": "O2-461", "planned_hours": 0.0, "actual_hours": 16.0, "original_actual_hours": 16.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "O2"}, {"id": 127, "parent_id": 123, "level": 3, "row_kind": "epic", "group_type": "not_planned", "rmi_label": "Data Anomaly V2", "jira_key": "O2-826", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "O2"}, {"id": 128, "parent_id": 123, "level": 3, "row_kind": "epic", "group_type": "not_planned", "rmi_label": "Data Anomaly V3", "jira_key": "O2-827", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "O2"}, {"id": 129, "parent_id": 123, "level": 3, "row_kind": "epic", "group_type": "not_planned", "rmi_label": "Direct Value Comparison", "jira_key": "O2-821", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "O2"}, {"id": 130, "parent_id": 123, "level": 3, "row_kind": "epic", "group_type": "not_planned", "rmi_label": "Enterprise connector (MySQL)", "jira_key": "O2-812", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "O2"}, {"id": 131, "parent_id": 123, "level": 3, "row_kind": "epic", "group_type": "not_planned", "rmi_label": "Enterprise connector (Oracle)", "jira_key": "O2-814", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "O2"}, {"id": 132, "parent_id": 123, "level": 3, "row_kind": "epic", "group_type": "not_planned", "rmi_label": "Enterprise Connector Enhancement (Support for upsert/injestion pointer)", "jira_key": "O2-815", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "O2"}, {"id": 133, "parent_id": 123, "level": 3, "row_kind": "epic", "group_type": "not_planned", "rmi_label": "Enterprise connectors Enhancement (use existing IT Table)", "jira_key": "O2-816", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "O2"}, {"id": 134, "parent_id": 123, "level": 3, "row_kind": "epic", "group_type": "not_planned", "rmi_label": "Enterprise Connectors External Api Trigger Support (SAP,Azure Sql, ODBC)", "jira_key": "O2-811", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "O2"}, {"id": 135, "parent_id": 123, "level": 3, "row_kind": "epic", "group_type": "not_planned", "rmi_label": "Ingestion Time-based Data Alarms", "jira_key": "O2-1625", "planned_hours": 200.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "O2"}, {"id": 136, "parent_id": 123, "level": 3, "row_kind": "epic", "group_type": "not_planned", "rmi_label": "IT/OT Conversion for Enterprise Connectors", "jira_key": "O2-817", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "O2"}, {"id": 137, "parent_id": 123, "level": 3, "row_kind": "epic", "group_type": "not_planned", "rmi_label": "OC Trender Enhancements", "jira_key": "O2-456", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "O2"}, {"id": 138, "parent_id": 123, "level": 3, "row_kind": "epic", "group_type": "not_planned", "rmi_label": "Pumps Operating OC Advisor (like DEWA)", "jira_key": "O2-462", "planned_hours": 0.0, "actual_hours": 5.0, "original_actual_hours": 5.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "O2"}, {"id": 139, "parent_id": 123, "level": 3, "row_kind": "epic", "group_type": "not_planned", "rmi_label": "Support for Job Priority in batch/bpm (high/Meduim/low)", "jira_key": "O2-809", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "O2"}, {"id": 140, "parent_id": 123, "level": 3, "row_kind": "epic", "group_type": "not_planned", "rmi_label": "Support for SQL Monaco IDE", "jira_key": "O2-819", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "O2"}, {"id": 141, "parent_id": 123, "level": 3, "row_kind": "epic", "group_type": "not_planned", "rmi_label": "Unified Notification Engine with Templating", "jira_key": "O2-823", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "O2"}, {"id": 142, "parent_id": 123, "level": 3, "row_kind": "epic", "group_type": "not_planned", "rmi_label": "User Activity Logs + Dashboards", "jira_key": "O2-822", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "O2"}, {"id": 143, "parent_id": 123, "level": 3, "row_kind": "epic", "group_type": "not_planned", "rmi_label": "CSV Bulk Import V2", "jira_key": "O2-825", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "O2"}, {"id": 144, "parent_id": 123, "level": 3, "row_kind": "epic", "group_type": "not_planned", "rmi_label": "Support for SQL in Batch/Bpm", "jira_key": "O2-820", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "O2"}, {"id": 145, "parent_id": 123, "level": 3, "row_kind": "epic", "group_type": "not_planned", "rmi_label": "Unified Notification", "jira_key": "O2-36", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "O2"}, {"id": 146, "parent_id": 123, "level": 3, "row_kind": "epic", "group_type": "not_planned", "rmi_label": "1", "jira_key": "O2-1200", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "O2"}, {"id": 147, "parent_id": 123, "level": 3, "row_kind": "epic", "group_type": "not_planned", "rmi_label": "No RMI", "jira_key": "", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "O2"}, {"id": 148, "parent_id": 123, "level": 3, "row_kind": "epic", "group_type": "not_planned", "rmi_label": "Omni OEE", "jira_key": "O2-1204", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "O2"}, {"id": 149, "parent_id": 123, "level": 3, "row_kind": "epic", "group_type": "not_planned", "rmi_label": "OmniEMS pre-URS working (P)", "jira_key": "O2-1621", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "O2"}, {"id": 150, "parent_id": 123, "level": 3, "row_kind": "epic", "group_type": "not_planned", "rmi_label": "test", "jira_key": "O2-1199", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "O2"}, {"id": 151, "parent_id": null, "level": 1, "row_kind": "project", "group_type": "", "rmi_label": "ODL - ODL Miscellaneous", "planned_hours": 0.0, "actual_hours": 3.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "ODL"}, {"id": 152, "parent_id": 151, "level": 2, "row_kind": "group", "group_type": "planned", "rmi_label": "Planned Epics", "planned_hours": 0, "actual_hours": 0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "ODL"}, {"id": 153, "parent_id": 151, "level": 2, "row_kind": "group", "group_type": "not_planned", "rmi_label": "Not Planned Yet Epics", "planned_hours": 0.0, "actual_hours": 3.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "ODL"}, {"id": 154, "parent_id": 153, "level": 3, "row_kind": "epic", "group_type": "not_planned", "rmi_label": "DEWA Pumps Operating Philosophy", "jira_key": "ODL-4", "planned_hours": 0.0, "actual_hours": 1.0, "original_actual_hours": 1.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "ODL"}, {"id": 155, "parent_id": 153, "level": 3, "row_kind": "epic", "group_type": "not_planned", "rmi_label": "EPR Reporting", "jira_key": "ODL-46", "planned_hours": 0.0, "actual_hours": 2.0, "original_actual_hours": 2.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "ODL"}, {"id": 156, "parent_id": 153, "level": 3, "row_kind": "epic", "group_type": "not_planned", "rmi_label": "General Research work", "jira_key": "ODL-64", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "ODL"}, {"id": 157, "parent_id": 153, "level": 3, "row_kind": "epic", "group_type": "not_planned", "rmi_label": "Handover Sessions", "jira_key": "ODL-63", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "ODL"}, {"id": 158, "parent_id": 153, "level": 3, "row_kind": "epic", "group_type": "not_planned", "rmi_label": "No RMI", "jira_key": "", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "ODL"}, {"id": 159, "parent_id": null, "level": 1, "row_kind": "project", "group_type": "", "rmi_label": "RLT - RLT", "planned_hours": 0.0, "actual_hours": 0.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "RLT"}, {"id": 160, "parent_id": 159, "level": 2, "row_kind": "group", "group_type": "planned", "rmi_label": "Planned Epics", "planned_hours": 0, "actual_hours": 0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "RLT"}, {"id": 161, "parent_id": 159, "level": 2, "row_kind": "group", "group_type": "not_planned", "rmi_label": "Not Planned Yet Epics", "planned_hours": 0.0, "actual_hours": 0.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "RLT"}, {"id": 162, "parent_id": 161, "level": 3, "row_kind": "epic", "group_type": "not_planned", "rmi_label": "No RMI", "jira_key": "", "planned_hours": 0.0, "actual_hours": 0.0, "original_actual_hours": 0.0, "planned_start": "", "planned_end": "", "has_range": false, "start_ordinal": "", "end_ordinal": "", "project_key": "RLT"}], "source_file": "E:\\JIRA SCRIPT\\nested view.xlsx", "default_from": "2026-01-01", "default_to": "2026-02-27", "generated_at": "2026-02-27 10:12 UTC"},rows=Array.isArray(d.rows)?d.rows:[];
+const byId=new Map(),kids=new Map(),collapsed=new Set();
+for(const r of rows){byId.set(r.id,r);const p=r.parent_id||null;if(!kids.has(p))kids.set(p,[]);kids.get(p).push(r.id)}
+const DAY=86400000,MINW=920,DAYPX=12;
+const $=id=>document.getElementById(id);
+const gen=$("gen"),src=$("src"),ve=$("ve"),from=$("from"),to=$("to"),root=$("root"),modeSel=$("actual-hours-mode"),statusEl=$("actual-hours-status");
+const sp=$("sp"),se=$("se"),su=$("su"),sh=$("sh"),shu=$("shu"),scap=$("scap"),sact=$("sact");
+const ACTUAL_MODE_STORAGE_KEY="actual-hours-mode:planned-rmis";
+const ACTUAL_MODE_DEFAULT="log_date";
+const ACTUAL_AGG_ENDPOINT="/api/actual-hours/aggregate";
+gen.textContent=d.generated_at||"-";src.textContent=d.source_file||"-";from.value=d.default_from||"";to.value=d.default_to||"";
+const storedMode=localStorage.getItem(ACTUAL_MODE_STORAGE_KEY);
+if(modeSel){modeSel.value=(storedMode==="planned_dates"||storedMode==="log_date")?storedMode:ACTUAL_MODE_DEFAULT;}
+const parseIso=s=>{if(!s)return null;const x=new Date(`${s}T00:00:00`);return Number.isNaN(x.getTime())?null:x};
+const iso=x=>`${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,"0")}-${String(x.getDate()).padStart(2,"0")}`;
+const num=v=>{const n=Number(v);return Number.isFinite(n)?n:0};
+const fh=v=>{const n=Number(v);return Number.isFinite(n)?String(n.toFixed(2)).replace(/\.00$/,""):"-"};
+const setStatus=t=>{if(statusEl)statusEl.textContent=String(t||"");};
+const hasChildren=id=>(kids.get(id)||[]).length>0;
+const overlap=(a,b,c,d)=>a<=d&&b>=c;
+const addDays=(x,d)=>new Date(x.getTime()+d*DAY);
+const mStart=d=>new Date(d.getFullYear(),d.getMonth(),1);
+const mEnd=d=>new Date(d.getFullYear(),d.getMonth()+1,0);
+const wStart=d=>{const x=new Date(d.getTime());const day=x.getDay();x.setDate(x.getDate()-(day===0?6:day-1));x.setHours(0,0,0,0);return x};
+function expanded(row){let cur=row;while(cur&&cur.parent_id){if(collapsed.has(cur.parent_id))return false;cur=byId.get(cur.parent_id)||null}return true}
+function collectAnc(id,keep){let cur=byId.get(id);while(cur&&cur.parent_id){keep.add(cur.parent_id);cur=byId.get(cur.parent_id)||null}}
+function descendantsOf(id){const out=[];const stack=[id];while(stack.length){const cur=stack.pop();for(const child of (kids.get(cur)||[])){out.push(child);stack.push(child)}}return out}
+function rangeForFocus(id){const target=byId.get(id);if(!target)return null;let min=null,max=null;const consider=row=>{if(row&&row.has_range&&Number.isFinite(Number(row.start_ordinal))&&Number.isFinite(Number(row.end_ordinal))){const s=Number(row.start_ordinal),e=Number(row.end_ordinal);min=min===null?s:Math.min(min,s);max=max===null?e:Math.max(max,e)}};consider(target);for(const did of descendantsOf(id)){consider(byId.get(did))}if(min===null||max===null)return null;return{min,max}}
+function focusRow(id){const rg=rangeForFocus(id);if(!rg)return;from.value=iso(new Date((rg.min-719163)*DAY));to.value=iso(new Date((rg.max-719163)*DAY));render();setTimeout(()=>{const b=root.querySelector(`[data-bar-id='${id}']`)||root.querySelector(`[data-row-id='${id}'] .bar`);if(b&&b.scrollIntoView)b.scrollIntoView({behavior:"smooth",block:"nearest",inline:"center"})},0)}
+function parseRange(){let a=parseIso(from.value),b=parseIso(to.value);if(!a)a=parseIso(d.default_from);if(!b)b=parseIso(d.default_to);if(!a||!b||b<a){const n=new Date();a=new Date(n.getFullYear(),0,1);b=new Date(n.getFullYear(),n.getMonth(),n.getDate())}from.value=iso(a);to.value=iso(b);return{a,b}}
+function monthBlocks(a,b){const out=[],td=Math.max(1,Math.floor((b-a)/DAY)+1);let c=mStart(a);while(c<=b){const s=new Date(c.getTime()),e=mEnd(c),cs=s<a?a:s,ce=e>b?b:e,ld=Math.floor((cs-a)/DAY),wd=Math.floor((ce-cs)/DAY)+1;out.push({l:s.toLocaleDateString(undefined,{month:"short",year:"numeric"}),x:(ld/td)*100,w:(wd/td)*100});c=new Date(c.getFullYear(),c.getMonth()+1,1)}return out}
+function weekBlocks(a,b){const out=[],td=Math.max(1,Math.floor((b-a)/DAY)+1);let c=wStart(a);while(c<=b){const s=new Date(c.getTime()),e=addDays(s,6),cs=s<a?a:s,ce=e>b?b:e,ld=Math.floor((cs-a)/DAY),wd=Math.floor((ce-cs)/DAY)+1;out.push({l:`Wk ${cs.toLocaleDateString(undefined,{day:"2-digit",month:"short"})}`,x:(ld/td)*100,w:(wd/td)*100});c=addDays(c,7)}return out}
+function visibleRows(r){const keep=new Set();for(const x of rows){if(x.row_kind!=="epic")continue;if(x.group_type==="not_planned"){keep.add(x.id);collectAnc(x.id,keep);continue}const s=parseIso(x.planned_start),e=parseIso(x.planned_end);if(s&&e&&overlap(s,e,r.a,r.b)){keep.add(x.id);collectAnc(x.id,keep)}}return rows.filter(x=>keep.has(x.id)&&expanded(x))}
+async function fetchActualHoursByMode(fromIso,toIso,mode){const query=`from=${encodeURIComponent(fromIso)}&to=${encodeURIComponent(toIso)}&mode=${encodeURIComponent(mode)}&report=planned_rmis`;const response=await fetch(`${ACTUAL_AGG_ENDPOINT}?${query}`,{method:"GET"});const payload=await response.json().catch(()=>({}));if(!response.ok||!payload||payload.ok===false){throw new Error(String(payload&&payload.error||"Failed to fetch actual hours."));}return payload;}
+function applyFetchedActualHours(payload){const epicHours=payload&&payload.epic_hours_by_issue&&typeof payload.epic_hours_by_issue==="object"?payload.epic_hours_by_issue:{};for(const row of rows){if(row.row_kind!=="epic")continue;const key=String(row&&row.jira_key||"").trim().toUpperCase();if(key){row.actual_hours=num(epicHours[key]);}else{row.actual_hours=num(row.original_actual_hours);}}}
+function render(){const r=parseRange();const vr=visibleRows(r);if(!vr.length){root.innerHTML="<div class='empty'>No rows found for selected filters.</div>";ve.textContent=sp.textContent=se.textContent=su.textContent="0";sh.textContent=shu.textContent=scap.textContent=sact.textContent="0";return}
+const ep=vr.filter(x=>x.row_kind==="epic"),pep=ep.filter(x=>x.group_type==="planned"),uep=ep.filter(x=>x.group_type==="not_planned");
+const pids=new Set(ep.map(x=>{const g=byId.get(x.parent_id),p=g&&g.row_kind==="group"?byId.get(g.parent_id):null;return p?p.id:null}).filter(x=>x!==null));
+const plannedHours=pep.reduce((s,x)=>s+num(x.planned_hours),0),unplannedHours=uep.reduce((s,x)=>s+num(x.planned_hours),0),actualHours=ep.reduce((s,x)=>s+num(x.actual_hours),0);
+ve.textContent=String(ep.length);sp.textContent=String(pids.size);se.textContent=String(pep.length);su.textContent=String(uep.length);sh.textContent=fh(plannedHours);shu.textContent=fh(unplannedHours);scap.textContent=fh(plannedHours+unplannedHours);sact.textContent=fh(actualHours);
+const rr=vr.filter(x=>x.has_range&&Number.isFinite(Number(x.start_ordinal))&&Number.isFinite(Number(x.end_ordinal)));
+const min=rr.length?Math.min(...rr.map(x=>Number(x.start_ordinal))):(Math.floor(r.a.getTime()/DAY)+719163);
+const max=rr.length?Math.max(...rr.map(x=>Number(x.end_ordinal))):(Math.floor(r.b.getTime()/DAY)+719163);
+const days=Math.max(1,(max-min)+1),tw=Math.max(MINW,Math.floor(days*DAYPX)),a=new Date((min-719163)*DAY),b=new Date((max-719163)*DAY);
+const mh=monthBlocks(a,b).map(m=>`<div class='mb' style='left:${m.x}%;width:${m.w}%'>${m.l}</div>`).join(""),wb=weekBlocks(a,b),wh=wb.map(w=>`<div class='wb' style='left:${w.x}%;width:${w.w}%'>${w.l}</div>`).join(""),wln=wb.map(w=>`<span class='wl' style='left:${w.x}%'></span>`).join("");
+const rh=vr.map(x=>{const lv=Number(x.level||1),pad=Math.max(0,(lv-1)*20),tg=hasChildren(x.id)?`<button class='toggle' data-i='${x.id}' type='button'>${collapsed.has(x.id)?"+":"-"}</button>`:"<button class='toggle placeholder' type='button' disabled>+</button>",rc=x.row_kind==="project"?"row-project":(x.row_kind==="group"?"row-group":"row-epic"),gc=x.group_type==="planned"?"group-planned":(x.group_type==="not_planned"?"group-not-planned":""),chip=x.row_kind==="epic"?(x.group_type==="planned"?"<span class='ch p'>Planned</span>":"<span class='ch u'>Not Planned</span>"):"";
+let bar="";if(x.has_range&&Number.isFinite(Number(x.start_ordinal))&&Number.isFinite(Number(x.end_ordinal))){const ld=Number(x.start_ordinal)-min,sd=(Number(x.end_ordinal)-Number(x.start_ordinal))+1,l=(ld/days)*100,w=(Math.max(1,sd)/days)*100,bc=x.row_kind==="project"?"bar project":"bar";bar=`<div class='${bc}' data-bar-id='${x.id}' style='left:${l}%;width:${w}%' title='${x.rmi_label||""}'></div>`}else if(x.row_kind==="epic"&&x.group_type==="not_planned"){bar="<div class='bar no' style='left:0;width:42px' title='Not planned yet'></div>"}
+const label=(x.row_kind==="epic"||x.row_kind==="project")?`<button class='focus-link' type='button' data-focus-id='${x.id}' title='Focus timeline'>${x.rmi_label||""}</button>`:`<span class='lbl' title='${x.rmi_label||""}'>${x.rmi_label||""}</span>`;
+return `<div class='r ${rc} ${gc}' data-row-id='${x.id}'><div class='c s1'><div class='rmi' style='padding-left:${pad}px'>${tg}${label}${chip}</div></div><div class='c s2'>${fh(x.planned_hours)}</div><div class='c tc'><div class='slot' style='width:${tw}px'>${wln}${bar}</div></div></div>`}).join("");
+root.innerHTML=`<div style='width:calc(var(--left1)+var(--left2)+${tw}px)'><div class='r h'><div class='c s1'>RMIs</div><div class='c s2'>Planned Hours</div><div class='c th'><div class='months'>${mh}</div><div class='weeks'>${wh}</div></div></div>${rh}</div>`;
+for(const b of root.querySelectorAll("[data-i]")){b.onclick=()=>{const id=Number(b.getAttribute("data-i"));if(collapsed.has(id))collapsed.delete(id);else collapsed.add(id);render()}}
+for(const f of root.querySelectorAll("[data-focus-id]")){f.onclick=()=>{const id=Number(f.getAttribute("data-focus-id"));if(Number.isFinite(id))focusRow(id)}}
+}
+async function applyActualMode(){const r=parseRange();const mode=modeSel?(String(modeSel.value||ACTUAL_MODE_DEFAULT)):"log_date";if(modeSel){localStorage.setItem(ACTUAL_MODE_STORAGE_KEY,mode);}if(!(window.location.protocol||"").startsWith("http")){setStatus("Static mode: API unavailable, using embedded actual hours.");render();return;}try{setStatus("Recomputing actual hours...");const payload=await fetchActualHoursByMode(iso(r.a),iso(r.b),mode);applyFetchedActualHours(payload);setStatus("");}catch(err){setStatus(String(err&&err.message||err||"Failed to fetch actual hours."));}render();}
+$("apply").onclick=()=>{applyActualMode();};$("reset").onclick=()=>{from.value=d.default_from||"";to.value=d.default_to||"";applyActualMode();};$("collapse").onclick=()=>{collapsed.clear();for(const r of rows){if(r.row_kind==="project"&&hasChildren(r.id))collapsed.add(r.id)}render()};$("expand").onclick=()=>{collapsed.clear();render()};if(modeSel){modeSel.addEventListener("change",()=>{applyActualMode();});}applyActualMode();
+</script>
+<script src='shared-nav.js'></script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!-- codex-info-drawer-start -->
+<!-- codex-info-drawer-v1 -->
+<style>
+.report-info-inline-btn {
+  margin-left: 6px;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 1px solid #94a3b8;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+}
+.report-info-inline-btn:hover { background: #eef2ff; border-color: #64748b; }
+#report-info-drawer-backdrop {
+  position: fixed; inset: 0; background: rgba(15,23,42,.45); opacity: 0; visibility: hidden;
+  transition: opacity .16s ease; z-index: 2500;
+}
+#report-info-drawer-backdrop.is-open { opacity: 1; visibility: visible; }
+#report-info-drawer {
+  position: fixed; right: 0; top: 0; height: 100vh; width: min(520px, 94vw);
+  background: #ffffff; border-left: 1px solid #cbd5e1; box-shadow: -16px 0 30px rgba(15,23,42,.18);
+  transform: translateX(105%); transition: transform .18s ease; z-index: 2501; display: flex; flex-direction: column;
+}
+#report-info-drawer.is-open { transform: translateX(0); }
+.report-info-drawer-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 12px 14px; border-bottom: 1px solid #e2e8f0; background: linear-gradient(180deg,#f8fafc,#f1f5f9);
+}
+.report-info-drawer-title { margin: 0; font-size: 1rem; color: #0f172a; }
+.report-info-drawer-close {
+  border: 1px solid #94a3b8; background: #fff; color: #334155; border-radius: 8px; padding: 6px 8px; cursor: pointer; font-weight: 700;
+}
+#report-info-drawer-body { padding: 12px 14px; overflow: auto; color: #1f2937; font-size: .86rem; line-height: 1.45; }
+.report-info-section { margin-bottom: 10px; }
+.report-info-section h4 { margin: 0 0 4px; font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; color: #475569; }
+.report-info-section p { margin: 0; }
+.report-info-list { margin: 0; padding-left: 18px; }
+.report-info-list li { margin: 0 0 3px; }
+body.report-info-drawer-open { overflow: hidden; }
+</style>
+<div id="report-info-drawer-backdrop" aria-hidden="true"></div>
+<aside id="report-info-drawer" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="report-info-drawer-title">
+  <div class="report-info-drawer-head">
+    <h3 class="report-info-drawer-title" id="report-info-drawer-title">Field Information</h3>
+    <button type="button" class="report-info-drawer-close" id="report-info-drawer-close">Close</button>
+  </div>
+  <div id="report-info-drawer-body"></div>
+</aside>
+<script>
+(function () {
+  const seeded = [];
+  const byId = Object.create(null);
+  function txt(v) { return String(v == null ? "" : v).trim(); }
+  function asArr(v) { return Array.isArray(v) ? v : []; }
+  function slug(v) { return txt(v).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "info"; }
+  function listHtml(values) {
+    const vals = asArr(values).map((x) => txt(x)).filter(Boolean);
+    if (!vals.length) return "<p>-</p>";
+    return "<ul class=\"report-info-list\">" + vals.map((x) => "<li>" + esc(x) + "</li>").join("") + "</ul>";
+  }
+  function esc(v) {
+    return txt(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+  function addCatalog(item) {
+    if (!item || !txt(item.id)) return;
+    byId[item.id] = Object.assign({
+      id: txt(item.id), label: "Field", report: txt(window.__activeReportId || ""),
+      ui_targets: [], definition: "", formula: "", ingredients: [],
+      business_validations: [], field_linkages: [], cross_report_linkages: [],
+      data_sources: [], leadership_interpretation: ""
+    }, item);
+  }
+  for (const item of asArr(seeded)) addCatalog(item);
+  function ensureInfoButton(host, infoId, label) {
+    if (!host || !txt(infoId)) return;
+    if (host.querySelector && host.querySelector('[data-info-id="' + infoId + '"]')) return;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "report-info-inline-btn";
+    btn.textContent = "i";
+    btn.setAttribute("data-info-id", infoId);
+    btn.setAttribute("aria-label", (txt(label) || "Field") + " information");
+    host.appendChild(btn);
+  }
+  function extractFromTooltips() {
+    const defs = [
+      [".score-info", ".score-info-tip"],
+      [".kpi-info", ".kpi-info-tip"],
+      [".stat-info", ".stat-info-tip"],
+      [".card-i-wrap", ".card-i-tip"]
+    ];
+    for (const pair of defs) {
+      const wrapSel = pair[0];
+      const tipSel = pair[1];
+      const wraps = Array.from(document.querySelectorAll(wrapSel));
+      for (const wrap of wraps) {
+        const tip = wrap.querySelector(tipSel);
+        const raw = txt(tip ? tip.textContent : "");
+        const parentLabelNode = wrap.closest(".score-label,.label,.k,.story-title,h3,h4,.card,.kpi,.stat,.summary-card");
+        const label = txt(parentLabelNode ? parentLabelNode.textContent : "");
+        const id = wrap.getAttribute("data-info-id") || slug((window.__activeReportId || "report") + "-" + (label || raw.slice(0, 36)));
+        wrap.setAttribute("data-info-id", id);
+        wrap.setAttribute("role", "button");
+        wrap.setAttribute("tabindex", "0");
+        if (tip) tip.style.display = "none";
+        if (!byId[id]) {
+          addCatalog({
+            id: id,
+            label: label || "Field",
+            report: txt(window.__activeReportId || ""),
+            ui_targets: [],
+            definition: "Auto-captured from report tooltip content.",
+            formula: raw.split("\n")[0] || raw,
+            ingredients: [],
+            business_validations: [],
+            field_linkages: [],
+            cross_report_linkages: [],
+            data_sources: [],
+            leadership_interpretation: raw
+          });
+        }
+      }
+    }
+  }
+  extractFromTooltips();
+  for (const item of Object.values(byId)) {
+    for (const selector of asArr(item.ui_targets)) {
+      try {
+        const nodes = Array.from(document.querySelectorAll(selector));
+        for (const node of nodes) {
+          const target = node.querySelector ? (node.querySelector(".label,.k,.score-label,h2,h3,h4,th") || node) : node;
+          ensureInfoButton(target, item.id, item.label);
+        }
+      } catch (_err) {}
+    }
+  }
+  const backdrop = document.getElementById("report-info-drawer-backdrop");
+  const drawer = document.getElementById("report-info-drawer");
+  const drawerBody = document.getElementById("report-info-drawer-body");
+  const closeBtn = document.getElementById("report-info-drawer-close");
+  let activeId = "";
+  let lastFocus = null;
+  function sectionHtml(title, contentHtml) {
+    return '<section class="report-info-section"><h4>' + esc(title) + '</h4>' + contentHtml + '</section>';
+  }
+  function render(item) {
+    if (!item) {
+      drawerBody.innerHTML = "<p>No information is configured for this field yet.</p>";
+      return;
+    }
+    drawerBody.innerHTML =
+      sectionHtml("Definition", "<p>" + esc(item.definition || "-") + "</p>") +
+      sectionHtml("Formula", "<p>" + esc(item.formula || "-") + "</p>") +
+      sectionHtml("Ingredients", listHtml(item.ingredients)) +
+      sectionHtml("Business Validations", listHtml(item.business_validations)) +
+      sectionHtml("Linked Fields (This Report)", listHtml(item.field_linkages)) +
+      sectionHtml("Cross-Report Linkages", listHtml(item.cross_report_linkages)) +
+      sectionHtml("Data Sources", listHtml(item.data_sources)) +
+      sectionHtml("Leadership Interpretation", "<p>" + esc(item.leadership_interpretation || "-") + "</p>");
+    const title = document.getElementById("report-info-drawer-title");
+    if (title) title.textContent = txt(item.label) || "Field Information";
+  }
+  function openDrawer(id) {
+    const item = byId[id];
+    activeId = id;
+    lastFocus = document.activeElement;
+    render(item);
+    backdrop.classList.add("is-open");
+    drawer.classList.add("is-open");
+    drawer.setAttribute("aria-hidden", "false");
+    document.body.classList.add("report-info-drawer-open");
+    if (closeBtn) closeBtn.focus();
+  }
+  function closeDrawer() {
+    activeId = "";
+    backdrop.classList.remove("is-open");
+    drawer.classList.remove("is-open");
+    drawer.setAttribute("aria-hidden", "true");
+    document.body.classList.remove("report-info-drawer-open");
+    if (lastFocus && lastFocus.focus) lastFocus.focus();
+  }
+  function triggerFromEvent(e) {
+    const el = e.target.closest("[data-info-id]");
+    if (!el) return;
+    const id = txt(el.getAttribute("data-info-id"));
+    if (!id) return;
+    e.preventDefault();
+    openDrawer(id);
+  }
+  document.addEventListener("click", triggerFromEvent);
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && activeId) {
+      e.preventDefault();
+      closeDrawer();
+      return;
+    }
+    const inInfo = e.target && e.target.closest && e.target.closest("[data-info-id]");
+    if (inInfo && (e.key === "Enter" || e.key === " ")) {
+      e.preventDefault();
+      openDrawer(txt(inInfo.getAttribute("data-info-id")));
+    }
+    if (!activeId || e.key !== "Tab") return;
+    const f = drawer.querySelectorAll("button,[href],[tabindex]:not([tabindex='-1'])");
+    const nodes = Array.from(f).filter((x) => !x.disabled);
+    if (!nodes.length) return;
+    const first = nodes[0];
+    const last = nodes[nodes.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  });
+  closeBtn.addEventListener("click", closeDrawer);
+  backdrop.addEventListener("click", closeDrawer);
+  window.reportInfoCatalog = Object.values(byId);
+})();
+</script>
+<!-- codex-info-drawer-end -->
+
+
+<!-- codex-refresh-widget-start -->
+<!-- codex-refresh-widget-v2 -->
+<style>
+@import url("https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,500,0,0");
+#codex-refresh-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+#codex-refresh-btn {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  box-sizing: border-box;
+  border: 1px solid rgba(126, 214, 242, 0.65);
+  background: rgba(14, 116, 144, 0.58);
+  color: #fff;
+  border-radius: 9px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+}
+#codex-refresh-btn[disabled] {
+  cursor: not-allowed;
+  opacity: 0.8;
+}
+#codex-refresh-btn .material-symbols-outlined {
+  font-size: 18px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.app-shell.sidebar-collapsed #codex-refresh-btn,
+.unified-nav.is-collapsed #codex-refresh-btn {
+  padding-left: 8px;
+  padding-right: 8px;
+  gap: 0;
+  justify-content: center;
+}
+.app-shell.sidebar-collapsed #codex-refresh-btn-label,
+.unified-nav.is-collapsed #codex-refresh-btn-label {
+  display: none;
+}
+.app-shell.sidebar-collapsed #codex-refresh-status,
+.unified-nav.is-collapsed #codex-refresh-status {
+  display: none;
+}
+#codex-refresh-status {
+  min-height: 14px;
+  font-size: 11px;
+  color: rgba(219, 246, 255, 0.9);
+  text-align: left;
+}
+</style>
+<div id="codex-refresh-wrap" aria-live="polite">
+  <button id="codex-refresh-btn" type="button">
+    <span class="material-symbols-outlined" aria-hidden="true">refresh</span>
+    <span id="codex-refresh-btn-label">Refresh</span>
+  </button>
+  <div id="codex-refresh-status"></div>
+</div>
+<script>
+(function () {
+  const reportId = 'planned_rmis';
+  const endpointPath = "/api/report/refresh";
+  const wrap = document.getElementById("codex-refresh-wrap");
+  const btn = document.getElementById("codex-refresh-btn");
+  const btnLabel = document.getElementById("codex-refresh-btn-label");
+  const status = document.getElementById("codex-refresh-status");
+  if (!wrap || !btn || !btnLabel || !status || !reportId) return;
+
+  function mountRefreshInNav() {
+    const navTargets = [
+      ".app-sidebar .sidebar-nav",
+      ".unified-nav .unified-nav-list",
+      ".sidebar-nav",
+      ".unified-nav-list",
+    ];
+    for (const selector of navTargets) {
+      const target = document.querySelector(selector);
+      if (target) {
+        target.appendChild(wrap);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  if (!mountRefreshInNav()) {
+    const observer = new MutationObserver(function () {
+      if (mountRefreshInNav()) {
+        observer.disconnect();
+      }
+    });
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+    window.setTimeout(function () { observer.disconnect(); }, 5000);
+  }
+
+  function setBusy(isBusy) {
+    btn.disabled = isBusy;
+    btnLabel.textContent = isBusy ? "Refreshing..." : "Refresh";
+  }
+
+  function setStatus(msg) {
+    status.textContent = msg || "";
+  }
+
+  function endpointCandidates() {
+    if (window.location.protocol === "http:" || window.location.protocol === "https:") {
+      return [endpointPath];
+    }
+    const savedOrigin = String(localStorage.getItem("codex-report-server-origin") || "").trim();
+    const defaults = [
+      "http://127.0.0.1:8000",
+      "http://localhost:8000",
+      "http://127.0.0.1:5000",
+      "http://localhost:5000",
+    ];
+    const origins = [savedOrigin, ...defaults]
+      .map((item) => String(item || "").trim().replace(/\/$/, ""))
+      .filter(Boolean);
+    return Array.from(new Set(origins)).map((origin) => origin + endpointPath);
+  }
+
+  async function postRefresh(body) {
+    const endpoints = endpointCandidates();
+    let lastError = "Failed to fetch";
+    for (const endpoint of endpoints) {
+      try {
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (endpoint.startsWith("http")) {
+          try {
+            localStorage.setItem("codex-report-server-origin", new URL(endpoint).origin);
+          } catch (_err) {}
+        }
+        return response;
+      } catch (err) {
+        lastError = (err && err.message) ? err.message : String(err);
+      }
+    }
+    throw new Error(lastError);
+  }
+
+  btn.addEventListener("click", async function () {
+    setBusy(true);
+    setStatus("Running scripts...");
+    try {
+      const response = await postRefresh({ report: reportId });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) {
+        const msg = payload.error || "Refresh failed.";
+        setStatus(msg);
+        alert(msg);
+        return;
+      }
+      const ts = payload.completed_at || "";
+      setStatus(ts ? ("Updated: " + ts) : "Updated.");
+      window.location.reload();
+    } catch (err) {
+      const base = (err && err.message) ? err.message : String(err);
+      const hint = "If report is opened from file path, use server URL like http://127.0.0.1:8000/dashboard.html";
+      const msg = base ? (base + ". " + hint) : hint;
+      setStatus(msg);
+      alert(msg);
+    } finally {
+      setBusy(false);
+    }
+  });
+})();
+</script>
+<!-- codex-refresh-widget-end -->
+
+</body>
+</html>

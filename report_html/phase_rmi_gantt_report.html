@@ -1,0 +1,1122 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Phase Owner RMI Gantt</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,500,0,0">
+  <style>
+    :root {
+      --bg: #eef3f7;
+      --panel: #ffffff;
+      --line: #d6e1ea;
+      --text: #1f2937;
+      --muted: #5f6f7f;
+      --title: #0c4054;
+      --head: #0f4c5c;
+      --head-text: #ffffff;
+      --phase-col: 260px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--text);
+      font-family: "Segoe UI", Tahoma, Verdana, sans-serif;
+      background:
+        radial-gradient(1000px 320px at 8% -10%, #dbeef7 0%, transparent 62%),
+        linear-gradient(180deg, #f4f8fb, var(--bg));
+    }
+    .page {
+      max-width: 1880px;
+      margin: 0 auto;
+      padding: 16px;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 14px 16px;
+      margin-bottom: 12px;
+    }
+    .title {
+      margin: 0 0 6px;
+      font-size: 1.25rem;
+      color: var(--title);
+    }
+    .meta {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+    .controls {
+      margin-top: 10px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: end;
+      gap: 10px;
+    }
+    .control {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-width: 180px;
+    }
+    .control label {
+      font-size: 0.8rem;
+      color: #314756;
+      font-weight: 600;
+    }
+    .control input {
+      border: 1px solid #b9cad5;
+      border-radius: 8px;
+      padding: 7px 9px;
+      font-size: 0.9rem;
+      color: #102c3b;
+      background: #fff;
+    }
+    .control input:focus {
+      outline: none;
+      border-color: #2a6274;
+      box-shadow: 0 0 0 2px rgba(42, 98, 116, 0.16);
+    }
+    .btn {
+      border: 1px solid #255f73;
+      background: #0f4c5c;
+      color: #fff;
+      border-radius: 8px;
+      padding: 7px 12px;
+      font-size: 0.86rem;
+      cursor: pointer;
+      height: 34px;
+    }
+    .btn.alt {
+      background: #fff;
+      color: #255f73;
+    }
+    .legend {
+      margin-top: 10px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      color: #506575;
+      font-size: 0.78rem;
+    }
+    .legend-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border: 1px solid #d8e4ee;
+      border-radius: 999px;
+      padding: 3px 8px;
+      background: #f8fbff;
+    }
+    .chip-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      background: #93c5fd;
+    }
+    .gantt-wrap {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      overflow: auto;
+      max-height: 76vh;
+    }
+    .gantt-root {
+      min-width: 860px;
+    }
+    .grid {
+      min-width: max-content;
+      border-collapse: separate;
+      border-spacing: 0;
+    }
+    .grid-row {
+      display: grid;
+      grid-template-columns: var(--phase-col) 1fr;
+      min-width: max-content;
+    }
+    .cell {
+      border-top: 1px solid var(--line);
+      background: #fff;
+    }
+    .head .cell {
+      position: sticky;
+      top: 0;
+      z-index: 40;
+      border-top: 0;
+      background: var(--head);
+      color: var(--head-text);
+      font-weight: 700;
+    }
+    .head .phase-cell {
+      padding: 10px 12px;
+      border-right: 1px solid rgba(255,255,255,0.18);
+    }
+    .head .timeline-cell {
+      padding: 0;
+      z-index: 38;
+    }
+    .phase-cell {
+      position: sticky;
+      left: 0;
+      z-index: 22;
+      border-right: 1px solid var(--line);
+      padding: 10px 12px;
+      background: #fff;
+      min-width: var(--phase-col);
+      max-width: var(--phase-col);
+    }
+    .phase-title {
+      font-size: 0.88rem;
+      font-weight: 700;
+      color: #0f3040;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .phase-sub {
+      margin-top: 3px;
+      font-size: 0.74rem;
+      color: #637a8a;
+    }
+    .load-row {
+      margin-top: 7px;
+      display: grid;
+      grid-auto-flow: column;
+      grid-auto-columns: 12px;
+      gap: 3px;
+      justify-content: start;
+      align-items: center;
+      overflow: hidden;
+      max-width: 230px;
+      min-height: 12px;
+    }
+    .load-chip {
+      width: 12px;
+      height: 10px;
+      border-radius: 3px;
+      border: 1px solid #d5e0e8;
+      background: #eff4f8;
+    }
+    .timeline-cell {
+      position: relative;
+      overflow: hidden;
+      min-height: 48px;
+      background: #fff;
+    }
+    .lane-timeline {
+      position: relative;
+      padding: 8px 8px 10px;
+    }
+    .timeline-header {
+      position: relative;
+      min-height: 58px;
+      background: #f8fbff;
+      border-bottom: 1px solid #d4e0e9;
+    }
+    .month-block {
+      position: absolute;
+      top: 0;
+      height: 22px;
+      border-right: 1px solid #d0dce5;
+      background: rgba(210, 228, 239, 0.35);
+      color: #334f60;
+      padding: 3px 6px;
+      font-size: 0.72rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .week-block {
+      position: absolute;
+      top: 24px;
+      height: 32px;
+      border-right: 1px solid #d8e3eb;
+      padding: 4px 6px;
+      font-size: 0.72rem;
+      color: #3b5565;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      background: rgba(255,255,255,0.62);
+    }
+    .week-block.current-week {
+      background: rgba(251, 191, 36, 0.28);
+      border: 1px solid rgba(180, 83, 9, 0.45);
+      color: #7c2d12;
+      font-weight: 700;
+      z-index: 2;
+    }
+    .grid-line {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 1px;
+      background: #e8eef3;
+      pointer-events: none;
+    }
+    .week-line {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 1px;
+      background: #d8e2ea;
+      pointer-events: none;
+    }
+    .current-week-band {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      background: rgba(251, 191, 36, 0.13);
+      border-left: 1px solid rgba(180, 83, 9, 0.4);
+      border-right: 1px solid rgba(180, 83, 9, 0.4);
+      pointer-events: none;
+      z-index: 1;
+    }
+    .lane-empty {
+      padding: 10px;
+      font-size: 0.8rem;
+      color: #7b8c99;
+    }
+    .card {
+      position: absolute;
+      min-height: 54px;
+      border-radius: 9px;
+      border: 1px solid rgba(15, 76, 92, 0.32);
+      background: linear-gradient(180deg, rgba(219, 238, 247, 0.82), rgba(233, 246, 253, 0.95));
+      box-shadow: 0 2px 8px rgba(16, 43, 58, 0.08);
+      padding: 6px 7px;
+      overflow: hidden;
+    }
+    .card-title {
+      font-size: 0.76rem;
+      color: #103547;
+      font-weight: 700;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-bottom: 4px;
+    }
+    .card-meta {
+      font-size: 0.68rem;
+      color: #375567;
+      line-height: 1.32;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .empty {
+      padding: 16px;
+      color: #607282;
+      font-size: 0.9rem;
+    }
+  </style>
+  <link rel="stylesheet" href="shared-nav.css">
+</head>
+<body>
+  <div class="page">
+    <section class="panel">
+      <h1 class="title">Phase Owner RMI Gantt</h1>
+      <p class="meta">Generated: <span id="generated-at"></span> | Source: <span id="source-file"></span> | RMIs in view: <span id="visible-count"></span></p>
+      <div class="controls">
+        <div class="control">
+          <label for="from-date">From</label>
+          <input type="date" id="from-date">
+        </div>
+        <div class="control">
+          <label for="to-date">To</label>
+          <input type="date" id="to-date">
+        </div>
+        <button class="btn alt" type="button" id="apply-range">Apply</button>
+        <button class="btn" type="button" id="reset-range">Reset</button>
+      </div>
+      <div class="legend">
+        <span class="legend-pill"><span class="chip-dot"></span>Mini cards show planned phase workload by RMI</span>
+        <span class="legend-pill">Sticky phase lanes + sticky weekly header + horizontal scroll</span>
+      </div>
+    </section>
+    <section class="gantt-wrap" id="gantt-wrap">
+      <div id="gantt-root" class="gantt-root"></div>
+    </section>
+  </div>
+  <script>
+    const reportData = {"generated_at": "2026-02-27 10:12 UTC", "source_file": "E:\\JIRA SCRIPT\\nested view.xlsx", "phase_names": ["Research/URS", "DDS", "Development", "SQA", "User Manual", "Production"], "items": [{"phase_name": "DDS", "rmi_name": "Holidays Management \u2013 manage the start and end time for the holiday", "man_days": 1.0, "planned_start": "2026-03-04", "planned_end": "2026-03-04", "project_key": "DIGITALLOG"}, {"phase_name": "DDS", "rmi_name": "Journal for Mobile App", "man_days": 3.0, "planned_start": "2026-02-25", "planned_end": "2026-02-27", "project_key": "DIGITALLOG"}, {"phase_name": "DDS", "rmi_name": "OmniChat Integration with OmniAgent", "man_days": 4.0, "planned_start": "2026-02-23", "planned_end": "2026-02-25", "project_key": "O2"}, {"phase_name": "Development", "rmi_name": "Anomaly Detection Engine Enrichment", "man_days": 33.0, "planned_start": "2025-10-01", "planned_end": "2025-10-13", "project_key": "O2"}, {"phase_name": "Development", "rmi_name": "APX Template Enhancement", "man_days": 90.0, "planned_start": "2025-11-20", "planned_end": "2026-01-02", "project_key": "O2"}, {"phase_name": "Development", "rmi_name": "APX Visualisations Enhancements", "man_days": 15.0, "planned_start": "2026-02-02", "planned_end": "2026-02-23", "project_key": "O2"}, {"phase_name": "Development", "rmi_name": "Auto Dataset Selection", "man_days": 13.0, "planned_start": "2026-04-06", "planned_end": "2026-04-24", "project_key": "MN"}, {"phase_name": "Development", "rmi_name": "Batch/Bpm modify Existing ADX IT Table", "man_days": 24.0, "planned_start": "2026-01-07", "planned_end": "2026-01-19", "project_key": "O2"}, {"phase_name": "Development", "rmi_name": "Batch/BPM V3 (Box re-usable, Mix and Match)", "man_days": 4.0, "planned_start": "2025-10-06", "planned_end": "2025-10-17", "project_key": "O2"}, {"phase_name": "Development", "rmi_name": "Batch/BPM V4 \u2013 GitHub Integration", "man_days": 20.0, "planned_start": "2025-11-03", "planned_end": "2025-11-17", "project_key": "O2"}, {"phase_name": "Development", "rmi_name": "BPM Editable & Reusability Enhancement", "man_days": 20.0, "planned_start": "2025-12-01", "planned_end": "2025-12-22", "project_key": "O2"}, {"phase_name": "Development", "rmi_name": "Calculated Tags Enhancements (With No Code)", "man_days": 15.0, "planned_start": "2026-02-16", "planned_end": "2026-02-20", "project_key": "O2"}, {"phase_name": "Development", "rmi_name": "Configurable Alarms and Sites, Notifications", "man_days": 28.0, "planned_start": "2026-02-06", "planned_end": "2026-02-15", "project_key": "FF"}, {"phase_name": "Development", "rmi_name": "Digital Log Journal Operator", "man_days": 30.0, "planned_start": "2026-01-23", "planned_end": "2026-02-06", "project_key": "DIGITALLOG"}, {"phase_name": "Development", "rmi_name": "Digital Log Read API", "man_days": 21.0, "planned_start": "2026-01-14", "planned_end": "2026-01-22", "project_key": "DIGITALLOG"}, {"phase_name": "Development", "rmi_name": "Domain Migration to Branded Domain of ODL", "man_days": 12.0, "planned_start": "2026-02-09", "planned_end": "2026-02-12", "project_key": "DIGITALLOG"}, {"phase_name": "Development", "rmi_name": "Fintech Fuel Read API", "man_days": 10.0, "planned_start": "2026-01-28", "planned_end": "2026-02-03", "project_key": "FF"}, {"phase_name": "Development", "rmi_name": "Forgot Password Functionality", "man_days": 5.0, "planned_start": "2026-02-16", "planned_end": "2026-02-20", "project_key": "MN"}, {"phase_name": "Development", "rmi_name": "Holidays Management \u2013 manage the start and end time for the holiday", "man_days": 13.0, "planned_start": "2026-03-04", "planned_end": "2026-03-12", "project_key": "DIGITALLOG"}, {"phase_name": "Development", "rmi_name": "IT Table to OT Tag Conversion - Phase 1", "man_days": 30.0, "planned_start": "2025-12-15", "planned_end": "2026-01-09", "project_key": "O2"}, {"phase_name": "Development", "rmi_name": "Journal for Mobile App", "man_days": 28.0, "planned_start": "2026-02-23", "planned_end": "2026-03-12", "project_key": "DIGITALLOG"}, {"phase_name": "Development", "rmi_name": "Log Chat Integration", "man_days": 10.0, "planned_start": "2026-01-07", "planned_end": "2026-01-13", "project_key": "DIGITALLOG"}, {"phase_name": "Development", "rmi_name": "Mobile App", "man_days": 40.0, "planned_start": "2025-11-24", "planned_end": "2025-12-31", "project_key": "FF"}, {"phase_name": "Development", "rmi_name": "OC Faster", "man_days": 120.0, "planned_start": "2025-09-22", "planned_end": "2025-10-13", "project_key": "O2"}, {"phase_name": "Development", "rmi_name": "OmniAgent - Multi-agent system", "man_days": 5.0, "planned_start": "2026-02-09", "planned_end": "2026-02-26", "project_key": "O2"}, {"phase_name": "Development", "rmi_name": "OmniAgent Phase 2.0", "man_days": 40.0, "planned_start": "2025-09-22", "planned_end": "2025-10-17", "project_key": "O2"}, {"phase_name": "Development", "rmi_name": "OmniChat Integration with OmniAgent", "man_days": 33.0, "planned_start": "2026-02-26", "planned_end": "2026-03-16", "project_key": "O2"}, {"phase_name": "Development", "rmi_name": "Read API - Handling Deleted Sites", "man_days": 3.0, "planned_start": "2026-02-17", "planned_end": "2026-02-23", "project_key": "O2"}, {"phase_name": "Development", "rmi_name": "Read API - Nanosecond Support", "man_days": 1.0, "planned_start": "2026-01-01", "planned_end": "2026-01-01", "project_key": "O2"}, {"phase_name": "Development", "rmi_name": "Read API - Query Optimisation", "man_days": 4.75, "planned_start": "2026-01-02", "planned_end": "2026-01-16", "project_key": "O2"}, {"phase_name": "Development", "rmi_name": "Real-time Tag Streaming", "man_days": 20.0, "planned_start": "2026-01-16", "planned_end": "2026-02-11", "project_key": "O2"}, {"phase_name": "Development", "rmi_name": "Recompute for existing Batch/Bpm Jobs", "man_days": 0.07, "planned_start": "2026-02-16", "planned_end": "2026-03-04", "project_key": "O2"}, {"phase_name": "Development", "rmi_name": "Scheduled Pulls from Data Source (REST API)", "man_days": 120.0, "planned_start": "2025-09-22", "planned_end": "2025-10-03", "project_key": "O2"}, {"phase_name": "Development", "rmi_name": "Scheduled Pulls from Data Source (SFTP)", "man_days": 12.0, "planned_start": "2025-10-20", "planned_end": "2025-10-24", "project_key": "O2"}, {"phase_name": "Development", "rmi_name": "Scheduled Pulls from Data Source (SQL OT)", "man_days": 40.0, "planned_start": "2025-09-17", "planned_end": "2025-09-26", "project_key": "O2"}, {"phase_name": "Development", "rmi_name": "Site Diagnostics Dashboard", "man_days": 48.0, "planned_start": "2026-02-06", "planned_end": "2026-02-17", "project_key": "FF"}, {"phase_name": "Development", "rmi_name": "Subscription Management", "man_days": 36.0, "planned_start": "2026-01-09", "planned_end": "2026-02-23", "project_key": "O2"}, {"phase_name": "Development", "rmi_name": "Trending in OmniAgent", "man_days": 2.0, "planned_start": "2026-01-07", "planned_end": "2026-01-08", "project_key": "O2"}, {"phase_name": "Research/URS", "rmi_name": "Batch/BPM V4 \u2013 GitHub Integration", "man_days": 8.0, "planned_start": "2025-10-27", "planned_end": "2025-10-31", "project_key": "O2"}, {"phase_name": "Research/URS", "rmi_name": "Real-time Tag Streaming", "man_days": 16.0, "planned_start": "2026-01-01", "planned_end": "2026-01-16", "project_key": "O2"}, {"phase_name": "Research/URS", "rmi_name": "Scheduled Pulls from Data Source (SQL OT)", "man_days": 1.0, "planned_start": "2025-09-15", "planned_end": "2025-09-15", "project_key": "O2"}, {"phase_name": "SQA", "rmi_name": "Anomaly Detection Engine Enrichment", "man_days": 15.0, "planned_start": "2025-10-20", "planned_end": "2025-11-13", "project_key": "O2"}, {"phase_name": "SQA", "rmi_name": "APX Template Enhancement", "man_days": 45.0, "planned_start": "2026-01-05", "planned_end": "2026-01-15", "project_key": "O2"}, {"phase_name": "SQA", "rmi_name": "APX Visualisations Enhancements", "man_days": 5.0, "planned_start": "2026-02-18", "planned_end": "2026-02-27", "project_key": "O2"}, {"phase_name": "SQA", "rmi_name": "Batch/Bpm modify Existing ADX IT Table", "man_days": 18.0, "planned_start": "2026-01-21", "planned_end": "2026-01-23", "project_key": "O2"}, {"phase_name": "SQA", "rmi_name": "Batch/BPM V3 (Box re-usable, Mix and Match)", "man_days": 0.0, "planned_start": "2025-10-20", "planned_end": "2025-10-23", "project_key": "O2"}, {"phase_name": "SQA", "rmi_name": "Batch/BPM V4 \u2013 GitHub Integration", "man_days": 10.0, "planned_start": "2025-11-18", "planned_end": "2025-11-20", "project_key": "O2"}, {"phase_name": "SQA", "rmi_name": "BPM Editable & Reusability Enhancement", "man_days": 16.0, "planned_start": "2025-12-22", "planned_end": "2026-01-01", "project_key": "O2"}, {"phase_name": "SQA", "rmi_name": "Calculated Tags Enhancements (With No Code)", "man_days": 10.0, "planned_start": "2026-02-23", "planned_end": "2026-03-03", "project_key": "O2"}, {"phase_name": "SQA", "rmi_name": "Checklist Stats Enhancements + Dashboard  User Activity Logs", "man_days": 15.0, "planned_start": "2025-12-22", "planned_end": "2026-01-02", "project_key": "DIGITALLOG"}, {"phase_name": "SQA", "rmi_name": "Configurable Alarms and Sites, Notifications", "man_days": 4.0, "planned_start": "2026-02-18", "planned_end": "2026-02-24", "project_key": "FF"}, {"phase_name": "SQA", "rmi_name": "Dashboard, Data & Mobile Improvements", "man_days": 20.0, "planned_start": "2025-11-03", "planned_end": "2025-11-07", "project_key": "DIGITALLOG"}, {"phase_name": "SQA", "rmi_name": "Digital Log Enhancements & Integration", "man_days": 20.0, "planned_start": "2026-02-13", "planned_end": "2026-02-19", "project_key": "DIGITALLOG"}, {"phase_name": "SQA", "rmi_name": "Fintech Fuel : Version 2", "man_days": 5.0, "planned_start": "2025-10-09", "planned_end": "2025-10-16", "project_key": "FF"}, {"phase_name": "SQA", "rmi_name": "Fintech Fuel : Version 3", "man_days": 2.0, "planned_start": "2025-10-29", "planned_end": "2025-10-30", "project_key": "FF"}, {"phase_name": "SQA", "rmi_name": "Fintech Fuel: Version 1", "man_days": 5.0, "planned_start": "2025-09-14", "planned_end": "2025-09-17", "project_key": "FF"}, {"phase_name": "SQA", "rmi_name": "Forgot Password Functionality", "man_days": 5.0, "planned_start": "2026-02-23", "planned_end": "2026-02-27", "project_key": "MN"}, {"phase_name": "SQA", "rmi_name": "Holidays Feature / Mobile App SSO Integration", "man_days": 4.0, "planned_start": "2025-10-06", "planned_end": "2025-10-09", "project_key": "DIGITALLOG"}, {"phase_name": "SQA", "rmi_name": "IT Table to OT Tag Conversion - Phase 1", "man_days": 25.0, "planned_start": "2026-01-12", "planned_end": "2026-01-16", "project_key": "O2"}, {"phase_name": "SQA", "rmi_name": "OC Faster", "man_days": 19.0, "planned_start": "2025-10-14", "planned_end": "2025-11-04", "project_key": "O2"}, {"phase_name": "SQA", "rmi_name": "Omni Chat Onboarding", "man_days": 80.0, "planned_start": "2026-02-20", "planned_end": "2026-04-20", "project_key": "MN"}, {"phase_name": "SQA", "rmi_name": "OmniAgent Phase 2.0", "man_days": 9.0, "planned_start": "2025-10-06", "planned_end": "2025-10-16", "project_key": "O2"}, {"phase_name": "SQA", "rmi_name": "OmniAgent Phase 2.1 ( APX Perf, What-if, Health )", "man_days": 20.0, "planned_start": "2025-11-19", "planned_end": "2025-11-20", "project_key": "O2"}, {"phase_name": "SQA", "rmi_name": "OmniChat Integration with OmniAgent", "man_days": 5.0, "planned_start": "2026-03-17", "planned_end": "2026-03-24", "project_key": "O2"}, {"phase_name": "SQA", "rmi_name": "OmniChat Regression", "man_days": 60.0, "planned_start": "2026-03-02", "planned_end": "2026-04-10", "project_key": "MN"}, {"phase_name": "SQA", "rmi_name": "Read API - Handling Deleted Sites", "man_days": 2.0, "planned_start": "2026-02-23", "planned_end": "2026-02-25", "project_key": "O2"}, {"phase_name": "SQA", "rmi_name": "Read API - Nanosecond Support", "man_days": 0.12, "planned_start": "2026-01-15", "planned_end": "2026-01-15", "project_key": "O2"}, {"phase_name": "SQA", "rmi_name": "Read API - Query Optimisation", "man_days": 0.12, "planned_start": "2026-01-19", "planned_end": "2026-01-19", "project_key": "O2"}, {"phase_name": "SQA", "rmi_name": "Read API - Support for Long and Wide Response Layouts", "man_days": 0.25, "planned_start": "2026-02-04", "planned_end": "2026-02-04", "project_key": "O2"}, {"phase_name": "SQA", "rmi_name": "Read API Enhancement", "man_days": 2.0, "planned_start": "2025-10-02", "planned_end": "2025-10-02", "project_key": "O2"}, {"phase_name": "SQA", "rmi_name": "Real-time Tag Streaming", "man_days": 6.0, "planned_start": "2026-01-05", "planned_end": "2026-01-09", "project_key": "O2"}, {"phase_name": "SQA", "rmi_name": "Recompute for existing Batch/Bpm Jobs", "man_days": 14.0, "planned_start": "2026-03-05", "planned_end": "2026-03-13", "project_key": "O2"}, {"phase_name": "SQA", "rmi_name": "Scheduled Pulls from Data Source (REST API)", "man_days": 80.0, "planned_start": "2025-10-06", "planned_end": "2025-10-14", "project_key": "O2"}, {"phase_name": "SQA", "rmi_name": "Scheduled Pulls from Data Source (SFTP)", "man_days": 3.0, "planned_start": "2025-10-27", "planned_end": "2025-10-30", "project_key": "O2"}, {"phase_name": "SQA", "rmi_name": "Scheduled Pulls from Data Source (SQL OT)", "man_days": 4.0, "planned_start": "2025-09-29", "planned_end": "2025-10-02", "project_key": "O2"}, {"phase_name": "SQA", "rmi_name": "Site Diagnostics Dashboard", "man_days": 7.0, "planned_start": "2026-02-18", "planned_end": "2026-02-26", "project_key": "FF"}, {"phase_name": "SQA", "rmi_name": "Subscription Management", "man_days": 20.0, "planned_start": "2026-02-24", "planned_end": "2026-03-05", "project_key": "O2"}, {"phase_name": "SQA", "rmi_name": "Trigger API", "man_days": 2.0, "planned_start": "2025-10-07", "planned_end": "2025-10-07", "project_key": "O2"}, {"phase_name": "User Manual", "rmi_name": "Anomaly Detection Engine Enrichment", "man_days": 15.0, "planned_start": "2025-10-20", "planned_end": "2025-11-13", "project_key": "O2"}, {"phase_name": "User Manual", "rmi_name": "APX Template Enhancement", "man_days": 0.0, "planned_start": "2026-01-05", "planned_end": "2026-01-15", "project_key": "O2"}, {"phase_name": "User Manual", "rmi_name": "APX Visualisations Enhancements", "man_days": 3.0, "planned_start": "2026-02-18", "planned_end": "2026-02-27", "project_key": "O2"}, {"phase_name": "User Manual", "rmi_name": "Batch/BPM V3 (Box re-usable, Mix and Match)", "man_days": 6.0, "planned_start": "2025-10-20", "planned_end": "2025-10-23", "project_key": "O2"}, {"phase_name": "User Manual", "rmi_name": "Batch/BPM V4 \u2013 GitHub Integration", "man_days": 4.0, "planned_start": "2025-11-18", "planned_end": "2025-11-20", "project_key": "O2"}, {"phase_name": "User Manual", "rmi_name": "BPM Editable & Reusability Enhancement", "man_days": 4.0, "planned_start": "2025-12-22", "planned_end": "2026-01-01", "project_key": "O2"}, {"phase_name": "User Manual", "rmi_name": "Calculated Tags Enhancements (With No Code)", "man_days": 4.0, "planned_start": "2025-12-22", "planned_end": "2025-12-25", "project_key": "O2"}, {"phase_name": "User Manual", "rmi_name": "Checklist Stats Enhancements + Dashboard  User Activity Logs", "man_days": 2.0, "planned_start": "2025-12-22", "planned_end": "2026-01-02", "project_key": "DIGITALLOG"}, {"phase_name": "User Manual", "rmi_name": "Fintech Fuel : Version 3", "man_days": 0.0, "planned_start": "2025-10-29", "planned_end": "2025-10-30", "project_key": "FF"}, {"phase_name": "User Manual", "rmi_name": "Holidays Feature / Mobile App SSO Integration", "man_days": 4.0, "planned_start": "2025-10-06", "planned_end": "2025-10-09", "project_key": "DIGITALLOG"}, {"phase_name": "User Manual", "rmi_name": "IT Table to OT Tag Conversion - Phase 1", "man_days": 5.0, "planned_start": "2026-01-12", "planned_end": "2026-01-16", "project_key": "O2"}, {"phase_name": "User Manual", "rmi_name": "Mobile App", "man_days": 4.0, "planned_start": "2026-01-01", "planned_end": "2026-01-15", "project_key": "FF"}, {"phase_name": "User Manual", "rmi_name": "OC Faster", "man_days": 2.0, "planned_start": "2025-10-14", "planned_end": "2025-11-04", "project_key": "O2"}, {"phase_name": "User Manual", "rmi_name": "OmniAgent Phase 2.0", "man_days": 22.0, "planned_start": "2025-10-06", "planned_end": "2025-10-16", "project_key": "O2"}, {"phase_name": "User Manual", "rmi_name": "OmniAgent Phase 2.1 ( APX Perf, What-if, Health )", "man_days": 20.0, "planned_start": "2025-11-19", "planned_end": "2025-11-20", "project_key": "O2"}, {"phase_name": "User Manual", "rmi_name": "OmniChat Integration with OmniAgent", "man_days": 3.0, "planned_start": "2026-03-17", "planned_end": "2026-03-24", "project_key": "O2"}, {"phase_name": "User Manual", "rmi_name": "Real-time Tag Streaming", "man_days": 0.5, "planned_start": "2026-01-05", "planned_end": "2026-01-09", "project_key": "O2"}, {"phase_name": "User Manual", "rmi_name": "Scheduled Pulls from Data Source (REST API)", "man_days": 18.0, "planned_start": "2025-10-06", "planned_end": "2025-10-14", "project_key": "O2"}, {"phase_name": "User Manual", "rmi_name": "Scheduled Pulls from Data Source (SFTP)", "man_days": 3.0, "planned_start": "2025-10-27", "planned_end": "2025-10-30", "project_key": "O2"}, {"phase_name": "User Manual", "rmi_name": "Scheduled Pulls from Data Source (SQL OT)", "man_days": 1.0, "planned_start": "2025-10-01", "planned_end": "2025-10-02", "project_key": "O2"}, {"phase_name": "User Manual", "rmi_name": "Simple Heat Exchangers", "man_days": 0.0, "planned_start": "2025-10-02", "planned_end": "2025-10-03", "project_key": "O2"}, {"phase_name": "User Manual", "rmi_name": "Trigger API", "man_days": 2.0, "planned_start": "2025-10-07", "planned_end": "2025-10-07", "project_key": "O2"}]};
+    const allItems = Array.isArray(reportData.items) ? reportData.items : [];
+    const phaseNames = Array.isArray(reportData.phase_names) ? reportData.phase_names : [];
+
+    const generatedNode = document.getElementById("generated-at");
+    const sourceNode = document.getElementById("source-file");
+    const visibleCountNode = document.getElementById("visible-count");
+    const fromInput = document.getElementById("from-date");
+    const toInput = document.getElementById("to-date");
+    const applyButton = document.getElementById("apply-range");
+    const resetButton = document.getElementById("reset-range");
+    const ganttRoot = document.getElementById("gantt-root");
+
+    const DAY_MS = 86400000;
+    const DAY_PX = 16;
+    const CARD_HEIGHT = 58;
+    const CARD_GAP = 8;
+    const TIMELINE_SIDE_PAD = 8;
+
+    generatedNode.textContent = reportData.generated_at || "-";
+    sourceNode.textContent = reportData.source_file || "-";
+
+    function parseIso(iso) {
+      if (!iso) return null;
+      const d = new Date(`${iso}T00:00:00`);
+      if (Number.isNaN(d.getTime())) return null;
+      return d;
+    }
+
+    function isoFromDate(d) {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      return `${y}-${m}-${day}`;
+    }
+
+    function addDays(d, days) {
+      return new Date(d.getTime() + (days * DAY_MS));
+    }
+
+    function startOfMonth(d) {
+      return new Date(d.getFullYear(), d.getMonth(), 1);
+    }
+
+    function endOfMonth(d) {
+      return new Date(d.getFullYear(), d.getMonth() + 1, 0);
+    }
+
+    function defaultRange() {
+      const today = new Date();
+      const currentMonthStart = startOfMonth(today);
+      const prevMonthStart = startOfMonth(new Date(today.getFullYear(), today.getMonth() - 1, 1));
+      const nextMonthEnd = endOfMonth(new Date(today.getFullYear(), today.getMonth() + 1, 1));
+      return { from: prevMonthStart, to: nextMonthEnd, currentMonthStart };
+    }
+
+    function overlap(aStart, aEnd, bStart, bEnd) {
+      return aStart <= bEnd && aEnd >= bStart;
+    }
+
+    function daysBetweenInclusive(startDate, endDate) {
+      return Math.max(1, Math.floor((endDate.getTime() - startDate.getTime()) / DAY_MS) + 1);
+    }
+
+    function pctFromDays(days, totalDays) {
+      if (totalDays <= 0) return 0;
+      return (days / totalDays) * 100;
+    }
+
+    function formatDate(iso) {
+      const d = parseIso(iso);
+      if (!d) return "-";
+      return d.toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" });
+    }
+
+    function formatShortDate(d) {
+      return d.toLocaleDateString(undefined, { day: "2-digit", month: "short" });
+    }
+
+    function monthLabel(d) {
+      return d.toLocaleDateString(undefined, { month: "short", year: "numeric" });
+    }
+
+    function weekStartFor(dateObj) {
+      const out = new Date(dateObj.getTime());
+      const day = out.getDay();
+      const shift = day === 0 ? 6 : day - 1;
+      out.setDate(out.getDate() - shift);
+      out.setHours(0, 0, 0, 0);
+      return out;
+    }
+
+    function buildWeeks(rangeFrom, rangeTo) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const weeks = [];
+      let cursor = weekStartFor(rangeFrom);
+      while (cursor <= rangeTo) {
+        const start = new Date(cursor.getTime());
+        const end = addDays(start, 6);
+        const clippedStart = start < rangeFrom ? rangeFrom : start;
+        const clippedEnd = end > rangeTo ? rangeTo : end;
+        const totalDays = daysBetweenInclusive(rangeFrom, rangeTo);
+        const leftDays = Math.floor((clippedStart.getTime() - rangeFrom.getTime()) / DAY_MS);
+        const spanDays = daysBetweenInclusive(clippedStart, clippedEnd);
+        weeks.push({
+          start,
+          end,
+          clippedStart,
+          clippedEnd,
+          isCurrent: today >= start && today <= end,
+          leftPct: pctFromDays(leftDays, totalDays),
+          widthPct: pctFromDays(spanDays, totalDays),
+          label: `Wk of ${formatShortDate(start)}`,
+        });
+        cursor = addDays(cursor, 7);
+      }
+      return weeks;
+    }
+
+    function buildMonths(rangeFrom, rangeTo) {
+      const months = [];
+      let cursor = startOfMonth(rangeFrom);
+      const totalDays = daysBetweenInclusive(rangeFrom, rangeTo);
+      while (cursor <= rangeTo) {
+        const monthStart = new Date(cursor.getTime());
+        const monthEnd = endOfMonth(cursor);
+        const clippedStart = monthStart < rangeFrom ? rangeFrom : monthStart;
+        const clippedEnd = monthEnd > rangeTo ? rangeTo : monthEnd;
+        const leftDays = Math.floor((clippedStart.getTime() - rangeFrom.getTime()) / DAY_MS);
+        const spanDays = daysBetweenInclusive(clippedStart, clippedEnd);
+        months.push({
+          label: monthLabel(monthStart),
+          leftPct: pctFromDays(leftDays, totalDays),
+          widthPct: pctFromDays(spanDays, totalDays),
+        });
+        cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+      }
+      return months;
+    }
+
+    function parseRangeFromInputs() {
+      const preset = defaultRange();
+      const from = parseIso(fromInput.value) || preset.from;
+      const to = parseIso(toInput.value) || preset.to;
+      if (to < from) {
+        return { from: preset.from, to: preset.to };
+      }
+      return { from, to };
+    }
+
+    function injectInputs(from, to) {
+      fromInput.value = isoFromDate(from);
+      toInput.value = isoFromDate(to);
+    }
+
+    function filteredItems(rangeFrom, rangeTo) {
+      return allItems.filter((item) => {
+        const start = parseIso(item.planned_start);
+        const end = parseIso(item.planned_end);
+        if (!start || !end || end < start) return false;
+        return overlap(start, end, rangeFrom, rangeTo);
+      });
+    }
+
+    function stackCards(items) {
+      const sorted = [...items].sort((a, b) => {
+        if (a.planned_start !== b.planned_start) return a.planned_start < b.planned_start ? -1 : 1;
+        if (a.planned_end !== b.planned_end) return a.planned_end < b.planned_end ? -1 : 1;
+        return (a.rmi_name || "").localeCompare(b.rmi_name || "");
+      });
+      const trackEnds = [];
+      return sorted.map((item) => {
+        const start = parseIso(item.planned_start);
+        const end = parseIso(item.planned_end);
+        let track = 0;
+        for (; track < trackEnds.length; track++) {
+          if (trackEnds[track] < start) break;
+        }
+        if (track === trackEnds.length) {
+          trackEnds.push(end);
+        } else {
+          trackEnds[track] = end;
+        }
+        return { ...item, _track: track };
+      });
+    }
+
+    function laneLoadChips(laneItems, weeks) {
+      if (!weeks.length) return "";
+      const weekLoads = weeks.map((week) => {
+        let total = 0;
+        for (const item of laneItems) {
+          const s = parseIso(item.planned_start);
+          const e = parseIso(item.planned_end);
+          if (!s || !e) continue;
+          if (overlap(s, e, week.clippedStart, week.clippedEnd)) {
+            total += Number(item.man_days || 0);
+          }
+        }
+        return total;
+      });
+      const maxLoad = Math.max(...weekLoads, 0);
+      return weekLoads.map((load, i) => {
+        const pct = maxLoad > 0 ? (load / maxLoad) : 0;
+        const bg = pct <= 0
+          ? "#eff4f8"
+          : pct < 0.35
+            ? "#dbeafe"
+            : pct < 0.7
+              ? "#93c5fd"
+              : "#2563eb";
+        const title = `${weeks[i].label}: ${load.toFixed(2).replace(/\.00$/, "")} md`;
+        return `<span class="load-chip" style="background:${bg};" title="${title}"></span>`;
+      }).join("");
+    }
+
+    function render() {
+      const range = parseRangeFromInputs();
+      injectInputs(range.from, range.to);
+
+      const visible = filteredItems(range.from, range.to);
+      visibleCountNode.textContent = String(visible.length);
+
+      const totalDays = daysBetweenInclusive(range.from, range.to);
+      const timelineWidth = Math.max(880, Math.floor(totalDays * DAY_PX));
+      const months = buildMonths(range.from, range.to);
+      const weeks = buildWeeks(range.from, range.to);
+
+      if (!phaseNames.length) {
+        ganttRoot.innerHTML = '<div class="empty">No phase rows found in nested view workbook.</div>';
+        return;
+      }
+
+      const monthBlocks = months.map((m) =>
+        `<div class="month-block" style="left:${m.leftPct}%; width:${m.widthPct}%;">${m.label}</div>`
+      ).join("");
+      const weekBlocks = weeks.map((w) =>
+        `<div class="week-block${w.isCurrent ? " current-week" : ""}" style="left:${w.leftPct}%; width:${w.widthPct}%;" title="${w.label}">${w.label}</div>`
+      ).join("");
+      const weekLines = weeks.map((w) => `<span class="week-line" style="left:${w.leftPct}%;"></span>`).join("");
+      const currentWeek = weeks.find((w) => w.isCurrent);
+      const currentBandHtml = currentWeek
+        ? `<span class="current-week-band" style="left:${currentWeek.leftPct}%; width:${currentWeek.widthPct}%;"></span>`
+        : "";
+
+      const laneRows = phaseNames.map((phaseName) => {
+        const laneItems = visible.filter((item) => item.phase_name === phaseName);
+        const stacked = stackCards(laneItems);
+        const maxTrack = stacked.reduce((acc, item) => Math.max(acc, Number(item._track || 0)), -1);
+        const rowCount = Math.max(1, maxTrack + 1);
+        const laneHeight = Math.max(48, (rowCount * CARD_HEIGHT) + ((rowCount - 1) * CARD_GAP) + 20);
+        const chips = laneLoadChips(laneItems, weeks);
+
+        let cardsHtml = "";
+        for (const item of stacked) {
+          const start = parseIso(item.planned_start);
+          const end = parseIso(item.planned_end);
+          if (!start || !end) continue;
+
+          const clippedStart = start < range.from ? range.from : start;
+          const clippedEnd = end > range.to ? range.to : end;
+          const leftDays = Math.floor((clippedStart.getTime() - range.from.getTime()) / DAY_MS);
+          const spanDays = daysBetweenInclusive(clippedStart, clippedEnd);
+          const leftPx = Math.floor(leftDays * DAY_PX) + TIMELINE_SIDE_PAD;
+          const widthPx = Math.max(64, Math.floor(spanDays * DAY_PX) - 4);
+          const topPx = 8 + (Number(item._track || 0) * (CARD_HEIGHT + CARD_GAP));
+          const title = [
+            `Phase: ${item.phase_name}`,
+            `RMI: ${item.rmi_name}`,
+            `Man Days: ${String(item.man_days)}`,
+            `Planned Start: ${item.planned_start}`,
+            `Planned End: ${item.planned_end}`,
+            `Project: ${item.project_key || "-"}`,
+          ].join("\n");
+
+          cardsHtml += `
+            <article class="card" style="left:${leftPx}px; top:${topPx}px; width:${widthPx}px;" title="${title}">
+              <div class="card-title">${item.rmi_name || "-"}</div>
+              <div class="card-meta">Man Days: ${String(item.man_days)}</div>
+              <div class="card-meta">Start: ${item.planned_start || "-"}</div>
+              <div class="card-meta">End: ${item.planned_end || "-"}</div>
+            </article>
+          `;
+        }
+
+        const lineEveryDays = 7;
+        const lines = [];
+        for (let day = 0; day <= totalDays; day += lineEveryDays) {
+          const leftPx = Math.floor(day * DAY_PX) + TIMELINE_SIDE_PAD;
+          lines.push(`<span class="grid-line" style="left:${leftPx}px;"></span>`);
+        }
+        const linesHtml = lines.join("");
+
+        const contentHtml = stacked.length
+          ? `<div class="lane-timeline" style="width:${timelineWidth}px; min-height:${laneHeight}px;">${linesHtml}${weekLines}${currentBandHtml}${cardsHtml}</div>`
+          : `<div class="lane-timeline" style="width:${timelineWidth}px; min-height:48px;">${linesHtml}${weekLines}${currentBandHtml}<div class="lane-empty">No RMIs in selected range.</div></div>`;
+
+        return `
+          <div class="grid-row">
+            <div class="cell phase-cell">
+              <div class="phase-title" title="${phaseName}">${phaseName}</div>
+              <div class="phase-sub">${laneItems.length} RMI card(s)</div>
+              <div class="load-row">${chips}</div>
+            </div>
+            <div class="cell timeline-cell">${contentHtml}</div>
+          </div>
+        `;
+      }).join("");
+
+      ganttRoot.innerHTML = `
+        <div class="grid" style="width: calc(var(--phase-col) + ${timelineWidth}px);">
+          <div class="grid-row head">
+            <div class="cell phase-cell">Phase</div>
+            <div class="cell timeline-cell">
+              <div class="timeline-header" style="width:${timelineWidth}px;">
+                ${monthBlocks}
+                ${currentBandHtml}
+                ${weekBlocks}
+              </div>
+            </div>
+          </div>
+          ${laneRows}
+        </div>
+      `;
+    }
+
+    const defaults = defaultRange();
+    injectInputs(defaults.from, defaults.to);
+    applyButton.addEventListener("click", render);
+    resetButton.addEventListener("click", () => {
+      const d = defaultRange();
+      injectInputs(d.from, d.to);
+      render();
+    });
+    render();
+  </script>
+<script src="shared-nav.js"></script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!-- codex-info-drawer-start -->
+<!-- codex-info-drawer-v1 -->
+<style>
+.report-info-inline-btn {
+  margin-left: 6px;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 1px solid #94a3b8;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+}
+.report-info-inline-btn:hover { background: #eef2ff; border-color: #64748b; }
+#report-info-drawer-backdrop {
+  position: fixed; inset: 0; background: rgba(15,23,42,.45); opacity: 0; visibility: hidden;
+  transition: opacity .16s ease; z-index: 2500;
+}
+#report-info-drawer-backdrop.is-open { opacity: 1; visibility: visible; }
+#report-info-drawer {
+  position: fixed; right: 0; top: 0; height: 100vh; width: min(520px, 94vw);
+  background: #ffffff; border-left: 1px solid #cbd5e1; box-shadow: -16px 0 30px rgba(15,23,42,.18);
+  transform: translateX(105%); transition: transform .18s ease; z-index: 2501; display: flex; flex-direction: column;
+}
+#report-info-drawer.is-open { transform: translateX(0); }
+.report-info-drawer-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 12px 14px; border-bottom: 1px solid #e2e8f0; background: linear-gradient(180deg,#f8fafc,#f1f5f9);
+}
+.report-info-drawer-title { margin: 0; font-size: 1rem; color: #0f172a; }
+.report-info-drawer-close {
+  border: 1px solid #94a3b8; background: #fff; color: #334155; border-radius: 8px; padding: 6px 8px; cursor: pointer; font-weight: 700;
+}
+#report-info-drawer-body { padding: 12px 14px; overflow: auto; color: #1f2937; font-size: .86rem; line-height: 1.45; }
+.report-info-section { margin-bottom: 10px; }
+.report-info-section h4 { margin: 0 0 4px; font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; color: #475569; }
+.report-info-section p { margin: 0; }
+.report-info-list { margin: 0; padding-left: 18px; }
+.report-info-list li { margin: 0 0 3px; }
+body.report-info-drawer-open { overflow: hidden; }
+</style>
+<div id="report-info-drawer-backdrop" aria-hidden="true"></div>
+<aside id="report-info-drawer" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="report-info-drawer-title">
+  <div class="report-info-drawer-head">
+    <h3 class="report-info-drawer-title" id="report-info-drawer-title">Field Information</h3>
+    <button type="button" class="report-info-drawer-close" id="report-info-drawer-close">Close</button>
+  </div>
+  <div id="report-info-drawer-body"></div>
+</aside>
+<script>
+(function () {
+  const seeded = [{"id": "phase_rmi.weekly_load", "label": "Weekly Load Chips", "report": "phase_rmi_gantt_report", "ui_targets": ["#gantt-root"], "definition": "Phase lane chips summarize man-day intensity by week.", "formula": "Aggregate phase man-days overlapping each week bucket", "ingredients": ["phase_planned_start", "phase_planned_end", "phase_man_days"], "business_validations": ["Only dated phases participate in lane load chips."], "field_linkages": ["Visible RMIs", "Date range controls"], "cross_report_linkages": ["gantt.timeline_window", "ipp.roadmap_geometry"], "data_sources": ["nested view.xlsx"], "leadership_interpretation": "Shows phase-level delivery pressure and overload periods."}];
+  const byId = Object.create(null);
+  function txt(v) { return String(v == null ? "" : v).trim(); }
+  function asArr(v) { return Array.isArray(v) ? v : []; }
+  function slug(v) { return txt(v).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "info"; }
+  function listHtml(values) {
+    const vals = asArr(values).map((x) => txt(x)).filter(Boolean);
+    if (!vals.length) return "<p>-</p>";
+    return "<ul class=\"report-info-list\">" + vals.map((x) => "<li>" + esc(x) + "</li>").join("") + "</ul>";
+  }
+  function esc(v) {
+    return txt(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+  function addCatalog(item) {
+    if (!item || !txt(item.id)) return;
+    byId[item.id] = Object.assign({
+      id: txt(item.id), label: "Field", report: txt(window.__activeReportId || ""),
+      ui_targets: [], definition: "", formula: "", ingredients: [],
+      business_validations: [], field_linkages: [], cross_report_linkages: [],
+      data_sources: [], leadership_interpretation: ""
+    }, item);
+  }
+  for (const item of asArr(seeded)) addCatalog(item);
+  function ensureInfoButton(host, infoId, label) {
+    if (!host || !txt(infoId)) return;
+    if (host.querySelector && host.querySelector('[data-info-id="' + infoId + '"]')) return;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "report-info-inline-btn";
+    btn.textContent = "i";
+    btn.setAttribute("data-info-id", infoId);
+    btn.setAttribute("aria-label", (txt(label) || "Field") + " information");
+    host.appendChild(btn);
+  }
+  function extractFromTooltips() {
+    const defs = [
+      [".score-info", ".score-info-tip"],
+      [".kpi-info", ".kpi-info-tip"],
+      [".stat-info", ".stat-info-tip"],
+      [".card-i-wrap", ".card-i-tip"]
+    ];
+    for (const pair of defs) {
+      const wrapSel = pair[0];
+      const tipSel = pair[1];
+      const wraps = Array.from(document.querySelectorAll(wrapSel));
+      for (const wrap of wraps) {
+        const tip = wrap.querySelector(tipSel);
+        const raw = txt(tip ? tip.textContent : "");
+        const parentLabelNode = wrap.closest(".score-label,.label,.k,.story-title,h3,h4,.card,.kpi,.stat,.summary-card");
+        const label = txt(parentLabelNode ? parentLabelNode.textContent : "");
+        const id = wrap.getAttribute("data-info-id") || slug((window.__activeReportId || "report") + "-" + (label || raw.slice(0, 36)));
+        wrap.setAttribute("data-info-id", id);
+        wrap.setAttribute("role", "button");
+        wrap.setAttribute("tabindex", "0");
+        if (tip) tip.style.display = "none";
+        if (!byId[id]) {
+          addCatalog({
+            id: id,
+            label: label || "Field",
+            report: txt(window.__activeReportId || ""),
+            ui_targets: [],
+            definition: "Auto-captured from report tooltip content.",
+            formula: raw.split("\n")[0] || raw,
+            ingredients: [],
+            business_validations: [],
+            field_linkages: [],
+            cross_report_linkages: [],
+            data_sources: [],
+            leadership_interpretation: raw
+          });
+        }
+      }
+    }
+  }
+  extractFromTooltips();
+  for (const item of Object.values(byId)) {
+    for (const selector of asArr(item.ui_targets)) {
+      try {
+        const nodes = Array.from(document.querySelectorAll(selector));
+        for (const node of nodes) {
+          const target = node.querySelector ? (node.querySelector(".label,.k,.score-label,h2,h3,h4,th") || node) : node;
+          ensureInfoButton(target, item.id, item.label);
+        }
+      } catch (_err) {}
+    }
+  }
+  const backdrop = document.getElementById("report-info-drawer-backdrop");
+  const drawer = document.getElementById("report-info-drawer");
+  const drawerBody = document.getElementById("report-info-drawer-body");
+  const closeBtn = document.getElementById("report-info-drawer-close");
+  let activeId = "";
+  let lastFocus = null;
+  function sectionHtml(title, contentHtml) {
+    return '<section class="report-info-section"><h4>' + esc(title) + '</h4>' + contentHtml + '</section>';
+  }
+  function render(item) {
+    if (!item) {
+      drawerBody.innerHTML = "<p>No information is configured for this field yet.</p>";
+      return;
+    }
+    drawerBody.innerHTML =
+      sectionHtml("Definition", "<p>" + esc(item.definition || "-") + "</p>") +
+      sectionHtml("Formula", "<p>" + esc(item.formula || "-") + "</p>") +
+      sectionHtml("Ingredients", listHtml(item.ingredients)) +
+      sectionHtml("Business Validations", listHtml(item.business_validations)) +
+      sectionHtml("Linked Fields (This Report)", listHtml(item.field_linkages)) +
+      sectionHtml("Cross-Report Linkages", listHtml(item.cross_report_linkages)) +
+      sectionHtml("Data Sources", listHtml(item.data_sources)) +
+      sectionHtml("Leadership Interpretation", "<p>" + esc(item.leadership_interpretation || "-") + "</p>");
+    const title = document.getElementById("report-info-drawer-title");
+    if (title) title.textContent = txt(item.label) || "Field Information";
+  }
+  function openDrawer(id) {
+    const item = byId[id];
+    activeId = id;
+    lastFocus = document.activeElement;
+    render(item);
+    backdrop.classList.add("is-open");
+    drawer.classList.add("is-open");
+    drawer.setAttribute("aria-hidden", "false");
+    document.body.classList.add("report-info-drawer-open");
+    if (closeBtn) closeBtn.focus();
+  }
+  function closeDrawer() {
+    activeId = "";
+    backdrop.classList.remove("is-open");
+    drawer.classList.remove("is-open");
+    drawer.setAttribute("aria-hidden", "true");
+    document.body.classList.remove("report-info-drawer-open");
+    if (lastFocus && lastFocus.focus) lastFocus.focus();
+  }
+  function triggerFromEvent(e) {
+    const el = e.target.closest("[data-info-id]");
+    if (!el) return;
+    const id = txt(el.getAttribute("data-info-id"));
+    if (!id) return;
+    e.preventDefault();
+    openDrawer(id);
+  }
+  document.addEventListener("click", triggerFromEvent);
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && activeId) {
+      e.preventDefault();
+      closeDrawer();
+      return;
+    }
+    const inInfo = e.target && e.target.closest && e.target.closest("[data-info-id]");
+    if (inInfo && (e.key === "Enter" || e.key === " ")) {
+      e.preventDefault();
+      openDrawer(txt(inInfo.getAttribute("data-info-id")));
+    }
+    if (!activeId || e.key !== "Tab") return;
+    const f = drawer.querySelectorAll("button,[href],[tabindex]:not([tabindex='-1'])");
+    const nodes = Array.from(f).filter((x) => !x.disabled);
+    if (!nodes.length) return;
+    const first = nodes[0];
+    const last = nodes[nodes.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  });
+  closeBtn.addEventListener("click", closeDrawer);
+  backdrop.addEventListener("click", closeDrawer);
+  window.reportInfoCatalog = Object.values(byId);
+})();
+</script>
+<!-- codex-info-drawer-end -->
+
+
+<!-- codex-refresh-widget-start -->
+<!-- codex-refresh-widget-v2 -->
+<style>
+@import url("https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,500,0,0");
+#codex-refresh-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+#codex-refresh-btn {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  box-sizing: border-box;
+  border: 1px solid rgba(126, 214, 242, 0.65);
+  background: rgba(14, 116, 144, 0.58);
+  color: #fff;
+  border-radius: 9px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+}
+#codex-refresh-btn[disabled] {
+  cursor: not-allowed;
+  opacity: 0.8;
+}
+#codex-refresh-btn .material-symbols-outlined {
+  font-size: 18px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.app-shell.sidebar-collapsed #codex-refresh-btn,
+.unified-nav.is-collapsed #codex-refresh-btn {
+  padding-left: 8px;
+  padding-right: 8px;
+  gap: 0;
+  justify-content: center;
+}
+.app-shell.sidebar-collapsed #codex-refresh-btn-label,
+.unified-nav.is-collapsed #codex-refresh-btn-label {
+  display: none;
+}
+.app-shell.sidebar-collapsed #codex-refresh-status,
+.unified-nav.is-collapsed #codex-refresh-status {
+  display: none;
+}
+#codex-refresh-status {
+  min-height: 14px;
+  font-size: 11px;
+  color: rgba(219, 246, 255, 0.9);
+  text-align: left;
+}
+</style>
+<div id="codex-refresh-wrap" aria-live="polite">
+  <button id="codex-refresh-btn" type="button">
+    <span class="material-symbols-outlined" aria-hidden="true">refresh</span>
+    <span id="codex-refresh-btn-label">Refresh</span>
+  </button>
+  <div id="codex-refresh-status"></div>
+</div>
+<script>
+(function () {
+  const reportId = 'phase_rmi_gantt';
+  const endpointPath = "/api/report/refresh";
+  const wrap = document.getElementById("codex-refresh-wrap");
+  const btn = document.getElementById("codex-refresh-btn");
+  const btnLabel = document.getElementById("codex-refresh-btn-label");
+  const status = document.getElementById("codex-refresh-status");
+  if (!wrap || !btn || !btnLabel || !status || !reportId) return;
+
+  function mountRefreshInNav() {
+    const navTargets = [
+      ".app-sidebar .sidebar-nav",
+      ".unified-nav .unified-nav-list",
+      ".sidebar-nav",
+      ".unified-nav-list",
+    ];
+    for (const selector of navTargets) {
+      const target = document.querySelector(selector);
+      if (target) {
+        target.appendChild(wrap);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  if (!mountRefreshInNav()) {
+    const observer = new MutationObserver(function () {
+      if (mountRefreshInNav()) {
+        observer.disconnect();
+      }
+    });
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+    window.setTimeout(function () { observer.disconnect(); }, 5000);
+  }
+
+  function setBusy(isBusy) {
+    btn.disabled = isBusy;
+    btnLabel.textContent = isBusy ? "Refreshing..." : "Refresh";
+  }
+
+  function setStatus(msg) {
+    status.textContent = msg || "";
+  }
+
+  function endpointCandidates() {
+    if (window.location.protocol === "http:" || window.location.protocol === "https:") {
+      return [endpointPath];
+    }
+    const savedOrigin = String(localStorage.getItem("codex-report-server-origin") || "").trim();
+    const defaults = [
+      "http://127.0.0.1:8000",
+      "http://localhost:8000",
+      "http://127.0.0.1:5000",
+      "http://localhost:5000",
+    ];
+    const origins = [savedOrigin, ...defaults]
+      .map((item) => String(item || "").trim().replace(/\/$/, ""))
+      .filter(Boolean);
+    return Array.from(new Set(origins)).map((origin) => origin + endpointPath);
+  }
+
+  async function postRefresh(body) {
+    const endpoints = endpointCandidates();
+    let lastError = "Failed to fetch";
+    for (const endpoint of endpoints) {
+      try {
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (endpoint.startsWith("http")) {
+          try {
+            localStorage.setItem("codex-report-server-origin", new URL(endpoint).origin);
+          } catch (_err) {}
+        }
+        return response;
+      } catch (err) {
+        lastError = (err && err.message) ? err.message : String(err);
+      }
+    }
+    throw new Error(lastError);
+  }
+
+  btn.addEventListener("click", async function () {
+    setBusy(true);
+    setStatus("Running scripts...");
+    try {
+      const response = await postRefresh({ report: reportId });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) {
+        const msg = payload.error || "Refresh failed.";
+        setStatus(msg);
+        alert(msg);
+        return;
+      }
+      const ts = payload.completed_at || "";
+      setStatus(ts ? ("Updated: " + ts) : "Updated.");
+      window.location.reload();
+    } catch (err) {
+      const base = (err && err.message) ? err.message : String(err);
+      const hint = "If report is opened from file path, use server URL like http://127.0.0.1:8000/dashboard.html";
+      const msg = base ? (base + ". " + hint) : hint;
+      setStatus(msg);
+      alert(msg);
+    } finally {
+      setBusy(false);
+    }
+  });
+})();
+</script>
+<!-- codex-refresh-widget-end -->
+
+</body>
+</html>

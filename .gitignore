@@ -1,0 +1,7 @@
+.env
+_ipp_temp.pptx
+_ipp_temp.xlsx
+__pycache__/
+*.pyc
+*.pyo
+dashboard.html
