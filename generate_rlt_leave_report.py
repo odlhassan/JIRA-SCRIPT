@@ -1285,11 +1285,13 @@ def _write_html(output_path: Path, project_key: str, project_name: str, from_dat
     .stat.planned {{ background: var(--kpi-planned-bg); border-color: var(--kpi-planned-line); }}
     .stat.unplanned {{ background: var(--kpi-actual-bg); border-color: var(--kpi-actual-line); }}
     .stat.future {{ background: var(--kpi-gap-bg); border-color: var(--kpi-gap-line); }}
+    .stat.leaves {{ background: var(--kpi-leaves-bg); border-color: var(--kpi-leaves-line); }}
     .stat.warn {{ background: var(--kpi-capacity-gap-bg); border-color: var(--kpi-capacity-gap-line); }}
     .stat.total .v {{ color: var(--kpi-capacity-ink); }}
     .stat.planned .v {{ color: var(--kpi-planned-ink); }}
     .stat.unplanned .v {{ color: var(--kpi-actual-ink); }}
     .stat.future .v {{ color: var(--kpi-gap-ink); }}
+    .stat.leaves .v {{ color: var(--kpi-leaves-ink); }}
     .stat.warn .v {{ color: var(--kpi-capacity-gap-ink); }}
     .controls {{ margin-top: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); padding: 12px; display: flex; flex-wrap: wrap; gap: 10px; align-items: end; }}
     label {{ font-size: 12px; color: var(--muted); font-weight: 700; }}
@@ -1323,6 +1325,7 @@ def _write_html(output_path: Path, project_key: str, project_name: str, from_dat
         <div class="stat total"><div class="k">Total Taken <span class="stat-info" tabindex="0">i<span class="stat-info-tip">Planned Taken + Unplanned Taken within selected date range. Days are derived from the configured day-hours profile.</span></span></div><div class="v" id="stat-total-taken-hours">{total_taken:.2f}h</div><div class="s" id="stat-total-taken-days">{total_taken_days:.2f}d</div></div>
         <div class="stat planned"><div class="k">Planned Taken <span class="stat-info" tabindex="0">i<span class="stat-info-tip">Logged leave hours classified as Planned within selected date range.</span></span></div><div class="v" id="stat-planned-taken-hours">{total_planned_taken:.2f}h</div></div>
         <div class="stat unplanned"><div class="k">Unplanned Taken <span class="stat-info" tabindex="0">i<span class="stat-info-tip">Logged leave hours classified as Unplanned within selected date range.</span></span></div><div class="v" id="stat-unplanned-taken-hours">{total_unplanned_taken:.2f}h</div></div>
+        <div class="stat leaves"><div class="k">Total Leaves Planned <span class="stat-info" tabindex="0">i<span class="stat-info-tip">Planned Taken + Future Planned within selected date range.</span></span></div><div class="v" id="stat-total-planned-leaves-hours">0.00h</div></div>
         <div class="stat future"><div class="k">Future Planned <span class="stat-info" tabindex="0">i<span class="stat-info-tip">Planned leave hours not yet logged in the selected range.</span></span></div><div class="v" id="stat-future-hours">{total_future:.2f}h</div></div>
         <div class="stat warn"><div class="k">No Entry <span class="stat-info" tabindex="0">i<span class="stat-info-tip">Count of planned leave items missing required planned date and/or estimate metadata.</span></span></div><div class="v" id="stat-no-entry">{total_no_entry}</div></div>
       </div>
@@ -1365,6 +1368,7 @@ const statTotalTakenHoursEl=document.getElementById('stat-total-taken-hours');
 const statTotalTakenDaysEl=document.getElementById('stat-total-taken-days');
 const statPlannedTakenHoursEl=document.getElementById('stat-planned-taken-hours');
 const statUnplannedTakenHoursEl=document.getElementById('stat-unplanned-taken-hours');
+const statTotalPlannedLeavesHoursEl=document.getElementById('stat-total-planned-leaves-hours');
 const statFutureHoursEl=document.getElementById('stat-future-hours');
 const statNoEntryEl=document.getElementById('stat-no-entry');
 const tabButtons = Array.from(document.querySelectorAll('.tab-btn'));
@@ -1562,16 +1566,19 @@ function apply(){{
    }}));
 
  const inRangeSubtask = (subtask) => {{
-   const candidates = [
-     String(subtask.planned_date_for_bucket || ''),
-     String(subtask.start_date || ''),
-     String(subtask.due_date || ''),
-   ].filter(Boolean);
-   if(!candidates.length) return true;
-   for(const iso of candidates) {{
-     if(inRangeDay(iso.slice(0,10), fromUsed, toUsed)) return true;
+   const plannedDate = String(subtask.planned_date_for_bucket || '').slice(0,10);
+   const startDate = String(subtask.start_date || '').slice(0,10);
+   const dueDate = String(subtask.due_date || '').slice(0,10);
+   const plannedObj = toDateObj(plannedDate);
+   const startObj = toDateObj(startDate);
+   const dueObj = toDateObj(dueDate);
+   if(plannedObj) return plannedObj >= fromUsed && plannedObj <= toUsed;
+   if(startObj || dueObj) {{
+     const rowStart = startObj || dueObj;
+     const rowEnd = dueObj || startObj;
+     return Boolean(rowStart && rowEnd && rowStart <= toUsed && rowEnd >= fromUsed);
    }}
-   return false;
+   return true;
  }};
 
  const defectiveRows = defectiveData.filter((row) => {{
@@ -1595,6 +1602,7 @@ function apply(){{
  const plannedTaken = dailyFilteredRaw.reduce((acc, row) => acc + Number(row.planned_taken_hours || 0), 0);
  const unplannedTaken = dailyFilteredRaw.reduce((acc, row) => acc + Number(row.unplanned_taken_hours || 0), 0);
  const futurePlanned = dailyFilteredRaw.reduce((acc, row) => acc + Number(row.planned_not_taken_hours || 0), 0);
+ const totalPlannedLeaves = plannedTaken + futurePlanned;
  const totalTaken = plannedTaken + unplannedTaken;
  const takenByDay = new Map();
  for(const row of dailyFilteredRaw) {{
@@ -1613,6 +1621,7 @@ function apply(){{
  statTotalTakenDaysEl.textContent = daysText(totalTakenDays);
  statPlannedTakenHoursEl.textContent = hoursText(plannedTaken);
  statUnplannedTakenHoursEl.textContent = hoursText(unplannedTaken);
+ statTotalPlannedLeavesHoursEl.textContent = hoursText(totalPlannedLeaves);
  statFutureHoursEl.textContent = hoursText(futurePlanned);
  statNoEntryEl.textContent = String(defectiveRows.filter((r)=>String(r.reason || '').includes('No Entry')).length);
 

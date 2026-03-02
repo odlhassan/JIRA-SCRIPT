@@ -101,6 +101,7 @@ def main() -> None:
         ("planned-rmis-html", "generate_planned_rmis_html.py"),
         ("gantt-chart-html", "generate_gantt_chart_html.py"),
         ("employee-performance-html", "generate_employee_performance_report.py"),
+        ("team-rmi-gantt-sqlite-sync", "sync_team_rmi_gantt_sqlite.py"),
     ]
 
     if not args.skip_phase_rmi_gantt:

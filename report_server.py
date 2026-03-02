@@ -343,9 +343,13 @@ def _save_dashboard_risk_settings(settings_db_path: Path, payload: object) -> di
 
 
 def _settings_top_nav_html(active_route: str) -> str:
+    # Hide the full settings navigation on the Epics Planner screen so that
+    # the header can stay focused and uncluttered.
+    if active_route == EPICS_MANAGEMENT_SETTINGS_ROUTE:
+        return ""
+
     links: list[str] = []
-    if active_route != EPICS_MANAGEMENT_SETTINGS_ROUTE:
-        links.append('<a class="btn alt" href="/dashboard.html">Back to Dashboard</a>')
+    links.append('<a class="btn alt" href="/dashboard.html">Back to Dashboard</a>')
     for label, route in _settings_nav_items():
         is_active = route == active_route
         class_name = "btn" if is_active else "btn alt"
@@ -433,7 +437,7 @@ def _capacity_settings_html() -> str:
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Capacity Profile Settings</title>
   <link rel="stylesheet" href="/shared-nav.css">
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,500,0,0">
+  <link rel="stylesheet" href="/material-symbols.css">
   <style>
     :root {
       color-scheme: light;
@@ -912,15 +916,26 @@ def _performance_settings_html() -> str:
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Performance Point Settings</title>
   <link rel="stylesheet" href="/shared-nav.css">
+  <link rel="stylesheet" href="/material-symbols.css">
   <style>
     :root { --bg:#f3f6fb; --card:#fff; --text:#0f172a; --muted:#475569; --line:#cbd5e1; --brand:#1d4ed8; --ok:#065f46; --err:#991b1b; }
     body { margin:0; padding:20px; font-family:"Segoe UI",Tahoma,sans-serif; background:var(--bg); color:var(--text); }
-    .card { max-width:980px; margin:0 auto; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px; }
+    .card { width:100%; max-width:none; margin:0; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px; }
     .top { display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap; align-items:center; }
     .btn { border:1px solid #1e40af; background:var(--brand); color:#fff; border-radius:8px; padding:8px 12px; cursor:pointer; text-decoration:none; display:inline-block; }
     .btn.alt { background:#fff; color:#0f172a; border-color:var(--line); }
     .grid { display:grid; gap:10px; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); margin-top:14px; }
     label { display:block; font-size:.82rem; font-weight:700; margin-bottom:4px; }
+    .label-row { display:flex; align-items:center; gap:6px; }
+    .field-info { font-size:1rem; line-height:1; color:#1d4ed8; cursor:pointer; border-radius:999px; padding:2px; }
+    .field-info:hover { background:#dbeafe; }
+    .field-group { margin-top:14px; border:1px solid #dbeafe; border-radius:10px; background:#f8fbff; padding:10px; }
+    .group-title { font-size:.8rem; font-weight:800; letter-spacing:.02em; text-transform:uppercase; color:#334155; }
+    .related-box { border:1px solid #bfdbfe; border-radius:10px; background:#eff6ff; padding:8px; }
+    .related-title { margin:0 0 6px; font-size:.78rem; font-weight:800; color:#1e3a8a; text-transform:uppercase; letter-spacing:.02em; }
+    .related-grid { display:grid; gap:8px; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); }
+    .perf-field { border:1px solid transparent; border-radius:9px; padding:6px; transition:border-color .16s ease, background-color .16s ease, box-shadow .16s ease; }
+    .perf-field.is-highlight { border-color:#f59e0b; background:#fffbeb; box-shadow:0 0 0 2px rgba(245,158,11,.2); }
     input { width:100%; box-sizing:border-box; border:1px solid var(--line); border-radius:8px; padding:8px; font-size:.92rem; }
     .row { display:flex; gap:8px; margin-top:14px; flex-wrap:wrap; }
     .team-wrap { margin-top:16px; padding-top:14px; border-top:1px dashed var(--line); }
@@ -930,6 +945,39 @@ def _performance_settings_html() -> str:
     .team-item:last-child { margin-bottom:0; }
     .team-name { font-weight:700; font-size:.88rem; }
     .team-members { margin-top:4px; color:var(--muted); font-size:.8rem; }
+    .guide { margin-top:16px; border:1px solid #c7d2fe; border-radius:12px; background:linear-gradient(135deg,#eef2ff,#f0fdf4); padding:14px; }
+    .guide-title { display:flex; align-items:center; gap:8px; margin:0 0 8px; font-size:1.02rem; }
+    .guide-title .material-symbols-outlined { color:#1d4ed8; font-size:1.2rem; }
+    .formula-box { border:1px solid #bfdbfe; background:#eff6ff; border-radius:10px; padding:10px; }
+    .formula-essence { margin:0 0 8px; font-size:.84rem; color:#1e3a8a; line-height:1.45; }
+    .formula-code { margin:0; color:#1e3a8a; font-family:Consolas,Monaco,monospace; font-size:.88rem; line-height:1.55; }
+    .formula-code .line { display:block; }
+    .formula-code [data-target-fields] { cursor:pointer; }
+    .formula-code [data-target-fields].is-active { outline:2px solid rgba(37,99,235,.3); outline-offset:1px; }
+    .token-reduce { display:inline-block; padding:1px 5px; border-radius:5px; background:#fee2e2; color:#7f1d1d; font-weight:700; }
+    .token-add { display:inline-block; padding:1px 5px; border-radius:5px; background:#dcfce7; color:#166534; font-weight:700; }
+    .token-neutral { display:inline-block; padding:1px 5px; border-radius:5px; background:#e2e8f0; color:#1e293b; font-weight:700; }
+    .ingredients { display:grid; gap:8px; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); margin-top:10px; }
+    .ingredient { border:1px solid #dbeafe; border-radius:10px; background:#fff; padding:9px; transition:border-color .16s ease, box-shadow .16s ease, transform .16s ease; }
+    .ingredient[data-target-fields] { cursor:pointer; }
+    .ingredient.is-active { border-color:#2563eb; box-shadow:0 8px 18px rgba(37,99,235,.16); transform:translateY(-1px); }
+    .ingredient-top { display:flex; align-items:center; gap:6px; font-size:.83rem; font-weight:700; color:#1e3a8a; }
+    .ingredient .material-symbols-outlined { font-size:1rem; color:#2563eb; }
+    .ingredient p { margin:4px 0 0; font-size:.82rem; color:var(--muted); }
+    .explain-grid { display:grid; gap:8px; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); margin-top:10px; }
+    .case { border:1px solid #d1fae5; border-radius:10px; background:#f8fffb; padding:10px; }
+    .case h3 { display:flex; align-items:center; gap:6px; margin:0; font-size:.9rem; color:#065f46; }
+    .case .material-symbols-outlined { font-size:1rem; color:#0f766e; }
+    .case p { margin:6px 0 0; font-size:.82rem; color:#334155; line-height:1.45; }
+    .drawer-backdrop { position:fixed; inset:0; background:rgba(15,23,42,.35); opacity:0; pointer-events:none; transition:opacity .18s ease; z-index:80; }
+    .drawer { position:fixed; top:0; right:0; width:min(460px,92vw); height:100vh; background:#ffffff; border-left:1px solid #cbd5e1; box-shadow:-14px 0 30px rgba(15,23,42,.18); transform:translateX(100%); transition:transform .2s ease; z-index:81; display:flex; flex-direction:column; }
+    .drawer-head { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:14px 14px 10px; border-bottom:1px solid #e2e8f0; background:#f8fbff; }
+    .drawer-title { margin:0; font-size:1rem; color:#0f172a; }
+    .drawer-close { border:1px solid #cbd5e1; background:#fff; color:#334155; border-radius:8px; padding:6px 10px; cursor:pointer; }
+    .drawer-body { padding:14px; overflow:auto; }
+    .drawer-body p { margin:0; color:#334155; line-height:1.55; font-size:.9rem; white-space:pre-wrap; }
+    body.drawer-open .drawer-backdrop { opacity:1; pointer-events:auto; }
+    body.drawer-open .drawer { transform:translateX(0); }
     #team-assignees { min-height:160px; }
     #status { margin-top:10px; min-height:1.2em; }
     #status.ok { color:var(--ok); } #status.err { color:var(--err); }
@@ -944,22 +992,141 @@ def _performance_settings_html() -> str:
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;">""" + _settings_top_nav_html(PERFORMANCE_SETTINGS_ROUTE) + """</div>
     </div>
-    <div class="grid">
-      <div><label for="base-score">Base Score</label><input id="base-score" type="number" step="0.1"></div>
-      <div><label for="min-score">Min Score</label><input id="min-score" type="number" step="0.1"></div>
-      <div><label for="max-score">Max Score</label><input id="max-score" type="number" step="0.1"></div>
-      <div><label for="bug-hour">Points per Bug Hour</label><input id="bug-hour" type="number" min="0" step="0.01"></div>
-      <div><label for="bug-late-hour">Points per Bug Late Hour</label><input id="bug-late-hour" type="number" min="0" step="0.01"></div>
-      <div><label for="leave-hour">Points per Unplanned Leave Hour</label><input id="leave-hour" type="number" min="0" step="0.01"></div>
-      <div><label for="subtask-late-hour">Points per Subtask Late Hour</label><input id="subtask-late-hour" type="number" min="0" step="0.01"></div>
-      <div><label for="estimate-hour">Points per Estimate Overrun Hour</label><input id="estimate-hour" type="number" min="0" step="0.01"></div>
-      <div><label for="missed-due-date">Points per Missed Due Date</label><input id="missed-due-date" type="number" min="0" step="0.01"></div>
-    </div>
+    <section class="field-group">
+      <div class="group-title">Score Foundation</div>
+      <div class="grid" style="margin-top:8px;">
+        <div class="perf-field" data-field-key="base_score">
+          <label for="base-score" class="label-row">Base Score
+            <span class="material-symbols-outlined field-info" role="button" tabindex="0" data-info-title="Base Score" data-info-body="Starting performance score before penalties are applied.\n\nMeaning for performance calculation:\n- It is the additive anchor in `Raw Score = base_score - Total Penalty`.\n- Increasing Base Score raises everyone’s starting point.\n- Use carefully so penalties still create meaningful separation." aria-label="Base Score info">info</span>
+          </label>
+          <input id="base-score" type="number" step="0.1">
+        </div>
+        <div class="related-box">
+          <p class="related-title">Related Bounds</p>
+          <div class="related-grid">
+            <div class="perf-field" data-field-key="min_score">
+              <label for="min-score" class="label-row">Min Score
+                <span class="material-symbols-outlined field-info" role="button" tabindex="0" data-info-title="Min Score" data-info-body="Lower clamp boundary.\n\nMeaning for performance calculation:\n- Final score cannot go below this value.\n- Protects against extreme penalties causing unstable negative/very-low outputs.\n- Higher Min Score compresses low-end differentiation." aria-label="Min Score info">info</span>
+              </label>
+              <input id="min-score" type="number" step="0.1">
+            </div>
+            <div class="perf-field" data-field-key="max_score">
+              <label for="max-score" class="label-row">Max Score
+                <span class="material-symbols-outlined field-info" role="button" tabindex="0" data-info-title="Max Score" data-info-body="Upper clamp boundary.\n\nMeaning for performance calculation:\n- Final score cannot exceed this value.\n- Prevents inflated scores when Base Score is high.\n- Lower Max Score compresses top-end differentiation." aria-label="Max Score info">info</span>
+              </label>
+              <input id="max-score" type="number" step="0.1">
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+    <section class="field-group">
+      <div class="group-title">Penalty Multipliers</div>
+      <div class="grid" style="margin-top:8px;">
+        <div class="perf-field" data-field-key="points_per_bug_hour">
+          <label for="bug-hour" class="label-row">Points per Bug Hour
+            <span class="material-symbols-outlined field-info" role="button" tabindex="0" data-info-title="Points per Bug Hour" data-info-body="Penalty rate applied to bug hours.\n\nMeaning for performance calculation:\n- Contributes to Total Penalty as `bug_hours * points_per_bug_hour`.\n- Higher value makes quality-related rework deduct score faster.\n- Use to reflect seriousness of bug workload in scoring." aria-label="Points per Bug Hour info">info</span>
+          </label>
+          <input id="bug-hour" type="number" min="0" step="0.01">
+        </div>
+        <div class="perf-field" data-field-key="points_per_bug_late_hour">
+          <label for="bug-late-hour" class="label-row">Points per Bug Late Hour
+            <span class="material-symbols-outlined field-info" role="button" tabindex="0" data-info-title="Points per Bug Late Hour" data-info-body="Penalty rate for late bug resolution hours.\n\nMeaning for performance calculation:\n- Contributes as `bug_late_hours * points_per_bug_late_hour`.\n- Emphasizes delay in quality closure and SLA risk.\n- Higher value prioritizes timeliness of bug fixing." aria-label="Points per Bug Late Hour info">info</span>
+          </label>
+          <input id="bug-late-hour" type="number" min="0" step="0.01">
+        </div>
+        <div class="perf-field" data-field-key="points_per_unplanned_leave_hour">
+          <label for="leave-hour" class="label-row">Points per Unplanned Leave Hour
+            <span class="material-symbols-outlined field-info" role="button" tabindex="0" data-info-title="Points per Unplanned Leave Hour" data-info-body="Penalty rate for unplanned leave hours.\n\nMeaning for performance calculation:\n- Contributes as `unplanned_leave_hours * points_per_unplanned_leave_hour`.\n- Captures disruption risk from unexpected availability loss.\n- Higher value increases penalty sensitivity to sudden leave." aria-label="Points per Unplanned Leave Hour info">info</span>
+          </label>
+          <input id="leave-hour" type="number" min="0" step="0.01">
+        </div>
+        <div class="perf-field" data-field-key="points_per_subtask_late_hour">
+          <label for="subtask-late-hour" class="label-row">Points per Subtask Late Hour
+            <span class="material-symbols-outlined field-info" role="button" tabindex="0" data-info-title="Points per Subtask Late Hour" data-info-body="Penalty rate for subtask late hours.\n\nMeaning for performance calculation:\n- Contributes as `subtask_late_hours * points_per_subtask_late_hour`.\n- Converts schedule slippage into measurable score deduction.\n- Higher value penalizes execution delays more strongly." aria-label="Points per Subtask Late Hour info">info</span>
+          </label>
+          <input id="subtask-late-hour" type="number" min="0" step="0.01">
+        </div>
+        <div class="perf-field" data-field-key="points_per_estimate_overrun_hour">
+          <label for="estimate-hour" class="label-row">Points per Estimate Overrun Hour
+            <span class="material-symbols-outlined field-info" role="button" tabindex="0" data-info-title="Points per Estimate Overrun Hour" data-info-body="Penalty rate for estimate overrun hours.\n\nMeaning for performance calculation:\n- Contributes as `estimate_overrun_hours * points_per_estimate_overrun_hour`.\n- Measures planning and estimation discipline.\n- Higher value increases penalty for underestimation/effort drift." aria-label="Points per Estimate Overrun Hour info">info</span>
+          </label>
+          <input id="estimate-hour" type="number" min="0" step="0.01">
+        </div>
+        <div class="perf-field" data-field-key="points_per_missed_due_date">
+          <label for="missed-due-date" class="label-row">Points per Missed Due Date
+            <span class="material-symbols-outlined field-info" role="button" tabindex="0" data-info-title="Points per Missed Due Date" data-info-body="Fixed penalty per missed due date event.\n\nMeaning for performance calculation:\n- Contributes as `missed_due_dates * points_per_missed_due_date`.\n- Encodes delivery commitment reliability in final score.\n- Higher value makes date misses more costly than hour-only signals." aria-label="Points per Missed Due Date info">info</span>
+          </label>
+          <input id="missed-due-date" type="number" min="0" step="0.01">
+        </div>
+      </div>
+    </section>
     <div class="row">
       <button class="btn alt" type="button" id="reload-btn">Reload</button>
       <button class="btn alt" type="button" id="reset-btn">Reset Defaults</button>
       <button class="btn" type="button" id="save-btn">Save</button>
     </div>
+    <section class="guide">
+      <h2 class="guide-title"><span class="material-symbols-outlined" aria-hidden="true">calculate</span>Performance Formula Guide</h2>
+      <div class="formula-box">
+        <p class="formula-essence">Essence: this is a penalty-first model. We start from a base score and deduct penalty points for delivery quality, delay, overrun, and unplanned leave factors. In this formula, only `base_score` adds points; all other scoring ingredients reduce points.</p>
+        <p class="formula-code">
+          <span class="line">1) Total Penalty =</span>
+          <span class="line">   (<span class="token-reduce" data-target-fields="points_per_bug_hour" tabindex="0">bug_hours * points_per_bug_hour</span>) +</span>
+          <span class="line">   (<span class="token-reduce" data-target-fields="points_per_bug_late_hour" tabindex="0">bug_late_hours * points_per_bug_late_hour</span>) +</span>
+          <span class="line">   (<span class="token-reduce" data-target-fields="points_per_unplanned_leave_hour" tabindex="0">unplanned_leave_hours * points_per_unplanned_leave_hour</span>) +</span>
+          <span class="line">   (<span class="token-reduce" data-target-fields="points_per_subtask_late_hour" tabindex="0">subtask_late_hours * points_per_subtask_late_hour</span>) +</span>
+          <span class="line">   (<span class="token-reduce" data-target-fields="points_per_estimate_overrun_hour" tabindex="0">estimate_overrun_hours * points_per_estimate_overrun_hour</span>) +</span>
+          <span class="line">   (<span class="token-reduce" data-target-fields="points_per_missed_due_date" tabindex="0">missed_due_dates * points_per_missed_due_date</span>)</span>
+          <span class="line" style="margin-top:6px;">2) Raw Score = <span class="token-add" data-target-fields="base_score" tabindex="0">base_score</span> - <span class="token-reduce">Total Penalty</span></span>
+          <span class="line" style="margin-top:6px;">3) Final Score = <span class="token-neutral" data-target-fields="min_score,max_score" tabindex="0">clamp(Raw Score, min_score, max_score)</span></span>
+        </p>
+      </div>
+      <div class="ingredients">
+        <article class="ingredient" data-target-fields="points_per_bug_hour,points_per_bug_late_hour" tabindex="0">
+          <div class="ingredient-top"><span class="material-symbols-outlined" aria-hidden="true">bug_report</span>Bug Quality Impact</div>
+          <p>Higher bug hours and late bug closure reduce score faster when severity or rework is high.</p>
+        </article>
+        <article class="ingredient" data-target-fields="points_per_unplanned_leave_hour" tabindex="0">
+          <div class="ingredient-top"><span class="material-symbols-outlined" aria-hidden="true">event_busy</span>Unplanned Leave Impact</div>
+          <p>Unexpected leave hours apply a direct penalty and reflect sudden execution gaps.</p>
+        </article>
+        <article class="ingredient" data-target-fields="points_per_subtask_late_hour" tabindex="0">
+          <div class="ingredient-top"><span class="material-symbols-outlined" aria-hidden="true">schedule</span>Subtask Delay Impact</div>
+          <p>Subtask late hours convert schedule drift into score deductions.</p>
+        </article>
+        <article class="ingredient" data-target-fields="points_per_estimate_overrun_hour" tabindex="0">
+          <div class="ingredient-top"><span class="material-symbols-outlined" aria-hidden="true">timer</span>Estimation Accuracy</div>
+          <p>Estimate overrun hours track planning accuracy and penalize larger overruns.</p>
+        </article>
+        <article class="ingredient" data-target-fields="points_per_missed_due_date" tabindex="0">
+          <div class="ingredient-top"><span class="material-symbols-outlined" aria-hidden="true">assignment_late</span>Due Date Breaches</div>
+          <p>Each missed due date adds a fixed point deduction for delivery discipline.</p>
+        </article>
+        <article class="ingredient" data-target-fields="min_score,max_score" tabindex="0">
+          <div class="ingredient-top"><span class="material-symbols-outlined" aria-hidden="true">shield</span>Score Bounds</div>
+          <p>`min_score` and `max_score` cap extreme outcomes to keep scoring stable.</p>
+        </article>
+        <article class="ingredient" data-target-fields="base_score" tabindex="0">
+          <div class="ingredient-top"><span class="material-symbols-outlined" aria-hidden="true">add_circle</span>Positive Contributor (Applicable)</div>
+          <p>`base_score` is the additive anchor. All configurable penalty multipliers on this page are deduction terms.</p>
+        </article>
+      </div>
+      <div class="explain-grid">
+        <article class="case">
+          <h3><span class="material-symbols-outlined" aria-hidden="true">trending_up</span>Case A: Balanced Delivery</h3>
+          <p>Given `base_score=100`, penalty total of `14.5` gives `Raw Score=85.5`. If bounds are `40..100`, final remains `85.5` because it is inside range.</p>
+        </article>
+        <article class="case">
+          <h3><span class="material-symbols-outlined" aria-hidden="true">warning</span>Case B: Heavy Delay and Overrun</h3>
+          <p>If penalties rise to `73` with `base_score=100`, `Raw Score=27`. With `min_score=40`, final score is clamped up to `40` to represent floor risk case.</p>
+        </article>
+        <article class="case">
+          <h3><span class="material-symbols-outlined" aria-hidden="true">rule</span>Case C: No Penalty Period</h3>
+          <p>When all ingredients are zero, `Total Penalty=0`, so `Raw Score=base_score`. Final equals base score unless base exceeds `max_score`, where it is capped.</p>
+        </article>
+      </div>
+    </section>
     <section class="team-wrap">
       <h2 style="margin:0 0 8px;font-size:1rem;">Team Management</h2>
       <p style="margin:0;color:var(--muted);font-size:.88rem;">Create quick teams by selecting assignees.</p>
@@ -983,12 +1150,28 @@ def _performance_settings_html() -> str:
     </section>
     <div id="status"></div>
   </main>
+  <div id="field-drawer-backdrop" class="drawer-backdrop" aria-hidden="true"></div>
+  <aside id="field-drawer" class="drawer" aria-hidden="true" aria-labelledby="field-drawer-title" aria-modal="true" role="dialog">
+    <div class="drawer-head">
+      <h3 id="field-drawer-title" class="drawer-title">Field Details</h3>
+      <button id="field-drawer-close" type="button" class="drawer-close">Close</button>
+    </div>
+    <div class="drawer-body">
+      <p id="field-drawer-body"></p>
+    </div>
+  </aside>
   <script>
     const DEFAULTS = """ + json.dumps(DEFAULT_PERFORMANCE_SETTINGS) + """;
     const API = "/api/performance/settings";
     const ASSIGNEES_API = "/api/performance/assignees";
     const TEAMS_API = "/api/performance/teams";
     const statusEl = document.getElementById("status");
+    const drawerEl = document.getElementById("field-drawer");
+    const drawerBackdropEl = document.getElementById("field-drawer-backdrop");
+    const drawerTitleEl = document.getElementById("field-drawer-title");
+    const drawerBodyEl = document.getElementById("field-drawer-body");
+    const drawerCloseEl = document.getElementById("field-drawer-close");
+    const fieldInfoButtons = Array.from(document.querySelectorAll(".field-info[data-info-title][data-info-body]"));
     const fields = {
       base_score: document.getElementById("base-score"),
       min_score: document.getElementById("min-score"),
@@ -1000,6 +1183,12 @@ def _performance_settings_html() -> str:
       points_per_estimate_overrun_hour: document.getElementById("estimate-hour"),
       points_per_missed_due_date: document.getElementById("missed-due-date")
     };
+    const fieldContainers = Array.from(document.querySelectorAll(".perf-field[data-field-key]"));
+    const fieldContainerByKey = {};
+    fieldContainers.forEach((el) => { fieldContainerByKey[String(el.getAttribute("data-field-key") || "")] = el; });
+    const ingredientCards = Array.from(document.querySelectorAll(".ingredient[data-target-fields]"));
+    const formulaLinks = Array.from(document.querySelectorAll(".formula-code [data-target-fields]"));
+    const interactiveLinks = ingredientCards.concat(formulaLinks);
     const teamNameEl = document.getElementById("team-name");
     const teamLeaderEl = document.getElementById("team-leader");
     const teamAssigneesEl = document.getElementById("team-assignees");
@@ -1008,6 +1197,57 @@ def _performance_settings_html() -> str:
     function setForm(settings) { for (const k of Object.keys(fields)) fields[k].value = String(Number(settings[k] ?? 0)); }
     function readForm() { const out = {}; for (const k of Object.keys(fields)) out[k] = Number(fields[k].value || 0); return out; }
     function esc(text) { return String(text || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+    function openFieldDrawer(title, body) {
+      drawerTitleEl.textContent = String(title || "Field Details");
+      drawerBodyEl.textContent = String(body || "");
+      document.body.classList.add("drawer-open");
+      drawerEl.setAttribute("aria-hidden", "false");
+      drawerBackdropEl.setAttribute("aria-hidden", "false");
+      drawerCloseEl.focus();
+    }
+    function closeFieldDrawer() {
+      document.body.classList.remove("drawer-open");
+      drawerEl.setAttribute("aria-hidden", "true");
+      drawerBackdropEl.setAttribute("aria-hidden", "true");
+    }
+    fieldInfoButtons.forEach((btn) => {
+      const open = () => openFieldDrawer(btn.getAttribute("data-info-title"), btn.getAttribute("data-info-body"));
+      btn.addEventListener("click", open);
+      btn.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          open();
+        }
+      });
+    });
+    drawerCloseEl.addEventListener("click", closeFieldDrawer);
+    drawerBackdropEl.addEventListener("click", closeFieldDrawer);
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && document.body.classList.contains("drawer-open")) closeFieldDrawer();
+    });
+    function clearLinkedHighlights() {
+      interactiveLinks.forEach((el) => el.classList.remove("is-active"));
+      fieldContainers.forEach((el) => el.classList.remove("is-highlight"));
+    }
+    function highlightTargetsFromElement(element) {
+      clearLinkedHighlights();
+      if (!element) return;
+      element.classList.add("is-active");
+      const targets = String(element.getAttribute("data-target-fields") || "")
+        .split(",")
+        .map((x) => x.trim())
+        .filter(Boolean);
+      targets.forEach((key) => {
+        const targetEl = fieldContainerByKey[key];
+        if (targetEl) targetEl.classList.add("is-highlight");
+      });
+    }
+    interactiveLinks.forEach((el) => {
+      el.addEventListener("mouseenter", () => highlightTargetsFromElement(el));
+      el.addEventListener("mouseleave", () => clearLinkedHighlights());
+      el.addEventListener("focus", () => highlightTargetsFromElement(el));
+      el.addEventListener("blur", () => clearLinkedHighlights());
+    });
     async function loadSettings() {
       setStatus("Loading...", "");
       const response = await fetch(API);
@@ -1110,6 +1350,7 @@ def _dashboard_risk_settings_html() -> str:
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Dashboard Risk Settings</title>
   <link rel="stylesheet" href="/shared-nav.css">
+  <link rel="stylesheet" href="/material-symbols.css">
   <style>
     :root { --bg:#f8fafc; --card:#ffffff; --ink:#0f172a; --muted:#475569; --line:#dbe6f5; --brand:#0f766e; --ok:#166534; --err:#b91c1c; --chip-low:#166534; --chip-can:#a16207; --chip-med:#c2410c; --chip-high:#b91c1c; }
     * { box-sizing:border-box; }
@@ -1411,6 +1652,7 @@ def _report_entities_settings_html() -> str:
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Report Entity Registry</title>
   <link rel="stylesheet" href="/shared-nav.css">
+  <link rel="stylesheet" href="/material-symbols.css">
   <style>
     :root { --bg:#eff6ff; --card:#ffffff; --ink:#0f172a; --muted:#475569; --line:#cbd5e1; --brand:#0f766e; --ok:#166534; --err:#b91c1c; --sug:#ccfbf1; }
     * { box-sizing:border-box; }
@@ -1857,6 +2099,7 @@ def _manage_fields_settings_html() -> str:
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Manage Fields</title>
   <link rel="stylesheet" href="/shared-nav.css">
+  <link rel="stylesheet" href="/material-symbols.css">
   <style>
     :root { --bg:#f4f8ff; --card:#fff; --ink:#0f172a; --line:#cbd5e1; --muted:#475569; --brand:#1d4ed8; --ok:#166534; --err:#b91c1c; --sug:#dbeafe; }
     * { box-sizing:border-box; }
@@ -2263,6 +2506,7 @@ def _projects_settings_html() -> str:
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Managed Projects</title>
   <link rel="stylesheet" href="/shared-nav.css">
+  <link rel="stylesheet" href="/material-symbols.css">
   <style>
     :root { --bg:#f4f7fc; --card:#fff; --line:#cbd5e1; --text:#0f172a; --muted:#475569; --brand:#1d4ed8; --ok:#166534; --err:#b91c1c; --soft:#eef4ff; }
     body { margin:0; padding:20px; background:linear-gradient(180deg,#f2f6ff,#f8fbff); color:var(--text); font-family:"Segoe UI",Tahoma,sans-serif; }
@@ -2766,6 +3010,7 @@ def _epics_dropdown_options_settings_html() -> str:
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Epic Dropdown Options</title>
   <link rel="stylesheet" href="/shared-nav.css">
+  <link rel="stylesheet" href="/material-symbols.css">
   <style>
     :root { --bg:#f4f7fc; --card:#fff; --line:#cbd5e1; --text:#0f172a; --muted:#475569; --brand:#1d4ed8; --ok:#166534; --err:#b91c1c; }
     * { box-sizing:border-box; }
@@ -2906,6 +3151,7 @@ def _epic_phases_settings_html() -> str:
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Epic Phases</title>
   <link rel="stylesheet" href="/shared-nav.css">
+  <link rel="stylesheet" href="/material-symbols.css">
   <style>
     :root { --bg:#f4f7fc; --card:#fff; --line:#cbd5e1; --text:#0f172a; --muted:#475569; --brand:#1d4ed8; --ok:#166534; --warn:#92400e; --err:#b91c1c; }
     * { box-sizing:border-box; }
@@ -3265,13 +3511,26 @@ def _epics_management_settings_html() -> str:
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Epics Planner</title>
   <link rel="stylesheet" href="/shared-nav.css">
+  <link rel="stylesheet" href="/material-symbols.css">
   <style>
     :root { --bg:#f5f7fb; --card:#fff; --line:#d1d9e8; --text:#0f172a; --muted:#475569; --brand:#1d4ed8; --ok:#166534; --warn:#92400e; --head:#eff6ff; --sticky:#f8fbff; --plan:#eef4ff; --epics-static-min-width:1420px; --epics-plan-col-min-width:170px; --epics-table-min-width:2610px; }
     * { box-sizing:border-box; }
     body { margin:0; padding:0; background:linear-gradient(180deg,#f3f7ff,#f8fbff); color:var(--text); font-family:"Segoe UI",Tahoma,sans-serif; }
     .card { width:100%; max-width:none; margin:0; border:1px solid var(--line); border-left:none; border-right:none; border-radius:0; background:var(--card); padding:16px; }
-    .top { display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap; align-items:flex-start; }
+    .top { display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; align-items:center; padding:6px 0 18px; border-bottom:1px solid #e2e8f0; margin-bottom:6px; }
+    .planner-page-title { display:flex; align-items:center; gap:10px; }
+    .planner-page-title .planner-title-icon { font-size:1.6rem; color:var(--brand); font-variation-settings:"FILL" 0,"wght" 500,"GRAD" 0,"opsz" 24; line-height:1; }
+    .planner-page-title h1 { margin:0; font-size:1.5rem; font-weight:600; letter-spacing:-0.02em; color:var(--text); }
+    .planner-header { margin-top:4px; padding:10px 14px; background:linear-gradient(180deg,#fafbff 0%,#f6f9ff 100%); border:1px solid #e2e8f0; border-radius:8px; box-shadow:0 1px 2px rgba(15,23,42,.04); }
+    .planner-header.collapsed { padding:10px 0; background:transparent; border:none; box-shadow:none; }
     .planner-header.collapsed .planner-header-content { display:none; }
+    .planner-header-content { padding-top:0; }
+    .planner-header-bar { display:flex; flex-wrap:wrap; align-items:center; gap:10px 16px; margin-top:8px; }
+    .planner-header-bar .btn, .planner-header-bar .btn.alt { padding:6px 10px; font-size:.8rem; }
+    .planner-header-bar .shortcut-chip { padding:3px 8px; font-size:.72rem; }
+    .planner-header-bar .shortcut-chip kbd { padding:1px 4px; font-size:.7rem; }
+    .planner-header-ipp { margin-left:auto; font-size:.7rem; color:var(--muted); opacity:.85; }
+    #header-toggle-btn { font-size:.82rem; padding:6px 10px; }
     .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:10px; }
     .btn { border:1px solid #1e40af; background:var(--brand); color:#fff; border-radius:8px; padding:8px 12px; cursor:pointer; text-decoration:none; font-size:.86rem; }
     .btn.alt { border-color:var(--line); background:#fff; color:var(--text); }
@@ -3356,6 +3615,8 @@ def _epics_management_settings_html() -> str:
     .icon-btn[disabled] { opacity:.45; cursor:not-allowed; background:#f8fafc; color:#64748b; }
     .icon-btn.danger { border-color:#fecaca; color:#b91c1c; background:#fff5f5; }
     .icon-btn.danger:hover { background:#ffe4e6; }
+    .btn.danger { border-color:#fecaca; color:#b91c1c; background:#fff5f5; }
+    .btn.danger:hover { background:#ffe4e6; }
     .icon-btn svg { width:12px; height:12px; display:block; }
     .draft-row td { background:#fff7ed; border-top:2px solid #fdba74; }
     .draft-input { width:100%; border:1px dashed #fb923c; border-radius:6px; padding:4px 6px; font-size:.78rem; background:#fff; }
@@ -3395,32 +3656,26 @@ def _epics_management_settings_html() -> str:
 <body>
   <main class="card">
     <div class="top">
-      <div>
-        <h1 style="margin:0;font-size:1.25rem;">Epics Planner</h1>
+      <div class="planner-page-title">
+        <span class="material-symbols-outlined planner-title-icon" aria-hidden="true">event_note</span>
+        <h1>Epics Planner</h1>
       </div>
-      <div class="row">
+      <div class="row" style="margin-top:0;">
         <button id="header-toggle-btn" class="btn alt" type="button" aria-expanded="true" aria-controls="planner-header-content">Collapse Header</button>
       </div>
     </div>
     <section id="planner-header" class="planner-header">
       <div id="planner-header-content" class="planner-header-content">
-        <div class="row">__SETTINGS_TOP_NAV__</div>
-        <p class="muted" style="margin:.45rem 0 0;font-size:.92rem;">Maintain project/product categorization/component/epic planning details with editable metadata and phase plans.</p>
-        <p class="muted" style="margin:.35rem 0 0;font-size:.8rem;">Epic column is frozen. Pale yellow Product Categorization/Component cells need data entry.</p>
-        <div class="row">
-          <button id="reload-btn" class="btn alt" type="button">Reload Data</button>
-          <button id="add-epic-btn" class="btn" type="button">Add New Epic</button>
-          <button id="add-plan-column-btn" class="btn alt" type="button">Add Epic Phase</button>
-          <button id="manage-plan-columns-btn" class="btn alt" type="button">Manage Epic Phases</button>
-          <button id="expand-all-btn" class="btn alt" type="button">Expand All</button>
-          <button id="collapse-all-btn" class="btn alt" type="button">Collapse All</button>
-          <span class="muted">Data source: epics database records.</span>
-          <span class="shortcut-chip"><span>Quick Add Epic</span><kbd>Shift</kbd><span>+</span><kbd>Tab</kbd></span>
-        </div>
-        <div class="row" style="margin-top:6px;">
-          <span style="font-weight:700;color:#0f172a;">IPP Meeting Planner</span>
-          <span class="muted">Use the IPP Meeting Planner column to mark epics for `ipp_meeting_dashboard.html`.</span>
-          <span class="muted">Project / Product Categorization / Epic hierarchy view.</span>
+        <div class="row" style="margin-top:0;">__SETTINGS_TOP_NAV__</div>
+        <div class="planner-header-bar">
+          <button id="reload-btn" class="btn alt" type="button">Reload</button>
+          <button id="add-epic-btn" class="btn" type="button">Add Epic</button>
+          <button id="add-plan-column-btn" class="btn alt" type="button">Add Phase</button>
+          <button id="manage-plan-columns-btn" class="btn alt" type="button">Manage Phases</button>
+          <button id="expand-all-btn" class="btn alt" type="button">Expand</button>
+          <button id="collapse-all-btn" class="btn alt" type="button">Collapse</button>
+          <span class="shortcut-chip" title="Quick add epic"><kbd>Shift</kbd>+<kbd>Tab</kbd></span>
+          <span class="planner-header-ipp" title="IPP Meeting Planner column marks epics for the IPP dashboard">IPP</span>
         </div>
       </div>
       <div id="status"></div>
@@ -4031,6 +4286,14 @@ def _epics_management_settings_html() -> str:
       if (!/^[A-Z0-9]+-\\d+$/.test(text)) throw new Error("Epic key must look like ABC-123.");
       return text;
     }
+    function normalizeEpicKeyAllowTmp(value) {
+      const text = String(value || "").trim().toUpperCase();
+      if (!text) throw new Error("Epic key is required.");
+      const jiraStyle = /^[A-Z0-9]+-\\d+$/;
+      const tmpStyle = /^TMP-\\d{8}T\\d{6}Z-[A-Z0-9]{6}$/;
+      if (jiraStyle.test(text) || tmpStyle.test(text)) return text;
+      throw new Error("Epic key must look like ABC-123 or TMP-YYYYMMDDTHHMMSSZ-XXXXXX.");
+    }
     function epicKeyFromJiraUrl(url) {
       const text = String(url || "").trim();
       const match = /\\/browse\\/([A-Za-z0-9_-]+-\\d+)/.exec(text);
@@ -4102,6 +4365,20 @@ def _epics_management_settings_html() -> str:
         options.push('<option value="' + esc(item) + '"' + (isSelected ? " selected" : "") + ">" + esc(item) + "</option>");
       }
       return '<select class="draft-input" data-draft-field="' + esc(field) + '">' + options.join("") + "</select>";
+    }
+    function renderDraftProjectSelect(selectedKey) {
+      const selected = normalizeProjectKey(selectedKey);
+      const options = ['<option value="">Select project</option>'];
+      for (const item of managedProjects) {
+        const key = normalizeProjectKey(item.project_key);
+        const name = String(item.display_name || item.project_name || key || "").trim();
+        const label = name + (key ? " (" + key + ")" : "");
+        options.push('<option value="' + esc(key) + '" data-project-name="' + esc(name) + '"' + (key === selected ? " selected" : "") + ">" + esc(label) + "</option>");
+      }
+      if (selected && !managedProjects.some((p) => normalizeProjectKey(p.project_key) === selected)) {
+        options.push('<option value="' + esc(selected) + '" data-project-name="' + esc(selected) + '" selected>' + esc(selected + " (Unavailable)") + "</option>");
+      }
+      return '<select class="draft-input draft-project-select" data-draft-field="project_key">' + options.join("") + "</select>";
     }
     async function loadDropdownOptions() {
       const resp = await fetch(OPTIONS_API, { cache: "no-store" });
@@ -4401,7 +4678,7 @@ def _epics_management_settings_html() -> str:
         + "<td>" + renderActualProductionDateInput(row.actual_production_date, rowIndex) + "</td>"
         + '<td contenteditable="true" data-row-index="' + rowIndex + '" data-field="remarks">' + esc(row.remarks || "") + "</td>"
         + planTds
-        + '<td><div style="display:flex;gap:6px;flex-wrap:wrap;"><button class="btn alt small" type="button" data-edit-row="' + rowIndex + '">Edit</button><button class="btn alt small" type="button" data-save-row="' + rowIndex + '">Save</button><button class="btn alt small" type="button" data-sync-epic-row="' + rowIndex + '">Sync Jira Epic</button></div></td>'
+        + '<td><div style="display:flex;gap:6px;flex-wrap:wrap;"><button class="btn alt small" type="button" data-edit-row="' + rowIndex + '">Edit</button><button class="btn alt small" type="button" data-save-row="' + rowIndex + '">Save</button><button class="btn alt small" type="button" data-sync-epic-row="' + rowIndex + '">Sync Jira Epic</button><button class="btn alt small danger" type="button" data-delete-epic-row="' + rowIndex + '" title="Delete epic from Epics Planner">Delete</button></div></td>'
         + "</tr>";
     }
     function ensureDraftEpicRow() {
@@ -4430,7 +4707,7 @@ def _epics_management_settings_html() -> str:
       const planTds = PLAN_COLUMNS.map(() => '<td class="plan-col-cell"><span class="plan-empty">Draft</span></td>').join("");
       return ""
         + '<tr class="draft-row">'
-        + '<td><input class="draft-input" data-draft-field="project_key" placeholder="Project key (optional)" value="' + esc(draft.project_key || "") + '"></td>'
+        + "<td>" + renderDraftProjectSelect(draft.project_key || "") + "</td>"
         + "<td>" + renderDraftCategorizationSelect("product_category", dropdownOptions.product_category_options, draft.product_category || "") + "</td>"
         + "<td>" + renderDraftCategorizationSelect("component", dropdownOptions.component_options, draft.component || "") + "</td>"
         + '<td><input id="draft-epic-name" class="draft-input" data-draft-field="epic_name" placeholder="Epic name (required)" value="' + esc(draft.epic_name || "") + '"></td>'
@@ -4448,13 +4725,7 @@ def _epics_management_settings_html() -> str:
     async function trySaveUsingVacantTmpKey(payload, conflictBody, options) {
       const opts = options && typeof options === "object" ? options : {};
       const vacantTmpKey = String((conflictBody && conflictBody.vacant_tmp_key) || "").trim().toUpperCase();
-      const conflictEpicKey = String((conflictBody && conflictBody.conflict_epic_key) || payload.epic_key || "").trim().toUpperCase();
       if (!vacantTmpKey) return { reused: false };
-      const shouldReuse = window.confirm(
-        'Epic TMP key "' + (conflictEpicKey || "TMP key") + '" already exists. '
-        + 'Use existing vacant TMP key "' + vacantTmpKey + '" and continue saving?'
-      );
-      if (!shouldReuse) return { reused: false };
       const reusePayload = Object.assign({}, payload, { epic_key: vacantTmpKey });
       const resp = await fetch(API + "/" + encodeURIComponent(vacantTmpKey), {
         method: "PUT",
@@ -4482,6 +4753,7 @@ def _epics_management_settings_html() -> str:
         const payload = {
           epic_name: epicName,
           project_key: String(draftEpicRow.project_key || "").trim(),
+          project_name: String(draftEpicRow.project_name || draftEpicRow.project_key || "").trim(),
           product_category: String(draftEpicRow.product_category || "").trim(),
           component: String(draftEpicRow.component || "").trim(),
           description: String(draftEpicRow.description || "").trim(),
@@ -4492,23 +4764,31 @@ def _epics_management_settings_html() -> str:
           jira_url: "",
           plans: {},
         };
-        const resp = await fetch(API, {
+        let resp = await fetch(API, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
-        const body = await resp.json().catch(() => ({}));
+        let body = await resp.json().catch(() => ({}));
         if (!resp.ok) {
           if (resp.status === 409 && String(body.code || "") === "epic_key_exists" && String(body.vacant_tmp_key || "").trim()) {
             const reused = await trySaveUsingVacantTmpKey(payload, body);
             if (reused.reused) {
               draftEpicRow = null;
               await loadRowsFromApi();
-              setStatus("Draft epic saved using vacant TMP key: " + reused.vacantTmpKey, "ok");
+              setStatus("Draft epic saved: " + reused.vacantTmpKey, "ok");
               return;
             }
           }
-          throw new Error(String(body.error || "Failed to create draft epic."));
+          resp = await fetch(API, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          body = await resp.json().catch(() => ({}));
+          if (!resp.ok) {
+            throw new Error(String(body.error || "Failed to create draft epic."));
+          }
         }
         draftEpicRow = null;
         await loadRowsFromApi();
@@ -4798,12 +5078,30 @@ def _epics_management_settings_html() -> str:
           syncRowPlanFromJira(rowIndex).catch((err) => setStatus(err.message || String(err), "warn"));
         });
       });
+      Array.from(tbodyEl.querySelectorAll("button[data-delete-epic-row]")).forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const rowIndex = Number(btn.getAttribute("data-delete-epic-row"));
+          deleteEpicRow(rowIndex).catch((err) => setStatus(err.message || String(err), "warn"));
+        });
+      });
       Array.from(tbodyEl.querySelectorAll("input.draft-input[data-draft-field]")).forEach((inputEl) => {
         inputEl.addEventListener("input", () => {
           if (!draftEpicRow) return;
           const field = String(inputEl.getAttribute("data-draft-field") || "");
           if (!field) return;
           draftEpicRow[field] = String(inputEl.value || "");
+        });
+      });
+      Array.from(tbodyEl.querySelectorAll("select.draft-input[data-draft-field]")).forEach((selectEl) => {
+        selectEl.addEventListener("change", () => {
+          if (!draftEpicRow) return;
+          const field = String(selectEl.getAttribute("data-draft-field") || "");
+          if (!field) return;
+          draftEpicRow[field] = String(selectEl.value || "");
+          if (field === "project_key") {
+            const opt = selectEl.options[selectEl.selectedIndex];
+            draftEpicRow.project_name = (opt && opt.getAttribute("data-project-name")) || draftEpicRow.project_key || "";
+          }
         });
       });
       const draftSaveBtn = document.getElementById("save-draft-epic-btn");
@@ -4928,6 +5226,19 @@ def _epics_management_settings_html() -> str:
       });
       flashSyncRowHighlight(rowIndex, "saved", 2000);
     }
+    async function deleteEpicRow(rowIndex) {
+      const row = rows[rowIndex];
+      if (!row) throw new Error("Row not found.");
+      const key = String(row.epic_key || row.id || "").trim().toUpperCase();
+      if (!key) throw new Error("Epic key is required to delete.");
+      const label = String(row.epic_name || row.epic_key || key).trim() || key;
+      if (!window.confirm('Delete epic "' + label + '" (' + key + ') from Epics Planner? This cannot be undone.')) return;
+      const resp = await fetch(API + "/" + encodeURIComponent(key), { method: "DELETE" });
+      const body = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(String(body.error || "Failed to delete epic."));
+      await loadRowsFromApi();
+      setStatus("Epic deleted: " + key, "ok");
+    }
     function resetEpicCreateForm() {
       renderProjectOptions("");
       epicProjectSelectEl.value = "";
@@ -4994,7 +5305,7 @@ def _epics_management_settings_html() -> str:
     function buildEpicCreatePayload() {
       const jiraUrl = validateJiraUrl(epicJiraUrlEl.value);
       const resolvedEpicKey = activeEpicEditKey
-        ? normalizeEpicKey(activeEpicEditKey)
+        ? normalizeEpicKeyAllowTmp(activeEpicEditKey)
         : epicKeyFromJiraUrl(jiraUrl);
       if (!resolvedEpicKey) {
         throw new Error("Jira URL must include an epic key like /browse/O2-1234.");
@@ -5376,7 +5687,7 @@ def sync_report_html(base_dir: Path, folder_raw: str) -> int:
         print(f"[report-html-sync] Moved: {source_path.name} -> {destination_path}")
 
     # Keep shared nav assets alongside reports so generated pages can always load them.
-    for asset_name in ("shared-nav.css", "shared-nav.js"):
+    for asset_name in ("shared-nav.css", "shared-nav.js", "material-symbols.css"):
         source_candidates = [
             base_dir / asset_name,
             base_dir / "report_html" / asset_name,
@@ -5390,8 +5701,65 @@ def sync_report_html(base_dir: Path, folder_raw: str) -> int:
         shutil.copy2(str(source_asset), str(destination_asset))
         print(f"[report-html-sync] Synced asset: {destination_asset.name}")
 
+    # Copy self-hosted font for fast icon loading (no Google CDN dependency).
+    fonts_src = base_dir / "report_html" / "fonts"
+    fonts_dst = target_dir / "fonts"
+    if fonts_src.exists() and fonts_src.is_dir():
+        fonts_dst.mkdir(parents=True, exist_ok=True)
+        for f in fonts_src.glob("*.woff2"):
+            dst = fonts_dst / f.name
+            try:
+                shutil.copy2(str(f), str(dst))
+                print(f"[report-html-sync] Synced font: {f.name}")
+            except PermissionError as exc:
+                # On Windows, the font file can be momentarily locked by another process
+                # (e.g. a running dev server or browser). Skip rather than crash.
+                print(
+                    f"[report-html-sync] Warning: could not sync font {f.name}: {exc}"
+                )
+
     _materialize_refresh_widgets(target_dir)
     return moved
+
+
+_LOCAL_MATERIAL_SYMBOLS_LINK = '<link rel="stylesheet" href="/material-symbols.css">'
+
+# Match Google Material Symbols/Symbols Outlined CSS links for replacement with local.
+_GOOGLE_MATERIAL_SYMBOLS_PATTERN = re.compile(
+    r'<link[^>]+href\s*=\s*["\']https://fonts\.googleapis\.com/(?:css2\?family=Material\+Symbols\+Outlined[^"\']*|icon\?family=Material\+Icons(?:\+Outlined)?)["\'][^>]*>',
+    re.I,
+)
+
+
+def _use_local_icons(html: str) -> str:
+    """Replace Google font links with self-hosted Material Symbols for fast loading."""
+    if "/material-symbols.css" in html:
+        # Already using local; just remove any leftover Google links.
+        html = _GOOGLE_MATERIAL_SYMBOLS_PATTERN.sub("", html)
+        return html
+    # Replace first Google Material Symbols/Icons link with local CSS.
+    def _repl(m: re.Match[str]) -> str:
+        return _LOCAL_MATERIAL_SYMBOLS_LINK
+
+    html = _GOOGLE_MATERIAL_SYMBOLS_PATTERN.sub(_repl, html, count=1)
+    # Remove any remaining Google font links (e.g. duplicate or preload).
+    html = _GOOGLE_MATERIAL_SYMBOLS_PATTERN.sub("", html)
+    # Remove preconnect/preload for Google fonts (no longer needed).
+    html = re.sub(
+        r'\s*<link\s+rel="(?:preconnect|preload)"[^>]+(?:fonts\.googleapis\.com|fonts\.gstatic\.com)[^>]*>',
+        "",
+        html,
+        flags=re.I,
+    )
+    # Ensure we have the local stylesheet if we removed Google and none was added.
+    needs_icons = (
+        "material-symbols-outlined" in html
+        or "material-icons-outlined" in html
+        or "material-icons" in html
+    )
+    if "/material-symbols.css" not in html and needs_icons:
+        html = re.sub(r"(\s*<head[^>]*>)", r"\1\n  " + _LOCAL_MATERIAL_SYMBOLS_LINK, html, count=1)
+    return html
 
 
 def _inject_refresh_ui(html: str, report_id: str) -> str:
@@ -5415,7 +5783,6 @@ def _inject_refresh_ui(html: str, report_id: str) -> str:
 {REFRESH_WIDGET_START}
 <!-- {REFRESH_WIDGET_MARKER} -->
 <style>
-@import url("https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,500,0,0");
 #codex-refresh-wrap {{
   display: flex;
   flex-direction: column;
@@ -5660,7 +6027,7 @@ def _build_report_info_catalog(report_id: str) -> list[dict]:
                 "definition": "Capacity after subtracting planned leave load from total capacity.",
                 "formula": "Total Capacity (Hours) - Total Leaves Planned",
                 "ingredients": ["total_capacity_hours", "total_leaves_planned_rlt"],
-                "business_validations": ["Date range filters applied.", "RLT leave planned estimate is deducted once."],
+                "business_validations": ["Date range filters applied.", "RLT day-bucketed planned leaves are deducted once."],
                 "field_linkages": ["Total Capacity", "Total Leaves Planned"],
                 "cross_report_linkages": ["rnd.leave_adjusted_capacity", "rlt.total_taken"],
                 "data_sources": ["rlt_leave_report.xlsx", "/api/capacity", "nested view.xlsx"],
@@ -5681,6 +6048,20 @@ def _build_report_info_catalog(report_id: str) -> list[dict]:
                 "cross_report_linkages": ["nested.total_capacity_adjusted", "rlt.total_taken"],
                 "data_sources": shared_capacity_source,
                 "leadership_interpretation": "Leadership baseline for commitment decisions.",
+            },
+            {
+                "id": "rnd.total_leaves_planned",
+                "label": "Total Leaves Planned",
+                "report": "rnd_data_story",
+                "ui_targets": ["#kpi-total-leaves-planned"],
+                "definition": "Planned leave load based on day-bucketed leave data within the selected date range.",
+                "formula": "Planned Taken + Planned Not Yet Taken",
+                "ingredients": ["planned_taken_hours", "planned_not_taken_hours"],
+                "business_validations": ["Date range filters applied to day rows.", "Same leave basis is used by capacity scorecards."],
+                "field_linkages": ["Capacity", "Availability"],
+                "cross_report_linkages": ["rlt.total_planned_leaves", "nested.total_capacity_adjusted"],
+                "data_sources": ["rlt_leave_report.xlsx"],
+                "leadership_interpretation": "Shows future planned leave effort to account for in planning decisions.",
             },
             {
                 "id": "rnd.pending_hours_required",
@@ -5711,6 +6092,20 @@ def _build_report_info_catalog(report_id: str) -> list[dict]:
                 "cross_report_linkages": ["nested.total_capacity_adjusted", "rnd.leave_adjusted_capacity"],
                 "data_sources": ["rlt_leave_report.xlsx"],
                 "leadership_interpretation": "Indicates realized leave impact already affecting delivery capacity.",
+            },
+            {
+                "id": "rlt.total_planned_leaves",
+                "label": "Total Leaves Planned",
+                "report": "rlt_leave_report",
+                "ui_targets": ["#stat-total-planned-leaves-hours"],
+                "definition": "Total planned leave load in the selected range, combining already consumed planned leave and remaining planned leave.",
+                "formula": "Planned Taken + Future Planned",
+                "ingredients": ["planned_taken_hours", "planned_not_yet_taken_hours"],
+                "business_validations": ["Computed from the same filtered window used by the RLT scorecards."],
+                "field_linkages": ["Planned Taken", "Future Planned", "No Entry"],
+                "cross_report_linkages": ["nested.total_capacity_adjusted", "nested.capacity_gap"],
+                "data_sources": ["rlt_leave_report.xlsx"],
+                "leadership_interpretation": "Forward-looking leave demand to reserve against delivery capacity.",
             },
             {
                 "id": "rlt.future_planned",
@@ -5867,14 +6262,14 @@ def _build_report_info_catalog(report_id: str) -> list[dict]:
                 "label": "Weekly Load Chips",
                 "report": "phase_rmi_gantt_report",
                 "ui_targets": ["#gantt-root"],
-                "definition": "Phase lane chips summarize man-day intensity by week.",
-                "formula": "Aggregate phase man-days overlapping each week bucket",
-                "ingredients": ["phase_planned_start", "phase_planned_end", "phase_man_days"],
-                "business_validations": ["Only dated phases participate in lane load chips."],
+                "definition": "Team lane chips summarize estimated epic workload intensity by week.",
+                "formula": "Aggregate team epic man-days (story estimate hours / 8) overlapping each week bucket",
+                "ingredients": ["story_assignee_team", "story_parent_epic", "story_estimate_hours", "epic_planned_start", "epic_planned_end"],
+                "business_validations": ["Only stories with epic, valid date range, and positive estimate participate in lane load chips."],
                 "field_linkages": ["Visible RMIs", "Date range controls"],
                 "cross_report_linkages": ["gantt.timeline_window", "ipp.roadmap_geometry"],
-                "data_sources": ["nested view.xlsx"],
-                "leadership_interpretation": "Shows phase-level delivery pressure and overload periods.",
+                "data_sources": ["1_jira_work_items_export.xlsx", "assignee_hours_capacity.db:performance_teams", "assignee_hours_capacity.db:team_rmi_gantt_items"],
+                "leadership_interpretation": "Shows team-level delivery pressure and weekly workload concentration by epic.",
             }
         ],
         "ipp_meeting": [
@@ -6161,11 +6556,27 @@ def _materialize_refresh_widgets(report_dir: Path) -> None:
         html_path = report_dir / file_name
         if not html_path.exists() or not html_path.is_file():
             continue
-        html = html_path.read_text(encoding="utf-8")
+        try:
+            html = html_path.read_text(encoding="utf-8")
+        except OSError as exc:
+            print(
+                f"[report-html-sync] Warning: could not read {html_path.name}: {exc}"
+            )
+            continue
+
         updated = _inject_refresh_ui(html, report_id)
-        if updated != html:
+        if updated == html:
+            continue
+
+        try:
             html_path.write_text(updated, encoding="utf-8")
             print(f"[report-html-sync] Added refresh widget: {html_path.name}")
+        except OSError as exc:
+            # On Windows, a browser/preview process may briefly lock report files.
+            # Skip the single file and keep the server startup running.
+            print(
+                f"[report-html-sync] Warning: could not update {html_path.name}: {exc}"
+            )
 
 
 def _run_script(script_name: str, base_dir: Path) -> tuple[int, str, str]:
@@ -6883,6 +7294,71 @@ def _init_epics_management_db(settings_db_path: Path) -> None:
         )
         columns = conn.execute("PRAGMA table_info(epics_management)").fetchall()
         names = {str(col[1]) for col in columns}
+        col_defaults = {str(col[1]): col[4] for col in columns}
+        needs_rebuild = (
+            "source_workbook" in names
+            or "source_sheet" in names
+            or ("created_at_utc" in names and col_defaults.get("created_at_utc") is None)
+        )
+        if needs_rebuild:
+            conn.execute(
+                """
+                CREATE TABLE epics_management_v2 (
+                    epic_key TEXT PRIMARY KEY,
+                    project_key TEXT NOT NULL,
+                    project_name TEXT NOT NULL,
+                    product_category TEXT NOT NULL,
+                    component TEXT NOT NULL DEFAULT '',
+                    epic_name TEXT NOT NULL,
+                    description TEXT NOT NULL DEFAULT '',
+                    originator TEXT NOT NULL DEFAULT '',
+                    priority TEXT NOT NULL DEFAULT 'Low',
+                    plan_status TEXT NOT NULL DEFAULT 'Not Planned Yet',
+                    ipp_meeting_planned TEXT NOT NULL DEFAULT 'No',
+                    actual_production_date TEXT NOT NULL DEFAULT '',
+                    remarks TEXT NOT NULL DEFAULT '',
+                    jira_url TEXT NOT NULL DEFAULT '',
+                    epic_plan_json TEXT NOT NULL DEFAULT '{}',
+                    research_urs_plan_json TEXT NOT NULL DEFAULT '{}',
+                    dds_plan_json TEXT NOT NULL DEFAULT '{}',
+                    development_plan_json TEXT NOT NULL DEFAULT '{}',
+                    sqa_plan_json TEXT NOT NULL DEFAULT '{}',
+                    user_manual_plan_json TEXT NOT NULL DEFAULT '{}',
+                    production_plan_json TEXT NOT NULL DEFAULT '{}'
+                )
+                """
+            )
+            _v2_cols = [
+                "epic_key", "project_key", "project_name", "product_category",
+                "epic_name", "description", "originator", "priority", "jira_url",
+                "epic_plan_json", "research_urs_plan_json", "dds_plan_json",
+                "development_plan_json", "sqa_plan_json", "production_plan_json",
+            ]
+            _v2_opt = {
+                "component": "''",
+                "plan_status": "'Not Planned Yet'",
+                "ipp_meeting_planned": "'No'",
+                "actual_production_date": "''",
+                "remarks": "''",
+                "user_manual_plan_json": "'{}'",
+            }
+            select_exprs = list(_v2_cols)
+            for col_name, fallback in _v2_opt.items():
+                if col_name in names:
+                    select_exprs.append(col_name)
+                else:
+                    select_exprs.append(f"{fallback} AS {col_name}")
+            conn.execute(
+                "INSERT INTO epics_management_v2 ("
+                + ", ".join(c if " AS " not in c else c.split(" AS ")[1] for c in select_exprs)
+                + ") SELECT "
+                + ", ".join(select_exprs)
+                + " FROM epics_management"
+            )
+            conn.execute("DROP TABLE epics_management")
+            conn.execute("ALTER TABLE epics_management_v2 RENAME TO epics_management")
+            columns = conn.execute("PRAGMA table_info(epics_management)").fetchall()
+            names = {str(col[1]) for col in columns}
         if "plan_status" not in names:
             conn.execute("ALTER TABLE epics_management ADD COLUMN plan_status TEXT NOT NULL DEFAULT 'Not Planned Yet'")
         if "ipp_meeting_planned" not in names:
@@ -7252,8 +7728,13 @@ def _save_epics_management_row(settings_db_path: Path, payload: dict) -> dict[st
         if not epic_name_in:
             raise ValueError("epic_name is required.")
         user_supplied_epic_key = bool(_to_text(prepared_payload.get("epic_key")))
+        reuse_vacant_tmp_key = ""
         if not user_supplied_epic_key:
-            prepared_payload["epic_key"] = _generate_tmp_epic_key(conn)
+            reuse_vacant_tmp_key = _find_vacant_tmp_epic_key_for_reuse(conn)
+            if reuse_vacant_tmp_key:
+                prepared_payload["epic_key"] = reuse_vacant_tmp_key
+            else:
+                prepared_payload["epic_key"] = _generate_tmp_epic_key(conn)
         project_key_in = _to_text(prepared_payload.get("project_key")).upper()
         project_name_in = _to_text(prepared_payload.get("project_name"))
         if not project_key_in:
@@ -7265,63 +7746,109 @@ def _save_epics_management_row(settings_db_path: Path, payload: dict) -> dict[st
             prepared_payload["project_name"] = project_key_in
 
         row = _normalize_epics_management_payload(prepared_payload, plan_columns=plan_columns, require_all_fields=True)
-        for _attempt in range(5):
+
+        if reuse_vacant_tmp_key:
             legacy_plans = {
                 key: row["plans"].get(key, {})
                 for key in _EPICS_MANAGEMENT_DEFAULT_PLAN_KEYS
             }
-            try:
-                conn.execute(
-                    """
-                    INSERT INTO epics_management (
-                        epic_key, project_key, project_name, product_category, component, epic_name,
-                        description, originator, priority, plan_status, ipp_meeting_planned, actual_production_date, remarks, jira_url,
-                        epic_plan_json, research_urs_plan_json, dds_plan_json,
-                        development_plan_json, sqa_plan_json, user_manual_plan_json, production_plan_json
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        row["epic_key"],
-                        row["project_key"],
-                        row["project_name"],
-                        row["product_category"],
-                        row["component"],
-                        row["epic_name"],
-                        row["description"],
-                        row["originator"],
-                        row["priority"],
-                        row["plan_status"],
-                        row["ipp_meeting_planned"],
-                        row["actual_production_date"],
-                        row["remarks"],
-                        row["jira_url"],
-                        json.dumps(legacy_plans["epic_plan"], ensure_ascii=True),
-                        json.dumps(legacy_plans["research_urs_plan"], ensure_ascii=True),
-                        json.dumps(legacy_plans["dds_plan"], ensure_ascii=True),
-                        json.dumps(legacy_plans["development_plan"], ensure_ascii=True),
-                        json.dumps(legacy_plans["sqa_plan"], ensure_ascii=True),
-                        json.dumps(legacy_plans["user_manual_plan"], ensure_ascii=True),
-                        json.dumps(legacy_plans["production_plan"], ensure_ascii=True),
-                    ),
-                )
-                _upsert_epics_plan_values_for_row(conn, row["epic_key"], row["plans"])
-                conn.commit()
-                break
-            except sqlite3.IntegrityError:
-                # Rare collision recovery for temporary auto-generated epic keys.
-                if not _is_tmp_epic_key(row.get("epic_key")):
-                    raise
-                if user_supplied_epic_key:
-                    conflict_key = _to_text(row.get("epic_key")).upper()
-                    vacant_tmp_key = _find_vacant_tmp_epic_key_for_reuse(conn, preferred_key=conflict_key)
-                    raise _EpicCreateConflictError(
-                        f"Epic '{conflict_key}' already exists.",
-                        conflict_epic_key=conflict_key,
-                        vacant_tmp_key=vacant_tmp_key,
-                    )
-                row["epic_key"] = _generate_tmp_epic_key(conn)
+            conn.execute(
+                """
+                UPDATE epics_management
+                SET project_key=?, project_name=?, product_category=?, component=?, epic_name=?,
+                    description=?, originator=?, priority=?, plan_status=?, ipp_meeting_planned=?,
+                    actual_production_date=?, remarks=?, jira_url=?,
+                    epic_plan_json=?, research_urs_plan_json=?, dds_plan_json=?,
+                    development_plan_json=?, sqa_plan_json=?, user_manual_plan_json=?, production_plan_json=?
+                WHERE epic_key=?
+                """,
+                (
+                    row["project_key"],
+                    row["project_name"],
+                    row["product_category"],
+                    row["component"],
+                    row["epic_name"],
+                    row["description"],
+                    row["originator"],
+                    row["priority"],
+                    row["plan_status"],
+                    row["ipp_meeting_planned"],
+                    row["actual_production_date"],
+                    row["remarks"],
+                    row["jira_url"],
+                    json.dumps(legacy_plans["epic_plan"], ensure_ascii=True),
+                    json.dumps(legacy_plans["research_urs_plan"], ensure_ascii=True),
+                    json.dumps(legacy_plans["dds_plan"], ensure_ascii=True),
+                    json.dumps(legacy_plans["development_plan"], ensure_ascii=True),
+                    json.dumps(legacy_plans["sqa_plan"], ensure_ascii=True),
+                    json.dumps(legacy_plans["user_manual_plan"], ensure_ascii=True),
+                    json.dumps(legacy_plans["production_plan"], ensure_ascii=True),
+                    reuse_vacant_tmp_key,
+                ),
+            )
+            _upsert_epics_plan_values_for_row(conn, reuse_vacant_tmp_key, row["plans"])
+            conn.commit()
         else:
-            raise ValueError("Failed to generate a unique temporary epic key.")
+            for _attempt in range(5):
+                legacy_plans = {
+                    key: row["plans"].get(key, {})
+                    for key in _EPICS_MANAGEMENT_DEFAULT_PLAN_KEYS
+                }
+                try:
+                    conn.execute(
+                        """
+                        INSERT INTO epics_management (
+                            epic_key, project_key, project_name, product_category, component, epic_name,
+                            description, originator, priority, plan_status, ipp_meeting_planned, actual_production_date, remarks, jira_url,
+                            epic_plan_json, research_urs_plan_json, dds_plan_json,
+                            development_plan_json, sqa_plan_json, user_manual_plan_json, production_plan_json
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            row["epic_key"],
+                            row["project_key"],
+                            row["project_name"],
+                            row["product_category"],
+                            row["component"],
+                            row["epic_name"],
+                            row["description"],
+                            row["originator"],
+                            row["priority"],
+                            row["plan_status"],
+                            row["ipp_meeting_planned"],
+                            row["actual_production_date"],
+                            row["remarks"],
+                            row["jira_url"],
+                            json.dumps(legacy_plans["epic_plan"], ensure_ascii=True),
+                            json.dumps(legacy_plans["research_urs_plan"], ensure_ascii=True),
+                            json.dumps(legacy_plans["dds_plan"], ensure_ascii=True),
+                            json.dumps(legacy_plans["development_plan"], ensure_ascii=True),
+                            json.dumps(legacy_plans["sqa_plan"], ensure_ascii=True),
+                            json.dumps(legacy_plans["user_manual_plan"], ensure_ascii=True),
+                            json.dumps(legacy_plans["production_plan"], ensure_ascii=True),
+                        ),
+                    )
+                    _upsert_epics_plan_values_for_row(conn, row["epic_key"], row["plans"])
+                    conn.commit()
+                    break
+                except sqlite3.IntegrityError:
+                    if not _is_tmp_epic_key(row.get("epic_key")):
+                        raise
+                    if user_supplied_epic_key:
+                        conflict_key = _to_text(row.get("epic_key")).upper()
+                        vacant_tmp_key = _find_vacant_tmp_epic_key_for_reuse(conn, preferred_key=conflict_key)
+                        raise _EpicCreateConflictError(
+                            f"Epic '{conflict_key}' already exists.",
+                            conflict_epic_key=conflict_key,
+                            vacant_tmp_key=vacant_tmp_key,
+                        )
+                    fallback_vacant = _find_vacant_tmp_epic_key_for_reuse(conn)
+                    if fallback_vacant:
+                        row["epic_key"] = fallback_vacant
+                    else:
+                        row["epic_key"] = _generate_tmp_epic_key(conn)
+            else:
+                raise ValueError("Failed to generate a unique temporary epic key.")
     except _EpicCreateConflictError:
         raise
     except sqlite3.IntegrityError:
@@ -7429,6 +7956,27 @@ def _update_epics_management_row(settings_db_path: Path, epic_key: str, payload:
     if not matches:
         raise LookupError(f"Epic '{updated_epic_key}' not found.")
     return matches[0]
+
+
+def _delete_epics_management_row(settings_db_path: Path, epic_key: str) -> str:
+    _init_epics_management_db(settings_db_path)
+    key = _normalize_epic_key(epic_key)
+    existing = [
+        r
+        for r in _load_epics_management_rows(settings_db_path)
+        if _to_text(r.get("epic_key")).upper() == key
+    ]
+    if not existing:
+        raise LookupError(f"Epic '{key}' not found.")
+    conn = sqlite3.connect(settings_db_path)
+    try:
+        conn.execute("DELETE FROM epics_management_plan_values WHERE epic_key=?", (key,))
+        conn.execute("DELETE FROM epics_management_story_sync WHERE epic_key=?", (key,))
+        conn.execute("DELETE FROM epics_management WHERE epic_key=?", (key,))
+        conn.commit()
+    finally:
+        conn.close()
+    return key
 
 
 def _load_epics_management_rows(settings_db_path: Path) -> list[dict[str, str]]:
@@ -8078,7 +8626,6 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
     app = Flask(__name__)
     report_dir = resolve_report_html_dir(base_dir, folder_raw)
     report_dir.mkdir(parents=True, exist_ok=True)
-    _materialize_refresh_widgets(report_dir)
     capacity_paths = _resolve_capacity_runtime_paths(base_dir)
     _init_capacity_db(capacity_paths["db_path"])
     _init_performance_settings_db(capacity_paths["db_path"])
@@ -8819,6 +9366,16 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         except Exception as exc:
             return jsonify({"error": f"Failed to update epic row: {exc}"}), 500
 
+    @app.route("/api/epics-management/rows/<path:epic_key>", methods=["DELETE"])
+    def delete_epics_management_row_api(epic_key: str):
+        try:
+            deleted_key = _delete_epics_management_row(capacity_paths["db_path"], epic_key)
+            return jsonify({"deleted": True, "epic_key": deleted_key, "source": "epics_management_db"})
+        except LookupError as exc:
+            return jsonify({"error": str(exc)}), 404
+        except Exception as exc:
+            return jsonify({"error": f"Failed to delete epic row: {exc}"}), 500
+
     @app.route("/api/ipp-meeting-dashboard/data", methods=["GET"])
     def ipp_meeting_dashboard_data_api():
         try:
@@ -8907,6 +9464,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         if target.suffix.lower() == ".html":
             report_id = REPORT_FILENAME_TO_ID.get(target.name, "")
             html = target.read_text(encoding="utf-8")
+            html = _use_local_icons(html)
             if report_id:
                 html = _inject_refresh_ui(html, report_id)
             return html
@@ -8919,7 +9477,6 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
 def run_report_server(base_dir: Path, folder_raw: str, host: str, port: int) -> None:
     report_dir = resolve_report_html_dir(base_dir, folder_raw)
     report_dir.mkdir(parents=True, exist_ok=True)
-    _materialize_refresh_widgets(report_dir)
     app = create_report_server_app(base_dir=base_dir, folder_raw=folder_raw)
 
     dashboard_path = report_dir / "dashboard.html"
@@ -8932,4 +9489,3 @@ def run_report_server(base_dir: Path, folder_raw: str, host: str, port: int) -> 
     print(f"[server] Open: {url}")
     print("[server] Press Ctrl+C to stop.")
     app.run(host=host, port=port)
-

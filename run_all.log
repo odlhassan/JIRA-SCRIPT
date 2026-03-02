@@ -151,3 +151,80 @@
 {"timestamp_utc": "2026-02-27T07:59:53.682946+00:00", "level": "INFO", "run_id": "db1a89f233c64dffb2cc0d20f8366d6f", "step": "report-html-sync", "message": "Step started."}
 {"timestamp_utc": "2026-02-27T07:59:57.186816+00:00", "level": "INFO", "run_id": "db1a89f233c64dffb2cc0d20f8366d6f", "step": "report-html-sync", "message": "Step completed."}
 {"timestamp_utc": "2026-02-27T07:59:57.189819+00:00", "level": "INFO", "run_id": "db1a89f233c64dffb2cc0d20f8366d6f", "step": "", "message": "Pipeline run completed successfully."}
+{"timestamp_utc": "2026-02-27T11:07:11.317708+00:00", "level": "INFO", "run_id": "11610c7f0ba64f6b81eb779686430439", "step": "", "message": "Pipeline run started."}
+{"timestamp_utc": "2026-02-27T11:07:11.320250+00:00", "level": "INFO", "run_id": "11610c7f0ba64f6b81eb779686430439", "step": "exports", "message": "Step started."}
+{"timestamp_utc": "2026-02-27T11:16:32.090346+00:00", "level": "INFO", "run_id": "11610c7f0ba64f6b81eb779686430439", "step": "exports", "message": "Step completed."}
+{"timestamp_utc": "2026-02-27T11:16:32.091348+00:00", "level": "INFO", "run_id": "11610c7f0ba64f6b81eb779686430439", "step": "work-items-full-sync", "message": "Step started."}
+{"timestamp_utc": "2026-02-27T11:17:58.061939+00:00", "level": "INFO", "run_id": "11610c7f0ba64f6b81eb779686430439", "step": "work-items-full-sync", "message": "Step completed."}
+{"timestamp_utc": "2026-02-27T11:17:58.061939+00:00", "level": "INFO", "run_id": "11610c7f0ba64f6b81eb779686430439", "step": "nested-view-html", "message": "Step started."}
+{"timestamp_utc": "2026-02-27T11:18:00.303739+00:00", "level": "INFO", "run_id": "11610c7f0ba64f6b81eb779686430439", "step": "nested-view-html", "message": "Step completed."}
+{"timestamp_utc": "2026-02-27T11:18:00.304759+00:00", "level": "INFO", "run_id": "11610c7f0ba64f6b81eb779686430439", "step": "missed-entries-html", "message": "Step started."}
+{"timestamp_utc": "2026-02-27T11:18:01.799257+00:00", "level": "INFO", "run_id": "11610c7f0ba64f6b81eb779686430439", "step": "missed-entries-html", "message": "Step completed."}
+{"timestamp_utc": "2026-02-27T11:18:01.800392+00:00", "level": "INFO", "run_id": "11610c7f0ba64f6b81eb779686430439", "step": "assignee-hours-html", "message": "Step started."}
+{"timestamp_utc": "2026-02-27T11:18:07.329534+00:00", "level": "INFO", "run_id": "11610c7f0ba64f6b81eb779686430439", "step": "assignee-hours-html", "message": "Step completed."}
+{"timestamp_utc": "2026-02-27T11:18:07.329534+00:00", "level": "INFO", "run_id": "11610c7f0ba64f6b81eb779686430439", "step": "rlt-leave-report", "message": "Step started."}
+{"timestamp_utc": "2026-02-27T11:19:01.156886+00:00", "level": "INFO", "run_id": "11610c7f0ba64f6b81eb779686430439", "step": "rlt-leave-report", "message": "Step completed."}
+{"timestamp_utc": "2026-02-27T11:19:01.157883+00:00", "level": "INFO", "run_id": "11610c7f0ba64f6b81eb779686430439", "step": "leaves-planned-calendar-html", "message": "Step started."}
+{"timestamp_utc": "2026-02-27T11:19:01.839172+00:00", "level": "INFO", "run_id": "11610c7f0ba64f6b81eb779686430439", "step": "leaves-planned-calendar-html", "message": "Step completed."}
+{"timestamp_utc": "2026-02-27T11:19:01.840172+00:00", "level": "INFO", "run_id": "11610c7f0ba64f6b81eb779686430439", "step": "rnd-data-story-html", "message": "Step started."}
+{"timestamp_utc": "2026-02-27T11:19:07.265723+00:00", "level": "INFO", "run_id": "11610c7f0ba64f6b81eb779686430439", "step": "rnd-data-story-html", "message": "Step completed."}
+{"timestamp_utc": "2026-02-27T11:19:07.267724+00:00", "level": "INFO", "run_id": "11610c7f0ba64f6b81eb779686430439", "step": "planned-rmis-html", "message": "Step started."}
+{"timestamp_utc": "2026-02-27T11:19:08.848911+00:00", "level": "INFO", "run_id": "11610c7f0ba64f6b81eb779686430439", "step": "planned-rmis-html", "message": "Step completed."}
+{"timestamp_utc": "2026-02-27T11:19:08.848911+00:00", "level": "INFO", "run_id": "11610c7f0ba64f6b81eb779686430439", "step": "gantt-chart-html", "message": "Step started."}
+{"timestamp_utc": "2026-02-27T11:19:10.806997+00:00", "level": "INFO", "run_id": "11610c7f0ba64f6b81eb779686430439", "step": "gantt-chart-html", "message": "Step completed."}
+{"timestamp_utc": "2026-02-27T11:19:10.807959+00:00", "level": "INFO", "run_id": "11610c7f0ba64f6b81eb779686430439", "step": "phase-rmi-gantt-html", "message": "Step started."}
+{"timestamp_utc": "2026-02-27T11:19:11.764186+00:00", "level": "INFO", "run_id": "11610c7f0ba64f6b81eb779686430439", "step": "phase-rmi-gantt-html", "message": "Step completed."}
+{"timestamp_utc": "2026-02-27T11:19:11.765182+00:00", "level": "INFO", "run_id": "11610c7f0ba64f6b81eb779686430439", "step": "employee-performance-html", "message": "Step started."}
+{"timestamp_utc": "2026-02-27T11:19:13.812191+00:00", "level": "INFO", "run_id": "11610c7f0ba64f6b81eb779686430439", "step": "employee-performance-html", "message": "Step completed."}
+{"timestamp_utc": "2026-02-27T11:19:13.813192+00:00", "level": "INFO", "run_id": "11610c7f0ba64f6b81eb779686430439", "step": "dashboard", "message": "Step started."}
+{"timestamp_utc": "2026-02-27T11:19:16.706967+00:00", "level": "INFO", "run_id": "11610c7f0ba64f6b81eb779686430439", "step": "dashboard", "message": "Step completed."}
+{"timestamp_utc": "2026-02-27T11:19:16.709966+00:00", "level": "INFO", "run_id": "11610c7f0ba64f6b81eb779686430439", "step": "ipp-phase-export", "message": "Step started."}
+{"timestamp_utc": "2026-02-27T11:19:17.478913+00:00", "level": "INFO", "run_id": "11610c7f0ba64f6b81eb779686430439", "step": "ipp-phase-export", "message": "Step completed."}
+{"timestamp_utc": "2026-02-27T11:19:17.479916+00:00", "level": "INFO", "run_id": "11610c7f0ba64f6b81eb779686430439", "step": "ipp-meeting-dashboard", "message": "Step started."}
+{"timestamp_utc": "2026-02-27T11:19:18.948377+00:00", "level": "INFO", "run_id": "11610c7f0ba64f6b81eb779686430439", "step": "ipp-meeting-dashboard", "message": "Step completed."}
+{"timestamp_utc": "2026-02-27T11:19:18.949378+00:00", "level": "INFO", "run_id": "11610c7f0ba64f6b81eb779686430439", "step": "unified-nav-assets", "message": "Step started."}
+{"timestamp_utc": "2026-02-27T11:19:18.950388+00:00", "level": "INFO", "run_id": "11610c7f0ba64f6b81eb779686430439", "step": "unified-nav-assets", "message": "Step completed."}
+{"timestamp_utc": "2026-02-27T11:19:18.950388+00:00", "level": "INFO", "run_id": "11610c7f0ba64f6b81eb779686430439", "step": "report-html-sync", "message": "Step started."}
+{"timestamp_utc": "2026-02-27T11:19:20.453232+00:00", "level": "INFO", "run_id": "11610c7f0ba64f6b81eb779686430439", "step": "report-html-sync", "message": "Step completed."}
+{"timestamp_utc": "2026-02-27T11:19:20.453232+00:00", "level": "INFO", "run_id": "11610c7f0ba64f6b81eb779686430439", "step": "", "message": "Pipeline run completed successfully."}
+{"timestamp_utc": "2026-02-27T11:26:08.707975+00:00", "level": "INFO", "run_id": "40c33cc6601845f29080ae83d31ab365", "step": "", "message": "Pipeline run started."}
+{"timestamp_utc": "2026-02-27T11:26:08.708976+00:00", "level": "INFO", "run_id": "40c33cc6601845f29080ae83d31ab365", "step": "exports", "message": "Step started."}
+{"timestamp_utc": "2026-02-27T11:27:00.689141+00:00", "level": "ERROR", "run_id": "40c33cc6601845f29080ae83d31ab365", "step": "exports", "message": "Pipeline interrupted by user."}
+{"timestamp_utc": "2026-03-02T06:30:11.532917+00:00", "level": "INFO", "run_id": "742b2033bac541148138a0d9786f523e", "step": "", "message": "Pipeline run started."}
+{"timestamp_utc": "2026-03-02T06:30:11.533915+00:00", "level": "INFO", "run_id": "742b2033bac541148138a0d9786f523e", "step": "exports", "message": "Step started."}
+{"timestamp_utc": "2026-03-02T06:46:19.335409+00:00", "level": "INFO", "run_id": "742b2033bac541148138a0d9786f523e", "step": "exports", "message": "Step completed."}
+{"timestamp_utc": "2026-03-02T06:46:19.337494+00:00", "level": "INFO", "run_id": "742b2033bac541148138a0d9786f523e", "step": "work-items-full-sync", "message": "Step started."}
+{"timestamp_utc": "2026-03-02T06:48:17.206721+00:00", "level": "INFO", "run_id": "742b2033bac541148138a0d9786f523e", "step": "work-items-full-sync", "message": "Step completed."}
+{"timestamp_utc": "2026-03-02T06:48:17.206721+00:00", "level": "INFO", "run_id": "742b2033bac541148138a0d9786f523e", "step": "team-rmi-gantt-sqlite-sync", "message": "Step started."}
+{"timestamp_utc": "2026-03-02T06:48:18.783666+00:00", "level": "INFO", "run_id": "742b2033bac541148138a0d9786f523e", "step": "team-rmi-gantt-sqlite-sync", "message": "Step completed."}
+{"timestamp_utc": "2026-03-02T06:48:18.784558+00:00", "level": "INFO", "run_id": "742b2033bac541148138a0d9786f523e", "step": "nested-view-html", "message": "Step started."}
+{"timestamp_utc": "2026-03-02T06:48:20.597581+00:00", "level": "INFO", "run_id": "742b2033bac541148138a0d9786f523e", "step": "nested-view-html", "message": "Step completed."}
+{"timestamp_utc": "2026-03-02T06:48:20.597581+00:00", "level": "INFO", "run_id": "742b2033bac541148138a0d9786f523e", "step": "missed-entries-html", "message": "Step started."}
+{"timestamp_utc": "2026-03-02T06:48:21.767513+00:00", "level": "INFO", "run_id": "742b2033bac541148138a0d9786f523e", "step": "missed-entries-html", "message": "Step completed."}
+{"timestamp_utc": "2026-03-02T06:48:21.768510+00:00", "level": "INFO", "run_id": "742b2033bac541148138a0d9786f523e", "step": "assignee-hours-html", "message": "Step started."}
+{"timestamp_utc": "2026-03-02T06:48:26.371954+00:00", "level": "INFO", "run_id": "742b2033bac541148138a0d9786f523e", "step": "assignee-hours-html", "message": "Step completed."}
+{"timestamp_utc": "2026-03-02T06:48:26.371954+00:00", "level": "INFO", "run_id": "742b2033bac541148138a0d9786f523e", "step": "rlt-leave-report", "message": "Step started."}
+{"timestamp_utc": "2026-03-02T06:49:59.414676+00:00", "level": "INFO", "run_id": "742b2033bac541148138a0d9786f523e", "step": "rlt-leave-report", "message": "Step completed."}
+{"timestamp_utc": "2026-03-02T06:49:59.415673+00:00", "level": "INFO", "run_id": "742b2033bac541148138a0d9786f523e", "step": "leaves-planned-calendar-html", "message": "Step started."}
+{"timestamp_utc": "2026-03-02T06:50:00.155922+00:00", "level": "INFO", "run_id": "742b2033bac541148138a0d9786f523e", "step": "leaves-planned-calendar-html", "message": "Step completed."}
+{"timestamp_utc": "2026-03-02T06:50:00.156923+00:00", "level": "INFO", "run_id": "742b2033bac541148138a0d9786f523e", "step": "rnd-data-story-html", "message": "Step started."}
+{"timestamp_utc": "2026-03-02T06:50:05.593551+00:00", "level": "INFO", "run_id": "742b2033bac541148138a0d9786f523e", "step": "rnd-data-story-html", "message": "Step completed."}
+{"timestamp_utc": "2026-03-02T06:50:05.594556+00:00", "level": "INFO", "run_id": "742b2033bac541148138a0d9786f523e", "step": "planned-rmis-html", "message": "Step started."}
+{"timestamp_utc": "2026-03-02T06:50:07.181039+00:00", "level": "INFO", "run_id": "742b2033bac541148138a0d9786f523e", "step": "planned-rmis-html", "message": "Step completed."}
+{"timestamp_utc": "2026-03-02T06:50:07.182548+00:00", "level": "INFO", "run_id": "742b2033bac541148138a0d9786f523e", "step": "gantt-chart-html", "message": "Step started."}
+{"timestamp_utc": "2026-03-02T06:50:09.303876+00:00", "level": "INFO", "run_id": "742b2033bac541148138a0d9786f523e", "step": "gantt-chart-html", "message": "Step completed."}
+{"timestamp_utc": "2026-03-02T06:50:09.304872+00:00", "level": "INFO", "run_id": "742b2033bac541148138a0d9786f523e", "step": "phase-rmi-gantt-html", "message": "Step started."}
+{"timestamp_utc": "2026-03-02T06:50:09.413368+00:00", "level": "INFO", "run_id": "742b2033bac541148138a0d9786f523e", "step": "phase-rmi-gantt-html", "message": "Step completed."}
+{"timestamp_utc": "2026-03-02T06:50:09.414376+00:00", "level": "INFO", "run_id": "742b2033bac541148138a0d9786f523e", "step": "employee-performance-html", "message": "Step started."}
+{"timestamp_utc": "2026-03-02T06:50:11.913119+00:00", "level": "INFO", "run_id": "742b2033bac541148138a0d9786f523e", "step": "employee-performance-html", "message": "Step completed."}
+{"timestamp_utc": "2026-03-02T06:50:11.913119+00:00", "level": "INFO", "run_id": "742b2033bac541148138a0d9786f523e", "step": "dashboard", "message": "Step started."}
+{"timestamp_utc": "2026-03-02T06:50:14.653941+00:00", "level": "INFO", "run_id": "742b2033bac541148138a0d9786f523e", "step": "dashboard", "message": "Step completed."}
+{"timestamp_utc": "2026-03-02T06:50:14.654941+00:00", "level": "INFO", "run_id": "742b2033bac541148138a0d9786f523e", "step": "ipp-phase-export", "message": "Step started."}
+{"timestamp_utc": "2026-03-02T06:50:15.340083+00:00", "level": "INFO", "run_id": "742b2033bac541148138a0d9786f523e", "step": "ipp-phase-export", "message": "Step completed."}
+{"timestamp_utc": "2026-03-02T06:50:15.341080+00:00", "level": "INFO", "run_id": "742b2033bac541148138a0d9786f523e", "step": "ipp-meeting-dashboard", "message": "Step started."}
+{"timestamp_utc": "2026-03-02T06:50:16.874495+00:00", "level": "INFO", "run_id": "742b2033bac541148138a0d9786f523e", "step": "ipp-meeting-dashboard", "message": "Step completed."}
+{"timestamp_utc": "2026-03-02T06:50:16.875554+00:00", "level": "INFO", "run_id": "742b2033bac541148138a0d9786f523e", "step": "unified-nav-assets", "message": "Step started."}
+{"timestamp_utc": "2026-03-02T06:50:16.876502+00:00", "level": "INFO", "run_id": "742b2033bac541148138a0d9786f523e", "step": "unified-nav-assets", "message": "Step completed."}
+{"timestamp_utc": "2026-03-02T06:50:16.876502+00:00", "level": "INFO", "run_id": "742b2033bac541148138a0d9786f523e", "step": "report-html-sync", "message": "Step started."}
+{"timestamp_utc": "2026-03-02T06:50:18.027697+00:00", "level": "INFO", "run_id": "742b2033bac541148138a0d9786f523e", "step": "report-html-sync", "message": "Step completed."}
+{"timestamp_utc": "2026-03-02T06:50:18.027697+00:00", "level": "INFO", "run_id": "742b2033bac541148138a0d9786f523e", "step": "", "message": "Pipeline run completed successfully."}

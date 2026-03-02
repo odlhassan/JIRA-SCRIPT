@@ -4,8 +4,7 @@
     const link = document.createElement("link");
     link.id = "unified-nav-material-symbols";
     link.rel = "stylesheet";
-    link.href =
-      "https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:FILL@0..1,GRAD@-25..200,opsz@20..48,wght@100..700";
+    link.href = "/material-symbols.css";
     document.head.appendChild(link);
   }
 

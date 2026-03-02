@@ -1,33 +1,17 @@
-﻿"""
-Generate a phase-owner RMI gantt chart HTML report from nested view.xlsx.
+"""
+Generate a team-owner RMI gantt chart HTML report from SQLite snapshot tables.
 """
 from __future__ import annotations
 
 import json
 import os
-from datetime import date, datetime, timezone
+import sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
-from openpyxl import load_workbook
-
-REQUIRED_HEADERS = [
-    "Aspect",
-    "Man-days",
-    "Planned Start Date",
-    "Planned End Date",
-]
-
-DEFAULT_INPUT_XLSX = "nested view.xlsx"
 DEFAULT_OUTPUT_HTML = "phase_rmi_gantt_report.html"
-FIXED_PHASE_NAMES = [
-    "Research/URS",
-    "DDS",
-    "Development",
-    "SQA",
-    "User Manual",
-    "Production",
-]
-PHASE_NAME_LOOKUP = {name.strip().lower(): name for name in FIXED_PHASE_NAMES}
+DEFAULT_CAPACITY_DB = "assignee_hours_capacity.db"
 
 
 def _resolve_path(value: str, base_dir: Path) -> Path:
@@ -37,202 +21,113 @@ def _resolve_path(value: str, base_dir: Path) -> Path:
     return base_dir / path
 
 
-def _to_text(value) -> str:
-    if value is None:
-        return ""
-    return str(value).strip()
+def _to_text(value: Any) -> str:
+    return "" if value is None else str(value).strip()
 
 
-def _to_number_or_zero(value) -> float:
-    if value in (None, ""):
-        return 0.0
+def _to_float(value: Any) -> float:
     try:
-        return round(float(value), 2)
+        return round(float(value or 0.0), 2)
     except (TypeError, ValueError):
         return 0.0
 
 
-def _parse_to_iso_date(value) -> str:
-    if value in (None, ""):
-        return ""
-    if isinstance(value, datetime):
-        return value.date().isoformat()
-    if isinstance(value, date):
-        return value.isoformat()
-
-    text = _to_text(value)
-    if not text:
-        return ""
-
-    formats = (
-        "%Y-%m-%d",
-        "%Y/%m/%d",
-        "%d-%b-%Y",
-        "%d-%B-%Y",
-        "%m/%d/%Y",
-        "%d/%m/%Y",
-    )
-    for fmt in formats:
-        try:
-            return datetime.strptime(text, fmt).date().isoformat()
-        except ValueError:
-            continue
-
-    try:
-        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
-        return parsed.date().isoformat()
-    except ValueError:
-        return ""
-
-
-def _row_type_from_level(level: int) -> str:
-    mapping = {
-        1: "project",
-        2: "product",
-        3: "rmi",
-        4: "story",
-        5: "subtask",
-        6: "assignee",
-    }
-    return mapping.get(level, "unknown")
-
-
-def _project_key_from_aspect(aspect: str) -> str:
-    text = _to_text(aspect)
-    if " - " in text:
-        return text.split(" - ", 1)[0].strip()
-    return text
-
-
-def _load_phase_rmi_records(input_path: Path) -> list[dict[str, object]]:
-    if not input_path.exists():
-        raise FileNotFoundError(f"Nested view workbook not found: {input_path}")
-
-    wb = load_workbook(input_path, read_only=False, data_only=True)
-    ws = wb["NestedView"] if "NestedView" in wb.sheetnames else wb.active
-
-    header = next(ws.iter_rows(min_row=1, max_row=1, values_only=True), None)
-    if not header:
-        wb.close()
-        raise ValueError("Nested view workbook has no header row.")
-
-    found_headers = [_to_text(cell) for cell in header]
-    header_index = {h.lower(): i for i, h in enumerate(found_headers)}
-    missing = [h for h in REQUIRED_HEADERS if h.lower() not in header_index]
-    if missing:
-        wb.close()
-        raise ValueError(
-            "Nested view workbook headers are missing required columns. "
-            f"Required: {REQUIRED_HEADERS}, missing: {missing}, found: {found_headers}"
-        )
-
-    idx_aspect = header_index["aspect"]
-    idx_man_days = header_index["man-days"]
-    idx_planned_start = header_index["planned start date"]
-    idx_planned_end = header_index["planned end date"]
-
-    rows: list[dict[str, object]] = []
-    stack: dict[int, dict[str, object]] = {}
-
-    for row_idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
-        level = int(getattr(ws.row_dimensions[row_idx], "outlineLevel", 0) or 0)
-        if level <= 0:
-            level = 1
-
-        for key in list(stack):
-            if key >= level:
-                del stack[key]
-
-        row_type = _row_type_from_level(level)
-        aspect = _to_text(row[idx_aspect] if len(row) > idx_aspect else "")
-        man_days = _to_number_or_zero(row[idx_man_days] if len(row) > idx_man_days else "")
-        planned_start = _parse_to_iso_date(row[idx_planned_start] if len(row) > idx_planned_start else "")
-        planned_end = _parse_to_iso_date(row[idx_planned_end] if len(row) > idx_planned_end else "")
-
-        current = {
-            "level": level,
-            "row_type": row_type,
-            "aspect": aspect,
-            "man_days": man_days,
-            "planned_start": planned_start,
-            "planned_end": planned_end,
+def _load_team_rmi_payload(db_path: Path) -> dict[str, Any]:
+    if not db_path.exists():
+        return {
+            "team_names": [],
+            "items": [],
+            "snapshot_meta": {},
+            "source_file": str(db_path),
         }
-        stack[level] = current
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        tables = {
+            _to_text(r[0]).lower()
+            for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+        }
+        if "team_rmi_gantt_items" not in tables:
+            return {
+                "team_names": [],
+                "items": [],
+                "snapshot_meta": {},
+                "source_file": str(db_path),
+            }
 
-        if row_type == "story":
-            rmi_node = stack.get(3)
-            project_node = stack.get(1)
-            if not rmi_node:
-                continue
-            phase_name = PHASE_NAME_LOOKUP.get(aspect.strip().lower())
-            if not phase_name:
-                continue
-            if not planned_start or not planned_end:
-                continue
-            try:
-                start_date = datetime.strptime(planned_start, "%Y-%m-%d").date()
-                end_date = datetime.strptime(planned_end, "%Y-%m-%d").date()
-            except ValueError:
-                continue
-            if end_date < start_date:
-                continue
-
-            rows.append(
+        rows = conn.execute(
+            """
+            SELECT team_name, epic_key, epic_name, epic_url, project_key,
+                   planned_start, planned_end, planned_hours, planned_man_days, story_count, is_unmapped_team, snapshot_utc
+            FROM team_rmi_gantt_items
+            ORDER BY lower(team_name), lower(epic_name), lower(epic_key)
+            """
+        ).fetchall()
+        items = []
+        team_names: list[str] = []
+        seen_teams: set[str] = set()
+        for row in rows:
+            team_name = _to_text(row["team_name"])
+            if team_name and team_name not in seen_teams:
+                seen_teams.add(team_name)
+                team_names.append(team_name)
+            items.append(
                 {
-                    "phase_name": phase_name,
-                    "rmi_name": _to_text(rmi_node.get("aspect")),
-                    "man_days": man_days,
-                    "planned_start": planned_start,
-                    "planned_end": planned_end,
-                    "project_key": _project_key_from_aspect(_to_text((project_node or {}).get("aspect", ""))),
+                    "team_name": team_name,
+                    "epic_key": _to_text(row["epic_key"]),
+                    "epic_name": _to_text(row["epic_name"]),
+                    "epic_url": _to_text(row["epic_url"]),
+                    "project_key": _to_text(row["project_key"]),
+                    "planned_start": _to_text(row["planned_start"]),
+                    "planned_end": _to_text(row["planned_end"]),
+                    "planned_hours": _to_float(row["planned_hours"]),
+                    "planned_man_days": _to_float(row["planned_man_days"]),
+                    "story_count": int(row["story_count"] or 0),
+                    "is_unmapped_team": int(row["is_unmapped_team"] or 0),
+                    "snapshot_utc": _to_text(row["snapshot_utc"]),
                 }
             )
 
-    wb.close()
-    return rows
+        snapshot_meta = {}
+        if "team_rmi_gantt_snapshot_meta" in tables:
+            meta_row = conn.execute(
+                """
+                SELECT snapshot_utc, source_work_items_path, total_story_rows, included_story_rows,
+                       excluded_missing_epic, excluded_missing_dates, excluded_missing_estimate
+                FROM team_rmi_gantt_snapshot_meta
+                WHERE id = 1
+                """
+            ).fetchone()
+            if meta_row:
+                snapshot_meta = {
+                    "snapshot_utc": _to_text(meta_row["snapshot_utc"]),
+                    "source_work_items_path": _to_text(meta_row["source_work_items_path"]),
+                    "total_story_rows": int(meta_row["total_story_rows"] or 0),
+                    "included_story_rows": int(meta_row["included_story_rows"] or 0),
+                    "excluded_missing_epic": int(meta_row["excluded_missing_epic"] or 0),
+                    "excluded_missing_dates": int(meta_row["excluded_missing_dates"] or 0),
+                    "excluded_missing_estimate": int(meta_row["excluded_missing_estimate"] or 0),
+                }
+
+        source_file = _to_text(snapshot_meta.get("source_work_items_path")) or str(db_path)
+        return {
+            "team_names": team_names,
+            "items": items,
+            "snapshot_meta": snapshot_meta,
+            "source_file": source_file,
+        }
+    finally:
+        conn.close()
 
 
-def _aggregate_phase_rmi_rows(rows: list[dict[str, object]]) -> list[dict[str, object]]:
-    grouped: dict[tuple[str, str], dict[str, object]] = {}
-    for row in rows:
-        phase_name = _to_text(row.get("phase_name"))
-        rmi_name = _to_text(row.get("rmi_name"))
-        if not phase_name or not rmi_name:
-            continue
-        key = (phase_name, rmi_name)
-        current = grouped.get(key)
-        if not current:
-            grouped[key] = {
-                "phase_name": phase_name,
-                "rmi_name": rmi_name,
-                "man_days": float(row.get("man_days") or 0.0),
-                "planned_start": _to_text(row.get("planned_start")),
-                "planned_end": _to_text(row.get("planned_end")),
-                "project_key": _to_text(row.get("project_key")),
-            }
-            continue
-
-        current["man_days"] = round(float(current["man_days"]) + float(row.get("man_days") or 0.0), 2)
-        row_start = _to_text(row.get("planned_start"))
-        row_end = _to_text(row.get("planned_end"))
-        if row_start and (not current["planned_start"] or row_start < current["planned_start"]):
-            current["planned_start"] = row_start
-        if row_end and (not current["planned_end"] or row_end > current["planned_end"]):
-            current["planned_end"] = row_end
-
-    out = list(grouped.values())
-    out.sort(key=lambda item: (_to_text(item.get("phase_name")).lower(), _to_text(item.get("rmi_name")).lower()))
-    return out
-
-
-def _build_html(data: dict[str, object]) -> str:
+def _build_html(data: dict[str, Any]) -> str:
     payload = json.dumps(data, ensure_ascii=True)
     return f"""<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Phase Owner RMI Gantt</title>
+  <title>Team Owner RMI Gantt</title>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,500,0,0">
   <style>
     :root {{
@@ -244,7 +139,7 @@ def _build_html(data: dict[str, object]) -> str:
       --title: #0c4054;
       --head: #0f4c5c;
       --head-text: #ffffff;
-      --phase-col: 260px;
+      --team-col: 280px;
     }}
     * {{ box-sizing: border-box; }}
     body {{
@@ -362,7 +257,7 @@ def _build_html(data: dict[str, object]) -> str:
     }}
     .grid-row {{
       display: grid;
-      grid-template-columns: var(--phase-col) 1fr;
+      grid-template-columns: var(--team-col) 1fr;
       min-width: max-content;
     }}
     .cell {{
@@ -378,7 +273,7 @@ def _build_html(data: dict[str, object]) -> str:
       color: var(--head-text);
       font-weight: 700;
     }}
-    .head .phase-cell {{
+    .head .team-cell {{
       padding: 10px 12px;
       border-right: 1px solid rgba(255,255,255,0.18);
     }}
@@ -386,17 +281,17 @@ def _build_html(data: dict[str, object]) -> str:
       padding: 0;
       z-index: 38;
     }}
-    .phase-cell {{
+    .team-cell {{
       position: sticky;
       left: 0;
       z-index: 22;
       border-right: 1px solid var(--line);
       padding: 10px 12px;
       background: #fff;
-      min-width: var(--phase-col);
-      max-width: var(--phase-col);
+      min-width: var(--team-col);
+      max-width: var(--team-col);
     }}
-    .phase-title {{
+    .team-title {{
       font-size: 0.88rem;
       font-weight: 700;
       color: #0f3040;
@@ -404,7 +299,7 @@ def _build_html(data: dict[str, object]) -> str:
       overflow: hidden;
       text-overflow: ellipsis;
     }}
-    .phase-sub {{
+    .team-sub {{
       margin-top: 3px;
       font-size: 0.74rem;
       color: #637a8a;
@@ -418,7 +313,7 @@ def _build_html(data: dict[str, object]) -> str:
       justify-content: start;
       align-items: center;
       overflow: hidden;
-      max-width: 230px;
+      max-width: 252px;
       min-height: 12px;
     }}
     .load-chip {{
@@ -510,13 +405,24 @@ def _build_html(data: dict[str, object]) -> str:
     }}
     .card {{
       position: absolute;
-      min-height: 54px;
+      min-height: 66px;
       border-radius: 9px;
       border: 1px solid rgba(15, 76, 92, 0.32);
       background: linear-gradient(180deg, rgba(219, 238, 247, 0.82), rgba(233, 246, 253, 0.95));
       box-shadow: 0 2px 8px rgba(16, 43, 58, 0.08);
-      padding: 6px 7px;
+      padding: 0;
       overflow: hidden;
+    }}
+    .card-link {{
+      display: block;
+      color: inherit;
+      text-decoration: none;
+      padding: 6px 7px;
+      width: 100%;
+      height: 100%;
+    }}
+    .card-link:hover {{
+      background: rgba(191, 219, 254, 0.26);
     }}
     .card-title {{
       font-size: 0.76rem;
@@ -546,8 +452,9 @@ def _build_html(data: dict[str, object]) -> str:
 <body>
   <div class="page">
     <section class="panel">
-      <h1 class="title">Phase Owner RMI Gantt</h1>
-      <p class="meta">Generated: <span id="generated-at"></span> | Source: <span id="source-file"></span> | RMIs in view: <span id="visible-count"></span></p>
+      <h1 class="title">Team Owner RMI Gantt</h1>
+      <p class="meta">Generated: <span id="generated-at"></span> | Source: <span id="source-file"></span> | Visible RMIs: <span id="visible-count"></span></p>
+      <p class="meta">Included stories: <span id="included-stories"></span> / <span id="total-stories"></span> | Excluded: missing epic <span id="excluded-epic"></span>, missing dates <span id="excluded-dates"></span>, missing estimate <span id="excluded-estimate"></span></p>
       <div class="controls">
         <div class="control">
           <label for="from-date">From</label>
@@ -561,8 +468,8 @@ def _build_html(data: dict[str, object]) -> str:
         <button class="btn" type="button" id="reset-range">Reset</button>
       </div>
       <div class="legend">
-        <span class="legend-pill"><span class="chip-dot"></span>Mini cards show planned phase workload by RMI</span>
-        <span class="legend-pill">Sticky phase lanes + sticky weekly header + horizontal scroll</span>
+        <span class="legend-pill"><span class="chip-dot"></span>Mini cards show team workload by RMI estimates</span>
+        <span class="legend-pill">Cards open Jira epic links in a new tab</span>
       </div>
     </section>
     <section class="gantt-wrap" id="gantt-wrap">
@@ -572,11 +479,17 @@ def _build_html(data: dict[str, object]) -> str:
   <script>
     const reportData = {payload};
     const allItems = Array.isArray(reportData.items) ? reportData.items : [];
-    const phaseNames = Array.isArray(reportData.phase_names) ? reportData.phase_names : [];
+    const teamNames = Array.isArray(reportData.team_names) ? reportData.team_names : [];
+    const snapshotMeta = reportData.snapshot_meta && typeof reportData.snapshot_meta === "object" ? reportData.snapshot_meta : {{}};
 
     const generatedNode = document.getElementById("generated-at");
     const sourceNode = document.getElementById("source-file");
     const visibleCountNode = document.getElementById("visible-count");
+    const includedStoriesNode = document.getElementById("included-stories");
+    const totalStoriesNode = document.getElementById("total-stories");
+    const excludedEpicNode = document.getElementById("excluded-epic");
+    const excludedDatesNode = document.getElementById("excluded-dates");
+    const excludedEstimateNode = document.getElementById("excluded-estimate");
     const fromInput = document.getElementById("from-date");
     const toInput = document.getElementById("to-date");
     const applyButton = document.getElementById("apply-range");
@@ -585,12 +498,17 @@ def _build_html(data: dict[str, object]) -> str:
 
     const DAY_MS = 86400000;
     const DAY_PX = 16;
-    const CARD_HEIGHT = 58;
+    const CARD_HEIGHT = 70;
     const CARD_GAP = 8;
     const TIMELINE_SIDE_PAD = 8;
 
-    generatedNode.textContent = reportData.generated_at || "-";
+    generatedNode.textContent = snapshotMeta.snapshot_utc || reportData.generated_at || "-";
     sourceNode.textContent = reportData.source_file || "-";
+    includedStoriesNode.textContent = String(snapshotMeta.included_story_rows || 0);
+    totalStoriesNode.textContent = String(snapshotMeta.total_story_rows || 0);
+    excludedEpicNode.textContent = String(snapshotMeta.excluded_missing_epic || 0);
+    excludedDatesNode.textContent = String(snapshotMeta.excluded_missing_dates || 0);
+    excludedEstimateNode.textContent = String(snapshotMeta.excluded_missing_estimate || 0);
 
     function parseIso(iso) {{
       if (!iso) return null;
@@ -620,10 +538,9 @@ def _build_html(data: dict[str, object]) -> str:
 
     function defaultRange() {{
       const today = new Date();
-      const currentMonthStart = startOfMonth(today);
       const prevMonthStart = startOfMonth(new Date(today.getFullYear(), today.getMonth() - 1, 1));
       const nextMonthEnd = endOfMonth(new Date(today.getFullYear(), today.getMonth() + 1, 1));
-      return {{ from: prevMonthStart, to: nextMonthEnd, currentMonthStart }};
+      return {{ from: prevMonthStart, to: nextMonthEnd }};
     }}
 
     function overlap(aStart, aEnd, bStart, bEnd) {{
@@ -637,12 +554,6 @@ def _build_html(data: dict[str, object]) -> str:
     function pctFromDays(days, totalDays) {{
       if (totalDays <= 0) return 0;
       return (days / totalDays) * 100;
-    }}
-
-    function formatDate(iso) {{
-      const d = parseIso(iso);
-      if (!d) return "-";
-      return d.toLocaleDateString(undefined, {{ day: "2-digit", month: "short", year: "numeric" }});
     }}
 
     function formatShortDate(d) {{
@@ -677,7 +588,6 @@ def _build_html(data: dict[str, object]) -> str:
         const spanDays = daysBetweenInclusive(clippedStart, clippedEnd);
         weeks.push({{
           start,
-          end,
           clippedStart,
           clippedEnd,
           isCurrent: today >= start && today <= end,
@@ -739,7 +649,7 @@ def _build_html(data: dict[str, object]) -> str:
       const sorted = [...items].sort((a, b) => {{
         if (a.planned_start !== b.planned_start) return a.planned_start < b.planned_start ? -1 : 1;
         if (a.planned_end !== b.planned_end) return a.planned_end < b.planned_end ? -1 : 1;
-        return (a.rmi_name || "").localeCompare(b.rmi_name || "");
+        return (a.epic_name || "").localeCompare(b.epic_name || "");
       }});
       const trackEnds = [];
       return sorted.map((item) => {{
@@ -767,7 +677,7 @@ def _build_html(data: dict[str, object]) -> str:
           const e = parseIso(item.planned_end);
           if (!s || !e) continue;
           if (overlap(s, e, week.clippedStart, week.clippedEnd)) {{
-            total += Number(item.man_days || 0);
+            total += Number(item.planned_man_days || 0);
           }}
         }}
         return total;
@@ -782,9 +692,19 @@ def _build_html(data: dict[str, object]) -> str:
             : pct < 0.7
               ? "#93c5fd"
               : "#2563eb";
-        const title = `${{weeks[i].label}}: ${{load.toFixed(2).replace(/\\.00$/, "")}} md`;
+        const pretty = Number(load.toFixed(2)).toString();
+        const title = `${{weeks[i].label}}: ${{pretty}} man-days`;
         return `<span class="load-chip" style="background:${{bg}};" title="${{title}}"></span>`;
       }}).join("");
+    }}
+
+    function safeText(value) {{
+      return String(value == null ? "" : value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
     }}
 
     function render() {{
@@ -799,8 +719,8 @@ def _build_html(data: dict[str, object]) -> str:
       const months = buildMonths(range.from, range.to);
       const weeks = buildWeeks(range.from, range.to);
 
-      if (!phaseNames.length) {{
-        ganttRoot.innerHTML = '<div class="empty">No phase rows found in nested view workbook.</div>';
+      if (!teamNames.length) {{
+        ganttRoot.innerHTML = '<div class="empty">No team workload rows found in SQLite snapshot. Run sync_team_rmi_gantt_sqlite.py first.</div>';
         return;
       }}
 
@@ -816,8 +736,8 @@ def _build_html(data: dict[str, object]) -> str:
         ? `<span class="current-week-band" style="left:${{currentWeek.leftPct}}%; width:${{currentWeek.widthPct}}%;"></span>`
         : "";
 
-      const laneRows = phaseNames.map((phaseName) => {{
-        const laneItems = visible.filter((item) => item.phase_name === phaseName);
+      const laneRows = teamNames.map((teamName) => {{
+        const laneItems = visible.filter((item) => item.team_name === teamName);
         const stacked = stackCards(laneItems);
         const maxTrack = stacked.reduce((acc, item) => Math.max(acc, Number(item._track || 0)), -1);
         const rowCount = Math.max(1, maxTrack + 1);
@@ -835,23 +755,35 @@ def _build_html(data: dict[str, object]) -> str:
           const leftDays = Math.floor((clippedStart.getTime() - range.from.getTime()) / DAY_MS);
           const spanDays = daysBetweenInclusive(clippedStart, clippedEnd);
           const leftPx = Math.floor(leftDays * DAY_PX) + TIMELINE_SIDE_PAD;
-          const widthPx = Math.max(64, Math.floor(spanDays * DAY_PX) - 4);
+          const widthPx = Math.max(140, Math.floor(spanDays * DAY_PX) - 4);
           const topPx = 8 + (Number(item._track || 0) * (CARD_HEIGHT + CARD_GAP));
           const title = [
-            `Phase: ${{item.phase_name}}`,
-            `RMI: ${{item.rmi_name}}`,
-            `Man Days: ${{String(item.man_days)}}`,
+            `Team: ${{item.team_name}}`,
+            `Epic: ${{item.epic_key}} - ${{item.epic_name}}`,
+            `Story Count: ${{item.story_count}}`,
+            `Planned Hours: ${{item.planned_hours}}`,
+            `Planned Man Days: ${{item.planned_man_days}}`,
             `Planned Start: ${{item.planned_start}}`,
             `Planned End: ${{item.planned_end}}`,
             `Project: ${{item.project_key || "-"}}`,
           ].join("\\n");
 
+          const epicUrl = safeText(item.epic_url || "#");
+          const epicLabel = safeText(item.epic_key || "-");
+          const epicName = safeText(item.epic_name || "-");
+          const storyCount = safeText(item.story_count);
+          const plannedHours = safeText(item.planned_hours);
+          const plannedManDays = safeText(item.planned_man_days);
+          const plannedStart = safeText(item.planned_start || "-");
+          const plannedEnd = safeText(item.planned_end || "-");
+
           cardsHtml += `
-            <article class="card" style="left:${{leftPx}}px; top:${{topPx}}px; width:${{widthPx}}px;" title="${{title}}">
-              <div class="card-title">${{item.rmi_name || "-"}}</div>
-              <div class="card-meta">Man Days: ${{String(item.man_days)}}</div>
-              <div class="card-meta">Start: ${{item.planned_start || "-"}}</div>
-              <div class="card-meta">End: ${{item.planned_end || "-"}}</div>
+            <article class="card" style="left:${{leftPx}}px; top:${{topPx}}px; width:${{widthPx}}px;" title="${{safeText(title)}}">
+              <a class="card-link" href="${{epicUrl}}" target="_blank" rel="noopener">
+                <div class="card-title">${{epicLabel}} - ${{epicName}}</div>
+                <div class="card-meta">Stories: ${{storyCount}} | Hours: ${{plannedHours}} | Man-days: ${{plannedManDays}}</div>
+                <div class="card-meta">Start: ${{plannedStart}} | End: ${{plannedEnd}}</div>
+              </a>
             </article>
           `;
         }}
@@ -870,9 +802,9 @@ def _build_html(data: dict[str, object]) -> str:
 
         return `
           <div class="grid-row">
-            <div class="cell phase-cell">
-              <div class="phase-title" title="${{phaseName}}">${{phaseName}}</div>
-              <div class="phase-sub">${{laneItems.length}} RMI card(s)</div>
+            <div class="cell team-cell">
+              <div class="team-title" title="${{safeText(teamName)}}">${{safeText(teamName)}}</div>
+              <div class="team-sub">${{laneItems.length}} RMI card(s)</div>
               <div class="load-row">${{chips}}</div>
             </div>
             <div class="cell timeline-cell">${{contentHtml}}</div>
@@ -881,9 +813,9 @@ def _build_html(data: dict[str, object]) -> str:
       }}).join("");
 
       ganttRoot.innerHTML = `
-        <div class="grid" style="width: calc(var(--phase-col) + ${{timelineWidth}}px);">
+        <div class="grid" style="width: calc(var(--team-col) + ${{timelineWidth}}px);">
           <div class="grid-row head">
-            <div class="cell phase-cell">Phase</div>
+            <div class="cell team-cell">Team</div>
             <div class="cell timeline-cell">
               <div class="timeline-header" style="width:${{timelineWidth}}px;">
                 ${{monthBlocks}}
@@ -915,30 +847,27 @@ def _build_html(data: dict[str, object]) -> str:
 
 def main() -> None:
     base_dir = Path(__file__).resolve().parent
-    input_name = os.getenv("JIRA_PHASE_GANTT_INPUT_XLSX_PATH", DEFAULT_INPUT_XLSX).strip() or DEFAULT_INPUT_XLSX
+    db_name = os.getenv("JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH", DEFAULT_CAPACITY_DB).strip() or DEFAULT_CAPACITY_DB
     output_name = os.getenv("JIRA_PHASE_GANTT_HTML_PATH", DEFAULT_OUTPUT_HTML).strip() or DEFAULT_OUTPUT_HTML
 
-    input_path = _resolve_path(input_name, base_dir)
+    db_path = _resolve_path(db_name, base_dir)
     output_path = _resolve_path(output_name, base_dir)
-
-    phase_rows = _load_phase_rmi_records(input_path)
-    aggregated = _aggregate_phase_rmi_rows(phase_rows)
-    phase_names = FIXED_PHASE_NAMES
+    loaded = _load_team_rmi_payload(db_path)
 
     payload = {
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
-        "source_file": str(input_path),
-        "phase_names": phase_names,
-        "items": aggregated,
+        "source_file": loaded.get("source_file", str(db_path)),
+        "team_names": loaded.get("team_names", []),
+        "items": loaded.get("items", []),
+        "snapshot_meta": loaded.get("snapshot_meta", {}),
     }
     output_path.write_text(_build_html(payload), encoding="utf-8")
 
-    print(f"Source workbook: {input_path}")
-    print(f"Phase story rows loaded: {len(phase_rows)}")
-    print(f"Aggregated phase-RMI rows: {len(aggregated)}")
+    print(f"Capacity DB: {db_path}")
+    print(f"Loaded team names: {len(payload['team_names'])}")
+    print(f"Loaded team-RMI rows: {len(payload['items'])}")
     print(f"Report written: {output_path}")
 
 
 if __name__ == "__main__":
     main()
-

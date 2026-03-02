@@ -16,9 +16,9 @@ Cross-report drawer and field-logic documentation now also lives in:
 | Field Caption | Definition | Formula |
 |---|---|---|
 | Total Capacity (Hours) | Capacity computed from applied profile factors for selected range (fallback: project totals). | `Total Capacity (Hours) = Employee Count x Available Business Days x Per Day Hours` |
-| Total Leaves Planned | Sum of Original Estimates for RLT (RnD Leave Tracker) issues in selected date range. | `Total Leaves Planned = Sum(RLT Original Estimate Hours)` |
+| Total Leaves Planned | Planned leave load from day-bucketed RLT rows in selected date range. | `Total Leaves Planned = Planned Taken + Planned Not Yet Taken` |
 | Availability | Capacity reduced only by planned leaves from RLT. | `Availability = Total Capacity (Hours) - Total Leaves Planned` |
-| Capacity available for more work | Capacity after subtracting planned project work and planned RLT leave estimates. | `Capacity available for more work = Total Capacity (Hours) - Total Planned Projects (Hours) - Total Leaves Planned` |
+| Capacity available for more work | Capacity after subtracting planned project work and planned RLT leave load. | `Capacity available for more work = Total Capacity (Hours) - Total Planned Projects (Hours) - Total Leaves Planned` |
 
 ## Notes
 - `Total Planned Projects (Hours)` excludes `RLT`.

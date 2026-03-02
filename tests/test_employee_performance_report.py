@@ -11,6 +11,7 @@ from generate_employee_performance_report import (
     _build_html,
     _build_payload,
     _init_performance_settings_db,
+    _load_leave_issue_keys,
     _load_unplanned_leave_rows,
     _load_work_items,
     _load_worklogs,
@@ -33,6 +34,7 @@ class EmployeePerformanceReportTests(unittest.TestCase):
                 "points_per_unplanned_leave_hour": 3,
                 "points_per_subtask_late_hour": 4,
                 "points_per_estimate_overrun_hour": 5,
+                "points_per_missed_due_date": 2,
             }
         )
         self.assertEqual(valid["base_score"], 100)
@@ -48,6 +50,7 @@ class EmployeePerformanceReportTests(unittest.TestCase):
                     "points_per_unplanned_leave_hour": 3,
                     "points_per_subtask_late_hour": 4,
                     "points_per_estimate_overrun_hour": 5,
+                    "points_per_missed_due_date": 2,
                 }
             )
 
@@ -68,6 +71,7 @@ class EmployeePerformanceReportTests(unittest.TestCase):
                     "points_per_unplanned_leave_hour": 0.6,
                     "points_per_subtask_late_hour": 1.2,
                     "points_per_estimate_overrun_hour": 1.4,
+                    "points_per_missed_due_date": 2.0,
                 },
             )
             loaded = _load_performance_settings(db)
@@ -101,12 +105,47 @@ class EmployeePerformanceReportTests(unittest.TestCase):
             html,
         )
         self.assertIn("if (!isSubtaskPerformanceType(issueType)) return false;", html)
+        self.assertIn("const leaveIssueKeySet = new Set(", html)
+        self.assertIn("function isLeaveIssueKey(issueKey)", html)
+        self.assertNotIn("if (!matchesPlannedRange(r, from, to)) return false;", html)
+        self.assertIn("const assignedItemsWork = assignedItems.filter((r) => !isLeaveIssueKey(String(r.issue_key || \"\")));", html)
+        self.assertIn("value: n(item.planned_hours_assigned),", html)
 
     def test_html_subtask_type_helper_includes_subtask_and_bug_subtask_patterns(self):
         payload = _build_payload([], [], [], dict(DEFAULT_PERFORMANCE_SETTINGS), [], [], [], [])
         html = _build_html(payload)
         self.assertIn('if (label.includes("sub-task") || label.includes("subtask")) return true;', html)
         self.assertIn('return label.includes("bug") && (label.includes("sub-task") || label.includes("subtask"));', html)
+
+    def test_load_leave_issue_keys_prefers_raw_subtasks_and_normalizes(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            path = Path(td) / "rlt_leave_report.xlsx"
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "Raw_Subtasks"
+            ws.append(["issue_key", "assignee"])
+            ws.append(["rlt-172", "Maria"])
+            ws.append(["RLT-172", "Maria"])
+            ws.append([" RLT-173 ", "Maria"])
+            ws.append(["", "Alice"])
+            wb.save(path)
+
+            keys = _load_leave_issue_keys(path)
+            self.assertEqual(keys, ["RLT-172", "RLT-173"])
+
+    def test_build_payload_includes_leave_issue_keys(self):
+        payload = _build_payload(
+            [],
+            [],
+            [],
+            dict(DEFAULT_PERFORMANCE_SETTINGS),
+            [],
+            [],
+            [],
+            [],
+            leave_issue_keys=["RLT-172"],
+        )
+        self.assertEqual(payload["leave_issue_keys"], ["RLT-172"])
 
     def test_load_unplanned_leave_rows_from_daily_assignee(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
@@ -172,6 +211,7 @@ class EmployeePerformanceReportTests(unittest.TestCase):
                     "points_per_unplanned_leave_hour": 0.9,
                     "points_per_subtask_late_hour": 1.2,
                     "points_per_estimate_overrun_hour": 1.3,
+                    "points_per_missed_due_date": 2.0,
                 },
             )
             self.assertEqual(post_resp.status_code, 200)

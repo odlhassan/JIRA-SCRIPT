@@ -408,10 +408,71 @@ def generate_html(data):
             box-shadow: 0 1px 3px rgba(0,0,0,0.1);
         }}
         .epics-section h3 {{
-            margin: 0 0 0.75rem 0;
+            margin: 0;
             font-size: 0.85rem;
             color: #0747a6;
             font-weight: 600;
+        }}
+        .epics-header {{
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            gap: 1rem;
+            margin-bottom: 0.5rem;
+        }}
+        .epics-search {{
+            position: relative;
+            min-width: 0;
+            flex: 0 0 260px;
+        }}
+        .epics-search-input {{
+            width: 100%;
+            padding: 0.35rem 1.75rem 0.35rem 1.75rem;
+            border-radius: 16px;
+            border: 1px solid #dfe1e6;
+            font-size: 0.8rem;
+            color: #172b4d;
+            background: #fafbfc;
+            outline: none;
+            transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+        }}
+        .epics-search-input::placeholder {{
+            color: #97a0af;
+        }}
+        .epics-search-input:focus {{
+            border-color: #0747a6;
+            box-shadow: 0 0 0 2px rgba(7,71,166,0.2);
+            background: #fff;
+        }}
+        .epics-search-icon {{
+            position: absolute;
+            left: 0.5rem;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 1rem;
+            color: #97a0af;
+        }}
+        .epics-search-clear {{
+            position: absolute;
+            right: 0.4rem;
+            top: 50%;
+            transform: translateY(-50%);
+            border: none;
+            background: transparent;
+            color: #97a0af;
+            cursor: pointer;
+            font-size: 0.9rem;
+            padding: 0;
+            line-height: 1;
+        }}
+        .epics-search-clear:hover {{
+            color: #172b4d;
+        }}
+        .epics-search-hint {{
+            font-size: 0.7rem;
+            color: #97a0af;
+            text-align: right;
+            margin-bottom: 0.75rem;
         }}
         .epics-table {{
             width: 100%;
@@ -692,6 +753,7 @@ def generate_html(data):
         }})();
 
         let epicSortState = {{ column: null, direction: 'asc' }};
+        let epicSearchQuery = '';
 
         function updateUI() {{
             try {{
@@ -823,25 +885,49 @@ def generate_html(data):
 
         function renderEpics() {{
             try {{
-                const container = document.getElementById('epics-section');
-                if (!container) {{
-                    console.error('epics-section container not found');
-                    return;
-                }}
-                let epics = dashboardData.unique_epics || [];
-                const epicDetails = dashboardData.epic_details || {{}};
-                const nearestProductionDate = dashboardData.nearest_production_date || '';
-                
-                if (epics.length === 0) {{
-                    container.innerHTML = '<h3>RMIs / Epics</h3><div class="epics-empty">No RMIs/Epics found in Excel file.</div>';
-                    return;
-                }}
-            
+            const container = document.getElementById('epics-section');
+            if (!container) {{
+                console.error('epics-section container not found');
+                return;
+            }}
+            const epicDetails = dashboardData.epic_details || {{}};
+            const nearestProductionDate = dashboardData.nearest_production_date || '';
+            const allEpics = dashboardData.unique_epics || [];
+
+            if (allEpics.length === 0) {{
+                container.innerHTML = '<h3>RMIs / Epics</h3><div class="epics-empty">No RMIs/Epics found in Excel file.</div>';
+                return;
+            }}
+
+            // Filter by search query
+            const query = (epicSearchQuery || '').trim().toLowerCase();
+            let epics = allEpics;
+            if (query) {{
+                epics = allEpics.filter(epicName => {{
+                    const details = epicDetails[epicName] || {{}};
+                    const workStatus = (details.work_status || '').toLowerCase();
+                    const stories = details.stories || [];
+
+                    const inName = epicName.toLowerCase().includes(query);
+                    const inStatus = workStatus.includes(query);
+                    const inStories = stories.some(story => {{
+                        const key = (story.key || '').toLowerCase();
+                        const summary = (story.summary || '').toLowerCase();
+                        return key.includes(query) || summary.includes(query);
+                    }});
+
+                    return inName || inStatus || inStories;
+                }});
+            }}
+
             // Sort if needed
             if (epicSortState.column) {{
                 epics = sortEpics(epics, epicDetails, epicSortState.column, epicSortState.direction);
             }}
-            
+
+            const totalEpics = allEpics.length;
+            const visibleCount = epics.length;
+
             // Convert nearest production date to display format for comparison
             let nearestDateDisplay = '';
             if (nearestProductionDate) {{
@@ -849,16 +935,30 @@ def generate_html(data):
                 const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
                 nearestDateDisplay = String(nearestDate.getDate()).padStart(2, '0') + '-' + months[nearestDate.getMonth()] + '-' + nearestDate.getFullYear();
             }}
-            
-            // Build header with sort indicators
-            const getSortClass = (col) => {{
-                if (epicSortState.column === col) {{
-                    return 'sortable ' + epicSortState.direction;
-                }}
-                return 'sortable';
-            }};
-            
-            let html = '<h3>RMIs / Epics (' + epics.length + ')</h3><div class="accordion-container">';
+
+            // Build header and search UI
+            let html = '<div class="epics-header">';
+            if (visibleCount === totalEpics) {{
+                html += '<h3>RMIs / Epics (' + totalEpics + ')</h3>';
+            }} else {{
+                html += '<h3>RMIs / Epics (' + visibleCount + ' of ' + totalEpics + ')</h3>';
+            }}
+            html += '<div class="epics-search">';
+            html += '<span class="material-icons epics-search-icon">search</span>';
+            html += '<input type="text" id="epics-search-input" class="epics-search-input" placeholder="Search epics, status, or tasks..." value="' + escapeHtml(epicSearchQuery) + '" oninput="handleEpicSearchChange(this.value)" />';
+            if (query) {{
+                html += '<button type="button" class="epics-search-clear" onclick="clearEpicSearch()">×</button>';
+            }}
+            html += '</div></div>';
+            html += '<div class="epics-search-hint">Search matches epic name, work status, story key and summary.</div>';
+
+            if (visibleCount === 0) {{
+                html += '<div class="epics-empty">No RMIs/Epics match this search.</div>';
+                container.innerHTML = html;
+                return;
+            }}
+
+            html += '<div class="accordion-container">';
             
             function getStatusBadgeClass(status) {{
                 if (!status) return 'unknown';
@@ -967,6 +1067,20 @@ def generate_html(data):
                 }}
             }}
         }}
+
+        window.handleEpicSearchChange = function(value) {{
+            epicSearchQuery = value || '';
+            renderEpics();
+        }};
+
+        window.clearEpicSearch = function() {{
+            epicSearchQuery = '';
+            const input = document.getElementById('epics-search-input');
+            if (input) {{
+                input.value = '';
+            }}
+            renderEpics();
+        }};
 
         function escapeHtml(text) {{
             const div = document.createElement('div');

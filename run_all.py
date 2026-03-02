@@ -1,21 +1,22 @@
 """
 Run the full pipeline in one command:
 1) Generate export Excel files
-2) Build nested-view HTML report
-3) Build missed-entries HTML report
-4) Build assignee-hours HTML + summary Excel report
-5) Build dedicated RLT leave report artifacts
-6) Build planned leaves calendar HTML report
-7) Build RnD data story HTML report (includes project-wise epic planned-hours page)
-8) Build Planned RMIs report HTML
-9) Build main gantt-chart HTML report
-10) Build phase-owner RMI gantt-chart HTML report
-11) Build Employee Performance report HTML
-12) Rebuild dashboard.html
-13) Build IPP phase breakdown export
-14) Build IPP Meeting dashboard HTML
-15) Move generated report HTML files into the designated folder
-16) Start local report server (unless --no-server is used)
+2) Sync team-RMI gantt snapshot tables into SQLite
+3) Build nested-view HTML report
+4) Build missed-entries HTML report
+5) Build assignee-hours HTML + summary Excel report
+6) Build dedicated RLT leave report artifacts
+7) Build planned leaves calendar HTML report
+8) Build RnD data story HTML report (includes project-wise epic planned-hours page)
+9) Build Planned RMIs report HTML
+10) Build main gantt-chart HTML report
+11) Build phase-owner RMI gantt-chart HTML report
+12) Build Employee Performance report HTML
+13) Rebuild dashboard.html
+14) Build IPP phase breakdown export
+15) Build IPP Meeting dashboard HTML
+16) Move generated report HTML files into the designated folder
+17) Start local report server (unless --no-server is used)
 """
 from __future__ import annotations
 
@@ -207,6 +208,7 @@ def main() -> None:
     pipeline_steps: list[dict] = [
         {"name": "exports", "type": "script", "script": "run_all_exports.py", "extra_args": ["--skip-work-items"], "env": None},
         {"name": "work-items-full-sync", "type": "script", "script": "export_jira_work_items.py", "extra_args": None, "env": full_sync_env},
+        {"name": "team-rmi-gantt-sqlite-sync", "type": "script", "script": "sync_team_rmi_gantt_sqlite.py", "extra_args": None, "env": None},
         {"name": "nested-view-html", "type": "script", "script": "generate_nested_view_html.py", "extra_args": None, "env": None},
         {"name": "missed-entries-html", "type": "script", "script": "generate_missed_entries_html.py", "extra_args": None, "env": None},
         {"name": "assignee-hours-html", "type": "script", "script": "generate_assignee_hours_report.py", "extra_args": None, "env": None},

@@ -1,4 +1,4 @@
-﻿"""
+"""
 Generate an interactive HTML report from nested view.xlsx.
 """
 from __future__ import annotations
@@ -14,7 +14,6 @@ from openpyxl import load_workbook
 from generate_assignee_hours_report import (
     DEFAULT_LEAVE_REPORT_INPUT_XLSX,
     _load_leave_daily_rows,
-    _load_leave_subtask_rows,
 )
 
 EXPECTED_HEADERS = [
@@ -553,7 +552,7 @@ def _build_html(data: dict) -> str:
       align-items: center;
       gap: 8px;
       flex-wrap: wrap;
-      padding: 6px 10px;
+      padding: 6px 12px;
       border-radius: 999px;
       border: 1px solid #7a4b24;
       background: #8b5e34;
@@ -584,54 +583,135 @@ def _build_html(data: dict) -> str:
       border-color: #fcd7aa;
       box-shadow: 0 0 0 2px rgba(255, 237, 213, 0.38);
     }}
-    .date-chip-reset {{
-      display: inline-flex;
-      align-items: center;
-      border: 1px solid #f3e8d8;
-      border-radius: 999px;
-      background: #fff7ed;
-      color: #7c2d12;
-      font-size: 0.72rem;
-      font-weight: 700;
-      padding: 4px 10px;
-      cursor: pointer;
-      line-height: 1;
-      text-transform: lowercase;
-    }}
-    .date-chip-reset:hover {{
-      background: #ffedd5;
-    }}
-    .date-chip-reset:focus {{
-      outline: none;
-      border-color: #fcd7aa;
-      box-shadow: 0 0 0 2px rgba(255, 237, 213, 0.38);
-    }}
     .date-chip-apply {{
       display: inline-flex;
       align-items: center;
-      border: 1px solid #1e40af;
+      gap: 5px;
+      border: 1px solid #0f766e;
       border-radius: 999px;
-      background: #2563eb;
+      background: #0d9488;
+      color: #ffffff;
+      font-size: 0.74rem;
+      font-weight: 700;
+      padding: 5px 14px 5px 10px;
+      cursor: pointer;
+      line-height: 1;
+      transition: background 0.15s, box-shadow 0.15s;
+    }}
+    .date-chip-apply .material-icons-outlined {{ font-size: 15px; }}
+    .date-chip-apply:hover {{ background: #0f766e; }}
+    .date-chip-apply:focus {{
+      outline: none;
+      box-shadow: 0 0 0 2px rgba(13, 148, 136, 0.35);
+    }}
+    .date-chip-apply:disabled {{ opacity: 0.55; cursor: not-allowed; }}
+    .date-chip-reset {{
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid #d4b896;
+      border-radius: 999px;
+      background: #fff7ed;
+      color: #92400e;
+      width: 30px;
+      height: 30px;
+      padding: 0;
+      cursor: pointer;
+      line-height: 1;
+      transition: background 0.15s;
+    }}
+    .date-chip-reset .material-icons-outlined {{ font-size: 16px; }}
+    .date-chip-reset:hover {{ background: #ffedd5; }}
+    .date-chip-reset:focus {{
+      outline: none;
+      box-shadow: 0 0 0 2px rgba(255, 237, 213, 0.38);
+    }}
+    .adv-filter-wrap {{ position: relative; display: inline-flex; }}
+    .adv-filter-btn {{
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      border: 1px solid #6366f1;
+      border-radius: 999px;
+      background: #4f46e5;
       color: #ffffff;
       font-size: 0.72rem;
       font-weight: 700;
-      padding: 4px 12px;
+      padding: 5px 12px 5px 9px;
       cursor: pointer;
       line-height: 1;
-      text-transform: lowercase;
+      transition: background 0.15s, box-shadow 0.15s;
     }}
-    .date-chip-apply:hover {{
-      background: #1d4ed8;
-    }}
-    .date-chip-apply:focus {{
+    .adv-filter-btn .material-icons-outlined {{ font-size: 15px; }}
+    .adv-filter-btn:hover {{ background: #4338ca; }}
+    .adv-filter-btn:focus {{
       outline: none;
-      border-color: #1d4ed8;
-      box-shadow: 0 0 0 2px rgba(147, 197, 253, 0.4);
+      box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.35);
     }}
-    .date-chip-apply:disabled {{
-      opacity: 0.6;
-      cursor: not-allowed;
+    .adv-filter-btn[aria-expanded="true"] {{ background: #4338ca; }}
+    .adv-filter-menu {{
+      position: absolute;
+      top: calc(100% + 8px);
+      right: 0;
+      min-width: 230px;
+      background: #fffbf5;
+      border: 1px solid #e0d4c8;
+      border-radius: 12px;
+      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.14);
+      padding: 6px 0;
+      z-index: 100;
+      animation: advFilterFadeIn 0.12s ease-out;
     }}
+    @keyframes advFilterFadeIn {{
+      from {{ opacity: 0; transform: translateY(-4px); }}
+      to   {{ opacity: 1; transform: translateY(0); }}
+    }}
+    .adv-filter-group-label {{
+      padding: 8px 14px 4px;
+      font-size: 0.65rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #78716c;
+    }}
+    .adv-filter-item {{
+      display: block;
+      width: 100%;
+      padding: 8px 14px;
+      border: none;
+      background: transparent;
+      text-align: left;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: #44403c;
+      cursor: pointer;
+      transition: background 0.1s, color 0.1s;
+    }}
+    .adv-filter-item:hover {{ background: #e0f2f1; color: #0f766e; }}
+    .adv-filter-divider {{
+      height: 1px;
+      background: #e7e0d8;
+      margin: 6px 10px;
+    }}
+    .adv-filter-radio {{
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 14px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: #44403c;
+      cursor: pointer;
+      transition: background 0.1s;
+    }}
+    .adv-filter-radio:hover {{ background: #ede9fe; }}
+    .adv-filter-radio input[type="radio"] {{
+      accent-color: #4f46e5;
+      margin: 0;
+      width: 14px;
+      height: 14px;
+    }}
+    .adv-filter-radio input[type="radio"]:checked + span {{ color: #4f46e5; font-weight: 700; }}
     .date-chip-status {{
       font-size: 0.72rem;
       color: #fef3c7;
@@ -1831,13 +1911,35 @@ def _build_html(data: dict) -> str:
       background: #111827;
     }}
     html[data-theme="dark"] .date-chip-apply {{
-      background: #1d4ed8;
-      border-color: #2563eb;
-      color: #dbeafe;
+      background: #0f766e;
+      border-color: #0d9488;
+      color: #ccfbf1;
     }}
-    html[data-theme="dark"] .date-chip-apply:hover {{
-      background: #1e40af;
+    html[data-theme="dark"] .date-chip-apply:hover {{ background: #115e59; }}
+    html[data-theme="dark"] .date-chip-reset {{
+      background: #1f2937;
+      border-color: #475569;
+      color: #d6d3d1;
     }}
+    html[data-theme="dark"] .date-chip-reset:hover {{ background: #374151; }}
+    html[data-theme="dark"] .adv-filter-btn {{
+      background: #4338ca;
+      border-color: #6366f1;
+      color: #e0e7ff;
+    }}
+    html[data-theme="dark"] .adv-filter-btn:hover {{ background: #3730a3; }}
+    html[data-theme="dark"] .adv-filter-menu {{
+      background: #1e1b2e;
+      border-color: #3f3a5a;
+      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.4);
+    }}
+    html[data-theme="dark"] .adv-filter-group-label {{ color: #a8a29e; }}
+    html[data-theme="dark"] .adv-filter-item {{ color: #d6d3d1; }}
+    html[data-theme="dark"] .adv-filter-item:hover {{ background: #164e63; color: #5eead4; }}
+    html[data-theme="dark"] .adv-filter-divider {{ background: #3f3a5a; }}
+    html[data-theme="dark"] .adv-filter-radio {{ color: #d6d3d1; }}
+    html[data-theme="dark"] .adv-filter-radio:hover {{ background: #312e81; }}
+    html[data-theme="dark"] .adv-filter-radio input[type="radio"]:checked + span {{ color: #a5b4fc; }}
     html[data-theme="dark"] .date-chip-status {{
       color: #e2e8f0;
     }}
@@ -1927,18 +2029,40 @@ def _build_html(data: dict) -> str:
 <body>
   <div class="top-date-range-wrap">
     <div class="top-date-range-chip" aria-label="Date range filter">
-      <span class="date-chip-segment">Range</span>
-      <span class="date-chip-segment">Actual Hours</span>
-      <select id="actual-hours-mode" class="date-chip-input" aria-label="Actual hours mode">
-        <option value="log_date">By Log Date</option>
-        <option value="planned_dates">By Planned Dates</option>
-      </select>
       <span class="date-chip-segment">From</span>
       <input id="date-filter-from" class="date-chip-input" type="date" aria-label="From date">
       <span class="date-chip-segment">To</span>
       <input id="date-filter-to" class="date-chip-input" type="date" aria-label="To date">
-      <button id="date-filter-apply" class="date-chip-apply" type="button" aria-label="Apply date range">apply</button>
-      <button id="date-filter-reset" class="date-chip-reset" type="button" aria-label="Reset date range">reset</button>
+      <button id="date-filter-apply" class="date-chip-apply" type="button" aria-label="Apply date range">
+        <span class="material-icons-outlined" aria-hidden="true">check_circle</span>
+        <span class="date-chip-apply-label">Apply</span>
+      </button>
+      <button id="date-filter-reset" class="date-chip-reset" type="button" aria-label="Reset date range" title="Reset">
+        <span class="material-icons-outlined" aria-hidden="true">restart_alt</span>
+      </button>
+      <div class="adv-filter-wrap">
+        <button id="adv-filter-toggle" class="adv-filter-btn" type="button" aria-expanded="false" aria-haspopup="true" aria-label="Advanced Filters">
+          <span class="material-icons-outlined" aria-hidden="true">tune</span>
+          <span>Advanced Filters</span>
+        </button>
+        <div class="adv-filter-menu" id="adv-filter-menu" role="menu" hidden>
+          <div class="adv-filter-group-label">Date Presets</div>
+          <button class="adv-filter-item" type="button" data-preset="last30" role="menuitem">Last 30 Days</button>
+          <button class="adv-filter-item" type="button" data-preset="lastMonth" role="menuitem">Last Month</button>
+          <button class="adv-filter-item" type="button" data-preset="currentMonth" role="menuitem">Current Month</button>
+          <button class="adv-filter-item" type="button" data-preset="last90" role="menuitem">Last 90 Days</button>
+          <button class="adv-filter-item" type="button" data-preset="lastQuarter" role="menuitem">Last Quarter</button>
+          <button class="adv-filter-item" type="button" data-preset="currentQuarter" role="menuitem">Current Quarter</button>
+          <div class="adv-filter-divider"></div>
+          <div class="adv-filter-group-label">Perspective</div>
+          <label class="adv-filter-radio"><input type="radio" name="perspective-radio" value="log_date" checked><span>By Log Date</span></label>
+          <label class="adv-filter-radio"><input type="radio" name="perspective-radio" value="planned_dates"><span>By Planned Dates</span></label>
+        </div>
+      </div>
+      <select id="actual-hours-mode" style="display:none" aria-hidden="true">
+        <option value="log_date">By Log Date</option>
+        <option value="planned_dates">By Planned Dates</option>
+      </select>
       <span id="date-filter-status" class="date-chip-status" aria-live="polite"></span>
     </div>
   </div>
@@ -2091,9 +2215,9 @@ Total Planned Projects = 0h</span>
             Total Leaves Planned
             <span class="score-info" tabindex="0" aria-label="Total Leaves Planned information">
               i
-              <span class="score-info-tip" id="score-total-leaves-planned-tip">Formula: Total Leaves Planned = Sum(Original Estimates) for project RLT RnD Leave Tracker.
+              <span class="score-info-tip" id="score-total-leaves-planned-tip">Formula: Total Leaves Planned = Planned Taken + Planned Not Yet Taken from day-bucketed leave rows in selected date range.
 Values:
-RLT RnD Leave Tracker Original Estimates = 0h
+Planned Taken + Planned Not Yet Taken = 0h
 Total Leaves Planned = 0h</span>
             </span>
           </p>
@@ -2237,7 +2361,6 @@ Capacity available for more work = 0h</span>
 
     const allRows = reportData.rows || [];
     const leaveDailyRows = Array.isArray(reportData.leave_daily_rows) ? reportData.leave_daily_rows : [];
-    const leaveSubtaskRows = Array.isArray(reportData.leave_subtask_rows) ? reportData.leave_subtask_rows : [];
     const rowsById = new Map();
     const childrenByParent = new Map();
     const collapsed = new Set();
@@ -2362,8 +2485,9 @@ Capacity available for more work = 0h</span>
     function setDateApplyBusy(busy) {{
       isApplyingDateRange = !!busy;
       updateDateRangeApplyState();
-      if (dateFilterApplyButton) {{
-        dateFilterApplyButton.textContent = busy ? "applying..." : "apply";
+      var applyLabel = dateFilterApplyButton && dateFilterApplyButton.querySelector(".date-chip-apply-label");
+      if (applyLabel) {{
+        applyLabel.textContent = busy ? "Applying\u2026" : "Apply";
       }}
     }}
 
@@ -2887,71 +3011,6 @@ Capacity available for more work = 0h</span>
         plannedLeavesNotTakenYet = embeddedLeaveMetrics.plannedNotTakenHours;
         unplannedLeavesTaken = embeddedLeaveMetrics.unplannedTakenHours;
       }}
-      function computeLeaveSubtaskMetrics() {{
-        const empty = {{
-          takenLeavesHours: 0,
-          futureLeavesHours: 0,
-          plannedEstimateHours: 0,
-          plannedIssueCount: 0,
-          usesLeaveWorkbook: false,
-        }};
-        if (!leaveSubtaskRows.length) {{
-          return empty;
-        }}
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        let takenLeavesHours = 0;
-        let futureLeavesHours = 0;
-        let plannedEstimateHours = 0;
-        let plannedIssueCount = 0;
-        const seenPlannedIssueKeys = new Set();
-        const bounds = getDateFilterBounds();
-        for (const row of leaveSubtaskRows) {{
-          const classification = String(row && row.leave_classification || "").trim().toLowerCase();
-          if (classification !== "planned" && classification !== "unplanned") {{
-            continue;
-          }}
-          const loggedHours = toFiniteNumber(row && row.total_worklog_hours, 0);
-          if (loggedHours > 0) {{
-            takenLeavesHours += loggedHours;
-          }}
-          const startDate = parseDateValue(row && row.start_date);
-          const estimateHours = toFiniteNumber(row && row.original_estimate_hours, 0);
-          if (startDate && startDate.getTime() > today.getTime() && estimateHours > 0) {{
-            futureLeavesHours += estimateHours;
-          }}
-          if (classification !== "planned" || estimateHours <= 0) {{
-            continue;
-          }}
-          const dueDate = parseDateValue(row && row.due_date);
-          let inRange = true;
-          if (bounds && bounds.start && bounds.end && (startDate || dueDate)) {{
-            const rowStart = startDate || dueDate;
-            const rowEnd = dueDate || startDate;
-            inRange = !!rowStart && !!rowEnd && !(rowEnd.getTime() < bounds.start.getTime() || rowStart.getTime() > bounds.end.getTime());
-          }}
-          if (!inRange) {{
-            continue;
-          }}
-          const issueKey = String(row && row.issue_key || "").trim().toUpperCase();
-          if (issueKey) {{
-            if (seenPlannedIssueKeys.has(issueKey)) {{
-              continue;
-            }}
-            seenPlannedIssueKeys.add(issueKey);
-          }}
-          plannedEstimateHours += estimateHours;
-          plannedIssueCount += 1;
-        }}
-        return {{
-          takenLeavesHours,
-          futureLeavesHours,
-          plannedEstimateHours,
-          plannedIssueCount,
-          usesLeaveWorkbook: true,
-        }};
-      }}
-      const leaveSubtaskMetrics = computeLeaveSubtaskMetrics();
       const totalLeavesTakenHours = plannedLeavesTaken + unplannedLeavesTaken;
       const deltaHours = totalPlannedHours - totalActualProjectHours;
       const capacityBreakdown = appliedCapacityProfile
@@ -2975,17 +3034,15 @@ Capacity available for more work = 0h</span>
         && Number(capacityBusinessDays) > 0
         ? (profileCapacityHours / (Number(capacityEmployeeCount) * Number(capacityBusinessDays)))
         : null;
-      const rltOriginalEstimatesHours = leaveSubtaskMetrics.usesLeaveWorkbook
-        ? leaveSubtaskMetrics.plannedEstimateHours
-        : excludedPlannedHours;
-      const totalCapacityPlannedLeavesAdjustedHoursDefault = totalCapacityHoursValue - rltOriginalEstimatesHours;
-      const capacityGapHoursDefault = totalCapacityHoursValue - totalPlannedHours - rltOriginalEstimatesHours;
+      const totalPlannedLeavesHours = plannedLeavesTaken + plannedLeavesNotTakenYet;
+      const totalCapacityPlannedLeavesAdjustedHoursDefault = totalCapacityHoursValue - totalPlannedLeavesHours;
+      const capacityGapHoursDefault = totalCapacityHoursValue - totalPlannedHours - totalPlannedLeavesHours;
       const hoursRequiredToCompleteProjectsDefault = deltaHours;
       const scorecardFormulaContext = {{
         "capacity": totalCapacityHoursValue,
         "planned_hours": totalPlannedHours,
         "actual_hours": totalActualProjectHours,
-        "planned_leaves": rltOriginalEstimatesHours,
+        "planned_leaves": totalPlannedLeavesHours,
       }};
       const availabilityEval = evaluateManagedField("availability", totalCapacityPlannedLeavesAdjustedHoursDefault, scorecardFormulaContext);
       const capacityMoreWorkEval = evaluateManagedField("capacity_available_for_more_work", capacityGapHoursDefault, scorecardFormulaContext);
@@ -3000,7 +3057,7 @@ Capacity available for more work = 0h</span>
       if (totalLeavesScoreNode) {{
         totalLeavesScoreNode.textContent = formatHours(totalLeavesTakenHours);
       }}
-      totalLeavesPlannedScoreNode.textContent = formatHours(rltOriginalEstimatesHours);
+      totalLeavesPlannedScoreNode.textContent = formatHours(totalPlannedLeavesHours);
       totalCapacityPlannedLeavesAdjustedScoreNode.textContent = formatHours(totalCapacityPlannedLeavesAdjustedHours);
       capacityGapScoreNode.textContent = formatHours(capacityGapHours);
       if (availabilityFormulaNode) {{
@@ -3084,12 +3141,12 @@ Capacity available for more work = 0h</span>
         const scoreRangeFrom = dateBounds && dateBounds.start ? toIsoDate(dateBounds.start) : "-";
         const scoreRangeTo = dateBounds && dateBounds.end ? toIsoDate(dateBounds.end) : "-";
         totalLeavesPlannedTipNode.textContent =
-          "Formula: Total Leaves Planned = Sum(Original Estimates) from leave workbook planned subtasks overlapping selected date range.\\n"
+          "Formula: Total Leaves Planned = Planned Taken + Planned Not Yet Taken from day-bucketed leave rows within selected date range.\\n"
           + "Values:\\n"
           + "Date Range = " + scoreRangeFrom + " to " + scoreRangeTo + "\\n"
-          + "Planned Leave Issues Count = " + String(Math.round(toFiniteNumber(leaveSubtaskMetrics.plannedIssueCount, 0))) + "\\n"
-          + "Leave Workbook Planned Original Estimates = " + formatHours(rltOriginalEstimatesHours) + "\\n"
-          + "Total Leaves Planned = " + formatHours(rltOriginalEstimatesHours);
+          + "Planned Taken = " + formatHours(plannedLeavesTaken) + "\\n"
+          + "Planned Not Yet Taken = " + formatHours(plannedLeavesNotTakenYet) + "\\n"
+          + "Total Leaves Planned = " + formatHours(totalPlannedLeavesHours);
       }}
       if (totalCapacityPlannedLeavesAdjustedTipNode) {{
         const availabilityFormulaText = managedFieldFormulaText("availability", "capacity-planned_leaves");
@@ -3097,7 +3154,7 @@ Capacity available for more work = 0h</span>
           "Formula: Availability = " + availabilityFormulaText + ".\\n"
           + "Values:\\n"
           + "Total Capacity = " + formatHours(totalCapacityHoursValue) + "\\n"
-          + "Total Leaves Planned = " + formatHours(rltOriginalEstimatesHours) + "\\n"
+          + "Total Leaves Planned = " + formatHours(totalPlannedLeavesHours) + "\\n"
           + "Availability = " + formatHours(totalCapacityPlannedLeavesAdjustedHours);
       }}
       if (capacityGapTipNode) {{
@@ -3110,7 +3167,7 @@ Capacity available for more work = 0h</span>
           + "Values:\\n"
           + "Total Capacity = " + formatHours(totalCapacityHoursValue) + "\\n"
           + "Total Planned Projects = " + formatHours(totalPlannedHours) + "\\n"
-          + "RLT RnD Leave Tracker Original Estimates = " + formatHours(rltOriginalEstimatesHours) + "\\n"
+          + "Total Leaves Planned = " + formatHours(totalPlannedLeavesHours) + "\\n"
           + "Capacity available for more work = " + formatHours(capacityGapHours);
       }}
       deltaScoreCard.classList.remove("delta-pos", "delta-neg", "delta-zero");
@@ -4819,6 +4876,8 @@ Capacity available for more work = 0h</span>
       dateFilterResetButton.addEventListener("click", () => {{
         pendingDateFrom = DEFAULT_DATE_FROM;
         pendingDateTo = DEFAULT_DATE_TO;
+        if (dateFilterFromInput) dateFilterFromInput.value = DEFAULT_DATE_FROM;
+        if (dateFilterToInput) dateFilterToInput.value = DEFAULT_DATE_TO;
         normalizePendingDateRange();
         updateDateRangeApplyState();
       }});
@@ -4828,6 +4887,89 @@ Capacity available for more work = 0h</span>
     if (collapseEpicsButton) {{
       collapseEpicsButton.addEventListener("click", collapseToEpics);
     }}
+
+    (function initAdvancedFilters() {{
+      var advToggle = document.getElementById("adv-filter-toggle");
+      var advMenu = document.getElementById("adv-filter-menu");
+      if (!advToggle || !advMenu) return;
+
+      advToggle.addEventListener("click", function (e) {{
+        e.stopPropagation();
+        var open = advToggle.getAttribute("aria-expanded") === "true";
+        advToggle.setAttribute("aria-expanded", String(!open));
+        advMenu.hidden = open;
+      }});
+      document.addEventListener("click", function (e) {{
+        if (!advMenu.contains(e.target) && e.target !== advToggle && !advToggle.contains(e.target)) {{
+          advToggle.setAttribute("aria-expanded", "false");
+          advMenu.hidden = true;
+        }}
+      }});
+
+      function computePreset(key) {{
+        var today = new Date();
+        var iso = function (d) {{ return d.toISOString().slice(0, 10); }};
+        if (key === "last30") {{
+          var f = new Date(today); f.setDate(f.getDate() - 30);
+          return {{ from: iso(f), to: iso(today) }};
+        }}
+        if (key === "lastMonth") {{
+          var f2 = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+          var t2 = new Date(today.getFullYear(), today.getMonth(), 0);
+          return {{ from: iso(f2), to: iso(t2) }};
+        }}
+        if (key === "currentMonth") {{
+          var fcm = new Date(today.getFullYear(), today.getMonth(), 1);
+          var tcm = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+          return {{ from: iso(fcm), to: iso(tcm) }};
+        }}
+        if (key === "last90") {{
+          var f3 = new Date(today); f3.setDate(f3.getDate() - 90);
+          return {{ from: iso(f3), to: iso(today) }};
+        }}
+        if (key === "lastQuarter") {{
+          var q = Math.floor(today.getMonth() / 3);
+          var pq = q === 0 ? 3 : q - 1;
+          var yr = q === 0 ? today.getFullYear() - 1 : today.getFullYear();
+          return {{ from: iso(new Date(yr, pq * 3, 1)), to: iso(new Date(yr, pq * 3 + 3, 0)) }};
+        }}
+        if (key === "currentQuarter") {{
+          var cq = Math.floor(today.getMonth() / 3);
+          return {{ from: iso(new Date(today.getFullYear(), cq * 3, 1)), to: iso(new Date(today.getFullYear(), cq * 3 + 3, 0)) }};
+        }}
+        return null;
+      }}
+
+      document.querySelectorAll(".adv-filter-item[data-preset]").forEach(function (btn) {{
+        btn.addEventListener("click", function () {{
+          var preset = computePreset(btn.dataset.preset);
+          if (!preset) return;
+          pendingDateFrom = preset.from;
+          pendingDateTo = preset.to;
+          if (dateFilterFromInput) dateFilterFromInput.value = preset.from;
+          if (dateFilterToInput) dateFilterToInput.value = preset.to;
+          normalizePendingDateRange();
+          updateDateRangeApplyState();
+          advToggle.setAttribute("aria-expanded", "false");
+          advMenu.hidden = true;
+        }});
+      }});
+
+      document.querySelectorAll('input[name="perspective-radio"]').forEach(function (radio) {{
+        radio.addEventListener("change", function () {{
+          if (actualHoursModeSelect) {{
+            actualHoursModeSelect.value = radio.value;
+            actualHoursModeSelect.dispatchEvent(new Event("change"));
+          }}
+        }});
+      }});
+
+      var storedMode = localStorage.getItem(ACTUAL_HOURS_MODE_STORAGE_KEY);
+      if (storedMode === "planned_dates") {{
+        var pr = document.querySelector('input[name="perspective-radio"][value="planned_dates"]');
+        if (pr) pr.checked = true;
+      }}
+    }})();
   </script>
 <script src="shared-nav.js"></script>
 </body>
@@ -4850,14 +4992,12 @@ def main() -> None:
     rows = _load_nested_rows(input_path)
     capacity_profiles = _load_capacity_profiles(capacity_db_path)
     leave_daily_rows = _load_leave_daily_rows(leave_path)
-    leave_subtask_rows = _load_leave_subtask_rows(leave_path)
     data = {
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
         "source_file": str(input_path),
         "rows": rows,
         "capacity_profiles": capacity_profiles,
         "leave_daily_rows": leave_daily_rows,
-        "leave_subtask_rows": leave_subtask_rows,
     }
     html = _build_html(data)
     output_path.write_text(html, encoding="utf-8")
@@ -4866,11 +5006,8 @@ def main() -> None:
     print(f"Rows loaded: {len(rows)}")
     print(f"Capacity profiles loaded: {len(capacity_profiles)}")
     print(f"Leave daily rows loaded: {len(leave_daily_rows)}")
-    print(f"Leave subtask rows loaded: {len(leave_subtask_rows)}")
     print(f"HTML report written: {output_path}")
 
 
 if __name__ == "__main__":
     main()
-
-

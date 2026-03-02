@@ -9,6 +9,7 @@ from unittest.mock import patch
 from generate_assignee_hours_report import _build_html as build_assignee_html
 from generate_employee_performance_report import _build_html as build_employee_perf_html
 from generate_nested_view_html import _build_html as build_nested_html
+from generate_phase_rmi_gantt_html import _build_html as build_team_rmi_gantt_html
 from generate_planned_rmis_html import _build_html as build_planned_rmis_html
 from generate_rnd_data_story import _build_html as build_rnd_story_html
 from openpyxl import Workbook
@@ -127,6 +128,45 @@ class ReportUiSmokeTests(unittest.TestCase):
         self.assertIn('id=\'actual-hours-mode\'', html)
         self.assertIn('id=\'actual-hours-status\'', html)
         self.assertIn("/api/actual-hours/aggregate", html)
+
+    def test_team_rmi_gantt_contains_team_lanes_and_clickable_epic_links(self):
+        payload = {
+            "generated_at": "2026-03-02 00:00 UTC",
+            "source_file": "1_jira_work_items_export.xlsx",
+            "team_names": ["Technical Writing", "Unmapped Team"],
+            "items": [
+                {
+                    "team_name": "Technical Writing",
+                    "epic_key": "P1-100",
+                    "epic_name": "Epic Alpha",
+                    "epic_url": "https://jira.example/browse/P1-100",
+                    "project_key": "P1",
+                    "planned_start": "2026-02-01",
+                    "planned_end": "2026-02-20",
+                    "planned_hours": 24.0,
+                    "planned_man_days": 3.0,
+                    "story_count": 2,
+                    "is_unmapped_team": 0,
+                    "snapshot_utc": "2026-03-02 00:00:00",
+                }
+            ],
+            "snapshot_meta": {
+                "snapshot_utc": "2026-03-02 00:00:00",
+                "source_work_items_path": "1_jira_work_items_export.xlsx",
+                "total_story_rows": 6,
+                "included_story_rows": 3,
+                "excluded_missing_epic": 1,
+                "excluded_missing_dates": 1,
+                "excluded_missing_estimate": 1,
+            },
+        }
+        html = build_team_rmi_gantt_html(payload)
+        self.assertIn("Team Owner RMI Gantt", html)
+        self.assertIn("Technical Writing", html)
+        self.assertIn("Unmapped Team", html)
+        self.assertIn("Cards open Jira epic links", html)
+        self.assertIn("target=\"_blank\"", html)
+        self.assertIn("team_names", html)
 
     def test_employee_performance_controls_exist(self):
         payload = {

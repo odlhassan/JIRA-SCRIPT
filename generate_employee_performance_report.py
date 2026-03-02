@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import argparse
 import json
@@ -135,6 +135,24 @@ def _init_performance_settings_db(db_path: Path) -> None:
         team_cols = [str(row[1]).lower() for row in conn.execute("PRAGMA table_info(performance_teams)").fetchall()]
         if "team_leader" not in team_cols:
             conn.execute("ALTER TABLE performance_teams ADD COLUMN team_leader TEXT NOT NULL DEFAULT ''")
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS simple_scoring_subtasks (
+                issue_key TEXT PRIMARY KEY,
+                assignee TEXT NOT NULL,
+                original_estimate_hours REAL NOT NULL DEFAULT 0,
+                actual_hours_logged REAL NOT NULL DEFAULT 0,
+                overrun_hours REAL NOT NULL DEFAULT 0,
+                estimate_status TEXT NOT NULL DEFAULT 'unknown',
+                due_date TEXT,
+                effective_completion_date TEXT,
+                due_completion_status TEXT NOT NULL DEFAULT 'unknown',
+                is_commitment INTEGER NOT NULL DEFAULT 0,
+                status TEXT,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
         settings_cols = [str(row[1]).lower() for row in conn.execute("PRAGMA table_info(performance_point_settings)").fetchall()]
         if "points_per_missed_due_date" not in settings_cols:
             conn.execute("ALTER TABLE performance_point_settings ADD COLUMN points_per_missed_due_date REAL NOT NULL DEFAULT 2.0")
@@ -490,12 +508,139 @@ def _load_unplanned_leave_rows(path: Path) -> list[dict]:
         wb.close()
 
 
+def _load_leave_issue_keys(path: Path) -> list[str]:
+    if not path.exists():
+        return []
+    wb = load_workbook(path, read_only=True, data_only=True)
+    try:
+        preferred_sheets = ["Raw_Subtasks", "Subtasks_Distributed"]
+        for sheet_name in preferred_sheets:
+            if sheet_name not in wb.sheetnames:
+                continue
+            ws = wb[sheet_name]
+            header = next(ws.iter_rows(min_row=1, max_row=1, values_only=True), None)
+            if not header:
+                continue
+            header_keys = [_normalize_header_key(h) for h in header]
+            index_by_header = {key: i for i, key in enumerate(header_keys) if key}
+            key_idx = index_by_header.get("issue_key")
+            if key_idx is None:
+                continue
+            keys: set[str] = set()
+            for row in ws.iter_rows(min_row=2, values_only=True):
+                issue_key = _to_text(row[key_idx]).upper()
+                if issue_key:
+                    keys.add(issue_key)
+            return sorted(keys)
+        return []
+    finally:
+        wb.close()
+
+
 def _default_range(rows: list[dict]) -> tuple[str, str]:
     today = datetime.now(timezone.utc).date()
     month_start = date(today.year, today.month, 1)
     next_month_start = date(today.year + (1 if today.month == 12 else 0), 1 if today.month == 12 else today.month + 1, 1)
     month_end = next_month_start - timedelta(days=1)
     return month_start.isoformat(), month_end.isoformat()
+
+
+def _precompute_simple_scoring(
+    db_path: Path,
+    work_items: dict[str, dict],
+    worklogs: list[dict],
+) -> list[dict]:
+    """Precompute per-subtask simple scoring metrics and persist to SQLite."""
+    hours_by_issue: dict[str, float] = {}
+    last_log_by_issue: dict[str, str] = {}
+    for wl in worklogs:
+        key = _to_text(wl.get("issue_id")).upper()
+        if not key:
+            continue
+        hrs = _to_float(wl.get("hours_logged"))
+        hours_by_issue[key] = hours_by_issue.get(key, 0.0) + hrs
+        log_date = _to_text(wl.get("worklog_date"))
+        if log_date and (not last_log_by_issue.get(key) or log_date > last_log_by_issue[key]):
+            last_log_by_issue[key] = log_date
+
+    rows: list[dict] = []
+    now_iso = datetime.now(timezone.utc).isoformat()
+    for key, wi in work_items.items():
+        issue_type = _to_text(wi.get("issue_type")).lower()
+        if "subtask" not in issue_type and "sub-task" not in issue_type and "bug" not in issue_type:
+            continue
+        assignee = _to_text(wi.get("assignee"))
+        if not assignee:
+            continue
+        estimate = round(_to_float(wi.get("original_estimate_hours")), 2)
+        actual = round(hours_by_issue.get(key, 0.0), 2)
+        overrun = round(max(0.0, actual - estimate), 2) if estimate > 0 else 0.0
+        if estimate <= 0:
+            est_status = "no_estimate"
+        elif actual <= estimate:
+            est_status = "within_estimate"
+        else:
+            est_status = "over_estimate"
+
+        due_date = _to_text(wi.get("due_date"))
+        resolved_date = _to_text(wi.get("resolved_stable_since_date"))
+        last_log = last_log_by_issue.get(key, "")
+        candidates = [d for d in (last_log, resolved_date) if d]
+        effective_completion = max(candidates) if candidates else ""
+
+        if not due_date:
+            due_status = "no_due_date"
+        elif not effective_completion:
+            due_status = "not_completed"
+        elif effective_completion <= due_date:
+            due_status = "on_time"
+        else:
+            due_status = "late"
+
+        is_commitment = 1 if (est_status == "over_estimate" and due_status == "on_time") else 0
+
+        rows.append({
+            "issue_key": key,
+            "assignee": assignee,
+            "original_estimate_hours": estimate,
+            "actual_hours_logged": actual,
+            "overrun_hours": overrun,
+            "estimate_status": est_status,
+            "due_date": due_date,
+            "effective_completion_date": effective_completion,
+            "due_completion_status": due_status,
+            "is_commitment": is_commitment,
+            "status": _to_text(wi.get("status")),
+            "updated_at": now_iso,
+        })
+
+    _init_performance_settings_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("DELETE FROM simple_scoring_subtasks")
+        for r in rows:
+            conn.execute(
+                """INSERT OR REPLACE INTO simple_scoring_subtasks
+                   (issue_key, assignee, original_estimate_hours, actual_hours_logged,
+                    overrun_hours, estimate_status, due_date, effective_completion_date,
+                    due_completion_status, is_commitment, status, updated_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    r["issue_key"], r["assignee"], r["original_estimate_hours"],
+                    r["actual_hours_logged"], r["overrun_hours"], r["estimate_status"],
+                    r["due_date"], r["effective_completion_date"],
+                    r["due_completion_status"], r["is_commitment"], r["status"],
+                    r["updated_at"],
+                ),
+            )
+        conn.commit()
+    return rows
+
+
+def _load_simple_scoring(db_path: Path) -> list[dict]:
+    _init_performance_settings_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        return [dict(r) for r in conn.execute("SELECT * FROM simple_scoring_subtasks").fetchall()]
 
 
 def _build_payload(
@@ -507,7 +652,16 @@ def _build_payload(
     entities_catalog: list[dict],
     managed_fields: list[dict],
     capacity_profiles: list[dict],
+    leave_issue_keys: list[str] | None = None,
+    simple_scoring: list[dict] | None = None,
 ) -> dict:
+    jira_browse_base = _to_text(os.getenv("JIRA_BROWSE_BASE"))
+    if not jira_browse_base:
+        jira_site = _to_text(os.getenv("JIRA_SITE")) or "octopusdtlsupport"
+        if re.match(r"^https?://", jira_site, re.IGNORECASE):
+            jira_browse_base = f"{jira_site.rstrip('/')}/browse"
+        else:
+            jira_browse_base = f"https://{jira_site}.atlassian.net/browse"
     projects = sorted(
         {
             *({_to_text(r.get("project_key")) or "UNKNOWN" for r in worklogs}),
@@ -519,6 +673,7 @@ def _build_payload(
         "worklogs": worklogs,
         "work_items": work_items,
         "leave_rows": leave_rows,
+        "leave_issue_keys": leave_issue_keys or [],
         "teams": teams or [],
         "projects": projects,
         "default_from": default_from,
@@ -528,6 +683,8 @@ def _build_payload(
         "entities_catalog": entities_catalog or [],
         "managed_fields": managed_fields or [],
         "capacity_profiles": capacity_profiles or [],
+        "simple_scoring": simple_scoring or [],
+        "jira_browse_base": jira_browse_base.rstrip("/"),
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
     }
 
@@ -543,8 +700,32 @@ def _build_html(payload: dict) -> str:
   <style>
     :root {{ --bg:#0a1325; --panel:#121f39; --line:#2a3f65; --ink:#dce8ff; --muted:#9db1d8; --bad:#fb7185; --good:#34d399; }}
     * {{ box-sizing:border-box; }} body {{ margin:0; font-family:"Trebuchet MS","Segoe UI",sans-serif; color:var(--ink); background:radial-gradient(circle at 5% 0%,#1a3356 0%,#0a1325 60%); }}
-    .wrap {{ max-width:1800px; margin:0 auto; padding:14px; }} .hero {{ background:#101e37; border:1px solid #34507e; border-radius:12px; padding:12px; }}
-    .meta {{ color:#c4d4ef; font-size:.8rem; margin-top:4px; }} .toolbar {{ display:grid; gap:8px; grid-template-columns:145px 145px minmax(180px,1fr) minmax(210px,1fr) auto auto auto; margin-top:8px; }}
+    .top-date-range-wrap {{ position:sticky; top:0; z-index:25; display:flex; justify-content:center; padding:10px 12px 0; }}
+    .top-date-range-chip {{ display:inline-flex; align-items:center; gap:8px; flex-wrap:wrap; padding:7px 12px; border:1px solid #3f5f93; border-radius:999px; background:#0f2342; box-shadow:0 8px 18px rgba(2, 8, 23, .35); }}
+    .date-chip-segment {{ color:#cfe0ff; font-size:.72rem; font-weight:800; text-transform:uppercase; letter-spacing:.03em; }}
+    .date-chip-input {{ border:1px solid #3a5c91; border-radius:999px; background:#0d1830; color:var(--ink); padding:6px 10px; min-height:32px; font-weight:700; }}
+    .date-chip-input:focus {{ outline:none; border-color:#7cb2ff; box-shadow:0 0 0 2px rgba(124,178,255,.25); }}
+    .date-chip-select {{ border:1px solid #3a5c91; border-radius:999px; background:#0d1830; color:var(--ink); padding:6px 10px; min-height:32px; font-weight:700; min-width:220px; }}
+    .date-chip-select:focus {{ outline:none; border-color:#7cb2ff; box-shadow:0 0 0 2px rgba(124,178,255,.25); }}
+    .adv-filter-wrap {{ position:relative; display:inline-flex; }}
+    .adv-filter-btn {{ border:1px solid #4f46e5; border-radius:999px; background:#4338ca; color:#eef2ff; font-size:.74rem; font-weight:700; padding:6px 12px; cursor:pointer; }}
+    .adv-filter-btn:hover {{ background:#3730a3; }}
+    .adv-filter-btn:focus {{ outline:none; box-shadow:0 0 0 2px rgba(99,102,241,.35); }}
+    .adv-filter-menu {{ position:absolute; top:calc(100% + 6px); right:0; min-width:200px; padding:6px; border:1px solid #314d7a; border-radius:10px; background:#0f1b32; box-shadow:0 10px 20px rgba(2,8,23,.4); z-index:45; }}
+    .adv-filter-group-label {{ padding:4px 8px; color:#9db1d8; font-size:.66rem; text-transform:uppercase; font-weight:800; letter-spacing:.04em; }}
+    .adv-filter-item {{ width:100%; border:0; background:transparent; color:#dce8ff; text-align:left; padding:7px 8px; border-radius:8px; font-size:.76rem; cursor:pointer; }}
+    .adv-filter-item:hover {{ background:#17325a; }}
+    .date-chip-status {{ color:#c7d7f3; font-size:.72rem; font-weight:700; }}
+    .header-expand-fab {{ position:fixed; top:12px; right:12px; z-index:60; display:none; width:38px; height:38px; border:1px solid #4a6ea9; border-radius:999px; background:#1b325a; color:#eef4ff; font-size:1.05rem; font-weight:800; cursor:pointer; line-height:1; }}
+    .header-expand-fab:hover {{ background:#244172; }}
+    body.header-collapsed .header-expand-fab {{ display:inline-flex; align-items:center; justify-content:center; }}
+    .wrap {{ max-width:1800px; margin:0 auto; padding:14px; }}
+    .hero {{ background:#101e37; border:1px solid #34507e; border-radius:12px; padding:12px; }}
+    .hero.is-collapsed > :not(.hero-top) {{ display:none; }}
+    .hero-top {{ display:flex; align-items:flex-start; justify-content:space-between; gap:8px; flex-wrap:wrap; }}
+    .hero-actions {{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }}
+    .meta {{ color:#c4d4ef; font-size:.8rem; margin-top:4px; }}
+    .toolbar {{ display:grid; gap:8px; grid-template-columns:minmax(180px,1fr) minmax(210px,1fr) minmax(210px,1fr) auto; margin-top:8px; }}
     .shortcut-bar {{ display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }}
     .shortcut-btn {{ border:1px solid #3f5f93; background:#0f2342; color:#dce8ff; border-radius:999px; font-size:.74rem; padding:5px 10px; cursor:pointer; }}
     .shortcut-btn:hover {{ background:#17325a; }}
@@ -588,17 +769,38 @@ def _build_html(payload: dict) -> str:
     .team-chart-svg {{ width:100%; height:220px; display:block; border:1px solid #223a61; border-radius:8px; background:#0d172b; }}
     .team-detail-shell {{ border:1px solid #2b446e; border-radius:10px; background:#0f1b32; padding:8px; }}
     .team-detail-body {{ margin-top:6px; }}
-    .arena {{ display:grid; gap:10px; grid-template-columns:minmax(320px,38%) minmax(0,62%); margin-top:10px; }} .panel {{ border:1px solid var(--line); border-radius:12px; background:var(--panel); overflow:hidden; }} .panel h2 {{ margin:0; padding:9px 10px; font-size:.9rem; border-bottom:1px solid var(--line); }}
-    .leaderboard {{ max-height:72vh; overflow:auto; }} .row {{ display:grid; gap:6px; grid-template-columns:24px 1fr auto; align-items:center; padding:8px 10px; border-bottom:1px solid #243b61; cursor:pointer; }} .row.sel {{ background:#193766; box-shadow:inset 0 0 0 1px #5d89cf; }} .rank {{ color:#5eead4; font-weight:800; }} .sub {{ color:var(--muted); font-size:.72rem; }} .score {{ border:1px solid #3f5f93; border-radius:999px; padding:2px 8px; font-weight:800; display:inline-flex; gap:4px; align-items:center; }}
+    .arena {{ display:grid; gap:10px; grid-template-columns:minmax(320px,38%) minmax(0,62%); margin-top:10px; align-items:stretch; }} .panel {{ border:1px solid var(--line); border-radius:12px; background:var(--panel); overflow:hidden; }} .panel h2 {{ margin:0; padding:9px 10px; font-size:.9rem; border-bottom:1px solid var(--line); }}
+    .arena > .panel {{ display:flex; flex-direction:column; min-height:72vh; max-height:72vh; }}
+    .leaderboard {{ overflow:auto; flex:1; min-height:0; max-height:none; }} .row {{ display:grid; gap:6px; grid-template-columns:24px 1fr auto; align-items:center; padding:8px 10px; border-bottom:1px solid #243b61; cursor:pointer; }} .row.sel {{ background:#193766; box-shadow:inset 0 0 0 1px #5d89cf; }} .rank {{ color:#5eead4; font-weight:800; }} .sub {{ color:var(--muted); font-size:.72rem; }} .score {{ border:1px solid #3f5f93; border-radius:999px; padding:2px 8px; font-weight:800; display:inline-flex; gap:4px; align-items:center; }}
     .leader-metrics {{ display:flex; gap:6px; flex-wrap:wrap; margin-top:2px; }}
     .metric-chip {{ display:inline-flex; align-items:center; gap:4px; border:1px solid #36598a; border-radius:999px; padding:2px 8px; background:#112546; }}
     .metric-chip .metric-value {{ color:#e2ecff; font-weight:900; font-size:.74rem; }}
     .metric-chip .metric-value.warn {{ color:#f59e0b; }}
     .metric-chip .material-symbols-outlined {{ font-size:15px; color:#93c5fd; font-variation-settings:"FILL" 1, "wght" 500, "GRAD" 0, "opsz" 20; }}
-    .detail {{ padding:10px; }} .card {{ border:1px solid #314e7f; border-radius:10px; background:#12213d; padding:10px; }} .big {{ font-size:2rem; font-weight:900; line-height:1; }}
+    .detail {{ padding:10px; overflow-y:auto; flex:1; min-height:0; }} .score-arena {{ margin-top:10px; }} .score-drill {{ padding:10px; }} .card {{ border:1px solid #314e7f; border-radius:10px; background:#12213d; padding:10px; }} .big {{ font-size:2rem; font-weight:900; line-height:1; }}
     .tabs {{ display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }}
     .tab-btn {{ border:1px solid #3b5f91; background:#12284b; color:#e6efff; border-radius:999px; padding:4px 10px; font-size:.74rem; cursor:pointer; }}
     .tab-btn.active {{ border-color:#7cb2ff; box-shadow:inset 0 0 0 1px #7cb2ff; background:#173866; }}
+    .tabs[data-tab-group="scoring"] {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:10px; }}
+    .tabs[data-tab-group="scoring"] .tab-btn {{ min-height:66px; border-radius:12px; padding:9px 12px; display:flex; flex-direction:column; align-items:flex-start; justify-content:center; gap:4px; font-size:.79rem; transition:border-color .15s ease, box-shadow .15s ease, background .15s ease; }}
+    .tabs[data-tab-group="scoring"] .tab-btn.active {{ border-color:#93c5fd; box-shadow:inset 0 0 0 1px #93c5fd; background:#173866; }}
+    .tab-kicker {{ font-size:.62rem; line-height:1; color:#9bb5df; text-transform:uppercase; letter-spacing:.06em; }}
+    .tab-main-row {{ width:100%; display:flex; justify-content:space-between; align-items:center; gap:10px; }}
+    .tab-title {{ font-size:.86rem; font-weight:800; color:#eff6ff; }}
+    .tab-score {{ font-size:1rem; font-weight:900; color:#e0f2fe; }}
+    .tab-btn.tab-btn-beta {{ border-color:#7c6a1c; background:linear-gradient(180deg,#2f2a15 0%,#251f10 100%); }}
+    .tab-btn.tab-btn-beta .tab-score {{ color:#fde68a; }}
+    .tab-btn.tab-btn-beta.active {{ border-color:#facc15; box-shadow:inset 0 0 0 1px #facc15; background:linear-gradient(180deg,#43380d 0%,#362b08 100%); }}
+    .tab-beta {{ display:inline-flex; align-items:center; border:1px solid #facc15; color:#facc15; border-radius:999px; padding:1px 7px; margin-left:6px; font-size:.64rem; font-weight:800; text-transform:uppercase; vertical-align:middle; }}
+    .assignment-scorecards {{ display:grid; gap:8px; grid-template-columns:repeat(4,minmax(140px,1fr)); margin-top:10px; }}
+    .assignment-card {{ border:1px solid #375f95; border-radius:10px; background:#12284b; padding:8px 10px; }}
+    .assignment-card .k {{ font-size:.66rem; text-transform:uppercase; letter-spacing:.05em; color:#cfe0ff; font-weight:800; }}
+    .assignment-card .v {{ margin-top:3px; font-size:1.05rem; font-weight:900; color:#eef4ff; }}
+    .assignment-card.epic {{ border-color:#c084fc; background:rgba(192,132,252,.14); }}
+    .assignment-card.story {{ border-color:#60a5fa; background:rgba(96,165,250,.14); }}
+    .assignment-card.subtask {{ border-color:#4ade80; background:rgba(74,222,128,.14); }}
+    .assignment-card.bug {{ border-color:#f87171; background:rgba(248,113,113,.14); }}
+    @media (max-width: 980px) {{ .assignment-scorecards {{ grid-template-columns:repeat(2,minmax(140px,1fr)); }} }}
     .tab-pane {{ display:none; }}
     .tab-pane.active {{ display:block; }}
     .grid2 {{ display:grid; gap:8px; grid-template-columns:repeat(2,minmax(0,1fr)); margin-top:8px; }} .mini {{ border:1px solid #2b446e; border-radius:10px; background:#0f1b32; padding:8px; }} .mini h3 {{ margin:0 0 6px; font-size:.8rem; }} .mini .l {{ display:flex; justify-content:space-between; font-size:.78rem; padding:2px 0; }}
@@ -606,6 +808,10 @@ def _build_html(payload: dict) -> str:
     .mini .l.actionable:hover {{ background:#173158; }}
     .metric-link-btn {{ border:1px solid #36598a; border-radius:999px; background:#12284b; color:#dce8ff; font-size:.72rem; padding:2px 8px; cursor:pointer; }}
     .metric-link-btn:hover {{ background:#1a3a67; border-color:#5f88c0; }}
+    .jira-link-icon {{ display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; border:1px solid #3a5c91; border-radius:6px; color:#cfe0ff; background:#0f2342; text-decoration:none; }}
+    .jira-link-icon:hover {{ border-color:#7cb2ff; color:#ffffff; background:#17325a; }}
+    .jira-link-icon .material-symbols-outlined {{ font-size:15px; }}
+    .jira-link-disabled {{ color:#6e85ac; font-size:.72rem; }}
     .ts-card {{ margin-top:8px; border:1px solid #2b446e; border-radius:10px; background:#0f1b32; padding:8px; }}
     .ts-svg {{ width:100%; height:220px; display:block; border:1px solid #223a61; border-radius:8px; background:#0d172b; }}
     .kpi-charts {{ display:grid; gap:8px; grid-template-columns:repeat(2,minmax(0,1fr)); margin-top:8px; }}
@@ -647,6 +853,13 @@ def _build_html(payload: dict) -> str:
     .tree-left {{ min-width:0; }}
     .tree-metrics {{ display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; }}
     .metric-pill {{ border:1px solid #375f95; border-radius:999px; padding:2px 8px; font-size:.68rem; color:#d7e7ff; background:#17325a; white-space:nowrap; }}
+    .issue-type-pill {{ display:inline-flex; align-items:center; justify-content:center; min-width:30px; padding:2px 7px; }}
+    .issue-type-pill .material-symbols-outlined {{ font-size:18px; line-height:1; font-variation-settings:"FILL" 1, "wght" 500, "GRAD" 0, "opsz" 24; }}
+    .issue-type-pill.issue-epic .material-symbols-outlined {{ color:#c084fc; }}
+    .issue-type-pill.issue-story .material-symbols-outlined {{ color:#60a5fa; }}
+    .issue-type-pill.issue-subtask .material-symbols-outlined {{ color:#4ade80; }}
+    .issue-type-pill.issue-bug-subtask .material-symbols-outlined {{ color:#f87171; }}
+    .issue-kind-inline {{ margin-left:6px; font-size:.68rem; font-weight:800; color:#fecdd3; }}
     .tree-children {{ margin-left:14px; margin-top:6px; border-left:1px dashed #2e4f7d; padding-left:8px; }}
     .exec-metrics {{ display:grid; gap:10px; }}
     .exec-metric {{ border:1px solid #29486f; border-radius:8px; padding:8px; background:#10223f; }}
@@ -665,28 +878,157 @@ def _build_html(payload: dict) -> str:
     .availability-num {{ color:#f8fafc; font-weight:800; font-family:Consolas,monospace; }}
     .availability-note {{ color:#93acd2; font-size:.72rem; }}
     .neg {{ color:var(--bad); font-weight:700; }} .feed {{ margin-top:8px; border:1px solid #2b446e; border-radius:10px; max-height:230px; overflow:auto; background:#0e182d; }} .feed .i {{ padding:7px 8px; border-bottom:1px solid #21385e; font-size:.76rem; }} .empty {{ color:var(--muted); font-style:italic; }}
-    @media (max-width:1200px) {{ .toolbar{{grid-template-columns:1fr 1fr;}} .kpis{{grid-template-columns:1fr 1fr;}} .top3-wrap{{grid-template-columns:1fr;}} .team-score-layout{{grid-template-columns:1fr;}} .arena{{grid-template-columns:1fr;}} }}
+    .scoring-section {{ margin-top:10px; border:1px solid #2b446e; border-radius:10px; background:#0f1b32; padding:10px; }}
+    .scoring-section-head {{ display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }}
+    .scoring-section-title {{ font-size:.88rem; font-weight:800; color:#e6f0ff; }}
+    .scoring-section-title .beta-tag {{ font-size:.66rem; font-weight:700; color:#facc15; border:1px solid #facc15; border-radius:999px; padding:1px 7px; margin-left:6px; vertical-align:middle; text-transform:uppercase; }}
+    .ss-toggle {{ display:flex; align-items:center; gap:6px; }}
+    .ss-toggle-label {{ font-size:.68rem; color:#7fa3d6; user-select:none; }}
+    .ss-switch {{ position:relative; width:32px; height:18px; }}
+    .ss-switch input {{ opacity:0; width:0; height:0; }}
+    .ss-switch .ss-slider {{ position:absolute; inset:0; background:#1e3560; border:1px solid #3a5c91; border-radius:999px; cursor:pointer; transition:background .2s; }}
+    .ss-switch .ss-slider::before {{ content:""; position:absolute; left:2px; top:2px; width:12px; height:12px; background:#7fa3d6; border-radius:50%; transition:transform .2s; }}
+    .ss-switch input:checked + .ss-slider {{ background:#1b4a7a; border-color:#5f88c0; }}
+    .ss-switch input:checked + .ss-slider::before {{ transform:translateX(14px); background:#93c5fd; }}
+    .ss-big-score {{ font-size:1.6rem; font-weight:900; line-height:1; margin:4px 0; }}
+    .ss-summary-row {{ display:flex; gap:8px; flex-wrap:wrap; margin-top:6px; }}
+    .ss-chip {{ border:1px solid #365c8d; border-radius:999px; padding:3px 9px; font-size:.72rem; color:#dce8ff; background:#132949; }}
+    .ss-tbl {{ width:100%; border-collapse:collapse; margin-top:8px; font-size:.74rem; }}
+    .ss-tbl th {{ color:#9db1d8; text-transform:uppercase; font-size:.66rem; letter-spacing:.04em; padding:5px 6px; border-bottom:1px solid #21385e; text-align:left; position:sticky; top:0; background:#10223f; }}
+    .ss-tbl td {{ padding:5px 6px; border-bottom:1px solid #1b2f52; vertical-align:top; }}
+    .ss-tbl .ss-row-within td {{ background:rgba(34,197,94,.10); }}
+    .ss-tbl .ss-row-commitment td {{ background:rgba(129,140,248,.12); }}
+    .ss-tbl .ss-row-over td {{ background:rgba(249,115,22,.10); }}
+    .ss-tbl .ss-row-over-late td {{ background:rgba(251,113,133,.10); }}
+    .ss-status-pill {{ display:inline-block; border-radius:999px; padding:2px 8px; font-size:.68rem; font-weight:700; border:1px solid transparent; }}
+    .ss-pill-within {{ background:rgba(34,197,94,.18); border-color:#22c55e; color:#bbf7d0; }}
+    .ss-pill-commitment {{ background:rgba(129,140,248,.18); border-color:#818cf8; color:#c7d2fe; }}
+    .ss-pill-over {{ background:rgba(249,115,22,.2); border-color:#f97316; color:#fed7aa; }}
+    .ss-pill-late {{ background:rgba(251,113,133,.18); border-color:#fb7185; color:#fecdd3; }}
+    .ss-pill-noest {{ background:rgba(148,163,184,.15); border-color:#94a3b8; color:#cbd5e1; }}
+    .ss-donut-wrap {{ display:flex; gap:12px; align-items:center; margin-top:8px; }}
+    .ss-legend {{ font-size:.72rem; display:grid; gap:3px; }}
+    .ss-legend-dot {{ display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:4px; vertical-align:middle; }}
+    .formula-guide {{ margin-top:10px; border:1px solid #315b92; border-radius:12px; background:linear-gradient(180deg,#0f2746 0%, #0b1d37 100%); padding:12px; color:#e8f1ff; }}
+    .formula-head {{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; }}
+    .formula-title {{ margin:0; font-size:clamp(1rem,1.2vw,1.14rem); font-weight:900; letter-spacing:.01em; }}
+    .formula-head-actions {{ display:flex; align-items:center; gap:8px; }}
+    .formula-toggle-btn {{ border:1px solid #4d79b3; background:#16365f; color:#eaf3ff; border-radius:999px; padding:4px 10px; display:inline-flex; align-items:center; gap:4px; cursor:pointer; font-size:.8rem; font-weight:700; }}
+    .formula-toggle-btn:hover {{ background:#1c4477; border-color:#6ea8ff; }}
+    .formula-toggle-btn .material-symbols-outlined {{ font-size:16px; }}
+    .formula-score-pill {{ border:1px solid #6ea8ff; background:#173866; color:#eaf3ff; border-radius:999px; padding:4px 10px; font-weight:900; font-size:clamp(.95rem,1.1vw,1.02rem); }}
+    .formula-layout {{ display:grid; gap:10px; grid-template-columns:1.25fr .85fr; }}
+    .formula-layout[hidden] {{ display:none !important; }}
+    .formula-steps {{ border:1px solid #2f5588; border-radius:10px; background:#112b4d; padding:10px; }}
+    .formula-step {{ margin-bottom:10px; }}
+    .formula-step:last-child {{ margin-bottom:0; }}
+    .formula-step.step-gap {{ margin-bottom:18px; padding-bottom:10px; border-bottom:1px dashed #3f6aa3; }}
+    .formula-kicker {{ font-size:.78rem; text-transform:uppercase; letter-spacing:.06em; color:#9ec2f5; margin-bottom:4px; font-weight:800; }}
+    .formula-eq {{ margin:0; font-family:"Consolas","Lucida Console","Courier New",monospace; font-size:clamp(1rem,1.15vw,1.08rem); font-weight:800; color:#f4f8ff; line-height:1.45; word-break:break-word; }}
+    .formula-applied {{ margin-top:6px; font-size:clamp(.92rem,1vw,.98rem); color:#d4e5ff; }}
+    .formula-note {{ margin-top:8px; font-size:clamp(.86rem,.95vw,.92rem); color:#b6cdef; }}
+    .formula-safeguards {{ margin-top:10px; border:1px solid #315b92; border-radius:8px; background:#0d223e; padding:8px 10px; }}
+    .formula-safeguards-title {{ font-size:.78rem; text-transform:uppercase; letter-spacing:.06em; color:#9ec2f5; font-weight:800; margin-bottom:4px; }}
+    .formula-safeguard-item {{ font-size:clamp(.86rem,.95vw,.92rem); color:#d4e5ff; line-height:1.45; margin:2px 0; }}
+    .formula-metrics {{ border:1px solid #2f5588; border-radius:10px; background:#102744; padding:10px; display:grid; gap:6px; align-content:start; }}
+    .formula-row {{ display:flex; justify-content:space-between; align-items:center; gap:10px; font-size:clamp(.94rem,1vw,1rem); }}
+    .formula-row span:first-child {{ color:#cfe1fb; }}
+    .formula-row span:last-child {{ font-weight:800; color:#ffffff; }}
+    .formula-row.final {{ margin-top:4px; padding-top:8px; border-top:1px dashed #3f6aa3; font-size:clamp(1rem,1.12vw,1.08rem); }}
+    .formula-mini-help {{ margin-top:4px; font-size:.8rem; color:#9fbbe3; }}
+    @media (max-width:900px) {{ .formula-layout {{ grid-template-columns:1fr; }} }}
+    .score-label {{ font-size:.66rem; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }}
+    .capacity-expanded {{ margin-top:10px; border:1px solid #36598a; border-radius:10px; background:#0d2543; padding:10px; }}
+    .capacity-expanded-head {{ display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:8px; }}
+    .capacity-expanded-title {{ font-size:.86rem; font-weight:800; color:#e2ecff; letter-spacing:.02em; text-transform:uppercase; }}
+    .capacity-expanded-sub {{ font-size:.74rem; color:#b7caea; }}
+    .capacity-expanded-grid {{ display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:6px; margin-bottom:8px; }}
+    .capacity-chip {{ border:1px solid #294b78; border-radius:8px; background:#102b4d; padding:6px 8px; }}
+    .capacity-chip .k {{ font-size:.66rem; color:#9bb7df; text-transform:uppercase; letter-spacing:.04em; }}
+    .capacity-chip .v {{ font-size:.85rem; color:#edf3ff; font-weight:700; margin-top:2px; }}
+    .capacity-legend {{ display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px; }}
+    .capacity-legend .pill {{ font-size:.68rem; padding:2px 7px; border-radius:999px; border:1px solid #355d92; color:#d9e7ff; background:#0f2a4b; }}
+    .capacity-calendar-wrap {{ display:flex; gap:8px; overflow-x:auto; padding-bottom:6px; scroll-snap-type:x proximity; scrollbar-width:thin; scrollbar-color:#4f7fb8 #0b213e; }}
+    .capacity-calendar-wrap::-webkit-scrollbar {{ height:10px; }}
+    .capacity-calendar-wrap::-webkit-scrollbar-track {{ background:#0b213e; border-radius:999px; }}
+    .capacity-calendar-wrap::-webkit-scrollbar-thumb {{ background:#4f7fb8; border-radius:999px; border:2px solid #0b213e; }}
+    .capacity-calendar-wrap::-webkit-scrollbar-thumb:hover {{ background:#6fa0de; }}
+    .capacity-month {{ border:1px solid #2f5486; border-radius:10px; background:#0f2b4d; padding:8px; flex:0 0 calc((100% - 16px)/3); min-width:280px; scroll-snap-align:start; }}
+    .capacity-month-head {{ font-size:.8rem; font-weight:800; color:#dbe8ff; margin-bottom:6px; }}
+    .capacity-month-grid {{ display:grid; grid-template-columns:repeat(7, minmax(0, 1fr)); gap:4px; }}
+    .capacity-dow {{ font-size:.62rem; color:#8ea9cf; text-transform:uppercase; text-align:center; }}
+    .capacity-day {{ min-height:44px; border:1px solid #22466f; border-radius:6px; background:#0c2340; padding:3px 4px; }}
+    .capacity-day.is-out {{ opacity:.35; }}
+    .capacity-day.is-weekend {{ background:#616161; border-color:#8b8b8b; }}
+    .capacity-day.is-ramadan {{ border-color:#0ea5e9; box-shadow:inset 0 0 0 1px rgba(14,165,233,.25); }}
+    .capacity-day.is-holiday {{ border-color:#f59e0b; box-shadow:inset 0 0 0 1px rgba(245,158,11,.25); }}
+    .capacity-day.has-leave {{ border-color:#6b7280; box-shadow:inset 0 0 0 1px rgba(148,163,184,.25); }}
+    .capacity-day.has-ramadan-leave {{ border-color:#0ea5e9; box-shadow:inset 0 0 0 1px rgba(14,165,233,.35); }}
+    .capacity-day.is-today {{ background:#fde047; border-color:#facc15; box-shadow:inset 0 0 0 1px rgba(234,179,8,.55), 0 0 0 1px rgba(250,204,21,.35); }}
+    .capacity-day.is-today .capacity-day-num {{ color:#1f2937; font-weight:900; }}
+    .capacity-day.is-today .capacity-day-tag {{ color:#0f172a; border-color:#b45309; background:#fcd34d; }}
+    .capacity-day-num {{ font-size:.72rem; font-weight:700; color:#dce9ff; line-height:1.1; }}
+    .capacity-day-tags {{ margin-top:2px; display:flex; gap:3px; flex-wrap:wrap; }}
+    .capacity-day-tag {{ font-size:.58rem; line-height:1; padding:2px 4px; border-radius:999px; border:1px solid #355c8f; background:#173761; color:#d9e8ff; }}
+    .capacity-day-tag.r {{ border-color:#0ea5e9; background:#0c3a58; }}
+    .capacity-day-tag.h {{ border-color:#f59e0b; background:#4a2a00; }}
+    .capacity-day-tag.l {{ border-color:#64748b; background:#334155; }}
+    .capacity-day-tag.rl {{ border-color:#0ea5e9; background:#0c3a58; }}
+    .capacity-empty {{ font-size:.76rem; color:#9fb7db; }}
+    @media (max-width:1200px) {{ .capacity-month{{ flex-basis:calc((100% - 8px)/2); }} }}
+    @media (max-width:760px) {{ .capacity-month{{ flex-basis:100%; }} }}
+    @media (max-width:1200px) {{ .toolbar{{grid-template-columns:1fr 1fr;}} .kpis{{grid-template-columns:1fr 1fr;}} .top3-wrap{{grid-template-columns:1fr;}} .team-score-layout{{grid-template-columns:1fr;}} .arena{{grid-template-columns:1fr;}} .arena > .panel {{ min-height:auto; max-height:none; }} .leaderboard {{ max-height:56vh; }} .detail {{ max-height:56vh; }} }}
   </style>
   <link rel="stylesheet" href="shared-nav.css">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:FILL,wght,GRAD,opsz@1,500,0,20">
 </head>
 <body>
+<div class="top-date-range-wrap">
+  <div class="top-date-range-chip" aria-label="Date range filter">
+    <span class="date-chip-segment">From</span>
+    <input id="from" class="date-chip-input" type="date" aria-label="From date">
+    <span class="date-chip-segment">To</span>
+    <input id="to" class="date-chip-input" type="date" aria-label="To date">
+    <span class="date-chip-segment">Capacity Profile</span>
+    <select id="capacity-profile-top" class="date-chip-select" aria-label="Capacity profile (top)"></select>
+    <button id="apply" class="btn" type="button">Apply Filters</button>
+    <button id="reset" class="btn" type="button">Reset</button>
+    <div class="adv-filter-wrap">
+      <button id="adv-filter-toggle" class="adv-filter-btn" type="button" aria-expanded="false" aria-haspopup="true" aria-controls="adv-filter-menu">Advanced Filters</button>
+      <div class="adv-filter-menu" id="adv-filter-menu" role="menu" hidden>
+        <div class="adv-filter-group-label">Date Presets</div>
+        <button class="adv-filter-item" type="button" data-preset="last30" role="menuitem">Last 30 Days</button>
+        <button class="adv-filter-item" type="button" data-preset="lastMonth" role="menuitem">Last Month</button>
+        <button class="adv-filter-item" type="button" data-preset="currentMonth" role="menuitem">Current Month</button>
+        <button class="adv-filter-item" type="button" data-preset="last90" role="menuitem">Last 90 Days</button>
+        <button class="adv-filter-item" type="button" data-preset="lastQuarter" role="menuitem">Last Quarter</button>
+        <button class="adv-filter-item" type="button" data-preset="currentQuarter" role="menuitem">Current Quarter</button>
+      </div>
+    </div>
+    <span id="date-filter-status" class="date-chip-status" aria-live="polite"></span>
+  </div>
+</div>
+<button id="header-expand-fab" class="header-expand-fab" type="button" aria-label="Expand header" title="Expand header">&#9776;</button>
 <div class="wrap">
-  <section class="hero">
-    <h1>Employee Performance Dashboard</h1><div class="meta" id="meta"></div>
+  <section class="hero" id="performance-header">
+    <div class="hero-top">
+      <div>
+        <h1>Employee Performance Dashboard</h1>
+        <div class="meta" id="meta"></div>
+      </div>
+      <div class="hero-actions">
+        <button id="header-toggle" class="btn" type="button" aria-expanded="true" aria-controls="performance-header">Collapse Header</button>
+      </div>
+    </div>
     <section class="guide">
       <h2>Executive View Guide</h2>
       <p>Start with Planning & Start-Adherence KPIs to check workload realism, then use Performance Score KPIs for risk posture. In leaderboard, sort by the lens you want and click a person for full diagnostic detail.</p>
       <div class="discover" id="discover-insights"></div>
     </section>
     <div class="toolbar">
-      <div class="f"><label for="from">From</label><input id="from" type="date"></div>
-      <div class="f"><label for="to">To</label><input id="to" type="date"></div>
       <div class="f"><label for="projects">Project</label><select id="projects" multiple size="1"></select></div>
       <div class="f"><label for="capacity-profile">Capacity Profile</label><select id="capacity-profile"></select></div>
       <div class="f"><label for="search">Search Assignee</label><input id="search" type="text"></div>
-      <button id="apply" class="btn" type="button">Apply Filters</button>
-      <button id="reset" class="btn" type="button">Reset</button>
       <a href="/settings/performance" class="btn">Performance Settings</a>
     </div>
     <div class="shortcut-bar">
@@ -697,6 +1039,7 @@ def _build_html(payload: dict) -> str:
       <button id="shortcut-reset" class="shortcut-btn" type="button">Reset</button>
     </div>
     <div class="meta" id="capacity-profile-meta"></div>
+    <div id="capacity-profile-expanded" class="capacity-expanded"></div>
     <div class="section-head collapse-toggle" id="toggle-performance-kpis">Performance Score KPIs<span class="hint">click to expand</span></div>
     <div id="performance-kpis-wrap" class="is-collapsed">
     <div class="kpis" id="performance-kpis">
@@ -732,8 +1075,11 @@ def _build_html(payload: dict) -> str:
     </div>
   </section>
   <section class="arena">
-    <article class="panel"><h2 id="leaderboard-title">Leaderboard</h2><div class="leader-controls"><div class="f"><label for="leader-sort">Sort By</label><select id="leader-sort"><option value="rmis">RMIs In Range (Desc)</option><option value="score">Performance Score</option><option value="missed">Missed Start Ratio</option><option value="capacity_gap">Capacity Gap (Cap - Planned)</option></select></div><div class="f"><label for="filter-risk">At-Risk View</label><select id="filter-risk"><option value="all">All Assignees</option><option value="risk">Only At-Risk (&lt;60)</option></select></div><div class="f"><label for="filter-missed">Start Discipline</label><select id="filter-missed"><option value="all">All</option><option value="missed">Only Missed Starts</option></select></div></div><div id="leaderboard-filter" class="sub" style="padding:0 10px 8px;"></div><div id="leaderboard" class="leaderboard"></div></article>
+    <article class="panel"><h2 id="leaderboard-title">Leaderboard</h2><div class="leader-controls"><div class="f"><label for="leader-scoring-mode">Scoring Mode</label><select id="leader-scoring-mode"><option value="simple" selected>Simple Scoring</option><option value="advanced">Advanced Scoring</option></select></div><div class="f"><label for="leader-sort">Sort By</label><select id="leader-sort"><option value="rmis">RMIs In Range (Desc)</option><option value="score" selected>Performance Score</option><option value="missed">Missed Start Ratio</option><option value="capacity_gap">Capacity Gap (Cap - Planned)</option></select></div><div class="f"><label for="filter-risk">At-Risk View</label><select id="filter-risk"><option value="all" selected>All Assignees</option><option value="risk">Only At-Risk (&lt;60)</option></select></div><div class="f"><label for="filter-missed">Start Discipline</label><select id="filter-missed"><option value="all" selected>All</option><option value="missed">Only Missed Starts</option></select></div></div><div id="leaderboard-filter" class="sub" style="padding:0 10px 8px;"></div><div id="leaderboard" class="leaderboard"></div></article>
     <article class="panel"><h2>Assignee Drilldown</h2><div id="detail" class="detail"><div class="empty">Select an assignee.</div></div></article>
+  </section>
+  <section class="score-arena">
+    <article class="panel"><h2>Score Drilldown</h2><div id="score-drilldown" class="score-drill"><div class="empty">Select an assignee.</div></div></article>
   </section>
 </div>
 <script>
@@ -741,13 +1087,26 @@ const payload = {data};
 const worklogs = Array.isArray(payload.worklogs) ? payload.worklogs : [];
 const workItems = Array.isArray(payload.work_items) ? payload.work_items : [];
 const leaveRows = Array.isArray(payload.leave_rows) ? payload.leave_rows : [];
+const leaveIssueKeySet = new Set((Array.isArray(payload.leave_issue_keys) ? payload.leave_issue_keys : []).map((v) => String(v || "").toUpperCase()).filter(Boolean));
 const teams = Array.isArray(payload.teams) ? payload.teams : [];
 const projects = Array.isArray(payload.projects) ? payload.projects : [];
 const entitiesCatalog = Array.isArray(payload.entities_catalog) ? payload.entities_catalog : [];
 const managedFields = Array.isArray(payload.managed_fields) ? payload.managed_fields : [];
 const capacityProfiles = Array.isArray(payload.capacity_profiles) ? payload.capacity_profiles : [];
+const simpleScoringRaw = Array.isArray(payload.simple_scoring) ? payload.simple_scoring : [];
+const jiraBrowseBase = String(payload.jira_browse_base || "").replace(/\\/+$/, "");
+const simpleScoringByKey = new Map(simpleScoringRaw.map((r) => [String(r && r.issue_key || "").toUpperCase(), r]));
 const capacityProfileSelectEl = document.getElementById("capacity-profile");
+const capacityProfileTopSelectEl = document.getElementById("capacity-profile-top");
 const capacityProfileMetaEl = document.getElementById("capacity-profile-meta");
+const capacityProfileExpandedEl = document.getElementById("capacity-profile-expanded");
+const headerSectionEl = document.getElementById("performance-header");
+const headerToggleButton = document.getElementById("header-toggle");
+const headerExpandFabButton = document.getElementById("header-expand-fab");
+const advFilterToggleButton = document.getElementById("adv-filter-toggle");
+const advFilterMenu = document.getElementById("adv-filter-menu");
+const dateFilterStatusNode = document.getElementById("date-filter-status");
+const HEADER_COLLAPSED_STORAGE_KEY = "employee-performance-header-collapsed";
 const workItemsByKey = new Map(workItems.map((row) => [String(row && row.issue_key || "").toUpperCase(), row || {{}}]));
 const defaultFrom = payload.default_from || "";
 const defaultTo = payload.default_to || "";
@@ -756,16 +1115,21 @@ const settings = payload.settings || {{}};
 let selectedName = "";
 let selectedTeam = "";
 let availabilityBreakdownForAssignee = "";
+let plannedHoursBreakdownForAssignee = "";
+let dueCompletionEnabled = false;
+let activeScoringTab = "simple";
+let simpleFormulaGuideExpanded = true;
+let advancedFormulaGuideExpanded = true;
 function n(v) {{ const x = Number(v); return Number.isFinite(x) ? x : 0; }}
 function e(t) {{ return String(t ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }}
+function jiraIssueUrl(issueKey) {{
+  const key = String(issueKey || "").trim().toUpperCase();
+  if (!key) return "";
+  if (!jiraBrowseBase) return "";
+  return `${{jiraBrowseBase}}/${{encodeURIComponent(key)}}`;
+}}
 function clamp(v, minv, maxv) {{ return Math.max(minv, Math.min(maxv, v)); }}
 function inRange(day, from, to) {{ if (!day) return false; if (from && day < from) return false; if (to && day > to) return false; return true; }}
-function matchesPlannedRange(row, from, to) {{
-  const start = String(row && row.item_start_date || "");
-  const end = String(row && row.item_due_date || "");
-  if (!start && !end) return false;
-  return inRange(start, from, to) || inRange(end, from, to);
-}}
 function selectedProjects() {{ return new Set(Array.from(document.getElementById("projects").selectedOptions).map(o => o.value)); }}
 function addDayPenalty(rec, day, points) {{
   const d = String(day || "");
@@ -788,13 +1152,20 @@ function dateRangeDays(from, to) {{
   return out;
 }}
 function ensure(map, name) {{
-  if (!map.has(name)) map.set(name, {{assignee:name, bug_hours:0, bug_late_hours:0, subtask_late_hours:0, estimate_overrun_hours:0, rework_hours:0, unplanned_leave_hours:0, planned_leave_hours:0, unplanned_leave_count:0, planned_leave_count:0, unplanned_leave_days:0, planned_leave_days:0, missing_story_due_count:0, missing_due_count:0, missing_estimate_issue_count:0, total_hours:0, planned_hours_assigned:0, employee_capacity_hours:0, assigned_counts:{{epic:0,story:0,subtask:0}}, total_assigned_count:0, due_dated_assigned_count:0, missed_start_count:0, missed_start_ratio:0, missed_due_date_count:0, missed_due_date_ratio:0, active_rmi_count:0, assigned_hierarchy:[], missed_start_items:[], due_compliance_items:[], start_day_activity:[], last_log_by_issue:{{}}, issue_logged_hours_by_issue:{{}}, subtask_late_by_issue:{{}}, entity_values:{{}}, managed_values:{{}}, managed_scope:{{}}, feed:[], daily_penalty_by_day:{{}}, daily_series:[]}});
+  if (!map.has(name)) map.set(name, {{assignee:name, bug_hours:0, bug_late_hours:0, subtask_late_hours:0, estimate_overrun_hours:0, rework_hours:0, unplanned_leave_hours:0, planned_leave_hours:0, unplanned_leave_count:0, planned_leave_count:0, unplanned_leave_days:0, planned_leave_days:0, missing_story_due_count:0, missing_due_count:0, missing_estimate_issue_count:0, total_hours:0, planned_hours_assigned:0, base_capacity_hours:0, employee_capacity_hours:0, assigned_counts:{{epic:0,story:0,subtask:0}}, total_assigned_count:0, due_dated_assigned_count:0, missed_start_count:0, missed_start_ratio:0, missed_due_date_count:0, missed_due_date_ratio:0, active_rmi_count:0, assigned_hierarchy:[], missed_start_items:[], due_compliance_items:[], start_day_activity:[], last_log_by_issue:{{}}, issue_logged_hours_by_issue:{{}}, subtask_late_by_issue:{{}}, entity_values:{{}}, managed_values:{{}}, managed_scope:{{}}, feed:[], daily_penalty_by_day:{{}}, daily_series:[], ss_total_estimate:0, ss_total_overrun:0, ss_commitment_overrun:0, ss_commitment_count:0, ss_within_count:0, ss_over_count:0, ss_no_estimate_count:0, ss_on_time_count:0, ss_late_count:0, ss_subtask_details:[]}});
   return map.get(name);
 }}
 function normalizeType(t) {{
   const low = String(t || "").toLowerCase();
   if (low.includes("epic")) return "epic";
   if (low.includes("story")) return "story";
+  return "subtask";
+}}
+function normalizeHierarchyType(t) {{
+  const low = String(t || "").toLowerCase();
+  if (low.includes("epic")) return "epic";
+  if (low.includes("story")) return "story";
+  if (low.includes("bug") && (low.includes("subtask") || low.includes("sub-task") || low.includes("task"))) return "bug_subtask";
   return "subtask";
 }}
 function issueTypeLabel(t) {{
@@ -813,18 +1184,33 @@ function capacityProfileLabel(profile) {{
   const ramadan = n(profile?.ramadan_hours_per_day) > 0 ? n(profile.ramadan_hours_per_day) : std;
   return `${{fromDate}} -> ${{toDate}} | Std ${{std.toFixed(1)}}h | Ramadan ${{ramadan.toFixed(1)}}h`;
 }}
+function getActiveCapacityProfileSelection() {{
+  if (capacityProfileTopSelectEl) return String(capacityProfileTopSelectEl.value || "auto");
+  if (capacityProfileSelectEl) return String(capacityProfileSelectEl.value || "auto");
+  return "auto";
+}}
+function syncCapacityProfileSelection(selectedValue, source) {{
+  const normalized = String(selectedValue || "auto");
+  if (capacityProfileSelectEl && source !== "header") capacityProfileSelectEl.value = normalized;
+  if (capacityProfileTopSelectEl && source !== "top") capacityProfileTopSelectEl.value = normalized;
+}}
 function refreshCapacityProfileOptions() {{
-  if (!capacityProfileSelectEl) return;
+  if (!capacityProfileSelectEl && !capacityProfileTopSelectEl) return;
   const options = [`<option value="auto">Auto (Match selected date range)</option>`];
   capacityProfiles.forEach((profile, idx) => {{
     options.push(`<option value="${{idx}}">${{e(capacityProfileLabel(profile))}}</option>`);
   }});
-  capacityProfileSelectEl.innerHTML = options.join("");
-  capacityProfileSelectEl.value = "auto";
+  if (capacityProfileSelectEl) {{
+    capacityProfileSelectEl.innerHTML = options.join("");
+    capacityProfileSelectEl.value = "auto";
+  }}
+  if (capacityProfileTopSelectEl) {{
+    capacityProfileTopSelectEl.innerHTML = options.join("");
+    capacityProfileTopSelectEl.value = "auto";
+  }}
 }}
 function resolveActiveCapacityProfile(fromIso, toIso) {{
-  if (!capacityProfileSelectEl) return null;
-  const selected = String(capacityProfileSelectEl.value || "auto");
+  const selected = getActiveCapacityProfileSelection();
   if (selected === "auto") {{
     return capacityProfiles.find((p) => String(p.from_date || "") === String(fromIso || "") && String(p.to_date || "") === String(toIso || "")) || null;
   }}
@@ -834,13 +1220,141 @@ function resolveActiveCapacityProfile(fromIso, toIso) {{
 }}
 function updateCapacityProfileMeta(fromIso, toIso, profile) {{
   if (!capacityProfileMetaEl) return;
-  const selected = capacityProfileSelectEl ? String(capacityProfileSelectEl.value || "auto") : "auto";
+  const selected = getActiveCapacityProfileSelection();
   if (!profile) {{
     capacityProfileMetaEl.textContent = "Capacity profile: Default weekdays (8h/day)";
+  }} else {{
+    const mode = selected === "auto" ? "Auto profile" : "Applied profile";
+    capacityProfileMetaEl.textContent = `${{mode}}: ${{capacityProfileLabel(profile)}} | Active range: ${{String(fromIso || "")}} -> ${{String(toIso || "")}}`;
+  }}
+  renderCapacityProfileExpanded(fromIso, toIso, profile || null);
+}}
+function renderCapacityProfileExpanded(fromIso, toIso, profile) {{
+  if (!capacityProfileExpandedEl) return;
+  const from = String(fromIso || "");
+  const to = String(toIso || "");
+  if (!from || !to || to < from) {{
+    capacityProfileExpandedEl.innerHTML = '<div class="capacity-empty">Select a valid date range to view full capacity settings and calendar.</div>';
     return;
   }}
-  const mode = selected === "auto" ? "Auto profile" : "Applied profile";
-  capacityProfileMetaEl.textContent = `${{mode}}: ${{capacityProfileLabel(profile)}} | Active range: ${{String(fromIso || "")}} -> ${{String(toIso || "")}}`;
+  const selected = getActiveCapacityProfileSelection();
+  const mode = selected === "auto" ? "Auto" : "Manual";
+  const std = n(profile?.standard_hours_per_day) > 0 ? n(profile.standard_hours_per_day) : 8;
+  const ram = n(profile?.ramadan_hours_per_day) > 0 ? n(profile.ramadan_hours_per_day) : std;
+  const ramadanStart = String(profile?.ramadan_start_date || "");
+  const ramadanEnd = String(profile?.ramadan_end_date || "");
+  const holidays = Array.isArray(profile?.holiday_dates) ? profile.holiday_dates.map((d) => String(d || "")).filter(Boolean).sort() : [];
+  const holidaySet = new Set(holidays);
+  const employeeCount = Math.max(0, Math.round(n(profile?.employee_count)));
+  const businessDays = computeBusinessDays(from, to, profile || null);
+  const perAssigneeHours = computePerAssigneeCapacity(from, to, profile || null);
+  const leaveByDay = new Map();
+  for (const row of leaveRows) {{
+    const day = String(row && row.period_day || "");
+    if (!inRange(day, from, to)) continue;
+    const planned = n(row && row.planned_taken_hours);
+    const unplanned = n(row && row.unplanned_taken_hours);
+    if (planned <= 0 && unplanned <= 0) continue;
+    const rec = leaveByDay.get(day) || {{ planned: 0, unplanned: 0, count: 0 }};
+    rec.planned += planned;
+    rec.unplanned += unplanned;
+    rec.count += 1;
+    leaveByDay.set(day, rec);
+  }}
+  let totalPlannedLeave = 0;
+  let totalUnplannedLeave = 0;
+  leaveByDay.forEach((v) => {{
+    totalPlannedLeave += n(v.planned);
+    totalUnplannedLeave += n(v.unplanned);
+  }});
+  const monthCards = [];
+  const cursor = new Date(from + "T00:00:00");
+  const end = new Date(to + "T00:00:00");
+  const todayIso = _isoDateLocal(new Date());
+  if (!Number.isFinite(cursor.getTime()) || !Number.isFinite(end.getTime())) {{
+    capacityProfileExpandedEl.innerHTML = '<div class="capacity-empty">Date range is invalid for calendar rendering.</div>';
+    return;
+  }}
+  cursor.setDate(1);
+  while (cursor <= end) {{
+    const mStart = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
+    const mEnd = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0);
+    const firstDow = (mStart.getDay() + 6) % 7;
+    const lastDow = (mEnd.getDay() + 6) % 7;
+    const gridStart = new Date(mStart);
+    gridStart.setDate(gridStart.getDate() - firstDow);
+    const gridEnd = new Date(mEnd);
+    gridEnd.setDate(gridEnd.getDate() + (6 - lastDow));
+    const isCurrentMonth = mStart.getFullYear() === new Date().getFullYear() && mStart.getMonth() === new Date().getMonth();
+    const cells = ['<div class="capacity-dow">Mon</div><div class="capacity-dow">Tue</div><div class="capacity-dow">Wed</div><div class="capacity-dow">Thu</div><div class="capacity-dow">Fri</div><div class="capacity-dow">Sat</div><div class="capacity-dow">Sun</div>'];
+    for (let d = new Date(gridStart); d <= gridEnd; d.setDate(d.getDate() + 1)) {{
+      const iso = _isoDateLocal(d);
+      const isOut = d.getMonth() !== mStart.getMonth();
+      const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+      const isRamadan = ramadanStart && ramadanEnd && iso >= ramadanStart && iso <= ramadanEnd;
+      const isHoliday = holidaySet.has(iso);
+      const isToday = iso === todayIso;
+      const leave = leaveByDay.get(iso) || null;
+      const classes = ["capacity-day"];
+      if (isOut) classes.push("is-out");
+      if (isWeekend) classes.push("is-weekend");
+      if (isRamadan) classes.push("is-ramadan");
+      if (isHoliday) classes.push("is-holiday");
+      if (isToday) classes.push("is-today");
+      if (leave && isRamadan) classes.push("has-ramadan-leave");
+      else if (leave) classes.push("has-leave");
+      const tags = [];
+      if (isRamadan) tags.push('<span class="capacity-day-tag r">R</span>');
+      if (isHoliday) tags.push('<span class="capacity-day-tag h">H</span>');
+      if (leave) {{
+        const rawLeaveHours = n(leave.planned) + n(leave.unplanned);
+        const effectiveLeaveHours = isRamadan ? ram : std;
+        const leaveHours = (rawLeaveHours > 0 ? effectiveLeaveHours : 0).toFixed(1);
+        tags.push(isRamadan
+          ? `<span class="capacity-day-tag rl">RL ${{leaveHours}}h</span>`
+          : `<span class="capacity-day-tag l">L ${{leaveHours}}h</span>`);
+      }}
+      cells.push(`<div class="${{classes.join(" ")}}"><div class="capacity-day-num">${{String(d.getDate())}}</div><div class="capacity-day-tags">${{tags.join("")}}</div></div>`);
+    }}
+    const label = mStart.toLocaleString(undefined, {{ month: "long", year: "numeric" }});
+    monthCards.push(`<div class="capacity-month"${{isCurrentMonth ? ' data-current-month="1"' : ""}}><div class="capacity-month-head">${{e(label)}}</div><div class="capacity-month-grid">${{cells.join("")}}</div></div>`);
+    cursor.setMonth(cursor.getMonth() + 1, 1);
+  }}
+  const holidaysText = holidays.length ? e(holidays.join(", ")) : "None";
+  const ramadanText = ramadanStart && ramadanEnd ? `${{e(ramadanStart)}} -> ${{e(ramadanEnd)}}` : "Not configured";
+  const scopeLabel = profile ? `${{e(String(profile.from_date || ""))}} -> ${{e(String(profile.to_date || ""))}}` : "Default weekdays profile";
+  capacityProfileExpandedEl.innerHTML = `
+    <div class="capacity-expanded-head">
+      <div class="capacity-expanded-title">Capacity Profile Expanded Settings</div>
+      <div class="capacity-expanded-sub">${{mode}} selection | Active filter: ${{e(from)}} -> ${{e(to)}}</div>
+    </div>
+    <div class="capacity-expanded-grid">
+      <div class="capacity-chip"><div class="k">Profile Range</div><div class="v">${{scopeLabel}}</div></div>
+      <div class="capacity-chip"><div class="k">Employee Count</div><div class="v">${{employeeCount}}</div></div>
+      <div class="capacity-chip"><div class="k">Standard Hours/Day</div><div class="v">${{std.toFixed(2)}}h</div></div>
+      <div class="capacity-chip"><div class="k">Ramadan Hours/Day</div><div class="v">${{ram.toFixed(2)}}h</div></div>
+      <div class="capacity-chip"><div class="k">Ramadan Range</div><div class="v">${{ramadanText}}</div></div>
+      <div class="capacity-chip"><div class="k">Holidays</div><div class="v">${{holidays.length}}</div></div>
+      <div class="capacity-chip"><div class="k">Business Days</div><div class="v">${{businessDays.toFixed(0)}}d</div></div>
+      <div class="capacity-chip"><div class="k">Per Assignee Capacity</div><div class="v">${{perAssigneeHours.toFixed(2)}}h</div></div>
+      <div class="capacity-chip"><div class="k">Planned Leave (Range)</div><div class="v">${{totalPlannedLeave.toFixed(2)}}h</div></div>
+      <div class="capacity-chip"><div class="k">Unplanned Leave (Range)</div><div class="v">${{totalUnplannedLeave.toFixed(2)}}h</div></div>
+    </div>
+    <div class="capacity-legend">
+      <span class="pill">R = Ramadan</span>
+      <span class="pill">H = Holiday</span>
+      <span class="pill">L = Leave hours</span>
+      <span class="pill">RL = Ramadan leave hours</span>
+    </div>
+    <div class="capacity-expanded-sub" style="margin-bottom:8px;">Holiday dates: ${{holidaysText}}</div>
+    <div class="capacity-calendar-wrap">${{monthCards.join("")}}</div>
+  `;
+  const calWrap = capacityProfileExpandedEl.querySelector(".capacity-calendar-wrap");
+  const currentMonthCard = calWrap ? calWrap.querySelector('[data-current-month="1"]') : null;
+  if (calWrap && currentMonthCard) {{
+    const target = Math.max(0, currentMonthCard.offsetLeft - 8);
+    calWrap.scrollLeft = target;
+  }}
 }}
 function computePerAssigneeCapacity(fromIso, toIso, profile) {{
   const fromDate = String(fromIso || "");
@@ -910,6 +1424,20 @@ function setDateFilterRange(from, to) {{
   document.getElementById("from").value = String(from || "");
   document.getElementById("to").value = String(to || "");
 }}
+function setDateFilterStatus(text) {{
+  if (!dateFilterStatusNode) return;
+  dateFilterStatusNode.textContent = String(text || "");
+}}
+function setAdvancedFilterMenuOpen(open) {{
+  if (!advFilterToggleButton || !advFilterMenu) return;
+  const isOpen = Boolean(open);
+  advFilterToggleButton.setAttribute("aria-expanded", isOpen ? "true" : "false");
+  if (isOpen) {{
+    advFilterMenu.removeAttribute("hidden");
+  }} else {{
+    advFilterMenu.setAttribute("hidden", "");
+  }}
+}}
 function applyDateShortcut(kind) {{
   const now = new Date();
   const today = _isoDateLocal(now);
@@ -930,6 +1458,25 @@ function applyDateShortcut(kind) {{
     setDateFilterRange(_isoDateLocal(start), today);
     return;
   }}
+  if (kind === "last_90_days") {{
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 89);
+    setDateFilterRange(_isoDateLocal(start), today);
+    return;
+  }}
+  if (kind === "last_quarter") {{
+    const qStartMonth = Math.floor(now.getMonth() / 3) * 3;
+    const start = new Date(now.getFullYear(), qStartMonth - 3, 1);
+    const end = new Date(now.getFullYear(), qStartMonth, 0);
+    setDateFilterRange(_isoDateLocal(start), _isoDateLocal(end));
+    return;
+  }}
+  if (kind === "current_quarter") {{
+    const qStartMonth = Math.floor(now.getMonth() / 3) * 3;
+    const start = new Date(now.getFullYear(), qStartMonth, 1);
+    const end = new Date(now.getFullYear(), qStartMonth + 3, 0);
+    setDateFilterRange(_isoDateLocal(start), _isoDateLocal(end));
+    return;
+  }}
   if (kind === "quarter_to_date") {{
     const qStartMonth = Math.floor(now.getMonth() / 3) * 3;
     const qStart = new Date(now.getFullYear(), qStartMonth, 1);
@@ -943,6 +1490,14 @@ function isSubtaskPerformanceType(t) {{
   if (!label) return false;
   if (label.includes("sub-task") || label.includes("subtask")) return true;
   return label.includes("bug") && (label.includes("sub-task") || label.includes("subtask"));
+}}
+function isBugIssueType(t) {{
+  const label = issueTypeLabel(t);
+  return !!label && label.includes("bug");
+}}
+function isLeaveIssueKey(issueKey) {{
+  const key = String(issueKey || "").toUpperCase();
+  return !!key && leaveIssueKeySet.has(key);
 }}
 function buildCapacityMap(from, to, assigneeNames, activeProfile) {{
   const out = new Map();
@@ -992,7 +1547,6 @@ function compute() {{
   const logs = worklogs.filter((r) => {{
     if (useP && !pset.has(String(r.project_key || "UNKNOWN"))) return false;
     if (!inRange(String(r.worklog_date || ""), from, to)) return false;
-    if (!matchesPlannedRange(r, from, to)) return false;
     if (s && !String(r.issue_assignee || "").toLowerCase().includes(s)) return false;
     const issueType = String(r.item_issue_type || r.issue_type || "");
     return isSubtaskPerformanceType(issueType);
@@ -1010,6 +1564,7 @@ function compute() {{
     if (!start && !due) return false;
     return inRange(start, from, to) || inRange(due, from, to);
   }});
+  const assignedItemsWork = assignedItems.filter((r) => !isLeaveIssueKey(String(r.issue_key || "")));
   const leaves = leaveRows.filter((r) => inRange(String(r.period_day || ""), from, to));
   const byA = new Map();
   const epicKeysByAssignee = new Map();
@@ -1021,7 +1576,7 @@ function compute() {{
     epicKeysByAssignee.get(assignee).add(epic);
   }}
   const issueAgg = new Map();
-  for (const wi of assignedItems) ensure(byA, String(wi.assignee || "Unassigned"));
+  for (const wi of assignedItemsWork) ensure(byA, String(wi.assignee || "Unassigned"));
   for (const l of logs) {{
     const a = ensure(byA, String(l.issue_assignee || "Unassigned"));
     addAssigneeEpic(a.assignee, resolveEpicKeyFromWorklogRow(l));
@@ -1101,14 +1656,18 @@ function compute() {{
   }}
   const assigneeNames = new Set(Array.from(byA.keys()));
   const capacityByAssignee = buildCapacityMap(from, to, assigneeNames, activeCapacityProfile);
-  for (const wi of assignedItems) {{
+  for (const wi of assignedItemsWork) {{
     const a = ensure(byA, String(wi.assignee || "Unassigned"));
     addAssigneeEpic(a.assignee, resolveParentEpicKey(wi));
     const issueKey = String(wi.issue_key || "");
     const startDate = String(wi.start_date || "");
     const dueDate = String(wi.due_date || "");
-    const issueType = normalizeType(wi.issue_type || wi.work_item_type || wi.jira_issue_type);
-    a.planned_hours_assigned += n(wi.original_estimate_hours);
+    const rawIssueType = wi.issue_type || wi.work_item_type || wi.jira_issue_type;
+    const issueType = normalizeType(rawIssueType);
+    const hierarchyIssueType = normalizeHierarchyType(rawIssueType);
+    const originalEstimateHours = n(wi.original_estimate_hours);
+    const includePlannedHours = !isBugIssueType(rawIssueType) && originalEstimateHours > 0;
+    if (includePlannedHours) a.planned_hours_assigned += originalEstimateHours;
     a.assigned_counts[issueType] = n(a.assigned_counts[issueType]) + 1;
     a.total_assigned_count += 1;
     if (dueDate) a.due_dated_assigned_count += 1;
@@ -1117,6 +1676,7 @@ function compute() {{
       issue_key: issueKey,
       summary: String(wi.summary || ""),
       issue_type: issueType,
+      hierarchy_type: hierarchyIssueType,
       parent_issue_key: String(wi.parent_issue_key || ""),
       parent_epic_key: resolveParentEpicKey(wi),
       due_date: dueDate,
@@ -1155,6 +1715,29 @@ function compute() {{
       status_bucket: dueStatus,
       is_missed_due_date: missedDueDate
     }});
+    const ssRow = simpleScoringByKey.get(issueKey.toUpperCase());
+    if (ssRow) {{
+      const ssEst = n(ssRow.original_estimate_hours);
+      const ssAct = n(ssRow.actual_hours_logged);
+      const ssOver = n(ssRow.overrun_hours);
+      const ssEstStatus = String(ssRow.estimate_status || "");
+      const ssDueStatus = String(ssRow.due_completion_status || "");
+      const ssCommit = n(ssRow.is_commitment);
+      a.ss_total_estimate += ssEst;
+      a.ss_total_overrun += ssOver;
+      if (ssCommit) {{ a.ss_commitment_overrun += ssOver; a.ss_commitment_count += 1; }}
+      if (ssEstStatus === "within_estimate") a.ss_within_count += 1;
+      else if (ssEstStatus === "over_estimate") a.ss_over_count += 1;
+      else a.ss_no_estimate_count += 1;
+      if (ssDueStatus === "on_time") a.ss_on_time_count += 1;
+      else if (ssDueStatus === "late") a.ss_late_count += 1;
+      a.ss_subtask_details.push({{
+        issue_key: issueKey, summary: String(wi.summary || ""), estimate: ssEst, actual: ssAct,
+        overrun: ssOver, estimate_status: ssEstStatus, due_date: dueDate,
+        effective_completion_date: String(ssRow.effective_completion_date || ""),
+        due_completion_status: ssDueStatus, is_commitment: ssCommit, status: String(ssRow.status || "")
+      }});
+    }}
     if (startDate && lastLogDate !== startDate) {{
       const loggedOnStart = logs.some((x) => String(x.issue_assignee || "") === a.assignee && String(x.issue_id || "") === issueKey && String(x.worklog_date || "") === startDate);
       if (!loggedOnStart) {{
@@ -1198,10 +1781,11 @@ function compute() {{
     if (it.penalties.leave) it.feed.push({{label:"Unplanned leave", points:it.penalties.leave, hours:it.unplanned_leave_hours}});
     if (it.penalties.missed_due_date) it.feed.push({{label:"Missed due dates", points:it.penalties.missed_due_date, hours:it.missed_due_date_count}});
     it.feed.sort((a,b)=>n(b.points)-n(a.points));
-    it.employee_capacity_hours = Math.max(0, n(capacityByAssignee.get(it.assignee)) - n(it.planned_leave_hours) - n(it.unplanned_leave_hours));
+    it.base_capacity_hours = Math.max(0, n(capacityByAssignee.get(it.assignee)));
+    it.employee_capacity_hours = Math.max(0, n(it.base_capacity_hours) - n(it.planned_leave_hours) - n(it.unplanned_leave_hours));
     it.missed_start_ratio = n(it.total_assigned_count) > 0 ? (n(it.missed_start_count) / n(it.total_assigned_count)) * 100 : 0;
     it.entity_values = {{
-      capacity: n(it.employee_capacity_hours),
+      capacity: n(it.base_capacity_hours),
       planned_hours: n(it.planned_hours_assigned),
       actual_hours: n(it.total_hours),
       planned_leaves: n(it.planned_leave_hours),
@@ -1235,6 +1819,15 @@ function compute() {{
         score: clamp(n(settings.base_score) - cumulative, n(settings.min_score), n(settings.max_score))
       }};
     }});
+  }}
+  for (const it of items) {{
+    const totalEst = n(it.ss_total_estimate);
+    const totalOver = n(it.ss_total_overrun);
+    const commitOver = n(it.ss_commitment_overrun);
+    it.simple_score_raw = totalEst > 0 ? clamp(100 * (1 - totalOver / totalEst), 0, 100) : 100;
+    const adjOver = Math.max(0, totalOver - commitOver);
+    it.simple_score_due = totalEst > 0 ? clamp(100 * (1 - adjOver / totalEst), 0, 100) : 100;
+    it.simple_score = dueCompletionEnabled ? it.simple_score_due : it.simple_score_raw;
   }}
   items.sort((a,b)=>n(b.final_score)-n(a.final_score) || a.assignee.localeCompare(b.assignee));
   return items;
@@ -1347,6 +1940,19 @@ function renderDueComplianceChart(rows) {{
   const legend = vals.map((v, i) => `<text x="210" y="${{26 + i*24}}" fill="#dce8ff" font-size="11">${{labels[i]}}: ${{v}}</text><rect x="188" y="${{18 + i*24}}" width="14" height="14" rx="3" fill="${{colors[i]}}"></rect>`).join("");
   return `<svg class="mini-svg" viewBox="0 0 ${{w}} ${{h}}" preserveAspectRatio="none"><rect x="0" y="0" width="${{w}}" height="${{h}}" fill="#0d172b"></rect>${{segs}}<text x="${{cx}}" y="${{cy + 4}}" fill="#cfe3ff" font-size="12" text-anchor="middle">${{total}}</text>${{legend}}</svg>`;
 }}
+function issueTypeMeta(rawType) {{
+  const type = String(rawType || "").toLowerCase();
+  if (type === "epic") return {{ label: "Epic", icon: "bolt" }};
+  if (type === "story") return {{ label: "Story", icon: "person" }};
+  if (type === "bug_subtask") return {{ label: "Bug Subtask", icon: "bug_report" }};
+  return {{ label: "Subtask", icon: "construction" }};
+}}
+function issueTypePill(rawType) {{
+  const meta = issueTypeMeta(rawType);
+  const low = String(rawType || "").toLowerCase();
+  const tone = low === "epic" ? "issue-epic" : (low === "story" ? "issue-story" : (low === "bug_subtask" ? "issue-bug-subtask" : "issue-subtask"));
+  return `<span class="metric-pill issue-type-pill ${{tone}}" title="${{e(meta.label)}}" aria-label="${{e(meta.label)}}"><span class="material-symbols-outlined" aria-hidden="true">${{e(meta.icon)}}</span></span>`;
+}}
 function renderHierarchyTable(rows, dueRows, missedRows) {{
   const data = Array.isArray(rows) ? rows : [];
   if (!data.length) return '<div class="empty" style="padding:8px;">No assigned items.</div>';
@@ -1363,18 +1969,24 @@ function renderHierarchyTable(rows, dueRows, missedRows) {{
     const x = String(t || "");
     if (x === "epic") return 0;
     if (x === "story") return 1;
-    return 2;
+    if (x === "subtask") return 2;
+    return 3;
+  }}
+  function nodeType(node) {{
+    return String(node?.hierarchy_type || node?.issue_type || "").toLowerCase();
   }}
   function sorted(list) {{
-    return (list || []).slice().sort((a,b) => typeRank(a.issue_type) - typeRank(b.issue_type) || String(a.issue_key).localeCompare(String(b.issue_key)));
+    return (list || []).slice().sort((a,b) => typeRank(nodeType(a)) - typeRank(nodeType(b)) || String(a.issue_key).localeCompare(String(b.issue_key)));
   }}
   function renderNode(node) {{
     const key = String(node.issue_key || "");
+    const nodeKind = nodeType(node);
     const kids = sorted(childMap.get(key) || []);
     const dueBucket = dueMap.get(key) || "-";
     const missed = missedSet.has(key) ? "Yes" : "No";
-    const openAttr = node.issue_type === "epic" ? " open" : "";
-    const summary = `<summary><div class="tree-left"><div class="issue-id">${{e(key)}}</div><div class="issue-title">${{e(node.summary || "")}}</div></div><div class="tree-metrics"><span class="metric-pill">${{e(String(node.issue_type || "").toUpperCase())}}</span><span class="metric-pill">Est: ${{n(node.original_estimate_hours).toFixed(1)}}h</span><span class="metric-pill">Start: ${{e(node.start_date || "-")}}</span><span class="metric-pill">Due: ${{e(node.due_date || "-")}}</span><span class="metric-pill">Done: ${{e(node.completion_date || "-")}}</span><span class="metric-pill">Due Status: ${{e(dueBucket)}}</span><span class="metric-pill">Missed Start: ${{missed}}</span></div></summary>`;
+    const openAttr = nodeKind === "epic" ? " open" : "";
+    const isBugSubtask = nodeKind === "bug_subtask";
+    const summary = `<summary><div class="tree-left"><div class="issue-id">${{e(key)}}</div><div class="issue-title">${{e(node.summary || "")}}${{isBugSubtask ? '<span class="issue-kind-inline">Bug Subtask</span>' : ""}}</div></div><div class="tree-metrics">${{issueTypePill(nodeKind)}}<span class="metric-pill">Est: ${{n(node.original_estimate_hours).toFixed(1)}}h</span><span class="metric-pill">Start: ${{e(node.start_date || "-")}}</span><span class="metric-pill">Due: ${{e(node.due_date || "-")}}</span><span class="metric-pill">Done: ${{e(node.completion_date || "-")}}</span><span class="metric-pill">Due Status: ${{e(dueBucket)}}</span><span class="metric-pill">Missed Start: ${{missed}}</span></div></summary>`;
     if (!kids.length) return `<div class="tree-node"><details${{openAttr}}>${{summary}}</details></div>`;
     return `<div class="tree-node"><details${{openAttr}}>${{summary}}<div class="tree-children">${{kids.map(renderNode).join("")}}</div></details></div>`;
   }}
@@ -1614,35 +2226,56 @@ function render(items) {{
   let viewItems = items.map((it) => ({{...it, capacity_gap_hours: n(it.employee_capacity_hours) - n(it.planned_hours_assigned)}}));
   const riskMode = String(document.getElementById("filter-risk")?.value || "all");
   const missedMode = String(document.getElementById("filter-missed")?.value || "all");
-  const sortMode = String(document.getElementById("leader-sort")?.value || "rmis");
-  if (riskMode === "risk") viewItems = viewItems.filter((it) => n(it.final_score) < 60);
-  if (missedMode === "missed") viewItems = viewItems.filter((it) => n(it.missed_start_count) > 0);
-  if (sortMode === "rmis") viewItems.sort((a,b)=>n(b.active_rmi_count)-n(a.active_rmi_count)||n(b.final_score)-n(a.final_score)||a.assignee.localeCompare(b.assignee));
-  else if (sortMode === "missed") viewItems.sort((a,b)=>n(b.missed_start_ratio)-n(a.missed_start_ratio)||n(b.final_score)-n(a.final_score));
-  else if (sortMode === "capacity_gap") viewItems.sort((a,b)=>n(a.capacity_gap_hours)-n(b.capacity_gap_hours)||n(b.final_score)-n(a.final_score));
-  else viewItems.sort((a,b)=>n(b.final_score)-n(a.final_score)||a.assignee.localeCompare(b.assignee));
+  const sortMode = String(document.getElementById("leader-sort")?.value || "score");
+  const leaderScoringMode = String(document.getElementById("leader-scoring-mode")?.value || "simple");
+  activeScoringTab = leaderScoringMode;
+  function lbScore(it) {{ return leaderScoringMode === "simple" ? n(it.simple_score) : n(it.final_score); }}
   if (selectedTeamRow) {{
     const allowed = new Set((selectedTeamRow.members || []).map((m) => String(m || "").toLowerCase()));
-    viewItems = items.filter((it) => allowed.has(String(it.assignee || "").toLowerCase()));
+    viewItems = viewItems.filter((it) => allowed.has(String(it.assignee || "").toLowerCase()));
   }}
+  if (riskMode === "risk") viewItems = viewItems.filter((it) => lbScore(it) < 60);
+  if (missedMode === "missed") viewItems = viewItems.filter((it) => n(it.missed_start_count) > 0);
+  if (sortMode === "rmis") viewItems.sort((a,b)=>n(b.active_rmi_count)-n(a.active_rmi_count)||lbScore(b)-lbScore(a)||a.assignee.localeCompare(b.assignee));
+  else if (sortMode === "missed") viewItems.sort((a,b)=>n(b.missed_start_ratio)-n(a.missed_start_ratio)||lbScore(b)-lbScore(a));
+  else if (sortMode === "capacity_gap") viewItems.sort((a,b)=>n(a.capacity_gap_hours)-n(b.capacity_gap_hours)||lbScore(b)-lbScore(a));
+  else viewItems.sort((a,b)=>lbScore(b)-lbScore(a)||a.assignee.localeCompare(b.assignee));
   document.getElementById("leaderboard-title").textContent = selectedTeam ? `Leaderboard - ${{selectedTeam}}` : "Leaderboard";
   document.getElementById("leaderboard-filter").textContent = selectedTeam
     ? `Filtered by team "${{selectedTeam}}" (${{viewItems.length}} assignee${{viewItems.length === 1 ? "" : "s"}})`
     : "";
   const lb = document.getElementById("leaderboard");
-  if (!viewItems.length) {{ lb.innerHTML = '<div class="empty" style="padding:10px;">No assignee activity for current filter.</div>'; document.getElementById("detail").innerHTML = '<div class="empty">No assignee activity for current filter.</div>'; return; }}
+  if (!viewItems.length) {{ lb.innerHTML = '<div class="empty" style="padding:10px;">No assignee activity for current filter.</div>'; document.getElementById("detail").innerHTML = '<div class="empty">No assignee activity for current filter.</div>'; document.getElementById("score-drilldown").innerHTML = '<div class="empty">No assignee activity for current filter.</div>'; return; }}
   lb.innerHTML = viewItems.map((it, i) => {{
     const capMoreManaged = getManagedValue(it, ["capacity_available_for_more_work", "capacityavailableformorework", "capacity_available_more_work"]);
     const capMore = Number.isFinite(capMoreManaged) ? capMoreManaged : n(it.capacity_gap_hours);
-    return `<div class="row${{it.assignee===selectedName?' sel':''}}" data-name="${{e(it.assignee)}}"><div class="rank">#${{i+1}}</div><div><div>${{e(it.assignee)}}</div><div class="leader-metrics"><span class="metric-chip"><span class="material-symbols-outlined">deployed_code</span><span class="metric-value">${{n(it.active_rmi_count).toFixed(0)}}</span></span><span class="metric-chip"><span class="material-symbols-outlined">sliders</span><span class="metric-value${{capMore < 0 ? " warn" : ""}}">${{capMore.toFixed(1)}}h</span></span><span class="metric-chip"><span class="material-symbols-outlined">award_star</span><span class="metric-value">${{n(it.final_score).toFixed(1)}}</span></span></div><div class="sub">${{n(it.total_hours).toFixed(1)}}h logged | Missed: ${{n(it.missed_start_ratio).toFixed(1)}}% | Cap Gap: ${{n(it.capacity_gap_hours).toFixed(1)}}h</div></div><div class="score"><span class="material-symbols-outlined">award_star</span>${{n(it.final_score).toFixed(1)}}</div></div>`;
+    const rowScore = lbScore(it);
+    const ssPlanned = n(it.ss_total_estimate);
+    const ssActual = (Array.isArray(it.ss_subtask_details) ? it.ss_subtask_details : []).reduce((acc, row) => acc + n(row?.actual), 0);
+    const ssOverrun = n(it.ss_total_overrun);
+    const simpleFormulaSub = `Simple: 100 x (1 - Overrun/Planned) | Planned: ${{ssPlanned.toFixed(1)}}h | Actual: ${{ssActual.toFixed(1)}}h | Overrun: ${{ssOverrun.toFixed(1)}}h`;
+    const advancedSub = `${{n(it.total_hours).toFixed(1)}}h logged | Missed: ${{n(it.missed_start_ratio).toFixed(1)}}% | Cap Gap: ${{n(it.capacity_gap_hours).toFixed(1)}}h`;
+    const rowSub = leaderScoringMode === "simple" ? simpleFormulaSub : advancedSub;
+    return `<div class="row${{it.assignee===selectedName?' sel':''}}" data-name="${{e(it.assignee)}}"><div class="rank">#${{i+1}}</div><div><div>${{e(it.assignee)}}</div><div class="leader-metrics"><span class="metric-chip"><span class="material-symbols-outlined">deployed_code</span><span class="metric-value">${{n(it.active_rmi_count).toFixed(0)}}</span></span><span class="metric-chip"><span class="material-symbols-outlined">sliders</span><span class="metric-value${{capMore < 0 ? " warn" : ""}}">${{capMore.toFixed(1)}}h</span></span><span class="metric-chip"><span class="material-symbols-outlined">award_star</span><span class="metric-value">${{rowScore.toFixed(1)}}</span></span></div><div class="sub">${{rowSub}}</div></div><div class="score"><span class="material-symbols-outlined">award_star</span>${{rowScore.toFixed(1)}}</div></div>`;
   }}).join("");
-  Array.from(lb.querySelectorAll(".row")).forEach((el)=>el.addEventListener("click", ()=>{{ selectedName = String(el.getAttribute("data-name") || ""); availabilityBreakdownForAssignee = ""; render(compute()); }}));
+  Array.from(lb.querySelectorAll(".row")).forEach((el)=>el.addEventListener("click", ()=>{{ selectedName = String(el.getAttribute("data-name") || ""); availabilityBreakdownForAssignee = ""; plannedHoursBreakdownForAssignee = ""; render(compute()); }}));
   let item = viewItems.find(x => x.assignee === selectedName); if (!item) {{ item = viewItems[0]; selectedName = item.assignee; }}
   const feed = (item.feed || []).map((v) => `<div class="i"><strong>${{e(v.label)}}</strong><br>${{n(v.hours).toFixed(2)}}h | <span class="neg">-${{n(v.points).toFixed(2)}}</span></div>`).join("") || '<div class="i empty">No violations.</div>';
   const hierarchyTable = renderHierarchyTable(item.assigned_hierarchy, item.due_compliance_items, item.missed_start_items);
   const executionHierarchyTable = renderExecutionHierarchyTable(item);
   const dueTable = renderDueTable(item.due_compliance_items);
   const missedTable = renderMissedTable(item.missed_start_items);
+  const assignedHierarchyRows = Array.isArray(item.assigned_hierarchy) ? item.assigned_hierarchy : [];
+  const assignmentCounts = assignedHierarchyRows.reduce((acc, row) => {{
+    const baseType = String(row?.issue_type || "").toLowerCase();
+    const hierarchyType = String(row?.hierarchy_type || "").toLowerCase();
+    if (baseType === "epic") acc.epics += 1;
+    else if (baseType === "story") acc.stories += 1;
+    else if (hierarchyType === "bug_subtask") acc.bugs += 1;
+    else if (baseType === "subtask") acc.subtasks += 1;
+    return acc;
+  }}, {{ epics: 0, stories: 0, subtasks: 0, bugs: 0 }});
+  const assignmentScorecardsHtml = `<div class="assignment-scorecards"><div class="assignment-card epic"><div class="k">Epics</div><div class="v">${{assignmentCounts.epics}}</div></div><div class="assignment-card story"><div class="k">Stories</div><div class="v">${{assignmentCounts.stories}}</div></div><div class="assignment-card subtask"><div class="k">Subtasks</div><div class="v">${{assignmentCounts.subtasks}}</div></div><div class="assignment-card bug"><div class="k">Bugs</div><div class="v">${{assignmentCounts.bugs}}</div></div></div>`;
   const assignedMixChart = renderAssignedMixChart(item);
   const dueMixChart = renderDueComplianceChart(item.due_compliance_items);
   const managedCatalog = new Map((managedFields || []).map((mf) => [String(mf?.field_key || "").toLowerCase(), mf]));
@@ -1654,14 +2287,17 @@ function render(items) {{
       return {{ key: k, label, meaning, value: n(v) }};
     }})
     .sort((a, b) => a.label.localeCompare(b.label));
-  const plannedSubtaskHours = (item.assigned_hierarchy || [])
-    .filter((row) => String(row?.issue_type || "").toLowerCase() === "subtask")
-    .reduce((acc, row) => acc + n(row?.original_estimate_hours), 0);
   const plannedAssignedEntry = {{
     key: "planned_hours_assigned_static",
     label: "Planned Hours Assigned",
-    meaning: "Total planned estimate hours for assigned subtasks within current filters.",
-    value: n(plannedSubtaskHours),
+    meaning: "Total original estimate hours for assigned non-bug subtasks within current filters (leave excluded).",
+    value: n(item.planned_hours_assigned),
+  }};
+  const actualHoursSpentEntry = {{
+    key: "actual_hours_spent_static",
+    label: "Actual Hours Spent",
+    meaning: "Total actual logged hours for assigned work items within current filters.",
+    value: n(item.total_hours),
   }};
   const availabilityIndex = managedEntries.findIndex((entry) => {{
     const key = String(entry?.key || "").trim().toLowerCase();
@@ -1670,6 +2306,28 @@ function render(items) {{
   }});
   if (availabilityIndex >= 0) managedEntries.splice(availabilityIndex + 1, 0, plannedAssignedEntry);
   else managedEntries.push(plannedAssignedEntry);
+  const plannedAssignedIndex = managedEntries.findIndex((entry) => {{
+    const key = String(entry?.key || "").trim().toLowerCase();
+    const label = String(entry?.label || "").trim().toLowerCase();
+    return key === "planned_hours_assigned_static" || label === "planned hours assigned";
+  }});
+  if (plannedAssignedIndex >= 0) managedEntries.splice(plannedAssignedIndex + 1, 0, actualHoursSpentEntry);
+  else managedEntries.push(actualHoursSpentEntry);
+  const managedMetricOrder = new Map([
+    ["availability", 0],
+    ["plannedhoursassignedstatic", 1],
+    ["plannedhoursassigned", 1],
+    ["actualhoursspentstatic", 2],
+    ["actualhoursspent", 2],
+    ["hoursrequiredtocompleteprojects", 3],
+    ["capacityavailableformorework", 4],
+  ]);
+  managedEntries.sort((a, b) => {{
+    const aRank = managedMetricOrder.get(normMetricToken(a?.key)) ?? managedMetricOrder.get(normMetricToken(a?.label)) ?? Number.MAX_SAFE_INTEGER;
+    const bRank = managedMetricOrder.get(normMetricToken(b?.key)) ?? managedMetricOrder.get(normMetricToken(b?.label)) ?? Number.MAX_SAFE_INTEGER;
+    if (aRank !== bRank) return aRank - bRank;
+    return String(a?.label || "").localeCompare(String(b?.label || ""));
+  }});
   function normMetricToken(text) {{
     return String(text || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
   }}
@@ -1779,7 +2437,46 @@ function render(items) {{
   const activeProfileForBreakdown = resolveActiveCapacityProfile(activeFrom, activeTo);
   const businessDaysInRange = computeBusinessDays(activeFrom, activeTo, activeProfileForBreakdown);
   const managedHtml = managedEntries.length
-    ? `<div class="exec-metrics">${{managedEntries.map((m) => {{ const b = barMeta(m); const toggleAttr = b.isAvailability ? ' data-action="toggle-availability-breakdown"' : ""; const cardClass = b.isAvailability ? "exec-metric actionable" : "exec-metric"; const isOpen = b.isAvailability && availabilityBreakdownForAssignee === String(item.assignee || ""); const ingredientRows = availabilityIngredients.length ? availabilityIngredients.map((part) => `<div class="availability-line"><span class="availability-name">${{e(part.key)}}${{part.missing ? " (default)" : ""}}</span><span class="availability-num">${{n(part.value).toFixed(2)}}${{b.isAvailability ? "h" : ""}}</span></div>`).join("") : '<div class="availability-note">No ingredients detected from formula.</div>'; const formulaBlock = b.isAvailability && isOpen ? `<div class="availability-breakdown"><div class="availability-line"><span class="availability-name">Formula</span><span class="availability-num">${{availabilityFormula ? e(availabilityFormula) : "Formula not configured"}}</span></div><div class="availability-line"><span class="availability-name">Business Days</span><span class="availability-num">${{n(businessDaysInRange).toFixed(0)}}d</span></div><div class="availability-note">Ingredients</div>${{ingredientRows}}<div class="availability-line"><span class="availability-name"><strong>Result</strong></span><span class="availability-num"><strong>${{b.rawValue.toFixed(2)}}h</strong></span></div></div>` : ""; return `<div class="${{cardClass}}"${{toggleAttr}}><div class="exec-m-head"><div class="exec-m-name">${{e(m.label)}}</div><div class="exec-m-value">${{b.rawValue.toFixed(2)}}${{(b.isAvailability || b.isPlannedAssigned) ? "h" : ""}}</div></div><div class="exec-m-meaning">${{e(m.meaning)}}</div><div class="exec-bar-track"><div class="exec-bar-fill" style="width:${{b.pct.toFixed(2)}}%;background:${{b.fill}};"></div></div><div class="exec-scale-note">${{e(b.note)}}${{b.isAvailability ? " | Click to view formula" : ""}}</div>${{formulaBlock}}</div>`; }}).join("")}}</div>`
+    ? `<div class="exec-metrics">${{managedEntries.map((m) => {{
+      const b = barMeta(m);
+      const action = b.isAvailability
+        ? "toggle-availability-breakdown"
+        : (b.isPlannedAssigned ? "toggle-planned-hours-breakdown" : "");
+      const toggleAttr = action ? ` data-action="${{action}}"` : "";
+      const cardClass = action ? "exec-metric actionable" : "exec-metric";
+      const isAvailabilityOpen = b.isAvailability && availabilityBreakdownForAssignee === String(item.assignee || "");
+      const isPlannedOpen = b.isPlannedAssigned && plannedHoursBreakdownForAssignee === String(item.assignee || "");
+      const ingredientRows = availabilityIngredients.length
+        ? availabilityIngredients.map((part) => `<div class="availability-line"><span class="availability-name">${{e(part.key)}}${{part.missing ? " (default)" : ""}}</span><span class="availability-num">${{n(part.value).toFixed(2)}}${{b.isAvailability ? "h" : ""}}</span></div>`).join("")
+        : '<div class="availability-note">No ingredients detected from formula.</div>';
+      const formulaBlock = b.isAvailability && isAvailabilityOpen
+        ? `<div class="availability-breakdown"><div class="availability-line"><span class="availability-name">Formula</span><span class="availability-num">${{availabilityFormula ? e(availabilityFormula) : "Formula not configured"}}</span></div><div class="availability-line"><span class="availability-name">Business Days</span><span class="availability-num">${{n(businessDaysInRange).toFixed(0)}}d</span></div><div class="availability-note">Ingredients</div>${{ingredientRows}}<div class="availability-line"><span class="availability-name"><strong>Result</strong></span><span class="availability-num"><strong>${{b.rawValue.toFixed(2)}}h</strong></span></div></div>`
+        : "";
+      const plannedRows = (Array.isArray(item.assigned_hierarchy) ? item.assigned_hierarchy : [])
+        .filter((row) => {{
+          const t = String(row?.issue_type || "").toLowerCase();
+          return t === "subtask" || t === "bug_subtask";
+        }});
+      const plannedTotal = plannedRows.reduce((acc, row) => acc + n(row?.original_estimate_hours), 0);
+      const plannedTableBody = plannedRows.length
+        ? plannedRows.map((row) => {{
+          const rowType = String(row?.issue_type || "").toLowerCase() === "bug_subtask" ? "Bug" : "Subtask";
+          const issueKey = String(row?.issue_key || "").toUpperCase();
+          const issueUrl = jiraIssueUrl(issueKey);
+          const linkCell = issueUrl
+            ? `<a class="jira-link-icon" href="${{e(issueUrl)}}" target="_blank" rel="noopener noreferrer" title="Open in Jira" onclick="event.stopPropagation();"><span class="material-symbols-outlined">open_in_new</span></a>`
+            : `<span class="jira-link-disabled">-</span>`;
+          return `<tr><td class="issue-id">${{e(issueKey || "-")}}</td><td>${{e(rowType)}}</td><td>${{n(row?.original_estimate_hours).toFixed(2)}}h</td><td>${{linkCell}}</td></tr>`;
+        }}).join("")
+        : '<tr><td colspan="4" class="empty">No subtasks in current scope.</td></tr>';
+      const plannedBreakdownBlock = b.isPlannedAssigned && isPlannedOpen
+        ? `<div class="availability-breakdown"><div class="availability-note">Assigned subtasks in current filters (including bug subtasks).</div><div class="tbl-wrap" style="max-height:240px;overflow:auto;"><table class="ss-tbl"><thead><tr><th>Jira Subtask ID</th><th>Type</th><th>Original Estimate</th><th>Jira</th></tr></thead><tbody>${{plannedTableBody}}</tbody></table></div><div class="availability-line"><span class="availability-name"><strong>Total Original Estimates</strong></span><span class="availability-num"><strong>${{plannedTotal.toFixed(2)}}h</strong></span></div></div>`
+        : "";
+      const clickHint = b.isAvailability
+        ? " | Click to view formula"
+        : (b.isPlannedAssigned ? " | Click to view subtasks table" : "");
+      return `<div class="${{cardClass}}"${{toggleAttr}}><div class="exec-m-head"><div class="exec-m-name">${{e(m.label)}}</div><div class="exec-m-value">${{b.rawValue.toFixed(2)}}${{(b.isAvailability || b.isPlannedAssigned) ? "h" : ""}}</div></div><div class="exec-m-meaning">${{e(m.meaning)}}</div><div class="exec-bar-track"><div class="exec-bar-fill" style="width:${{b.pct.toFixed(2)}}%;background:${{b.fill}};"></div></div><div class="exec-scale-note">${{e(b.note)}}${{clickHint}}</div>${{formulaBlock}}${{plannedBreakdownBlock}}</div>`;
+    }}).join("")}}</div>`
     : '<div class="empty">No managed metrics configured.</div>';
   const activeProjectList = Array.from(selectedProjects()).sort();
   const activeProjectsText = activeProjectList.length ? activeProjectList.join(", ") : "All";
@@ -1789,37 +2486,144 @@ function render(items) {{
   const summaryCapacity = Number.isFinite(summaryCapacityManaged) ? summaryCapacityManaged : (n(item.employee_capacity_hours) - n(item.planned_hours_assigned));
   const summaryRmis = n(item.active_rmi_count);
   const summaryScore = n(item.final_score);
-  const summaryMetricsHtml = `<div class="kpis" style="margin-top:8px;"><div class="kpi"><div class="k"><span class="material-symbols-outlined" style="font-size:15px;vertical-align:middle;margin-right:4px;">deployed_code</span>RMIs</div><div class="v">${{summaryRmis.toFixed(0)}}</div></div><div class="kpi"><div class="k"><span class="material-symbols-outlined" style="font-size:15px;vertical-align:middle;margin-right:4px;">sliders</span>Capacity</div><div class="v">${{summaryCapacity.toFixed(1)}}h</div></div><div class="kpi"><div class="k"><span class="material-symbols-outlined" style="font-size:15px;vertical-align:middle;margin-right:4px;">award_star</span>Score</div><div class="v">${{summaryScore.toFixed(1)}}</div></div></div>`;
-  const summaryHtml = `<div class="card"><div style="display:flex;justify-content:space-between;align-items:end;"><div><div class="sub">Assignee</div><div style="font-size:1.1rem;font-weight:800;">${{e(item.assignee)}}</div></div><div class="big">${{summaryScore.toFixed(1)}}</div></div>${{summaryMetricsHtml}}<div class="sub">Raw ${{n(item.raw_score).toFixed(2)}} | Total Penalty -${{n(item.total_penalty).toFixed(2)}} | Base ${{n(settings.base_score).toFixed(0)}}</div><div class="discover"><span class="pill" style="border-color:${{healthColor}};">Health: ${{healthTag}}</span><span class="pill">Capacity Gap: ${{(n(item.employee_capacity_hours)-n(item.planned_hours_assigned)).toFixed(1)}}h</span><span class="pill">Missed Starts: ${{n(item.missed_start_ratio).toFixed(1)}}%</span><span class="pill">Missed Due Dates: ${{n(item.missed_due_date_ratio).toFixed(1)}}%</span></div></div>`;
+  const activeSimpleScore = dueCompletionEnabled ? n(item.simple_score_due) : n(item.simple_score_raw);
+  const activeBigScore = activeScoringTab === "simple" ? activeSimpleScore : summaryScore;
+  const activeBigLabel = activeScoringTab === "simple" ? "Simple Score" : "Advanced Score";
+  const activeBigSub = activeScoringTab === "simple"
+    ? `Simple efficiency${{dueCompletionEnabled ? " (due-adjusted)" : ""}} = 100 x (1 - Overrun/Planned) | Overrun: ${{n(item.ss_total_overrun).toFixed(1)}}h | Planned: ${{n(item.ss_total_estimate).toFixed(1)}}h`
+    : `Penalty-based | Raw ${{n(item.raw_score).toFixed(2)}} | Penalty -${{n(item.total_penalty).toFixed(2)}} | Base ${{n(settings.base_score).toFixed(0)}}`;
+  const summaryMetricsHtml = `<div class="kpis" style="margin-top:8px;"><div class="kpi"><div class="k"><span class="material-symbols-outlined" style="font-size:15px;vertical-align:middle;margin-right:4px;">deployed_code</span>RMIs</div><div class="v">${{summaryRmis.toFixed(0)}}</div></div><div class="kpi"><div class="k"><span class="material-symbols-outlined" style="font-size:15px;vertical-align:middle;margin-right:4px;">sliders</span>Capacity</div><div class="v">${{summaryCapacity.toFixed(1)}}h</div></div><div class="kpi"><div class="k"><span class="material-symbols-outlined" style="font-size:15px;vertical-align:middle;margin-right:4px;">award_star</span>Score</div><div class="v" id="summary-score-kpi">${{activeBigScore.toFixed(1)}}</div></div></div>`;
+  const summaryHtml = `<div class="card"><div style="display:flex;justify-content:space-between;align-items:end;"><div><div class="sub">Assignee</div><div style="font-size:1.1rem;font-weight:800;">${{e(item.assignee)}}</div></div><div><div class="big" id="summary-big-score">${{activeBigScore.toFixed(1)}}</div><div class="score-label" id="summary-score-label">${{activeBigLabel}}</div></div></div>${{summaryMetricsHtml}}<div class="sub" id="summary-score-sub">${{activeBigSub}}</div><div class="discover"><span class="pill" style="border-color:${{healthColor}};">Health: ${{healthTag}}</span><span class="pill">Capacity Gap: ${{(n(item.employee_capacity_hours)-n(item.planned_hours_assigned)).toFixed(1)}}h</span><span class="pill">Missed Starts: ${{n(item.missed_start_ratio).toFixed(1)}}%</span><span class="pill">Missed Due Dates: ${{n(item.missed_due_date_ratio).toFixed(1)}}%</span></div></div>`;
   const managedSectionHtml = `<div class="mini" style="margin:8px 0;"><h3>Managed Field Metrics - ${{e(item.assignee)}}</h3><div class="sub">Employee-only metrics within filters | Date: ${{e(activeFrom)}} to ${{e(activeTo)}} | Projects: ${{e(activeProjectsText)}}</div>${{managedHtml}}</div>`;
-  const tabsHtml = `<div class="tabs"><button class="tab-btn active" data-tab="overview">Overview</button><button class="tab-btn" data-tab="execution">Execution</button><button class="tab-btn" data-tab="planning">Planning</button></div><div class="tab-pane active" data-pane="overview"><div class="grid2"><section class="mini"><h3>Score Breakdown</h3><div class="l"><span>Bug Hours</span><span class="neg">-${{n(item.penalties.bug).toFixed(2)}}</span></div><div class="l"><span>Bug Late Hours</span><span class="neg">-${{n(item.penalties.bug_late).toFixed(2)}}</span></div><div class="l"><span>Unplanned Leaves</span><span class="neg">-${{n(item.penalties.leave).toFixed(2)}}</span></div><div class="l"><span>Subtask Late Hours</span><span class="neg">-${{n(item.penalties.subtask_late).toFixed(2)}}</span></div><div class="l"><span>Missed Due Dates</span><span class="neg">-${{n(item.penalties.missed_due_date).toFixed(2)}}</span></div><div class="l"><span>Estimate Overrun</span><span class="neg">-${{n(item.penalties.estimate).toFixed(2)}}</span></div></section><section class="mini"><h3>Planning Scorecards</h3><div class="l"><span>Employee Capacity</span><span>${{n(item.employee_capacity_hours).toFixed(2)}}h</span></div><div class="l"><span>Planned Assigned</span><span>${{n(item.planned_hours_assigned).toFixed(2)}}h</span></div><div class="l"><span>Assigned (E/S/ST)</span><span>${{n(item.assigned_counts.epic).toFixed(0)}}/${{n(item.assigned_counts.story).toFixed(0)}}/${{n(item.assigned_counts.subtask).toFixed(0)}}</span></div><div class="l actionable" data-action="open-missed-starts"><span>Missed Starts</span><span><button type="button" class="metric-link-btn">View subtasks</button> ${{n(item.missed_start_count).toFixed(0)}} / ${{n(item.total_assigned_count).toFixed(0)}} (${{n(item.missed_start_ratio).toFixed(1)}}%)</span></div><div class="l actionable" data-action="open-missed-due"><span>Missed Due Dates</span><span><button type="button" class="metric-link-btn">View subtasks</button> ${{n(item.missed_due_date_count).toFixed(0)}} / ${{n(item.due_dated_assigned_count).toFixed(0)}} (${{n(item.missed_due_date_ratio).toFixed(1)}}%)</span></div><div class="l"><span>Planned Leaves</span><span>${{n(item.planned_leave_count).toFixed(0)}} | ${{n(item.planned_leave_hours).toFixed(2)}}h / ${{n(item.planned_leave_days).toFixed(2)}}d</span></div><div class="l"><span>Unplanned Leaves</span><span>${{n(item.unplanned_leave_count).toFixed(0)}} | ${{n(item.unplanned_leave_hours).toFixed(2)}}h / ${{n(item.unplanned_leave_days).toFixed(2)}}d</span></div></section></div><div class="kpi-charts"><div class="mini-chart"><h3 style="margin:0 0 6px;font-size:.82rem;">Assigned Mix Chart</h3>${{assignedMixChart}}</div><div class="mini-chart"><h3 style="margin:0 0 6px;font-size:.82rem;">Due Compliance Chart</h3>${{dueMixChart}}</div></div><div class="ts-card"><h3 style="margin:0 0 6px;font-size:.82rem;">Performance Over Days</h3>${{renderSeriesSvg(item.daily_series)}}</div></div><div class="tab-pane" data-pane="execution"><div class="tbl-wrap"><h3 class="tbl-title">Execution Nested View (Epic -> Story -> Subtask) | Planned vs Actual</h3>${{executionHierarchyTable}}</div><div class="tbl-wrap" id="due-compliance-context"><h3 class="tbl-title">Due Compliance Table (Logged Items)</h3>${{dueTable}}</div><div class="tbl-wrap" id="missed-start-context"><h3 class="tbl-title">Missed Start Context Table</h3>${{missedTable}}</div><div class="feed">${{feed}}</div></div><div class="tab-pane" data-pane="planning"><div class="tbl-wrap"><h3 class="tbl-title">Interactive Hierarchy Breakdown (Epic -> Story -> Subtask)</h3>${{hierarchyTable}}</div></div>`;
-  document.getElementById("detail").innerHTML = `${{summaryHtml}}${{managedSectionHtml}}${{tabsHtml}}`;
-  const detailHost = document.getElementById("detail");
-  function activateDetailTab(tab) {{
-    Array.from(detailHost.querySelectorAll(".tab-btn")).forEach((b) => b.classList.toggle("active", String(b.getAttribute("data-tab") || "") === tab));
-    Array.from(detailHost.querySelectorAll(".tab-pane")).forEach((p) => p.classList.toggle("active", String(p.getAttribute("data-pane") || "") === tab));
+  const ssDetails = item.ss_subtask_details || [];
+  function ssRowClass(row) {{
+    const est = String(row.estimate_status || "");
+    const due = String(row.due_completion_status || "");
+    if (est === "no_estimate") return "";
+    if (n(row.is_commitment)) return "ss-row-commitment";
+    if (est === "within_estimate") return "ss-row-within";
+    if (est === "over_estimate" && due === "late") return "ss-row-over-late";
+    if (est === "over_estimate") return "ss-row-over";
+    return "";
   }}
-  Array.from(detailHost.querySelectorAll(".tab-btn")).forEach((btn) => {{
+  function ssPillHtml(row) {{
+    const est = String(row.estimate_status || "");
+    if (est === "no_estimate") return `<span class="ss-status-pill ss-pill-noest">No Estimate</span>`;
+    if (n(row.is_commitment)) return `<span class="ss-status-pill ss-pill-commitment">Commitment</span>`;
+    if (est === "within_estimate") return `<span class="ss-status-pill ss-pill-within">Within Estimate</span>`;
+    if (est === "over_estimate" && String(row.due_completion_status || "") === "late") return `<span class="ss-status-pill ss-pill-late">Over + Late</span>`;
+    if (est === "over_estimate") return `<span class="ss-status-pill ss-pill-over">Over Estimate</span>`;
+    return "";
+  }}
+  const ssTableRows = ssDetails.map((row) => {{
+    const cls = ssRowClass(row);
+    const showDue = dueCompletionEnabled;
+    return `<tr class="${{cls}}"><td class="issue-id">${{e(row.issue_key)}}</td><td class="issue-title">${{e(row.summary)}}</td><td>${{n(row.estimate).toFixed(1)}}h</td><td>${{n(row.actual).toFixed(1)}}h</td><td>${{n(row.overrun) > 0 ? n(row.overrun).toFixed(1) + "h" : "-"}}</td>${{showDue ? `<td>${{row.due_date ? e(row.due_date) : "-"}}</td><td>${{row.effective_completion_date ? e(row.effective_completion_date) : "-"}}</td>` : ""}}<td>${{ssPillHtml(row)}}</td></tr>`;
+  }}).join("");
+  const ssDueColHeaders = dueCompletionEnabled ? "<th>Due Date</th><th>Completed</th>" : "";
+  const ssTableHtml = ssDetails.length ? `<div class="table-title" style="margin:10px 0 6px;font-weight:700;">Assignee Task Estimate vs Actual (Overrun & Status)</div><div class="tbl-wrap" style="max-height:320px;overflow:auto;"><table class="ss-tbl"><thead><tr><th>Key</th><th>Summary</th><th>Estimate</th><th>Actual</th><th>Overrun</th>${{ssDueColHeaders}}<th>Status</th></tr></thead><tbody>${{ssTableRows}}</tbody></table></div>` : '<div class="empty">No subtask data for simple scoring.</div>';
+  const ssWithin = n(item.ss_within_count);
+  const ssOver = n(item.ss_over_count);
+  const ssCommit = n(item.ss_commitment_count);
+  const ssTotal = ssWithin + ssOver;
+  const ssPlannedHours = n(item.ss_total_estimate);
+  const ssActualHours = ssDetails.reduce((acc, row) => acc + n(row?.actual), 0);
+  const ssOverrunHours = n(item.ss_total_overrun);
+  const ssAdjustedOverrunHours = Math.max(0, ssOverrunHours - n(item.ss_commitment_overrun));
+  const ssAppliedOverrunHours = dueCompletionEnabled ? ssAdjustedOverrunHours : ssOverrunHours;
+  const ssFormulaText = dueCompletionEnabled
+    ? "Score % = max(0, min(100, 100 x (1 - (Total Overrun - Commitment Forgiven) / Planned Hours)))"
+    : "Score % = max(0, min(100, 100 x (1 - Total Overrun / Planned Hours)))";
+  const ssOverrunFormulaText = "Item Overrun = max(0, Item Actual - Item Planned)";
+  const ssFormulaAppliedText = dueCompletionEnabled
+    ? `100 x (1 - (${{ssOverrunHours.toFixed(1)}} - ${{n(item.ss_commitment_overrun).toFixed(1)}}) / ${{ssPlannedHours.toFixed(1)}})`
+    : `100 x (1 - ${{ssOverrunHours.toFixed(1)}} / ${{ssPlannedHours.toFixed(1)}})`;
+  const ssFormulaIngredientsHtml = `<section class="formula-guide"><div class="formula-head"><h3 class="formula-title">Simple Scoring Formula Guide</h3><div class="formula-head-actions"><button type="button" class="formula-toggle-btn" id="toggle-formula-guide" aria-controls="simple-formula-guide-body" aria-expanded="${{simpleFormulaGuideExpanded ? "true" : "false"}}"><span class="material-symbols-outlined">${{simpleFormulaGuideExpanded ? "expand_less" : "expand_more"}}</span><span>${{simpleFormulaGuideExpanded ? "Collapse" : "Expand"}}</span></button><div class="formula-score-pill">${{activeSimpleScore.toFixed(1)}}%</div></div></div><div class="formula-layout" id="simple-formula-guide-body" ${{simpleFormulaGuideExpanded ? "" : "hidden"}}><div class="formula-steps"><div class="formula-step step-gap"><div class="formula-kicker">Step 1: Per Item Overrun</div><p class="formula-eq">${{e(ssOverrunFormulaText)}}</p><div class="formula-mini-help">max(a, b) means: choose the bigger number.</div></div><div class="formula-step"><div class="formula-kicker">Step 2: Final Score</div><p class="formula-eq">${{e(ssFormulaText)}}</p><p class="formula-applied">${{ssPlannedHours > 0 ? `Applied: ${{e(ssFormulaAppliedText)}}` : "Applied: Planned Hours is 0, so score defaults to 100%"}}</p></div><div class="formula-note">Total Overrun = only positive overruns added together. Extra savings (underrun) do not cancel overruns.</div>${{dueCompletionEnabled ? `<div class="formula-note"><strong>Commitment Forgiven</strong> = overrun hours from items finished on time are not counted in penalty.</div>` : ""}}<div class="formula-safeguards"><div class="formula-safeguards-title">Why we use max (simple examples)</div><div class="formula-safeguard-item">1. <strong>Stop negative overrun:</strong> <code>max(0, Actual - Planned)</code><br>Example: Planned 5h, Actual 3h -> Actual - Planned = -2h -> Overrun = max(0, -2) = 0h.</div><div class="formula-safeguard-item">2. <strong>Keep score between 0% and 100%:</strong> <code>max(0, min(100, ...))</code><br>Example: If math gives 108%, final shown score is 100%. If math gives -12%, final shown score is 0%.</div></div></div><div class="formula-metrics"><div class="formula-row"><span>Planned Hours</span><span>${{ssPlannedHours.toFixed(1)}}h</span></div><div class="formula-row"><span>Actual Hours Spent</span><span>${{ssActualHours.toFixed(1)}}h</span></div><div class="formula-row"><span>Total Overrun</span><span>${{ssOverrunHours.toFixed(1)}}h</span></div>${{dueCompletionEnabled ? `<div class="formula-row"><span>Commitment Forgiven</span><span>${{n(item.ss_commitment_overrun).toFixed(1)}}h</span></div><div class="formula-row"><span>Applied Overrun</span><span>${{ssAppliedOverrunHours.toFixed(1)}}h</span></div>` : ""}}<div class="formula-row final"><span>Final Simple Score</span><span>${{activeSimpleScore.toFixed(1)}}%</span></div></div></div></section>`;
+  function renderSsDonut(within, over, commit, total) {{
+    if (total <= 0) return '<div class="empty">No data.</div>';
+    const r = 50, cx = 60, cy = 60, sw = 18;
+    const overNonCommit = Math.max(0, over - commit);
+    const slices = [
+      {{val:within, color:"#22c55e", label:"Within Estimate"}},
+      {{val:commit, color:"#818cf8", label:"Commitment"}},
+      {{val:overNonCommit, color:"#f97316", label:"Over Estimate"}},
+    ].filter((s) => s.val > 0);
+    let offset = 0;
+    const circ = 2 * Math.PI * r;
+    const paths = slices.map((s) => {{
+      const pct = s.val / total;
+      const dash = circ * pct;
+      const gap = circ - dash;
+      const o = offset;
+      offset += pct;
+      return `<circle cx="${{cx}}" cy="${{cy}}" r="${{r}}" fill="none" stroke="${{s.color}}" stroke-width="${{sw}}" stroke-dasharray="${{dash.toFixed(2)}} ${{gap.toFixed(2)}}" stroke-dashoffset="${{(-circ * o).toFixed(2)}}" transform="rotate(-90 ${{cx}} ${{cy}})"></circle>`;
+    }}).join("");
+    const legendItems = slices.map((s) => `<div><span class="ss-legend-dot" style="background:${{s.color}};"></span>${{s.label}}: ${{s.val}}</div>`).join("");
+    return `<div class="ss-donut-wrap"><svg width="120" height="120" viewBox="0 0 120 120">${{paths}}<text x="${{cx}}" y="${{cy + 4}}" text-anchor="middle" fill="#e6f0ff" font-size="16" font-weight="900">${{total}}</text></svg><div class="ss-legend">${{legendItems}}</div></div>`;
+  }}
+  const ssDonutHtml = renderSsDonut(ssWithin, ssOver, ssCommit, ssTotal);
+  const simpleScoringContent = `<div class="scoring-section"><div class="scoring-section-head"><div class="scoring-section-title">Simple Scoring</div><div class="ss-toggle"><span class="ss-toggle-label">Due Completion</span><label class="ss-switch"><input type="checkbox" id="due-completion-toggle" ${{dueCompletionEnabled ? "checked" : ""}}><span class="ss-slider"></span></label></div></div><div class="ss-big-score">${{activeSimpleScore.toFixed(1)}}</div><div class="sub">Simple efficiency score${{dueCompletionEnabled ? " (adjusted for due completion)" : ""}} | Planned: ${{ssPlannedHours.toFixed(1)}}h | Actual: ${{ssActualHours.toFixed(1)}}h | Overrun: ${{ssOverrunHours.toFixed(1)}}h${{dueCompletionEnabled && ssCommit > 0 ? ` | Commitment forgiven: ${{n(item.ss_commitment_overrun).toFixed(1)}}h` : ""}}</div><div class="ss-summary-row"><span class="ss-chip">Within: ${{ssWithin}}</span><span class="ss-chip">Over: ${{ssOver}}</span>${{dueCompletionEnabled ? `<span class="ss-chip">Commitment: ${{ssCommit}}</span><span class="ss-chip">On Time: ${{n(item.ss_on_time_count)}}</span><span class="ss-chip">Late: ${{n(item.ss_late_count)}}</span>` : ""}}<span class="ss-chip">No Estimate: ${{n(item.ss_no_estimate_count)}}</span></div>${{ssFormulaIngredientsHtml}}${{ssDonutHtml}}${{ssTableHtml}}</div>`;
+  const advPenaltyFormulaText = "Total Penalty = (Bug Hours x Points/Bug Hour) + (Bug Late Hours x Points/Bug Late Hour) + (Unplanned Leave Hours x Points/Unplanned Leave Hour) + (Subtask Late Hours x Points/Subtask Late Hour) + (Estimate Overrun Hours x Points/Estimate Overrun Hour) + (Missed Due Dates x Points/Missed Due Date)";
+  const advRawFormulaText = "Raw Score = Base Score - Total Penalty";
+  const advFinalFormulaText = "Final Score = clamp(Raw Score, Min Score, Max Score)";
+  const advPenaltyAppliedText = `(${{n(item.bug_hours).toFixed(2)}} x ${{n(settings.points_per_bug_hour).toFixed(2)}}) + (${{n(item.bug_late_hours).toFixed(2)}} x ${{n(settings.points_per_bug_late_hour).toFixed(2)}}) + (${{n(item.unplanned_leave_hours).toFixed(2)}} x ${{n(settings.points_per_unplanned_leave_hour).toFixed(2)}}) + (${{n(item.subtask_late_hours).toFixed(2)}} x ${{n(settings.points_per_subtask_late_hour).toFixed(2)}}) + (${{n(item.estimate_overrun_hours).toFixed(2)}} x ${{n(settings.points_per_estimate_overrun_hour).toFixed(2)}}) + (${{n(item.missed_due_date_count).toFixed(0)}} x ${{n(settings.points_per_missed_due_date).toFixed(2)}})`;
+  const advRawAppliedText = `${{n(settings.base_score).toFixed(2)}} - ${{n(item.total_penalty).toFixed(2)}}`;
+  const advFinalAppliedText = `clamp(${{n(item.raw_score).toFixed(2)}}, ${{n(settings.min_score).toFixed(2)}}, ${{n(settings.max_score).toFixed(2)}})`;
+  const advancedFormulaIngredientsHtml = `<section class="formula-guide"><div class="formula-head"><h3 class="formula-title">Advanced Scoring Formula Guide</h3><div class="formula-head-actions"><button type="button" class="formula-toggle-btn" id="toggle-advanced-formula-guide" aria-controls="advanced-formula-guide-body" aria-expanded="${{advancedFormulaGuideExpanded ? "true" : "false"}}"><span class="material-symbols-outlined">${{advancedFormulaGuideExpanded ? "expand_less" : "expand_more"}}</span><span>${{advancedFormulaGuideExpanded ? "Collapse" : "Expand"}}</span></button><div class="formula-score-pill">${{summaryScore.toFixed(1)}}%</div></div></div><div class="formula-layout" id="advanced-formula-guide-body" ${{advancedFormulaGuideExpanded ? "" : "hidden"}}><div class="formula-steps"><div class="formula-step step-gap"><div class="formula-kicker">Step 1: Total Penalty</div><p class="formula-eq">${{e(advPenaltyFormulaText)}}</p><p class="formula-applied">Applied: ${{e(advPenaltyAppliedText)}}</p></div><div class="formula-step"><div class="formula-kicker">Step 2: Raw Score</div><p class="formula-eq">${{e(advRawFormulaText)}}</p><p class="formula-applied">Applied: ${{e(advRawAppliedText)}} = ${{n(item.raw_score).toFixed(2)}}</p></div><div class="formula-step"><div class="formula-kicker">Step 3: Final Score</div><p class="formula-eq">${{e(advFinalFormulaText)}}</p><p class="formula-applied">Applied: ${{e(advFinalAppliedText)}} = ${{summaryScore.toFixed(2)}}</p></div><div class="formula-note">Penalty multipliers come from Performance Settings. Higher multipliers increase score deductions for the same workload pattern.</div><div class="formula-safeguards"><div class="formula-safeguards-title">Safeguards</div><div class="formula-safeguard-item">1. <strong>Penalty-first model:</strong> only <code>base_score</code> adds points; all configured factors reduce score.</div><div class="formula-safeguard-item">2. <strong>Bounds:</strong> <code>clamp(raw, min, max)</code> keeps final score within allowed range.</div></div></div><div class="formula-metrics"><div class="formula-row"><span>Base Score</span><span>${{n(settings.base_score).toFixed(2)}}</span></div><div class="formula-row"><span>Total Penalty</span><span>${{n(item.total_penalty).toFixed(2)}}</span></div><div class="formula-row"><span>Raw Score</span><span>${{n(item.raw_score).toFixed(2)}}</span></div><div class="formula-row"><span>Score Bounds</span><span>${{n(settings.min_score).toFixed(0)}} to ${{n(settings.max_score).toFixed(0)}}</span></div><div class="formula-row final"><span>Final Advanced Score</span><span>${{summaryScore.toFixed(1)}}%</span></div></div></div></section>`;
+  const advancedScoringContent = `<div class="scoring-section"><div class="scoring-section-head"><div class="scoring-section-title">Advanced Scoring <span class="beta-tag">beta</span></div></div><div class="ss-big-score">${{summaryScore.toFixed(1)}}</div><div class="sub">Penalty-based | Raw ${{n(item.raw_score).toFixed(2)}} | Total Penalty -${{n(item.total_penalty).toFixed(2)}} | Base ${{n(settings.base_score).toFixed(0)}}</div>${{advancedFormulaIngredientsHtml}}<div class="grid2" style="margin-top:8px;"><section class="mini"><h3>Score Breakdown</h3><div class="l"><span>Bug Hours</span><span class="neg">-${{n(item.penalties.bug).toFixed(2)}}</span></div><div class="l"><span>Bug Late Hours</span><span class="neg">-${{n(item.penalties.bug_late).toFixed(2)}}</span></div><div class="l"><span>Unplanned Leaves</span><span class="neg">-${{n(item.penalties.leave).toFixed(2)}}</span></div><div class="l"><span>Subtask Late Hours</span><span class="neg">-${{n(item.penalties.subtask_late).toFixed(2)}}</span></div><div class="l"><span>Missed Due Dates</span><span class="neg">-${{n(item.penalties.missed_due_date).toFixed(2)}}</span></div><div class="l"><span>Estimate Overrun</span><span class="neg">-${{n(item.penalties.estimate).toFixed(2)}}</span></div></section><section class="mini"><h3>Planning Scorecards</h3><div class="l"><span>Employee Capacity</span><span>${{n(item.employee_capacity_hours).toFixed(2)}}h</span></div><div class="l"><span>Planned Assigned</span><span>${{n(item.planned_hours_assigned).toFixed(2)}}h</span></div><div class="l"><span>Assigned (E/S/ST)</span><span>${{n(item.assigned_counts.epic).toFixed(0)}}/${{n(item.assigned_counts.story).toFixed(0)}}/${{n(item.assigned_counts.subtask).toFixed(0)}}</span></div><div class="l actionable" data-action="open-missed-starts"><span>Missed Starts</span><span><button type="button" class="metric-link-btn">View subtasks</button> ${{n(item.missed_start_count).toFixed(0)}} / ${{n(item.total_assigned_count).toFixed(0)}} (${{n(item.missed_start_ratio).toFixed(1)}}%)</span></div><div class="l actionable" data-action="open-missed-due"><span>Missed Due Dates</span><span><button type="button" class="metric-link-btn">View subtasks</button> ${{n(item.missed_due_date_count).toFixed(0)}} / ${{n(item.due_dated_assigned_count).toFixed(0)}} (${{n(item.missed_due_date_ratio).toFixed(1)}}%)</span></div><div class="l"><span>Planned Leaves</span><span>${{n(item.planned_leave_count).toFixed(0)}} | ${{n(item.planned_leave_hours).toFixed(2)}}h / ${{n(item.planned_leave_days).toFixed(2)}}d</span></div><div class="l"><span>Unplanned Leaves</span><span>${{n(item.unplanned_leave_count).toFixed(0)}} | ${{n(item.unplanned_leave_hours).toFixed(2)}}h / ${{n(item.unplanned_leave_days).toFixed(2)}}d</span></div></section></div><div class="kpi-charts"><div class="mini-chart"><h3 style="margin:0 0 6px;font-size:.82rem;">Assigned Mix Chart</h3>${{assignedMixChart}}</div><div class="mini-chart"><h3 style="margin:0 0 6px;font-size:.82rem;">Due Compliance Chart</h3>${{dueMixChart}}</div></div><div class="ts-card"><h3 style="margin:0 0 6px;font-size:.82rem;">Performance Over Days</h3>${{renderSeriesSvg(item.daily_series)}}</div></div>`;
+  const scoringTabsHtml = `<div class="tabs" style="margin-top:10px;" data-tab-group="scoring"><button class="tab-btn tab-btn-score${{activeScoringTab === "simple" ? " active" : ""}}" data-tab="simple"><span class="tab-kicker">Mode</span><span class="tab-main-row"><span class="tab-title">Simple Scoring</span><span class="tab-score">${{activeSimpleScore.toFixed(1)}}</span></span></button><button class="tab-btn tab-btn-score tab-btn-beta${{activeScoringTab === "advanced" ? " active" : ""}}" data-tab="advanced"><span class="tab-kicker">Mode</span><span class="tab-main-row"><span class="tab-title">Advanced Scoring <span class="tab-beta">beta</span></span><span class="tab-score">${{summaryScore.toFixed(1)}}</span></span></button></div><div class="tab-pane${{activeScoringTab === "simple" ? " active" : ""}}" data-pane="simple" data-tab-group="scoring">${{simpleScoringContent}}</div><div class="tab-pane${{activeScoringTab === "advanced" ? " active" : ""}}" data-pane="advanced" data-tab-group="scoring">${{advancedScoringContent}}</div>`;
+  const execPlanTabsHtml = `${{assignmentScorecardsHtml}}<div class="tabs" style="margin-top:10px;" data-tab-group="detail"><button class="tab-btn active" data-tab="planning">Planning</button><button class="tab-btn" data-tab="execution">Execution</button></div><div class="tab-pane active" data-pane="planning" data-tab-group="detail"><div class="tbl-wrap"><h3 class="tbl-title">Interactive Hierarchy Breakdown (Epic -> Story -> Subtask)</h3>${{hierarchyTable}}</div></div><div class="tab-pane" data-pane="execution" data-tab-group="detail"><div class="tbl-wrap"><h3 class="tbl-title">Execution Nested View (Epic -> Story -> Subtask) | Planned vs Actual</h3>${{executionHierarchyTable}}</div><div class="tbl-wrap" id="due-compliance-context"><h3 class="tbl-title">Due Compliance Table (Logged Items)</h3>${{dueTable}}</div><div class="tbl-wrap" id="missed-start-context"><h3 class="tbl-title">Missed Start Context Table</h3>${{missedTable}}</div><div class="feed">${{feed}}</div></div>`;
+  document.getElementById("detail").innerHTML = `${{summaryHtml}}${{managedSectionHtml}}`;
+  document.getElementById("score-drilldown").innerHTML = `${{scoringTabsHtml}}${{execPlanTabsHtml}}`;
+  const detailHost = document.getElementById("detail");
+  const scoreHost = document.getElementById("score-drilldown");
+  function activateGroupTab(host, group, tab) {{
+    if (!host) return;
+    host.querySelectorAll(`.tabs[data-tab-group="${{group}}"] .tab-btn`).forEach((b) => b.classList.toggle("active", String(b.getAttribute("data-tab") || "") === tab));
+    host.querySelectorAll(`.tab-pane[data-tab-group="${{group}}"]`).forEach((p) => p.classList.toggle("active", String(p.getAttribute("data-pane") || "") === tab));
+  }}
+  scoreHost?.querySelectorAll('.tabs[data-tab-group="scoring"] .tab-btn').forEach((btn) => {{
     btn.addEventListener("click", () => {{
-      const tab = String(btn.getAttribute("data-tab") || "overview");
-      activateDetailTab(tab);
+      const tab = String(btn.getAttribute("data-tab") || "simple");
+      activeScoringTab = tab;
+      activateGroupTab(scoreHost, "scoring", tab);
+      const bigEl = detailHost.querySelector("#summary-big-score");
+      const lblEl = detailHost.querySelector("#summary-score-label");
+      const subEl = detailHost.querySelector("#summary-score-sub");
+      const kpiEl = detailHost.querySelector("#summary-score-kpi");
+      if (tab === "simple") {{
+        if (bigEl) bigEl.textContent = activeSimpleScore.toFixed(1);
+        if (lblEl) lblEl.textContent = "Simple Score";
+        if (subEl) subEl.textContent = `Simple efficiency${{dueCompletionEnabled ? " (due-adjusted)" : ""}} = 100 x (1 - Overrun/Planned) | Overrun: ${{n(item.ss_total_overrun).toFixed(1)}}h | Planned: ${{n(item.ss_total_estimate).toFixed(1)}}h`;
+        if (kpiEl) kpiEl.textContent = activeSimpleScore.toFixed(1);
+      }} else {{
+        if (bigEl) bigEl.textContent = summaryScore.toFixed(1);
+        if (lblEl) lblEl.textContent = "Advanced Score";
+        if (subEl) subEl.textContent = `Penalty-based | Raw ${{n(item.raw_score).toFixed(2)}} | Penalty -${{n(item.total_penalty).toFixed(2)}} | Base ${{n(settings.base_score).toFixed(0)}}`;
+        if (kpiEl) kpiEl.textContent = summaryScore.toFixed(1);
+      }}
+    }});
+  }});
+  scoreHost?.querySelectorAll('.tabs[data-tab-group="detail"] .tab-btn').forEach((btn) => {{
+    btn.addEventListener("click", () => {{
+      activateGroupTab(scoreHost, "detail", String(btn.getAttribute("data-tab") || "execution"));
     }});
   }});
   function focusContext(targetId) {{
-    activateDetailTab("execution");
-    const target = detailHost.querySelector(targetId);
+    activateGroupTab(scoreHost, "detail", "execution");
+    const target = scoreHost ? scoreHost.querySelector(targetId) : null;
     if (!target) return;
     target.classList.add("focus-pulse");
     target.scrollIntoView({{ behavior: "smooth", block: "start" }});
     setTimeout(() => target.classList.remove("focus-pulse"), 1300);
   }}
-  const missedStartsTrigger = detailHost.querySelector('[data-action="open-missed-starts"]');
+  const missedStartsTrigger = scoreHost?.querySelector('[data-action="open-missed-starts"]');
   if (missedStartsTrigger) {{
     missedStartsTrigger.addEventListener("click", () => {{
       focusContext("#missed-start-context");
     }});
   }}
-  const missedDueTrigger = detailHost.querySelector('[data-action="open-missed-due"]');
+  const missedDueTrigger = scoreHost?.querySelector('[data-action="open-missed-due"]');
   if (missedDueTrigger) {{
     missedDueTrigger.addEventListener("click", () => {{
       focusContext("#due-compliance-context");
@@ -1830,15 +2634,114 @@ function render(items) {{
     availabilityTrigger.addEventListener("click", () => {{
       const assigneeName = String(item.assignee || "");
       availabilityBreakdownForAssignee = availabilityBreakdownForAssignee === assigneeName ? "" : assigneeName;
+      plannedHoursBreakdownForAssignee = "";
       render(items);
     }});
   }}
+  const plannedHoursTrigger = detailHost.querySelector('[data-action="toggle-planned-hours-breakdown"]');
+  if (plannedHoursTrigger) {{
+    plannedHoursTrigger.addEventListener("click", () => {{
+      const assigneeName = String(item.assignee || "");
+      plannedHoursBreakdownForAssignee = plannedHoursBreakdownForAssignee === assigneeName ? "" : assigneeName;
+      availabilityBreakdownForAssignee = "";
+      render(items);
+    }});
+  }}
+  const dueToggle = scoreHost?.querySelector("#due-completion-toggle");
+  if (dueToggle) {{
+    dueToggle.addEventListener("change", () => {{
+      dueCompletionEnabled = dueToggle.checked;
+      render(compute());
+    }});
+  }}
+  const formulaToggle = scoreHost?.querySelector("#toggle-formula-guide");
+  if (formulaToggle) {{
+    formulaToggle.addEventListener("click", () => {{
+      simpleFormulaGuideExpanded = !simpleFormulaGuideExpanded;
+      const body = scoreHost.querySelector("#simple-formula-guide-body");
+      if (body) body.hidden = !simpleFormulaGuideExpanded;
+      const icon = formulaToggle.querySelector(".material-symbols-outlined");
+      const label = formulaToggle.querySelector("span:last-child");
+      formulaToggle.setAttribute("aria-expanded", simpleFormulaGuideExpanded ? "true" : "false");
+      if (icon) icon.textContent = simpleFormulaGuideExpanded ? "expand_less" : "expand_more";
+      if (label) label.textContent = simpleFormulaGuideExpanded ? "Collapse" : "Expand";
+    }});
+  }}
+  const advancedFormulaToggle = scoreHost?.querySelector("#toggle-advanced-formula-guide");
+  if (advancedFormulaToggle) {{
+    advancedFormulaToggle.addEventListener("click", () => {{
+      advancedFormulaGuideExpanded = !advancedFormulaGuideExpanded;
+      const body = scoreHost.querySelector("#advanced-formula-guide-body");
+      if (body) body.hidden = !advancedFormulaGuideExpanded;
+      const icon = advancedFormulaToggle.querySelector(".material-symbols-outlined");
+      const label = advancedFormulaToggle.querySelector("span:last-child");
+      advancedFormulaToggle.setAttribute("aria-expanded", advancedFormulaGuideExpanded ? "true" : "false");
+      if (icon) icon.textContent = advancedFormulaGuideExpanded ? "expand_less" : "expand_more";
+      if (label) label.textContent = advancedFormulaGuideExpanded ? "Collapse" : "Expand";
+    }});
+  }}
 }}
-function renderAll() {{ availabilityBreakdownForAssignee = ""; render(compute()); }}
+function renderAll() {{ availabilityBreakdownForAssignee = ""; plannedHoursBreakdownForAssignee = ""; render(compute()); }}
+function setHeaderCollapsed(isCollapsed) {{
+  const collapsed = Boolean(isCollapsed);
+  if (headerSectionEl) {{
+    headerSectionEl.classList.toggle("is-collapsed", collapsed);
+  }}
+  document.body.classList.toggle("header-collapsed", collapsed);
+  if (headerToggleButton) {{
+    headerToggleButton.setAttribute("aria-expanded", collapsed ? "false" : "true");
+    headerToggleButton.textContent = collapsed ? "Expand Header" : "Collapse Header";
+  }}
+  if (headerExpandFabButton) {{
+    headerExpandFabButton.setAttribute("aria-hidden", collapsed ? "false" : "true");
+  }}
+  localStorage.setItem(HEADER_COLLAPSED_STORAGE_KEY, collapsed ? "1" : "0");
+}}
 document.getElementById("projects").innerHTML = projects.map((p) => `<option value="${{e(p)}}" selected>${{e(p)}}</option>`).join("");
 refreshCapacityProfileOptions();
 document.getElementById("from").value = defaultFrom; document.getElementById("to").value = defaultTo;
 document.getElementById("meta").textContent = `Generated: ${{payload.generated_at || "-"}} | Data window: ${{defaultFrom}} to ${{defaultTo}}`;
+setHeaderCollapsed(localStorage.getItem(HEADER_COLLAPSED_STORAGE_KEY) === "1");
+if (headerToggleButton) {{
+  headerToggleButton.addEventListener("click", () => {{
+    const currentlyCollapsed = headerSectionEl ? headerSectionEl.classList.contains("is-collapsed") : false;
+    setHeaderCollapsed(!currentlyCollapsed);
+  }});
+}}
+if (headerExpandFabButton) {{
+  headerExpandFabButton.addEventListener("click", () => {{
+    setHeaderCollapsed(false);
+  }});
+}}
+if (advFilterToggleButton && advFilterMenu) {{
+  advFilterToggleButton.addEventListener("click", () => {{
+    const expanded = advFilterToggleButton.getAttribute("aria-expanded") === "true";
+    setAdvancedFilterMenuOpen(!expanded);
+  }});
+  advFilterMenu.querySelectorAll(".adv-filter-item").forEach((btn) => {{
+    btn.addEventListener("click", () => {{
+      const preset = String(btn.getAttribute("data-preset") || "");
+      if (preset === "last30") applyDateShortcut("last_30_days");
+      else if (preset === "lastMonth") applyDateShortcut("previous_month");
+      else if (preset === "currentMonth") applyDateShortcut("current_month");
+      else if (preset === "last90") applyDateShortcut("last_90_days");
+      else if (preset === "lastQuarter") applyDateShortcut("last_quarter");
+      else if (preset === "currentQuarter") applyDateShortcut("current_quarter");
+      setDateFilterStatus(`Preset applied: ${{btn.textContent || preset}}`);
+      setAdvancedFilterMenuOpen(false);
+      renderAll();
+    }});
+  }});
+  document.addEventListener("click", (event) => {{
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    if (target.closest(".adv-filter-wrap")) return;
+    setAdvancedFilterMenuOpen(false);
+  }});
+  document.addEventListener("keydown", (event) => {{
+    if (event.key === "Escape") setAdvancedFilterMenuOpen(false);
+  }});
+}}
 document.getElementById("toggle-performance-kpis").addEventListener("click", () => {{
   const wrap = document.getElementById("performance-kpis-wrap");
   const collapsed = wrap.classList.toggle("is-collapsed");
@@ -1849,9 +2752,24 @@ document.getElementById("toggle-team-performance").addEventListener("click", () 
   const collapsed = sec.classList.toggle("is-collapsed");
   document.querySelector("#toggle-team-performance .hint").textContent = collapsed ? "click to expand" : "click to collapse";
 }});
-document.getElementById("apply").addEventListener("click", renderAll);
-if (capacityProfileSelectEl) capacityProfileSelectEl.addEventListener("change", renderAll);
-document.getElementById("reset").addEventListener("click", ()=>{{ document.getElementById("from").value=defaultFrom; document.getElementById("to").value=defaultTo; document.getElementById("search").value=\"\"; document.getElementById("leader-sort").value=\"rmis\"; document.getElementById("filter-risk").value=\"all\"; document.getElementById("filter-missed").value=\"all\"; if (capacityProfileSelectEl) capacityProfileSelectEl.value=\"auto\"; selectedTeam = \"\"; Array.from(document.getElementById("projects").options).forEach(o => o.selected=true); renderAll(); }});
+document.getElementById("apply").addEventListener("click", ()=>{{ setDateFilterStatus(""); renderAll(); }});
+if (capacityProfileSelectEl) {{
+  capacityProfileSelectEl.addEventListener("change", () => {{
+    syncCapacityProfileSelection(capacityProfileSelectEl.value, "header");
+    renderAll();
+  }});
+}}
+if (capacityProfileTopSelectEl) {{
+  capacityProfileTopSelectEl.addEventListener("change", () => {{
+    syncCapacityProfileSelection(capacityProfileTopSelectEl.value, "top");
+    renderAll();
+  }});
+}}
+document.getElementById("leader-scoring-mode").addEventListener("change", renderAll);
+document.getElementById("leader-sort").addEventListener("change", renderAll);
+document.getElementById("filter-risk").addEventListener("change", renderAll);
+document.getElementById("filter-missed").addEventListener("change", renderAll);
+document.getElementById("reset").addEventListener("click", ()=>{{ document.getElementById("from").value=defaultFrom; document.getElementById("to").value=defaultTo; document.getElementById("search").value=\"\"; document.getElementById("leader-sort").value=\"score\"; document.getElementById("leader-scoring-mode").value=\"simple\"; document.getElementById("filter-risk").value=\"all\"; document.getElementById("filter-missed").value=\"all\"; syncCapacityProfileSelection(\"auto\", \"\"); selectedTeam = \"\"; setDateFilterStatus(""); Array.from(document.getElementById("projects").options).forEach(o => o.selected=true); renderAll(); }});
 document.getElementById("shortcut-current-month").addEventListener("click", ()=>{{ applyDateShortcut("current_month"); renderAll(); }});
 document.getElementById("shortcut-previous-month").addEventListener("click", ()=>{{ applyDateShortcut("previous_month"); renderAll(); }});
 document.getElementById("shortcut-last-30-days").addEventListener("click", ()=>{{ applyDateShortcut("last_30_days"); renderAll(); }});
@@ -1891,6 +2809,8 @@ def main() -> None:
     work_items = _load_work_items(paths["work_items_path"])
     worklogs = _load_worklogs(paths["worklog_path"], work_items)
     leave_rows = _load_unplanned_leave_rows(paths["leave_report_path"])
+    leave_issue_keys = _load_leave_issue_keys(paths["leave_report_path"])
+    simple_scoring = _precompute_simple_scoring(paths["db_path"], work_items, worklogs)
     payload = _build_payload(
         worklogs,
         list(work_items.values()),
@@ -1900,6 +2820,8 @@ def main() -> None:
         entities_catalog=entities_catalog,
         managed_fields=managed_fields,
         capacity_profiles=capacity_profiles,
+        leave_issue_keys=leave_issue_keys,
+        simple_scoring=simple_scoring,
     )
     paths["html_path"].write_text(_build_html(payload), encoding="utf-8")
     print(f"Employee performance logs: {len(worklogs)}")
@@ -1910,4 +2832,3 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate employee performance report.")
     parser.parse_args()
     main()
-
