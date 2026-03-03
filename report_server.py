@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import date, datetime, timezone
+import io
 import json
 import os
 import random
@@ -12,6 +13,7 @@ import subprocess
 import sys
 import threading
 import time
+import uuid
 from pathlib import Path
 
 from flask import Flask, jsonify, redirect, request, send_file
@@ -72,6 +74,40 @@ from report_entity_registry import (
 )
 from ipp_meeting_utils import resolve_jira_end_date_field_ids, resolve_jira_start_date_field_id
 from jira_client import BASE_URL, extract_jira_key_from_url, get_session
+from planned_actual_table_view_service import (
+    DEFAULT_RETENTION_DAYS as PACTV_DEFAULT_RETENTION_DAYS,
+    VALID_MODES as PACTV_VALID_MODES,
+    build_snapshot_payload as pactv_build_snapshot_payload,
+    begin_queued_run as pactv_begin_queued_run,
+    create_run as pactv_create_run,
+    diff_snapshots as pactv_diff_snapshots,
+    export_csv_bytes as pactv_export_csv_bytes,
+    export_xlsx_bytes as pactv_export_xlsx_bytes,
+    finish_run_failed as pactv_finish_run_failed,
+    finish_run_success as pactv_finish_run_success,
+    get_run as pactv_get_run,
+    has_running_run_for_scope as pactv_has_running_run_for_scope,
+    init_db as pactv_init_db,
+    is_cancel_requested as pactv_is_cancel_requested,
+    list_history as pactv_list_history,
+    list_queue as pactv_list_queue,
+    mark_run_canceled as pactv_mark_run_canceled,
+    load_snapshot_by_filter as pactv_load_snapshot_by_filter,
+    load_snapshot_by_id as pactv_load_snapshot_by_id,
+    load_sync_state as pactv_load_sync_state,
+    load_ui_settings as pactv_load_ui_settings,
+    make_filter as pactv_make_filter,
+    prune_old_data as pactv_prune_old_data,
+    pin_official_snapshot as pactv_pin_official_snapshot,
+    request_cancel as pactv_request_cancel,
+    save_snapshot as pactv_save_snapshot,
+    save_snapshot_event as pactv_save_snapshot_event,
+    save_source_audit as pactv_save_source_audit,
+    save_sync_state as pactv_save_sync_state,
+    save_ui_settings as pactv_save_ui_settings,
+    unpin_official_snapshot as pactv_unpin_official_snapshot,
+    update_run_progress as pactv_update_run_progress,
+)
 
 
 REPORT_FILENAME_TO_ID: dict[str, str] = {
@@ -88,6 +124,7 @@ REPORT_FILENAME_TO_ID: dict[str, str] = {
     "leaves_planned_calendar.html": "leaves_planned_calendar",
     "employee_performance_report.html": "employee_performance",
     "planned_vs_dispensed_report.html": "planned_vs_dispensed",
+    "planned_actual_table_view.html": "planned_actual_table_view",
 }
 
 REPORT_REFRESH_CHAINS: dict[str, list[str]] = {
@@ -144,6 +181,8 @@ REPORT_REFRESH_CHAINS: dict[str, list[str]] = {
     ],
     # This report is API-driven (atomic Jira fetches), so no batch refresh scripts.
     "planned_vs_dispensed": [],
+    # This report is API-driven and DB-backed.
+    "planned_actual_table_view": [],
 }
 
 REFRESH_WIDGET_MARKER = "codex-refresh-widget-v2"
@@ -175,7 +214,8 @@ STATIC_REPORT_NAV_ITEMS: list[dict[str, object]] = [
     {"page_key": "planned_rmis_report", "title": "Planned RMIs", "href": "/planned_rmis_report.html", "icon": "assignment_turned_in", "file": "planned_rmis_report.html", "default_nav_order": 90, "page_type": "report"},
     {"page_key": "phase_rmi_gantt_report", "title": "Phase RMI Gantt", "href": "/phase_rmi_gantt_report.html", "icon": "view_timeline", "file": "phase_rmi_gantt_report.html", "default_nav_order": 100, "page_type": "report"},
     {"page_key": "planned_vs_dispensed_report", "title": "Planned vs Dispensed", "href": "/planned_vs_dispensed_report.html", "icon": "analytics", "file": "planned_vs_dispensed_report.html", "default_nav_order": 110, "page_type": "report"},
-    {"page_key": "ipp_meeting_dashboard", "title": "IPP Meeting Dashboard", "href": "/ipp_meeting_dashboard.html", "icon": "groups", "file": "ipp_meeting_dashboard.html", "default_nav_order": 120, "page_type": "report"},
+    {"page_key": "planned_actual_table_view", "title": "Planned vs Actual Table View", "href": "/planned_actual_table_view.html", "icon": "table_view", "file": "planned_actual_table_view.html", "default_nav_order": 120, "page_type": "report"},
+    {"page_key": "ipp_meeting_dashboard", "title": "IPP Meeting Dashboard", "href": "/ipp_meeting_dashboard.html", "icon": "groups", "file": "ipp_meeting_dashboard.html", "default_nav_order": 130, "page_type": "report"},
 ]
 
 STATIC_ADMIN_NAV_ITEMS: list[dict[str, object]] = [
@@ -6518,6 +6558,9 @@ def _resolve_report_html_sources(base_dir: Path) -> dict[str, Path]:
         "planned_vs_dispensed_report.html": _resolve_output_html_path(
             "JIRA_PLANNED_VS_DISPENSED_HTML_PATH", "planned_vs_dispensed_report.html", base_dir
         ),
+        "planned_actual_table_view.html": _resolve_output_html_path(
+            "JIRA_PLANNED_ACTUAL_TABLE_VIEW_HTML_PATH", "planned_actual_table_view.html", base_dir
+        ),
     }
 
 
@@ -6867,7 +6910,7 @@ def _build_report_info_catalog(report_id: str) -> list[dict]:
         "nested_view": [
             {
                 "id": "nested.capacity_gap",
-                "label": "Capacity available for more work",
+                "label": "Availability for more work",
                 "report": "nested_view_report",
                 "ui_targets": ["#score-capacity-gap-card", "#score-capacity-gap"],
                 "definition": "Capacity remaining after planned project hours and planned RLT leave estimates.",
@@ -9307,6 +9350,150 @@ def _load_planned_vs_dispensed_hierarchy(
     }
 
 
+def _fetch_subtask_actual_hours_by_keys(session, subtask_keys: list[str]) -> dict[str, float]:
+    keys = sorted({_to_text(item).upper() for item in (subtask_keys or []) if _to_text(item)})
+    if not keys:
+        return {}
+    issues = _fetch_jira_issues_by_keys(
+        session,
+        keys,
+        ["timespent", "aggregatetimespent", "issuetype", "summary"],
+    )
+    out: dict[str, float] = {}
+    for issue in issues:
+        key = _to_text(issue.get("key")).upper()
+        fields = issue.get("fields", {}) or {}
+        raw_seconds = fields.get("aggregatetimespent")
+        if raw_seconds in (None, ""):
+            raw_seconds = fields.get("timespent")
+        try:
+            seconds = float(raw_seconds or 0.0)
+        except Exception:
+            seconds = 0.0
+        out[key] = _round_hours(seconds / 3600.0)
+    for key in keys:
+        out.setdefault(key, 0.0)
+    return out
+
+
+def _load_planned_actual_hierarchy_incremental(
+    session,
+    from_date: date,
+    to_date: date,
+    mode: str,
+    selected_projects: set[str],
+    last_successful_fetch_utc: str,
+) -> dict[str, object]:
+    watermark_date = _to_text(last_successful_fetch_utc)[:10]
+    if _parse_iso_date(watermark_date) is None:
+        raise ValueError("Incremental watermark is unavailable.")
+
+    start_field_id = resolve_jira_start_date_field_id(
+        session, BASE_URL, project_keys=sorted(selected_projects) if selected_projects else None
+    )
+    end_field_ids = resolve_jira_end_date_field_ids(
+        session, BASE_URL, project_keys=sorted(selected_projects) if selected_projects else None
+    )
+    if "duedate" not in end_field_ids:
+        end_field_ids.append("duedate")
+    fields = _planned_vs_dispensed_issue_fields(start_field_id, end_field_ids)
+
+    project_clause = _project_jql_clause(selected_projects)
+    prefix = f"{project_clause} AND " if project_clause else ""
+    changed_jql = (
+        f'{prefix}updated >= "{watermark_date}" '
+        f'AND (issuetype = Epic OR issuetype = Story OR issueType in subTaskIssueTypes())'
+    )
+    changed_issues = _fetch_jira_issues_for_jql(session, changed_jql, fields)
+
+    impacted_epics: set[str] = set()
+    parent_story_keys: set[str] = set()
+    for issue in changed_issues:
+        normalized = _normalize_pvd_issue(issue, start_field_id, end_field_ids)
+        kind = _to_text(normalized.get("issue_kind")).lower()
+        if kind == "epic":
+            impacted_epics.add(_to_text(normalized.get("issue_key")).upper())
+        elif kind == "story":
+            epic_key = _to_text(normalized.get("epic_key_candidate")).upper()
+            if epic_key:
+                impacted_epics.add(epic_key)
+        elif kind == "subtask":
+            parent_story = _to_text(normalized.get("parent_key")).upper()
+            if parent_story:
+                parent_story_keys.add(parent_story)
+
+    if parent_story_keys:
+        for story in _fetch_jira_issues_by_keys(session, sorted(parent_story_keys), fields):
+            story_fields = story.get("fields", {}) or {}
+            epic_key = _extract_epic_key_candidate(story_fields)
+            if epic_key:
+                impacted_epics.add(epic_key)
+
+    if not impacted_epics:
+        return {
+            "start_field_id": start_field_id,
+            "end_field_ids": end_field_ids,
+            "epics": [],
+            "stories": [],
+            "subtasks": [],
+        }
+
+    epic_issues = _fetch_jira_issues_by_keys(session, sorted(impacted_epics), fields)
+    scoped_epics: dict[str, dict] = {}
+    for issue in epic_issues:
+        normalized = _normalize_pvd_issue(issue, start_field_id, end_field_ids, issue_kind_override="epic")
+        if mode == "planned_dates":
+            if not _issue_overlaps_range(normalized["planned_start"], normalized["planned_due"], from_date, to_date):
+                continue
+        scoped_epics[normalized["issue_key"]] = normalized
+
+    if not scoped_epics:
+        return {
+            "start_field_id": start_field_id,
+            "end_field_ids": end_field_ids,
+            "epics": [],
+            "stories": [],
+            "subtasks": [],
+        }
+
+    story_issues = _fetch_story_issues_for_epics(session, sorted(scoped_epics.keys()), fields, project_keys=selected_projects)
+    stories: list[dict] = []
+    story_to_epic: dict[str, str] = {}
+    valid_epic_keys = set(scoped_epics.keys())
+    for issue in story_issues:
+        normalized = _normalize_pvd_issue(issue, start_field_id, end_field_ids, issue_kind_override="story")
+        story_fields = issue.get("fields", {}) or {}
+        epic_key = _resolve_epic_key_for_story(story_fields, valid_epic_keys) or normalized["epic_key_candidate"]
+        epic_key = _to_text(epic_key).upper()
+        if not epic_key or epic_key not in valid_epic_keys:
+            continue
+        normalized["epic_key"] = epic_key
+        story_to_epic[normalized["issue_key"]] = epic_key
+        stories.append(normalized)
+
+    subtasks: list[dict] = []
+    story_keys = sorted(story_to_epic.keys())
+    if story_keys:
+        subtask_issues = _fetch_subtask_issues_for_stories(session, story_keys, fields, project_keys=selected_projects)
+        for issue in subtask_issues:
+            normalized = _normalize_pvd_issue(issue, start_field_id, end_field_ids, issue_kind_override="subtask")
+            story_key = _to_text(normalized.get("parent_key")).upper()
+            epic_key = story_to_epic.get(story_key, "")
+            if not epic_key:
+                continue
+            normalized["story_key"] = story_key
+            normalized["epic_key"] = epic_key
+            subtasks.append(normalized)
+
+    return {
+        "start_field_id": start_field_id,
+        "end_field_ids": end_field_ids,
+        "epics": list(scoped_epics.values()),
+        "stories": stories,
+        "subtasks": subtasks,
+    }
+
+
 def _story_sync_row_from_issue(
     issue: dict,
     epic_key: str,
@@ -9791,6 +9978,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
     init_manage_fields_db(capacity_paths["db_path"])
     init_managed_projects_db(capacity_paths["db_path"])
     _init_page_categories_db(capacity_paths["db_path"])
+    pactv_init_db(capacity_paths["db_path"])
     default_project_keys = parse_project_keys_from_env()
 
     def _resolve_seed_project_name(project_key: str) -> str:
@@ -9811,6 +9999,32 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
     refresh_lock = threading.Lock()
     actual_hours_cache: dict[tuple[str, str, str, str, str, str, float, float], dict[str, object]] = {}
     pvd_response_cache_version = "v6"
+    pactv_jobs_lock = threading.Lock()
+    pactv_active_scopes: set[str] = set()
+    pactv_pending_by_scope: dict[str, list[dict[str, object]]] = {}
+
+    def _request_roles() -> set[str]:
+        direct = _to_text(request.headers.get("X-Role"))
+        listed = _to_text(request.headers.get("X-Roles")) or _to_text(request.headers.get("X-User-Role"))
+        source = listed or direct
+        roles = {
+            _to_text(part).lower()
+            for part in source.split(",")
+            if _to_text(part)
+        } if source else set()
+        return roles
+
+    def _pactv_require_roles(allowed: set[str]):
+        roles = _request_roles()
+        if roles.intersection(allowed):
+            return None
+        return jsonify(
+            {
+                "ok": False,
+                "error": "Forbidden. Missing required role.",
+                "required_any_of": sorted(allowed),
+            }
+        ), 403
 
     def _is_rlt_managed_project(item: dict) -> bool:
         key = _to_text((item or {}).get("project_key")).upper()
@@ -9856,6 +10070,91 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             )
             out[key] = name
         return out
+
+    def _pactv_rows_with_managed_display_names(rows: list[dict]) -> list[dict]:
+        source = rows if isinstance(rows, list) else []
+        managed_names = _managed_project_name_map()
+        out: list[dict] = []
+        for row in source:
+            if not isinstance(row, dict):
+                out.append(row)
+                continue
+            item = dict(row)
+            project_key = _to_text(item.get("project_key")).upper()
+            display_name = managed_names.get(project_key, "")
+            if display_name and _to_text(item.get("row_type")).lower() == "project":
+                item["project_name"] = display_name
+                item["summary"] = display_name
+                item["aspect"] = display_name
+            out.append(item)
+        return out
+
+    def _parse_pactv_request_filters(args_or_payload) -> tuple[str, str, str, set[str], set[str], set[str], object]:
+        mode = _to_text((args_or_payload or {}).get("mode")).lower() or "log_date"
+        if mode not in PACTV_VALID_MODES:
+            raise ValueError("Invalid mode. Expected 'log_date' or 'planned_dates'.")
+        if hasattr(args_or_payload, "get"):
+            from_raw, to_raw = _resolve_effective_range_from_request(args_or_payload)
+        else:
+            from_raw = _to_text((args_or_payload or {}).get("from"))
+            to_raw = _to_text((args_or_payload or {}).get("to"))
+        from_date = _parse_iso_date(from_raw)
+        to_date = _parse_iso_date(to_raw)
+        if from_date is None or to_date is None:
+            raise ValueError("Invalid date format. Expected YYYY-MM-DD.")
+
+        projects_raw = _to_text((args_or_payload or {}).get("projects"))
+        statuses_raw = _to_text((args_or_payload or {}).get("statuses"))
+        assignees_raw = _to_text((args_or_payload or {}).get("assignees"))
+        selected_projects = {
+            _to_text(item).upper()
+            for item in projects_raw.split(",")
+            if _to_text(item)
+        } if projects_raw else set()
+        selected_statuses = {
+            _to_text(item).lower()
+            for item in statuses_raw.split(",")
+            if _to_text(item)
+        } if statuses_raw else set()
+        selected_assignees = {
+            _to_text(item).lower()
+            for item in assignees_raw.split(",")
+            if _to_text(item)
+        } if assignees_raw else set()
+        default_scope, _managed_keys, _default_selected = _managed_project_scope_defaults()
+        if not selected_projects:
+            selected_projects = set(default_scope)
+        return from_raw, to_raw, mode, selected_projects, selected_statuses, selected_assignees, (from_date, to_date)
+
+    def _pactv_scope_key(flt) -> str:
+        return "|".join(
+            [
+                flt.from_date,
+                flt.to_date,
+                flt.mode,
+                flt.projects_scope,
+                flt.statuses_scope,
+                flt.assignees_scope,
+            ]
+        )
+
+    def _pactv_managed_options_fallback() -> dict[str, list[str]]:
+        try:
+            managed = list_managed_projects(capacity_paths["db_path"], include_inactive=False)
+        except Exception:
+            managed = []
+        project_options = []
+        seen: set[str] = set()
+        for item in managed:
+            key = _to_text(item.get("project_key")).upper()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            name = _to_text(item.get("display_name")) or _to_text(item.get("project_name")) or key
+            project_options.append({"project_key": key, "project_name": name})
+        project_options.sort(key=lambda x: _to_text(x.get("project_key")))
+        projects = [_to_text(item.get("project_key")) for item in project_options]
+        return {"projects": projects, "project_options": project_options, "statuses": [], "assignees": []}
 
     def _normalize_pvd_plan_source(raw_value: str) -> str:
         value = _to_text(raw_value).strip().lower()
@@ -10404,7 +10703,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         response.headers["Access-Control-Allow-Headers"] = "Content-Type"
         response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
         req_path = _to_text(getattr(request, "path", ""))
-        if req_path.startswith("/api/planned-vs-dispensed/"):
+        if req_path.startswith("/api/planned-vs-dispensed/") or req_path.startswith("/api/planned-actual-table-view/"):
             response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
             response.headers["Pragma"] = "no-cache"
             response.headers["Expires"] = "0"
@@ -11192,6 +11491,654 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             payload=payload,
         )
         return jsonify(payload)
+
+    def _run_pactv_refresh(
+        run_id: str,
+        flt,
+        from_date: date,
+        to_date: date,
+        selected_projects: set[str],
+        selected_statuses: set[str],
+        selected_assignees: set[str],
+        force_full: bool,
+        scope_key: str,
+    ) -> None:
+        source_used = "jira_full"
+        stats: dict[str, object] = {}
+
+        def _ensure_not_canceled(step: str) -> None:
+            if pactv_is_cancel_requested(capacity_paths["db_path"], run_id):
+                pactv_mark_run_canceled(
+                    capacity_paths["db_path"],
+                    run_id,
+                    reason=f"Canceled by user during '{step}'. Rollback applied; previous snapshot retained.",
+                )
+                raise RuntimeError("run_canceled")
+
+        try:
+            pactv_update_run_progress(capacity_paths["db_path"], run_id, "initializing", 5)
+            _ensure_not_canceled("initializing")
+            session = get_session()
+            hierarchy: dict[str, object] = {}
+            sync_state = pactv_load_sync_state(capacity_paths["db_path"], scope_key)
+
+            if not force_full and sync_state and _to_text(sync_state.get("last_successful_fetch_utc")):
+                pactv_update_run_progress(capacity_paths["db_path"], run_id, "fetching_incremental", 25)
+                _ensure_not_canceled("fetching_incremental")
+                try:
+                    hierarchy = _load_planned_actual_hierarchy_incremental(
+                        session=session,
+                        from_date=from_date,
+                        to_date=to_date,
+                        mode=flt.mode,
+                        selected_projects=selected_projects,
+                        last_successful_fetch_utc=_to_text(sync_state.get("last_successful_fetch_utc")),
+                    )
+                    source_used = "jira_incremental"
+                    if not hierarchy.get("epics") and not hierarchy.get("stories") and not hierarchy.get("subtasks"):
+                        _ensure_not_canceled("fallback_fetching_full")
+                        hierarchy = _load_planned_vs_dispensed_hierarchy(
+                            session=session,
+                            from_date=from_date,
+                            to_date=to_date,
+                            mode=flt.mode,
+                            selected_projects=selected_projects,
+                        )
+                        source_used = "jira_full_fallback"
+                except Exception:
+                    _ensure_not_canceled("fallback_fetching_full")
+                    hierarchy = _load_planned_vs_dispensed_hierarchy(
+                        session=session,
+                        from_date=from_date,
+                        to_date=to_date,
+                        mode=flt.mode,
+                        selected_projects=selected_projects,
+                    )
+                    source_used = "jira_full_fallback"
+            else:
+                pactv_update_run_progress(capacity_paths["db_path"], run_id, "fetching_full", 25)
+                _ensure_not_canceled("fetching_full")
+                hierarchy = _load_planned_vs_dispensed_hierarchy(
+                    session=session,
+                    from_date=from_date,
+                    to_date=to_date,
+                    mode=flt.mode,
+                    selected_projects=selected_projects,
+                )
+                source_used = "jira_full"
+
+            pactv_update_run_progress(capacity_paths["db_path"], run_id, "loading_actuals", 55)
+            _ensure_not_canceled("loading_actuals")
+            subtask_keys = [
+                _to_text(item.get("issue_key")).upper()
+                for item in (hierarchy.get("subtasks", []) or [])
+                if _to_text(item.get("issue_key"))
+            ]
+            actual_by_subtask = _fetch_subtask_actual_hours_by_keys(session, subtask_keys)
+            pactv_update_run_progress(capacity_paths["db_path"], run_id, "computing", 75)
+            _ensure_not_canceled("computing")
+            rows, totals, options = pactv_build_snapshot_payload(
+                hierarchy=hierarchy,
+                actual_hours_by_subtask=actual_by_subtask,
+                selected_projects=selected_projects,
+                selected_statuses=selected_statuses,
+                selected_assignees=selected_assignees,
+            )
+
+            snapshot_id = f"pactv-{uuid.uuid4().hex[:12]}"
+            watermark_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            source_payload = {
+                "source": source_used,
+                "computed_at_utc": watermark_utc,
+            }
+            pactv_update_run_progress(capacity_paths["db_path"], run_id, "saving", 90)
+            _ensure_not_canceled("saving")
+            pactv_save_snapshot(
+                db_path=capacity_paths["db_path"],
+                snapshot_id=snapshot_id,
+                flt=flt,
+                rows=rows,
+                totals=totals,
+                options=options,
+                source=source_payload,
+                watermark_utc=watermark_utc,
+            )
+            counts = {
+                "epics": len(hierarchy.get("epics", []) or []),
+                "stories": len(hierarchy.get("stories", []) or []),
+                "subtasks": len(hierarchy.get("subtasks", []) or []),
+                "rows": len(rows),
+            }
+            pactv_save_source_audit(
+                db_path=capacity_paths["db_path"],
+                run_id=run_id,
+                snapshot_id=snapshot_id,
+                source_type=source_used,
+                counts=counts,
+                payload={"totals": totals, "counts": counts},
+            )
+            pactv_save_snapshot_event(
+                db_path=capacity_paths["db_path"],
+                snapshot_id=snapshot_id,
+                run_id=run_id,
+                event_type="refresh_success",
+                actor="system",
+                details={"source": source_used, "counts": counts},
+            )
+            pactv_save_sync_state(capacity_paths["db_path"], scope_key, watermark_utc, run_id)
+            pactv_prune_old_data(capacity_paths["db_path"], retention_days=PACTV_DEFAULT_RETENTION_DAYS)
+            stats = {
+                "snapshot_id": snapshot_id,
+                "counts": counts,
+            }
+            pactv_finish_run_success(capacity_paths["db_path"], run_id, source_used, stats)
+        except Exception as exc:
+            if "run_canceled" in str(exc):
+                return
+            pactv_save_snapshot_event(
+                db_path=capacity_paths["db_path"],
+                snapshot_id="",
+                run_id=run_id,
+                event_type="refresh_failed",
+                actor="system",
+                details={"error": _to_text(exc)},
+            )
+            pactv_finish_run_failed(
+                capacity_paths["db_path"],
+                run_id,
+                f"Refresh failed: {exc}",
+                stats=stats,
+            )
+
+    def _start_pactv_job(job: dict[str, object]) -> None:
+        def _runner_for_scope(first_job: dict[str, object]) -> None:
+            current_job = dict(first_job)
+            while True:
+                run_id_local = _to_text(current_job.get("run_id"))
+                scope_key_local = _to_text(current_job.get("scope_key"))
+                if run_id_local:
+                    _run_pactv_refresh(
+                        run_id=run_id_local,
+                        flt=current_job.get("flt"),
+                        from_date=current_job.get("from_date"),
+                        to_date=current_job.get("to_date"),
+                        selected_projects=current_job.get("selected_projects") or set(),
+                        selected_statuses=current_job.get("selected_statuses") or set(),
+                        selected_assignees=current_job.get("selected_assignees") or set(),
+                        force_full=bool(current_job.get("force_full")),
+                        scope_key=scope_key_local,
+                    )
+                with pactv_jobs_lock:
+                    queue = pactv_pending_by_scope.get(scope_key_local, [])
+                    next_job = None
+                    while queue and next_job is None:
+                        candidate = queue.pop(0)
+                        candidate_run_id = _to_text(candidate.get("run_id"))
+                        if pactv_begin_queued_run(capacity_paths["db_path"], candidate_run_id):
+                            next_job = dict(candidate)
+                        else:
+                            pactv_mark_run_canceled(
+                                capacity_paths["db_path"],
+                                candidate_run_id,
+                                reason="Canceled while queued. Rollback applied; previous snapshot retained.",
+                            )
+                    if queue:
+                        pactv_pending_by_scope[scope_key_local] = queue
+                    else:
+                        pactv_pending_by_scope.pop(scope_key_local, None)
+                    if next_job is None:
+                        pactv_active_scopes.discard(scope_key_local)
+                        break
+                current_job = next_job
+
+        threading.Thread(target=_runner_for_scope, args=(job,), daemon=True).start()
+
+    @app.route("/api/planned-actual-table-view/summary", methods=["GET"])
+    def planned_actual_table_view_summary():
+        try:
+            from_raw, to_raw, mode, selected_projects, selected_statuses, selected_assignees, _parsed = _parse_pactv_request_filters(request.args)
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+
+        flt = pactv_make_filter(
+            from_raw,
+            to_raw,
+            mode,
+            selected_projects,
+            selected_statuses,
+            selected_assignees,
+        )
+        snapshot = pactv_load_snapshot_by_filter(capacity_paths["db_path"], flt)
+        if not snapshot:
+            return jsonify(
+                {
+                    "ok": True,
+                    "from_date": from_raw,
+                    "to_date": to_raw,
+                    "mode": mode,
+                    "rows": [],
+                    "totals": {
+                        "planned_hours": 0.0,
+                        "actual_hours": 0.0,
+                        "variance_hours": 0.0,
+                        "project_count": 0,
+                        "epic_count": 0,
+                        "story_count": 0,
+                        "subtask_count": 0,
+                    },
+                    "filter_options": _pactv_managed_options_fallback(),
+                    "selected_projects": sorted(selected_projects),
+                    "selected_statuses": sorted(selected_statuses),
+                    "selected_assignees": sorted(selected_assignees),
+                    "source": "snapshot_db",
+                    "needs_refresh": True,
+                }
+            )
+        managed_names = _managed_project_name_map()
+        snapshot_options = snapshot.get("options", {}) if isinstance(snapshot.get("options"), dict) else {}
+        merged_project_keys = sorted(
+            {
+                *_managed_project_scope_defaults()[1],
+                *[
+                    _to_text(item).upper()
+                    for item in (snapshot_options.get("projects", []) or [])
+                    if _to_text(item)
+                ],
+                *sorted(selected_projects),
+            }
+        )
+        return jsonify(
+            {
+                "ok": True,
+                "from_date": snapshot.get("from_date"),
+                "to_date": snapshot.get("to_date"),
+                "mode": snapshot.get("mode"),
+                "rows": _pactv_rows_with_managed_display_names(snapshot.get("rows", [])),
+                "totals": snapshot.get("totals", {}),
+                "filter_options": {
+                    **snapshot_options,
+                    "projects": merged_project_keys,
+                    "project_options": [
+                        {
+                            "project_key": key,
+                            "project_name": (managed_names.get(key) or key),
+                        }
+                        for key in merged_project_keys
+                    ],
+                },
+                "selected_projects": sorted(selected_projects),
+                "selected_statuses": sorted(selected_statuses),
+                "selected_assignees": sorted(selected_assignees),
+                "snapshot_id": snapshot.get("snapshot_id"),
+                "computed_at_utc": snapshot.get("computed_at_utc"),
+                "is_official": bool(snapshot.get("is_official")),
+                "official_pinned_by": _to_text(snapshot.get("official_pinned_by")),
+                "official_pinned_at_utc": _to_text(snapshot.get("official_pinned_at_utc")),
+                "lifecycle_state": _to_text(snapshot.get("lifecycle_state")) or "active",
+                "source": "snapshot_db",
+                "needs_refresh": False,
+            }
+        )
+
+    @app.route("/api/planned-actual-table-view/refresh", methods=["POST"])
+    def planned_actual_table_view_refresh():
+        role_error = _pactv_require_roles({"operator", "admin"})
+        if role_error is not None:
+            return role_error
+        payload = request.get_json(silent=True) or {}
+        try:
+            from_raw, to_raw, mode, selected_projects, selected_statuses, selected_assignees, parsed = _parse_pactv_request_filters(payload)
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        from_date, to_date = parsed
+        force_full_raw = _to_text(payload.get("force_full")).lower()
+        force_full = force_full_raw in {"1", "true", "yes", "y", "on"}
+        run_sync = _to_text(payload.get("run_sync")).lower() in {"1", "true", "yes", "y", "on"}
+        max_attempts_raw = _to_text(payload.get("max_attempts"))
+        try:
+            max_attempts = max(1, min(5, int(max_attempts_raw or "1")))
+        except Exception:
+            max_attempts = 1
+
+        flt = pactv_make_filter(
+            from_raw,
+            to_raw,
+            mode,
+            selected_projects,
+            selected_statuses,
+            selected_assignees,
+        )
+        scope_key = _pactv_scope_key(flt)
+        run_id = f"pactv-{int(time.time())}-{uuid.uuid4().hex[:8]}"
+        job = {
+            "run_id": run_id,
+            "flt": flt,
+            "from_date": from_date,
+            "to_date": to_date,
+            "selected_projects": selected_projects,
+            "selected_statuses": selected_statuses,
+            "selected_assignees": selected_assignees,
+            "force_full": force_full,
+            "scope_key": scope_key,
+        }
+
+        should_queue = False
+        queue_position = 0
+        with pactv_jobs_lock:
+            db_running = pactv_has_running_run_for_scope(capacity_paths["db_path"], flt)
+            active = scope_key in pactv_active_scopes
+            should_queue = db_running or active
+            if should_queue:
+                pactv_create_run(
+                    capacity_paths["db_path"],
+                    run_id,
+                    flt,
+                    force_full,
+                    status="queued",
+                    progress_step="queued",
+                    progress_pct=0,
+                    attempt=1,
+                    max_attempts=max_attempts,
+                )
+                queue = pactv_pending_by_scope.setdefault(scope_key, [])
+                queue.append(job)
+                queue_position = len(queue)
+            else:
+                pactv_active_scopes.add(scope_key)
+                pactv_create_run(
+                    capacity_paths["db_path"],
+                    run_id,
+                    flt,
+                    force_full,
+                    status="running",
+                    progress_step="initializing",
+                    progress_pct=1,
+                    attempt=1,
+                    max_attempts=max_attempts,
+                )
+
+        if should_queue:
+            return jsonify(
+                {
+                    "ok": True,
+                    "run_id": run_id,
+                    "status": "queued",
+                    "queue_position": queue_position,
+                    "attempt": 1,
+                    "max_attempts": max_attempts,
+                    "queued_at_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                }
+            ), 202
+
+        if run_sync:
+            _run_pactv_refresh(
+                run_id=run_id,
+                flt=flt,
+                from_date=from_date,
+                to_date=to_date,
+                selected_projects=selected_projects,
+                selected_statuses=selected_statuses,
+                selected_assignees=selected_assignees,
+                force_full=force_full,
+                scope_key=scope_key,
+            )
+            with pactv_jobs_lock:
+                pactv_active_scopes.discard(scope_key)
+            run_row = pactv_get_run(capacity_paths["db_path"], run_id) or {}
+            return jsonify(
+                {
+                    "ok": True,
+                    "run_id": run_id,
+                    "status": _to_text(run_row.get("status")) or "unknown",
+                    "attempt": int(run_row.get("attempt") or 1),
+                    "max_attempts": int(run_row.get("max_attempts") or 1),
+                    "queued_at_utc": _to_text(run_row.get("queued_at_utc")),
+                }
+            )
+
+        _start_pactv_job(job)
+        return jsonify({"ok": True, "run_id": run_id, "status": "running", "attempt": 1, "max_attempts": max_attempts, "queued_at_utc": ""}), 202
+
+    @app.route("/api/planned-actual-table-view/refresh/<path:run_id>", methods=["GET"])
+    def planned_actual_table_view_refresh_status(run_id: str):
+        role_error = _pactv_require_roles({"viewer", "operator", "admin"})
+        if role_error is not None:
+            return role_error
+        row = pactv_get_run(capacity_paths["db_path"], run_id)
+        if not row:
+            return jsonify({"ok": False, "error": "Run not found."}), 404
+        return jsonify(
+            {
+                "ok": True,
+                "run_id": _to_text(row.get("run_id")),
+                "status": _to_text(row.get("status")),
+                "step": _to_text(row.get("progress_step")),
+                "progress": int(row.get("progress_pct") or 0),
+                "source": _to_text(row.get("source")),
+                "started_at_utc": _to_text(row.get("started_at_utc")),
+                "completed_at_utc": _to_text(row.get("completed_at_utc")),
+                "queued_at_utc": _to_text(row.get("queued_at_utc")),
+                "error": _to_text(row.get("error_text")),
+                "attempt": int(row.get("attempt") or 1),
+                "max_attempts": int(row.get("max_attempts") or 1),
+                "next_retry_at_utc": _to_text(row.get("next_retry_at_utc")),
+                "stats": json.loads(_to_text(row.get("stats_json")) or "{}"),
+            }
+        )
+
+    @app.route("/api/planned-actual-table-view/filter-options", methods=["GET"])
+    def planned_actual_table_view_filter_options():
+        options = _pactv_managed_options_fallback()
+        latest = pactv_list_history(capacity_paths["db_path"], limit=1)
+        if latest:
+            snapshot_id = _to_text(latest[0].get("snapshot_id"))
+            snapshot = pactv_load_snapshot_by_id(capacity_paths["db_path"], snapshot_id)
+            if snapshot and isinstance(snapshot.get("options"), dict):
+                snap_options = snapshot.get("options") or {}
+                options = {
+                    **options,
+                    **snap_options,
+                }
+        managed_names = _managed_project_name_map()
+        managed_keys = _managed_project_scope_defaults()[1]
+        project_keys = options.get("projects", []) if isinstance(options, dict) else []
+        merged_keys = sorted(
+            {
+                *[_to_text(key).upper() for key in (project_keys or []) if _to_text(key)],
+                *[_to_text(key).upper() for key in (managed_keys or []) if _to_text(key)],
+            }
+        )
+        options["projects"] = merged_keys
+        options["project_options"] = [
+            {
+                "project_key": _to_text(key).upper(),
+                "project_name": managed_names.get(_to_text(key).upper(), _to_text(key).upper()),
+            }
+            for key in merged_keys
+            if _to_text(key)
+        ]
+        return jsonify({"ok": True, "options": options})
+
+    @app.route("/api/planned-actual-table-view/queue", methods=["GET"])
+    def planned_actual_table_view_queue():
+        role_error = _pactv_require_roles({"viewer", "operator", "admin"})
+        if role_error is not None:
+            return role_error
+        limit_raw = _to_text(request.args.get("limit"))
+        try:
+            limit = int(limit_raw) if limit_raw else 20
+        except Exception:
+            limit = 20
+        rows = pactv_list_queue(capacity_paths["db_path"], limit=limit)
+        return jsonify({"ok": True, "rows": rows})
+
+    @app.route("/api/planned-actual-table-view/cancel", methods=["POST"])
+    def planned_actual_table_view_cancel():
+        role_error = _pactv_require_roles({"operator", "admin"})
+        if role_error is not None:
+            return role_error
+        payload = request.get_json(silent=True) or {}
+        run_id = _to_text(payload.get("run_id"))
+        if not run_id:
+            running = [row for row in pactv_list_queue(capacity_paths["db_path"], limit=50) if _to_text(row.get("status")) == "running"]
+            if running:
+                run_id = _to_text(running[0].get("run_id"))
+        if not run_id:
+            return jsonify({"ok": False, "error": "run_id is required."}), 400
+
+        row_before = pactv_get_run(capacity_paths["db_path"], run_id)
+        if not row_before:
+            return jsonify({"ok": False, "error": "Run not found."}), 404
+        status_before = _to_text(row_before.get("status")).lower()
+        if status_before not in {"queued", "running"}:
+            return jsonify({"ok": False, "error": f"Run is not cancelable (status={status_before})."}), 409
+
+        accepted = pactv_request_cancel(capacity_paths["db_path"], run_id)
+        if not accepted:
+            return jsonify({"ok": False, "error": "Cancel request was not accepted."}), 409
+
+        if status_before == "queued":
+            with pactv_jobs_lock:
+                for scope_key, jobs in list(pactv_pending_by_scope.items()):
+                    filtered = [item for item in jobs if _to_text(item.get("run_id")) != run_id]
+                    if filtered:
+                        pactv_pending_by_scope[scope_key] = filtered
+                    else:
+                        pactv_pending_by_scope.pop(scope_key, None)
+            pactv_mark_run_canceled(
+                capacity_paths["db_path"],
+                run_id,
+                reason="Canceled while queued. Rollback applied; previous snapshot retained.",
+            )
+            return jsonify({"ok": True, "run_id": run_id, "status": "canceled", "message": "Queued fetch canceled and rolled back."})
+
+        return jsonify(
+            {
+                "ok": True,
+                "run_id": run_id,
+                "status": "cancel_requested",
+                "message": "Cancel requested. Running fetch will stop shortly and rollback.",
+            }
+        )
+
+    @app.route("/api/planned-actual-table-view/history", methods=["GET"])
+    def planned_actual_table_view_history():
+        role_error = _pactv_require_roles({"viewer", "operator", "admin"})
+        if role_error is not None:
+            return role_error
+        limit_raw = _to_text(request.args.get("limit"))
+        try:
+            limit = int(limit_raw) if limit_raw else 30
+        except Exception:
+            limit = 30
+        rows = pactv_list_history(capacity_paths["db_path"], limit=limit)
+        return jsonify({"ok": True, "rows": rows})
+
+    @app.route("/api/planned-actual-table-view/diff", methods=["GET"])
+    def planned_actual_table_view_diff():
+        role_error = _pactv_require_roles({"viewer", "operator", "admin"})
+        if role_error is not None:
+            return role_error
+        left_id = _to_text(request.args.get("left_snapshot_id"))
+        right_id = _to_text(request.args.get("right_snapshot_id"))
+        if not left_id or not right_id:
+            return jsonify({"ok": False, "error": "Both left_snapshot_id and right_snapshot_id are required."}), 400
+        left = pactv_load_snapshot_by_id(capacity_paths["db_path"], left_id)
+        right = pactv_load_snapshot_by_id(capacity_paths["db_path"], right_id)
+        if not left or not right:
+            return jsonify({"ok": False, "error": "One or both snapshots not found."}), 404
+        return jsonify(
+            {
+                "ok": True,
+                "left_snapshot_id": left_id,
+                "right_snapshot_id": right_id,
+                "delta": pactv_diff_snapshots(left, right),
+            }
+        )
+
+    @app.route("/api/planned-actual-table-view/export", methods=["POST"])
+    def planned_actual_table_view_export():
+        role_error = _pactv_require_roles({"viewer", "operator", "admin"})
+        if role_error is not None:
+            return role_error
+        payload = request.get_json(silent=True) or {}
+        fmt = _to_text(payload.get("format")).lower() or "csv"
+        snapshot_id = _to_text(payload.get("snapshot_id"))
+        snapshot = pactv_load_snapshot_by_id(capacity_paths["db_path"], snapshot_id) if snapshot_id else None
+        if snapshot is None:
+            try:
+                from_raw, to_raw, mode, selected_projects, selected_statuses, selected_assignees, _parsed = _parse_pactv_request_filters(payload)
+            except ValueError as exc:
+                return jsonify({"ok": False, "error": str(exc)}), 400
+            flt = pactv_make_filter(
+                from_raw,
+                to_raw,
+                mode,
+                selected_projects,
+                selected_statuses,
+                selected_assignees,
+            )
+            snapshot = pactv_load_snapshot_by_filter(capacity_paths["db_path"], flt)
+        if snapshot is None:
+            return jsonify({"ok": False, "error": "Snapshot not found for export."}), 404
+
+        if fmt == "xlsx":
+            payload_bytes = pactv_export_xlsx_bytes(snapshot)
+            filename = f"planned_actual_table_view_{_to_text(snapshot.get('snapshot_id'))}.xlsx"
+            return send_file(
+                io.BytesIO(payload_bytes),
+                mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                as_attachment=True,
+                download_name=filename,
+            )
+        if fmt != "csv":
+            return jsonify({"ok": False, "error": "Unsupported format. Expected 'csv' or 'xlsx'."}), 400
+        payload_bytes = pactv_export_csv_bytes(snapshot)
+        filename = f"planned_actual_table_view_{_to_text(snapshot.get('snapshot_id'))}.csv"
+        return send_file(
+            io.BytesIO(payload_bytes),
+            mimetype="text/csv; charset=utf-8",
+            as_attachment=True,
+            download_name=filename,
+        )
+
+    @app.route("/api/planned-actual-table-view/ui-settings", methods=["GET"])
+    def planned_actual_table_view_get_ui_settings():
+        role_error = _pactv_require_roles({"viewer", "operator", "admin"})
+        if role_error is not None:
+            return role_error
+        return jsonify({"ok": True, "settings": pactv_load_ui_settings(capacity_paths["db_path"])})
+
+    @app.route("/api/planned-actual-table-view/ui-settings", methods=["POST"])
+    def planned_actual_table_view_save_ui_settings():
+        role_error = _pactv_require_roles({"admin"})
+        if role_error is not None:
+            return role_error
+        payload = request.get_json(silent=True) or {}
+        settings = pactv_save_ui_settings(capacity_paths["db_path"], payload if isinstance(payload, dict) else {})
+        return jsonify({"ok": True, "settings": settings})
+
+    @app.route("/api/planned-actual-table-view/snapshots/<path:snapshot_id>/pin-official", methods=["POST"])
+    def planned_actual_table_view_pin_official(snapshot_id: str):
+        role_error = _pactv_require_roles({"admin"})
+        if role_error is not None:
+            return role_error
+        actor = _to_text(request.headers.get("X-Actor")) or _to_text(request.headers.get("X-User")) or "unknown"
+        pinned = pactv_pin_official_snapshot(capacity_paths["db_path"], snapshot_id, actor)
+        if not pinned:
+            return jsonify({"ok": False, "error": "Snapshot not found."}), 404
+        return jsonify({"ok": True, "snapshot_id": snapshot_id, "snapshot": pinned})
+
+    @app.route("/api/planned-actual-table-view/snapshots/<path:snapshot_id>/unpin-official", methods=["POST"])
+    def planned_actual_table_view_unpin_official(snapshot_id: str):
+        role_error = _pactv_require_roles({"admin"})
+        if role_error is not None:
+            return role_error
+        actor = _to_text(request.headers.get("X-Actor")) or _to_text(request.headers.get("X-User")) or "unknown"
+        unpinned = pactv_unpin_official_snapshot(capacity_paths["db_path"], snapshot_id, actor)
+        if not unpinned:
+            return jsonify({"ok": False, "error": "Snapshot not found."}), 404
+        return jsonify({"ok": True, "snapshot_id": snapshot_id, "snapshot": unpinned})
 
     @app.route("/api/capacity", methods=["POST"])
     def save_capacity():

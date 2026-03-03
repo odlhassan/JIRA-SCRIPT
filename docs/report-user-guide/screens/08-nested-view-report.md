@@ -8,7 +8,7 @@ INFO_IDS: `nested.capacity_gap`, `nested.total_capacity_adjusted`
 
 | Field | Definition | Formula | Ingredients | Business Validations | Cross-Report Linkage |
 | --- | --- | --- | --- | --- | --- |
-| Capacity available for more work | Capacity remaining after planned project load and planned leave estimates. | `Total Capacity - Total Planned Projects - Total Leaves Planned` | total capacity, planned projects (non-RLT), leaves planned (RLT) | Date range and project filter sensitive; RLT rules applied. | Assignee subtraction, RnD investable hours. |
+| Availability for more work | Capacity remaining after planned project load and planned leave estimates. | `Total Capacity - Total Planned Projects - Total Leaves Planned` | total capacity, planned projects (non-RLT), leaves planned (RLT) | Date range and project filter sensitive; RLT rules applied. | Assignee subtraction, RnD investable hours. |
 | Availability | Practical capacity after planned leaves are deducted. | `Total Capacity (Hours) - Total Leaves Planned` | total capacity, planned leaves (RLT original estimates) | Date range and project filter sensitive; RLT leave planned estimates are deducted once. | RLT leave totals and RnD leave-adjusted capacity. |
 
 ## Drawer Notes

@@ -870,6 +870,29 @@ class ReportUiSmokeTests(unittest.TestCase):
         self.assertIn("/api/planned-vs-dispensed/summary", html)
         self.assertIn("/api/planned-vs-dispensed/details", html)
 
+    def test_planned_actual_table_view_page_controls_exist(self):
+        html_path = Path(__file__).resolve().parents[1] / "report_html" / "planned_actual_table_view.html"
+        self.assertTrue(html_path.exists())
+        html = html_path.read_text(encoding="utf-8")
+        self.assertIn('id="from-date"', html)
+        self.assertIn('id="to-date"', html)
+        self.assertIn('id="mode"', html)
+        self.assertIn('id="projects"', html)
+        self.assertIn('id="statuses"', html)
+        self.assertIn('id="assignees"', html)
+        self.assertIn('id="load-btn"', html)
+        self.assertIn('id="fetch-btn"', html)
+        self.assertIn("/api/planned-actual-table-view/summary", html)
+        self.assertIn("/api/planned-actual-table-view/refresh", html)
+        self.assertIn("/api/planned-actual-table-view/filter-options", html)
+        self.assertIn("/api/planned-actual-table-view/queue", html)
+        self.assertIn("/api/planned-actual-table-view/cancel", html)
+        self.assertIn("/api/planned-actual-table-view/history", html)
+        self.assertIn("/api/planned-actual-table-view/diff", html)
+        self.assertIn("/api/planned-actual-table-view/export", html)
+        self.assertIn("Fetch Queue", html)
+        self.assertIn("Cancel and Rollback", html)
+
 
 if __name__ == "__main__":
     unittest.main()
