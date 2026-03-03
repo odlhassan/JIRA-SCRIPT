@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 import os
 import socket
+import subprocess
+import sys
 from pathlib import Path
 
 from report_server import run_report_server, sync_report_html
@@ -43,6 +45,18 @@ def _resolve_server_port(host: str, requested_port: int) -> int:
     raise RuntimeError(f"[server] Port {requested_port} is busy. Choose a different --port.")
 
 
+def _run_planned_vs_dispensed_script(base_dir: Path) -> None:
+    script_path = base_dir / "generate_planned_vs_dispensed_report.py"
+    if not script_path.exists():
+        raise FileNotFoundError(f"Missing script: {script_path}")
+    print("[server] Running generate_planned_vs_dispensed_report.py")
+    result = subprocess.run([sys.executable, str(script_path)], cwd=str(base_dir))
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"[server] planned_vs_dispensed generation failed with exit code {result.returncode}"
+        )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Start report server without running data generation scripts."
@@ -81,6 +95,7 @@ def main() -> None:
     if args.no_sync:
         print("[server] Skipping report-html sync (--no-sync).")
     else:
+        _run_planned_vs_dispensed_script(base_dir)
         moved = sync_report_html(base_dir, args.report_html_dir)
         if moved == 0:
             print("[server] report-html sync completed: no files moved.")

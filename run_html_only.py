@@ -96,6 +96,7 @@ def main() -> None:
         ("nested-view-html", "generate_nested_view_html.py"),
         ("missed-entries-html", "generate_missed_entries_html.py"),
         ("assignee-hours-html", "generate_assignee_hours_report.py"),
+        ("planned-vs-dispensed-html", "generate_planned_vs_dispensed_report.py"),
         ("leaves-planned-calendar-html", "generate_leaves_planned_calendar_html.py"),
         ("rnd-data-story-html", "generate_rnd_data_story.py"),
         ("planned-rmis-html", "generate_planned_rmis_html.py"),

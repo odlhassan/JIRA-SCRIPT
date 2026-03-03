@@ -87,6 +87,7 @@ REPORT_FILENAME_TO_ID: dict[str, str] = {
     "rlt_leave_report.html": "rlt_leave_report",
     "leaves_planned_calendar.html": "leaves_planned_calendar",
     "employee_performance_report.html": "employee_performance",
+    "planned_vs_dispensed_report.html": "planned_vs_dispensed",
 }
 
 REPORT_REFRESH_CHAINS: dict[str, list[str]] = {
@@ -141,6 +142,8 @@ REPORT_REFRESH_CHAINS: dict[str, list[str]] = {
         "generate_rlt_leave_report.py",
         "generate_employee_performance_report.py",
     ],
+    # This report is API-driven (atomic Jira fetches), so no batch refresh scripts.
+    "planned_vs_dispensed": [],
 }
 
 REFRESH_WIDGET_MARKER = "codex-refresh-widget-v2"
@@ -158,6 +161,34 @@ EPICS_MANAGEMENT_SETTINGS_ROUTE = "/settings/epics-management"
 EPICS_DROPDOWN_OPTIONS_SETTINGS_ROUTE = "/settings/epics-dropdown-options"
 EPIC_PHASES_SETTINGS_ROUTE = "/settings/epic-phases"
 DASHBOARD_RISK_SETTINGS_ROUTE = "/settings/dashboard-risk"
+PAGE_CATEGORIES_SETTINGS_ROUTE = "/settings/page-categories"
+
+STATIC_REPORT_NAV_ITEMS: list[dict[str, object]] = [
+    {"page_key": "dashboard", "title": "Dashboard", "href": "/dashboard.html", "icon": "space_dashboard", "file": "dashboard.html", "default_nav_order": 10, "page_type": "report"},
+    {"page_key": "nested_view_report", "title": "Nested View Report", "href": "/nested_view_report.html", "icon": "account_tree", "file": "nested_view_report.html", "default_nav_order": 20, "page_type": "report"},
+    {"page_key": "missed_entries_report", "title": "Missed Entries Report", "href": "/missed_entries.html", "icon": "event_busy", "file": "missed_entries.html", "default_nav_order": 30, "page_type": "report"},
+    {"page_key": "assignee_hours_report", "title": "Assignee Hours Report", "href": "/assignee_hours_report.html", "icon": "schedule", "file": "assignee_hours_report.html", "default_nav_order": 40, "page_type": "report"},
+    {"page_key": "employee_performance_report", "title": "Employee Performance", "href": "/employee_performance_report.html", "icon": "monitoring", "file": "employee_performance_report.html", "default_nav_order": 50, "page_type": "report"},
+    {"page_key": "rlt_leave_report", "title": "RLT Leave Report", "href": "/rlt_leave_report.html", "icon": "beach_access", "file": "rlt_leave_report.html", "default_nav_order": 60, "page_type": "report"},
+    {"page_key": "leaves_planned_calendar", "title": "Leaves Planned Calendar", "href": "/leaves_planned_calendar.html", "icon": "calendar_month", "file": "leaves_planned_calendar.html", "default_nav_order": 70, "page_type": "report"},
+    {"page_key": "rnd_data_story", "title": "RnD Data Story", "href": "/rnd_data_story.html", "icon": "auto_stories", "file": "rnd_data_story.html", "default_nav_order": 80, "page_type": "report"},
+    {"page_key": "planned_rmis_report", "title": "Planned RMIs", "href": "/planned_rmis_report.html", "icon": "assignment_turned_in", "file": "planned_rmis_report.html", "default_nav_order": 90, "page_type": "report"},
+    {"page_key": "phase_rmi_gantt_report", "title": "Phase RMI Gantt", "href": "/phase_rmi_gantt_report.html", "icon": "view_timeline", "file": "phase_rmi_gantt_report.html", "default_nav_order": 100, "page_type": "report"},
+    {"page_key": "planned_vs_dispensed_report", "title": "Planned vs Dispensed", "href": "/planned_vs_dispensed_report.html", "icon": "analytics", "file": "planned_vs_dispensed_report.html", "default_nav_order": 110, "page_type": "report"},
+    {"page_key": "ipp_meeting_dashboard", "title": "IPP Meeting Dashboard", "href": "/ipp_meeting_dashboard.html", "icon": "groups", "file": "ipp_meeting_dashboard.html", "default_nav_order": 120, "page_type": "report"},
+]
+
+STATIC_ADMIN_NAV_ITEMS: list[dict[str, object]] = [
+    {"page_key": "capacity_settings", "title": "Capacity Settings", "href": CAPACITY_SETTINGS_ROUTE, "icon": "tune", "path": CAPACITY_SETTINGS_ROUTE, "default_nav_order": 10, "page_type": "configuration"},
+    {"page_key": "performance_settings", "title": "Performance Settings", "href": PERFORMANCE_SETTINGS_ROUTE, "icon": "speed", "path": PERFORMANCE_SETTINGS_ROUTE, "default_nav_order": 20, "page_type": "configuration"},
+    {"page_key": "report_entities", "title": "Report Entities", "href": REPORT_ENTITIES_SETTINGS_ROUTE, "icon": "dataset", "path": REPORT_ENTITIES_SETTINGS_ROUTE, "default_nav_order": 30, "page_type": "configuration"},
+    {"page_key": "manage_fields", "title": "Manage Fields", "href": MANAGE_FIELDS_SETTINGS_ROUTE, "icon": "list_alt", "path": MANAGE_FIELDS_SETTINGS_ROUTE, "default_nav_order": 40, "page_type": "configuration"},
+    {"page_key": "projects", "title": "Projects", "href": PROJECTS_SETTINGS_ROUTE, "icon": "work", "path": PROJECTS_SETTINGS_ROUTE, "default_nav_order": 50, "page_type": "configuration"},
+    {"page_key": "epic_dropdowns", "title": "Epic Dropdowns", "href": EPICS_DROPDOWN_OPTIONS_SETTINGS_ROUTE, "icon": "arrow_drop_down_circle", "path": EPICS_DROPDOWN_OPTIONS_SETTINGS_ROUTE, "default_nav_order": 60, "page_type": "configuration"},
+    {"page_key": "epic_phases", "title": "Epic Phases", "href": EPIC_PHASES_SETTINGS_ROUTE, "icon": "alt_route", "path": EPIC_PHASES_SETTINGS_ROUTE, "default_nav_order": 70, "page_type": "configuration"},
+    {"page_key": "epics_planner", "title": "Epics Planner", "href": EPICS_MANAGEMENT_SETTINGS_ROUTE, "icon": "event_note", "path": EPICS_MANAGEMENT_SETTINGS_ROUTE, "default_nav_order": 80, "page_type": "configuration"},
+    {"page_key": "page_categories", "title": "Page Categories", "href": PAGE_CATEGORIES_SETTINGS_ROUTE, "icon": "category", "path": PAGE_CATEGORIES_SETTINGS_ROUTE, "default_nav_order": 90, "page_type": "configuration"},
+]
 
 
 def _settings_nav_items() -> list[tuple[str, str]]:
@@ -168,6 +199,7 @@ def _settings_nav_items() -> list[tuple[str, str]]:
         ("Report Entities", REPORT_ENTITIES_SETTINGS_ROUTE),
         ("Manage Fields", MANAGE_FIELDS_SETTINGS_ROUTE),
         ("Projects", PROJECTS_SETTINGS_ROUTE),
+        ("Page Categories", PAGE_CATEGORIES_SETTINGS_ROUTE),
         ("Epic Dropdowns", EPICS_DROPDOWN_OPTIONS_SETTINGS_ROUTE),
         ("Epic Phases", EPIC_PHASES_SETTINGS_ROUTE),
         ("Epics Planner", EPICS_MANAGEMENT_SETTINGS_ROUTE),
@@ -343,19 +375,470 @@ def _save_dashboard_risk_settings(settings_db_path: Path, payload: object) -> di
 
 
 def _settings_top_nav_html(active_route: str) -> str:
-    # Hide the full settings navigation on the Epics Planner screen so that
-    # the header can stay focused and uncluttered.
-    if active_route == EPICS_MANAGEMENT_SETTINGS_ROUTE:
-        return ""
+    _ = active_route
+    # Admin page-to-page links are intentionally removed from headers.
+    # Navigation is handled by the shared left navigation.
+    return ""
 
-    links: list[str] = []
-    links.append('<a class="btn alt" href="/dashboard.html">Back to Dashboard</a>')
-    for label, route in _settings_nav_items():
-        is_active = route == active_route
-        class_name = "btn" if is_active else "btn alt"
-        aria_current = ' aria-current="page"' if is_active else ""
-        links.append(f'<a class="{class_name}" href="{route}"{aria_current}>{label}</a>')
-    return "".join(links)
+
+def _page_catalog() -> list[dict[str, object]]:
+    items = STATIC_REPORT_NAV_ITEMS + STATIC_ADMIN_NAV_ITEMS
+    out: list[dict[str, object]] = []
+    for item in items:
+        out.append(
+            {
+                "page_key": _to_text(item.get("page_key")),
+                "title": _to_text(item.get("title")),
+                "route_or_file": _to_text(item.get("path") or item.get("file") or item.get("href")),
+                "href": _to_text(item.get("href")),
+                "icon": _to_text(item.get("icon")),
+                "page_type": _to_text(item.get("page_type")),
+                "default_nav_order": int(item.get("default_nav_order") or 0),
+            }
+        )
+    return out
+
+
+def _normalize_page_category_name(value: object) -> str:
+    name = _to_text(value)
+    if not name:
+        raise ValueError("Category name is required.")
+    return name
+
+
+def _normalize_google_icon_name(value: object) -> str:
+    icon_name = _to_text(value).lower()
+    if not icon_name:
+        return "folder"
+    if not re.match(r"^[a-z0-9_]+$", icon_name):
+        raise ValueError("icon_name must contain only lowercase letters, numbers, and underscores.")
+    return icon_name
+
+
+def _normalize_page_category_payload(payload: object, require_name: bool = True) -> dict[str, object]:
+    raw = payload if isinstance(payload, dict) else {}
+    name = _to_text(raw.get("name"))
+    if require_name:
+        name = _normalize_page_category_name(name)
+    display_order_raw = raw.get("display_order", 100)
+    try:
+        display_order = int(display_order_raw)
+    except (TypeError, ValueError):
+        raise ValueError("display_order must be an integer.")
+    return {
+        "id": int(raw.get("id") or 0),
+        "name": name,
+        "icon_name": _normalize_google_icon_name(raw.get("icon_name")),
+        "display_in_navigation": 1 if bool(raw.get("display_in_navigation", True)) else 0,
+        "display_order": display_order,
+        "is_active": 1 if bool(raw.get("is_active", True)) else 0,
+    }
+
+
+def _normalize_page_assignment_payload(payload: object, valid_page_keys: set[str], valid_category_ids: set[int]) -> dict[str, object]:
+    raw = payload if isinstance(payload, dict) else {}
+    page_key = _to_text(raw.get("page_key"))
+    if not page_key:
+        raise ValueError("page_key is required for assignments.")
+    if page_key not in valid_page_keys:
+        raise ValueError(f"Unknown page_key: {page_key}")
+    page_type = _to_text(raw.get("page_type")).lower()
+    if page_type not in {"report", "configuration"}:
+        raise ValueError("page_type must be report or configuration.")
+    try:
+        category_id = int(raw.get("category_id"))
+    except (TypeError, ValueError):
+        raise ValueError("category_id must be an integer.")
+    if category_id not in valid_category_ids:
+        raise ValueError(f"Unknown category_id: {category_id}")
+    return {
+        "page_key": page_key,
+        "page_type": page_type,
+        "category_id": category_id,
+    }
+
+
+def _init_page_categories_db(db_path: Path) -> None:
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS page_categories (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+                icon_name TEXT NOT NULL DEFAULT 'folder',
+                display_in_navigation INTEGER NOT NULL DEFAULT 1,
+                display_order INTEGER NOT NULL DEFAULT 100,
+                is_active INTEGER NOT NULL DEFAULT 1,
+                created_at_utc TEXT NOT NULL,
+                updated_at_utc TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS page_category_assignments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                page_key TEXT NOT NULL,
+                page_type TEXT NOT NULL,
+                category_id INTEGER NOT NULL,
+                created_at_utc TEXT NOT NULL,
+                updated_at_utc TEXT NOT NULL,
+                UNIQUE(page_key, category_id),
+                FOREIGN KEY(category_id) REFERENCES page_categories(id) ON DELETE CASCADE
+            )
+            """
+        )
+        columns = conn.execute("PRAGMA table_info(page_categories)").fetchall()
+        column_names = {str(row[1]) for row in columns}
+        if "icon_name" not in column_names:
+            conn.execute("ALTER TABLE page_categories ADD COLUMN icon_name TEXT NOT NULL DEFAULT 'folder'")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_page_category_assignments_page_key ON page_category_assignments(page_key)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_page_category_assignments_category ON page_category_assignments(category_id)")
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _row_to_page_category(row: sqlite3.Row) -> dict[str, object]:
+    return {
+        "id": int(row["id"]),
+        "name": _to_text(row["name"]),
+        "icon_name": _normalize_google_icon_name(row["icon_name"]),
+        "display_in_navigation": bool(int(row["display_in_navigation"] or 0)),
+        "display_order": int(row["display_order"] or 0),
+        "is_active": bool(int(row["is_active"] or 0)),
+        "created_at_utc": _to_text(row["created_at_utc"]),
+        "updated_at_utc": _to_text(row["updated_at_utc"]),
+    }
+
+
+def _load_page_categories(db_path: Path) -> dict[str, object]:
+    _init_page_categories_db(db_path)
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        category_rows = conn.execute(
+            """
+            SELECT id, name, icon_name, display_in_navigation, display_order, is_active, created_at_utc, updated_at_utc
+            FROM page_categories
+            WHERE is_active = 1
+            ORDER BY display_order ASC, lower(name) ASC, id ASC
+            """
+        ).fetchall()
+        assignment_rows = conn.execute(
+            """
+            SELECT id, page_key, page_type, category_id, created_at_utc, updated_at_utc
+            FROM page_category_assignments
+            ORDER BY page_type ASC, page_key ASC, category_id ASC
+            """
+        ).fetchall()
+    finally:
+        conn.close()
+    categories = [_row_to_page_category(row) for row in category_rows]
+    category_ids = {int(item["id"]) for item in categories}
+    assignments: list[dict[str, object]] = []
+    for row in assignment_rows:
+        category_id = int(row["category_id"] or 0)
+        if category_id not in category_ids:
+            continue
+        assignments.append(
+            {
+                "id": int(row["id"]),
+                "page_key": _to_text(row["page_key"]),
+                "page_type": _to_text(row["page_type"]),
+                "category_id": category_id,
+                "created_at_utc": _to_text(row["created_at_utc"]),
+                "updated_at_utc": _to_text(row["updated_at_utc"]),
+            }
+        )
+    return {
+        "categories": categories,
+        "assignments": assignments,
+        "page_catalog": _page_catalog(),
+        "has_categories": len(categories) > 0,
+    }
+
+
+def _create_page_category(db_path: Path, payload: object) -> dict[str, object]:
+    _init_page_categories_db(db_path)
+    normalized = _normalize_page_category_payload(payload, require_name=True)
+    now = _utc_now_iso()
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        cur = conn.execute(
+            """
+            INSERT INTO page_categories(name, icon_name, display_in_navigation, display_order, is_active, created_at_utc, updated_at_utc)
+            VALUES(?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                normalized["name"],
+                normalized["icon_name"],
+                normalized["display_in_navigation"],
+                normalized["display_order"],
+                normalized["is_active"],
+                now,
+                now,
+            ),
+        )
+        conn.commit()
+        category_id = int(cur.lastrowid or 0)
+        row = conn.execute(
+            """
+            SELECT id, name, icon_name, display_in_navigation, display_order, is_active, created_at_utc, updated_at_utc
+            FROM page_categories
+            WHERE id = ?
+            """,
+            (category_id,),
+        ).fetchone()
+    except sqlite3.IntegrityError:
+        raise ValueError(f"Category '{normalized['name']}' already exists.")
+    finally:
+        conn.close()
+    if not row:
+        raise ValueError("Failed to load created category.")
+    return _row_to_page_category(row)
+
+
+def _update_page_category(db_path: Path, category_id: int, payload: object) -> dict[str, object]:
+    _init_page_categories_db(db_path)
+    normalized = _normalize_page_category_payload(payload, require_name=True)
+    cid = int(category_id)
+    now = _utc_now_iso()
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        existing = conn.execute("SELECT id FROM page_categories WHERE id = ?", (cid,)).fetchone()
+        if not existing:
+            raise LookupError(f"Category '{cid}' not found.")
+        conn.execute(
+            """
+            UPDATE page_categories
+            SET name = ?, icon_name = ?, display_in_navigation = ?, display_order = ?, is_active = ?, updated_at_utc = ?
+            WHERE id = ?
+            """,
+            (
+                normalized["name"],
+                normalized["icon_name"],
+                normalized["display_in_navigation"],
+                normalized["display_order"],
+                normalized["is_active"],
+                now,
+                cid,
+            ),
+        )
+        conn.commit()
+        row = conn.execute(
+            """
+            SELECT id, name, icon_name, display_in_navigation, display_order, is_active, created_at_utc, updated_at_utc
+            FROM page_categories
+            WHERE id = ?
+            """,
+            (cid,),
+        ).fetchone()
+    except sqlite3.IntegrityError:
+        raise ValueError(f"Category '{normalized['name']}' already exists.")
+    finally:
+        conn.close()
+    if not row:
+        raise LookupError(f"Category '{cid}' not found.")
+    return _row_to_page_category(row)
+
+
+def _delete_page_category(db_path: Path, category_id: int) -> int:
+    _init_page_categories_db(db_path)
+    cid = int(category_id)
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute("DELETE FROM page_category_assignments WHERE category_id = ?", (cid,))
+        cur = conn.execute("DELETE FROM page_categories WHERE id = ?", (cid,))
+        conn.commit()
+    finally:
+        conn.close()
+    if int(cur.rowcount or 0) <= 0:
+        raise LookupError(f"Category '{cid}' not found.")
+    return cid
+
+
+def _save_page_categories_payload(db_path: Path, payload: object) -> dict[str, object]:
+    _init_page_categories_db(db_path)
+    raw = payload if isinstance(payload, dict) else {}
+    incoming_categories_raw = raw.get("categories")
+    incoming_assignments_raw = raw.get("assignments")
+    incoming_categories = incoming_categories_raw if isinstance(incoming_categories_raw, list) else []
+    incoming_assignments = incoming_assignments_raw if isinstance(incoming_assignments_raw, list) else []
+
+    now = _utc_now_iso()
+    valid_page_keys = {item["page_key"] for item in _page_catalog()}
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        existing_rows = conn.execute(
+            "SELECT id, name, icon_name, display_in_navigation, display_order, is_active FROM page_categories ORDER BY id ASC"
+        ).fetchall()
+        existing_by_id = {int(row["id"]): row for row in existing_rows}
+
+        keep_ids: set[int] = set()
+        for item in incoming_categories:
+            normalized = _normalize_page_category_payload(item, require_name=True)
+            requested_id = int(normalized.get("id") or 0)
+            if requested_id > 0 and requested_id in existing_by_id:
+                conn.execute(
+                    """
+                    UPDATE page_categories
+                    SET name = ?, icon_name = ?, display_in_navigation = ?, display_order = ?, is_active = ?, updated_at_utc = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        normalized["name"],
+                        normalized["icon_name"],
+                        normalized["display_in_navigation"],
+                        normalized["display_order"],
+                        normalized["is_active"],
+                        now,
+                        requested_id,
+                    ),
+                )
+                keep_ids.add(requested_id)
+            else:
+                cur = conn.execute(
+                    """
+                    INSERT INTO page_categories(name, icon_name, display_in_navigation, display_order, is_active, created_at_utc, updated_at_utc)
+                    VALUES(?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        normalized["name"],
+                        normalized["icon_name"],
+                        normalized["display_in_navigation"],
+                        normalized["display_order"],
+                        normalized["is_active"],
+                        now,
+                        now,
+                    ),
+                )
+                keep_ids.add(int(cur.lastrowid or 0))
+
+        if incoming_categories:
+            existing_ids = set(existing_by_id.keys())
+            delete_ids = existing_ids - keep_ids
+            for cid in delete_ids:
+                conn.execute("DELETE FROM page_category_assignments WHERE category_id = ?", (cid,))
+                conn.execute("DELETE FROM page_categories WHERE id = ?", (cid,))
+
+        active_category_rows = conn.execute(
+            "SELECT id FROM page_categories WHERE is_active = 1"
+        ).fetchall()
+        valid_category_ids = {int(row["id"]) for row in active_category_rows}
+
+        conn.execute("DELETE FROM page_category_assignments")
+        seen_pairs: set[tuple[str, int]] = set()
+        for item in incoming_assignments:
+            normalized_assignment = _normalize_page_assignment_payload(item, valid_page_keys, valid_category_ids)
+            pair = (str(normalized_assignment["page_key"]), int(normalized_assignment["category_id"]))
+            if pair in seen_pairs:
+                continue
+            seen_pairs.add(pair)
+            conn.execute(
+                """
+                INSERT INTO page_category_assignments(page_key, page_type, category_id, created_at_utc, updated_at_utc)
+                VALUES(?, ?, ?, ?, ?)
+                """,
+                (
+                    normalized_assignment["page_key"],
+                    normalized_assignment["page_type"],
+                    normalized_assignment["category_id"],
+                    now,
+                    now,
+                ),
+            )
+        conn.commit()
+    except sqlite3.IntegrityError as exc:
+        raise ValueError(f"Failed to save page categories payload: {exc}")
+    finally:
+        conn.close()
+    return _load_page_categories(db_path)
+
+
+def _sort_nav_items(items: list[dict[str, object]]) -> list[dict[str, object]]:
+    return sorted(items, key=lambda item: (int(item.get("default_nav_order") or 0), _to_text(item.get("title")).casefold()))
+
+
+def _build_navigation_from_page_categories(db_path: Path) -> dict[str, object]:
+    state = _load_page_categories(db_path)
+    categories = [item for item in state["categories"] if bool(item.get("is_active"))]
+    if not categories:
+        return {"enabled": False}
+
+    visible_categories = [
+        item for item in categories
+        if bool(item.get("display_in_navigation"))
+    ]
+    visible_categories = sorted(
+        visible_categories,
+        key=lambda item: (int(item.get("display_order") or 0), _to_text(item.get("name")).casefold(), int(item.get("id") or 0)),
+    )
+    visible_ids = {int(item.get("id") or 0) for item in visible_categories}
+
+    report_by_key = {str(item["page_key"]): dict(item) for item in STATIC_REPORT_NAV_ITEMS}
+    admin_by_key = {str(item["page_key"]): dict(item) for item in STATIC_ADMIN_NAV_ITEMS}
+    assignment_map: dict[str, set[int]] = defaultdict(set)
+    for row in state["assignments"]:
+        category_id = int(row.get("category_id") or 0)
+        if category_id not in visible_ids:
+            continue
+        page_key = _to_text(row.get("page_key"))
+        if page_key:
+            assignment_map[page_key].add(category_id)
+
+    report_categories: list[dict[str, object]] = []
+    report_assigned_keys: set[str] = set()
+    for category in visible_categories:
+        cid = int(category.get("id") or 0)
+        items = [item for key, item in report_by_key.items() if cid in assignment_map.get(key, set())]
+        if not items:
+            continue
+        report_assigned_keys.update({str(item["page_key"]) for item in items})
+        report_categories.append(
+            {
+                "id": cid,
+                "name": _to_text(category.get("name")),
+                "icon_name": _normalize_google_icon_name(category.get("icon_name")),
+                "items": _sort_nav_items(items),
+            }
+        )
+
+    admin_categories: list[dict[str, object]] = []
+    admin_assigned_keys: set[str] = set()
+    for category in visible_categories:
+        cid = int(category.get("id") or 0)
+        items = [item for key, item in admin_by_key.items() if cid in assignment_map.get(key, set())]
+        if not items:
+            continue
+        admin_assigned_keys.update({str(item["page_key"]) for item in items})
+        admin_categories.append(
+            {
+                "id": cid,
+                "name": _to_text(category.get("name")),
+                "icon_name": _normalize_google_icon_name(category.get("icon_name")),
+                "items": _sort_nav_items(items),
+            }
+        )
+
+    uncategorized_reports = _sort_nav_items([item for key, item in report_by_key.items() if key not in report_assigned_keys])
+    uncategorized_admin = _sort_nav_items([item for key, item in admin_by_key.items() if key not in admin_assigned_keys])
+    return {
+        "enabled": True,
+        "reports": {
+            "items": uncategorized_reports,
+            "categories": report_categories,
+        },
+        "admin_settings": {
+            "items": uncategorized_admin,
+            "categories": admin_categories,
+        },
+    }
 
 
 def _resolve_capacity_runtime_paths(base_dir: Path) -> dict[str, Path]:
@@ -3002,6 +3485,350 @@ def _projects_settings_html() -> str:
 </html>""".replace("__SETTINGS_TOP_NAV__", _settings_top_nav_html(PROJECTS_SETTINGS_ROUTE))
 
 
+def _page_categories_settings_html() -> str:
+    return """<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Page Categories</title>
+  <link rel="stylesheet" href="/shared-nav.css">
+  <link rel="stylesheet" href="/material-symbols.css">
+  <style>
+    :root { --bg:#f5f8ff; --card:#fff; --line:#d6dfef; --ink:#0f172a; --muted:#475569; --brand:#1d4ed8; --ok:#166534; --err:#b91c1c; }
+    * { box-sizing:border-box; }
+    body { margin:0; padding:20px; background:linear-gradient(180deg,#eef4ff,#f8fbff); color:var(--ink); font-family:"Segoe UI",Tahoma,sans-serif; }
+    .wrap { max-width:1240px; margin:0 auto; display:grid; gap:14px; }
+    .card { border:1px solid var(--line); border-radius:12px; background:var(--card); padding:14px; box-shadow:0 8px 22px rgba(15,23,42,.05); }
+    .top { display:flex; justify-content:space-between; align-items:flex-start; gap:8px; flex-wrap:wrap; }
+    .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:10px; }
+    .btn { border:1px solid #1e40af; background:var(--brand); color:#fff; border-radius:8px; padding:8px 12px; cursor:pointer; text-decoration:none; font-size:.85rem; }
+    .btn.alt { border-color:var(--line); background:#fff; color:var(--ink); }
+    .btn.warn { border-color:#7f1d1d; background:#b91c1c; color:#fff; }
+    .muted { color:var(--muted); font-size:.88rem; }
+    .table-wrap { margin-top:10px; border:1px solid var(--line); border-radius:10px; overflow:auto; background:#fff; }
+    table { border-collapse:collapse; width:100%; min-width:760px; }
+    th, td { border-bottom:1px solid #e8edf7; padding:8px 10px; text-align:left; font-size:.84rem; vertical-align:top; }
+    thead th { position:sticky; top:0; background:#eff6ff; text-transform:uppercase; letter-spacing:.03em; font-size:.73rem; }
+    .split { display:grid; gap:14px; grid-template-columns:1fr 1fr; }
+    @media (max-width:980px) { .split { grid-template-columns:1fr; } }
+    .page-block { border:1px solid var(--line); border-radius:10px; padding:10px; background:#fbfdff; }
+    .page-grid { display:grid; gap:8px; }
+    .page-row { display:grid; grid-template-columns:240px 1fr; gap:8px; align-items:center; }
+    .page-row label { font-weight:600; font-size:.84rem; }
+    input[type="text"], input[type="number"], select { width:100%; border:1px solid var(--line); border-radius:8px; padding:7px; font-size:.85rem; }
+    select[multiple] { min-height:78px; }
+    .icon-btn { display:inline-flex; align-items:center; justify-content:center; width:40px; height:34px; border:1px solid var(--line); background:#fff; border-radius:8px; cursor:pointer; }
+    .icon-btn .material-symbols-outlined { font-size:1.15rem; color:#1e40af; }
+    .icon-picker { position:fixed; inset:0; background:rgba(15,23,42,.35); display:none; align-items:center; justify-content:center; z-index:1000; }
+    .icon-picker.open { display:flex; }
+    .icon-picker-card { width:min(820px,94vw); max-height:82vh; overflow:auto; background:#fff; border:1px solid var(--line); border-radius:12px; padding:12px; box-shadow:0 18px 40px rgba(15,23,42,.2); }
+    .icon-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(58px,1fr)); gap:8px; margin-top:10px; }
+    .icon-tile { border:1px solid var(--line); background:#fff; border-radius:8px; min-height:50px; display:flex; align-items:center; justify-content:center; cursor:pointer; }
+    .icon-tile:hover { border-color:#93c5fd; background:#eff6ff; }
+    .icon-tile .material-symbols-outlined { font-size:1.35rem; color:#1e40af; }
+    #status { min-height:1.2em; margin-top:8px; font-size:.9rem; }
+    #status.ok { color:var(--ok); } #status.err { color:var(--err); }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <section class="card">
+      <div class="top">
+        <div>
+          <h1 style="margin:0;font-size:1.25rem;">Page Categories</h1>
+          <p class="muted" style="margin:.45rem 0 0;">Create navigation categories and assign report/configuration pages. Hidden categories are removed from navigation.</p>
+        </div>
+        <div class="row">__SETTINGS_TOP_NAV__</div>
+      </div>
+      <div class="row">
+        <button id="reload-btn" class="btn alt" type="button">Reload</button>
+        <button id="add-category-btn" class="btn alt" type="button">Add Category</button>
+        <button id="save-btn" class="btn" type="button">Save All</button>
+      </div>
+      <div id="status"></div>
+    </section>
+
+    <section class="card">
+      <h2 style="margin:0;font-size:1.02rem;">Categories</h2>
+      <p class="muted" style="margin:.4rem 0 0;">Use Display Order for navigation ordering (lower first).</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Name</th><th>Icon</th><th>Display in Navigation</th><th>Display Order</th><th>Active</th><th>Actions</th></tr></thead>
+          <tbody id="categories-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2 style="margin:0;font-size:1.02rem;">Page Assignments</h2>
+      <p class="muted" style="margin:.4rem 0 0;">Each page can belong to multiple categories.</p>
+      <div class="split">
+        <section class="page-block">
+          <h3 style="margin:0 0 8px;font-size:.95rem;">Reports</h3>
+          <div id="report-pages" class="page-grid"></div>
+        </section>
+        <section class="page-block">
+          <h3 style="margin:0 0 8px;font-size:.95rem;">Configuration</h3>
+          <div id="configuration-pages" class="page-grid"></div>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <div id="icon-picker" class="icon-picker" aria-hidden="true">
+    <div class="icon-picker-card">
+      <div class="row" style="margin-top:0;justify-content:space-between;">
+        <strong>Select Category Icon</strong>
+        <button id="icon-picker-close" class="btn alt" type="button">Close</button>
+      </div>
+      <div class="icon-grid" id="icon-picker-grid"></div>
+    </div>
+  </div>
+  <script>
+    const API = "/api/page-categories";
+    const CATEGORY_ICON_CHOICES = [
+      "folder","category","dashboard","settings","tune","dataset","description","analytics","query_stats","monitoring",
+      "account_tree","event_note","calendar_month","inventory_2","workspace_premium","groups","build","construction","engineering","manage_accounts",
+      "admin_panel_settings","security","verified","insights","history","list_alt","segment","widgets","view_list","splitscreen",
+      "star","flag","bookmark","rocket_launch","lightbulb","fact_check","task","check_circle","label","extension"
+    ];
+    const statusEl = document.getElementById("status");
+    const categoriesTbodyEl = document.getElementById("categories-tbody");
+    const reportPagesEl = document.getElementById("report-pages");
+    const configurationPagesEl = document.getElementById("configuration-pages");
+    const iconPickerEl = document.getElementById("icon-picker");
+    const iconPickerGridEl = document.getElementById("icon-picker-grid");
+
+    let categories = [];
+    let assignments = [];
+    let pageCatalog = [];
+    let nextTempId = -1;
+    let iconPickerCategoryIndex = -1;
+
+    function esc(v) {
+      return String(v == null ? "" : v)
+        .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+    function setStatus(message, kind) {
+      statusEl.textContent = String(message || "");
+      statusEl.className = kind || "";
+    }
+    function categoryOptions() {
+      return categories
+        .filter((c) => c && c.is_active)
+        .sort((a, b) => {
+          const ao = Number(a.display_order || 0);
+          const bo = Number(b.display_order || 0);
+          if (ao !== bo) return ao - bo;
+          return String(a.name || "").localeCompare(String(b.name || ""), undefined, { sensitivity: "base" });
+        });
+    }
+    function assignmentIdsByPageKey(pageKey) {
+      return new Set(
+        assignments
+          .filter((item) => String(item.page_key || "") === pageKey)
+          .map((item) => Number(item.category_id || 0))
+          .filter((x) => Number.isInteger(x) && x > 0)
+      );
+    }
+    function normalizeIconName(value) {
+      const text = String(value || "").trim().toLowerCase();
+      if (!text) return "folder";
+      return /^[a-z0-9_]+$/.test(text) ? text : "folder";
+    }
+    function renderIconPicker() {
+      iconPickerGridEl.innerHTML = CATEGORY_ICON_CHOICES.map((iconName) =>
+        "<button class='icon-tile' type='button' data-icon-choice='" + esc(iconName) + "' title='" + esc(iconName) + "'>"
+          + "<span class='material-symbols-outlined' aria-hidden='true'>" + esc(iconName) + "</span>"
+        + "</button>"
+      ).join("");
+      Array.from(iconPickerGridEl.querySelectorAll("button[data-icon-choice]")).forEach((btn) => {
+        btn.addEventListener("click", () => {
+          if (iconPickerCategoryIndex < 0 || iconPickerCategoryIndex >= categories.length) return;
+          categories[iconPickerCategoryIndex].icon_name = normalizeIconName(btn.getAttribute("data-icon-choice"));
+          closeIconPicker();
+          renderCategories();
+        });
+      });
+    }
+    function openIconPicker(categoryIndex) {
+      iconPickerCategoryIndex = categoryIndex;
+      iconPickerEl.classList.add("open");
+      iconPickerEl.setAttribute("aria-hidden", "false");
+      renderIconPicker();
+    }
+    function closeIconPicker() {
+      iconPickerCategoryIndex = -1;
+      iconPickerEl.classList.remove("open");
+      iconPickerEl.setAttribute("aria-hidden", "true");
+    }
+    function renderCategories() {
+      categoriesTbodyEl.innerHTML = categories.map((row, idx) => {
+        const id = Number(row.id || 0);
+        const iconName = normalizeIconName(row.icon_name);
+        return "<tr>"
+          + "<td><input type='text' data-cat-name='" + idx + "' value='" + esc(row.name || "") + "' placeholder='Category name'></td>"
+          + "<td><button class='icon-btn' type='button' data-cat-icon='" + idx + "' title='Select icon'><span class='material-symbols-outlined'>" + esc(iconName) + "</span></button></td>"
+          + "<td><label><input type='checkbox' data-cat-display='" + idx + "' " + (row.display_in_navigation ? "checked" : "") + "> Show</label></td>"
+          + "<td><input type='number' data-cat-order='" + idx + "' value='" + esc(row.display_order == null ? 100 : row.display_order) + "'></td>"
+          + "<td><label><input type='checkbox' data-cat-active='" + idx + "' " + (row.is_active ? "checked" : "") + "> Active</label></td>"
+          + "<td><button class='btn warn' type='button' data-cat-delete='" + id + "'>Delete</button></td>"
+          + "</tr>";
+      }).join("");
+
+      Array.from(categoriesTbodyEl.querySelectorAll("input[data-cat-name]")).forEach((el) => {
+        el.addEventListener("input", () => {
+          const idx = Number(el.getAttribute("data-cat-name") || -1);
+          if (idx < 0 || idx >= categories.length) return;
+          categories[idx].name = String(el.value || "").trim();
+          renderAssignments();
+        });
+      });
+      Array.from(categoriesTbodyEl.querySelectorAll("button[data-cat-icon]")).forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const idx = Number(btn.getAttribute("data-cat-icon") || -1);
+          if (idx < 0 || idx >= categories.length) return;
+          openIconPicker(idx);
+        });
+      });
+      Array.from(categoriesTbodyEl.querySelectorAll("input[data-cat-display]")).forEach((el) => {
+        el.addEventListener("change", () => {
+          const idx = Number(el.getAttribute("data-cat-display") || -1);
+          if (idx < 0 || idx >= categories.length) return;
+          categories[idx].display_in_navigation = !!el.checked;
+        });
+      });
+      Array.from(categoriesTbodyEl.querySelectorAll("input[data-cat-order]")).forEach((el) => {
+        el.addEventListener("input", () => {
+          const idx = Number(el.getAttribute("data-cat-order") || -1);
+          if (idx < 0 || idx >= categories.length) return;
+          categories[idx].display_order = Number(el.value || 100);
+          renderAssignments();
+        });
+      });
+      Array.from(categoriesTbodyEl.querySelectorAll("input[data-cat-active]")).forEach((el) => {
+        el.addEventListener("change", () => {
+          const idx = Number(el.getAttribute("data-cat-active") || -1);
+          if (idx < 0 || idx >= categories.length) return;
+          categories[idx].is_active = !!el.checked;
+          renderAssignments();
+        });
+      });
+      Array.from(categoriesTbodyEl.querySelectorAll("button[data-cat-delete]")).forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const id = Number(btn.getAttribute("data-cat-delete") || 0);
+          categories = categories.filter((x) => Number(x.id || 0) !== id);
+          assignments = assignments.filter((x) => Number(x.category_id || 0) !== id);
+          renderCategories();
+          renderAssignments();
+        });
+      });
+    }
+    function renderAssignmentSection(containerEl, type) {
+      const pages = pageCatalog
+        .filter((x) => String(x.page_type || "") === type)
+        .sort((a, b) => Number(a.default_nav_order || 0) - Number(b.default_nav_order || 0));
+      const opts = categoryOptions();
+      containerEl.innerHTML = pages.map((page) => {
+        const key = String(page.page_key || "");
+        const selectedIds = assignmentIdsByPageKey(key);
+        const optionsHtml = opts.map((cat) => {
+          const cid = Number(cat.id || 0);
+          const selected = selectedIds.has(cid) ? " selected" : "";
+          return "<option value='" + cid + "'" + selected + ">" + esc(cat.name || "") + "</option>";
+        }).join("");
+        return "<div class='page-row'>"
+          + "<label>" + esc(page.title || key) + "</label>"
+          + "<select multiple data-page-key='" + esc(key) + "' data-page-type='" + esc(type) + "'>" + optionsHtml + "</select>"
+          + "</div>";
+      }).join("");
+      Array.from(containerEl.querySelectorAll("select[data-page-key]")).forEach((selectEl) => {
+        selectEl.addEventListener("change", () => {
+          const pageKey = String(selectEl.getAttribute("data-page-key") || "");
+          const pageType = String(selectEl.getAttribute("data-page-type") || "");
+          const selected = new Set(Array.from(selectEl.selectedOptions).map((op) => Number(op.value || 0)).filter((x) => x > 0));
+          assignments = assignments.filter((x) => String(x.page_key || "") !== pageKey);
+          for (const cid of selected.values()) {
+            assignments.push({ page_key: pageKey, page_type: pageType, category_id: cid });
+          }
+        });
+      });
+    }
+    function renderAssignments() {
+      renderAssignmentSection(reportPagesEl, "report");
+      renderAssignmentSection(configurationPagesEl, "configuration");
+    }
+    function addCategory() {
+      categories.push({
+        id: nextTempId,
+        name: "",
+        icon_name: "folder",
+        display_in_navigation: true,
+        display_order: 100,
+        is_active: true
+      });
+      nextTempId -= 1;
+      renderCategories();
+      renderAssignments();
+    }
+    function payloadFromState() {
+      const normalizedCategories = categories.map((item) => ({
+        id: Number(item.id || 0) > 0 ? Number(item.id || 0) : 0,
+        name: String(item.name || "").trim(),
+        icon_name: normalizeIconName(item.icon_name),
+        display_in_navigation: !!item.display_in_navigation,
+        display_order: Number(item.display_order || 100),
+        is_active: !!item.is_active,
+      }));
+      const normalizedAssignments = assignments.map((item) => ({
+        page_key: String(item.page_key || ""),
+        page_type: String(item.page_type || ""),
+        category_id: Number(item.category_id || 0),
+      }));
+      return { categories: normalizedCategories, assignments: normalizedAssignments };
+    }
+    async function loadAll() {
+      const resp = await fetch(API, { cache: "no-store" });
+      const body = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(String(body.error || "Failed to load page categories."));
+      categories = (Array.isArray(body.categories) ? body.categories : []).map((item) => ({ ...item, icon_name: normalizeIconName(item.icon_name) }));
+      assignments = Array.isArray(body.assignments) ? body.assignments : [];
+      pageCatalog = Array.isArray(body.page_catalog) ? body.page_catalog : [];
+      renderCategories();
+      renderAssignments();
+      setStatus("Loaded " + categories.length + " categories.", "ok");
+    }
+    async function saveAll() {
+      const payload = payloadFromState();
+      const resp = await fetch(API, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const body = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(String(body.error || "Failed to save page categories."));
+      categories = (Array.isArray(body.categories) ? body.categories : []).map((item) => ({ ...item, icon_name: normalizeIconName(item.icon_name) }));
+      assignments = Array.isArray(body.assignments) ? body.assignments : [];
+      pageCatalog = Array.isArray(body.page_catalog) ? body.page_catalog : pageCatalog;
+      renderCategories();
+      renderAssignments();
+      setStatus("Saved page categories.", "ok");
+    }
+    document.getElementById("reload-btn").addEventListener("click", () => loadAll().catch((err) => setStatus(err.message || String(err), "err")));
+    document.getElementById("add-category-btn").addEventListener("click", addCategory);
+    document.getElementById("save-btn").addEventListener("click", () => saveAll().catch((err) => setStatus(err.message || String(err), "err")));
+    document.getElementById("icon-picker-close").addEventListener("click", closeIconPicker);
+    iconPickerEl.addEventListener("click", (event) => {
+      if (event.target === iconPickerEl) closeIconPicker();
+    });
+    loadAll().catch((err) => setStatus(err.message || String(err), "err"));
+  </script>
+  <script src="/shared-nav.js"></script>
+</body>
+</html>""".replace("__SETTINGS_TOP_NAV__", _settings_top_nav_html(PAGE_CATEGORIES_SETTINGS_ROUTE))
+
+
 def _epics_dropdown_options_settings_html() -> str:
     return """<!doctype html>
 <html lang="en">
@@ -3175,7 +4002,10 @@ def _epic_phases_settings_html() -> str:
     #status.ok { color:var(--ok); }
     #status.warn { color:var(--warn); }
     #status.err { color:var(--err); }
-    .table-wrap { margin-top:12px; border:1px solid var(--line); border-radius:10px; overflow:auto; background:#fff; }
+    .tabs { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
+    .tab-btn { border:1px solid var(--line); background:#fff; color:var(--text); border-radius:999px; padding:6px 12px; cursor:pointer; font-size:.84rem; }
+    .tab-btn.active { border-color:#1e40af; background:#eff6ff; color:#1e3a8a; font-weight:700; }
+    .table-wrap { margin-top:8px; border:1px solid var(--line); border-radius:10px; overflow:auto; background:#fff; }
     table { width:100%; min-width:860px; border-collapse:separate; border-spacing:0; }
     th, td { border-bottom:1px solid #e2e8f0; border-right:1px solid #e2e8f0; padding:8px 10px; font-size:.83rem; text-align:left; vertical-align:middle; }
     th:last-child, td:last-child { border-right:none; }
@@ -3221,6 +4051,10 @@ def _epic_phases_settings_html() -> str:
     </div>
 
     <div id="status"></div>
+    <div class="tabs" role="tablist" aria-label="Epic phase status tabs">
+      <button id="tab-active" class="tab-btn active" type="button" role="tab" aria-selected="true">Active</button>
+      <button id="tab-deleted" class="tab-btn" type="button" role="tab" aria-selected="false">Deleted</button>
+    </div>
     <div class="table-wrap">
       <table>
         <thead>
@@ -3253,8 +4087,11 @@ def _epic_phases_settings_html() -> str:
     const phaseJiraEnabledEl = document.getElementById("phase-jira-enabled");
     const restoreHintEl = document.getElementById("restore-hint");
     const phasesTbodyEl = document.getElementById("phases-tbody");
+    const tabActiveEl = document.getElementById("tab-active");
+    const tabDeletedEl = document.getElementById("tab-deleted");
 
     let phaseCatalog = [];
+    let activeTab = "active";
 
     function esc(value) {
       return String(value == null ? "" : value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -3274,6 +4111,18 @@ def _epic_phases_settings_html() -> str:
     }
     function getActivePhases() {
       return phaseCatalog.filter((item) => item.is_active);
+    }
+    function getDeletedPhases() {
+      return phaseCatalog.filter((item) => !item.is_active);
+    }
+    function setActiveTab(tabName) {
+      activeTab = tabName === "deleted" ? "deleted" : "active";
+      const isActiveTab = activeTab === "active";
+      tabActiveEl.classList.toggle("active", isActiveTab);
+      tabDeletedEl.classList.toggle("active", !isActiveTab);
+      tabActiveEl.setAttribute("aria-selected", isActiveTab ? "true" : "false");
+      tabDeletedEl.setAttribute("aria-selected", isActiveTab ? "false" : "true");
+      renderPhasesTable();
     }
     function formatPhasePositionLabel(index, phases) {
       if (!phases.length) return "1 (first)";
@@ -3320,7 +4169,10 @@ def _epic_phases_settings_html() -> str:
     }
     function renderPhasesTable() {
       const activeOrder = getActivePhases().map((item) => item.key);
-      const html = phaseCatalog.map((phase) => {
+      const rows = activeTab === "deleted" ? getDeletedPhases() : getActivePhases();
+      tabActiveEl.textContent = "Active (" + String(getActivePhases().length) + ")";
+      tabDeletedEl.textContent = "Deleted (" + String(getDeletedPhases().length) + ")";
+      const html = rows.map((phase) => {
         const key = String(phase && phase.key || "").trim();
         const label = String(phase && (phase.label || phase.key) || "").trim();
         const isDefault = !!(phase && phase.is_default);
@@ -3352,7 +4204,8 @@ def _epic_phases_settings_html() -> str:
           + "<td>" + actionHtml + "</td>"
           + "</tr>";
       }).join("");
-      phasesTbodyEl.innerHTML = html || '<tr><td colspan="8" class="mono" style="color:#94a3b8;">No Epic Phases found.</td></tr>';
+      const emptyLabel = activeTab === "deleted" ? "No deleted Epic Phases found." : "No active Epic Phases found.";
+      phasesTbodyEl.innerHTML = html || '<tr><td colspan="8" class="mono" style="color:#94a3b8;">' + emptyLabel + "</td></tr>";
     }
     async function loadCatalog() {
       const resp = await fetch(PLAN_COLUMNS_API + "?include_inactive=1", { cache: "no-store" });
@@ -3458,6 +4311,8 @@ def _epic_phases_settings_html() -> str:
       addPhase().catch((err) => setStatus(err.message || String(err), "err"));
     });
     phaseNameEl.addEventListener("input", refreshRestoreHint);
+    tabActiveEl.addEventListener("click", () => setActiveTab("active"));
+    tabDeletedEl.addEventListener("click", () => setActiveTab("deleted"));
     phasesTbodyEl.addEventListener("click", (event) => {
       const target = event.target instanceof Element ? event.target : null;
       const renameBtn = target ? target.closest("button[data-rename-phase]") : null;
@@ -3572,10 +4427,12 @@ def _epics_management_settings_html() -> str:
     .description-editor:focus { outline:2px solid #bfdbfe; outline-offset:-2px; background:#f8fbff; }
     select { width:100%; border:1px solid #cbd5e1; border-radius:6px; padding:4px 6px; font-size:.78rem; background:#fff; }
     .tree { display:grid; gap:2px; }
+    .tree.tree-epic-cell { position:relative; min-height:22px; padding-right:50px; }
     .tree-line { display:flex; align-items:center; gap:6px; white-space:nowrap; }
     .tree-epic { margin-left:6px; color:#1e3a8a; font-weight:600; }
     .tree-title { display:block; max-width:260px; white-space:normal; line-height:1.15; }
     .tree-actions { display:flex; gap:4px; flex-wrap:wrap; margin-top:2px; }
+    .tree.tree-epic-cell .tree-actions { position:absolute; top:0; right:0; margin-top:0; flex-wrap:nowrap; }
     .tree-toggle { border:1px solid #cbd5e1; background:#fff; color:#334155; border-radius:6px; width:20px; height:20px; line-height:1; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; }
     .tree-toggle:hover { background:#f1f5f9; }
     .tree-label-project { font-weight:700; color:#0f172a; }
@@ -4645,7 +5502,7 @@ def _epics_management_settings_html() -> str:
     function renderEpicCell(row) {
       const hasJira = !!String(row.jira_url || "").trim();
       return ''
-        + '<div class="tree">'
+        + '<div class="tree tree-epic-cell">'
         + '  <div class="tree-line tree-epic"><span class="tree-title">' + esc(row.epic_name || row.epic_key || "-") + '</span></div>'
         + '  <div class="tree-actions">'
         + '    <a class="jira-open ' + (hasJira ? "" : "disabled") + '" href="' + esc(hasJira ? row.jira_url : "#") + '" target="_blank" rel="noopener noreferrer" title="' + (hasJira ? "Open Jira link" : "No Jira link set") + '">J</a>'
@@ -5658,6 +6515,9 @@ def _resolve_report_html_sources(base_dir: Path) -> dict[str, Path]:
         "employee_performance_report.html": _resolve_output_html_path(
             "JIRA_EMPLOYEE_PERFORMANCE_HTML_PATH", "employee_performance_report.html", base_dir
         ),
+        "planned_vs_dispensed_report.html": _resolve_output_html_path(
+            "JIRA_PLANNED_VS_DISPENSED_HTML_PATH", "planned_vs_dispensed_report.html", base_dir
+        ),
     }
 
 
@@ -5687,7 +6547,7 @@ def sync_report_html(base_dir: Path, folder_raw: str) -> int:
         print(f"[report-html-sync] Moved: {source_path.name} -> {destination_path}")
 
     # Keep shared nav assets alongside reports so generated pages can always load them.
-    for asset_name in ("shared-nav.css", "shared-nav.js", "material-symbols.css"):
+    for asset_name in ("shared-nav.css", "shared-nav.js", "shared-date-filter.js", "material-symbols.css"):
         source_candidates = [
             base_dir / asset_name,
             base_dir / "report_html" / asset_name,
@@ -6304,6 +7164,22 @@ def _build_report_info_catalog(report_id: str) -> list[dict]:
                 "leadership_interpretation": "Operational pulse view for execution, data consistency, and risk flags.",
             }
         ],
+        "planned_vs_dispensed": [
+            {
+                "id": "planned_vs_dispensed.project_gap",
+                "label": "Planned vs Dispensed Gap",
+                "report": "planned_vs_dispensed_report",
+                "ui_targets": ["#pvd-comparison-chart", "#pvd-detail-root"],
+                "definition": "Compares epic-level planned estimates against subtotal of descendant subtask estimates per project.",
+                "formula": "Project Planned (Epic Estimates) - Project Dispensed (Subtask Estimates)",
+                "ingredients": ["epic.timeoriginalestimate", "subtask.timeoriginalestimate", "perspective_mode", "date_range"],
+                "business_validations": ["Perspective mode must be valid.", "Date range must be valid.", "Hierarchy linkage epic->story->subtask is required."],
+                "field_linkages": ["Date Range", "Advanced Filters", "Perspective"],
+                "cross_report_linkages": ["assignee.project_plan_actual_gap", "rnd.pending_hours_required"],
+                "data_sources": ["/api/planned-vs-dispensed/summary", "/api/planned-vs-dispensed/details"],
+                "leadership_interpretation": "Positive gap indicates under-dispensing from planning to actionable subtasks; near-zero gap indicates healthy decomposition.",
+            }
+        ],
     }
     return by_report.get(report_id, [])
 
@@ -6551,6 +7427,32 @@ body.report-info-drawer-open {{ overflow: hidden; }}
     return html + snippet
 
 
+def _inject_shared_date_filter_script(html: str) -> str:
+    if "shared-date-filter.js" in html:
+        return html
+    if '<script src="/shared-nav.js"></script>' in html:
+        return html.replace(
+            '<script src="/shared-nav.js"></script>',
+            '<script src="/shared-date-filter.js"></script>\n  <script src="/shared-nav.js"></script>',
+            1,
+        )
+    if '<script src="shared-nav.js"></script>' in html:
+        return html.replace(
+            '<script src="shared-nav.js"></script>',
+            '<script src="shared-date-filter.js"></script>\n<script src="shared-nav.js"></script>',
+            1,
+        )
+    if "<script src='shared-nav.js'></script>" in html:
+        return html.replace(
+            "<script src='shared-nav.js'></script>",
+            "<script src='shared-date-filter.js'></script>\n<script src='shared-nav.js'></script>",
+            1,
+        )
+    if "</body>" in html:
+        return html.replace("</body>", '<script src="/shared-date-filter.js"></script>\n</body>', 1)
+    return html + '\n<script src="/shared-date-filter.js"></script>\n'
+
+
 def _materialize_refresh_widgets(report_dir: Path) -> None:
     for file_name, report_id in REPORT_FILENAME_TO_ID.items():
         html_path = report_dir / file_name
@@ -6565,6 +7467,7 @@ def _materialize_refresh_widgets(report_dir: Path) -> None:
             continue
 
         updated = _inject_refresh_ui(html, report_id)
+        updated = _inject_shared_date_filter_script(updated)
         if updated == html:
             continue
 
@@ -6609,6 +7512,10 @@ def _parse_iso_date(value: str) -> date | None:
         return date.fromisoformat(text)
     except ValueError:
         return None
+
+
+def _utc_now_iso_z() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def _round_hours(value: float) -> float:
@@ -8150,6 +9057,256 @@ def _extract_issue_plan_metrics(issue_fields: dict, start_field_id: str, end_fie
     return start_iso, due_iso, estimate_hours
 
 
+def _chunked(items: list[str], size: int = 50) -> list[list[str]]:
+    out: list[list[str]] = []
+    if size <= 0:
+        size = 50
+    for i in range(0, len(items), size):
+        out.append(items[i:i + size])
+    return out
+
+
+def _jql_quote(value: str) -> str:
+    return str(value or "").replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _project_jql_clause(project_keys: set[str]) -> str:
+    normalized = sorted({_to_text(item).upper() for item in (project_keys or set()) if _to_text(item)})
+    if not normalized:
+        return ""
+    quoted = ", ".join(f'"{_jql_quote(key)}"' for key in normalized)
+    return f"project in ({quoted})"
+
+
+def _extract_epic_key_candidate(issue_fields: dict) -> str:
+    parent = issue_fields.get("parent") or {}
+    parent_key = _to_text(parent.get("key")).upper()
+    epic_link = issue_fields.get("customfield_10014")
+    if isinstance(epic_link, str):
+        link_key = _to_text(epic_link).upper()
+        if link_key:
+            return link_key
+    if isinstance(epic_link, dict):
+        link_key = _to_text(epic_link.get("key")).upper()
+        if link_key:
+            return link_key
+    return parent_key
+
+
+def _issue_overlaps_range(start_iso: str, due_iso: str, from_date: date, to_date: date) -> bool:
+    start_parsed = _parse_iso_date(start_iso)
+    due_parsed = _parse_iso_date(due_iso)
+    return bool(
+        (start_parsed and from_date <= start_parsed <= to_date)
+        or (due_parsed and from_date <= due_parsed <= to_date)
+    )
+
+
+def _fetch_jira_issues_by_keys(session, issue_keys: list[str], fields: list[str]) -> list[dict]:
+    normalized = sorted({_to_text(item).upper() for item in issue_keys if _to_text(item)})
+    if not normalized:
+        return []
+    out: list[dict] = []
+    for chunk in _chunked(normalized, 50):
+        keys_csv = '", "'.join(_jql_quote(item) for item in chunk)
+        out.extend(_fetch_jira_issues_for_jql(session, f'key in ("{keys_csv}")', fields))
+    return out
+
+
+def _fetch_story_issues_for_epics(session, epic_keys: list[str], fields: list[str], project_keys: set[str] | None = None) -> list[dict]:
+    normalized = sorted({_to_text(item).upper() for item in epic_keys if _to_text(item)})
+    if not normalized:
+        return []
+    out: list[dict] = []
+    project_clause = _project_jql_clause(project_keys or set())
+    prefix = f"{project_clause} AND " if project_clause else ""
+    for chunk in _chunked(normalized, 30):
+        keys_csv = '", "'.join(_jql_quote(item) for item in chunk)
+        jql = (
+            f'{prefix}issuetype not in subTaskIssueTypes() '
+            f'AND (parent in ("{keys_csv}") OR customfield_10014 in ("{keys_csv}"))'
+        )
+        out.extend(_fetch_jira_issues_for_jql(session, jql, fields))
+    return out
+
+
+def _fetch_subtask_issues_for_stories(session, story_keys: list[str], fields: list[str], project_keys: set[str] | None = None) -> list[dict]:
+    normalized = sorted({_to_text(item).upper() for item in story_keys if _to_text(item)})
+    if not normalized:
+        return []
+    out: list[dict] = []
+    project_clause = _project_jql_clause(project_keys or set())
+    prefix = f"{project_clause} AND " if project_clause else ""
+    for chunk in _chunked(normalized, 50):
+        keys_csv = '", "'.join(_jql_quote(item) for item in chunk)
+        jql = f'{prefix}issueType in subTaskIssueTypes() AND parent in ("{keys_csv}")'
+        out.extend(_fetch_jira_issues_for_jql(session, jql, fields))
+    return out
+
+
+def _planned_vs_dispensed_issue_fields(start_field_id: str, end_field_ids: list[str]) -> list[str]:
+    fields = [
+        "summary",
+        "status",
+        "assignee",
+        "issuetype",
+        "project",
+        "parent",
+        "customfield_10014",
+        "timeoriginalestimate",
+    ]
+    if start_field_id:
+        fields.append(start_field_id)
+    for field_id in end_field_ids:
+        if field_id not in fields:
+            fields.append(field_id)
+    return fields
+
+
+def _jira_browse_url(issue_key: str) -> str:
+    key = _to_text(issue_key).upper()
+    if not key:
+        return ""
+    base = _to_text(BASE_URL).rstrip("/")
+    if not base:
+        return ""
+    return f"{base}/browse/{key}"
+
+
+def _normalize_pvd_issue(
+    issue: dict,
+    start_field_id: str,
+    end_field_ids: list[str],
+    issue_kind_override: str = "",
+) -> dict:
+    issue_fields = issue.get("fields", {}) or {}
+    issue_key = _to_text(issue.get("key")).upper()
+    issue_type_name = _to_text((issue_fields.get("issuetype") or {}).get("name"))
+    issue_kind = issue_kind_override or _issue_kind(issue_type_name)
+    planned_start, planned_due, estimate_hours = _extract_issue_plan_metrics(issue_fields, start_field_id, end_field_ids)
+    assignee_raw = issue_fields.get("assignee") or {}
+    if isinstance(assignee_raw, dict):
+        assignee = _to_text(assignee_raw.get("displayName")) or _to_text(assignee_raw.get("emailAddress")) or "Unassigned"
+    else:
+        assignee = "Unassigned"
+    parent = issue_fields.get("parent") or {}
+    return {
+        "issue_key": issue_key,
+        "issue_kind": issue_kind,
+        "issue_type_name": issue_type_name,
+        "project_key": _to_text((issue_fields.get("project") or {}).get("key")).upper() or _extract_project_key(issue_key),
+        "project_name": _to_text((issue_fields.get("project") or {}).get("name")),
+        "jira_url": _jira_browse_url(issue_key),
+        "summary": _to_text(issue_fields.get("summary")) or issue_key,
+        "status": _to_text((issue_fields.get("status") or {}).get("name")),
+        "assignee": assignee,
+        "planned_start": planned_start,
+        "planned_due": planned_due,
+        "estimate_hours": estimate_hours,
+        "parent_key": _to_text(parent.get("key")).upper(),
+        "epic_key_candidate": _extract_epic_key_candidate(issue_fields),
+    }
+
+
+def _load_planned_vs_dispensed_hierarchy(
+    session,
+    from_date: date,
+    to_date: date,
+    mode: str,
+    selected_projects: set[str],
+) -> dict[str, object]:
+    start_field_id = resolve_jira_start_date_field_id(session, BASE_URL, project_keys=sorted(selected_projects) if selected_projects else None)
+    end_field_ids = resolve_jira_end_date_field_ids(session, BASE_URL, project_keys=sorted(selected_projects) if selected_projects else None)
+    if "duedate" not in end_field_ids:
+        end_field_ids.append("duedate")
+    fields = _planned_vs_dispensed_issue_fields(start_field_id, end_field_ids)
+
+    project_clause = _project_jql_clause(selected_projects)
+    prefix = f"{project_clause} AND " if project_clause else ""
+
+    scoped_epic_keys: set[str] = set()
+    preloaded_epics: dict[str, dict] = {}
+
+    if mode == "planned_dates":
+        epic_issues = _fetch_jira_issues_for_jql(session, f"{prefix}issuetype = Epic", fields)
+        for issue in epic_issues:
+            normalized = _normalize_pvd_issue(issue, start_field_id, end_field_ids, issue_kind_override="epic")
+            if _issue_overlaps_range(normalized["planned_start"], normalized["planned_due"], from_date, to_date):
+                scoped_epic_keys.add(normalized["issue_key"])
+                preloaded_epics[normalized["issue_key"]] = normalized
+    else:
+        log_jql = (
+            f'{prefix}issueType in subTaskIssueTypes() '
+            f'AND worklogDate >= "{from_date.isoformat()}" AND worklogDate <= "{to_date.isoformat()}"'
+        )
+        logged_subtasks = _fetch_jira_issues_for_jql(session, log_jql, fields)
+        story_keys = sorted({
+            _to_text((issue.get("fields", {}) or {}).get("parent", {}).get("key")).upper()
+            for issue in logged_subtasks
+            if _to_text((issue.get("fields", {}) or {}).get("parent", {}).get("key"))
+        })
+        if story_keys:
+            story_issues = _fetch_jira_issues_by_keys(session, story_keys, fields)
+            for story_issue in story_issues:
+                story_fields = story_issue.get("fields", {}) or {}
+                epic_key = _extract_epic_key_candidate(story_fields)
+                if epic_key:
+                    scoped_epic_keys.add(epic_key)
+
+    if not scoped_epic_keys:
+        return {
+            "start_field_id": start_field_id,
+            "end_field_ids": end_field_ids,
+            "epics": [],
+            "stories": [],
+            "subtasks": [],
+        }
+
+    scoped_epics = dict(preloaded_epics)
+    missing_epics = sorted(scoped_epic_keys - set(scoped_epics.keys()))
+    if missing_epics:
+        for issue in _fetch_jira_issues_by_keys(session, missing_epics, fields):
+            normalized = _normalize_pvd_issue(issue, start_field_id, end_field_ids, issue_kind_override="epic")
+            scoped_epics[normalized["issue_key"]] = normalized
+
+    story_issues = _fetch_story_issues_for_epics(session, list(scoped_epics.keys()), fields, project_keys=selected_projects)
+    stories: list[dict] = []
+    story_to_epic: dict[str, str] = {}
+    valid_epic_keys = set(scoped_epics.keys())
+    for issue in story_issues:
+        normalized = _normalize_pvd_issue(issue, start_field_id, end_field_ids, issue_kind_override="story")
+        story_fields = issue.get("fields", {}) or {}
+        epic_key = _resolve_epic_key_for_story(story_fields, valid_epic_keys) or normalized["epic_key_candidate"]
+        epic_key = _to_text(epic_key).upper()
+        if not epic_key or epic_key not in valid_epic_keys:
+            continue
+        normalized["epic_key"] = epic_key
+        story_to_epic[normalized["issue_key"]] = epic_key
+        stories.append(normalized)
+
+    subtasks: list[dict] = []
+    story_keys = sorted(story_to_epic.keys())
+    if story_keys:
+        subtask_issues = _fetch_subtask_issues_for_stories(session, story_keys, fields, project_keys=selected_projects)
+        for issue in subtask_issues:
+            normalized = _normalize_pvd_issue(issue, start_field_id, end_field_ids, issue_kind_override="subtask")
+            story_key = _to_text(normalized.get("parent_key")).upper()
+            epic_key = story_to_epic.get(story_key, "")
+            if not epic_key:
+                continue
+            normalized["story_key"] = story_key
+            normalized["epic_key"] = epic_key
+            subtasks.append(normalized)
+
+    return {
+        "start_field_id": start_field_id,
+        "end_field_ids": end_field_ids,
+        "epics": list(scoped_epics.values()),
+        "stories": stories,
+        "subtasks": subtasks,
+    }
+
+
 def _story_sync_row_from_issue(
     issue: dict,
     epic_key: str,
@@ -8174,7 +9331,7 @@ def _story_sync_row_from_issue(
         "project_key": project_key,
         "story_name": _to_text(issue_fields.get("summary")) or story_key,
         "story_status": _to_text((issue_fields.get("status") or {}).get("name")),
-        "jira_url": f"{browse_base}/{story_key}",
+        "jira_url": _to_text(f"{browse_base}/{story_key}") if browse_base else _jira_browse_url(story_key),
         "start_date": story_start,
         "due_date": story_due,
         "estimate_hours": estimate_hours,
@@ -8633,6 +9790,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
     init_report_entities_db(capacity_paths["db_path"])
     init_manage_fields_db(capacity_paths["db_path"])
     init_managed_projects_db(capacity_paths["db_path"])
+    _init_page_categories_db(capacity_paths["db_path"])
     default_project_keys = parse_project_keys_from_env()
 
     def _resolve_seed_project_name(project_key: str) -> str:
@@ -8652,12 +9810,604 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             pass
     refresh_lock = threading.Lock()
     actual_hours_cache: dict[tuple[str, str, str, str, str, str, float, float], dict[str, object]] = {}
+    pvd_response_cache_version = "v6"
+
+    def _is_rlt_managed_project(item: dict) -> bool:
+        key = _to_text((item or {}).get("project_key")).upper()
+        name = _to_text((item or {}).get("project_name")).lower()
+        display = _to_text((item or {}).get("display_name")).lower()
+        if key == "RLT":
+            return True
+        text = f"{name} {display}"
+        return "leave tracker" in text and "rnd" in text
+
+    def _managed_project_scope_defaults() -> tuple[set[str], list[str], list[str]]:
+        try:
+            managed = list_managed_projects(capacity_paths["db_path"], include_inactive=False)
+        except Exception:
+            managed = []
+        managed_keys = sorted({
+            _to_text(item.get("project_key")).upper()
+            for item in managed
+            if _to_text(item.get("project_key"))
+        })
+        default_selected = sorted({
+            _to_text(item.get("project_key")).upper()
+            for item in managed
+            if _to_text(item.get("project_key")) and not _is_rlt_managed_project(item)
+        })
+        selected_scope = set(default_selected or managed_keys)
+        return selected_scope, managed_keys, default_selected
+
+    def _managed_project_name_map() -> dict[str, str]:
+        try:
+            managed = list_managed_projects(capacity_paths["db_path"], include_inactive=False)
+        except Exception:
+            managed = []
+        out: dict[str, str] = {}
+        for item in managed:
+            key = _to_text((item or {}).get("project_key")).upper()
+            if not key:
+                continue
+            name = (
+                _to_text((item or {}).get("display_name"))
+                or _to_text((item or {}).get("project_name"))
+                or key
+            )
+            out[key] = name
+        return out
+
+    def _normalize_pvd_plan_source(raw_value: str) -> str:
+        value = _to_text(raw_value).strip().lower()
+        if not value:
+            return "jira_estimates"
+        if value in {"jira_estimates", "epic_planner"}:
+            return value
+        return ""
+
+    def _pvd_hours_from_man_days(raw_value: object) -> float | None:
+        text = _to_text(raw_value)
+        if not text:
+            return None
+        try:
+            parsed = float(text)
+        except Exception:
+            return None
+        if parsed <= 0:
+            return None
+        return _round_hours(parsed * 8.0)
+
+    def _load_pvd_planner_maps() -> tuple[dict[str, dict[str, object]], dict[str, dict[str, object]]]:
+        epic_map: dict[str, dict[str, object]] = {}
+        story_map: dict[str, dict[str, object]] = {}
+        try:
+            rows = _load_epics_management_rows(capacity_paths["db_path"])
+        except Exception:
+            rows = []
+        for row in rows:
+            epic_key = _to_text((row or {}).get("epic_key")).upper()
+            if not epic_key:
+                continue
+            epic_plan = ((row or {}).get("plans") or {}).get("epic_plan") or {}
+            planned_hours = _pvd_hours_from_man_days(epic_plan.get("man_days"))
+            planned_start = _to_text(epic_plan.get("start_date"))
+            planned_due = _to_text(epic_plan.get("due_date"))
+            epic_map[epic_key] = {
+                "planned_hours": planned_hours,
+                "planned_start": planned_start,
+                "planned_due": planned_due,
+            }
+        conn = sqlite3.connect(capacity_paths["db_path"])
+        conn.row_factory = sqlite3.Row
+        try:
+            story_rows = conn.execute(
+                """
+                SELECT story_key, start_date, due_date, estimate_hours
+                FROM epics_management_story_sync
+                """
+            ).fetchall()
+        except Exception:
+            story_rows = []
+        finally:
+            conn.close()
+        for row in story_rows:
+            story_key = _to_text(row["story_key"]).upper()
+            if not story_key:
+                continue
+            story_map[story_key] = {
+                "planned_hours": _round_hours(float(row["estimate_hours"] or 0.0)),
+                "planned_start": _to_text(row["start_date"]),
+                "planned_due": _to_text(row["due_date"]),
+            }
+        return epic_map, story_map
+
+    def _rollup_dispensed_dates(items: list[dict]) -> tuple[str, str]:
+        starts: list[date] = []
+        dues: list[date] = []
+        for item in (items or []):
+            start_raw = _to_text((item or {}).get("planned_start"))
+            due_raw = _to_text((item or {}).get("planned_due"))
+            start_parsed = _parse_iso_date(start_raw)
+            due_parsed = _parse_iso_date(due_raw)
+            if start_parsed:
+                starts.append(start_parsed)
+            if due_parsed:
+                dues.append(due_parsed)
+        start_iso = min(starts).isoformat() if starts else ""
+        due_iso = max(dues).isoformat() if dues else ""
+        return start_iso, due_iso
+
+    def _init_planned_vs_dispensed_cache_db() -> None:
+        conn = sqlite3.connect(capacity_paths["db_path"])
+        try:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS planned_vs_dispensed_cache (
+                    cache_key TEXT PRIMARY KEY,
+                    from_date TEXT NOT NULL,
+                    to_date TEXT NOT NULL,
+                    mode TEXT NOT NULL,
+                    project_scope TEXT NOT NULL DEFAULT '',
+                    payload_json TEXT NOT NULL,
+                    fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS planned_vs_dispensed_response_cache (
+                    cache_key TEXT PRIMARY KEY,
+                    endpoint TEXT NOT NULL,
+                    from_date TEXT NOT NULL,
+                    to_date TEXT NOT NULL,
+                    mode TEXT NOT NULL,
+                    project_scope TEXT NOT NULL DEFAULT '',
+                    statuses_scope TEXT NOT NULL DEFAULT '',
+                    assignees_scope TEXT NOT NULL DEFAULT '',
+                    project_key TEXT NOT NULL DEFAULT '',
+                    payload_json TEXT NOT NULL,
+                    fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_pvd_cache_fetched_at
+                ON planned_vs_dispensed_cache(fetched_at DESC)
+                """
+            )
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_pvd_response_cache_fetched_at
+                ON planned_vs_dispensed_response_cache(fetched_at DESC)
+                """
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def _planned_vs_dispensed_cache_scope(selected_projects: set[str]) -> str:
+        return ",".join(sorted({_to_text(item).upper() for item in (selected_projects or set()) if _to_text(item)}))
+
+    def _planned_vs_dispensed_text_scope(values: set[str]) -> str:
+        return ",".join(sorted({_to_text(item).lower() for item in (values or set()) if _to_text(item)}))
+
+    def _planned_vs_dispensed_cache_key(
+        from_date: date,
+        to_date: date,
+        mode: str,
+        selected_projects: set[str],
+    ) -> tuple[str, str]:
+        scope = _planned_vs_dispensed_cache_scope(selected_projects)
+        return f"{from_date.isoformat()}|{to_date.isoformat()}|{mode}|{scope}", scope
+
+    def _load_planned_vs_dispensed_cache(
+        from_date: date,
+        to_date: date,
+        mode: str,
+        selected_projects: set[str],
+    ) -> dict[str, object] | None:
+        _init_planned_vs_dispensed_cache_db()
+        cache_key, _scope = _planned_vs_dispensed_cache_key(from_date, to_date, mode, selected_projects)
+        conn = sqlite3.connect(capacity_paths["db_path"])
+        conn.row_factory = sqlite3.Row
+        try:
+            row = conn.execute(
+                "SELECT payload_json FROM planned_vs_dispensed_cache WHERE cache_key=?",
+                (cache_key,),
+            ).fetchone()
+            if not row:
+                return None
+            payload = json.loads(_to_text(row["payload_json"]) or "{}")
+            if not isinstance(payload, dict):
+                return None
+            if not isinstance(payload.get("epics"), list):
+                return None
+            if not isinstance(payload.get("stories"), list):
+                return None
+            if not isinstance(payload.get("subtasks"), list):
+                return None
+            return payload
+        except Exception:
+            return None
+        finally:
+            conn.close()
+
+    def _save_planned_vs_dispensed_cache(
+        from_date: date,
+        to_date: date,
+        mode: str,
+        selected_projects: set[str],
+        hierarchy: dict[str, object],
+    ) -> None:
+        _init_planned_vs_dispensed_cache_db()
+        cache_key, scope = _planned_vs_dispensed_cache_key(from_date, to_date, mode, selected_projects)
+        payload_text = json.dumps(hierarchy or {}, ensure_ascii=True, separators=(",", ":"))
+        conn = sqlite3.connect(capacity_paths["db_path"])
+        try:
+            conn.execute(
+                """
+                INSERT INTO planned_vs_dispensed_cache (
+                    cache_key, from_date, to_date, mode, project_scope, payload_json, fetched_at
+                ) VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+                ON CONFLICT(cache_key) DO UPDATE SET
+                    payload_json=excluded.payload_json,
+                    fetched_at=datetime('now')
+                """,
+                (
+                    cache_key,
+                    from_date.isoformat(),
+                    to_date.isoformat(),
+                    mode,
+                    scope,
+                    payload_text,
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def _get_planned_vs_dispensed_hierarchy_cached(
+        from_date: date,
+        to_date: date,
+        mode: str,
+        selected_projects: set[str],
+        force_refresh: bool = False,
+    ) -> tuple[dict[str, object], str]:
+        if not force_refresh:
+            cached = _load_planned_vs_dispensed_cache(from_date, to_date, mode, selected_projects)
+            if cached is not None:
+                return cached, "cache"
+        session = get_session()
+        hierarchy = _load_planned_vs_dispensed_hierarchy(
+            session=session,
+            from_date=from_date,
+            to_date=to_date,
+            mode=mode,
+            selected_projects=selected_projects,
+        )
+        _save_planned_vs_dispensed_cache(from_date, to_date, mode, selected_projects, hierarchy)
+        return hierarchy, "jira"
+
+    def _planned_vs_dispensed_response_cache_key(
+        endpoint: str,
+        from_date: date,
+        to_date: date,
+        mode: str,
+        plan_source: str,
+        selected_projects: set[str],
+        selected_statuses: set[str],
+        selected_assignees: set[str],
+        project_key: str = "",
+    ) -> tuple[str, str, str, str, str]:
+        project_scope = _planned_vs_dispensed_cache_scope(selected_projects)
+        statuses_scope = _planned_vs_dispensed_text_scope(selected_statuses)
+        assignees_scope = _planned_vs_dispensed_text_scope(selected_assignees)
+        pk = _to_text(project_key).upper()
+        key = "|".join(
+            [
+                pvd_response_cache_version,
+                endpoint,
+                from_date.isoformat(),
+                to_date.isoformat(),
+                mode,
+                plan_source,
+                project_scope,
+                statuses_scope,
+                assignees_scope,
+                pk,
+            ]
+        )
+        return key, project_scope, statuses_scope, assignees_scope, pk
+
+    def _load_planned_vs_dispensed_response_cache(
+        endpoint: str,
+        from_date: date,
+        to_date: date,
+        mode: str,
+        plan_source: str,
+        selected_projects: set[str],
+        selected_statuses: set[str],
+        selected_assignees: set[str],
+        project_key: str = "",
+    ) -> dict[str, object] | None:
+        _init_planned_vs_dispensed_cache_db()
+        cache_key, _project_scope, _statuses_scope, _assignees_scope, _pk = _planned_vs_dispensed_response_cache_key(
+            endpoint=endpoint,
+            from_date=from_date,
+            to_date=to_date,
+            mode=mode,
+            plan_source=plan_source,
+            selected_projects=selected_projects,
+            selected_statuses=selected_statuses,
+            selected_assignees=selected_assignees,
+            project_key=project_key,
+        )
+        conn = sqlite3.connect(capacity_paths["db_path"])
+        conn.row_factory = sqlite3.Row
+        try:
+            row = conn.execute(
+                "SELECT payload_json FROM planned_vs_dispensed_response_cache WHERE cache_key=?",
+                (cache_key,),
+            ).fetchone()
+            if not row:
+                return None
+            payload = json.loads(_to_text(row["payload_json"]) or "{}")
+            return payload if isinstance(payload, dict) else None
+        except Exception:
+            return None
+        finally:
+            conn.close()
+
+    def _save_planned_vs_dispensed_response_cache(
+        endpoint: str,
+        from_date: date,
+        to_date: date,
+        mode: str,
+        plan_source: str,
+        selected_projects: set[str],
+        selected_statuses: set[str],
+        selected_assignees: set[str],
+        payload: dict[str, object],
+        project_key: str = "",
+    ) -> None:
+        _init_planned_vs_dispensed_cache_db()
+        cache_key, project_scope, statuses_scope, assignees_scope, pk = _planned_vs_dispensed_response_cache_key(
+            endpoint=endpoint,
+            from_date=from_date,
+            to_date=to_date,
+            mode=mode,
+            plan_source=plan_source,
+            selected_projects=selected_projects,
+            selected_statuses=selected_statuses,
+            selected_assignees=selected_assignees,
+            project_key=project_key,
+        )
+        payload_text = json.dumps(payload or {}, ensure_ascii=True, separators=(",", ":"))
+        conn = sqlite3.connect(capacity_paths["db_path"])
+        try:
+            conn.execute(
+                """
+                INSERT INTO planned_vs_dispensed_response_cache (
+                    cache_key, endpoint, from_date, to_date, mode,
+                    project_scope, statuses_scope, assignees_scope, project_key,
+                    payload_json, fetched_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                ON CONFLICT(cache_key) DO UPDATE SET
+                    payload_json=excluded.payload_json,
+                    fetched_at=datetime('now')
+                """,
+                (
+                    cache_key,
+                    endpoint,
+                    from_date.isoformat(),
+                    to_date.isoformat(),
+                    mode,
+                    project_scope,
+                    statuses_scope,
+                    assignees_scope,
+                    pk,
+                    payload_text,
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def _init_global_report_date_filter_db(db_path: Path) -> None:
+        conn = sqlite3.connect(db_path)
+        try:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS global_report_date_filters (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    from_date TEXT NOT NULL,
+                    to_date TEXT NOT NULL,
+                    source_page TEXT NOT NULL DEFAULT '',
+                    created_at_utc TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_global_report_date_filters_created
+                ON global_report_date_filters(created_at_utc DESC, id DESC)
+                """
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def _init_pvd_ui_settings_db(db_path: Path) -> None:
+        conn = sqlite3.connect(db_path)
+        try:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS planned_vs_dispensed_ui_settings (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    first_column_width_px INTEGER NOT NULL,
+                    updated_at_utc TEXT NOT NULL
+                )
+                """
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def _normalize_pvd_first_column_width(raw_value: object) -> int:
+        try:
+            parsed = int(float(_to_text(raw_value)))
+        except Exception:
+            raise ValueError("first_column_width_px must be a number.")
+        if parsed < 290 or parsed > 900:
+            raise ValueError("first_column_width_px must be between 290 and 900.")
+        return parsed
+
+    def _load_pvd_ui_settings(db_path: Path) -> dict[str, object]:
+        _init_pvd_ui_settings_db(db_path)
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        try:
+            row = conn.execute(
+                """
+                SELECT first_column_width_px, updated_at_utc
+                FROM planned_vs_dispensed_ui_settings
+                WHERE id = 1
+                """
+            ).fetchone()
+        finally:
+            conn.close()
+        if not row:
+            return {"first_column_width_px": 420, "updated_at_utc": ""}
+        width_px = int(row["first_column_width_px"] or 420)
+        if width_px < 290 or width_px > 900:
+            width_px = 420
+        return {
+            "first_column_width_px": width_px,
+            "updated_at_utc": _to_text(row["updated_at_utc"]),
+        }
+
+    def _save_pvd_ui_settings(db_path: Path, payload: object) -> dict[str, object]:
+        raw = payload if isinstance(payload, dict) else {}
+        width_px = _normalize_pvd_first_column_width(raw.get("first_column_width_px"))
+        updated_at = _utc_now_iso_z()
+        _init_pvd_ui_settings_db(db_path)
+        conn = sqlite3.connect(db_path)
+        try:
+            conn.execute(
+                """
+                INSERT INTO planned_vs_dispensed_ui_settings(id, first_column_width_px, updated_at_utc)
+                VALUES (1, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    first_column_width_px = excluded.first_column_width_px,
+                    updated_at_utc = excluded.updated_at_utc
+                """,
+                (width_px, updated_at),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        return {"first_column_width_px": width_px, "updated_at_utc": updated_at}
+
+    def _load_latest_global_report_date_filter(db_path: Path) -> dict[str, str] | None:
+        _init_global_report_date_filter_db(db_path)
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        try:
+            row = conn.execute(
+                """
+                SELECT id, from_date, to_date, source_page, created_at_utc
+                FROM global_report_date_filters
+                ORDER BY created_at_utc DESC, id DESC
+                LIMIT 1
+                """
+            ).fetchone()
+        finally:
+            conn.close()
+        if not row:
+            return None
+        from_date = _to_text(row["from_date"])
+        to_date = _to_text(row["to_date"])
+        from_parsed = _parse_iso_date(from_date)
+        to_parsed = _parse_iso_date(to_date)
+        if from_parsed is None or to_parsed is None or to_parsed < from_parsed:
+            return None
+        return {
+            "from_date": from_parsed.isoformat(),
+            "to_date": to_parsed.isoformat(),
+            "source_page": _to_text(row["source_page"]),
+            "updated_at_utc": _to_text(row["created_at_utc"]),
+        }
+
+    def _save_global_report_date_filter(db_path: Path, from_date: str, to_date: str, source_page: str = "") -> dict[str, str]:
+        _init_global_report_date_filter_db(db_path)
+        from_parsed = _parse_iso_date(from_date)
+        to_parsed = _parse_iso_date(to_date)
+        if from_parsed is None or to_parsed is None:
+            raise ValueError("Invalid date format. Expected YYYY-MM-DD.")
+        if to_parsed < from_parsed:
+            raise ValueError("'to_date' must be on or after 'from_date'.")
+        created_at = _utc_now_iso_z()
+        conn = sqlite3.connect(db_path)
+        try:
+            conn.execute(
+                """
+                INSERT INTO global_report_date_filters(from_date, to_date, source_page, created_at_utc)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    from_parsed.isoformat(),
+                    to_parsed.isoformat(),
+                    _to_text(source_page),
+                    created_at,
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        return {
+            "from_date": from_parsed.isoformat(),
+            "to_date": to_parsed.isoformat(),
+            "source_page": _to_text(source_page),
+            "updated_at_utc": created_at,
+        }
+
+    def _resolve_effective_range_from_request(
+        args,
+        *,
+        allow_global_fallback: bool = True,
+    ) -> tuple[str, str]:
+        from_raw = _to_text(args.get("from"))
+        to_raw = _to_text(args.get("to"))
+        if bool(from_raw) != bool(to_raw):
+            raise ValueError("Query params 'from' and 'to' must be provided together.")
+        if not from_raw and not to_raw and allow_global_fallback:
+            latest = _load_latest_global_report_date_filter(capacity_paths["db_path"])
+            if latest:
+                return _to_text(latest["from_date"]), _to_text(latest["to_date"])
+        if not from_raw or not to_raw:
+            raise ValueError("Query params 'from' and 'to' are required.")
+        from_parsed = _parse_iso_date(from_raw)
+        to_parsed = _parse_iso_date(to_raw)
+        if from_parsed is None or to_parsed is None:
+            raise ValueError("Invalid date format. Expected YYYY-MM-DD.")
+        if to_parsed < from_parsed:
+            raise ValueError("'to' must be on or after 'from'.")
+        return from_parsed.isoformat(), to_parsed.isoformat()
+
+    _init_global_report_date_filter_db(capacity_paths["db_path"])
+    _init_pvd_ui_settings_db(capacity_paths["db_path"])
 
     @app.after_request
     def add_cors_headers(response):
         response.headers["Access-Control-Allow-Origin"] = "*"
         response.headers["Access-Control-Allow-Headers"] = "Content-Type"
         response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+        req_path = _to_text(getattr(request, "path", ""))
+        if req_path.startswith("/api/planned-vs-dispensed/"):
+            response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
         return response
 
     @app.route("/")
@@ -8752,13 +10502,43 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         finally:
             refresh_lock.release()
 
+    @app.route("/api/report-date-filter", methods=["GET"])
+    def get_report_date_filter():
+        latest = _load_latest_global_report_date_filter(capacity_paths["db_path"])
+        return jsonify({"ok": True, "filter": latest})
+
+    @app.route("/api/report-date-filter", methods=["POST"])
+    def save_report_date_filter():
+        payload = request.get_json(silent=True) or {}
+        try:
+            saved = _save_global_report_date_filter(
+                capacity_paths["db_path"],
+                from_date=_to_text(payload.get("from_date")),
+                to_date=_to_text(payload.get("to_date")),
+                source_page=_to_text(payload.get("source_page")),
+            )
+            return jsonify({"ok": True, "filter": saved})
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+
+    @app.route("/api/planned-vs-dispensed/ui-settings", methods=["GET"])
+    def get_pvd_ui_settings():
+        settings = _load_pvd_ui_settings(capacity_paths["db_path"])
+        return jsonify({"ok": True, "settings": settings})
+
+    @app.route("/api/planned-vs-dispensed/ui-settings", methods=["POST"])
+    def save_pvd_ui_settings():
+        payload = request.get_json(silent=True) or {}
+        try:
+            settings = _save_pvd_ui_settings(capacity_paths["db_path"], payload)
+            return jsonify({"ok": True, "settings": settings})
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+
     @app.route("/api/capacity", methods=["GET"])
     def get_capacity():
         try:
-            from_date = _to_text(request.args.get("from"))
-            to_date = _to_text(request.args.get("to"))
-            if not from_date or not to_date:
-                return jsonify({"error": "Query params 'from' and 'to' are required."}), 400
+            from_date, to_date = _resolve_effective_range_from_request(request.args)
             settings = _load_capacity_settings(capacity_paths["db_path"], from_date, to_date)
             result = calculate_capacity_metrics(settings)
             leave = _load_leave_metrics(
@@ -8782,8 +10562,6 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
 
     @app.route("/api/actual-hours/aggregate", methods=["GET"])
     def actual_hours_aggregate():
-        from_raw = _to_text(request.args.get("from"))
-        to_raw = _to_text(request.args.get("to"))
         mode = _to_text(request.args.get("mode")).lower() or "log_date"
         report_id = _to_text(request.args.get("report"))
         projects_raw = _to_text(request.args.get("projects"))
@@ -8792,16 +10570,16 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             for item in projects_raw.split(",")
             if item.strip()
         } if projects_raw else None
-        if not from_raw or not to_raw:
-            return jsonify({"ok": False, "error": "Query params 'from' and 'to' are required."}), 400
+        try:
+            from_raw, to_raw = _resolve_effective_range_from_request(request.args)
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
         if mode not in {"log_date", "planned_dates"}:
             return jsonify({"ok": False, "error": "Invalid mode. Expected 'log_date' or 'planned_dates'."}), 400
         from_date = _parse_iso_date(from_raw)
         to_date = _parse_iso_date(to_raw)
         if from_date is None or to_date is None:
             return jsonify({"ok": False, "error": "Invalid date format. Expected YYYY-MM-DD."}), 400
-        if to_date < from_date:
-            return jsonify({"ok": False, "error": "'to' must be on or after 'from'."}), 400
 
         worklog_path = _resolve_worklog_xlsx_path(base_dir)
         work_items_path = _resolve_work_items_xlsx_path(base_dir)
@@ -8847,19 +10625,17 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
 
     @app.route("/api/nested-view/actual-hours", methods=["GET"])
     def nested_view_actual_hours():
-        from_raw = _to_text(request.args.get("from"))
-        to_raw = _to_text(request.args.get("to"))
         mode = _to_text(request.args.get("mode")).lower() or "log_date"
-        if not from_raw or not to_raw:
-            return jsonify({"ok": False, "error": "Query params 'from' and 'to' are required."}), 400
+        try:
+            from_raw, to_raw = _resolve_effective_range_from_request(request.args)
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
         if mode not in {"log_date", "planned_dates"}:
             return jsonify({"ok": False, "error": "Invalid mode. Expected 'log_date' or 'planned_dates'."}), 400
         from_date = _parse_iso_date(from_raw)
         to_date = _parse_iso_date(to_raw)
         if from_date is None or to_date is None:
             return jsonify({"ok": False, "error": "Invalid date format. Expected YYYY-MM-DD."}), 400
-        if to_date < from_date:
-            return jsonify({"ok": False, "error": "'to' must be on or after 'from'."}), 400
 
         worklog_path = _resolve_worklog_xlsx_path(base_dir)
         work_items_path = _resolve_work_items_xlsx_path(base_dir)
@@ -8899,6 +10675,523 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 "subtask_hours_by_issue": cached.get("subtask_hours_by_issue", {}),
             }
         )
+
+    @app.route("/api/planned-vs-dispensed/summary", methods=["GET"])
+    def planned_vs_dispensed_summary():
+        mode = _to_text(request.args.get("mode")).lower() or "log_date"
+        plan_source = _normalize_pvd_plan_source(_to_text(request.args.get("plan_source")))
+        refresh_raw = _to_text(request.args.get("refresh")).lower()
+        force_refresh = refresh_raw in {"1", "true", "yes", "y", "on"}
+        projects_raw = _to_text(request.args.get("projects"))
+        statuses_raw = _to_text(request.args.get("statuses"))
+        assignees_raw = _to_text(request.args.get("assignees"))
+        try:
+            from_raw, to_raw = _resolve_effective_range_from_request(request.args)
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        if mode not in {"log_date", "planned_dates"}:
+            return jsonify({"ok": False, "error": "Invalid mode. Expected 'log_date' or 'planned_dates'."}), 400
+        if not plan_source:
+            return jsonify({"ok": False, "error": "Invalid plan_source. Expected 'jira_estimates' or 'epic_planner'."}), 400
+        from_date = _parse_iso_date(from_raw)
+        to_date = _parse_iso_date(to_raw)
+        if from_date is None or to_date is None:
+            return jsonify({"ok": False, "error": "Invalid date format. Expected YYYY-MM-DD."}), 400
+
+        selected_projects_raw = {
+            _to_text(item).upper()
+            for item in projects_raw.split(",")
+            if _to_text(item)
+        } if projects_raw else set()
+        default_scope, managed_project_keys, default_selected_projects = _managed_project_scope_defaults()
+        selected_projects = set(selected_projects_raw or default_scope)
+        selected_statuses = {
+            _to_text(item).lower()
+            for item in statuses_raw.split(",")
+            if _to_text(item)
+        } if statuses_raw else set()
+        selected_assignees = {
+            _to_text(item).lower()
+            for item in assignees_raw.split(",")
+            if _to_text(item)
+        } if assignees_raw else set()
+        if not force_refresh:
+            cached_summary = _load_planned_vs_dispensed_response_cache(
+                endpoint="summary",
+                from_date=from_date,
+                to_date=to_date,
+                mode=mode,
+                plan_source=plan_source,
+                selected_projects=selected_projects,
+                selected_statuses=selected_statuses,
+                selected_assignees=selected_assignees,
+            )
+            if cached_summary is not None:
+                return jsonify(cached_summary)
+
+        def _match_filter(value: str, selected: set[str]) -> bool:
+            if not selected:
+                return True
+            return _to_text(value).lower() in selected
+
+        try:
+            hierarchy, source = _get_planned_vs_dispensed_hierarchy_cached(
+                from_date=from_date,
+                to_date=to_date,
+                mode=mode,
+                selected_projects=selected_projects,
+                force_refresh=force_refresh,
+            )
+        except Exception as exc:
+            return jsonify({"ok": False, "error": f"Failed to load Jira hierarchy: {exc}"}), 500
+
+        epics = hierarchy.get("epics", []) or []
+        stories = hierarchy.get("stories", []) or []
+        subtasks = hierarchy.get("subtasks", []) or []
+        planner_epic_map: dict[str, dict[str, object]] = {}
+        if plan_source == "epic_planner":
+            planner_epic_map, _planner_story_map = _load_pvd_planner_maps()
+        managed_name_by_key = _managed_project_name_map()
+        project_name_by_key: dict[str, str] = {}
+        for item in epics + stories + subtasks:
+            key = _to_text(item.get("project_key")).upper()
+            if not key:
+                continue
+            name = _to_text(item.get("project_name")) or managed_name_by_key.get(key, key)
+            project_name_by_key[key] = name
+        story_by_epic: dict[str, list[dict]] = defaultdict(list)
+        subtask_by_epic: dict[str, list[dict]] = defaultdict(list)
+        for story in stories:
+            story_by_epic[_to_text(story.get("epic_key")).upper()].append(story)
+        for subtask in subtasks:
+            subtask_by_epic[_to_text(subtask.get("epic_key")).upper()].append(subtask)
+
+        project_rows: dict[str, dict[str, object]] = {}
+        missing_epics_by_project: dict[str, list[str]] = defaultdict(list)
+        for epic in epics:
+            if not _match_filter(_to_text(epic.get("status")), selected_statuses):
+                continue
+            if not _match_filter(_to_text(epic.get("assignee")), selected_assignees):
+                continue
+            project_key = _to_text(epic.get("project_key")).upper() or "UNKNOWN"
+            row = project_rows.setdefault(
+                project_key,
+                {
+                    "project_key": project_key,
+                    "project_name": project_name_by_key.get(project_key, managed_name_by_key.get(project_key, project_key)),
+                    "planned_epic_hours": 0.0,
+                    "dispensed_subtask_hours": 0.0,
+                    "remaining_hours": 0.0,
+                    "epic_count": 0,
+                    "story_count": 0,
+                    "subtask_count": 0,
+                },
+            )
+            epic_key = _to_text(epic.get("issue_key")).upper()
+            planned_hours = _round_hours(float(epic.get("estimate_hours") or 0.0))
+            if plan_source == "epic_planner":
+                planner_item = planner_epic_map.get(epic_key) or {}
+                planner_hours = planner_item.get("planned_hours")
+                if planner_hours is None:
+                    missing_epics_by_project[project_key].append(epic_key)
+                    planned_hours = 0.0
+                else:
+                    planned_hours = _round_hours(float(planner_hours or 0.0))
+            row["planned_epic_hours"] = float(row["planned_epic_hours"]) + planned_hours
+            row["epic_count"] = int(row["epic_count"]) + 1
+
+            filtered_stories = [
+                item for item in story_by_epic.get(epic_key, [])
+                if _match_filter(_to_text(item.get("status")), selected_statuses)
+                and _match_filter(_to_text(item.get("assignee")), selected_assignees)
+            ]
+            filtered_subtasks = [
+                item for item in subtask_by_epic.get(epic_key, [])
+                if _match_filter(_to_text(item.get("status")), selected_statuses)
+                and _match_filter(_to_text(item.get("assignee")), selected_assignees)
+            ]
+            row["story_count"] = int(row["story_count"]) + len(filtered_stories)
+            row["subtask_count"] = int(row["subtask_count"]) + len(filtered_subtasks)
+            row["dispensed_subtask_hours"] = float(row["dispensed_subtask_hours"]) + sum(
+                float(item.get("estimate_hours") or 0.0) for item in filtered_subtasks
+            )
+
+        rows_out = []
+        for row in project_rows.values():
+            planned_hours = _round_hours(float(row["planned_epic_hours"]))
+            dispensed_hours = _round_hours(float(row["dispensed_subtask_hours"]))
+            rows_out.append(
+                {
+                    **row,
+                    "planned_epic_hours": planned_hours,
+                    "dispensed_subtask_hours": dispensed_hours,
+                    "remaining_hours": _round_hours(planned_hours - dispensed_hours),
+                }
+            )
+        for project_key in sorted(selected_projects):
+            if any(_to_text(item.get("project_key")).upper() == project_key for item in rows_out):
+                continue
+            rows_out.append(
+                {
+                    "project_key": project_key,
+                    "project_name": project_name_by_key.get(project_key, managed_name_by_key.get(project_key, project_key)),
+                    "planned_epic_hours": 0.0,
+                    "dispensed_subtask_hours": 0.0,
+                    "remaining_hours": 0.0,
+                    "epic_count": 0,
+                    "story_count": 0,
+                    "subtask_count": 0,
+                }
+            )
+        rows_out.sort(key=lambda item: (_to_text(item.get("project_key")),))
+
+        project_key_order = managed_project_keys or sorted({
+            _to_text(item.get("project_key")).upper()
+            for item in epics
+            if _to_text(item.get("project_key"))
+        })
+        project_options = [
+            {
+                "project_key": key,
+                "project_name": project_name_by_key.get(key, managed_name_by_key.get(key, key)),
+            }
+            for key in project_key_order
+        ]
+        all_statuses = sorted({
+            _to_text(item.get("status"))
+            for item in epics + stories + subtasks
+            if _to_text(item.get("status"))
+        })
+        all_assignees = sorted({
+            _to_text(item.get("assignee"))
+            for item in epics + stories + subtasks
+            if _to_text(item.get("assignee"))
+        })
+        missing_plan_projects = [
+            {
+                "project_key": key,
+                "project_name": project_name_by_key.get(key, managed_name_by_key.get(key, key)),
+                "epic_keys": sorted(set(values)),
+                "count": len(sorted(set(values))),
+            }
+            for key, values in sorted(missing_epics_by_project.items())
+        ]
+        missing_plan = {
+            "enabled": plan_source == "epic_planner",
+            "message": (
+                "The following epics in selected date range do not have planned hours in Epics Planner. "
+                "Either switch source or specify plan in Epics Planner."
+            ),
+            "projects": missing_plan_projects,
+            "count": sum(int(item["count"]) for item in missing_plan_projects),
+        }
+
+        payload = {
+            "ok": True,
+            "from_date": from_date.isoformat(),
+            "to_date": to_date.isoformat(),
+            "mode": mode,
+            "plan_source": plan_source,
+            "rows": rows_out,
+            "selected_projects": sorted(selected_projects),
+            "filter_options": {
+                "projects": [item.get("project_key") for item in project_options],
+                "project_options": project_options,
+                "statuses": all_statuses,
+                "assignees": all_assignees,
+            },
+            "default_selected_projects": default_selected_projects,
+            "missing_plan": missing_plan,
+            "source": source,
+        }
+        _save_planned_vs_dispensed_response_cache(
+            endpoint="summary",
+            from_date=from_date,
+            to_date=to_date,
+            mode=mode,
+            plan_source=plan_source,
+            selected_projects=selected_projects,
+            selected_statuses=selected_statuses,
+            selected_assignees=selected_assignees,
+            payload=payload,
+        )
+        return jsonify(payload)
+
+    @app.route("/api/planned-vs-dispensed/details", methods=["GET"])
+    def planned_vs_dispensed_details():
+        mode = _to_text(request.args.get("mode")).lower() or "log_date"
+        plan_source = _normalize_pvd_plan_source(_to_text(request.args.get("plan_source")))
+        refresh_raw = _to_text(request.args.get("refresh")).lower()
+        force_refresh = refresh_raw in {"1", "true", "yes", "y", "on"}
+        project_key = _to_text(request.args.get("project_key")).upper()
+        projects_raw = _to_text(request.args.get("projects"))
+        statuses_raw = _to_text(request.args.get("statuses"))
+        assignees_raw = _to_text(request.args.get("assignees"))
+        if not project_key:
+            return jsonify({"ok": False, "error": "Query param 'project_key' is required."}), 400
+        try:
+            from_raw, to_raw = _resolve_effective_range_from_request(request.args)
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        if mode not in {"log_date", "planned_dates"}:
+            return jsonify({"ok": False, "error": "Invalid mode. Expected 'log_date' or 'planned_dates'."}), 400
+        if not plan_source:
+            return jsonify({"ok": False, "error": "Invalid plan_source. Expected 'jira_estimates' or 'epic_planner'."}), 400
+        from_date = _parse_iso_date(from_raw)
+        to_date = _parse_iso_date(to_raw)
+        if from_date is None or to_date is None:
+            return jsonify({"ok": False, "error": "Invalid date format. Expected YYYY-MM-DD."}), 400
+
+        selected_projects_raw = {
+            _to_text(item).upper()
+            for item in projects_raw.split(",")
+            if _to_text(item)
+        } if projects_raw else set()
+        default_scope, _managed_project_keys, _default_selected_projects = _managed_project_scope_defaults()
+        selected_projects = set(selected_projects_raw or default_scope)
+        selected_projects.add(project_key)
+        selected_statuses = {
+            _to_text(item).lower()
+            for item in statuses_raw.split(",")
+            if _to_text(item)
+        } if statuses_raw else set()
+        selected_assignees = {
+            _to_text(item).lower()
+            for item in assignees_raw.split(",")
+            if _to_text(item)
+        } if assignees_raw else set()
+        if not force_refresh:
+            cached_details = _load_planned_vs_dispensed_response_cache(
+                endpoint="details",
+                from_date=from_date,
+                to_date=to_date,
+                mode=mode,
+                plan_source=plan_source,
+                selected_projects=selected_projects,
+                selected_statuses=selected_statuses,
+                selected_assignees=selected_assignees,
+                project_key=project_key,
+            )
+            if cached_details is not None:
+                return jsonify(cached_details)
+
+        def _match_filter(value: str, selected: set[str]) -> bool:
+            if not selected:
+                return True
+            return _to_text(value).lower() in selected
+
+        try:
+            hierarchy, source = _get_planned_vs_dispensed_hierarchy_cached(
+                from_date=from_date,
+                to_date=to_date,
+                mode=mode,
+                selected_projects=selected_projects,
+                force_refresh=force_refresh,
+            )
+        except Exception as exc:
+            return jsonify({"ok": False, "error": f"Failed to load Jira hierarchy: {exc}"}), 500
+
+        planner_epic_map: dict[str, dict[str, object]] = {}
+        planner_story_map: dict[str, dict[str, object]] = {}
+        if plan_source == "epic_planner":
+            planner_epic_map, planner_story_map = _load_pvd_planner_maps()
+
+        epics = [
+            item for item in (hierarchy.get("epics", []) or [])
+            if _to_text(item.get("project_key")).upper() == project_key
+        ]
+        managed_name_by_key = _managed_project_name_map()
+        project_name = managed_name_by_key.get(project_key, project_key)
+        for item in epics:
+            raw_name = _to_text(item.get("project_name"))
+            if raw_name:
+                project_name = raw_name
+                break
+        stories = hierarchy.get("stories", []) or []
+        subtasks = hierarchy.get("subtasks", []) or []
+        stories_by_epic: dict[str, list[dict]] = defaultdict(list)
+        subtasks_by_story: dict[str, list[dict]] = defaultdict(list)
+        for story in stories:
+            stories_by_epic[_to_text(story.get("epic_key")).upper()].append(story)
+        for subtask in subtasks:
+            subtasks_by_story[_to_text(subtask.get("story_key")).upper()].append(subtask)
+
+        epic_rows: list[dict[str, object]] = []
+        total_planned = 0.0
+        total_dispensed = 0.0
+        missing_epic_keys: list[str] = []
+
+        for epic in epics:
+            if not _match_filter(_to_text(epic.get("status")), selected_statuses):
+                continue
+            if not _match_filter(_to_text(epic.get("assignee")), selected_assignees):
+                continue
+            epic_key = _to_text(epic.get("issue_key")).upper()
+            story_rows: list[dict[str, object]] = []
+            epic_dispensed = 0.0
+            epic_subtask_count = 0
+            source_stories = stories_by_epic.get(epic_key, [])
+            source_stories.sort(key=lambda item: (_to_text(item.get("summary")).lower(), _to_text(item.get("issue_key"))))
+
+            for story in source_stories:
+                story_key = _to_text(story.get("issue_key")).upper()
+                story_subtasks = [
+                    sub for sub in subtasks_by_story.get(story_key, [])
+                    if _match_filter(_to_text(sub.get("status")), selected_statuses)
+                    and _match_filter(_to_text(sub.get("assignee")), selected_assignees)
+                ]
+                story_subtasks.sort(key=lambda item: (_to_text(item.get("summary")).lower(), _to_text(item.get("issue_key"))))
+                story_dispensed_from_subtasks = _round_hours(sum(float(item.get("estimate_hours") or 0.0) for item in story_subtasks))
+                story_estimate_hours = _round_hours(float(story.get("estimate_hours") or 0.0))
+                story_planned_hours = story_estimate_hours
+                story_planned_start = _to_text(story.get("planned_start"))
+                story_planned_due = _to_text(story.get("planned_due"))
+                if plan_source == "epic_planner":
+                    planner_story = planner_story_map.get(story_key) or {}
+                    planner_story_hours = planner_story.get("planned_hours")
+                    if planner_story_hours is not None:
+                        story_planned_hours = _round_hours(float(planner_story_hours or 0.0))
+                    else:
+                        story_planned_hours = 0.0
+                    story_planned_start = _to_text(planner_story.get("planned_start"))
+                    story_planned_due = _to_text(planner_story.get("planned_due"))
+                story_dispensed = story_dispensed_from_subtasks
+                if not story_subtasks and not _match_filter(_to_text(story.get("status")), selected_statuses):
+                    continue
+                if not story_subtasks and not _match_filter(_to_text(story.get("assignee")), selected_assignees):
+                    continue
+                story_dispensed_start, story_dispensed_due = _rollup_dispensed_dates(story_subtasks)
+                epic_dispensed += story_dispensed
+                epic_subtask_count += len(story_subtasks)
+                story_rows.append(
+                    {
+                        "issue_key": _to_text(story.get("issue_key")).upper(),
+                        "issue_kind": _to_text(story.get("issue_kind")) or "story",
+                        "issue_type_name": _to_text(story.get("issue_type_name")) or "Story",
+                        "jira_url": _to_text(story.get("jira_url")) or _jira_browse_url(_to_text(story.get("issue_key")).upper()),
+                        "summary": _to_text(story.get("summary")),
+                        "assignee": _to_text(story.get("assignee")) or "Unassigned",
+                        "status": _to_text(story.get("status")),
+                        "planned_start": story_planned_start,
+                        "planned_due": story_planned_due,
+                        "estimate_hours": story_planned_hours,
+                        "planned_hours": story_planned_hours,
+                        "dispensed_estimates": story_dispensed,
+                        "dispensed_start": story_dispensed_start,
+                        "dispensed_due": story_dispensed_due,
+                        "remaining": _round_hours(story_planned_hours - story_dispensed),
+                        "subtasks": [
+                            {
+                                "issue_key": _to_text(subtask.get("issue_key")).upper(),
+                                "issue_kind": _to_text(subtask.get("issue_kind")) or "subtask",
+                                "issue_type_name": _to_text(subtask.get("issue_type_name")) or "Subtask",
+                                "jira_url": _to_text(subtask.get("jira_url")) or _jira_browse_url(_to_text(subtask.get("issue_key")).upper()),
+                                "summary": _to_text(subtask.get("summary")),
+                                "assignee": _to_text(subtask.get("assignee")) or "Unassigned",
+                                "status": _to_text(subtask.get("status")),
+                                "planned_start": _to_text(subtask.get("planned_start")),
+                                "planned_due": _to_text(subtask.get("planned_due")),
+                                "estimate_hours": _round_hours(float(subtask.get("estimate_hours") or 0.0)),
+                                "planned_hours": None,
+                                "dispensed_estimates": _round_hours(float(subtask.get("estimate_hours") or 0.0)),
+                                "dispensed_start": _to_text(subtask.get("planned_start")),
+                                "dispensed_due": _to_text(subtask.get("planned_due")),
+                                "remaining": 0.0,
+                            }
+                            for subtask in story_subtasks
+                        ],
+                    }
+                )
+
+            epic_planned = _round_hours(float(epic.get("estimate_hours") or 0.0))
+            epic_planned_start = _to_text(epic.get("planned_start"))
+            epic_planned_due = _to_text(epic.get("planned_due"))
+            if plan_source == "epic_planner":
+                planner_epic = planner_epic_map.get(epic_key) or {}
+                planner_epic_hours = planner_epic.get("planned_hours")
+                if planner_epic_hours is None:
+                    missing_epic_keys.append(epic_key)
+                    epic_planned = 0.0
+                else:
+                    epic_planned = _round_hours(float(planner_epic_hours or 0.0))
+                epic_planned_start = _to_text(planner_epic.get("planned_start"))
+                epic_planned_due = _to_text(planner_epic.get("planned_due"))
+            epic_dispensed = _round_hours(epic_dispensed)
+            epic_dispensed_start, epic_dispensed_due = _rollup_dispensed_dates([
+                subtask
+                for story_row in story_rows
+                for subtask in (story_row.get("subtasks") or [])
+            ])
+            total_planned += epic_planned
+            total_dispensed += epic_dispensed
+            epic_rows.append(
+                {
+                    "issue_key": _to_text(epic.get("issue_key")).upper(),
+                    "issue_kind": _to_text(epic.get("issue_kind")) or "epic",
+                    "issue_type_name": _to_text(epic.get("issue_type_name")) or "Epic",
+                    "jira_url": _to_text(epic.get("jira_url")) or _jira_browse_url(_to_text(epic.get("issue_key")).upper()),
+                    "summary": _to_text(epic.get("summary")),
+                    "assignee": _to_text(epic.get("assignee")) or "Unassigned",
+                    "status": _to_text(epic.get("status")),
+                    "planned_start": epic_planned_start,
+                    "planned_due": epic_planned_due,
+                    "estimate_hours": epic_planned,
+                    "planned_hours": epic_planned,
+                    "dispensed_estimates": epic_dispensed,
+                    "dispensed_start": epic_dispensed_start,
+                    "dispensed_due": epic_dispensed_due,
+                    "remaining": _round_hours(epic_planned - epic_dispensed),
+                    "story_count": len(story_rows),
+                    "subtask_count": epic_subtask_count,
+                    "stories": story_rows,
+                }
+            )
+
+        epic_rows.sort(key=lambda item: (_to_text(item.get("summary")).lower(), _to_text(item.get("issue_key"))))
+        missing_epic_keys_sorted = sorted(set(missing_epic_keys))
+        missing_plan = {
+            "enabled": plan_source == "epic_planner",
+            "project_key": project_key,
+            "project_name": project_name,
+            "message": (
+                "The following epics in selected date range do not have planned hours in Epics Planner. "
+                "Either switch source or specify plan in Epics Planner."
+            ),
+            "epic_keys": missing_epic_keys_sorted,
+            "count": len(missing_epic_keys_sorted),
+        }
+        payload = {
+            "ok": True,
+            "project_key": project_key,
+            "project_name": project_name,
+            "jira_base_url": _to_text(BASE_URL).rstrip("/"),
+            "from_date": from_date.isoformat(),
+            "to_date": to_date.isoformat(),
+            "mode": mode,
+            "plan_source": plan_source,
+            "totals": {
+                "planned_epic_hours": _round_hours(total_planned),
+                "dispensed_subtask_hours": _round_hours(total_dispensed),
+                "remaining_hours": _round_hours(total_planned - total_dispensed),
+                "epic_count": len(epic_rows),
+            },
+            "epics": epic_rows,
+            "missing_plan": missing_plan,
+            "source": source,
+        }
+        _save_planned_vs_dispensed_response_cache(
+            endpoint="details",
+            from_date=from_date,
+            to_date=to_date,
+            mode=mode,
+            plan_source=plan_source,
+            selected_projects=selected_projects,
+            selected_statuses=selected_statuses,
+            selected_assignees=selected_assignees,
+            project_key=project_key,
+            payload=payload,
+        )
+        return jsonify(payload)
 
     @app.route("/api/capacity", methods=["POST"])
     def save_capacity():
@@ -9219,6 +11512,87 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         except Exception as exc:
             return jsonify({"error": f"Failed to fetch Jira projects: {exc}"}), 502
 
+    @app.route("/api/page-categories", methods=["GET"])
+    def get_page_categories_api():
+        try:
+            state = _load_page_categories(capacity_paths["db_path"])
+            nav_config = _build_navigation_from_page_categories(capacity_paths["db_path"])
+            return jsonify(
+                {
+                    **state,
+                    "navigation": nav_config,
+                    "source": "db",
+                }
+            )
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"error": f"Failed to load page categories: {exc}"}), 500
+
+    @app.route("/api/page-categories", methods=["PUT"])
+    def save_page_categories_api():
+        try:
+            payload = request.get_json(silent=True) or {}
+            state = _save_page_categories_payload(capacity_paths["db_path"], payload)
+            nav_config = _build_navigation_from_page_categories(capacity_paths["db_path"])
+            return jsonify(
+                {
+                    **state,
+                    "navigation": nav_config,
+                    "saved": True,
+                    "source": "db",
+                }
+            )
+        except LookupError as exc:
+            return jsonify({"error": str(exc)}), 404
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"error": f"Failed to save page categories: {exc}"}), 500
+
+    @app.route("/api/page-categories/categories", methods=["POST"])
+    def create_page_category_api():
+        try:
+            payload = request.get_json(silent=True) or {}
+            category = _create_page_category(capacity_paths["db_path"], payload)
+            state = _load_page_categories(capacity_paths["db_path"])
+            return jsonify({"category": category, **state, "created": True, "source": "db"})
+        except ValueError as exc:
+            message = str(exc)
+            status = 409 if "already exists" in message else 400
+            return jsonify({"error": message}), status
+        except Exception as exc:
+            return jsonify({"error": f"Failed to create category: {exc}"}), 500
+
+    @app.route("/api/page-categories/categories/<int:category_id>", methods=["PUT"])
+    def update_page_category_api(category_id: int):
+        try:
+            payload = request.get_json(silent=True) or {}
+            category = _update_page_category(capacity_paths["db_path"], category_id, payload)
+            state = _load_page_categories(capacity_paths["db_path"])
+            return jsonify({"category": category, **state, "updated": True, "source": "db"})
+        except LookupError as exc:
+            return jsonify({"error": str(exc)}), 404
+        except ValueError as exc:
+            message = str(exc)
+            status = 409 if "already exists" in message else 400
+            return jsonify({"error": message}), status
+        except Exception as exc:
+            return jsonify({"error": f"Failed to update category: {exc}"}), 500
+
+    @app.route("/api/page-categories/categories/<int:category_id>", methods=["DELETE"])
+    def delete_page_category_api(category_id: int):
+        try:
+            deleted_id = _delete_page_category(capacity_paths["db_path"], category_id)
+            state = _load_page_categories(capacity_paths["db_path"])
+            return jsonify({"deleted": True, "category_id": deleted_id, **state, "source": "db"})
+        except LookupError as exc:
+            return jsonify({"error": str(exc)}), 404
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"error": f"Failed to delete category: {exc}"}), 500
+
     @app.route("/api/epics-management/dropdown-options", methods=["GET"])
     def get_epics_management_dropdown_options_api():
         try:
@@ -9437,6 +11811,10 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
     def projects_settings():
         return _projects_settings_html()
 
+    @app.route(PAGE_CATEGORIES_SETTINGS_ROUTE, methods=["GET"])
+    def page_categories_settings():
+        return _page_categories_settings_html()
+
     @app.route(EPICS_DROPDOWN_OPTIONS_SETTINGS_ROUTE, methods=["GET"])
     def epics_dropdown_options_settings():
         return _epics_dropdown_options_settings_html()
@@ -9465,6 +11843,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             report_id = REPORT_FILENAME_TO_ID.get(target.name, "")
             html = target.read_text(encoding="utf-8")
             html = _use_local_icons(html)
+            html = _inject_shared_date_filter_script(html)
             if report_id:
                 html = _inject_refresh_ui(html, report_id)
             return html

@@ -5,3 +5,16 @@ __pycache__/
 *.pyc
 *.pyo
 dashboard.html
+nested_view_report.html
+missed_entries.html
+assignee_hours_report.html
+rnd_data_story.html
+planned_rmis_report.html
+gantt_chart_report.html
+phase_rmi_gantt_report.html
+ipp_meeting_dashboard.html
+rlt_leave_report.html
+leaves_planned_calendar.html
+employee_performance_report.html
+planned_vs_dispensed_report.html
+report_html/*.html
