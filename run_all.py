@@ -140,6 +140,20 @@ def _prompt_resume_choice(previous_state: dict) -> str:
         print("Please enter C or F.")
 
 
+def _truncate_completed_for_forced_refresh(completed_steps: list[str]) -> list[str]:
+    """
+    Ensure key report artifacts are always regenerated on resume.
+
+    If missed-entries was previously marked completed, truncate the carried state
+    so this step (and subsequent report steps) run again.
+    """
+    forced_refresh_step = "missed-entries-html"
+    if forced_refresh_step not in completed_steps:
+        return completed_steps
+    forced_index = completed_steps.index(forced_refresh_step)
+    return completed_steps[:forced_index]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run the full reporting/export pipeline.")
     parser.add_argument(
@@ -209,10 +223,11 @@ def main() -> None:
         {"name": "exports", "type": "script", "script": "run_all_exports.py", "extra_args": ["--skip-work-items"], "env": None},
         {"name": "work-items-full-sync", "type": "script", "script": "export_jira_work_items.py", "extra_args": None, "env": full_sync_env},
         {"name": "team-rmi-gantt-sqlite-sync", "type": "script", "script": "sync_team_rmi_gantt_sqlite.py", "extra_args": None, "env": None},
+        # Generate RLT workbook/HTML first so downstream reports consume a fresh, aligned leave dataset.
+        {"name": "rlt-leave-report", "type": "script", "script": "generate_rlt_leave_report.py", "extra_args": None, "env": None},
         {"name": "nested-view-html", "type": "script", "script": "generate_nested_view_html.py", "extra_args": None, "env": None},
         {"name": "missed-entries-html", "type": "script", "script": "generate_missed_entries_html.py", "extra_args": None, "env": None},
         {"name": "assignee-hours-html", "type": "script", "script": "generate_assignee_hours_report.py", "extra_args": None, "env": None},
-        {"name": "rlt-leave-report", "type": "script", "script": "generate_rlt_leave_report.py", "extra_args": None, "env": None},
         {"name": "leaves-planned-calendar-html", "type": "script", "script": "generate_leaves_planned_calendar_html.py", "extra_args": None, "env": None},
         {"name": "rnd-data-story-html", "type": "script", "script": "generate_rnd_data_story.py", "extra_args": None, "env": None},
         {"name": "planned-rmis-html", "type": "script", "script": "generate_planned_rmis_html.py", "extra_args": None, "env": None},
@@ -264,7 +279,8 @@ def main() -> None:
                 else:
                     break
             carried_completed = current_step_names[:idx]
-            print(f"Resuming from step {idx + 1} of {len(pipeline_steps)}.")
+            carried_completed = _truncate_completed_for_forced_refresh(carried_completed)
+            print(f"Resuming from step {len(carried_completed) + 1} of {len(pipeline_steps)}.")
 
     run_id = uuid.uuid4().hex
     run_state = {

@@ -144,6 +144,16 @@ class PlannedVsDispensedApiTests(unittest.TestCase):
                 self.assertEqual(row["planned_epic_hours"], 100.0)
                 self.assertEqual(row["dispensed_subtask_hours"], 45.0)
                 self.assertEqual(row["remaining_hours"], 55.0)
+                self.assertEqual(row.get("dispensed_bucket_mode"), "week")
+                self.assertEqual(
+                    row.get("dispensed_buckets"),
+                    [
+                        {"bucket_key": "2026-W06", "bucket_label": "2026-W06", "hours": 45.0},
+                        {"bucket_key": "remaining_hours", "bucket_label": "Remaining Hours", "hours": 55.0},
+                    ],
+                )
+                self.assertEqual(row.get("dispensed_stack_hours"), 100.0)
+                self.assertEqual(row.get("remaining_hours_outside_range"), 55.0)
 
                 details_resp = client.get(
                     "/api/planned-vs-dispensed/details?from=2026-02-01&to=2026-02-28&mode=log_date&project_key=O2"
@@ -157,6 +167,304 @@ class PlannedVsDispensedApiTests(unittest.TestCase):
                 self.assertEqual(len(details.get("epics", [])), 1)
                 self.assertEqual(details["epics"][0]["stories"][0]["subtasks"][0]["planned_start"], "2026-02-03")
                 self.assertEqual(details["epics"][0]["stories"][0]["subtasks"][0]["planned_due"], "2026-02-05")
+
+    def test_summary_uses_monthly_dispensed_buckets_for_multi_month_range(self):
+        hierarchy = {
+            "epics": [
+                {
+                    "issue_key": "O2-EP1",
+                    "project_key": "O2",
+                    "summary": "Epic One",
+                    "status": "In Progress",
+                    "assignee": "Alice",
+                    "estimate_hours": 100.0,
+                    "planned_start": "2026-02-01",
+                    "planned_due": "2026-03-20",
+                }
+            ],
+            "stories": [
+                {
+                    "issue_key": "O2-ST1",
+                    "epic_key": "O2-EP1",
+                    "summary": "Story One",
+                    "status": "In Progress",
+                    "assignee": "Alice",
+                    "estimate_hours": 0.0,
+                    "planned_start": "2026-02-02",
+                    "planned_due": "2026-03-12",
+                }
+            ],
+            "subtasks": [
+                {
+                    "issue_key": "O2-SUB1",
+                    "story_key": "O2-ST1",
+                    "epic_key": "O2-EP1",
+                    "summary": "Subtask One",
+                    "status": "In Progress",
+                    "assignee": "Alice",
+                    "estimate_hours": 25.0,
+                    "planned_start": "2026-02-27",
+                    "planned_due": "2026-02-28",
+                },
+                {
+                    "issue_key": "O2-SUB2",
+                    "story_key": "O2-ST1",
+                    "epic_key": "O2-EP1",
+                    "summary": "Subtask Two",
+                    "status": "In Progress",
+                    "assignee": "Alice",
+                    "estimate_hours": 20.0,
+                    "planned_start": "2026-03-01",
+                    "planned_due": "2026-03-02",
+                },
+            ],
+        }
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            app = _build_app(root)
+            client = app.test_client()
+            with (
+                patch("report_server.get_session", return_value=object()),
+                patch("report_server._load_planned_vs_dispensed_hierarchy", return_value=hierarchy),
+            ):
+                summary_resp = client.get(
+                    "/api/planned-vs-dispensed/summary?from=2026-02-28&to=2026-03-01&mode=log_date"
+                )
+                self.assertEqual(summary_resp.status_code, 200)
+                summary = summary_resp.get_json()
+                self.assertTrue(summary.get("ok"))
+                self.assertEqual(summary.get("dispensed_bucket_mode"), "month")
+                row = next(
+                    (item for item in (summary.get("rows", []) or []) if item.get("project_key") == "O2"),
+                    None,
+                )
+                self.assertIsNotNone(row)
+                self.assertEqual(row.get("dispensed_bucket_mode"), "month")
+                self.assertEqual(
+                    row.get("dispensed_buckets"),
+                    [
+                        {"bucket_key": "2026-02", "bucket_label": "2026-02", "hours": 25.0},
+                        {"bucket_key": "2026-03", "bucket_label": "2026-03", "hours": 20.0},
+                        {"bucket_key": "remaining_hours", "bucket_label": "Remaining Hours", "hours": 55.0},
+                    ],
+                )
+
+    def test_summary_splits_subtask_estimates_across_overlapping_weeks(self):
+        hierarchy = {
+            "epics": [
+                {
+                    "issue_key": "O2-EP1",
+                    "project_key": "O2",
+                    "summary": "Epic One",
+                    "status": "In Progress",
+                    "assignee": "Alice",
+                    "estimate_hours": 120.0,
+                    "planned_start": "2026-02-01",
+                    "planned_due": "2026-02-28",
+                }
+            ],
+            "stories": [
+                {
+                    "issue_key": "O2-ST1",
+                    "epic_key": "O2-EP1",
+                    "summary": "Story One",
+                    "status": "In Progress",
+                    "assignee": "Alice",
+                    "estimate_hours": 0.0,
+                    "planned_start": "2026-02-01",
+                    "planned_due": "2026-02-28",
+                }
+            ],
+            "subtasks": [
+                {
+                    "issue_key": "O2-SUB1",
+                    "story_key": "O2-ST1",
+                    "epic_key": "O2-EP1",
+                    "summary": "Long Subtask",
+                    "status": "In Progress",
+                    "assignee": "Alice",
+                    "estimate_hours": 40.0,
+                    "planned_start": "2026-02-03",
+                    "planned_due": "2026-02-22",
+                },
+            ],
+        }
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            app = _build_app(root)
+            client = app.test_client()
+            with (
+                patch("report_server.get_session", return_value=object()),
+                patch("report_server._load_planned_vs_dispensed_hierarchy", return_value=hierarchy),
+            ):
+                summary_resp = client.get(
+                    "/api/planned-vs-dispensed/summary?from=2026-02-01&to=2026-02-28&mode=log_date"
+                )
+                self.assertEqual(summary_resp.status_code, 200)
+                summary = summary_resp.get_json()
+                self.assertTrue(summary.get("ok"))
+                row = next(
+                    (item for item in (summary.get("rows", []) or []) if item.get("project_key") == "O2"),
+                    None,
+                )
+                self.assertIsNotNone(row)
+                self.assertEqual(row.get("dispensed_bucket_mode"), "week")
+                buckets = row.get("dispensed_buckets") or []
+                keys = [item.get("bucket_key") for item in buckets]
+                self.assertEqual(keys, ["2026-W06", "2026-W07", "2026-W08", "remaining_hours"])
+                hours = [float(item.get("hours") or 0.0) for item in buckets]
+                self.assertTrue(all(value > 0 for value in hours))
+                self.assertAlmostEqual(sum(hours), 120.0, places=1)
+
+    def test_summary_places_remaining_first_when_hours_are_before_range(self):
+        hierarchy = {
+            "epics": [
+                {
+                    "issue_key": "O2-EP1",
+                    "project_key": "O2",
+                    "summary": "Epic One",
+                    "status": "In Progress",
+                    "assignee": "Alice",
+                    "estimate_hours": 100.0,
+                    "planned_start": "2026-02-01",
+                    "planned_due": "2026-02-28",
+                }
+            ],
+            "stories": [
+                {
+                    "issue_key": "O2-ST1",
+                    "epic_key": "O2-EP1",
+                    "summary": "Story One",
+                    "status": "In Progress",
+                    "assignee": "Alice",
+                    "estimate_hours": 0.0,
+                    "planned_start": "2026-01-01",
+                    "planned_due": "2026-02-28",
+                }
+            ],
+            "subtasks": [
+                {
+                    "issue_key": "O2-SUB1",
+                    "story_key": "O2-ST1",
+                    "epic_key": "O2-EP1",
+                    "summary": "Subtask Before Range",
+                    "status": "In Progress",
+                    "assignee": "Alice",
+                    "estimate_hours": 20.0,
+                    "planned_start": "2026-01-10",
+                    "planned_due": "2026-01-20",
+                },
+                {
+                    "issue_key": "O2-SUB2",
+                    "story_key": "O2-ST1",
+                    "epic_key": "O2-EP1",
+                    "summary": "Subtask In Range",
+                    "status": "In Progress",
+                    "assignee": "Alice",
+                    "estimate_hours": 40.0,
+                    "planned_start": "2026-02-03",
+                    "planned_due": "2026-02-09",
+                },
+            ],
+        }
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            app = _build_app(root)
+            client = app.test_client()
+            with (
+                patch("report_server.get_session", return_value=object()),
+                patch("report_server._load_planned_vs_dispensed_hierarchy", return_value=hierarchy),
+            ):
+                summary_resp = client.get(
+                    "/api/planned-vs-dispensed/summary?from=2026-02-01&to=2026-02-28&mode=log_date"
+                )
+                self.assertEqual(summary_resp.status_code, 200)
+                summary = summary_resp.get_json()
+                self.assertTrue(summary.get("ok"))
+                row = next(
+                    (item for item in (summary.get("rows", []) or []) if item.get("project_key") == "O2"),
+                    None,
+                )
+                self.assertIsNotNone(row)
+                buckets = row.get("dispensed_buckets") or []
+                self.assertGreaterEqual(len(buckets), 2)
+                self.assertEqual(buckets[0].get("bucket_key"), "remaining_hours")
+
+    def test_summary_does_not_create_week_buckets_for_fully_outside_subtasks(self):
+        hierarchy = {
+            "epics": [
+                {
+                    "issue_key": "O2-EP1",
+                    "project_key": "O2",
+                    "summary": "Epic One",
+                    "status": "In Progress",
+                    "assignee": "Alice",
+                    "estimate_hours": 100.0,
+                    "planned_start": "2026-02-01",
+                    "planned_due": "2026-02-28",
+                }
+            ],
+            "stories": [
+                {
+                    "issue_key": "O2-ST1",
+                    "epic_key": "O2-EP1",
+                    "summary": "Story One",
+                    "status": "In Progress",
+                    "assignee": "Alice",
+                    "estimate_hours": 0.0,
+                    "planned_start": "2026-01-01",
+                    "planned_due": "2026-03-31",
+                }
+            ],
+            "subtasks": [
+                {
+                    "issue_key": "O2-SUB1",
+                    "story_key": "O2-ST1",
+                    "epic_key": "O2-EP1",
+                    "summary": "Before Range",
+                    "status": "In Progress",
+                    "assignee": "Alice",
+                    "estimate_hours": 20.0,
+                    "planned_start": "2026-01-05",
+                    "planned_due": "2026-01-20",
+                },
+                {
+                    "issue_key": "O2-SUB2",
+                    "story_key": "O2-ST1",
+                    "epic_key": "O2-EP1",
+                    "summary": "After Range",
+                    "status": "In Progress",
+                    "assignee": "Alice",
+                    "estimate_hours": 30.0,
+                    "planned_start": "2026-03-10",
+                    "planned_due": "2026-03-25",
+                },
+            ],
+        }
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            app = _build_app(root)
+            client = app.test_client()
+            with (
+                patch("report_server.get_session", return_value=object()),
+                patch("report_server._load_planned_vs_dispensed_hierarchy", return_value=hierarchy),
+            ):
+                summary_resp = client.get(
+                    "/api/planned-vs-dispensed/summary?from=2026-02-01&to=2026-02-28&mode=log_date"
+                )
+                self.assertEqual(summary_resp.status_code, 200)
+                summary = summary_resp.get_json()
+                self.assertTrue(summary.get("ok"))
+                row = next(
+                    (item for item in (summary.get("rows", []) or []) if item.get("project_key") == "O2"),
+                    None,
+                )
+                self.assertIsNotNone(row)
+                buckets = row.get("dispensed_buckets") or []
+                self.assertEqual(
+                    buckets,
+                    [{"bucket_key": "remaining_hours", "bucket_label": "Remaining Hours", "hours": 100.0}],
+                )
 
     def test_validation_errors(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:

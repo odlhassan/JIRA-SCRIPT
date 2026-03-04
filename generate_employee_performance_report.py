@@ -1116,6 +1116,7 @@ let selectedName = "";
 let selectedTeam = "";
 let availabilityBreakdownForAssignee = "";
 let plannedHoursBreakdownForAssignee = "";
+let actualHoursBreakdownForAssignee = "";
 let dueCompletionEnabled = false;
 let activeScoringTab = "simple";
 let simpleFormulaGuideExpanded = true;
@@ -2258,7 +2259,7 @@ function render(items) {{
     const rowSub = leaderScoringMode === "simple" ? simpleFormulaSub : advancedSub;
     return `<div class="row${{it.assignee===selectedName?' sel':''}}" data-name="${{e(it.assignee)}}"><div class="rank">#${{i+1}}</div><div><div>${{e(it.assignee)}}</div><div class="leader-metrics"><span class="metric-chip"><span class="material-symbols-outlined">deployed_code</span><span class="metric-value">${{n(it.active_rmi_count).toFixed(0)}}</span></span><span class="metric-chip"><span class="material-symbols-outlined">sliders</span><span class="metric-value${{capMore < 0 ? " warn" : ""}}">${{capMore.toFixed(1)}}h</span></span><span class="metric-chip"><span class="material-symbols-outlined">award_star</span><span class="metric-value">${{rowScore.toFixed(1)}}</span></span></div><div class="sub">${{rowSub}}</div></div><div class="score"><span class="material-symbols-outlined">award_star</span>${{rowScore.toFixed(1)}}</div></div>`;
   }}).join("");
-  Array.from(lb.querySelectorAll(".row")).forEach((el)=>el.addEventListener("click", ()=>{{ selectedName = String(el.getAttribute("data-name") || ""); availabilityBreakdownForAssignee = ""; plannedHoursBreakdownForAssignee = ""; render(compute()); }}));
+  Array.from(lb.querySelectorAll(".row")).forEach((el)=>el.addEventListener("click", ()=>{{ selectedName = String(el.getAttribute("data-name") || ""); availabilityBreakdownForAssignee = ""; plannedHoursBreakdownForAssignee = ""; actualHoursBreakdownForAssignee = ""; render(compute()); }}));
   let item = viewItems.find(x => x.assignee === selectedName); if (!item) {{ item = viewItems[0]; selectedName = item.assignee; }}
   const feed = (item.feed || []).map((v) => `<div class="i"><strong>${{e(v.label)}}</strong><br>${{n(v.hours).toFixed(2)}}h | <span class="neg">-${{n(v.points).toFixed(2)}}</span></div>`).join("") || '<div class="i empty">No violations.</div>';
   const hierarchyTable = renderHierarchyTable(item.assigned_hierarchy, item.due_compliance_items, item.missed_start_items);
@@ -2397,15 +2398,21 @@ function render(items) {{
     const l = normMetricToken(entry?.label);
     return k === "plannedhoursassignedstatic" || l === "plannedhoursassigned";
   }}
+  function isActualHoursSpentMetric(entry) {{
+    const k = normMetricToken(entry?.key);
+    const l = normMetricToken(entry?.label);
+    return k === "actualhoursspentstatic" || l === "actualhoursspent";
+  }}
   function barMeta(entry) {{
     const key = normMetricToken(entry?.key);
     const label = normMetricToken(entry?.label);
     const isAvailability = key === "availability" || label === "availability";
     const isPlannedAssigned = isPlannedHoursAssignedMetric(entry);
+    const isActualSpent = isActualHoursSpentMetric(entry);
     const isCapacityAvail = isCapacityAvailableForMoreWork(entry);
     const maxValue = isAvailability
       ? 178
-      : (isPlannedAssigned
+      : ((isPlannedAssigned || isActualSpent)
         ? 178
         : (isCapacityAvail
           ? Math.max(1, availabilityRawValue)
@@ -2415,19 +2422,20 @@ function render(items) {{
     const pct = maxValue > 0 ? (clampedValue / maxValue) * 100 : 0;
     const overflow = rawValue > maxValue;
     let fill = "linear-gradient(90deg,#38bdf8,#60a5fa)";
-    if (overflow && isPlannedAssigned) {{
+    if (overflow && (isPlannedAssigned || isActualSpent)) {{
       fill = "linear-gradient(90deg,#38bdf8 0%, #60a5fa 42%, #f97316 72%, #ef4444 100%)";
     }}
     return {{
       isAvailability,
       isPlannedAssigned,
+      isActualSpent,
       maxValue,
       rawValue,
       pct: Math.max(0, Math.min(100, pct)),
       fill,
       note: isAvailability
         ? "Scale: 0 to 178h"
-        : (isPlannedAssigned
+        : ((isPlannedAssigned || isActualSpent)
           ? (overflow ? `Scale: 0 to 178h (Exceeded by ${{(rawValue - 178).toFixed(2)}}h)` : "Scale: 0 to 178h")
           : `Scale: 0 to ${{maxValue.toFixed(2)}}`)
     }};
@@ -2441,11 +2449,14 @@ function render(items) {{
       const b = barMeta(m);
       const action = b.isAvailability
         ? "toggle-availability-breakdown"
-        : (b.isPlannedAssigned ? "toggle-planned-hours-breakdown" : "");
+        : (b.isPlannedAssigned
+          ? "toggle-planned-hours-breakdown"
+          : (b.isActualSpent ? "toggle-actual-hours-breakdown" : ""));
       const toggleAttr = action ? ` data-action="${{action}}"` : "";
       const cardClass = action ? "exec-metric actionable" : "exec-metric";
       const isAvailabilityOpen = b.isAvailability && availabilityBreakdownForAssignee === String(item.assignee || "");
       const isPlannedOpen = b.isPlannedAssigned && plannedHoursBreakdownForAssignee === String(item.assignee || "");
+      const isActualOpen = b.isActualSpent && actualHoursBreakdownForAssignee === String(item.assignee || "");
       const ingredientRows = availabilityIngredients.length
         ? availabilityIngredients.map((part) => `<div class="availability-line"><span class="availability-name">${{e(part.key)}}${{part.missing ? " (default)" : ""}}</span><span class="availability-num">${{n(part.value).toFixed(2)}}${{b.isAvailability ? "h" : ""}}</span></div>`).join("")
         : '<div class="availability-note">No ingredients detected from formula.</div>';
@@ -2472,10 +2483,43 @@ function render(items) {{
       const plannedBreakdownBlock = b.isPlannedAssigned && isPlannedOpen
         ? `<div class="availability-breakdown"><div class="availability-note">Assigned subtasks in current filters (including bug subtasks).</div><div class="tbl-wrap" style="max-height:240px;overflow:auto;"><table class="ss-tbl"><thead><tr><th>Jira Subtask ID</th><th>Type</th><th>Original Estimate</th><th>Jira</th></tr></thead><tbody>${{plannedTableBody}}</tbody></table></div><div class="availability-line"><span class="availability-name"><strong>Total Original Estimates</strong></span><span class="availability-num"><strong>${{plannedTotal.toFixed(2)}}h</strong></span></div></div>`
         : "";
+      const actualRows = Object.entries(item.issue_logged_hours_by_issue || {{}})
+        .map(([issueKeyRaw, loggedHoursRaw]) => {{
+          const issueKey = String(issueKeyRaw || "").toUpperCase();
+          const loggedHours = n(loggedHoursRaw);
+          const wi = workItemsByKey.get(issueKey) || {{}};
+          const rawType = String(wi.issue_type || wi.work_item_type || wi.jira_issue_type || "");
+          const normalizedType = normalizeHierarchyType(rawType);
+          const rowType = normalizedType === "bug_subtask" ? "Bug" : "Subtask";
+          return {{
+            issue_key: issueKey,
+            issue_type: normalizedType || "subtask",
+            row_type: rowType,
+            actual_hours: loggedHours,
+          }};
+        }})
+        .filter((row) => n(row?.actual_hours) > 0)
+        .sort((a, b) => String(a.issue_key || "").localeCompare(String(b.issue_key || "")));
+      const actualTotal = actualRows.reduce((acc, row) => acc + n(row?.actual_hours), 0);
+      const actualTableBody = actualRows.length
+        ? actualRows.map((row) => {{
+          const issueKey = String(row?.issue_key || "").toUpperCase();
+          const issueUrl = jiraIssueUrl(issueKey);
+          const linkCell = issueUrl
+            ? `<a class="jira-link-icon" href="${{e(issueUrl)}}" target="_blank" rel="noopener noreferrer" title="Open in Jira" onclick="event.stopPropagation();"><span class="material-symbols-outlined">open_in_new</span></a>`
+            : `<span class="jira-link-disabled">-</span>`;
+          return `<tr><td class="issue-id">${{e(issueKey || "-")}}</td><td>${{e(row?.row_type || "Subtask")}}</td><td>${{n(row?.actual_hours).toFixed(2)}}h</td><td>${{linkCell}}</td></tr>`;
+        }}).join("")
+        : '<tr><td colspan="4" class="empty">No logged subtasks in current scope.</td></tr>';
+      const actualBreakdownBlock = b.isActualSpent && isActualOpen
+        ? `<div class="availability-breakdown"><div class="availability-note">Subtasks with logged hours in current date/project filters (including bug subtasks).</div><div class="tbl-wrap" style="max-height:240px;overflow:auto;"><table class="ss-tbl"><thead><tr><th>Jira Subtask ID</th><th>Type</th><th>Actual Logged Hours</th><th>Jira</th></tr></thead><tbody>${{actualTableBody}}</tbody></table></div><div class="availability-line"><span class="availability-name"><strong>Total Actual Logged Hours</strong></span><span class="availability-num"><strong>${{actualTotal.toFixed(2)}}h</strong></span></div></div>`
+        : "";
       const clickHint = b.isAvailability
         ? " | Click to view formula"
-        : (b.isPlannedAssigned ? " | Click to view subtasks table" : "");
-      return `<div class="${{cardClass}}"${{toggleAttr}}><div class="exec-m-head"><div class="exec-m-name">${{e(m.label)}}</div><div class="exec-m-value">${{b.rawValue.toFixed(2)}}${{(b.isAvailability || b.isPlannedAssigned) ? "h" : ""}}</div></div><div class="exec-m-meaning">${{e(m.meaning)}}</div><div class="exec-bar-track"><div class="exec-bar-fill" style="width:${{b.pct.toFixed(2)}}%;background:${{b.fill}};"></div></div><div class="exec-scale-note">${{e(b.note)}}${{clickHint}}</div>${{formulaBlock}}${{plannedBreakdownBlock}}</div>`;
+        : (b.isPlannedAssigned
+          ? " | Click to view subtasks table"
+          : (b.isActualSpent ? " | Click to view logged subtasks table" : ""));
+      return `<div class="${{cardClass}}"${{toggleAttr}}><div class="exec-m-head"><div class="exec-m-name">${{e(m.label)}}</div><div class="exec-m-value">${{b.rawValue.toFixed(2)}}${{(b.isAvailability || b.isPlannedAssigned || b.isActualSpent) ? "h" : ""}}</div></div><div class="exec-m-meaning">${{e(m.meaning)}}</div><div class="exec-bar-track"><div class="exec-bar-fill" style="width:${{b.pct.toFixed(2)}}%;background:${{b.fill}};"></div></div><div class="exec-scale-note">${{e(b.note)}}${{clickHint}}</div>${{formulaBlock}}${{plannedBreakdownBlock}}${{actualBreakdownBlock}}</div>`;
     }}).join("")}}</div>`
     : '<div class="empty">No managed metrics configured.</div>';
   const activeProjectList = Array.from(selectedProjects()).sort();
@@ -2635,6 +2679,7 @@ function render(items) {{
       const assigneeName = String(item.assignee || "");
       availabilityBreakdownForAssignee = availabilityBreakdownForAssignee === assigneeName ? "" : assigneeName;
       plannedHoursBreakdownForAssignee = "";
+      actualHoursBreakdownForAssignee = "";
       render(items);
     }});
   }}
@@ -2644,6 +2689,17 @@ function render(items) {{
       const assigneeName = String(item.assignee || "");
       plannedHoursBreakdownForAssignee = plannedHoursBreakdownForAssignee === assigneeName ? "" : assigneeName;
       availabilityBreakdownForAssignee = "";
+      actualHoursBreakdownForAssignee = "";
+      render(items);
+    }});
+  }}
+  const actualHoursTrigger = detailHost.querySelector('[data-action="toggle-actual-hours-breakdown"]');
+  if (actualHoursTrigger) {{
+    actualHoursTrigger.addEventListener("click", () => {{
+      const assigneeName = String(item.assignee || "");
+      actualHoursBreakdownForAssignee = actualHoursBreakdownForAssignee === assigneeName ? "" : assigneeName;
+      availabilityBreakdownForAssignee = "";
+      plannedHoursBreakdownForAssignee = "";
       render(items);
     }});
   }}
@@ -2681,7 +2737,7 @@ function render(items) {{
     }});
   }}
 }}
-function renderAll() {{ availabilityBreakdownForAssignee = ""; plannedHoursBreakdownForAssignee = ""; render(compute()); }}
+function renderAll() {{ availabilityBreakdownForAssignee = ""; plannedHoursBreakdownForAssignee = ""; actualHoursBreakdownForAssignee = ""; render(compute()); }}
 function setHeaderCollapsed(isCollapsed) {{
   const collapsed = Boolean(isCollapsed);
   if (headerSectionEl) {{

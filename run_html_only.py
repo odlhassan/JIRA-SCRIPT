@@ -93,6 +93,8 @@ def main() -> None:
         print("[ipp-meeting-dashboard] Enabled (includes latest IPP roadmap/table UI changes)")
 
     steps: list[tuple[str, str]] = [
+        # Keep leave workbook/html fresh before any report that embeds leave_daily_rows.
+        ("rlt-leave-report", "generate_rlt_leave_report.py"),
         ("nested-view-html", "generate_nested_view_html.py"),
         ("missed-entries-html", "generate_missed_entries_html.py"),
         ("assignee-hours-html", "generate_assignee_hours_report.py"),

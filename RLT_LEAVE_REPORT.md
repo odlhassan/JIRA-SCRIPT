@@ -6,12 +6,12 @@
 - Reporting Window: `2026-02-01` to `2026-04-30`
 
 ## Executive Summary
-- Planned Taken (hours): `568.00`
-- Unplanned Taken (hours): `43.50`
+- Planned Taken (hours): `582.50`
+- Unplanned Taken (hours): `66.00`
 - Planned Not Yet Taken (hours): `0.00`
-- Planned Not Yet Taken (No Entry count): `13`
-- Defective subtasks listed: `27`
-- Clubbed leave subtasks: `13`
+- Planned Not Yet Taken (No Entry count): `11`
+- Defective subtasks listed: `25`
+- Clubbed leave subtasks: `12`
 
 ## Assignee-wise Summary
 | Assignee | Planned Taken (h) | Unplanned Taken (h) | Planned Not Yet Taken (h) | No Entry Count | Unknown Count |
@@ -25,8 +25,9 @@
 | Muhammad Abbas | 0.00 | 0.00 | 0.00 | 7 | 0 |
 | Muhammad Abdullah | 0.00 | 6.50 | 0.00 | 0 | 0 |
 | Muhammad Ahmad Saleem | 0.00 | 21.00 | 0.00 | 0 | 0 |
-| Muhammad Imran Aslam | 0.00 | 0.00 | 0.00 | 2 | 0 |
-| Taimur Zahid | 0.00 | 0.00 | 0.00 | 2 | 0 |
+| Muhammad Imran Aslam | 6.50 | 0.00 | 0.00 | 1 | 0 |
+| Sarmad Sabir | 0.00 | 14.50 | 0.00 | 0 | 0 |
+| Taimur Zahid | 8.00 | 8.00 | 0.00 | 1 | 0 |
 | Waqar Rasheed | 48.00 | 0.00 | 0.00 | 0 | 0 |
 | Zeeshan Sarwar | 0.00 | 0.00 | 0.00 | 0 | 11 |
 

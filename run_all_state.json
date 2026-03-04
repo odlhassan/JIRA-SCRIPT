@@ -1,0 +1,41 @@
+{
+  "run_id": "f7c3abfd7ca74cdca53e6b7d5918b633",
+  "status": "completed",
+  "started_at_utc": "2026-03-04T10:33:34.506613+00:00",
+  "ended_at_utc": "2026-03-04T10:56:50.243424+00:00",
+  "current_step": null,
+  "completed_steps": [
+    "exports",
+    "work-items-full-sync",
+    "team-rmi-gantt-sqlite-sync",
+    "rlt-leave-report",
+    "nested-view-html",
+    "missed-entries-html",
+    "assignee-hours-html",
+    "leaves-planned-calendar-html",
+    "rnd-data-story-html",
+    "planned-rmis-html",
+    "gantt-chart-html",
+    "planned-actual-table-view-html",
+    "phase-rmi-gantt-html",
+    "employee-performance-html",
+    "dashboard",
+    "ipp-phase-export",
+    "ipp-meeting-dashboard",
+    "unified-nav-assets",
+    "report-html-sync"
+  ],
+  "error": null,
+  "resume_choice": "fresh",
+  "resumed_from_run_id": "8138d1957f254599b9d48e61d5b41839",
+  "args": {
+    "skip_phase_rmi_gantt": false,
+    "skip_ipp_phase_export": false,
+    "skip_ipp_dashboard": false,
+    "report_html_dir": "report_html",
+    "no_server": false,
+    "host": "127.0.0.1",
+    "port": 8000,
+    "resume_policy": "ask"
+  }
+}

@@ -4,7 +4,7 @@
     const link = document.createElement("link");
     link.id = "unified-nav-material-symbols";
     link.rel = "stylesheet";
-    link.href = "/material-symbols.css";
+    link.href = window.location.protocol === "file:" ? "./material-symbols.css" : "/material-symbols.css";
     document.head.appendChild(link);
   }
 

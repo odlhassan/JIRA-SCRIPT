@@ -1026,6 +1026,9 @@ def _load_leave_daily_rows(leave_report_path: Path) -> list[dict]:
         if not required.issubset(set(headers)):
             return []
         idx = {name: headers.index(name) for name in required}
+        assignee_idx = headers.index("assignee") if "assignee" in headers else -1
+        jira_ids_idx = headers.index("jira_task_ids") if "jira_task_ids" in headers else -1
+        jira_links_idx = headers.index("jira_task_links") if "jira_task_links" in headers else -1
         out: list[dict] = []
         for row in ws.iter_rows(min_row=2, values_only=True):
             period_day = _to_text(row[idx["period_day"]])
@@ -1037,10 +1040,13 @@ def _load_leave_daily_rows(leave_report_path: Path) -> list[dict]:
                 continue
             out.append(
                 {
+                    "assignee": _to_text(row[assignee_idx]) if assignee_idx >= 0 else "",
                     "period_day": period_day,
                     "planned_taken_hours": round(_to_float(row[idx["planned_taken_hours"]]), 2),
                     "unplanned_taken_hours": round(_to_float(row[idx["unplanned_taken_hours"]]), 2),
                     "planned_not_taken_hours": round(_to_float(row[idx["planned_not_taken_hours"]]), 2),
+                    "jira_task_ids": _to_text(row[jira_ids_idx]) if jira_ids_idx >= 0 else "",
+                    "jira_task_links": _to_text(row[jira_links_idx]) if jira_links_idx >= 0 else "",
                 }
             )
         return out

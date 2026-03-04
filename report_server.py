@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 import io
 import json
 import os
@@ -9844,6 +9844,7 @@ def _compute_actual_hours_aggregate(
     to_date: date,
     mode: str,
     selected_projects: set[str] | None = None,
+    selected_assignees: set[str] | None = None,
 ) -> dict[str, object]:
     result: dict[str, object] = {
         "subtask_hours_by_issue": {},
@@ -9917,6 +9918,8 @@ def _compute_actual_hours_aggregate(
                 assignee = _to_text(row[idx["worklog_author"]]) or assignee
             if assignee == "Unassigned" and "issue_assignee" in idx:
                 assignee = _to_text(row[idx["issue_assignee"]]) or assignee
+            if selected_assignees and _to_text(assignee).lower() not in selected_assignees:
+                continue
 
             subtask_hours[issue_key] += hours
             if epic_key:
@@ -9997,8 +10000,8 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         except Exception:
             pass
     refresh_lock = threading.Lock()
-    actual_hours_cache: dict[tuple[str, str, str, str, str, str, float, float], dict[str, object]] = {}
-    pvd_response_cache_version = "v6"
+    actual_hours_cache: dict[tuple[object, ...], dict[str, object]] = {}
+    pvd_response_cache_version = "v8"
     pactv_jobs_lock = threading.Lock()
     pactv_active_scopes: set[str] = set()
     pactv_pending_by_scope: dict[str, list[dict[str, object]]] = {}
@@ -10864,11 +10867,17 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         mode = _to_text(request.args.get("mode")).lower() or "log_date"
         report_id = _to_text(request.args.get("report"))
         projects_raw = _to_text(request.args.get("projects"))
+        assignees_raw = _to_text(request.args.get("assignees"))
         selected_projects = {
             item.strip().upper()
             for item in projects_raw.split(",")
             if item.strip()
         } if projects_raw else None
+        selected_assignees = {
+            item.strip().lower()
+            for item in assignees_raw.split(",")
+            if item.strip()
+        } if assignees_raw else None
         try:
             from_raw, to_raw = _resolve_effective_range_from_request(request.args)
         except ValueError as exc:
@@ -10889,6 +10898,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             to_date.isoformat(),
             mode,
             ",".join(sorted(selected_projects or set())),
+            ",".join(sorted(selected_assignees or set())),
             str(worklog_path.resolve()),
             str(work_items_path.resolve()),
             worklog_mtime,
@@ -10904,6 +10914,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                     to_date=to_date,
                     mode=mode,
                     selected_projects=selected_projects,
+                    selected_assignees=selected_assignees,
                 )
             except Exception as exc:
                 return jsonify({"ok": False, "error": f"Failed to aggregate worklogs: {exc}"}), 500
@@ -10925,6 +10936,12 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
     @app.route("/api/nested-view/actual-hours", methods=["GET"])
     def nested_view_actual_hours():
         mode = _to_text(request.args.get("mode")).lower() or "log_date"
+        assignees_raw = _to_text(request.args.get("assignees"))
+        selected_assignees = {
+            item.strip().lower()
+            for item in assignees_raw.split(",")
+            if item.strip()
+        } if assignees_raw else None
         try:
             from_raw, to_raw = _resolve_effective_range_from_request(request.args)
         except ValueError as exc:
@@ -10944,6 +10961,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             from_date.isoformat(),
             to_date.isoformat(),
             mode,
+            ",".join(sorted(selected_assignees or set())),
             "",
             str(worklog_path.resolve()),
             str(work_items_path.resolve()),
@@ -10959,6 +10977,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                     from_date=from_date,
                     to_date=to_date,
                     mode=mode,
+                    selected_assignees=selected_assignees,
                 )
             except Exception as exc:
                 return jsonify({"ok": False, "error": f"Failed to aggregate worklogs: {exc}"}), 500
@@ -11033,6 +11052,52 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 return True
             return _to_text(value).lower() in selected
 
+        dispensed_bucket_mode = "month" if (
+            from_date.year != to_date.year or from_date.month != to_date.month
+        ) else "week"
+
+        def _bucket_key_label(day_value: date) -> tuple[str, str]:
+            if dispensed_bucket_mode == "month":
+                month_key = f"{day_value.year:04d}-{day_value.month:02d}"
+                return month_key, month_key
+            week_key = _iso_week_code(day_value)
+            return week_key, week_key
+
+        def _dispensed_bucket_allocations(subtask: dict) -> list[tuple[str, str, float]]:
+            estimate_hours = float(subtask.get("estimate_hours") or 0.0)
+            if estimate_hours <= 0:
+                return []
+            planned_start = _parse_iso_date(_to_text(subtask.get("planned_start")))
+            planned_due = _parse_iso_date(_to_text(subtask.get("planned_due")))
+            if planned_start is None and planned_due is None:
+                return [("unscheduled", "Unscheduled", estimate_hours)]
+            span_start = planned_start or planned_due
+            span_end = planned_due or planned_start
+            if span_start is None or span_end is None:
+                return [("unscheduled", "Unscheduled", estimate_hours)]
+            if span_end < span_start:
+                span_start, span_end = span_end, span_start
+            overlap_start = max(span_start, from_date)
+            overlap_end = min(span_end, to_date)
+            if overlap_start > overlap_end:
+                # No overlap with selected range: keep these hours in "Remaining Hours" only.
+                return []
+            effective_start = overlap_start
+            effective_end = overlap_end
+            buckets_ordered: list[tuple[str, str]] = []
+            seen_keys: set[str] = set()
+            day_cursor = effective_start
+            while day_cursor <= effective_end:
+                bucket_key, bucket_label = _bucket_key_label(day_cursor)
+                if bucket_key not in seen_keys:
+                    seen_keys.add(bucket_key)
+                    buckets_ordered.append((bucket_key, bucket_label))
+                day_cursor = day_cursor + timedelta(days=1)
+            if not buckets_ordered:
+                return []
+            share = estimate_hours / float(len(buckets_ordered))
+            return [(bucket_key, bucket_label, share) for bucket_key, bucket_label in buckets_ordered]
+
         try:
             hierarchy, source = _get_planned_vs_dispensed_hierarchy_cached(
                 from_date=from_date,
@@ -11084,6 +11149,10 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                     "epic_count": 0,
                     "story_count": 0,
                     "subtask_count": 0,
+                    "dispensed_bucket_hours": {},
+                    "dispensed_bucket_labels": {},
+                    "outside_before_hours_raw": 0.0,
+                    "outside_after_hours_raw": 0.0,
                 },
             )
             epic_key = _to_text(epic.get("issue_key")).upper()
@@ -11111,20 +11180,87 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             ]
             row["story_count"] = int(row["story_count"]) + len(filtered_stories)
             row["subtask_count"] = int(row["subtask_count"]) + len(filtered_subtasks)
-            row["dispensed_subtask_hours"] = float(row["dispensed_subtask_hours"]) + sum(
-                float(item.get("estimate_hours") or 0.0) for item in filtered_subtasks
-            )
+            for subtask in filtered_subtasks:
+                estimate_hours = float(subtask.get("estimate_hours") or 0.0)
+                row["dispensed_subtask_hours"] = float(row["dispensed_subtask_hours"]) + estimate_hours
+                for bucket_key, bucket_label, bucket_hours in _dispensed_bucket_allocations(subtask):
+                    current_bucket_total = float((row.get("dispensed_bucket_hours") or {}).get(bucket_key) or 0.0)
+                    row["dispensed_bucket_hours"][bucket_key] = current_bucket_total + float(bucket_hours)
+                    row["dispensed_bucket_labels"][bucket_key] = bucket_label
+                planned_start = _parse_iso_date(_to_text(subtask.get("planned_start")))
+                planned_due = _parse_iso_date(_to_text(subtask.get("planned_due")))
+                if planned_start is not None or planned_due is not None:
+                    span_start = planned_start or planned_due
+                    span_end = planned_due or planned_start
+                    if span_start is not None and span_end is not None:
+                        if span_end < span_start:
+                            span_start, span_end = span_end, span_start
+                        total_days = int((span_end - span_start).days) + 1
+                        if total_days > 0 and estimate_hours > 0:
+                            before_end = min(span_end, from_date - timedelta(days=1))
+                            before_days = 0
+                            if before_end >= span_start:
+                                before_days = int((before_end - span_start).days) + 1
+                            after_start = max(span_start, to_date + timedelta(days=1))
+                            after_days = 0
+                            if span_end >= after_start:
+                                after_days = int((span_end - after_start).days) + 1
+                            if before_days > 0:
+                                row["outside_before_hours_raw"] = float(row["outside_before_hours_raw"]) + (estimate_hours * (before_days / total_days))
+                            if after_days > 0:
+                                row["outside_after_hours_raw"] = float(row["outside_after_hours_raw"]) + (estimate_hours * (after_days / total_days))
 
         rows_out = []
         for row in project_rows.values():
             planned_hours = _round_hours(float(row["planned_epic_hours"]))
             dispensed_hours = _round_hours(float(row["dispensed_subtask_hours"]))
+            bucket_hours_map = row.get("dispensed_bucket_hours") or {}
+            bucket_labels_map = row.get("dispensed_bucket_labels") or {}
+            in_range_dispensed_hours = float(sum(float(value or 0.0) for value in bucket_hours_map.values()))
+            remaining_hours = max(0.0, planned_hours - in_range_dispensed_hours)
+            outside_before_raw = float(row.get("outside_before_hours_raw") or 0.0)
+            outside_after_raw = float(row.get("outside_after_hours_raw") or 0.0)
+            bucket_keys = sorted(
+                bucket_hours_map.keys(),
+                key=lambda key: (str(key).lower() == "unscheduled", str(key)),
+            )
+            in_range_buckets = [
+                {
+                    "bucket_key": bucket_key,
+                    "bucket_label": _to_text(bucket_labels_map.get(bucket_key)) or _to_text(bucket_key),
+                    "hours": _round_hours(float(bucket_hours_map.get(bucket_key) or 0.0)),
+                }
+                for bucket_key in bucket_keys
+            ]
+            dispensed_buckets = list(in_range_buckets)
+            if remaining_hours > 0.0:
+                remaining_item = {
+                    "bucket_key": "remaining_hours",
+                    "bucket_label": "Remaining Hours",
+                    "hours": _round_hours(remaining_hours),
+                }
+                remaining_first = outside_before_raw > 0.0 and outside_after_raw <= 0.0
+                if remaining_first:
+                    dispensed_buckets = [remaining_item] + dispensed_buckets
+                else:
+                    dispensed_buckets = dispensed_buckets + [remaining_item]
+            dispensed_stack_hours = _round_hours(sum(float(item.get("hours") or 0.0) for item in dispensed_buckets))
+            row_payload = {
+                key: value
+                for key, value in row.items()
+                if key not in {"dispensed_bucket_hours", "dispensed_bucket_labels", "outside_before_hours_raw", "outside_after_hours_raw"}
+            }
             rows_out.append(
                 {
-                    **row,
+                    **row_payload,
                     "planned_epic_hours": planned_hours,
                     "dispensed_subtask_hours": dispensed_hours,
+                    "dispensed_in_range_hours": _round_hours(in_range_dispensed_hours),
+                    "dispensed_stack_hours": dispensed_stack_hours,
+                    "remaining_hours_outside_range": _round_hours(remaining_hours),
                     "remaining_hours": _round_hours(planned_hours - dispensed_hours),
+                    "dispensed_bucket_mode": dispensed_bucket_mode,
+                    "dispensed_buckets": dispensed_buckets,
                 }
             )
         for project_key in sorted(selected_projects):
@@ -11140,6 +11276,11 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                     "epic_count": 0,
                     "story_count": 0,
                     "subtask_count": 0,
+                    "dispensed_in_range_hours": 0.0,
+                    "dispensed_stack_hours": 0.0,
+                    "remaining_hours_outside_range": 0.0,
+                    "dispensed_bucket_mode": dispensed_bucket_mode,
+                    "dispensed_buckets": [],
                 }
             )
         rows_out.sort(key=lambda item: (_to_text(item.get("project_key")),))
@@ -11191,6 +11332,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             "to_date": to_date.isoformat(),
             "mode": mode,
             "plan_source": plan_source,
+            "dispensed_bucket_mode": dispensed_bucket_mode,
             "rows": rows_out,
             "selected_projects": sorted(selected_projects),
             "filter_options": {

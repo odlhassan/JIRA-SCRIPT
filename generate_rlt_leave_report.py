@@ -58,6 +58,16 @@ DEFAULT_FORCE_FULL_SYNC_DAYS = 7
 DEFAULT_BOOTSTRAP_DAYS = 365
 
 
+def _jira_issue_url(issue_key: str) -> str:
+    key = _to_text(issue_key).upper()
+    if not key:
+        return ""
+    base = _to_text(BASE_URL).rstrip("/")
+    if not base:
+        return ""
+    return f"{base}/browse/{key}"
+
+
 @dataclass
 class WorklogRow:
     issue_key: str
@@ -753,6 +763,8 @@ def _compute_aggregates(
             "planned_taken_hours": 0.0,
             "unplanned_taken_hours": 0.0,
             "planned_not_taken_hours": 0.0,
+            "_jira_issue_keys": set(),
+            "_jira_issue_links": set(),
         }
     )
     monthly: dict[tuple[str, str], dict[str, float]] = defaultdict(
@@ -846,6 +858,8 @@ def _compute_aggregates(
                     continue
                 by_assignee[assignee]["planned_not_taken_hours"] += planned_part
                 daily[(assignee, planned_date)]["planned_not_taken_hours"] += planned_part
+                daily[(assignee, planned_date)]["_jira_issue_keys"].add(subtask.issue_key)
+                daily[(assignee, planned_date)]["_jira_issue_links"].add(_jira_issue_url(subtask.issue_key))
                 assignee_planned_not_taken_daily[assignee][planned_date] += planned_part
                 weekly[(assignee, iso_week_code(planned_date))]["planned_not_taken_hours"] += planned_part
                 monthly[(assignee, month_code(planned_date))]["planned_not_taken_hours"] += planned_part
@@ -865,12 +879,16 @@ def _compute_aggregates(
         if subtask.leave_classification == "Planned":
             by_assignee[assignee]["planned_taken_hours"] += log.hours_logged
             daily[(assignee, log.started_date)]["planned_taken_hours"] += log.hours_logged
+            daily[(assignee, log.started_date)]["_jira_issue_keys"].add(log.issue_key)
+            daily[(assignee, log.started_date)]["_jira_issue_links"].add(_jira_issue_url(log.issue_key))
             assignee_planned_taken_daily[assignee][log.started_date] += log.hours_logged
             weekly[(assignee, week_key)]["planned_taken_hours"] += log.hours_logged
             monthly[(assignee, month_key)]["planned_taken_hours"] += log.hours_logged
         else:
             by_assignee[assignee]["unplanned_taken_hours"] += log.hours_logged
             daily[(assignee, log.started_date)]["unplanned_taken_hours"] += log.hours_logged
+            daily[(assignee, log.started_date)]["_jira_issue_keys"].add(log.issue_key)
+            daily[(assignee, log.started_date)]["_jira_issue_links"].add(_jira_issue_url(log.issue_key))
             assignee_unplanned_taken_daily[assignee][log.started_date] += log.hours_logged
             weekly[(assignee, week_key)]["unplanned_taken_hours"] += log.hours_logged
             monthly[(assignee, month_key)]["unplanned_taken_hours"] += log.hours_logged
@@ -911,6 +929,8 @@ def _compute_aggregates(
     daily_rows = []
     for (assignee, period), m in sorted(daily.items(), key=lambda x: (x[0][1], x[0][0].lower())):
         total = m["planned_taken_hours"] + m["unplanned_taken_hours"] + m["planned_not_taken_hours"]
+        issue_keys = sorted({_to_text(x).upper() for x in (m.get("_jira_issue_keys") or set()) if _to_text(x)})
+        issue_links = sorted({_to_text(x) for x in (m.get("_jira_issue_links") or set()) if _to_text(x)})
         daily_rows.append(
             {
                 "assignee": assignee,
@@ -919,6 +939,8 @@ def _compute_aggregates(
                 "unplanned_taken_hours": round(m["unplanned_taken_hours"], 2),
                 "planned_not_taken_hours": round(m["planned_not_taken_hours"], 2),
                 "total_hours": round(total, 2),
+                "jira_task_ids": ", ".join(issue_keys),
+                "jira_task_links": ", ".join(issue_links),
             }
         )
 
@@ -999,6 +1021,7 @@ def _write_xlsx(
     ws_daily = wb.create_sheet("Daily_Assignee")
     _sheet_append_rows(ws_daily, [
         "assignee", "period_day", "planned_taken_hours", "unplanned_taken_hours", "planned_not_taken_hours", "total_hours",
+        "jira_task_ids", "jira_task_links",
     ], aggregates["daily"])
 
     ws_weekly = wb.create_sheet("Weekly_Assignee")
@@ -1167,6 +1190,8 @@ def _write_html(output_path: Path, project_key: str, project_name: str, from_dat
             "Unplanned Taken (h)": f'{r["unplanned_taken_hours"]:.2f}',
             "Future Planned (h)": f'{r["planned_not_taken_hours"]:.2f}',
             "Total (h)": f'{r["total_hours"]:.2f}',
+            "Jira Task Id": _to_text(r.get("jira_task_ids")),
+            "Jira Task Link": _to_text(r.get("jira_task_links")),
         }
         for r in aggregates["daily"]
     ]
@@ -1348,7 +1373,7 @@ def _write_html(output_path: Path, project_key: str, project_name: str, from_dat
           <button class="tab-btn" data-tab="weekly">Weekly</button>
           <button class="tab-btn" data-tab="monthly">Monthly</button>
         </div>
-        <div id="tab-daily" class="tab-pane active">{_html_table(list(daily_rows[0].keys()) if daily_rows else ["Assignee","Day","Planned Taken (h)","Unplanned Taken (h)","Future Planned (h)","Total (h)"], daily_rows, "daily-table")}</div>
+        <div id="tab-daily" class="tab-pane active">{_html_table(list(daily_rows[0].keys()) if daily_rows else ["Assignee","Day","Planned Taken (h)","Unplanned Taken (h)","Future Planned (h)","Total (h)","Jira Task Id","Jira Task Link"], daily_rows, "daily-table")}</div>
         <div id="tab-weekly" class="tab-pane">{_html_table(list(weekly_rows[0].keys()) if weekly_rows else ["Assignee","Week","Planned Taken (h)","Unplanned Taken (h)","Future Planned (h)","Total (h)"], weekly_rows, "weekly-table")}</div>
         <div id="tab-monthly" class="tab-pane">{_html_table(list(monthly_rows[0].keys()) if monthly_rows else ["Assignee","Month","Planned Taken (h)","Unplanned Taken (h)","Future Planned (h)","Total (h)"], monthly_rows, "monthly-table")}</div>
       </section>
@@ -1530,16 +1555,18 @@ function apply(){{
    }};
  }});
 
- const dailyRows = dailyFilteredRaw
-   .sort((x,y)=>String(x.period_day||'').localeCompare(String(y.period_day||'')) || String(x.assignee||'').localeCompare(String(y.assignee||'')))
-   .map((r)=>({{
-     "Assignee": String(r.assignee || ''),
-     "Day": String(r.period_day || ''),
-     "Planned Taken (h)": Number(r.planned_taken_hours || 0).toFixed(2),
-     "Unplanned Taken (h)": Number(r.unplanned_taken_hours || 0).toFixed(2),
-     "Future Planned (h)": Number(r.planned_not_taken_hours || 0).toFixed(2),
-     "Total (h)": Number(r.total_hours || 0).toFixed(2),
-   }}));
+const dailyRows = dailyFilteredRaw
+  .sort((x,y)=>String(x.period_day||'').localeCompare(String(y.period_day||'')) || String(x.assignee||'').localeCompare(String(y.assignee||'')))
+  .map((r)=>({{
+    "Assignee": String(r.assignee || ''),
+    "Day": String(r.period_day || ''),
+    "Planned Taken (h)": Number(r.planned_taken_hours || 0).toFixed(2),
+    "Unplanned Taken (h)": Number(r.unplanned_taken_hours || 0).toFixed(2),
+    "Future Planned (h)": Number(r.planned_not_taken_hours || 0).toFixed(2),
+    "Total (h)": Number(r.total_hours || 0).toFixed(2),
+    "Jira Task Id": String(r.jira_task_ids || ''),
+    "Jira Task Link": String(r.jira_task_links || ''),
+  }}));
 
  const weeklyRows = weeklyData
    .filter((r)=>inRangeWeek(String(r.period_week || ''), fromUsed, toUsed) && (!a || String(r.assignee || '').toLowerCase() === a))
@@ -1626,7 +1653,7 @@ function apply(){{
  statNoEntryEl.textContent = String(defectiveRows.filter((r)=>String(r.reason || '').includes('No Entry')).length);
 
  renderTable('assignee-table', ["Assignee","Planned Taken (h)","Unplanned Taken (h)","Planned Not Yet Taken (h)","No Entry Count","Unknown Count"], assigneeRows);
- renderTable('daily-table', ["Assignee","Day","Planned Taken (h)","Unplanned Taken (h)","Future Planned (h)","Total (h)"], dailyRows);
+renderTable('daily-table', ["Assignee","Day","Planned Taken (h)","Unplanned Taken (h)","Future Planned (h)","Total (h)","Jira Task Id","Jira Task Link"], dailyRows);
  renderTable('weekly-table', ["Assignee","Week","Planned Taken (h)","Unplanned Taken (h)","Future Planned (h)","Total (h)"], weeklyRows);
  renderTable('monthly-table', ["Assignee","Month","Planned Taken (h)","Unplanned Taken (h)","Future Planned (h)","Total (h)"], monthlyRows);
  renderTable('defective-table', ["issue_key","assignee","summary","status","leave_classification","reason","planned_dates","original_estimate_hours"], defectiveRows);

@@ -14,6 +14,7 @@ from openpyxl import load_workbook
 from generate_assignee_hours_report import (
     DEFAULT_LEAVE_REPORT_INPUT_XLSX,
     _load_leave_daily_rows,
+    _load_leave_subtask_rows,
 )
 
 EXPECTED_HEADERS = [
@@ -951,6 +952,17 @@ def _build_html(data: dict) -> str:
       min-height: 66px;
       position: relative;
     }}
+    .score-card.is-expandable {{
+      cursor: pointer;
+      transition: box-shadow 0.14s ease, transform 0.14s ease;
+    }}
+    .score-card.is-expandable:hover {{
+      box-shadow: 0 6px 20px rgba(15, 23, 42, 0.09);
+      transform: translateY(-1px);
+    }}
+    .score-card.is-expanded {{
+      box-shadow: 0 0 0 2px rgba(244, 63, 94, 0.28);
+    }}
     .score-formula-chip {{
       position: absolute;
       top: 6px;
@@ -990,14 +1002,9 @@ def _build_html(data: dict) -> str:
     }}
     #score-total-planned-card,
     #score-total-logged-card,
-    #score-delta-card {{
+    #score-loading-efficiency-card {{
       background: #eff6ff;
       border-color: #93c5fd;
-    }}
-    #score-capacity-gap-card {{
-      background: linear-gradient(90deg, #fff1f2 0%, #eff6ff 100%);
-      border-color: #cbd5e1;
-      grid-column: 1 / -1;
     }}
     .score-label {{
       color: #355564;
@@ -1119,8 +1126,7 @@ def _build_html(data: dict) -> str:
     #score-total-capacity-planned-leaves-adjusted-card .score-value {{ color: #9f1239; }}
     #score-total-planned-card .score-value,
     #score-total-logged-card .score-value,
-    #score-delta-card .score-value {{ color: #1d4ed8; }}
-    #score-capacity-gap-card .score-value {{ color: #1e293b; }}
+    #score-loading-efficiency-card .score-value {{ color: #1d4ed8; }}
     .score-card.delta-pos .score-value {{
       color: #15803d;
     }}
@@ -1129,6 +1135,118 @@ def _build_html(data: dict) -> str:
     }}
     .score-card.delta-zero .score-value {{
       color: #1f2937;
+    }}
+    .score-details-panel {{
+      margin-top: 10px;
+      border: 1px solid #fda4af;
+      border-radius: 10px;
+      background: #fff7f8;
+      padding: 10px;
+    }}
+    .score-details-panel[hidden] {{
+      display: none;
+    }}
+    .score-details-title {{
+      margin: 0 0 8px;
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: #9f1239;
+    }}
+    .score-details-meta {{
+      margin: 0 0 8px;
+      font-size: 0.78rem;
+      color: #6b7280;
+    }}
+    .score-details-table-wrap {{
+      overflow-x: auto;
+    }}
+    .score-details-table {{
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 640px;
+      font-size: 0.84rem;
+    }}
+    .score-details-table th,
+    .score-details-table td {{
+      border: 1px solid #fbcfe8;
+      padding: 7px 8px;
+      text-align: left;
+      vertical-align: middle;
+      white-space: nowrap;
+    }}
+    .score-details-table th {{
+      background: #ffe4e6;
+      color: #9f1239;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
+    }}
+    .score-details-table td.hours {{
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }}
+    .score-details-empty {{
+      color: #64748b;
+      font-style: italic;
+      text-align: center;
+    }}
+    .leaves-link-btn {{
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      border-radius: 999px;
+      border: 1px solid #fda4af;
+      background: #fff1f2;
+      color: #be123c;
+      text-decoration: none;
+    }}
+    .leaves-link-btn:hover {{
+      background: #ffe4e6;
+    }}
+    .leaves-link-btn .material-icons-outlined {{
+      font-size: 15px;
+      line-height: 1;
+    }}
+    .planned-project-row td {{
+      background: #eff6ff;
+      border-color: #bfdbfe;
+      padding: 6px 8px;
+    }}
+    .planned-project-toggle {{
+      border: 0;
+      background: transparent;
+      color: #1e3a8a;
+      font-size: 0.88rem;
+      font-weight: 700;
+      cursor: pointer;
+      padding: 8px 6px;
+      min-height: 36px;
+      min-width: 260px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border-radius: 8px;
+    }}
+    .planned-project-toggle:hover {{
+      background: rgba(59, 130, 246, 0.12);
+    }}
+    .planned-project-toggle:focus-visible {{
+      outline: 2px solid #2563eb;
+      outline-offset: 1px;
+    }}
+    .planned-project-toggle .caret {{
+      width: 10px;
+      text-align: center;
+      color: #1d4ed8;
+    }}
+    .planned-epic-row td {{
+      background: #ffffff;
+    }}
+    .planned-epic-row td.hours {{
+      text-align: right;
+      font-variant-numeric: tabular-nums;
     }}
     .toolbar {{
       display: flex;
@@ -1767,13 +1885,9 @@ def _build_html(data: dict) -> str:
     }}
     html[data-theme="dark"] #score-total-planned-card,
     html[data-theme="dark"] #score-total-logged-card,
-    html[data-theme="dark"] #score-delta-card {{
+    html[data-theme="dark"] #score-loading-efficiency-card {{
       background: #172554;
       border-color: #60a5fa;
-    }}
-    html[data-theme="dark"] #score-capacity-gap-card {{
-      background: linear-gradient(90deg, #4c0519 0%, #172554 100%);
-      border-color: #93c5fd;
     }}
     html[data-theme="dark"] .capacity-profile-bar {{
       background: #0f172a;
@@ -1869,6 +1983,54 @@ def _build_html(data: dict) -> str:
     }}
     html[data-theme="dark"] .score-card.delta-zero .score-value {{
       color: #e5e7eb;
+    }}
+    html[data-theme="dark"] .score-details-panel {{
+      border-color: #fb7185;
+      background: #3f0b1f;
+    }}
+    html[data-theme="dark"] .score-details-title {{
+      color: #fda4af;
+    }}
+    html[data-theme="dark"] .score-details-meta {{
+      color: #cbd5e1;
+    }}
+    html[data-theme="dark"] .score-details-table th,
+    html[data-theme="dark"] .score-details-table td {{
+      border-color: #9f1239;
+    }}
+    html[data-theme="dark"] .score-details-table th {{
+      background: #6b102b;
+      color: #fecdd3;
+    }}
+    html[data-theme="dark"] .score-details-empty {{
+      color: #cbd5e1;
+    }}
+    html[data-theme="dark"] .leaves-link-btn {{
+      border-color: #fb7185;
+      background: #6b102b;
+      color: #fecdd3;
+    }}
+    html[data-theme="dark"] .leaves-link-btn:hover {{
+      background: #881337;
+    }}
+    html[data-theme="dark"] .planned-project-row td {{
+      background: #172554;
+      border-color: #1d4ed8;
+    }}
+    html[data-theme="dark"] .planned-project-toggle {{
+      color: #bfdbfe;
+    }}
+    html[data-theme="dark"] .planned-project-toggle:hover {{
+      background: rgba(147, 197, 253, 0.2);
+    }}
+    html[data-theme="dark"] .planned-project-toggle:focus-visible {{
+      outline-color: #93c5fd;
+    }}
+    html[data-theme="dark"] .planned-project-toggle .caret {{
+      color: #93c5fd;
+    }}
+    html[data-theme="dark"] .planned-epic-row td {{
+      background: #111827;
     }}
     html[data-theme="dark"] .search-input {{
       background: #0f172a;
@@ -2053,12 +2215,14 @@ def _build_html(data: dict) -> str:
           <button class="adv-filter-item" type="button" data-preset="last90" role="menuitem">Last 90 Days</button>
           <button class="adv-filter-item" type="button" data-preset="lastQuarter" role="menuitem">Last Quarter</button>
           <button class="adv-filter-item" type="button" data-preset="currentQuarter" role="menuitem">Current Quarter</button>
-          <div class="adv-filter-divider"></div>
-          <div class="adv-filter-group-label">Perspective</div>
-          <label class="adv-filter-radio"><input type="radio" name="perspective-radio" value="log_date" checked><span>By Log Date</span></label>
-          <label class="adv-filter-radio"><input type="radio" name="perspective-radio" value="planned_dates"><span>By Planned Dates</span></label>
         </div>
       </div>
+      <span class="date-chip-segment">Planned Hours Source</span>
+      <select id="planned-hours-source" class="date-chip-input" aria-label="Planned Hours Source">
+        <option value="subtask_estimates">Subtask Estimates</option>
+        <option value="subtask_logs">Subtask Logs</option>
+        <option value="epic_estimates">Epic Estimates</option>
+      </select>
       <select id="actual-hours-mode" style="display:none" aria-hidden="true">
         <option value="log_date">By Log Date</option>
         <option value="planned_dates">By Planned Dates</option>
@@ -2118,6 +2282,26 @@ def _build_html(data: dict) -> str:
               <button class="project-filter-action" type="button" id="project-filter-clear-all">Clear all</button>
             </div>
             <div class="project-filter-options" id="project-filter-options"></div>
+          </div>
+        </div>
+        <div class="project-filter" id="team-filter">
+          <button
+            class="project-filter-btn"
+            type="button"
+            id="team-filter-toggle"
+            aria-haspopup="true"
+            aria-expanded="false"
+            aria-controls="team-filter-menu"
+          >
+            <span id="team-filter-summary">Teams: All</span>
+            <span class="project-filter-caret" aria-hidden="true">v</span>
+          </button>
+          <div class="project-filter-menu" id="team-filter-menu">
+            <div class="project-filter-actions">
+              <button class="project-filter-action" type="button" id="team-filter-select-all">Select all</button>
+              <button class="project-filter-action" type="button" id="team-filter-clear-all">Clear all</button>
+            </div>
+            <div class="project-filter-options" id="team-filter-options"></div>
           </div>
         </div>
         <button class="btn" type="button" id="expand-all">Expand All</button>
@@ -2200,28 +2384,80 @@ Total Capacity = 0h</span>
             Total Planned Projects (Hours)
             <span class="score-info" tabindex="0" aria-label="Total Planned Projects information">
               i
-              <span class="score-info-tip" id="score-total-planned-tip">Formula: Total Planned Projects = Sum(Project Man-hours), excluding RLT (RnD Leave Tracker).
+              <span class="score-info-tip" id="score-total-planned-tip">Formula: Total Planned Projects = Sum(Subtask Planned Hours) where subtask Start OR Due date is within selected range, excluding RLT (RnD Leave Tracker).
 Values:
-Included Projects Count = 0
-Excluded Projects Count = 0
-Excluded Projects Planned Sum = 0h
+Included Subtasks Count = 0
+Excluded (RLT) Subtasks Count = 0
+Excluded (RLT) Subtasks Planned Sum = 0h
 Total Planned Projects = 0h</span>
             </span>
           </p>
           <p class="score-value" id="score-total-planned">0h</p>
+          <section class="score-details-panel" id="score-total-planned-details" hidden>
+            <h3 class="score-details-title">Total Planned Projects - Epic Breakdown</h3>
+            <p class="score-details-meta" id="score-total-planned-details-meta">No rows.</p>
+            <div class="score-details-table-wrap">
+              <table class="score-details-table" aria-label="Total Planned Projects details table">
+                <thead>
+                  <tr>
+                    <th>Project Name</th>
+                    <th>Epic Jira ID</th>
+                    <th>Epic Jira Name</th>
+                    <th>Epic Start Date</th>
+                    <th>Epic Due Date</th>
+                    <th>Planned Hours</th>
+                  </tr>
+                </thead>
+                <tbody id="score-total-planned-details-body"></tbody>
+              </table>
+            </div>
+          </section>
         </article>
         <article class="score-card" id="score-total-leaves-planned-card">
+          <span class="score-formula-chip" id="score-total-leaves-planned-formula">Planned Taken + Planned Not Yet Taken</span>
           <p class="score-label">
             Total Leaves Planned
             <span class="score-info" tabindex="0" aria-label="Total Leaves Planned information">
               i
               <span class="score-info-tip" id="score-total-leaves-planned-tip">Formula: Total Leaves Planned = Planned Taken + Planned Not Yet Taken from day-bucketed leave rows in selected date range.
 Values:
+Capacity Profile Effect = None (independent of selected profile)
 Planned Taken + Planned Not Yet Taken = 0h
 Total Leaves Planned = 0h</span>
             </span>
           </p>
           <p class="score-value" id="score-total-leaves-planned">0h</p>
+          <section class="score-details-panel" id="score-total-leaves-planned-details" hidden>
+            <h3 class="score-details-title">Total Leaves Planned - Assignee Summary</h3>
+            <p class="score-details-meta" id="score-total-leaves-planned-assignee-summary-meta">No rows.</p>
+            <div class="score-details-table-wrap">
+              <table class="score-details-table" aria-label="Total Leaves Planned assignee summary table">
+                <thead>
+                  <tr>
+                    <th>Assignee Name</th>
+                    <th>Planned Leaves (h)</th>
+                  </tr>
+                </thead>
+                <tbody id="score-total-leaves-planned-assignee-summary-body"></tbody>
+              </table>
+            </div>
+            <h3 class="score-details-title" style="margin-top:12px;">Total Leaves Planned - Subtask Breakdown</h3>
+            <p class="score-details-meta" id="score-total-leaves-planned-details-meta">No rows.</p>
+            <div class="score-details-table-wrap">
+              <table class="score-details-table" aria-label="Total Leaves Planned details table">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Assignee Name</th>
+                    <th>Hours</th>
+                    <th>Subtask Jira ID</th>
+                    <th>Jira</th>
+                  </tr>
+                </thead>
+                <tbody id="score-total-leaves-planned-details-body"></tbody>
+              </table>
+            </div>
+          </section>
         </article>
         <article class="score-card" id="score-total-logged-card">
           <p class="score-label">
@@ -2252,19 +2488,20 @@ Availability = 0h</span>
           </p>
           <p class="score-value" id="score-total-capacity-planned-leaves-adjusted">0h</p>
         </article>
-        <article class="score-card" id="score-delta-card">
+        <article class="score-card" id="score-loading-efficiency-card">
+          <span class="score-formula-chip" id="score-loading-efficiency-formula">Total Planned Projects / Availability x 100</span>
           <p class="score-label">
-            Hours Required To Complete Projects
-            <span class="score-info" tabindex="0" aria-label="Hours Required To Complete Projects information">
+            Loading Efficiency
+            <span class="score-info" tabindex="0" aria-label="Loading Efficiency information">
               i
-              <span class="score-info-tip" id="score-delta-tip">Formula: Plan Gap = Total Planned Projects - Total Actual Project Hours.
+              <span class="score-info-tip" id="score-loading-efficiency-tip">Formula: Loading Efficiency = Total Planned Projects / Availability x 100.
 Values:
 Total Planned Projects = 0h
-Total Actual Project Hours = 0h
-Plan Gap = 0h</span>
+Availability = 0h
+Loading Efficiency = 0%</span>
             </span>
           </p>
-          <p class="score-value" id="score-delta">0h</p>
+          <p class="score-value" id="score-loading-efficiency">0%</p>
         </article>
         <!--
         <article class="score-card" id="score-total-leaves-card">
@@ -2283,21 +2520,6 @@ Total Leaves Taken = 0h</span>
         </article>
         </article>
         -->
-        <article class="score-card" id="score-capacity-gap-card">
-          <p class="score-label">
-            Capacity available for more work
-            <span class="score-info" tabindex="0" aria-label="Capacity available for more work information">
-              i
-              <span class="score-info-tip" id="score-capacity-gap-tip">Formula: Capacity available for more work = Total Capacity (Hours) - Total Planned Projects (Hours) - RLT RnD Leave Tracker Original Estimates.
-Values:
-Total Capacity = 0h
-Total Planned Projects = 0h
-RLT RnD Leave Tracker Original Estimates = 0h
-Capacity available for more work = 0h</span>
-            </span>
-          </p>
-          <p class="score-value" id="score-capacity-gap">0h</p>
-        </article>
       </div>
       <div class="capacity-profile-drawer" id="capacity-profile-drawer" role="dialog" aria-modal="true" aria-label="Capacity profile">
         <div class="capacity-profile-drawer-head">
@@ -2361,6 +2583,8 @@ Capacity available for more work = 0h</span>
 
     const allRows = reportData.rows || [];
     const leaveDailyRows = Array.isArray(reportData.leave_daily_rows) ? reportData.leave_daily_rows : [];
+    const leaveSubtaskRows = Array.isArray(reportData.leave_subtask_rows) ? reportData.leave_subtask_rows : [];
+    const jiraBaseUrl = String(reportData.jira_base_url || "").trim().replace(/[/]+$/, "");
     const rowsById = new Map();
     const childrenByParent = new Map();
     const collapsed = new Set();
@@ -2374,6 +2598,7 @@ Capacity available for more work = 0h</span>
     const searchMeta = document.getElementById("search-meta");
     const dateFilterFromInput = document.getElementById("date-filter-from");
     const dateFilterToInput = document.getElementById("date-filter-to");
+    const plannedHoursSourceSelect = document.getElementById("planned-hours-source");
     const actualHoursModeSelect = document.getElementById("actual-hours-mode");
     const dateFilterApplyButton = document.getElementById("date-filter-apply");
     const dateFilterResetButton = document.getElementById("date-filter-reset");
@@ -2385,6 +2610,13 @@ Capacity available for more work = 0h</span>
     const projectFilterSummary = document.getElementById("project-filter-summary");
     const projectFilterSelectAll = document.getElementById("project-filter-select-all");
     const projectFilterClearAll = document.getElementById("project-filter-clear-all");
+    const teamFilterRoot = document.getElementById("team-filter");
+    const teamFilterToggle = document.getElementById("team-filter-toggle");
+    const teamFilterMenu = document.getElementById("team-filter-menu");
+    const teamFilterOptions = document.getElementById("team-filter-options");
+    const teamFilterSummary = document.getElementById("team-filter-summary");
+    const teamFilterSelectAll = document.getElementById("team-filter-select-all");
+    const teamFilterClearAll = document.getElementById("team-filter-clear-all");
     const viewOptionsRoot = document.getElementById("view-options");
     const viewOptionsToggle = document.getElementById("view-options-toggle");
     const viewOptionsMenu = document.getElementById("view-options-menu");
@@ -2395,11 +2627,22 @@ Capacity available for more work = 0h</span>
     const totalCapacityFormulaDaysNode = document.getElementById("score-total-capacity-formula-days");
     const totalCapacityFormulaHoursNode = document.getElementById("score-total-capacity-formula-hours");
     const totalPlannedScoreNode = document.getElementById("score-total-planned");
+    const totalPlannedCardEl = document.getElementById("score-total-planned-card");
+    const totalPlannedDetailsEl = document.getElementById("score-total-planned-details");
+    const totalPlannedDetailsMetaEl = document.getElementById("score-total-planned-details-meta");
+    const totalPlannedDetailsBodyEl = document.getElementById("score-total-planned-details-body");
     const totalLoggedScoreNode = document.getElementById("score-total-logged");
     const deltaScoreNode = document.getElementById("score-delta");
     const totalLeavesScoreNode = document.getElementById("score-total-leaves");
     const totalLeavesPlannedScoreNode = document.getElementById("score-total-leaves-planned");
+    const totalLeavesPlannedCardEl = document.getElementById("score-total-leaves-planned-card");
+    const totalLeavesPlannedDetailsEl = document.getElementById("score-total-leaves-planned-details");
+    const totalLeavesPlannedDetailsMetaEl = document.getElementById("score-total-leaves-planned-details-meta");
+    const totalLeavesPlannedDetailsBodyEl = document.getElementById("score-total-leaves-planned-details-body");
+    const totalLeavesPlannedAssigneeSummaryMetaEl = document.getElementById("score-total-leaves-planned-assignee-summary-meta");
+    const totalLeavesPlannedAssigneeSummaryBodyEl = document.getElementById("score-total-leaves-planned-assignee-summary-body");
     const totalCapacityPlannedLeavesAdjustedScoreNode = document.getElementById("score-total-capacity-planned-leaves-adjusted");
+    const loadingEfficiencyScoreNode = document.getElementById("score-loading-efficiency");
     const capacityGapScoreNode = document.getElementById("score-capacity-gap");
     const deltaScoreCard = document.getElementById("score-delta-card");
     const totalCapacityTipNode = document.getElementById("score-total-capacity-tip");
@@ -2409,6 +2652,7 @@ Capacity available for more work = 0h</span>
     const totalLeavesTipNode = document.getElementById("score-total-leaves-tip");
     const totalLeavesPlannedTipNode = document.getElementById("score-total-leaves-planned-tip");
     const totalCapacityPlannedLeavesAdjustedTipNode = document.getElementById("score-total-capacity-planned-leaves-adjusted-tip");
+    const loadingEfficiencyTipNode = document.getElementById("score-loading-efficiency-tip");
     const capacityGapTipNode = document.getElementById("score-capacity-gap-tip");
     const availabilityFormulaNode = document.getElementById("score-availability-formula");
     const scoreCapacityProfileOpenButton = document.getElementById("score-capacity-profile-open");
@@ -2426,7 +2670,9 @@ Capacity available for more work = 0h</span>
     const capacityProfileDetailsEl = document.getElementById("capacity-profile-details");
     const DATE_FILTER_WORK_TYPES = new Set(["rmi"]);
     const ACTUAL_HOURS_MODE_STORAGE_KEY = "actual-hours-mode:nested-view";
+    const PLANNED_HOURS_SOURCE_STORAGE_KEY = "planned-hours-source:nested-view";
     const DEFAULT_ACTUAL_HOURS_MODE = "log_date";
+    const DEFAULT_PLANNED_HOURS_SOURCE = "subtask_estimates";
     const DEFAULT_DATE_FROM = "2026-01-01";
     const DEFAULT_DATE_TO = new Date().toISOString().slice(0, 10);
     let selectedDateFrom = DEFAULT_DATE_FROM;
@@ -2435,6 +2681,8 @@ Capacity available for more work = 0h</span>
     let pendingDateTo = DEFAULT_DATE_TO;
     let selectedActualHoursMode = DEFAULT_ACTUAL_HOURS_MODE;
     let pendingActualHoursMode = DEFAULT_ACTUAL_HOURS_MODE;
+    let selectedPlannedHoursSource = DEFAULT_PLANNED_HOURS_SOURCE;
+    let pendingPlannedHoursSource = DEFAULT_PLANNED_HOURS_SOURCE;
     let isApplyingDateRange = false;
     let activeSearchQuery = "";
     let showProductCategorization = false;
@@ -2458,9 +2706,20 @@ Capacity available for more work = 0h</span>
     const hasManagedFieldsApi = window.location.protocol !== "file:";
     const ACTUAL_HOURS_AGGREGATE_ENDPOINT = "/api/actual-hours/aggregate";
     const NESTED_ACTUALS_ENDPOINT = "/api/nested-view/actual-hours";
+    const PERFORMANCE_TEAMS_ENDPOINT = "/api/performance/teams";
     const hasNestedActualsApi = window.location.protocol !== "file:";
+    const hasTeamsApi = window.location.protocol !== "file:";
     const originalMetricsById = new Map();
     let managedFieldsByKey = new Map();
+    const allTeams = [];
+    const selectedTeamNames = new Set();
+    const selectedTeamAssignees = new Set();
+    let totalPlannedDetailsOpen = false;
+    let totalPlannedDetailsGroups = [];
+    const collapsedTotalPlannedProjectKeys = new Set();
+    let totalLeavesPlannedDetailsOpen = false;
+    let totalLeavesPlannedDetailsRows = [];
+    let subtaskLogHoursByIssue = {{}};
 
     function toFiniteNumber(value, fallback = 0) {{
       const n = Number(value);
@@ -2469,6 +2728,26 @@ Capacity available for more work = 0h</span>
 
     function roundHours(value) {{
       return Math.round(toFiniteNumber(value, 0) * 100) / 100;
+    }}
+
+    function normalizePlannedHoursSource(value) {{
+      const raw = String(value || "").trim().toLowerCase();
+      if (raw === "subtask_logs") return "subtask_logs";
+      if (raw === "epic_estimates") return "epic_estimates";
+      return "subtask_estimates";
+    }}
+
+    function extractSubtaskHoursMap(payload) {{
+      const source = payload && payload.subtask_hours_by_issue && typeof payload.subtask_hours_by_issue === "object"
+        ? payload.subtask_hours_by_issue
+        : {{}};
+      const out = {{}};
+      for (const [key, value] of Object.entries(source)) {{
+        const issueKey = String(key || "").trim().toUpperCase();
+        if (!issueKey) continue;
+        out[issueKey] = toFiniteNumber(value, 0);
+      }}
+      return out;
     }}
 
     function toHoursToDays(hoursValue) {{
@@ -2498,6 +2777,249 @@ Capacity available for more work = 0h</span>
         ? String(rounded)
         : rounded.toFixed(2).replace(/0+$/, "").replace(/\\.$/, "");
       return text + "h";
+    }}
+
+    function formatHoursPlain(value) {{
+      const n = toFiniteNumber(value, 0);
+      const rounded = Math.round(n * 100) / 100;
+      if (Number.isInteger(rounded)) {{
+        return String(rounded);
+      }}
+      return rounded.toFixed(2).replace(/0+$/, "").replace(/\\.$/, "");
+    }}
+
+    function formatPercent(value) {{
+      const n = toFiniteNumber(value, 0);
+      const rounded = Math.round(n * 100) / 100;
+      if (Number.isInteger(rounded)) {{
+        return String(rounded) + "%";
+      }}
+      return rounded.toFixed(2).replace(/0+$/, "").replace(/\\.$/, "") + "%";
+    }}
+
+    function setTotalPlannedDetailsOpen(open) {{
+      totalPlannedDetailsOpen = !!open;
+      if (totalPlannedDetailsEl) {{
+        totalPlannedDetailsEl.hidden = !totalPlannedDetailsOpen;
+      }}
+      if (totalPlannedCardEl) {{
+        totalPlannedCardEl.classList.toggle("is-expanded", totalPlannedDetailsOpen);
+        totalPlannedCardEl.setAttribute("aria-expanded", totalPlannedDetailsOpen ? "true" : "false");
+      }}
+    }}
+
+    function renderTotalPlannedDetails() {{
+      if (!totalPlannedDetailsBodyEl || !totalPlannedDetailsMetaEl) {{
+        return;
+      }}
+      totalPlannedDetailsBodyEl.innerHTML = "";
+      const groups = Array.isArray(totalPlannedDetailsGroups) ? totalPlannedDetailsGroups : [];
+      let totalEpics = 0;
+      let totalHours = 0;
+      for (const group of groups) {{
+        const epics = Array.isArray(group && group.epics) ? group.epics : [];
+        totalEpics += epics.length;
+        for (const epic of epics) {{
+          totalHours += toFiniteNumber(epic && epic.planned_hours, 0);
+        }}
+      }}
+      totalPlannedDetailsMetaEl.textContent =
+        "Projects: " + String(groups.length) + " | Epics: " + String(totalEpics) + " | Planned Hours: " + formatHours(totalHours);
+      if (!groups.length) {{
+        const tr = document.createElement("tr");
+        const td = document.createElement("td");
+        td.colSpan = 6;
+        td.className = "score-details-empty";
+        td.textContent = "No planned epic rows found for current date/team filters.";
+        tr.appendChild(td);
+        totalPlannedDetailsBodyEl.appendChild(tr);
+        return;
+      }}
+      for (const group of groups) {{
+        const projectKey = String(group && group.project_key || "");
+        const projectName = String(group && group.project_name || projectKey || "Unknown Project");
+        const epics = Array.isArray(group && group.epics) ? group.epics : [];
+        const groupHours = epics.reduce((sum, epic) => sum + toFiniteNumber(epic && epic.planned_hours, 0), 0);
+        const projectTr = document.createElement("tr");
+        projectTr.className = "planned-project-row";
+        const projectTd = document.createElement("td");
+        projectTd.colSpan = 6;
+        const projectBtn = document.createElement("button");
+        projectBtn.type = "button";
+        projectBtn.className = "planned-project-toggle";
+        projectBtn.setAttribute("data-project-key", projectKey);
+        const collapsed = collapsedTotalPlannedProjectKeys.has(projectKey);
+        projectBtn.innerHTML =
+          '<span class="caret">' + (collapsed ? "+" : "-") + '</span>'
+          + '<span>' + projectName + "</span>"
+          + '<span>(' + String(epics.length) + " epics, " + formatHours(groupHours) + ")</span>";
+        projectTd.appendChild(projectBtn);
+        projectTr.appendChild(projectTd);
+        totalPlannedDetailsBodyEl.appendChild(projectTr);
+
+        if (!collapsed) {{
+          for (const epic of epics) {{
+            const tr = document.createElement("tr");
+            tr.className = "planned-epic-row";
+            const tdProject = document.createElement("td");
+            tdProject.textContent = "";
+            const tdEpicKey = document.createElement("td");
+            tdEpicKey.textContent = String(epic && epic.epic_jira_id || "");
+            const tdEpicName = document.createElement("td");
+            tdEpicName.textContent = String(epic && epic.epic_jira_name || "");
+            const tdStart = document.createElement("td");
+            tdStart.textContent = String(epic && epic.epic_start_date || "");
+            const tdDue = document.createElement("td");
+            tdDue.textContent = String(epic && epic.epic_due_date || "");
+            const tdHours = document.createElement("td");
+            tdHours.className = "hours";
+            tdHours.textContent = formatHoursPlain(epic && epic.planned_hours);
+            tr.appendChild(tdProject);
+            tr.appendChild(tdEpicKey);
+            tr.appendChild(tdEpicName);
+            tr.appendChild(tdStart);
+            tr.appendChild(tdDue);
+            tr.appendChild(tdHours);
+            totalPlannedDetailsBodyEl.appendChild(tr);
+          }}
+        }}
+      }}
+      for (const btn of Array.from(totalPlannedDetailsBodyEl.querySelectorAll(".planned-project-toggle"))) {{
+        btn.addEventListener("click", (event) => {{
+          event.preventDefault();
+          event.stopPropagation();
+          const key = String(btn.getAttribute("data-project-key") || "");
+          if (!key) {{
+            return;
+          }}
+          if (collapsedTotalPlannedProjectKeys.has(key)) {{
+            collapsedTotalPlannedProjectKeys.delete(key);
+          }} else {{
+            collapsedTotalPlannedProjectKeys.add(key);
+          }}
+          renderTotalPlannedDetails();
+        }});
+      }}
+    }}
+
+    function setTotalLeavesPlannedDetailsOpen(open) {{
+      totalLeavesPlannedDetailsOpen = !!open;
+      if (totalLeavesPlannedDetailsEl) {{
+        totalLeavesPlannedDetailsEl.hidden = !totalLeavesPlannedDetailsOpen;
+      }}
+      if (totalLeavesPlannedCardEl) {{
+        totalLeavesPlannedCardEl.classList.toggle("is-expanded", totalLeavesPlannedDetailsOpen);
+        totalLeavesPlannedCardEl.setAttribute("aria-expanded", totalLeavesPlannedDetailsOpen ? "true" : "false");
+      }}
+    }}
+
+    function renderTotalLeavesPlannedDetails() {{
+      if (!totalLeavesPlannedDetailsBodyEl || !totalLeavesPlannedDetailsMetaEl) {{
+        return;
+      }}
+      totalLeavesPlannedDetailsBodyEl.innerHTML = "";
+      if (totalLeavesPlannedAssigneeSummaryBodyEl) {{
+        totalLeavesPlannedAssigneeSummaryBodyEl.innerHTML = "";
+      }}
+      const rows = Array.isArray(totalLeavesPlannedDetailsRows) ? totalLeavesPlannedDetailsRows : [];
+      const totalHours = rows.reduce((sum, row) => sum + toFiniteNumber(row && row.hours, 0), 0);
+      totalLeavesPlannedDetailsMetaEl.textContent =
+        "Rows: " + String(rows.length) + " | Total Hours: " + formatHours(totalHours);
+      const assigneeSummaryMap = new Map();
+      for (const row of rows) {{
+        const assigneeName = String(row && row.assignee_name || "").trim() || "Unassigned";
+        const rowHours = toFiniteNumber(row && row.hours, 0);
+        assigneeSummaryMap.set(assigneeName, toFiniteNumber(assigneeSummaryMap.get(assigneeName), 0) + rowHours);
+      }}
+      const assigneeSummaryRows = Array.from(assigneeSummaryMap.entries())
+        .map(([assignee_name, hours]) => ({{ assignee_name, hours }}))
+        .sort((left, right) => {{
+          const diff = toFiniteNumber(right && right.hours, 0) - toFiniteNumber(left && left.hours, 0);
+          if (Math.abs(diff) > 1e-9) {{
+            return diff;
+          }}
+          return String(left && left.assignee_name || "").localeCompare(String(right && right.assignee_name || ""));
+        }});
+      if (totalLeavesPlannedAssigneeSummaryMetaEl) {{
+        totalLeavesPlannedAssigneeSummaryMetaEl.textContent =
+          "Assignees: " + String(assigneeSummaryRows.length) + " | Total Hours: " + formatHours(totalHours);
+      }}
+      if (!rows.length) {{
+        const tr = document.createElement("tr");
+        const td = document.createElement("td");
+        td.colSpan = 5;
+        td.className = "score-details-empty";
+        td.textContent = "No planned leave rows found for current date/team filters.";
+        tr.appendChild(td);
+        totalLeavesPlannedDetailsBodyEl.appendChild(tr);
+      }} else {{
+        for (const row of rows) {{
+          const tr = document.createElement("tr");
+          const tdDate = document.createElement("td");
+          tdDate.textContent = String(row && row.date || "");
+          const tdAssignee = document.createElement("td");
+          tdAssignee.textContent = String(row && row.assignee_name || "");
+          const tdHours = document.createElement("td");
+          tdHours.className = "hours";
+          tdHours.textContent = formatHoursPlain(row && row.hours);
+        const tdJiraId = document.createElement("td");
+        tdJiraId.textContent = String(row && row.jira_key || "");
+        const tdLink = document.createElement("td");
+        const jiraUrl = String(row && row.jira_url || "");
+        if (jiraUrl) {{
+          const urls = jiraUrl.split(",").map((part) => String(part || "").trim()).filter(Boolean);
+          if (urls.length > 1) {{
+            tdLink.style.whiteSpace = "normal";
+          }}
+          urls.forEach((urlValue, index) => {{
+            const link = document.createElement("a");
+            link.className = "leaves-link-btn";
+            link.href = urlValue;
+            link.target = "_blank";
+            link.rel = "noopener noreferrer";
+            link.title = "Open Jira task";
+            link.setAttribute("aria-label", "Open Jira task");
+            link.innerHTML = '<span class="material-icons-outlined" aria-hidden="true">open_in_new</span>';
+            tdLink.appendChild(link);
+            if (index < urls.length - 1) {{
+              tdLink.appendChild(document.createTextNode(" "));
+            }}
+          }});
+        }} else {{
+          tdLink.textContent = "-";
+        }}
+          tr.appendChild(tdDate);
+          tr.appendChild(tdAssignee);
+          tr.appendChild(tdHours);
+          tr.appendChild(tdJiraId);
+          tr.appendChild(tdLink);
+          totalLeavesPlannedDetailsBodyEl.appendChild(tr);
+        }}
+      }}
+      if (!totalLeavesPlannedAssigneeSummaryBodyEl) {{
+        return;
+      }}
+      if (!assigneeSummaryRows.length) {{
+        const tr = document.createElement("tr");
+        const td = document.createElement("td");
+        td.colSpan = 2;
+        td.className = "score-details-empty";
+        td.textContent = "No assignee summary rows for current date/team filters.";
+        tr.appendChild(td);
+        totalLeavesPlannedAssigneeSummaryBodyEl.appendChild(tr);
+        return;
+      }}
+      for (const row of assigneeSummaryRows) {{
+        const tr = document.createElement("tr");
+        const tdAssignee = document.createElement("td");
+        tdAssignee.textContent = String(row && row.assignee_name || "");
+        const tdHours = document.createElement("td");
+        tdHours.className = "hours";
+        tdHours.textContent = formatHoursPlain(row && row.hours);
+        tr.appendChild(tdAssignee);
+        tr.appendChild(tdHours);
+        totalLeavesPlannedAssigneeSummaryBodyEl.appendChild(tr);
+      }}
     }}
 
     function capacityProfileKey(profile) {{
@@ -2921,9 +3443,53 @@ Capacity available for more work = 0h</span>
 
     function updateScoreCards(sourceRows) {{
       const rows = Array.isArray(sourceRows) ? sourceRows : [];
+      const rowsById = new Map();
+      const rowsByIdText = new Map();
+      for (const row of rows) {{
+        rowsById.set(row.id, row);
+        rowsByIdText.set(String(row && row.id || ""), row);
+      }}
+      function resolveProjectContext(row) {{
+        let current = row || null;
+        let fallbackKey = String(row && row.project_key || "").trim();
+        let fallbackName = String(row && row.project_name || "").trim();
+        while (current) {{
+          if (String(current && current.row_type || "") === "project") {{
+            return {{
+              key: String(current && current.project_key || "").trim(),
+              name: String(current && current.project_name || "").trim(),
+            }};
+          }}
+          if (!fallbackKey) {{
+            fallbackKey = String(current && current.project_key || "").trim();
+          }}
+          if (!fallbackName) {{
+            fallbackName = String(current && current.project_name || "").trim();
+          }}
+          const parentId = current && current.parent_id;
+          current = parentId ? (rowsById.get(parentId) || null) : null;
+        }}
+        return {{ key: fallbackKey, name: fallbackName }};
+      }}
+      function resolveEpicContext(row) {{
+        let current = row || null;
+        while (current) {{
+          if (String(current && current.row_type || "") === "rmi") {{
+            return {{
+              id: String(current && current.id || ""),
+              jira_key: String(current && current.jira_key || "").trim().toUpperCase(),
+              name: String(current && current.aspect || "").trim(),
+            }};
+          }}
+          const parentId = current && current.parent_id;
+          current = parentId ? (rowsById.get(parentId) || null) : null;
+        }}
+        return {{ id: "", jira_key: "", name: "" }};
+      }}
       function isLeaveProject(row) {{
-        const projectKey = String(row && row.project_key || "").trim().toUpperCase();
-        const projectName = String(row && row.project_name || "").trim().toUpperCase();
+        const projectCtx = resolveProjectContext(row);
+        const projectKey = String(projectCtx && projectCtx.key || "").trim().toUpperCase();
+        const projectName = String(projectCtx && projectCtx.name || "").trim().toUpperCase();
         if (projectKey === "RLT") {{
           return true;
         }}
@@ -2932,12 +3498,122 @@ Capacity available for more work = 0h</span>
       function isExcludedPlannedProject(row) {{
         return isLeaveProject(row);
       }}
+      function subtaskPlannedInRange(row, bounds) {{
+        if (String(row && row.row_type || "") !== "subtask") {{
+          return false;
+        }}
+        const plannedStart = parseDateValue(row && (row.planned_start || row.start_date));
+        const plannedDue = parseDateValue(row && (row.planned_end || row.planned_due || row.due_date));
+        return isDateWithinBounds(plannedStart, bounds) || isDateWithinBounds(plannedDue, bounds);
+      }}
+      function subtaskLoggedInRange(row) {{
+        if (String(row && row.row_type || "") !== "subtask") {{
+          return false;
+        }}
+        const jiraKey = String(row && row.jira_key || "").trim().toUpperCase();
+        if (!jiraKey) {{
+          return false;
+        }}
+        if (Object.prototype.hasOwnProperty.call(subtaskLogHoursByIssue, jiraKey)) {{
+          return toFiniteNumber(subtaskLogHoursByIssue[jiraKey], 0) > 0;
+        }}
+        if (selectedActualHoursMode === "log_date") {{
+          return toFiniteNumber(row && row.actual_hours, 0) > 0;
+        }}
+        return false;
+      }}
+      function epicPlannedInRangeFromSubtask(row, bounds) {{
+        const epicCtx = resolveEpicContext(row);
+        const epicRow = rowsByIdText.get(String(epicCtx && epicCtx.id || ""));
+        if (!epicRow) {{
+          return false;
+        }}
+        const epicStart = parseDateValue(epicRow && epicRow.planned_start);
+        const epicDue = parseDateValue(epicRow && epicRow.planned_end);
+        return isDateWithinBounds(epicStart, bounds) || isDateWithinBounds(epicDue, bounds);
+      }}
+      function subtaskMatchesPlannedHoursSource(row, bounds) {{
+        const source = normalizePlannedHoursSource(selectedPlannedHoursSource);
+        if (source === "epic_estimates") {{
+          return epicPlannedInRangeFromSubtask(row, bounds);
+        }}
+        if (source === "subtask_logs") {{
+          return subtaskLoggedInRange(row);
+        }}
+        return subtaskPlannedInRange(row, bounds);
+      }}
+      function subtaskPlannedHours(row) {{
+        const manHours = Number(row && row.man_hours);
+        const manDays = Number(row && row.man_days);
+        if (Number.isFinite(manHours)) {{
+          return manHours;
+        }}
+        if (Number.isFinite(manDays)) {{
+          return manDays * 8;
+        }}
+        return 0;
+      }}
+      function rowMatchesSelectedTeams(row) {{
+        if (isAllTeamsSelected()) {{
+          return true;
+        }}
+        if (!selectedTeamNames.size) {{
+          return false;
+        }}
+        const assigneeText = String(row && row.assignee_name || row && row.assignee || "").trim();
+        if (!assigneeText) {{
+          return false;
+        }}
+        const assignees = assigneeText.split(",").map((name) => normalizeAssigneeName(name)).filter(Boolean);
+        if (!assignees.length) {{
+          return false;
+        }}
+        for (const assignee of assignees) {{
+          if (selectedTeamAssignees.has(assignee)) {{
+            return true;
+          }}
+        }}
+        return false;
+      }}
+      function leaveSubtaskMatchesSelectedTeams(row) {{
+        if (isAllTeamsSelected()) {{
+          return true;
+        }}
+        if (!selectedTeamNames.size) {{
+          return false;
+        }}
+        const assignee = normalizeAssigneeName(String(row && row.assignee || "").trim());
+        return !!(assignee && selectedTeamAssignees.has(assignee));
+      }}
+      function leaveSubtaskOverlapsBounds(row, bounds) {{
+        const start = parseDateValue(row && row.start_date);
+        const due = parseDateValue(row && row.due_date);
+        if (start && due && bounds && bounds.start && bounds.end) {{
+          return start.getTime() <= bounds.end.getTime() && due.getTime() >= bounds.start.getTime();
+        }}
+        return isDateWithinBounds(start, bounds) || isDateWithinBounds(due, bounds);
+      }}
+      function leaveJiraUrl(row) {{
+        const directUrl = String(row && row.jira_url || "").trim();
+        if (directUrl) {{
+          return directUrl;
+        }}
+        const issueKey = String(row && row.issue_key || "").trim().toUpperCase();
+        if (!issueKey || !jiraBaseUrl) {{
+          return "";
+        }}
+        return jiraBaseUrl + "/browse/" + issueKey;
+      }}
       let totalCapacityHours = 0;
       let totalPlannedHours = 0;
       let excludedPlannedHours = 0;
-      let includedProjectCount = 0;
-      let excludedProjectCount = 0;
-      let totalActualProjectHours = 0;
+      let includedSubtaskCount = 0;
+      let excludedSubtaskCount = 0;
+      const epicSummariesById = new Map();
+      const fallbackLeavesDetailsRowsNext = [];
+      let totalActualProjectHoursFromProjects = 0;
+      let totalActualProjectHoursFromFilteredSubtasks = 0;
+      let filteredSubtaskActualCount = 0;
       let excludedActualHours = 0;
       let plannedLeavesTaken = 0;
       let plannedLeavesNotTakenYet = 0;
@@ -2957,15 +3633,11 @@ Capacity available for more work = 0h</span>
           : plannedHours;
         const actualHours = Number(row && row.actual_hours);
         totalCapacityHours += capacityHours;
-        if (!isExcludedPlannedProject(row)) {{
-          totalPlannedHours += plannedHours;
-          includedProjectCount += 1;
+        if (!isLeaveProject(row)) {{
           if (Number.isFinite(actualHours)) {{
-            totalActualProjectHours += actualHours;
+            totalActualProjectHoursFromProjects += actualHours;
           }}
         }} else {{
-          excludedPlannedHours += plannedHours;
-          excludedProjectCount += 1;
           const actualLeaveHours = Number.isFinite(actualHours) ? actualHours : 0;
           excludedActualHours += actualLeaveHours;
           const cappedPlannedTaken = Math.max(0, Math.min(actualLeaveHours, plannedHours));
@@ -2974,6 +3646,107 @@ Capacity available for more work = 0h</span>
           unplannedLeavesTaken += Math.max(0, actualLeaveHours - plannedHours);
         }}
       }}
+      for (const row of rows) {{
+        if (!subtaskMatchesPlannedHoursSource(row, dateBounds)) {{
+          continue;
+        }}
+        if (!rowMatchesSelectedTeams(row)) {{
+          continue;
+        }}
+        const plannedHours = subtaskPlannedHours(row);
+        if (isExcludedPlannedProject(row)) {{
+          excludedPlannedHours += plannedHours;
+          excludedSubtaskCount += 1;
+          const plannedStartDate = parseDateValue(row && (row.planned_start || row.start_date));
+          fallbackLeavesDetailsRowsNext.push({{
+            date: plannedStartDate ? toIsoDate(plannedStartDate) : "",
+            assignee_name: String(row && row.assignee_name || row && row.assignee || "").trim(),
+            hours: plannedHours,
+            jira_key: String(row && row.jira_key || "").trim(),
+            jira_url: String(row && row.jira_url || "").trim(),
+          }});
+        }} else {{
+          totalPlannedHours += plannedHours;
+          includedSubtaskCount += 1;
+          const epicCtx = resolveEpicContext(row);
+          const projectCtx = resolveProjectContext(row);
+          const epicId = String(epicCtx && epicCtx.id || "") || String(row && row.parent_id || "") || String(row && row.id || "");
+          if (!epicSummariesById.has(epicId)) {{
+            epicSummariesById.set(epicId, {{
+              project_key: String(projectCtx && projectCtx.key || "").trim().toUpperCase(),
+              project_name: String(projectCtx && projectCtx.name || "").trim(),
+              epic_jira_id: String(epicCtx && epicCtx.jira_key || "").trim().toUpperCase(),
+              epic_jira_name: String(epicCtx && epicCtx.name || "").trim(),
+              epic_start_date_obj: null,
+              epic_due_date_obj: null,
+              planned_hours: 0,
+            }});
+          }}
+          const epicSummary = epicSummariesById.get(epicId);
+          const plannedStart = parseDateValue(row && (row.planned_start || row.start_date));
+          const plannedDue = parseDateValue(row && (row.planned_end || row.planned_due || row.due_date));
+          if (plannedStart && (!epicSummary.epic_start_date_obj || plannedStart.getTime() < epicSummary.epic_start_date_obj.getTime())) {{
+            epicSummary.epic_start_date_obj = plannedStart;
+          }}
+          if (plannedDue && (!epicSummary.epic_due_date_obj || plannedDue.getTime() > epicSummary.epic_due_date_obj.getTime())) {{
+            epicSummary.epic_due_date_obj = plannedDue;
+          }}
+          epicSummary.planned_hours += plannedHours;
+          const subtaskActualHours = Number(row && row.actual_hours);
+          if (Number.isFinite(subtaskActualHours)) {{
+            totalActualProjectHoursFromFilteredSubtasks += subtaskActualHours;
+            filteredSubtaskActualCount += 1;
+          }}
+        }}
+      }}
+      const totalActualProjectHours = hasNestedActualsApi
+        ? totalActualProjectHoursFromProjects
+        : (filteredSubtaskActualCount > 0 ? totalActualProjectHoursFromFilteredSubtasks : totalActualProjectHoursFromProjects);
+      const groupedEpicSummaries = new Map();
+      for (const summary of epicSummariesById.values()) {{
+        const projectKey = String(summary && summary.project_key || "").trim().toUpperCase();
+        const projectName = String(summary && summary.project_name || "").trim() || projectKey || "Unknown Project";
+        const groupKey = projectKey || projectName;
+        if (!groupedEpicSummaries.has(groupKey)) {{
+          groupedEpicSummaries.set(groupKey, {{
+            project_key: projectKey,
+            project_name: projectName,
+            epics: [],
+          }});
+        }}
+        groupedEpicSummaries.get(groupKey).epics.push({{
+          epic_jira_id: String(summary && summary.epic_jira_id || "").trim(),
+          epic_jira_name: String(summary && summary.epic_jira_name || "").trim(),
+          epic_start_date: summary && summary.epic_start_date_obj ? toIsoDate(summary.epic_start_date_obj) : "",
+          epic_due_date: summary && summary.epic_due_date_obj ? toIsoDate(summary.epic_due_date_obj) : "",
+          planned_hours: roundHours(summary && summary.planned_hours),
+        }});
+      }}
+      const totalPlannedDetailsGroupsNext = Array.from(groupedEpicSummaries.values());
+      totalPlannedDetailsGroupsNext.sort((left, right) =>
+        String(left && left.project_name || "").localeCompare(String(right && right.project_name || ""))
+      );
+      for (const group of totalPlannedDetailsGroupsNext) {{
+        const epics = Array.isArray(group && group.epics) ? group.epics : [];
+        epics.sort((left, right) => {{
+          const diff = toFiniteNumber(right && right.planned_hours, 0) - toFiniteNumber(left && left.planned_hours, 0);
+          if (Math.abs(diff) > 1e-9) {{
+            return diff;
+          }}
+          return String(left && left.epic_jira_id || "").localeCompare(String(right && right.epic_jira_id || ""));
+        }});
+      }}
+      const validProjectKeys = new Set(totalPlannedDetailsGroupsNext.map((group) => String(group && group.project_key || "")));
+      for (const key of Array.from(collapsedTotalPlannedProjectKeys)) {{
+        if (!validProjectKeys.has(key)) {{
+          collapsedTotalPlannedProjectKeys.delete(key);
+        }}
+      }}
+      for (const key of validProjectKeys) {{
+        collapsedTotalPlannedProjectKeys.add(key);
+      }}
+      totalPlannedDetailsGroups = totalPlannedDetailsGroupsNext;
+      renderTotalPlannedDetails();
       function computeEmbeddedLeaveMetricsForRange(bounds) {{
         const empty = {{
           hasData: false,
@@ -3006,6 +3779,104 @@ Capacity available for more work = 0h</span>
         }};
       }}
       const embeddedLeaveMetrics = computeEmbeddedLeaveMetricsForRange(dateBounds);
+      const dailyPlannedDetailsRowsNext = [];
+      if (dateBounds && dateBounds.start && dateBounds.end && leaveDailyRows.length) {{
+        const byDayAssignee = new Map();
+        for (const row of leaveDailyRows) {{
+          const day = parseDateValue(row && row.period_day);
+          if (!day || !isDateWithinBounds(day, dateBounds)) {{
+            continue;
+          }}
+          const plannedTaken = toFiniteNumber(row && row.planned_taken_hours, 0);
+          const plannedNotTaken = toFiniteNumber(row && row.planned_not_taken_hours, 0);
+          const plannedTotal = plannedTaken + plannedNotTaken;
+          if (plannedTotal <= 0) {{
+            continue;
+          }}
+          const isoDay = toIsoDate(day);
+          const assigneeName = String(row && row.assignee || "").trim();
+          const groupKey = isoDay + "|" + assigneeName.toLowerCase();
+          const jiraTaskIds = String(row && row.jira_task_ids || "").trim();
+          const jiraTaskLinks = String(row && row.jira_task_links || "").trim();
+          const existing = byDayAssignee.get(groupKey) || {{
+            date: isoDay,
+            assignee_name: assigneeName,
+            hours: 0,
+            jira_key: "",
+            jira_url: "",
+            _jiraKeySet: new Set(),
+            _jiraUrlSet: new Set(),
+          }};
+          existing.hours += plannedTotal;
+          if (jiraTaskIds) {{
+            for (const key of jiraTaskIds.split(",")) {{
+              const keyText = String(key || "").trim().toUpperCase();
+              if (keyText) {{
+                existing._jiraKeySet.add(keyText);
+              }}
+            }}
+          }}
+          if (jiraTaskLinks) {{
+            for (const linkTextRaw of jiraTaskLinks.split(",")) {{
+              const linkText = String(linkTextRaw || "").trim();
+              if (linkText) {{
+                existing._jiraUrlSet.add(linkText);
+              }}
+            }}
+          }}
+          existing.jira_key = Array.from(existing._jiraKeySet).sort().join(", ");
+          existing.jira_url = Array.from(existing._jiraUrlSet).sort().join(", ");
+          byDayAssignee.set(groupKey, existing);
+        }}
+        for (const item of byDayAssignee.values()) {{
+          delete item._jiraKeySet;
+          delete item._jiraUrlSet;
+          dailyPlannedDetailsRowsNext.push(item);
+        }}
+      }}
+      const totalLeavesPlannedDetailsRowsNext = [];
+      for (const leaveRow of leaveSubtaskRows) {{
+        if (!leaveSubtaskOverlapsBounds(leaveRow, dateBounds)) {{
+          continue;
+        }}
+        if (!leaveSubtaskMatchesSelectedTeams(leaveRow)) {{
+          continue;
+        }}
+        const issueKey = String(leaveRow && leaveRow.issue_key || "").trim().toUpperCase();
+        totalLeavesPlannedDetailsRowsNext.push({{
+          date: String(leaveRow && leaveRow.start_date || "").trim(),
+          assignee_name: String(leaveRow && leaveRow.assignee || "").trim(),
+          hours: toFiniteNumber(leaveRow && leaveRow.original_estimate_hours, 0),
+          jira_key: issueKey,
+          jira_url: leaveJiraUrl(leaveRow),
+        }});
+      }}
+      const detailsRowsForRender = dailyPlannedDetailsRowsNext.length
+        ? dailyPlannedDetailsRowsNext
+        : (totalLeavesPlannedDetailsRowsNext.length ? totalLeavesPlannedDetailsRowsNext : fallbackLeavesDetailsRowsNext);
+      detailsRowsForRender.sort((left, right) => {{
+        const lDate = String(left && left.date || "");
+        const rDate = String(right && right.date || "");
+        if (lDate && rDate && lDate !== rDate) {{
+          return lDate.localeCompare(rDate);
+        }}
+        if (lDate && !rDate) {{
+          return -1;
+        }}
+        if (!lDate && rDate) {{
+          return 1;
+        }}
+        const lAssignee = String(left && left.assignee_name || "");
+        const rAssignee = String(right && right.assignee_name || "");
+        if (lAssignee !== rAssignee) {{
+          return lAssignee.localeCompare(rAssignee);
+        }}
+        const lJira = String(left && left.jira_key || "");
+        const rJira = String(right && right.jira_key || "");
+        return lJira.localeCompare(rJira);
+      }});
+      totalLeavesPlannedDetailsRows = detailsRowsForRender;
+      renderTotalLeavesPlannedDetails();
       if (embeddedLeaveMetrics.hasData) {{
         plannedLeavesTaken = embeddedLeaveMetrics.plannedTakenHours;
         plannedLeavesNotTakenYet = embeddedLeaveMetrics.plannedNotTakenHours;
@@ -3050,16 +3921,26 @@ Capacity available for more work = 0h</span>
       const totalCapacityPlannedLeavesAdjustedHours = availabilityEval.value;
       const capacityGapHours = capacityMoreWorkEval.value;
       const hoursRequiredToCompleteProjectsHours = hoursRequiredEval.value;
+      const loadingEfficiencyPercent = totalCapacityPlannedLeavesAdjustedHours === 0
+        ? 0
+        : ((totalPlannedHours / totalCapacityPlannedLeavesAdjustedHours) * 100);
       totalCapacityScoreNode.textContent = formatHours(totalCapacityHoursValue);
       totalPlannedScoreNode.textContent = formatHours(totalPlannedHours);
       totalLoggedScoreNode.textContent = formatHours(totalActualProjectHours);
-      deltaScoreNode.textContent = formatHours(hoursRequiredToCompleteProjectsHours);
+      if (deltaScoreNode) {{
+        deltaScoreNode.textContent = formatHours(hoursRequiredToCompleteProjectsHours);
+      }}
       if (totalLeavesScoreNode) {{
         totalLeavesScoreNode.textContent = formatHours(totalLeavesTakenHours);
       }}
       totalLeavesPlannedScoreNode.textContent = formatHours(totalPlannedLeavesHours);
       totalCapacityPlannedLeavesAdjustedScoreNode.textContent = formatHours(totalCapacityPlannedLeavesAdjustedHours);
-      capacityGapScoreNode.textContent = formatHours(capacityGapHours);
+      if (loadingEfficiencyScoreNode) {{
+        loadingEfficiencyScoreNode.textContent = formatPercent(loadingEfficiencyPercent);
+      }}
+      if (capacityGapScoreNode) {{
+        capacityGapScoreNode.textContent = formatHours(capacityGapHours);
+      }}
       if (availabilityFormulaNode) {{
         availabilityFormulaNode.textContent = managedFieldFormulaText("availability", "Total Capacity - Total Leaves Planned");
       }}
@@ -3102,11 +3983,11 @@ Capacity available for more work = 0h</span>
       }}
       if (totalPlannedTipNode) {{
         totalPlannedTipNode.textContent =
-          "Formula: Total Planned Projects = Sum(Project Man-hours), excluding RLT (RnD Leave Tracker).\\n"
+          "Formula: Total Planned Projects = Sum(Subtask Planned Hours) where subtask Start OR Due date is within selected range, excluding RLT (RnD Leave Tracker).\\n"
           + "Values:\\n"
-          + "Included Projects Count = " + String(includedProjectCount) + "\\n"
-          + "Excluded Projects Count = " + String(excludedProjectCount) + "\\n"
-          + "Excluded Projects Planned Sum = " + formatHours(excludedPlannedHours) + "\\n"
+          + "Included Subtasks Count = " + String(includedSubtaskCount) + "\\n"
+          + "Excluded (RLT) Subtasks Count = " + String(excludedSubtaskCount) + "\\n"
+          + "Excluded (RLT) Subtasks Planned Sum = " + formatHours(excludedPlannedHours) + "\\n"
           + "Total Planned Projects = " + formatHours(totalPlannedHours);
       }}
       if (totalLoggedTipNode) {{
@@ -3143,6 +4024,7 @@ Capacity available for more work = 0h</span>
         totalLeavesPlannedTipNode.textContent =
           "Formula: Total Leaves Planned = Planned Taken + Planned Not Yet Taken from day-bucketed leave rows within selected date range.\\n"
           + "Values:\\n"
+          + "Capacity Profile Effect = None (independent of selected profile)\\n"
           + "Date Range = " + scoreRangeFrom + " to " + scoreRangeTo + "\\n"
           + "Planned Taken = " + formatHours(plannedLeavesTaken) + "\\n"
           + "Planned Not Yet Taken = " + formatHours(plannedLeavesNotTakenYet) + "\\n"
@@ -3157,6 +4039,14 @@ Capacity available for more work = 0h</span>
           + "Total Leaves Planned = " + formatHours(totalPlannedLeavesHours) + "\\n"
           + "Availability = " + formatHours(totalCapacityPlannedLeavesAdjustedHours);
       }}
+      if (loadingEfficiencyTipNode) {{
+        loadingEfficiencyTipNode.textContent =
+          "Formula: Loading Efficiency = Total Planned Projects / Availability x 100.\\n"
+          + "Values:\\n"
+          + "Total Planned Projects = " + formatHours(totalPlannedHours) + "\\n"
+          + "Availability = " + formatHours(totalCapacityPlannedLeavesAdjustedHours) + "\\n"
+          + "Loading Efficiency = " + formatPercent(loadingEfficiencyPercent);
+      }}
       if (capacityGapTipNode) {{
         const capacityGapFormulaText = managedFieldFormulaText(
           "capacity_available_for_more_work",
@@ -3170,13 +4060,15 @@ Capacity available for more work = 0h</span>
           + "Total Leaves Planned = " + formatHours(totalPlannedLeavesHours) + "\\n"
           + "Capacity available for more work = " + formatHours(capacityGapHours);
       }}
-      deltaScoreCard.classList.remove("delta-pos", "delta-neg", "delta-zero");
-      if (hoursRequiredToCompleteProjectsHours > 0) {{
-        deltaScoreCard.classList.add("delta-pos");
-      }} else if (hoursRequiredToCompleteProjectsHours < 0) {{
-        deltaScoreCard.classList.add("delta-neg");
-      }} else {{
-        deltaScoreCard.classList.add("delta-zero");
+      if (deltaScoreCard) {{
+        deltaScoreCard.classList.remove("delta-pos", "delta-neg", "delta-zero");
+        if (hoursRequiredToCompleteProjectsHours > 0) {{
+          deltaScoreCard.classList.add("delta-pos");
+        }} else if (hoursRequiredToCompleteProjectsHours < 0) {{
+          deltaScoreCard.classList.add("delta-neg");
+        }} else {{
+          deltaScoreCard.classList.add("delta-zero");
+        }}
       }}
     }}
 
@@ -3545,6 +4437,9 @@ Capacity available for more work = 0h</span>
         if (!projectFilterRoot.contains(event.target)) {{
           closeProjectFilterMenu();
         }}
+        if (teamFilterRoot && !teamFilterRoot.contains(event.target)) {{
+          closeTeamFilterMenu();
+        }}
         if (viewOptionsRoot && !viewOptionsRoot.contains(event.target)) {{
           closeViewOptionsMenu();
         }}
@@ -3552,9 +4447,231 @@ Capacity available for more work = 0h</span>
       document.addEventListener("keydown", (event) => {{
         if (event.key === "Escape") {{
           closeProjectFilterMenu();
+          closeTeamFilterMenu();
           closeViewOptionsMenu();
         }}
       }});
+    }}
+
+    function normalizeAssigneeName(value) {{
+      return String(value || "").trim().toLowerCase();
+    }}
+
+    function isAllTeamsSelected() {{
+      return !allTeams.length || selectedTeamNames.size === allTeams.length;
+    }}
+
+    function recomputeSelectedTeamAssignees() {{
+      selectedTeamAssignees.clear();
+      if (isAllTeamsSelected()) {{
+        return;
+      }}
+      for (const team of allTeams) {{
+        if (!selectedTeamNames.has(team.team_name)) {{
+          continue;
+        }}
+        const members = Array.isArray(team.assignees) ? team.assignees : [];
+        for (const member of members) {{
+          const normalized = normalizeAssigneeName(member);
+          if (normalized) {{
+            selectedTeamAssignees.add(normalized);
+          }}
+        }}
+      }}
+    }}
+
+    function updateTeamFilterSummary() {{
+      if (!teamFilterSummary) {{
+        return;
+      }}
+      const total = allTeams.length;
+      const selected = selectedTeamNames.size;
+      if (!total) {{
+        teamFilterSummary.textContent = "Teams: None";
+        return;
+      }}
+      if (selected === total) {{
+        teamFilterSummary.textContent = "Teams: All";
+        return;
+      }}
+      if (selected === 0) {{
+        teamFilterSummary.textContent = "Teams: None";
+        return;
+      }}
+      teamFilterSummary.textContent = "Teams: " + String(selected) + " selected";
+    }}
+
+    function closeTeamFilterMenu() {{
+      if (!teamFilterRoot || !teamFilterToggle) {{
+        return;
+      }}
+      teamFilterRoot.classList.remove("open");
+      teamFilterToggle.setAttribute("aria-expanded", "false");
+    }}
+
+    function openTeamFilterMenu() {{
+      if (!teamFilterRoot || !teamFilterToggle) {{
+        return;
+      }}
+      teamFilterRoot.classList.add("open");
+      teamFilterToggle.setAttribute("aria-expanded", "true");
+    }}
+
+    function toggleTeamFilterMenu() {{
+      if (!teamFilterRoot) {{
+        return;
+      }}
+      const isOpen = teamFilterRoot.classList.contains("open");
+      if (isOpen) {{
+        closeTeamFilterMenu();
+      }} else {{
+        openTeamFilterMenu();
+      }}
+    }}
+
+    async function applyTeamFilterSelection() {{
+      recomputeSelectedTeamAssignees();
+      updateTeamFilterSummary();
+      if (!hasNestedActualsApi) {{
+        applyOriginalMetricsToRows();
+        rerender(true);
+        return;
+      }}
+      setDateApplyBusy(true);
+      try {{
+        const payload = await fetchActualHoursForDateRange(
+          selectedDateFrom,
+          selectedDateTo,
+          selectedActualHoursMode,
+          selectedTeamAssignees
+        );
+        applyFetchedActualHours(payload);
+        rerender(true);
+      }} catch (error) {{
+        setDateFilterStatus(String(error && error.message || error || "Failed to apply team filter."));
+      }} finally {{
+        setDateApplyBusy(false);
+      }}
+      updateDateRangeApplyState();
+    }}
+
+    function renderTeamFilterOptions() {{
+      if (!teamFilterOptions) {{
+        return;
+      }}
+      teamFilterOptions.innerHTML = "";
+      if (!allTeams.length) {{
+        const empty = document.createElement("div");
+        empty.className = "project-option-label";
+        empty.textContent = "No teams found in Performance Settings.";
+        teamFilterOptions.appendChild(empty);
+        return;
+      }}
+      for (const team of allTeams) {{
+        const label = document.createElement("label");
+        label.className = "project-option";
+
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.checked = selectedTeamNames.has(team.team_name);
+        checkbox.dataset.teamName = team.team_name;
+        checkbox.setAttribute("aria-label", team.team_name);
+        checkbox.addEventListener("change", () => {{
+          if (checkbox.checked) {{
+            selectedTeamNames.add(team.team_name);
+          }} else {{
+            selectedTeamNames.delete(team.team_name);
+          }}
+          applyTeamFilterSelection();
+        }});
+
+        const text = document.createElement("span");
+        text.className = "project-option-label";
+        const leader = String(team.team_leader || "").trim();
+        text.textContent = leader
+          ? (team.team_name + " (Lead: " + leader + ")")
+          : team.team_name;
+
+        label.appendChild(checkbox);
+        label.appendChild(text);
+        teamFilterOptions.appendChild(label);
+      }}
+    }}
+
+    async function initializeTeamFilter() {{
+      allTeams.length = 0;
+      selectedTeamNames.clear();
+      selectedTeamAssignees.clear();
+      if (!hasTeamsApi) {{
+        updateTeamFilterSummary();
+        return;
+      }}
+      let teamsPayload = [];
+      try {{
+        const response = await fetch(PERFORMANCE_TEAMS_ENDPOINT, {{ method: "GET" }});
+        const payload = await response.json().catch(() => ({{}}));
+        if (!response.ok) {{
+          throw new Error(String(payload && payload.error || "Failed to load teams."));
+        }}
+        teamsPayload = Array.isArray(payload && payload.teams) ? payload.teams : [];
+      }} catch (error) {{
+        console.warn("Failed to load teams:", error);
+      }}
+      for (const item of teamsPayload) {{
+        const teamName = String(item && item.team_name || "").trim();
+        if (!teamName) {{
+          continue;
+        }}
+        const members = Array.isArray(item && item.assignees) ? item.assignees : [];
+        const assignees = Array.from(new Set(
+          members
+            .map((entry) => String(entry || "").trim())
+            .filter(Boolean)
+        ));
+        allTeams.push({{
+          team_name: teamName,
+          team_leader: String(item && item.team_leader || "").trim(),
+          assignees,
+        }});
+      }}
+      allTeams.sort((left, right) => left.team_name.localeCompare(right.team_name));
+      for (const team of allTeams) {{
+        selectedTeamNames.add(team.team_name);
+      }}
+      renderTeamFilterOptions();
+      updateTeamFilterSummary();
+
+      if (teamFilterToggle) {{
+        teamFilterToggle.addEventListener("click", () => {{
+          toggleTeamFilterMenu();
+        }});
+        teamFilterToggle.addEventListener("keydown", (event) => {{
+          if (event.key === "Enter" || event.key === " ") {{
+            event.preventDefault();
+            toggleTeamFilterMenu();
+          }}
+          if (event.key === "Escape") {{
+            closeTeamFilterMenu();
+          }}
+        }});
+      }}
+      if (teamFilterSelectAll) {{
+        teamFilterSelectAll.addEventListener("click", () => {{
+          selectedTeamNames.clear();
+          for (const team of allTeams) {{
+            selectedTeamNames.add(team.team_name);
+          }}
+          renderTeamFilterOptions();
+          applyTeamFilterSelection();
+        }});
+      }}
+      if (teamFilterClearAll) {{
+        teamFilterClearAll.addEventListener("click", () => {{
+          selectedTeamNames.clear();
+          renderTeamFilterOptions();
+          applyTeamFilterSelection();
+        }});
+      }}
     }}
 
     function addChild(parentId, childId) {{
@@ -3667,11 +4784,15 @@ Capacity available for more work = 0h</span>
       if (pendingActualHoursMode !== "log_date" && pendingActualHoursMode !== "planned_dates") {{
         pendingActualHoursMode = DEFAULT_ACTUAL_HOURS_MODE;
       }}
+      pendingPlannedHoursSource = normalizePlannedHoursSource(pendingPlannedHoursSource);
       if (dateFilterFromInput) {{
         dateFilterFromInput.value = pendingDateFrom;
       }}
       if (dateFilterToInput) {{
         dateFilterToInput.value = pendingDateTo;
+      }}
+      if (plannedHoursSourceSelect) {{
+        plannedHoursSourceSelect.value = pendingPlannedHoursSource;
       }}
       if (actualHoursModeSelect) {{
         actualHoursModeSelect.value = pendingActualHoursMode;
@@ -3682,7 +4803,8 @@ Capacity available for more work = 0h</span>
       normalizePendingDateRange();
       return pendingDateFrom !== selectedDateFrom
         || pendingDateTo !== selectedDateTo
-        || pendingActualHoursMode !== selectedActualHoursMode;
+        || pendingActualHoursMode !== selectedActualHoursMode
+        || pendingPlannedHoursSource !== selectedPlannedHoursSource;
     }}
 
     function updateDateRangeApplyState() {{
@@ -3699,7 +4821,7 @@ Capacity available for more work = 0h</span>
       }} else if (!isValid) {{
         setDateFilterStatus("Select a valid date range.");
       }} else if (dirty) {{
-        setDateFilterStatus("Date range or mode changed. Click apply.");
+        setDateFilterStatus("Date range, mode, or planned hours source changed. Click apply.");
       }} else {{
         setDateFilterStatus("");
       }}
@@ -3805,15 +4927,22 @@ Capacity available for more work = 0h</span>
       }}
     }}
 
-    async function fetchActualHoursForDateRange(fromDate, toDate, mode) {{
+    async function fetchActualHoursForDateRange(fromDate, toDate, mode, selectedAssigneesSet) {{
       const fromParam = encodeURIComponent(String(fromDate || ""));
       const toParam = encodeURIComponent(String(toDate || ""));
       const modeParam = encodeURIComponent(String(mode || DEFAULT_ACTUAL_HOURS_MODE));
+      const assignees = Array.isArray(selectedAssigneesSet)
+        ? selectedAssigneesSet
+        : Array.from(selectedAssigneesSet || []);
+      const assigneesParam = assignees.length
+        ? ("&assignees=" + encodeURIComponent(assignees.join(",")))
+        : "";
       const response = await fetch(
         ACTUAL_HOURS_AGGREGATE_ENDPOINT
         + "?from=" + fromParam
         + "&to=" + toParam
         + "&mode=" + modeParam
+        + assigneesParam
         + "&report=nested_view",
         {{
         method: "GET",
@@ -3830,6 +4959,7 @@ Capacity available for more work = 0h</span>
       const nextFrom = pendingDateFrom;
       const nextTo = pendingDateTo;
       const nextMode = pendingActualHoursMode;
+      const nextPlannedHoursSource = pendingPlannedHoursSource;
       if (!parseFilterDate(nextFrom) || !parseFilterDate(nextTo)) {{
         updateDateRangeApplyState();
         return;
@@ -3837,15 +4967,21 @@ Capacity available for more work = 0h</span>
       setDateApplyBusy(true);
       try {{
         if (hasNestedActualsApi) {{
-          const payload = await fetchActualHoursForDateRange(nextFrom, nextTo, nextMode);
+          const payload = await fetchActualHoursForDateRange(nextFrom, nextTo, nextMode, selectedTeamAssignees);
           applyFetchedActualHours(payload);
+          const logPayload = nextMode === "log_date"
+            ? payload
+            : await fetchActualHoursForDateRange(nextFrom, nextTo, "log_date", selectedTeamAssignees);
+          subtaskLogHoursByIssue = extractSubtaskHoursMap(logPayload);
         }} else {{
           applyOriginalMetricsToRows();
         }}
         selectedDateFrom = nextFrom;
         selectedDateTo = nextTo;
         selectedActualHoursMode = nextMode;
+        selectedPlannedHoursSource = nextPlannedHoursSource;
         localStorage.setItem(ACTUAL_HOURS_MODE_STORAGE_KEY, selectedActualHoursMode);
+        localStorage.setItem(PLANNED_HOURS_SOURCE_STORAGE_KEY, selectedPlannedHoursSource);
         rerender(true);
       }} catch (error) {{
         setDateFilterStatus(String(error && error.message || error || "Failed to apply date range."));
@@ -3865,11 +5001,38 @@ Capacity available for more work = 0h</span>
     }}
 
     function matchesDateFilter(row) {{
-      if (!DATE_FILTER_WORK_TYPES.has(String(row && row.row_type || ""))) {{
+      const rowType = String(row && row.row_type || "");
+      const source = normalizePlannedHoursSource(selectedPlannedHoursSource);
+      if (source === "epic_estimates") {{
+        if (!DATE_FILTER_WORK_TYPES.has(rowType)) {{
+          return false;
+        }}
+        const plannedStart = parseDateValue(row && row.planned_start);
+        const plannedEnd = parseDateValue(row && row.planned_end);
+        if (!plannedStart && !plannedEnd) {{
+          return false;
+        }}
+        const bounds = getDateFilterBounds();
+        return isDateWithinBounds(plannedStart, bounds) || isDateWithinBounds(plannedEnd, bounds);
+      }}
+      if (rowType !== "subtask") {{
         return false;
       }}
-      const plannedStart = parseDateValue(row && row.planned_start);
-      const plannedEnd = parseDateValue(row && row.planned_end);
+      if (source === "subtask_logs") {{
+        const jiraKey = String(row && row.jira_key || "").trim().toUpperCase();
+        if (!jiraKey) {{
+          return false;
+        }}
+        if (Object.prototype.hasOwnProperty.call(subtaskLogHoursByIssue, jiraKey)) {{
+          return toFiniteNumber(subtaskLogHoursByIssue[jiraKey], 0) > 0;
+        }}
+        if (selectedActualHoursMode === "log_date") {{
+          return toFiniteNumber(row && row.actual_hours, 0) > 0;
+        }}
+        return false;
+      }}
+      const plannedStart = parseDateValue(row && (row.planned_start || row.start_date));
+      const plannedEnd = parseDateValue(row && (row.planned_end || row.planned_due || row.due_date));
       if (!plannedStart && !plannedEnd) {{
         return false;
       }}
@@ -4703,6 +5866,9 @@ Capacity available for more work = 0h</span>
     initializeDensityToggle();
     initializeAspectColumnResize();
     initializeProjectFilter();
+    initializeTeamFilter().catch((error) => {{
+      console.warn("Failed to initialize team filter:", error);
+    }});
     if (!hasCapacityApi) {{
       setCapacityStatus("Read-only in static mode. Open via server to load latest saved profiles.", "info");
     }} else {{
@@ -4719,10 +5885,13 @@ Capacity available for more work = 0h</span>
     if (storedActualHoursMode === "log_date" || storedActualHoursMode === "planned_dates") {{
       pendingActualHoursMode = storedActualHoursMode;
     }}
+    const storedPlannedHoursSource = localStorage.getItem(PLANNED_HOURS_SOURCE_STORAGE_KEY);
+    pendingPlannedHoursSource = normalizePlannedHoursSource(storedPlannedHoursSource || DEFAULT_PLANNED_HOURS_SOURCE);
     normalizePendingDateRange();
     selectedDateFrom = pendingDateFrom;
     selectedDateTo = pendingDateTo;
     selectedActualHoursMode = pendingActualHoursMode;
+    selectedPlannedHoursSource = pendingPlannedHoursSource;
     if (!hasNestedActualsApi) {{
       setDateFilterStatus("Date apply works without live recompute in file mode.");
     }}
@@ -4772,6 +5941,46 @@ Capacity available for more work = 0h</span>
       }});
     }}
     setCapacityProfileDrawerOpen(false);
+    if (totalPlannedCardEl) {{
+      totalPlannedCardEl.classList.add("is-expandable");
+      totalPlannedCardEl.setAttribute("role", "button");
+      totalPlannedCardEl.setAttribute("tabindex", "0");
+      totalPlannedCardEl.setAttribute("aria-controls", "score-total-planned-details");
+      totalPlannedCardEl.setAttribute("aria-expanded", "false");
+      totalPlannedCardEl.addEventListener("click", (event) => {{
+        const target = event.target instanceof Element ? event.target : null;
+        if (target && (target.closest(".score-info") || target.closest(".score-action-btn") || target.closest("a") || target.closest(".score-details-panel"))) {{
+          return;
+        }}
+        setTotalPlannedDetailsOpen(!totalPlannedDetailsOpen);
+      }});
+      totalPlannedCardEl.addEventListener("keydown", (event) => {{
+        if (event.key === "Enter" || event.key === " ") {{
+          event.preventDefault();
+          setTotalPlannedDetailsOpen(!totalPlannedDetailsOpen);
+        }}
+      }});
+    }}
+    if (totalLeavesPlannedCardEl) {{
+      totalLeavesPlannedCardEl.classList.add("is-expandable");
+      totalLeavesPlannedCardEl.setAttribute("role", "button");
+      totalLeavesPlannedCardEl.setAttribute("tabindex", "0");
+      totalLeavesPlannedCardEl.setAttribute("aria-controls", "score-total-leaves-planned-details");
+      totalLeavesPlannedCardEl.setAttribute("aria-expanded", "false");
+      totalLeavesPlannedCardEl.addEventListener("click", (event) => {{
+        const target = event.target instanceof Element ? event.target : null;
+        if (target && (target.closest(".score-info") || target.closest(".score-action-btn") || target.closest("a") || target.closest(".score-details-panel"))) {{
+          return;
+        }}
+        setTotalLeavesPlannedDetailsOpen(!totalLeavesPlannedDetailsOpen);
+      }});
+      totalLeavesPlannedCardEl.addEventListener("keydown", (event) => {{
+        if (event.key === "Enter" || event.key === " ") {{
+          event.preventDefault();
+          setTotalLeavesPlannedDetailsOpen(!totalLeavesPlannedDetailsOpen);
+        }}
+      }});
+    }}
     if (capacityProfileToggleEl) {{
       capacityProfileToggleEl.addEventListener("click", () => {{
         const expanded = capacityProfileToggleEl.getAttribute("aria-expanded") === "true";
@@ -4867,6 +6076,14 @@ Capacity available for more work = 0h</span>
         updateDateRangeApplyState();
       }});
     }}
+    if (plannedHoursSourceSelect) {{
+      plannedHoursSourceSelect.value = pendingPlannedHoursSource;
+      plannedHoursSourceSelect.addEventListener("change", () => {{
+        pendingPlannedHoursSource = normalizePlannedHoursSource(plannedHoursSourceSelect.value || DEFAULT_PLANNED_HOURS_SOURCE);
+        normalizePendingDateRange();
+        updateDateRangeApplyState();
+      }});
+    }}
     if (dateFilterApplyButton) {{
       dateFilterApplyButton.addEventListener("click", () => {{
         applyPendingDateRange();
@@ -4955,20 +6172,6 @@ Capacity available for more work = 0h</span>
         }});
       }});
 
-      document.querySelectorAll('input[name="perspective-radio"]').forEach(function (radio) {{
-        radio.addEventListener("change", function () {{
-          if (actualHoursModeSelect) {{
-            actualHoursModeSelect.value = radio.value;
-            actualHoursModeSelect.dispatchEvent(new Event("change"));
-          }}
-        }});
-      }});
-
-      var storedMode = localStorage.getItem(ACTUAL_HOURS_MODE_STORAGE_KEY);
-      if (storedMode === "planned_dates") {{
-        var pr = document.querySelector('input[name="perspective-radio"][value="planned_dates"]');
-        if (pr) pr.checked = true;
-      }}
     }})();
   </script>
 <script src="shared-nav.js"></script>
@@ -4992,12 +6195,15 @@ def main() -> None:
     rows = _load_nested_rows(input_path)
     capacity_profiles = _load_capacity_profiles(capacity_db_path)
     leave_daily_rows = _load_leave_daily_rows(leave_path)
+    leave_subtask_rows = _load_leave_subtask_rows(leave_path)
     data = {
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
         "source_file": str(input_path),
         "rows": rows,
         "capacity_profiles": capacity_profiles,
         "leave_daily_rows": leave_daily_rows,
+        "leave_subtask_rows": leave_subtask_rows,
+        "jira_base_url": _jira_base_url(),
     }
     html = _build_html(data)
     output_path.write_text(html, encoding="utf-8")
@@ -5006,6 +6212,7 @@ def main() -> None:
     print(f"Rows loaded: {len(rows)}")
     print(f"Capacity profiles loaded: {len(capacity_profiles)}")
     print(f"Leave daily rows loaded: {len(leave_daily_rows)}")
+    print(f"Leave subtask rows loaded: {len(leave_subtask_rows)}")
     print(f"HTML report written: {output_path}")
 
 

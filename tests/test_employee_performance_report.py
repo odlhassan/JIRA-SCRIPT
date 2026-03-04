@@ -110,6 +110,9 @@ class EmployeePerformanceReportTests(unittest.TestCase):
         self.assertNotIn("if (!matchesPlannedRange(r, from, to)) return false;", html)
         self.assertIn("const assignedItemsWork = assignedItems.filter((r) => !isLeaveIssueKey(String(r.issue_key || \"\")));", html)
         self.assertIn("value: n(item.planned_hours_assigned),", html)
+        self.assertIn("value: n(item.total_hours),", html)
+        self.assertIn("toggle-actual-hours-breakdown", html)
+        self.assertIn("Object.entries(item.issue_logged_hours_by_issue || {})", html)
 
     def test_html_subtask_type_helper_includes_subtask_and_bug_subtask_patterns(self):
         payload = _build_payload([], [], [], dict(DEFAULT_PERFORMANCE_SETTINGS), [], [], [], [])
