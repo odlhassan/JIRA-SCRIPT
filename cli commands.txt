@@ -1,6 +1,17 @@
 AT RISK
 as of now, 40 hours should have been invest, but today only 10 hours invested.
 
+---
+CLEANUP PROCESS
+# Stop only run_server.py python processes
+Get-CimInstance Win32_Process -Filter "name='python.exe'" |
+  Where-Object { $_.CommandLine -match "run_server\.py" } |
+  ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+
+# Start one server instance
+python run_server.py --port 3000
+
+===
 
 rom your codebase, these are the CLI commands that actually fetch/build data, plus their variants.
 

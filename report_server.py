@@ -11,6 +11,7 @@ import shutil
 import sqlite3
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import uuid
@@ -37,11 +38,20 @@ from generate_employee_performance_report import (
     DEFAULT_PERFORMANCE_SETTINGS,
     _delete_performance_team,
     _init_performance_settings_db,
+    _load_leave_issue_keys as epf_load_leave_issue_keys,
     _list_performance_teams,
+    _load_unplanned_leave_rows as epf_load_unplanned_leave_rows,
+    _load_work_items as epf_load_work_items,
+    _load_worklogs as epf_load_worklogs,
     _load_performance_settings,
     _normalize_performance_settings,
     _save_performance_settings,
     _save_performance_team,
+    _update_performance_team,
+)
+from generate_missed_entries_html import (
+    DEFAULT_INPUT_XLSX as MISSED_ENTRIES_DEFAULT_INPUT_XLSX,
+    _load_rows as missed_entries_load_rows,
 )
 from manage_fields_registry import (
     create_manage_field,
@@ -124,7 +134,9 @@ REPORT_FILENAME_TO_ID: dict[str, str] = {
     "leaves_planned_calendar.html": "leaves_planned_calendar",
     "employee_performance_report.html": "employee_performance",
     "planned_vs_dispensed_report.html": "planned_vs_dispensed",
+    "approved_vs_planned_hours_report.html": "planned_vs_dispensed",
     "planned_actual_table_view.html": "planned_actual_table_view",
+    "original_estimates_hierarchy_report.html": "original_estimates_hierarchy",
 }
 
 REPORT_REFRESH_CHAINS: dict[str, list[str]] = {
@@ -183,7 +195,12 @@ REPORT_REFRESH_CHAINS: dict[str, list[str]] = {
     "planned_vs_dispensed": [],
     # This report is API-driven and DB-backed.
     "planned_actual_table_view": [],
+    # This report is API-driven and DB-backed.
+    "original_estimates_hierarchy": [],
 }
+
+EPF_DEFAULT_RETENTION_RUNS = 5
+ME_DEFAULT_RETENTION_RUNS = 8
 
 REFRESH_WIDGET_MARKER = "codex-refresh-widget-v2"
 REFRESH_WIDGET_START = "<!-- codex-refresh-widget-start -->"
@@ -201,6 +218,12 @@ EPICS_DROPDOWN_OPTIONS_SETTINGS_ROUTE = "/settings/epics-dropdown-options"
 EPIC_PHASES_SETTINGS_ROUTE = "/settings/epic-phases"
 DASHBOARD_RISK_SETTINGS_ROUTE = "/settings/dashboard-risk"
 PAGE_CATEGORIES_SETTINGS_ROUTE = "/settings/page-categories"
+LEGACY_PVD_PAGE_KEY = "planned_vs_dispensed_report"
+CANONICAL_PVD_PAGE_KEY = "approved_vs_planned_hours_report"
+LEGACY_PVD_HTML_FILE = "planned_vs_dispensed_report.html"
+CANONICAL_PVD_HTML_FILE = "approved_vs_planned_hours_report.html"
+LEGACY_PVD_API_PREFIX = "/api/planned-vs-dispensed"
+CANONICAL_PVD_API_PREFIX = "/api/approved-vs-planned-hours"
 
 STATIC_REPORT_NAV_ITEMS: list[dict[str, object]] = [
     {"page_key": "dashboard", "title": "Dashboard", "href": "/dashboard.html", "icon": "space_dashboard", "file": "dashboard.html", "default_nav_order": 10, "page_type": "report"},
@@ -213,9 +236,10 @@ STATIC_REPORT_NAV_ITEMS: list[dict[str, object]] = [
     {"page_key": "rnd_data_story", "title": "RnD Data Story", "href": "/rnd_data_story.html", "icon": "auto_stories", "file": "rnd_data_story.html", "default_nav_order": 80, "page_type": "report"},
     {"page_key": "planned_rmis_report", "title": "Planned RMIs", "href": "/planned_rmis_report.html", "icon": "assignment_turned_in", "file": "planned_rmis_report.html", "default_nav_order": 90, "page_type": "report"},
     {"page_key": "phase_rmi_gantt_report", "title": "Phase RMI Gantt", "href": "/phase_rmi_gantt_report.html", "icon": "view_timeline", "file": "phase_rmi_gantt_report.html", "default_nav_order": 100, "page_type": "report"},
-    {"page_key": "planned_vs_dispensed_report", "title": "Planned vs Dispensed", "href": "/planned_vs_dispensed_report.html", "icon": "analytics", "file": "planned_vs_dispensed_report.html", "default_nav_order": 110, "page_type": "report"},
+    {"page_key": CANONICAL_PVD_PAGE_KEY, "title": "Approved vs Planned Hours Report", "href": f"/{CANONICAL_PVD_HTML_FILE}", "icon": "analytics", "file": CANONICAL_PVD_HTML_FILE, "default_nav_order": 110, "page_type": "report"},
     {"page_key": "planned_actual_table_view", "title": "Planned vs Actual Table View", "href": "/planned_actual_table_view.html", "icon": "table_view", "file": "planned_actual_table_view.html", "default_nav_order": 120, "page_type": "report"},
-    {"page_key": "ipp_meeting_dashboard", "title": "IPP Meeting Dashboard", "href": "/ipp_meeting_dashboard.html", "icon": "groups", "file": "ipp_meeting_dashboard.html", "default_nav_order": 130, "page_type": "report"},
+    {"page_key": "original_estimates_hierarchy_report", "title": "Epic Estimate Report", "href": "/original_estimates_hierarchy_report.html", "icon": "schema", "file": "original_estimates_hierarchy_report.html", "default_nav_order": 130, "page_type": "report"},
+    {"page_key": "ipp_meeting_dashboard", "title": "IPP Meeting Dashboard", "href": "/ipp_meeting_dashboard.html", "icon": "groups", "file": "ipp_meeting_dashboard.html", "default_nav_order": 140, "page_type": "report"},
 ]
 
 STATIC_ADMIN_NAV_ITEMS: list[dict[str, object]] = [
@@ -446,6 +470,13 @@ def _normalize_page_category_name(value: object) -> str:
     return name
 
 
+def _canonical_page_key(value: object) -> str:
+    page_key = _to_text(value)
+    if page_key == LEGACY_PVD_PAGE_KEY:
+        return CANONICAL_PVD_PAGE_KEY
+    return page_key
+
+
 def _normalize_google_icon_name(value: object) -> str:
     icon_name = _to_text(value).lower()
     if not icon_name:
@@ -477,9 +508,16 @@ def _normalize_page_category_payload(payload: object, require_name: bool = True)
 
 def _normalize_page_assignment_payload(payload: object, valid_page_keys: set[str], valid_category_ids: set[int]) -> dict[str, object]:
     raw = payload if isinstance(payload, dict) else {}
-    page_key = _to_text(raw.get("page_key"))
+    page_key_raw = _to_text(raw.get("page_key"))
+    page_key = _canonical_page_key(page_key_raw)
     if not page_key:
         raise ValueError("page_key is required for assignments.")
+    if page_key not in valid_page_keys:
+        # Backward/forward compatibility for mixed frontend/backend versions.
+        if page_key == CANONICAL_PVD_PAGE_KEY and LEGACY_PVD_PAGE_KEY in valid_page_keys:
+            page_key = LEGACY_PVD_PAGE_KEY
+        elif page_key == LEGACY_PVD_PAGE_KEY and CANONICAL_PVD_PAGE_KEY in valid_page_keys:
+            page_key = CANONICAL_PVD_PAGE_KEY
     if page_key not in valid_page_keys:
         raise ValueError(f"Unknown page_key: {page_key}")
     page_type = _to_text(raw.get("page_type")).lower()
@@ -586,7 +624,7 @@ def _load_page_categories(db_path: Path) -> dict[str, object]:
         assignments.append(
             {
                 "id": int(row["id"]),
-                "page_key": _to_text(row["page_key"]),
+                "page_key": _canonical_page_key(row["page_key"]),
                 "page_type": _to_text(row["page_type"]),
                 "category_id": category_id,
                 "created_at_utc": _to_text(row["created_at_utc"]),
@@ -908,6 +946,775 @@ def _resolve_capacity_runtime_paths(base_dir: Path) -> dict[str, Path]:
     }
 
 
+def _epf_retention_runs() -> int:
+    raw = _to_text(os.getenv("EPF_REFRESH_RETAIN_RUNS", str(EPF_DEFAULT_RETENTION_RUNS)))
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        value = EPF_DEFAULT_RETENTION_RUNS
+    return max(1, value)
+
+
+def _epf_now_utc() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _sqlite_column_exists(conn: sqlite3.Connection, table_name: str, column_name: str) -> bool:
+    rows = conn.execute(f"PRAGMA table_info({table_name})").fetchall()
+    for row in rows:
+        # pragma table_info columns: cid, name, type, notnull, dflt_value, pk
+        if len(row) > 1 and _to_text(row[1]) == column_name:
+            return True
+    return False
+
+
+def _init_epf_refresh_db(db_path: Path) -> None:
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS epf_refresh_runs (
+                run_id TEXT PRIMARY KEY,
+                started_at_utc TEXT NOT NULL,
+                ended_at_utc TEXT,
+                status TEXT NOT NULL,
+                trigger_source TEXT NOT NULL DEFAULT '',
+                error_message TEXT NOT NULL DEFAULT '',
+                stats_json TEXT NOT NULL DEFAULT '{}'
+            )
+            """
+        )
+        if not _sqlite_column_exists(conn, "epf_refresh_runs", "progress_step"):
+            conn.execute("ALTER TABLE epf_refresh_runs ADD COLUMN progress_step TEXT NOT NULL DEFAULT ''")
+        if not _sqlite_column_exists(conn, "epf_refresh_runs", "progress_pct"):
+            conn.execute("ALTER TABLE epf_refresh_runs ADD COLUMN progress_pct INTEGER NOT NULL DEFAULT 0")
+        if not _sqlite_column_exists(conn, "epf_refresh_runs", "cancel_requested"):
+            conn.execute("ALTER TABLE epf_refresh_runs ADD COLUMN cancel_requested INTEGER NOT NULL DEFAULT 0")
+        if not _sqlite_column_exists(conn, "epf_refresh_runs", "updated_at_utc"):
+            conn.execute("ALTER TABLE epf_refresh_runs ADD COLUMN updated_at_utc TEXT NOT NULL DEFAULT ''")
+        now_for_backfill = _epf_now_utc()
+        conn.execute(
+            """
+            UPDATE epf_refresh_runs
+            SET updated_at_utc = COALESCE(NULLIF(updated_at_utc, ''), started_at_utc, ?)
+            WHERE COALESCE(updated_at_utc, '') = ''
+            """,
+            (now_for_backfill,),
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS epf_refresh_state (
+                id INTEGER PRIMARY KEY CHECK(id = 1),
+                active_run_id TEXT NOT NULL DEFAULT '',
+                last_success_run_id TEXT NOT NULL DEFAULT '',
+                updated_at_utc TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS epf_work_items (
+                run_id TEXT NOT NULL,
+                issue_key TEXT NOT NULL,
+                project_key TEXT NOT NULL DEFAULT '',
+                issue_type TEXT NOT NULL DEFAULT '',
+                fix_type TEXT NOT NULL DEFAULT '',
+                summary TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT '',
+                assignee TEXT NOT NULL DEFAULT '',
+                start_date TEXT NOT NULL DEFAULT '',
+                due_date TEXT NOT NULL DEFAULT '',
+                resolved_stable_since_date TEXT NOT NULL DEFAULT '',
+                original_estimate_hours REAL NOT NULL DEFAULT 0,
+                parent_issue_key TEXT NOT NULL DEFAULT ''
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_epf_work_items_run_issue ON epf_work_items(run_id, issue_key)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_epf_work_items_run_assignee ON epf_work_items(run_id, assignee)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_epf_work_items_run_project ON epf_work_items(run_id, project_key)"
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS epf_worklogs (
+                run_id TEXT NOT NULL,
+                issue_id TEXT NOT NULL,
+                issue_assignee TEXT NOT NULL DEFAULT '',
+                worklog_date TEXT NOT NULL DEFAULT '',
+                hours_logged REAL NOT NULL DEFAULT 0,
+                project_key TEXT NOT NULL DEFAULT '',
+                is_bug INTEGER NOT NULL DEFAULT 0,
+                fix_type TEXT NOT NULL DEFAULT '',
+                item_summary TEXT NOT NULL DEFAULT '',
+                item_status TEXT NOT NULL DEFAULT '',
+                item_issue_type TEXT NOT NULL DEFAULT '',
+                item_assignee TEXT NOT NULL DEFAULT '',
+                item_parent_issue_key TEXT NOT NULL DEFAULT '',
+                item_start_date TEXT NOT NULL DEFAULT '',
+                item_due_date TEXT NOT NULL DEFAULT '',
+                item_resolved_stable_since_date TEXT NOT NULL DEFAULT '',
+                story_due_date TEXT NOT NULL DEFAULT '',
+                original_estimate_hours REAL NOT NULL DEFAULT 0
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_epf_worklogs_run_issue ON epf_worklogs(run_id, issue_id)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_epf_worklogs_run_assignee ON epf_worklogs(run_id, issue_assignee)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_epf_worklogs_run_project ON epf_worklogs(run_id, project_key)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_epf_worklogs_run_date ON epf_worklogs(run_id, worklog_date)"
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS epf_leave_rows (
+                run_id TEXT NOT NULL,
+                assignee TEXT NOT NULL DEFAULT '',
+                period_day TEXT NOT NULL DEFAULT '',
+                unplanned_taken_hours REAL NOT NULL DEFAULT 0,
+                planned_taken_hours REAL NOT NULL DEFAULT 0
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_epf_leave_rows_run_assignee ON epf_leave_rows(run_id, assignee)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_epf_leave_rows_run_day ON epf_leave_rows(run_id, period_day)"
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS epf_leave_issue_keys (
+                run_id TEXT NOT NULL,
+                issue_key TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_epf_leave_issue_keys_run_issue ON epf_leave_issue_keys(run_id, issue_key)"
+        )
+        row = conn.execute("SELECT id FROM epf_refresh_state WHERE id = 1").fetchone()
+        if not row:
+            now = _epf_now_utc()
+            conn.execute(
+                "INSERT INTO epf_refresh_state(id, active_run_id, last_success_run_id, updated_at_utc) VALUES (1, '', '', ?)",
+                (now,),
+            )
+        conn.commit()
+
+
+def _epf_insert_run_data(
+    db_path: Path,
+    run_id: str,
+    work_items: dict[str, dict],
+    worklogs: list[dict],
+    leave_rows: list[dict],
+    leave_issue_keys: list[str],
+    replace_run: bool = True,
+) -> dict[str, int]:
+    work_item_rows = []
+    for item in (work_items or {}).values():
+        work_item_rows.append(
+            (
+                run_id,
+                _to_text(item.get("issue_key")).upper(),
+                _to_text(item.get("project_key")).upper(),
+                _to_text(item.get("issue_type")),
+                _to_text(item.get("fix_type")).lower(),
+                _to_text(item.get("summary")),
+                _to_text(item.get("status")),
+                _to_text(item.get("assignee")),
+                _to_text(item.get("start_date")),
+                _to_text(item.get("due_date")),
+                _to_text(item.get("resolved_stable_since_date")),
+                float(item.get("original_estimate_hours") or 0),
+                _to_text(item.get("parent_issue_key")).upper(),
+            )
+        )
+
+    worklog_rows = []
+    for row in worklogs or []:
+        worklog_rows.append(
+            (
+                run_id,
+                _to_text(row.get("issue_id")).upper(),
+                _to_text(row.get("issue_assignee")) or "Unassigned",
+                _to_text(row.get("worklog_date")),
+                float(row.get("hours_logged") or 0),
+                _to_text(row.get("project_key")).upper(),
+                1 if bool(row.get("is_bug")) else 0,
+                _to_text(row.get("fix_type")).lower(),
+                _to_text(row.get("item_summary")),
+                _to_text(row.get("item_status")),
+                _to_text(row.get("item_issue_type")),
+                _to_text(row.get("item_assignee")),
+                _to_text(row.get("item_parent_issue_key")).upper(),
+                _to_text(row.get("item_start_date")),
+                _to_text(row.get("item_due_date")),
+                _to_text(row.get("item_resolved_stable_since_date")),
+                _to_text(row.get("story_due_date")),
+                float(row.get("original_estimate_hours") or 0),
+            )
+        )
+
+    leave_data_rows = []
+    for row in leave_rows or []:
+        leave_data_rows.append(
+            (
+                run_id,
+                _to_text(row.get("assignee")) or "Unassigned",
+                _to_text(row.get("period_day")),
+                float(row.get("unplanned_taken_hours") or 0),
+                float(row.get("planned_taken_hours") or 0),
+            )
+        )
+
+    leave_key_rows = [(run_id, _to_text(x).upper()) for x in (leave_issue_keys or []) if _to_text(x)]
+
+    with sqlite3.connect(db_path) as conn:
+        if replace_run:
+            conn.execute("DELETE FROM epf_work_items WHERE run_id = ?", (run_id,))
+            conn.execute("DELETE FROM epf_worklogs WHERE run_id = ?", (run_id,))
+            conn.execute("DELETE FROM epf_leave_rows WHERE run_id = ?", (run_id,))
+            conn.execute("DELETE FROM epf_leave_issue_keys WHERE run_id = ?", (run_id,))
+        if work_item_rows:
+            conn.executemany(
+                """
+                INSERT INTO epf_work_items(
+                    run_id, issue_key, project_key, issue_type, fix_type, summary, status, assignee,
+                    start_date, due_date, resolved_stable_since_date, original_estimate_hours, parent_issue_key
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                work_item_rows,
+            )
+        if worklog_rows:
+            conn.executemany(
+                """
+                INSERT INTO epf_worklogs(
+                    run_id, issue_id, issue_assignee, worklog_date, hours_logged, project_key, is_bug,
+                    fix_type, item_summary, item_status, item_issue_type, item_assignee, item_parent_issue_key,
+                    item_start_date, item_due_date, item_resolved_stable_since_date, story_due_date, original_estimate_hours
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                worklog_rows,
+            )
+        if leave_data_rows:
+            conn.executemany(
+                """
+                INSERT INTO epf_leave_rows(
+                    run_id, assignee, period_day, unplanned_taken_hours, planned_taken_hours
+                ) VALUES (?, ?, ?, ?, ?)
+                """,
+                leave_data_rows,
+            )
+        if leave_key_rows:
+            conn.executemany(
+                "INSERT INTO epf_leave_issue_keys(run_id, issue_key) VALUES (?, ?)",
+                leave_key_rows,
+            )
+        conn.commit()
+    return {
+        "work_items": len(work_item_rows),
+        "worklogs": len(worklog_rows),
+        "leave_rows": len(leave_data_rows),
+        "leave_issue_keys": len(leave_key_rows),
+    }
+
+
+def _epf_mark_run_status(
+    db_path: Path,
+    run_id: str,
+    status: str,
+    error_message: str = "",
+    stats: dict[str, object] | None = None,
+    activate: bool = False,
+) -> None:
+    now = _epf_now_utc()
+    stats_json = json.dumps(stats or {}, ensure_ascii=True)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            UPDATE epf_refresh_runs
+            SET ended_at_utc = ?, status = ?, error_message = ?, stats_json = ?, updated_at_utc = ?
+            WHERE run_id = ?
+            """,
+            (now, status, _to_text(error_message), stats_json, now, run_id),
+        )
+        if activate and status == "success":
+            conn.execute(
+                """
+                UPDATE epf_refresh_state
+                SET active_run_id = ?, last_success_run_id = ?, updated_at_utc = ?
+                WHERE id = 1
+                """,
+                (run_id, run_id, now),
+            )
+        conn.commit()
+
+
+def _epf_update_run_progress(db_path: Path, run_id: str, step: str, progress_pct: int) -> None:
+    if not run_id:
+        return
+    now = _epf_now_utc()
+    progress = max(0, min(100, int(progress_pct or 0)))
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            UPDATE epf_refresh_runs
+            SET progress_step = ?, progress_pct = ?, updated_at_utc = ?
+            WHERE run_id = ?
+            """,
+            (_to_text(step), progress, now, run_id),
+        )
+        conn.commit()
+
+
+def _epf_is_cancel_requested(db_path: Path, run_id: str) -> bool:
+    if not run_id:
+        return False
+    with sqlite3.connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT cancel_requested FROM epf_refresh_runs WHERE run_id = ?",
+            (run_id,),
+        ).fetchone()
+    return bool(int(row[0] or 0)) if row else False
+
+
+def _epf_request_cancel(db_path: Path, run_id: str) -> bool:
+    if not run_id:
+        return False
+    now = _epf_now_utc()
+    with sqlite3.connect(db_path) as conn:
+        cur = conn.execute(
+            """
+            UPDATE epf_refresh_runs
+            SET cancel_requested = 1, updated_at_utc = ?
+            WHERE run_id = ? AND status = 'running'
+            """,
+            (now, run_id),
+        )
+        conn.commit()
+        return int(cur.rowcount or 0) > 0
+
+
+def _epf_get_run(db_path: Path, run_id: str) -> dict[str, object] | None:
+    if not run_id:
+        return None
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            """
+            SELECT
+                run_id, started_at_utc, ended_at_utc, status, trigger_source, error_message,
+                stats_json, progress_step, progress_pct, cancel_requested, updated_at_utc
+            FROM epf_refresh_runs
+            WHERE run_id = ?
+            """,
+            (run_id,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def _epf_find_running_run(db_path: Path) -> dict[str, object] | None:
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            """
+            SELECT
+                run_id, started_at_utc, ended_at_utc, status, trigger_source, error_message,
+                stats_json, progress_step, progress_pct, cancel_requested, updated_at_utc
+            FROM epf_refresh_runs
+            WHERE status = 'running'
+            ORDER BY started_at_utc DESC
+            LIMIT 1
+            """
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def _epf_prune_old_runs(db_path: Path, keep_runs: int) -> None:
+    keep = max(1, int(keep_runs or 1))
+    with sqlite3.connect(db_path) as conn:
+        state_row = conn.execute(
+            "SELECT active_run_id FROM epf_refresh_state WHERE id = 1"
+        ).fetchone()
+        active_run_id = _to_text(state_row[0] if state_row else "")
+        rows = conn.execute(
+            """
+            SELECT run_id FROM epf_refresh_runs
+            WHERE status = 'success'
+            ORDER BY ended_at_utc DESC, started_at_utc DESC
+            """
+        ).fetchall()
+        keep_ids = {_to_text(r[0]) for r in rows[:keep]}
+        if active_run_id:
+            keep_ids.add(active_run_id)
+        delete_ids = [_to_text(r[0]) for r in rows if _to_text(r[0]) and _to_text(r[0]) not in keep_ids]
+        for run_id in delete_ids:
+            conn.execute("DELETE FROM epf_work_items WHERE run_id = ?", (run_id,))
+            conn.execute("DELETE FROM epf_worklogs WHERE run_id = ?", (run_id,))
+            conn.execute("DELETE FROM epf_leave_rows WHERE run_id = ?", (run_id,))
+            conn.execute("DELETE FROM epf_leave_issue_keys WHERE run_id = ?", (run_id,))
+            conn.execute("DELETE FROM epf_refresh_runs WHERE run_id = ?", (run_id,))
+        conn.commit()
+
+
+def _epf_active_run_id(db_path: Path) -> str:
+    with sqlite3.connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT active_run_id FROM epf_refresh_state WHERE id = 1"
+        ).fetchone()
+    return _to_text(row[0] if row else "")
+
+
+def _epf_clone_run_snapshot(db_path: Path, source_run_id: str, target_run_id: str) -> None:
+    if not source_run_id or not target_run_id:
+        return
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO epf_work_items(
+                run_id, issue_key, project_key, issue_type, fix_type, summary, status, assignee,
+                start_date, due_date, resolved_stable_since_date, original_estimate_hours, parent_issue_key
+            )
+            SELECT ?, issue_key, project_key, issue_type, fix_type, summary, status, assignee,
+                   start_date, due_date, resolved_stable_since_date, original_estimate_hours, parent_issue_key
+            FROM epf_work_items
+            WHERE run_id = ?
+            """,
+            (target_run_id, source_run_id),
+        )
+        conn.execute(
+            """
+            INSERT INTO epf_worklogs(
+                run_id, issue_id, issue_assignee, worklog_date, hours_logged, project_key, is_bug, fix_type,
+                item_summary, item_status, item_issue_type, item_assignee, item_parent_issue_key, item_start_date,
+                item_due_date, item_resolved_stable_since_date, story_due_date, original_estimate_hours
+            )
+            SELECT ?, issue_id, issue_assignee, worklog_date, hours_logged, project_key, is_bug, fix_type,
+                   item_summary, item_status, item_issue_type, item_assignee, item_parent_issue_key, item_start_date,
+                   item_due_date, item_resolved_stable_since_date, story_due_date, original_estimate_hours
+            FROM epf_worklogs
+            WHERE run_id = ?
+            """,
+            (target_run_id, source_run_id),
+        )
+        conn.execute(
+            """
+            INSERT INTO epf_leave_rows(
+                run_id, assignee, period_day, unplanned_taken_hours, planned_taken_hours
+            )
+            SELECT ?, assignee, period_day, unplanned_taken_hours, planned_taken_hours
+            FROM epf_leave_rows
+            WHERE run_id = ?
+            """,
+            (target_run_id, source_run_id),
+        )
+        conn.execute(
+            """
+            INSERT INTO epf_leave_issue_keys(run_id, issue_key)
+            SELECT ?, issue_key
+            FROM epf_leave_issue_keys
+            WHERE run_id = ?
+            """,
+            (target_run_id, source_run_id),
+        )
+        conn.commit()
+
+
+def _me_retention_runs() -> int:
+    raw = _to_text(os.getenv("MISSED_ENTRIES_REFRESH_RETAIN_RUNS", str(ME_DEFAULT_RETENTION_RUNS)))
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        value = ME_DEFAULT_RETENTION_RUNS
+    return max(1, value)
+
+
+def _me_now_utc() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _init_missed_entries_refresh_db(db_path: Path) -> None:
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS me_refresh_runs (
+                run_id TEXT PRIMARY KEY,
+                started_at_utc TEXT NOT NULL,
+                ended_at_utc TEXT,
+                status TEXT NOT NULL,
+                trigger_source TEXT NOT NULL DEFAULT '',
+                error_message TEXT NOT NULL DEFAULT '',
+                stats_json TEXT NOT NULL DEFAULT '{}',
+                progress_step TEXT NOT NULL DEFAULT '',
+                progress_pct INTEGER NOT NULL DEFAULT 0,
+                cancel_requested INTEGER NOT NULL DEFAULT 0,
+                updated_at_utc TEXT NOT NULL DEFAULT ''
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS me_refresh_state (
+                id INTEGER PRIMARY KEY CHECK(id = 1),
+                active_run_id TEXT NOT NULL DEFAULT '',
+                last_success_run_id TEXT NOT NULL DEFAULT '',
+                updated_at_utc TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS me_snapshot_rows (
+                run_id TEXT NOT NULL,
+                issue_key TEXT NOT NULL,
+                issue_type TEXT NOT NULL DEFAULT '',
+                assignee TEXT NOT NULL DEFAULT '',
+                summary TEXT NOT NULL DEFAULT '',
+                jira_start_date TEXT NOT NULL DEFAULT '',
+                jira_due_date TEXT NOT NULL DEFAULT '',
+                original_estimate TEXT NOT NULL DEFAULT '',
+                resource_logged_hours TEXT NOT NULL DEFAULT '',
+                jira_url TEXT NOT NULL DEFAULT ''
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_me_snapshot_rows_run_issue ON me_snapshot_rows(run_id, issue_key)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_me_snapshot_rows_run_assignee ON me_snapshot_rows(run_id, assignee)"
+        )
+        row = conn.execute("SELECT id FROM me_refresh_state WHERE id = 1").fetchone()
+        if not row:
+            now = _me_now_utc()
+            conn.execute(
+                "INSERT INTO me_refresh_state(id, active_run_id, last_success_run_id, updated_at_utc) VALUES (1, '', '', ?)",
+                (now,),
+            )
+        conn.commit()
+
+
+def _me_get_run(db_path: Path, run_id: str) -> dict[str, object] | None:
+    run_id_text = _to_text(run_id)
+    if not run_id_text:
+        return None
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            """
+            SELECT
+                run_id, started_at_utc, ended_at_utc, status, trigger_source, error_message,
+                stats_json, progress_step, progress_pct, cancel_requested, updated_at_utc
+            FROM me_refresh_runs
+            WHERE run_id = ?
+            """,
+            (run_id_text,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def _me_find_running_run(db_path: Path) -> dict[str, object] | None:
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            """
+            SELECT
+                run_id, started_at_utc, ended_at_utc, status, trigger_source, error_message,
+                stats_json, progress_step, progress_pct, cancel_requested, updated_at_utc
+            FROM me_refresh_runs
+            WHERE status = 'running'
+            ORDER BY started_at_utc DESC
+            LIMIT 1
+            """
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def _me_update_progress(db_path: Path, run_id: str, step: str, progress_pct: int) -> None:
+    run_id_text = _to_text(run_id)
+    if not run_id_text:
+        return
+    now = _me_now_utc()
+    progress = max(0, min(100, int(progress_pct)))
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            UPDATE me_refresh_runs
+            SET progress_step = ?, progress_pct = ?, updated_at_utc = ?
+            WHERE run_id = ?
+            """,
+            (_to_text(step), progress, now, run_id_text),
+        )
+        conn.commit()
+
+
+def _me_is_cancel_requested(db_path: Path, run_id: str) -> bool:
+    run_id_text = _to_text(run_id)
+    if not run_id_text:
+        return False
+    with sqlite3.connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT cancel_requested FROM me_refresh_runs WHERE run_id = ?",
+            (run_id_text,),
+        ).fetchone()
+    return bool(int((row[0] if row else 0) or 0))
+
+
+def _me_request_cancel(db_path: Path, run_id: str) -> bool:
+    run_id_text = _to_text(run_id)
+    if not run_id_text:
+        return False
+    now = _me_now_utc()
+    with sqlite3.connect(db_path) as conn:
+        cur = conn.execute(
+            """
+            UPDATE me_refresh_runs
+            SET cancel_requested = 1, updated_at_utc = ?
+            WHERE run_id = ? AND status = 'running'
+            """,
+            (now, run_id_text),
+        )
+        conn.commit()
+        return int(cur.rowcount or 0) > 0
+
+
+def _me_mark_run_status(
+    db_path: Path,
+    run_id: str,
+    status: str,
+    error_message: str = "",
+    stats: dict[str, object] | None = None,
+    activate: bool = False,
+) -> None:
+    run_id_text = _to_text(run_id)
+    if not run_id_text:
+        return
+    now = _me_now_utc()
+    stats_json = json.dumps(stats or {}, ensure_ascii=True)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            UPDATE me_refresh_runs
+            SET ended_at_utc = ?, status = ?, error_message = ?, stats_json = ?, cancel_requested = 0, updated_at_utc = ?
+            WHERE run_id = ?
+            """,
+            (now, _to_text(status), _to_text(error_message), stats_json, now, run_id_text),
+        )
+        if activate and _to_text(status) == "success":
+            conn.execute(
+                """
+                UPDATE me_refresh_state
+                SET active_run_id = ?, last_success_run_id = ?, updated_at_utc = ?
+                WHERE id = 1
+                """,
+                (run_id_text, run_id_text, now),
+            )
+        conn.commit()
+
+
+def _me_prune_old_runs(db_path: Path, keep_runs: int) -> None:
+    keep = max(1, int(keep_runs))
+    with sqlite3.connect(db_path) as conn:
+        state = conn.execute("SELECT active_run_id FROM me_refresh_state WHERE id = 1").fetchone()
+        active_run_id = _to_text(state[0] if state else "")
+        rows = conn.execute(
+            """
+            SELECT run_id FROM me_refresh_runs
+            ORDER BY started_at_utc DESC
+            """
+        ).fetchall()
+        ids = [_to_text(row[0]) for row in rows if _to_text(row[0])]
+        keep_ids = set(ids[:keep])
+        if active_run_id:
+            keep_ids.add(active_run_id)
+        for run_id in ids:
+            if run_id in keep_ids:
+                continue
+            conn.execute("DELETE FROM me_snapshot_rows WHERE run_id = ?", (run_id,))
+            conn.execute("DELETE FROM me_refresh_runs WHERE run_id = ?", (run_id,))
+        conn.commit()
+
+
+def _me_store_snapshot_rows(
+    db_path: Path,
+    run_id: str,
+    rows: list[dict[str, object]],
+) -> int:
+    run_id_text = _to_text(run_id)
+    if not run_id_text:
+        return 0
+    values = [
+        (
+            run_id_text,
+            _to_text(row.get("issue_key")).upper(),
+            _to_text(row.get("issue_type")),
+            _to_text(row.get("assignee")),
+            _to_text(row.get("summary")),
+            _to_text(row.get("jira_start_date")),
+            _to_text(row.get("jira_due_date")),
+            _to_text(row.get("original_estimate")),
+            _to_text(row.get("resource_logged_hours")),
+            _to_text(row.get("jira_url")),
+        )
+        for row in (rows or [])
+        if _to_text(row.get("issue_key"))
+    ]
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("DELETE FROM me_snapshot_rows WHERE run_id = ?", (run_id_text,))
+        if values:
+            conn.executemany(
+                """
+                INSERT INTO me_snapshot_rows(
+                    run_id, issue_key, issue_type, assignee, summary, jira_start_date,
+                    jira_due_date, original_estimate, resource_logged_hours, jira_url
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                values,
+            )
+        conn.commit()
+    return len(values)
+
+
+def _me_serialize_run(row: dict[str, object] | None) -> dict[str, object] | None:
+    if not row:
+        return None
+    stats_raw = _to_text(row.get("stats_json"))
+    stats: dict[str, object] = {}
+    if stats_raw:
+        try:
+            parsed = json.loads(stats_raw)
+            if isinstance(parsed, dict):
+                stats = parsed
+        except Exception:
+            stats = {}
+    return {
+        "run_id": _to_text(row.get("run_id")),
+        "started_at_utc": _to_text(row.get("started_at_utc")),
+        "ended_at_utc": _to_text(row.get("ended_at_utc")),
+        "status": _to_text(row.get("status")).lower(),
+        "trigger_source": _to_text(row.get("trigger_source")),
+        "error_message": _to_text(row.get("error_message")),
+        "progress_step": _to_text(row.get("progress_step")),
+        "progress_pct": int(row.get("progress_pct") or 0),
+        "cancel_requested": bool(int(row.get("cancel_requested") or 0)),
+        "updated_at_utc": _to_text(row.get("updated_at_utc")),
+        "stats": stats,
+    }
+
+
 def _list_assignees_from_summary(summary_path: Path) -> list[str]:
     try:
         rows = _read_summary_xlsx(summary_path)
@@ -920,26 +1727,63 @@ def _list_assignees_from_summary(summary_path: Path) -> list[str]:
     return sorted(names, key=lambda s: s.casefold())
 
 
-def _jira_search_projects(query: str, limit: int = 25) -> list[dict[str, str]]:
+def _jira_search_projects(query: str, limit: int | None = None) -> list[dict[str, str]]:
     text = _to_text(query)
-    max_results = max(1, min(int(limit or 25), 100))
     session = get_session()
-    params = {
-        "query": text,
-        "maxResults": max_results,
-        "orderBy": "key",
-    }
-    response = session.get(f"{BASE_URL}/rest/api/3/project/search", params=params, timeout=(10, 30))
-    response.raise_for_status()
-    payload = response.json()
-    values = payload.get("values", []) if isinstance(payload, dict) else []
+    page_size = 100
     out: list[dict[str, str]] = []
-    for item in values:
-        key = _to_text((item or {}).get("key")).upper()
-        name = _to_text((item or {}).get("name"))
-        if not key or not name:
-            continue
-        out.append({"project_key": key, "project_name": name})
+    seen_keys: set[str] = set()
+    start_at = 0
+
+    if limit is None:
+        max_total: int | None = None
+    else:
+        max_total = None if int(limit) <= 0 else max(1, int(limit))
+
+    while True:
+        max_results = page_size
+        if max_total is not None:
+            remaining = max_total - len(out)
+            if remaining <= 0:
+                break
+            max_results = min(max_results, remaining)
+
+        params = {
+            "query": text,
+            "maxResults": max_results,
+            "startAt": start_at,
+            "orderBy": "key",
+        }
+        response = session.get(f"{BASE_URL}/rest/api/3/project/search", params=params, timeout=(10, 30))
+        response.raise_for_status()
+        payload = response.json()
+        values = payload.get("values", []) if isinstance(payload, dict) else []
+        if not values:
+            break
+
+        for item in values:
+            key = _to_text((item or {}).get("key")).upper()
+            name = _to_text((item or {}).get("name"))
+            if not key or not name or key in seen_keys:
+                continue
+            out.append({"project_key": key, "project_name": name})
+            seen_keys.add(key)
+
+        start_at += len(values)
+        if not isinstance(payload, dict):
+            break
+
+        if payload.get("isLast") is True:
+            break
+
+        total_raw = payload.get("total")
+        try:
+            total = int(total_raw)
+        except (TypeError, ValueError):
+            total = None
+        if total is not None and start_at >= total:
+            break
+
     return out
 
 
@@ -1584,6 +2428,23 @@ def _performance_settings_html() -> str:
         </div>
       </div>
     </section>
+    <section class="field-group">
+      <div class="group-title">Simple Scoring Guardrail</div>
+      <div class="grid" style="margin-top:8px;">
+        <div class="perf-field" data-field-key="overloaded_penalty_enabled">
+          <label for="overloaded-penalty-enabled" class="label-row">Overloaded Penalty
+            <span class="material-symbols-outlined field-info" role="button" tabindex="0" data-info-title="Overloaded Penalty" data-info-body="Enable/disable overloaded planning guardrail for simple scoring.\n\nMeaning for simple score:\n- If enabled and logged hours are below minimum expected threshold, simple score is capped by `logged/planned * 100`.\n- Prevents over-planned assignments from looking healthy with low execution.\n- Default is ON." aria-label="Overloaded Penalty info">info</span>
+          </label>
+          <input id="overloaded-penalty-enabled" type="checkbox" style="width:auto;">
+        </div>
+        <div class="perf-field" data-field-key="overloaded_penalty_threshold_pct">
+          <label for="overloaded-penalty-threshold-pct" class="label-row">Overloaded Threshold (%)
+            <span class="material-symbols-outlined field-info" role="button" tabindex="0" data-info-title="Overloaded Threshold (%)" data-info-body="Allowed shortfall percentage before overloaded penalty applies.\n\nMeaning for simple score:\n- Minimum required logged = `planned * (1 - threshold/100)`.\n- If logged falls below this value, simple score is capped by execution ratio.\n- Example: threshold 10%, planned 200h => minimum required 180h." aria-label="Overloaded Threshold info">info</span>
+          </label>
+          <input id="overloaded-penalty-threshold-pct" type="number" min="0" max="100" step="0.1">
+        </div>
+      </div>
+    </section>
     <div class="row">
       <button class="btn alt" type="button" id="reload-btn">Reload</button>
       <button class="btn alt" type="button" id="reset-btn">Reset Defaults</button>
@@ -1603,6 +2464,7 @@ def _performance_settings_html() -> str:
           <span class="line">   (<span class="token-reduce" data-target-fields="points_per_missed_due_date" tabindex="0">missed_due_dates * points_per_missed_due_date</span>)</span>
           <span class="line" style="margin-top:6px;">2) Raw Score = <span class="token-add" data-target-fields="base_score" tabindex="0">base_score</span> - <span class="token-reduce">Total Penalty</span></span>
           <span class="line" style="margin-top:6px;">3) Final Score = <span class="token-neutral" data-target-fields="min_score,max_score" tabindex="0">clamp(Raw Score, min_score, max_score)</span></span>
+          <span class="line" style="margin-top:6px;">4) Simple Guardrail = <span class="token-neutral" data-target-fields="overloaded_penalty_enabled,overloaded_penalty_threshold_pct" tabindex="0">if enabled and logged &lt; planned x (1 - threshold/100), cap simple score to logged/planned x 100</span></span>
         </p>
       </div>
       <div class="ingredients">
@@ -1634,6 +2496,10 @@ def _performance_settings_html() -> str:
           <div class="ingredient-top"><span class="material-symbols-outlined" aria-hidden="true">add_circle</span>Positive Contributor (Applicable)</div>
           <p>`base_score` is the additive anchor. All configurable penalty multipliers on this page are deduction terms.</p>
         </article>
+        <article class="ingredient" data-target-fields="overloaded_penalty_enabled,overloaded_penalty_threshold_pct" tabindex="0">
+          <div class="ingredient-top"><span class="material-symbols-outlined" aria-hidden="true">rule</span>Overloaded Guardrail</div>
+          <p>When enabled, simple score is capped by logged/planned ratio if execution drops below configured threshold.</p>
+        </article>
       </div>
       <div class="explain-grid">
         <article class="case">
@@ -1660,7 +2526,8 @@ def _performance_settings_html() -> str:
           <label for="team-leader" style="margin-top:8px;">Team Leader</label>
           <select id="team-leader"></select>
           <div class="row" style="margin-top:8px;">
-            <button class="btn" type="button" id="create-team-btn">Create / Update Team</button>
+            <button class="btn" type="button" id="create-team-btn">Create Team</button>
+            <button class="btn alt" type="button" id="cancel-edit-team-btn" style="display:none;">Cancel Edit</button>
             <button class="btn alt" type="button" id="reload-teams-btn">Reload Teams</button>
           </div>
         </div>
@@ -1670,6 +2537,10 @@ def _performance_settings_html() -> str:
         </div>
       </div>
       <div class="team-list" id="team-list"></div>
+      <div style="margin-top:10px;">
+        <div style="font-size:.86rem;font-weight:700;color:#334155;margin-bottom:4px;">Assignees Not in Any Team</div>
+        <div class="team-list" id="team-unassigned-list"></div>
+      </div>
     </section>
     <div id="status"></div>
   </main>
@@ -1704,7 +2575,9 @@ def _performance_settings_html() -> str:
       points_per_unplanned_leave_hour: document.getElementById("leave-hour"),
       points_per_subtask_late_hour: document.getElementById("subtask-late-hour"),
       points_per_estimate_overrun_hour: document.getElementById("estimate-hour"),
-      points_per_missed_due_date: document.getElementById("missed-due-date")
+      points_per_missed_due_date: document.getElementById("missed-due-date"),
+      overloaded_penalty_enabled: document.getElementById("overloaded-penalty-enabled"),
+      overloaded_penalty_threshold_pct: document.getElementById("overloaded-penalty-threshold-pct")
     };
     const fieldContainers = Array.from(document.querySelectorAll(".perf-field[data-field-key]"));
     const fieldContainerByKey = {};
@@ -1716,10 +2589,87 @@ def _performance_settings_html() -> str:
     const teamLeaderEl = document.getElementById("team-leader");
     const teamAssigneesEl = document.getElementById("team-assignees");
     const teamListEl = document.getElementById("team-list");
+    const teamUnassignedListEl = document.getElementById("team-unassigned-list");
+    const saveTeamBtnEl = document.getElementById("create-team-btn");
+    const cancelEditTeamBtnEl = document.getElementById("cancel-edit-team-btn");
+    let allAssignees = [];
+    let loadedTeams = [];
+    let editingOriginalTeamName = "";
     function setStatus(msg, kind) { statusEl.textContent = msg || ""; statusEl.className = kind || ""; }
-    function setForm(settings) { for (const k of Object.keys(fields)) fields[k].value = String(Number(settings[k] ?? 0)); }
-    function readForm() { const out = {}; for (const k of Object.keys(fields)) out[k] = Number(fields[k].value || 0); return out; }
+    function setForm(settings) {
+      for (const k of Object.keys(fields)) {
+        if (k === "overloaded_penalty_enabled") fields[k].checked = Number(settings[k] ?? 0) > 0;
+        else fields[k].value = String(Number(settings[k] ?? 0));
+      }
+    }
+    function readForm() {
+      const out = {};
+      for (const k of Object.keys(fields)) {
+        if (k === "overloaded_penalty_enabled") out[k] = fields[k].checked ? 1 : 0;
+        else out[k] = Number(fields[k].value || 0);
+      }
+      return out;
+    }
     function esc(text) { return String(text || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+    function getSelectedAssignees() {
+      return Array.from(teamAssigneesEl.selectedOptions).map((o) => String(o.value || "").trim()).filter(Boolean);
+    }
+    function syncLeaderOptions(preferredValue) {
+      const selectedAssignees = getSelectedAssignees();
+      const source = selectedAssignees.length ? selectedAssignees : allAssignees;
+      const preferred = String(preferredValue || "").trim();
+      const current = String(teamLeaderEl.value || "").trim();
+      const desired = preferred || current;
+      teamLeaderEl.innerHTML = '<option value="">Select team leader</option>' + source.map((name) => '<option value="' + esc(name) + '">' + esc(name) + '</option>').join("");
+      if (desired && source.includes(desired)) {
+        teamLeaderEl.value = desired;
+      } else {
+        teamLeaderEl.value = "";
+      }
+    }
+    function setTeamEditingMode(isEditing) {
+      saveTeamBtnEl.textContent = isEditing ? "Save Team Changes" : "Create Team";
+      cancelEditTeamBtnEl.style.display = isEditing ? "" : "none";
+    }
+    function clearTeamForm() {
+      editingOriginalTeamName = "";
+      teamNameEl.value = "";
+      Array.from(teamAssigneesEl.options).forEach((o) => { o.selected = false; });
+      syncLeaderOptions("");
+      setTeamEditingMode(false);
+    }
+    function renderUnassignedAssignees() {
+      const mapped = new Set();
+      (Array.isArray(loadedTeams) ? loadedTeams : []).forEach((team) => {
+        (Array.isArray(team && team.assignees) ? team.assignees : []).forEach((name) => {
+          const normalized = String(name || "").trim();
+          if (normalized) mapped.add(normalized.toLowerCase());
+        });
+      });
+      const unassigned = (Array.isArray(allAssignees) ? allAssignees : [])
+        .map((name) => String(name || "").trim())
+        .filter((name) => name && !mapped.has(name.toLowerCase()))
+        .sort((a, b) => a.localeCompare(b));
+      if (!unassigned.length) {
+        teamUnassignedListEl.innerHTML = '<div style="color:#64748b;font-size:.85rem;">All assignees are mapped to teams.</div>';
+        return;
+      }
+      teamUnassignedListEl.innerHTML = unassigned.map((name) => '<div class="team-item"><div class="team-name">' + esc(name) + '</div></div>').join("");
+    }
+    function startTeamEdit(teamName) {
+      const targetName = String(teamName || "");
+      const team = loadedTeams.find((item) => String(item.team_name || "") === targetName);
+      if (!team) {
+        setStatus("Selected team no longer exists. Reload and try again.", "err");
+        return;
+      }
+      editingOriginalTeamName = String(team.team_name || "");
+      teamNameEl.value = editingOriginalTeamName;
+      const selectedMembers = new Set((Array.isArray(team.assignees) ? team.assignees : []).map((name) => String(name || "")));
+      Array.from(teamAssigneesEl.options).forEach((o) => { o.selected = selectedMembers.has(String(o.value || "")); });
+      syncLeaderOptions(String(team.team_leader || ""));
+      setTeamEditingMode(true);
+    }
     function openFieldDrawer(title, body) {
       drawerTitleEl.textContent = String(title || "Field Details");
       drawerBodyEl.textContent = String(body || "");
@@ -1796,11 +2746,16 @@ def _performance_settings_html() -> str:
       const response = await fetch(ASSIGNEES_API);
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Failed to load assignees.");
-      const assignees = Array.isArray(data.assignees) ? data.assignees : [];
-      teamAssigneesEl.innerHTML = assignees.map((name) => '<option value="' + esc(name) + '">' + esc(name) + '</option>').join("");
-      teamLeaderEl.innerHTML = '<option value="">Select team leader</option>' + assignees.map((name) => '<option value="' + esc(name) + '">' + esc(name) + '</option>').join("");
+      allAssignees = Array.isArray(data.assignees) ? data.assignees.map((name) => String(name || "")).filter(Boolean) : [];
+      const retained = new Set(getSelectedAssignees());
+      teamAssigneesEl.innerHTML = allAssignees.map((name) => '<option value="' + esc(name) + '">' + esc(name) + '</option>').join("");
+      Array.from(teamAssigneesEl.options).forEach((o) => { o.selected = retained.has(String(o.value || "")); });
+      syncLeaderOptions(String(teamLeaderEl.value || ""));
+      renderUnassignedAssignees();
     }
     function renderTeams(teams) {
+      loadedTeams = Array.isArray(teams) ? teams : [];
+      renderUnassignedAssignees();
       if (!Array.isArray(teams) || !teams.length) {
         teamListEl.innerHTML = '<div style="color:#64748b;font-size:.85rem;">No teams created yet.</div>';
         return;
@@ -1810,8 +2765,16 @@ def _performance_settings_html() -> str:
         const members = Array.isArray(team.assignees) ? team.assignees : [];
         const membersText = members.length ? members.join(", ") : "-";
         const leader = String(team.team_leader || "-");
-        return '<div class="team-item"><div><div class="team-name">' + esc(name) + ' <span style="font-weight:600;color:#475569;">(Lead: ' + esc(leader) + ')</span></div><div class="team-members">' + esc(membersText) + '</div></div><button class="btn alt" type="button" data-del-team="' + esc(name) + '">Delete</button></div>';
+        return '<div class="team-item"><div><div class="team-name">' + esc(name) + ' <span style="font-weight:600;color:#475569;">(Lead: ' + esc(leader) + ')</span></div><div class="team-members">' + esc(membersText) + '</div></div><div class="row"><button class="btn alt" type="button" data-edit-team="' + esc(name) + '">Edit</button><button class="btn alt" type="button" data-del-team="' + esc(name) + '">Delete</button></div></div>';
       }).join("");
+      Array.from(teamListEl.querySelectorAll("button[data-edit-team]")).forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const teamName = String(btn.getAttribute("data-edit-team") || "");
+          if (!teamName) return;
+          startTeamEdit(teamName);
+          setStatus("Editing team: " + teamName, "");
+        });
+      });
       Array.from(teamListEl.querySelectorAll("button[data-del-team]")).forEach((btn) => {
         btn.addEventListener("click", async () => {
           const teamName = String(btn.getAttribute("data-del-team") || "");
@@ -1821,6 +2784,7 @@ def _performance_settings_html() -> str:
             const data = await response.json();
             if (!response.ok) throw new Error(data.error || "Failed to delete team.");
             setStatus("Team deleted.", "ok");
+            if (editingOriginalTeamName && editingOriginalTeamName === teamName) clearTeamForm();
             await loadTeams();
           } catch (err) {
             setStatus(err.message || String(err), "err");
@@ -1839,24 +2803,32 @@ def _performance_settings_html() -> str:
     });
     document.getElementById("create-team-btn").addEventListener("click", async () => {
       try {
+        const isEditing = Boolean(editingOriginalTeamName);
         const teamName = String(teamNameEl.value || "").trim();
         const teamLeader = String(teamLeaderEl.value || "").trim();
-        const assignees = Array.from(teamAssigneesEl.selectedOptions).map((o) => String(o.value || "").trim()).filter(Boolean);
-        const response = await fetch(TEAMS_API, {
-          method: "POST",
+        const assignees = getSelectedAssignees();
+        const requestUrl = isEditing ? (TEAMS_API + '/' + encodeURIComponent(editingOriginalTeamName)) : TEAMS_API;
+        const requestMethod = isEditing ? "PUT" : "POST";
+        const response = await fetch(requestUrl, {
+          method: requestMethod,
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ team_name: teamName, team_leader: teamLeader, assignees }),
         });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || "Failed to save team.");
-        teamNameEl.value = "";
-        teamLeaderEl.value = "";
-        Array.from(teamAssigneesEl.options).forEach((o) => { o.selected = false; });
-        setStatus("Team saved.", "ok");
+        clearTeamForm();
+        setStatus(isEditing ? "Team updated." : "Team saved.", "ok");
         await loadTeams();
       } catch (err) {
         setStatus(err.message || String(err), "err");
       }
+    });
+    cancelEditTeamBtnEl.addEventListener("click", () => {
+      clearTeamForm();
+      setStatus("Edit cancelled.", "");
+    });
+    teamAssigneesEl.addEventListener("change", () => {
+      syncLeaderOptions(String(teamLeaderEl.value || ""));
     });
     Promise.all([loadSettings(), loadAssignees(), loadTeams()]).catch((e) => setStatus(e.message || String(e), "err"));
   </script>
@@ -3383,7 +4355,7 @@ def _projects_settings_html() -> str:
     }
     async function searchProjects() {
       const query = encodeURIComponent(String(searchEl.value || "").trim());
-      const resp = await fetch(SEARCH_API + "?q=" + query + "&limit=25");
+      const resp = await fetch(SEARCH_API + "?q=" + query);
       const body = await resp.json().catch(() => ({}));
       if (!resp.ok) throw new Error(String(body.error || "Failed to search Jira projects."));
       searchRows = Array.isArray(body.projects) ? body.projects : [];
@@ -6561,6 +7533,9 @@ def _resolve_report_html_sources(base_dir: Path) -> dict[str, Path]:
         "planned_actual_table_view.html": _resolve_output_html_path(
             "JIRA_PLANNED_ACTUAL_TABLE_VIEW_HTML_PATH", "planned_actual_table_view.html", base_dir
         ),
+        "original_estimates_hierarchy_report.html": _resolve_output_html_path(
+            "JIRA_ORIGINAL_ESTIMATES_HIERARCHY_HTML_PATH", "original_estimates_hierarchy_report.html", base_dir
+        ),
     }
 
 
@@ -6588,6 +7563,16 @@ def sync_report_html(base_dir: Path, folder_raw: str) -> int:
         shutil.move(str(source_path), str(destination_path))
         moved += 1
         print(f"[report-html-sync] Moved: {source_path.name} -> {destination_path}")
+
+    # Keep canonical + legacy aliases for Approved vs Planned report filename.
+    legacy_pvd_path = target_dir / LEGACY_PVD_HTML_FILE
+    canonical_pvd_path = target_dir / CANONICAL_PVD_HTML_FILE
+    if legacy_pvd_path.exists() and legacy_pvd_path.is_file() and not canonical_pvd_path.exists():
+        shutil.copy2(str(legacy_pvd_path), str(canonical_pvd_path))
+        print(f"[report-html-sync] Aliased: {legacy_pvd_path.name} -> {canonical_pvd_path.name}")
+    elif canonical_pvd_path.exists() and canonical_pvd_path.is_file() and not legacy_pvd_path.exists():
+        shutil.copy2(str(canonical_pvd_path), str(legacy_pvd_path))
+        print(f"[report-html-sync] Aliased: {canonical_pvd_path.name} -> {legacy_pvd_path.name}")
 
     # Keep shared nav assets alongside reports so generated pages can always load them.
     for asset_name in ("shared-nav.css", "shared-nav.js", "shared-date-filter.js", "material-symbols.css"):
@@ -6713,6 +7698,26 @@ def _inject_refresh_ui(html: str, report_id: str) -> str:
   cursor: not-allowed;
   opacity: 0.8;
 }}
+#codex-refresh-cancel-btn {{
+  width: 100%;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  box-sizing: border-box;
+  border: 1px solid rgba(248, 113, 113, 0.75);
+  background: rgba(153, 27, 27, 0.55);
+  color: #fff;
+  border-radius: 9px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}}
+#codex-refresh-cancel-btn[disabled] {{
+  cursor: not-allowed;
+  opacity: 0.75;
+}}
 #codex-refresh-btn .material-symbols-outlined {{
   font-size: 18px;
   line-height: 1;
@@ -6747,17 +7752,29 @@ def _inject_refresh_ui(html: str, report_id: str) -> str:
     <span class="material-symbols-outlined" aria-hidden="true">refresh</span>
     <span id="codex-refresh-btn-label">Refresh</span>
   </button>
+  <button id="codex-refresh-cancel-btn" type="button">Cancel Refresh Run</button>
   <div id="codex-refresh-status"></div>
 </div>
 <script>
 (function () {{
   const reportId = {report_id!r};
   const endpointPath = "/api/report/refresh";
+  const isMissedEntries = reportId === "missed_entries";
   const wrap = document.getElementById("codex-refresh-wrap");
   const btn = document.getElementById("codex-refresh-btn");
+  const cancelBtn = document.getElementById("codex-refresh-cancel-btn");
   const btnLabel = document.getElementById("codex-refresh-btn-label");
   const status = document.getElementById("codex-refresh-status");
   if (!wrap || !btn || !btnLabel || !status || !reportId) return;
+  let activeRunId = "";
+  let pollTimer = 0;
+
+  if (!isMissedEntries && cancelBtn) {{
+    cancelBtn.style.display = "none";
+  }} else if (cancelBtn) {{
+    cancelBtn.style.display = "";
+    cancelBtn.disabled = true;
+  }}
 
   function mountRefreshInNav() {{
     const navTargets = [
@@ -6787,17 +7804,21 @@ def _inject_refresh_ui(html: str, report_id: str) -> str:
   }}
 
   function setBusy(isBusy) {{
-    btn.disabled = isBusy;
+    btn.disabled = !!isBusy;
     btnLabel.textContent = isBusy ? "Refreshing..." : "Refresh";
+    if (isMissedEntries && cancelBtn) {{
+      cancelBtn.disabled = !isBusy || !activeRunId;
+    }}
   }}
 
   function setStatus(msg) {{
     status.textContent = msg || "";
   }}
 
-  function endpointCandidates() {{
+  function endpointCandidates(path) {{
+    const endpointSuffix = String(path || endpointPath);
     if (window.location.protocol === "http:" || window.location.protocol === "https:") {{
-      return [endpointPath];
+      return [endpointSuffix];
     }}
     const savedOrigin = String(localStorage.getItem("codex-report-server-origin") || "").trim();
     const defaults = [
@@ -6809,25 +7830,22 @@ def _inject_refresh_ui(html: str, report_id: str) -> str:
     const origins = [savedOrigin, ...defaults]
       .map((item) => String(item || "").trim().replace(/\\/$/, ""))
       .filter(Boolean);
-    return Array.from(new Set(origins)).map((origin) => origin + endpointPath);
+    return Array.from(new Set(origins)).map((origin) => origin + endpointSuffix);
   }}
 
-  async function postRefresh(body) {{
-    const endpoints = endpointCandidates();
+  async function requestJson(path, options) {{
+    const endpoints = endpointCandidates(path);
     let lastError = "Failed to fetch";
     for (const endpoint of endpoints) {{
       try {{
-        const response = await fetch(endpoint, {{
-          method: "POST",
-          headers: {{ "Content-Type": "application/json" }},
-          body: JSON.stringify(body),
-        }});
+        const response = await fetch(endpoint, options || {{}});
         if (endpoint.startsWith("http")) {{
           try {{
             localStorage.setItem("codex-report-server-origin", new URL(endpoint).origin);
           }} catch (_err) {{}}
         }}
-        return response;
+        const payload = await response.json().catch(() => ({{}}));
+        return {{ response, payload }};
       }} catch (err) {{
         lastError = (err && err.message) ? err.message : String(err);
       }}
@@ -6835,21 +7853,120 @@ def _inject_refresh_ui(html: str, report_id: str) -> str:
     throw new Error(lastError);
   }}
 
+  function runStatusText(run) {{
+    const item = run || {{}};
+    const state = String(item.status || "").toLowerCase();
+    const pct = Number(item.progress_pct || 0);
+    const step = String(item.progress_step || "");
+    if (state === "running") {{
+      return `Refresh running${{step ? ` (${{step}})` : ""}}${{pct > 0 ? ` - ${{pct}}%` : ""}}`;
+    }}
+    if (state === "cancel_requested") {{
+      return "Cancel requested. Waiting for safe stop...";
+    }}
+    if (state === "success") {{
+      return "Refresh completed.";
+    }}
+    if (state === "canceled") {{
+      return String(item.error_message || "Refresh canceled. Previous snapshot retained.");
+    }}
+    if (state === "failed") {{
+      return String(item.error_message || "Refresh failed.");
+    }}
+    return "";
+  }}
+
+  function clearPolling() {{
+    if (pollTimer) {{
+      window.clearTimeout(pollTimer);
+      pollTimer = 0;
+    }}
+  }}
+
+  async function pollMissedEntriesRun(runId) {{
+    const runIdText = String(runId || "").trim();
+    if (!runIdText) return;
+    activeRunId = runIdText;
+    setBusy(true);
+    clearPolling();
+    const tick = async function () {{
+      try {{
+        const result = await requestJson(`/api/missed-entries/refresh/${{encodeURIComponent(runIdText)}}`, {{
+          method: "GET",
+          headers: {{ "Accept": "application/json" }},
+        }});
+        const payload = result.payload || {{}};
+        const run = payload.run || {{}};
+        const state = String(run.status || "").toLowerCase();
+        setStatus(runStatusText(run));
+        if (state === "running" || state === "cancel_requested") {{
+          setBusy(true);
+          pollTimer = window.setTimeout(tick, 1200);
+          return;
+        }}
+        clearPolling();
+        activeRunId = "";
+        setBusy(false);
+        if (state === "success") {{
+          window.location.reload();
+        }}
+      }} catch (err) {{
+        clearPolling();
+        activeRunId = "";
+        setBusy(false);
+        const msg = (err && err.message) ? err.message : String(err);
+        setStatus(msg || "Failed to poll refresh status.");
+      }}
+    }};
+    tick();
+  }}
+
   btn.addEventListener("click", async function () {{
     setBusy(true);
     setStatus("Running scripts...");
     try {{
-      const response = await postRefresh({{ report: reportId }});
-      const payload = await response.json().catch(() => ({{}}));
+      if (!isMissedEntries) {{
+        const result = await requestJson(endpointPath, {{
+          method: "POST",
+          headers: {{ "Content-Type": "application/json" }},
+          body: JSON.stringify({{ report: reportId }}),
+        }});
+        const response = result.response;
+        const payload = result.payload || {{}};
+        if (!response.ok || !payload.ok) {{
+          const msg = payload.error || "Refresh failed.";
+          setStatus(msg);
+          alert(msg);
+          return;
+        }}
+        const ts = payload.completed_at || "";
+        setStatus(ts ? ("Updated: " + ts) : "Updated.");
+        window.location.reload();
+        return;
+      }}
+
+      const result = await requestJson("/api/missed-entries/refresh", {{
+        method: "POST",
+        headers: {{ "Content-Type": "application/json" }},
+        body: JSON.stringify({{}}),
+      }});
+      const response = result.response;
+      const payload = result.payload || {{}};
       if (!response.ok || !payload.ok) {{
         const msg = payload.error || "Refresh failed.";
         setStatus(msg);
         alert(msg);
         return;
       }}
-      const ts = payload.completed_at || "";
-      setStatus(ts ? ("Updated: " + ts) : "Updated.");
-      window.location.reload();
+      const run = payload.run || {{}};
+      const runId = String(payload.run_id || run.run_id || "").trim();
+      if (!runId) {{
+        setBusy(false);
+        setStatus("Refresh started but no run ID was returned.");
+        return;
+      }}
+      setStatus(runStatusText(run) || "Refresh started.");
+      await pollMissedEntriesRun(runId);
     }} catch (err) {{
       const base = (err && err.message) ? err.message : String(err);
       const hint = "If report is opened from file path, use server URL like http://127.0.0.1:8000/dashboard.html";
@@ -6857,9 +7974,60 @@ def _inject_refresh_ui(html: str, report_id: str) -> str:
       setStatus(msg);
       alert(msg);
     }} finally {{
-      setBusy(false);
+      if (!isMissedEntries) {{
+        setBusy(false);
+      }}
     }}
   }});
+
+  if (isMissedEntries && cancelBtn) {{
+    cancelBtn.addEventListener("click", async function () {{
+      if (!activeRunId) return;
+      cancelBtn.disabled = true;
+      try {{
+        const result = await requestJson("/api/missed-entries/cancel", {{
+          method: "POST",
+          headers: {{ "Content-Type": "application/json" }},
+          body: JSON.stringify({{ run_id: activeRunId }}),
+        }});
+        const response = result.response;
+        const payload = result.payload || {{}};
+        if (!response.ok || !payload.ok) {{
+          const msg = payload.error || "Cancel failed.";
+          setStatus(msg);
+          alert(msg);
+          cancelBtn.disabled = false;
+          return;
+        }}
+        setStatus(String(payload.message || "Cancel requested. Waiting for safe stop..."));
+      }} catch (err) {{
+        const msg = (err && err.message) ? err.message : String(err);
+        setStatus(msg || "Cancel failed.");
+        cancelBtn.disabled = false;
+      }}
+    }});
+
+    (async function attachCurrentRun() {{
+      try {{
+        const result = await requestJson("/api/missed-entries/refresh/current", {{
+          method: "GET",
+          headers: {{ "Accept": "application/json" }},
+        }});
+        const payload = result.payload || {{}};
+        const run = payload.run || null;
+        if (!run) return;
+        const state = String(run.status || "").toLowerCase();
+        if (state === "running" || state === "cancel_requested") {{
+          setStatus(runStatusText(run));
+          await pollMissedEntriesRun(String(run.run_id || ""));
+        }} else if (state) {{
+          setStatus(runStatusText(run));
+        }}
+      }} catch (_err) {{
+        // Best effort only.
+      }}
+    }})();
+  }}
 }})();
 </script>
 {REFRESH_WIDGET_END}
@@ -7210,17 +8378,17 @@ def _build_report_info_catalog(report_id: str) -> list[dict]:
         "planned_vs_dispensed": [
             {
                 "id": "planned_vs_dispensed.project_gap",
-                "label": "Planned vs Dispensed Gap",
-                "report": "planned_vs_dispensed_report",
+                "label": "Approved vs Planned Hours Gap",
+                "report": CANONICAL_PVD_PAGE_KEY,
                 "ui_targets": ["#pvd-comparison-chart", "#pvd-detail-root"],
-                "definition": "Compares epic-level planned estimates against subtotal of descendant subtask estimates per project.",
-                "formula": "Project Planned (Epic Estimates) - Project Dispensed (Subtask Estimates)",
-                "ingredients": ["epic.timeoriginalestimate", "subtask.timeoriginalestimate", "perspective_mode", "date_range"],
-                "business_validations": ["Perspective mode must be valid.", "Date range must be valid.", "Hierarchy linkage epic->story->subtask is required."],
-                "field_linkages": ["Date Range", "Advanced Filters", "Perspective"],
+                "definition": "Compares approved epic estimates against subtotal of descendant planned subtask estimates per project.",
+                "formula": "Project Approved (Epic Estimates) - Project Planned (Subtask Estimates)",
+                "ingredients": ["epic.timeoriginalestimate", "subtask.timeoriginalestimate", "planned_hours_source", "date_range"],
+                "business_validations": ["Planned hours source must be valid.", "Date range must be valid.", "Hierarchy linkage epic->story->subtask is required."],
+                "field_linkages": ["Date Range", "Advanced Filters", "Planned Hours Source"],
                 "cross_report_linkages": ["assignee.project_plan_actual_gap", "rnd.pending_hours_required"],
-                "data_sources": ["/api/planned-vs-dispensed/summary", "/api/planned-vs-dispensed/details"],
-                "leadership_interpretation": "Positive gap indicates under-dispensing from planning to actionable subtasks; near-zero gap indicates healthy decomposition.",
+                "data_sources": [f"{CANONICAL_PVD_API_PREFIX}/summary", f"{CANONICAL_PVD_API_PREFIX}/details"],
+                "leadership_interpretation": "Positive gap indicates approved hours exceed planned decomposition; near-zero gap indicates healthy decomposition.",
             }
         ],
     }
@@ -7525,17 +8693,81 @@ def _materialize_refresh_widgets(report_dir: Path) -> None:
             )
 
 
-def _run_script(script_name: str, base_dir: Path) -> tuple[int, str, str]:
+def _run_script(
+    script_name: str,
+    base_dir: Path,
+    extra_args: list[str] | None = None,
+    env_overrides: dict[str, str] | None = None,
+) -> tuple[int, str, str]:
     script_path = base_dir / script_name
     if not script_path.exists():
         raise FileNotFoundError(f"Missing script: {script_path}")
+    command = [sys.executable, str(script_path)]
+    if extra_args:
+        command.extend([str(x) for x in extra_args])
+    env = os.environ.copy()
+    if env_overrides:
+        for key, value in env_overrides.items():
+            env[str(key)] = str(value)
     result = subprocess.run(
-        [sys.executable, str(script_path)],
+        command,
         cwd=str(base_dir),
         capture_output=True,
         text=True,
+        env=env,
     )
     return result.returncode, result.stdout, result.stderr
+
+
+def _run_script_interruptible(
+    script_name: str,
+    base_dir: Path,
+    extra_args: list[str] | None = None,
+    env_overrides: dict[str, str] | None = None,
+    cancel_check=None,
+    poll_interval_sec: float = 0.5,
+) -> tuple[int, str, str]:
+    script_path = base_dir / script_name
+    if not script_path.exists():
+        raise FileNotFoundError(f"Missing script: {script_path}")
+    command = [sys.executable, str(script_path)]
+    if extra_args:
+        command.extend([str(x) for x in extra_args])
+    env = os.environ.copy()
+    if env_overrides:
+        for key, value in env_overrides.items():
+            env[str(key)] = str(value)
+    proc = subprocess.Popen(
+        command,
+        cwd=str(base_dir),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=env,
+    )
+    try:
+        while proc.poll() is None:
+            if callable(cancel_check) and bool(cancel_check()):
+                try:
+                    proc.terminate()
+                    proc.wait(timeout=10)
+                except Exception:
+                    try:
+                        proc.kill()
+                    except Exception:
+                        pass
+                out, err = proc.communicate()
+                canceled_err = (err or "") + ("\n" if err else "") + "Canceled by user."
+                return -1, out or "", canceled_err
+            time.sleep(max(0.1, float(poll_interval_sec)))
+        out, err = proc.communicate()
+        return int(proc.returncode or 0), out or "", err or ""
+    finally:
+        try:
+            if proc.poll() is None:
+                proc.kill()
+        except Exception:
+            pass
 
 
 def _tail(text: str, lines: int = 30) -> str:
@@ -9269,14 +10501,81 @@ def _load_planned_vs_dispensed_hierarchy(
 
     scoped_epic_keys: set[str] = set()
     preloaded_epics: dict[str, dict] = {}
+    preloaded_stories: list[dict] = []
+    preloaded_subtasks: list[dict] = []
+    can_reuse_preloaded_children = False
 
     if mode == "planned_dates":
         epic_issues = _fetch_jira_issues_for_jql(session, f"{prefix}issuetype = Epic", fields)
+        all_epics: dict[str, dict] = {}
         for issue in epic_issues:
             normalized = _normalize_pvd_issue(issue, start_field_id, end_field_ids, issue_kind_override="epic")
+            epic_key = _to_text(normalized.get("issue_key")).upper()
+            if not epic_key:
+                continue
+            all_epics[epic_key] = normalized
             if _issue_overlaps_range(normalized["planned_start"], normalized["planned_due"], from_date, to_date):
-                scoped_epic_keys.add(normalized["issue_key"])
-                preloaded_epics[normalized["issue_key"]] = normalized
+                scoped_epic_keys.add(epic_key)
+
+        # Planned-vs-dispensed must also include epics that have in-range descendant subtasks,
+        # even when epic planned dates are missing/out-of-range.
+        valid_epic_keys = set(all_epics.keys())
+        story_to_epic: dict[str, str] = {}
+        normalized_stories_all: list[dict] = []
+        if valid_epic_keys:
+            story_issues_all = _fetch_story_issues_for_epics(
+                session,
+                sorted(valid_epic_keys),
+                fields,
+                project_keys=selected_projects,
+            )
+            for issue in story_issues_all:
+                normalized_story = _normalize_pvd_issue(issue, start_field_id, end_field_ids, issue_kind_override="story")
+                story_fields = issue.get("fields", {}) or {}
+                epic_key = _resolve_epic_key_for_story(story_fields, valid_epic_keys) or normalized_story["epic_key_candidate"]
+                epic_key = _to_text(epic_key).upper()
+                story_key = _to_text(normalized_story.get("issue_key")).upper()
+                if not story_key or not epic_key or epic_key not in valid_epic_keys:
+                    continue
+                normalized_story["epic_key"] = epic_key
+                story_to_epic[story_key] = epic_key
+                normalized_stories_all.append(normalized_story)
+
+        normalized_subtasks_all: list[dict] = []
+        story_keys = sorted(story_to_epic.keys())
+        if story_keys:
+            subtask_issues_all = _fetch_subtask_issues_for_stories(
+                session,
+                story_keys,
+                fields,
+                project_keys=selected_projects,
+            )
+            for issue in subtask_issues_all:
+                normalized_subtask = _normalize_pvd_issue(issue, start_field_id, end_field_ids, issue_kind_override="subtask")
+                story_key = _to_text(normalized_subtask.get("parent_key")).upper()
+                epic_key = story_to_epic.get(story_key, "")
+                if not epic_key:
+                    continue
+                normalized_subtask["story_key"] = story_key
+                normalized_subtask["epic_key"] = epic_key
+                normalized_subtasks_all.append(normalized_subtask)
+                if _issue_overlaps_range(normalized_subtask["planned_start"], normalized_subtask["planned_due"], from_date, to_date):
+                    scoped_epic_keys.add(epic_key)
+
+        preloaded_epics = {
+            key: item for key, item in all_epics.items()
+            if key in scoped_epic_keys
+        }
+        if scoped_epic_keys:
+            preloaded_stories = [
+                item for item in normalized_stories_all
+                if _to_text(item.get("epic_key")).upper() in scoped_epic_keys
+            ]
+            preloaded_subtasks = [
+                item for item in normalized_subtasks_all
+                if _to_text(item.get("epic_key")).upper() in scoped_epic_keys
+            ]
+            can_reuse_preloaded_children = True
     else:
         log_jql = (
             f'{prefix}issueType in subTaskIssueTypes() '
@@ -9312,34 +10611,53 @@ def _load_planned_vs_dispensed_hierarchy(
             normalized = _normalize_pvd_issue(issue, start_field_id, end_field_ids, issue_kind_override="epic")
             scoped_epics[normalized["issue_key"]] = normalized
 
-    story_issues = _fetch_story_issues_for_epics(session, list(scoped_epics.keys()), fields, project_keys=selected_projects)
     stories: list[dict] = []
     story_to_epic: dict[str, str] = {}
     valid_epic_keys = set(scoped_epics.keys())
-    for issue in story_issues:
-        normalized = _normalize_pvd_issue(issue, start_field_id, end_field_ids, issue_kind_override="story")
-        story_fields = issue.get("fields", {}) or {}
-        epic_key = _resolve_epic_key_for_story(story_fields, valid_epic_keys) or normalized["epic_key_candidate"]
-        epic_key = _to_text(epic_key).upper()
-        if not epic_key or epic_key not in valid_epic_keys:
-            continue
-        normalized["epic_key"] = epic_key
-        story_to_epic[normalized["issue_key"]] = epic_key
-        stories.append(normalized)
+    if can_reuse_preloaded_children and not missing_epics:
+        for item in preloaded_stories:
+            story_key = _to_text(item.get("issue_key")).upper()
+            epic_key = _to_text(item.get("epic_key")).upper()
+            if not story_key or not epic_key or epic_key not in valid_epic_keys:
+                continue
+            story_to_epic[story_key] = epic_key
+            stories.append(item)
+    else:
+        story_issues = _fetch_story_issues_for_epics(session, list(scoped_epics.keys()), fields, project_keys=selected_projects)
+        for issue in story_issues:
+            normalized = _normalize_pvd_issue(issue, start_field_id, end_field_ids, issue_kind_override="story")
+            story_fields = issue.get("fields", {}) or {}
+            epic_key = _resolve_epic_key_for_story(story_fields, valid_epic_keys) or normalized["epic_key_candidate"]
+            epic_key = _to_text(epic_key).upper()
+            if not epic_key or epic_key not in valid_epic_keys:
+                continue
+            normalized["epic_key"] = epic_key
+            story_to_epic[normalized["issue_key"]] = epic_key
+            stories.append(normalized)
 
     subtasks: list[dict] = []
-    story_keys = sorted(story_to_epic.keys())
-    if story_keys:
-        subtask_issues = _fetch_subtask_issues_for_stories(session, story_keys, fields, project_keys=selected_projects)
-        for issue in subtask_issues:
-            normalized = _normalize_pvd_issue(issue, start_field_id, end_field_ids, issue_kind_override="subtask")
-            story_key = _to_text(normalized.get("parent_key")).upper()
-            epic_key = story_to_epic.get(story_key, "")
-            if not epic_key:
+    if can_reuse_preloaded_children and not missing_epics:
+        for item in preloaded_subtasks:
+            story_key = _to_text(item.get("story_key")).upper()
+            epic_key = _to_text(item.get("epic_key")).upper()
+            if not story_key or not epic_key:
                 continue
-            normalized["story_key"] = story_key
-            normalized["epic_key"] = epic_key
-            subtasks.append(normalized)
+            if story_to_epic.get(story_key) != epic_key:
+                continue
+            subtasks.append(item)
+    else:
+        story_keys = sorted(story_to_epic.keys())
+        if story_keys:
+            subtask_issues = _fetch_subtask_issues_for_stories(session, story_keys, fields, project_keys=selected_projects)
+            for issue in subtask_issues:
+                normalized = _normalize_pvd_issue(issue, start_field_id, end_field_ids, issue_kind_override="subtask")
+                story_key = _to_text(normalized.get("parent_key")).upper()
+                epic_key = story_to_epic.get(story_key, "")
+                if not epic_key:
+                    continue
+                normalized["story_key"] = story_key
+                normalized["epic_key"] = epic_key
+                subtasks.append(normalized)
 
     return {
         "start_field_id": start_field_id,
@@ -9976,12 +11294,14 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
     capacity_paths = _resolve_capacity_runtime_paths(base_dir)
     _init_capacity_db(capacity_paths["db_path"])
     _init_performance_settings_db(capacity_paths["db_path"])
+    _init_epf_refresh_db(capacity_paths["db_path"])
     _init_dashboard_risk_settings_db(capacity_paths["db_path"])
     init_report_entities_db(capacity_paths["db_path"])
     init_manage_fields_db(capacity_paths["db_path"])
     init_managed_projects_db(capacity_paths["db_path"])
     _init_page_categories_db(capacity_paths["db_path"])
     pactv_init_db(capacity_paths["db_path"])
+    _init_missed_entries_refresh_db(capacity_paths["db_path"])
     default_project_keys = parse_project_keys_from_env()
 
     def _resolve_seed_project_name(project_key: str) -> str:
@@ -10001,10 +11321,14 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             pass
     refresh_lock = threading.Lock()
     actual_hours_cache: dict[tuple[object, ...], dict[str, object]] = {}
-    pvd_response_cache_version = "v8"
+    pvd_response_cache_version = "v9"
     pactv_jobs_lock = threading.Lock()
     pactv_active_scopes: set[str] = set()
     pactv_pending_by_scope: dict[str, list[dict[str, object]]] = {}
+    epf_jobs_lock = threading.Lock()
+    epf_runtime_state: dict[str, str] = {"active_run_id": ""}
+    me_jobs_lock = threading.Lock()
+    me_runtime_state: dict[str, str] = {"active_run_id": ""}
 
     def _request_roles() -> set[str]:
         direct = _to_text(request.headers.get("X-Role"))
@@ -10540,6 +11864,34 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         finally:
             conn.close()
 
+    def _migrate_report_page_renames(db_path: Path) -> None:
+        _init_page_categories_db(db_path)
+        _init_global_report_date_filter_db(db_path)
+        conn = sqlite3.connect(db_path)
+        try:
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO page_category_assignments(
+                    page_key, page_type, category_id, created_at_utc, updated_at_utc
+                )
+                SELECT ?, page_type, category_id, created_at_utc, updated_at_utc
+                FROM page_category_assignments
+                WHERE page_key = ?
+                """,
+                (CANONICAL_PVD_PAGE_KEY, LEGACY_PVD_PAGE_KEY),
+            )
+            conn.execute(
+                "DELETE FROM page_category_assignments WHERE page_key = ?",
+                (LEGACY_PVD_PAGE_KEY,),
+            )
+            conn.execute(
+                "UPDATE global_report_date_filters SET source_page = ? WHERE source_page = ?",
+                (CANONICAL_PVD_PAGE_KEY, LEGACY_PVD_PAGE_KEY),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
     def _init_pvd_ui_settings_db(db_path: Path) -> None:
         conn = sqlite3.connect(db_path)
         try:
@@ -10611,6 +11963,671 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             conn.close()
         return {"first_column_width_px": width_px, "updated_at_utc": updated_at}
 
+    def _init_original_estimates_db(db_path: Path) -> None:
+        conn = sqlite3.connect(db_path)
+        try:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS oeh_epics (
+                    epic_key TEXT PRIMARY KEY,
+                    project_key TEXT NOT NULL DEFAULT '',
+                    project_name TEXT NOT NULL DEFAULT '',
+                    summary TEXT NOT NULL DEFAULT '',
+                    status TEXT NOT NULL DEFAULT '',
+                    assignee TEXT NOT NULL DEFAULT '',
+                    jira_url TEXT NOT NULL DEFAULT '',
+                    planned_start TEXT NOT NULL DEFAULT '',
+                    planned_due TEXT NOT NULL DEFAULT '',
+                    original_estimate_hours REAL NOT NULL DEFAULT 0,
+                    updated_at_utc TEXT NOT NULL DEFAULT ''
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS oeh_stories (
+                    story_key TEXT PRIMARY KEY,
+                    epic_key TEXT NOT NULL,
+                    project_key TEXT NOT NULL DEFAULT '',
+                    project_name TEXT NOT NULL DEFAULT '',
+                    summary TEXT NOT NULL DEFAULT '',
+                    status TEXT NOT NULL DEFAULT '',
+                    assignee TEXT NOT NULL DEFAULT '',
+                    jira_url TEXT NOT NULL DEFAULT '',
+                    planned_start TEXT NOT NULL DEFAULT '',
+                    planned_due TEXT NOT NULL DEFAULT '',
+                    original_estimate_hours REAL NOT NULL DEFAULT 0,
+                    updated_at_utc TEXT NOT NULL DEFAULT ''
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS oeh_subtasks (
+                    subtask_key TEXT PRIMARY KEY,
+                    story_key TEXT NOT NULL,
+                    epic_key TEXT NOT NULL,
+                    project_key TEXT NOT NULL DEFAULT '',
+                    project_name TEXT NOT NULL DEFAULT '',
+                    summary TEXT NOT NULL DEFAULT '',
+                    status TEXT NOT NULL DEFAULT '',
+                    assignee TEXT NOT NULL DEFAULT '',
+                    jira_url TEXT NOT NULL DEFAULT '',
+                    planned_start TEXT NOT NULL DEFAULT '',
+                    planned_due TEXT NOT NULL DEFAULT '',
+                    original_estimate_hours REAL NOT NULL DEFAULT 0,
+                    updated_at_utc TEXT NOT NULL DEFAULT ''
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS oeh_sync_runs (
+                    run_id TEXT PRIMARY KEY,
+                    scope TEXT NOT NULL DEFAULT '',
+                    target_epic_key TEXT NOT NULL DEFAULT '',
+                    status TEXT NOT NULL DEFAULT '',
+                    stats_json TEXT NOT NULL DEFAULT '{}',
+                    error_message TEXT NOT NULL DEFAULT '',
+                    started_at_utc TEXT NOT NULL DEFAULT '',
+                    finished_at_utc TEXT NOT NULL DEFAULT ''
+                )
+                """
+            )
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_oeh_epics_project ON oeh_epics(project_key)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_oeh_epics_status ON oeh_epics(status)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_oeh_epics_assignee ON oeh_epics(assignee)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_oeh_stories_epic ON oeh_stories(epic_key)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_oeh_stories_project ON oeh_stories(project_key)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_oeh_stories_status ON oeh_stories(status)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_oeh_stories_assignee ON oeh_stories(assignee)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_oeh_subtasks_story ON oeh_subtasks(story_key)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_oeh_subtasks_epic ON oeh_subtasks(epic_key)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_oeh_subtasks_project ON oeh_subtasks(project_key)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_oeh_subtasks_status ON oeh_subtasks(status)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_oeh_subtasks_assignee ON oeh_subtasks(assignee)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_oeh_sync_runs_started ON oeh_sync_runs(started_at_utc DESC)")
+            conn.commit()
+        finally:
+            conn.close()
+
+    def _oeh_parse_csv_set(raw_value: str, *, lower: bool = False, upper: bool = False) -> set[str]:
+        values = set()
+        for item in _to_text(raw_value).split(","):
+            value = _to_text(item)
+            if not value:
+                continue
+            if lower:
+                value = value.lower()
+            if upper:
+                value = value.upper()
+            values.add(value)
+        return values
+
+    def _oeh_issue_from_normalized(item: dict, issue_key_key: str) -> dict[str, object]:
+        issue_key = _to_text(item.get(issue_key_key)).upper()
+        return {
+            "issue_key": issue_key,
+            "project_key": _to_text(item.get("project_key")).upper(),
+            "project_name": _to_text(item.get("project_name")),
+            "summary": _to_text(item.get("summary")),
+            "status": _to_text(item.get("status")),
+            "assignee": _to_text(item.get("assignee")) or "Unassigned",
+            "jira_url": _to_text(item.get("jira_url")) or _jira_browse_url(issue_key),
+            "planned_start": _to_text(item.get("planned_start")),
+            "planned_due": _to_text(item.get("planned_due")),
+            "original_estimate_hours": _round_hours(float(item.get("estimate_hours") or 0.0)),
+        }
+
+    def _oeh_insert_sync_run(
+        scope: str,
+        target_epic_key: str,
+        status: str,
+        stats: dict[str, object] | None = None,
+        error_message: str = "",
+    ) -> str:
+        run_id = uuid.uuid4().hex
+        now_utc = _utc_now_iso_z()
+        with sqlite3.connect(capacity_paths["db_path"]) as conn:
+            conn.execute(
+                """
+                INSERT INTO oeh_sync_runs (
+                    run_id, scope, target_epic_key, status, stats_json, error_message, started_at_utc, finished_at_utc
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    run_id,
+                    _to_text(scope),
+                    _to_text(target_epic_key).upper(),
+                    _to_text(status),
+                    json.dumps(stats or {}, ensure_ascii=True, separators=(",", ":")),
+                    _to_text(error_message),
+                    now_utc,
+                    now_utc,
+                ),
+            )
+            conn.commit()
+        return run_id
+
+    def _oeh_replace_all(epics: list[dict], stories: list[dict], subtasks: list[dict]) -> None:
+        now_utc = _utc_now_iso_z()
+        with sqlite3.connect(capacity_paths["db_path"]) as conn:
+            conn.execute("DELETE FROM oeh_subtasks")
+            conn.execute("DELETE FROM oeh_stories")
+            conn.execute("DELETE FROM oeh_epics")
+            for item in epics:
+                row = _oeh_issue_from_normalized(item, "issue_key")
+                conn.execute(
+                    """
+                    INSERT INTO oeh_epics (
+                        epic_key, project_key, project_name, summary, status, assignee, jira_url,
+                        planned_start, planned_due, original_estimate_hours, updated_at_utc
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        row["issue_key"],
+                        row["project_key"],
+                        row["project_name"],
+                        row["summary"],
+                        row["status"],
+                        row["assignee"],
+                        row["jira_url"],
+                        row["planned_start"],
+                        row["planned_due"],
+                        float(row["original_estimate_hours"] or 0.0),
+                        now_utc,
+                    ),
+                )
+            for item in stories:
+                row = _oeh_issue_from_normalized(item, "issue_key")
+                conn.execute(
+                    """
+                    INSERT INTO oeh_stories (
+                        story_key, epic_key, project_key, project_name, summary, status, assignee, jira_url,
+                        planned_start, planned_due, original_estimate_hours, updated_at_utc
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        row["issue_key"],
+                        _to_text(item.get("epic_key")).upper(),
+                        row["project_key"],
+                        row["project_name"],
+                        row["summary"],
+                        row["status"],
+                        row["assignee"],
+                        row["jira_url"],
+                        row["planned_start"],
+                        row["planned_due"],
+                        float(row["original_estimate_hours"] or 0.0),
+                        now_utc,
+                    ),
+                )
+            for item in subtasks:
+                row = _oeh_issue_from_normalized(item, "issue_key")
+                conn.execute(
+                    """
+                    INSERT INTO oeh_subtasks (
+                        subtask_key, story_key, epic_key, project_key, project_name, summary, status, assignee, jira_url,
+                        planned_start, planned_due, original_estimate_hours, updated_at_utc
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        row["issue_key"],
+                        _to_text(item.get("story_key")).upper(),
+                        _to_text(item.get("epic_key")).upper(),
+                        row["project_key"],
+                        row["project_name"],
+                        row["summary"],
+                        row["status"],
+                        row["assignee"],
+                        row["jira_url"],
+                        row["planned_start"],
+                        row["planned_due"],
+                        float(row["original_estimate_hours"] or 0.0),
+                        now_utc,
+                    ),
+                )
+            conn.commit()
+
+    def _oeh_upsert_epic_subtree(epic: dict, stories: list[dict], subtasks: list[dict]) -> None:
+        now_utc = _utc_now_iso_z()
+        epic_key = _to_text(epic.get("issue_key")).upper()
+        if not epic_key:
+            raise ValueError("Invalid epic payload: missing issue key.")
+        story_keys = sorted({_to_text(item.get("issue_key")).upper() for item in stories if _to_text(item.get("issue_key"))})
+        subtask_keys = sorted({_to_text(item.get("issue_key")).upper() for item in subtasks if _to_text(item.get("issue_key"))})
+        with sqlite3.connect(capacity_paths["db_path"]) as conn:
+            if story_keys:
+                placeholders = ",".join("?" for _ in story_keys)
+                conn.execute(
+                    f"DELETE FROM oeh_stories WHERE epic_key=? AND story_key NOT IN ({placeholders})",
+                    [epic_key, *story_keys],
+                )
+            else:
+                conn.execute("DELETE FROM oeh_stories WHERE epic_key=?", (epic_key,))
+            if subtask_keys:
+                placeholders = ",".join("?" for _ in subtask_keys)
+                conn.execute(
+                    f"DELETE FROM oeh_subtasks WHERE epic_key=? AND subtask_key NOT IN ({placeholders})",
+                    [epic_key, *subtask_keys],
+                )
+            else:
+                conn.execute("DELETE FROM oeh_subtasks WHERE epic_key=?", (epic_key,))
+
+            epic_row = _oeh_issue_from_normalized(epic, "issue_key")
+            conn.execute(
+                """
+                INSERT INTO oeh_epics (
+                    epic_key, project_key, project_name, summary, status, assignee, jira_url,
+                    planned_start, planned_due, original_estimate_hours, updated_at_utc
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(epic_key) DO UPDATE SET
+                    project_key=excluded.project_key,
+                    project_name=excluded.project_name,
+                    summary=excluded.summary,
+                    status=excluded.status,
+                    assignee=excluded.assignee,
+                    jira_url=excluded.jira_url,
+                    planned_start=excluded.planned_start,
+                    planned_due=excluded.planned_due,
+                    original_estimate_hours=excluded.original_estimate_hours,
+                    updated_at_utc=excluded.updated_at_utc
+                """,
+                (
+                    epic_row["issue_key"],
+                    epic_row["project_key"],
+                    epic_row["project_name"],
+                    epic_row["summary"],
+                    epic_row["status"],
+                    epic_row["assignee"],
+                    epic_row["jira_url"],
+                    epic_row["planned_start"],
+                    epic_row["planned_due"],
+                    float(epic_row["original_estimate_hours"] or 0.0),
+                    now_utc,
+                ),
+            )
+            for item in stories:
+                row = _oeh_issue_from_normalized(item, "issue_key")
+                conn.execute(
+                    """
+                    INSERT INTO oeh_stories (
+                        story_key, epic_key, project_key, project_name, summary, status, assignee, jira_url,
+                        planned_start, planned_due, original_estimate_hours, updated_at_utc
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(story_key) DO UPDATE SET
+                        epic_key=excluded.epic_key,
+                        project_key=excluded.project_key,
+                        project_name=excluded.project_name,
+                        summary=excluded.summary,
+                        status=excluded.status,
+                        assignee=excluded.assignee,
+                        jira_url=excluded.jira_url,
+                        planned_start=excluded.planned_start,
+                        planned_due=excluded.planned_due,
+                        original_estimate_hours=excluded.original_estimate_hours,
+                        updated_at_utc=excluded.updated_at_utc
+                    """,
+                    (
+                        row["issue_key"],
+                        epic_key,
+                        row["project_key"],
+                        row["project_name"],
+                        row["summary"],
+                        row["status"],
+                        row["assignee"],
+                        row["jira_url"],
+                        row["planned_start"],
+                        row["planned_due"],
+                        float(row["original_estimate_hours"] or 0.0),
+                        now_utc,
+                    ),
+                )
+            for item in subtasks:
+                row = _oeh_issue_from_normalized(item, "issue_key")
+                conn.execute(
+                    """
+                    INSERT INTO oeh_subtasks (
+                        subtask_key, story_key, epic_key, project_key, project_name, summary, status, assignee, jira_url,
+                        planned_start, planned_due, original_estimate_hours, updated_at_utc
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(subtask_key) DO UPDATE SET
+                        story_key=excluded.story_key,
+                        epic_key=excluded.epic_key,
+                        project_key=excluded.project_key,
+                        project_name=excluded.project_name,
+                        summary=excluded.summary,
+                        status=excluded.status,
+                        assignee=excluded.assignee,
+                        jira_url=excluded.jira_url,
+                        planned_start=excluded.planned_start,
+                        planned_due=excluded.planned_due,
+                        original_estimate_hours=excluded.original_estimate_hours,
+                        updated_at_utc=excluded.updated_at_utc
+                    """,
+                    (
+                        row["issue_key"],
+                        _to_text(item.get("story_key")).upper(),
+                        epic_key,
+                        row["project_key"],
+                        row["project_name"],
+                        row["summary"],
+                        row["status"],
+                        row["assignee"],
+                        row["jira_url"],
+                        row["planned_start"],
+                        row["planned_due"],
+                        float(row["original_estimate_hours"] or 0.0),
+                        now_utc,
+                    ),
+                )
+            conn.commit()
+
+    def _oeh_fetch_epic_subtree(
+        session,
+        epic_key: str,
+        from_date: date,
+        to_date: date,
+    ) -> tuple[dict, list[dict], list[dict]]:
+        key = _to_text(epic_key).upper()
+        if not key:
+            raise ValueError("epic_key is required.")
+        start_field_id = resolve_jira_start_date_field_id(session, BASE_URL, project_keys=None)
+        end_field_ids = resolve_jira_end_date_field_ids(session, BASE_URL, project_keys=None)
+        if "duedate" not in end_field_ids:
+            end_field_ids.append("duedate")
+        fields = _planned_vs_dispensed_issue_fields(start_field_id, end_field_ids)
+        epic_issues = _fetch_jira_issues_by_keys(session, [key], fields)
+        if not epic_issues:
+            raise LookupError(f"Epic '{key}' not found in Jira.")
+        epic = _normalize_pvd_issue(epic_issues[0], start_field_id, end_field_ids, issue_kind_override="epic")
+        if not _issue_overlaps_range(_to_text(epic.get("planned_start")), _to_text(epic.get("planned_due")), from_date, to_date):
+            raise ValueError(f"Epic '{key}' is outside selected date range.")
+        # Refreshing an epic must include all currently linked descendants,
+        # even when Jira child issues live in a different project key.
+        stories_raw = _fetch_story_issues_for_epics(session, [key], fields, project_keys=None)
+        stories: list[dict] = []
+        story_to_epic: dict[str, str] = {}
+        for issue in stories_raw:
+            normalized = _normalize_pvd_issue(issue, start_field_id, end_field_ids, issue_kind_override="story")
+            story_fields = issue.get("fields", {}) or {}
+            linked_epic = _resolve_epic_key_for_story(story_fields, {key}) or _to_text(normalized.get("epic_key_candidate")).upper()
+            if linked_epic != key:
+                continue
+            normalized["epic_key"] = key
+            story_to_epic[_to_text(normalized.get("issue_key")).upper()] = key
+            stories.append(normalized)
+        story_keys = sorted(story_to_epic.keys())
+        subtasks: list[dict] = []
+        if story_keys:
+            subtasks_raw = _fetch_subtask_issues_for_stories(session, story_keys, fields, project_keys=None)
+            for issue in subtasks_raw:
+                normalized = _normalize_pvd_issue(issue, start_field_id, end_field_ids, issue_kind_override="subtask")
+                story_key = _to_text(normalized.get("parent_key")).upper()
+                if story_key not in story_to_epic:
+                    continue
+                normalized["story_key"] = story_key
+                normalized["epic_key"] = key
+                subtasks.append(normalized)
+        return epic, stories, subtasks
+
+    def _oeh_filters_from_request(args) -> tuple[date, date, set[str], set[str], set[str], set[str]]:
+        from_raw, to_raw = _resolve_effective_range_from_request(args)
+        from_date = _parse_iso_date(from_raw)
+        to_date = _parse_iso_date(to_raw)
+        if from_date is None or to_date is None:
+            raise ValueError("Invalid date format. Expected YYYY-MM-DD.")
+        projects = _oeh_parse_csv_set(_to_text(args.get("projects")), upper=True)
+        statuses = _oeh_parse_csv_set(_to_text(args.get("statuses")), lower=True)
+        assignees = _oeh_parse_csv_set(_to_text(args.get("assignees")), lower=True)
+        default_scope, managed_project_keys, default_selected_projects = _managed_project_scope_defaults()
+        selected_projects = set(projects or default_scope)
+        return from_date, to_date, selected_projects, statuses, assignees, set(default_selected_projects or managed_project_keys or [])
+
+    def _oeh_filters_from_payload(payload: object) -> tuple[date, date, set[str]]:
+        raw = payload if isinstance(payload, dict) else {}
+        from_raw = _to_text(raw.get("from"))
+        to_raw = _to_text(raw.get("to"))
+        if from_raw and to_raw:
+            from_date = _parse_iso_date(from_raw)
+            to_date = _parse_iso_date(to_raw)
+            if from_date is None or to_date is None or to_date < from_date:
+                raise ValueError("Invalid 'from'/'to' date range. Expected YYYY-MM-DD.")
+        else:
+            latest = _load_latest_global_report_date_filter(capacity_paths["db_path"])
+            if latest:
+                from_date = _parse_iso_date(_to_text(latest.get("from_date")))
+                to_date = _parse_iso_date(_to_text(latest.get("to_date")))
+            else:
+                today = datetime.now(timezone.utc).date()
+                from_date = today - timedelta(days=30)
+                to_date = today
+        if from_date is None or to_date is None:
+            raise ValueError("Unable to resolve date range.")
+        selected_projects = set(
+            _to_text(item).upper()
+            for item in (raw.get("projects") or [])
+            if _to_text(item)
+        )
+        if not selected_projects:
+            default_scope, _managed_keys, _defaults = _managed_project_scope_defaults()
+            selected_projects = set(default_scope)
+        return from_date, to_date, selected_projects
+
+    def _oeh_filter_item(
+        item: dict,
+        from_date: date,
+        to_date: date,
+        statuses: set[str],
+        assignees: set[str],
+        *,
+        apply_date_range: bool = True,
+    ) -> bool:
+        if statuses and _to_text(item.get("status")).lower() not in statuses:
+            return False
+        if assignees and _to_text(item.get("assignee")).lower() not in assignees:
+            return False
+        if apply_date_range and not _issue_overlaps_range(
+            _to_text(item.get("planned_start")),
+            _to_text(item.get("planned_due")),
+            from_date,
+            to_date,
+        ):
+            return False
+        return True
+
+    def _oeh_load_summary(
+        from_date: date,
+        to_date: date,
+        selected_projects: set[str],
+        selected_statuses: set[str],
+        selected_assignees: set[str],
+    ) -> dict[str, object]:
+        _init_original_estimates_db(capacity_paths["db_path"])
+        conn = sqlite3.connect(capacity_paths["db_path"])
+        conn.row_factory = sqlite3.Row
+        try:
+            epic_rows = conn.execute("SELECT * FROM oeh_epics").fetchall()
+            story_rows = conn.execute("SELECT * FROM oeh_stories").fetchall()
+            subtask_rows = conn.execute("SELECT * FROM oeh_subtasks").fetchall()
+            latest_row = conn.execute(
+                """
+                SELECT MAX(updated_at_utc) AS latest FROM (
+                    SELECT updated_at_utc FROM oeh_epics
+                    UNION ALL SELECT updated_at_utc FROM oeh_stories
+                    UNION ALL SELECT updated_at_utc FROM oeh_subtasks
+                )
+                """
+            ).fetchone()
+        finally:
+            conn.close()
+
+        def _epic_from_row(row: sqlite3.Row) -> dict[str, object]:
+            key = _to_text(row["epic_key"]).upper()
+            return {
+                "issue_key": key,
+                "project_key": _to_text(row["project_key"]).upper(),
+                "project_name": _to_text(row["project_name"]),
+                "summary": _to_text(row["summary"]),
+                "status": _to_text(row["status"]),
+                "assignee": _to_text(row["assignee"]) or "Unassigned",
+                "jira_url": _to_text(row["jira_url"]) or _jira_browse_url(key),
+                "planned_start": _to_text(row["planned_start"]),
+                "planned_due": _to_text(row["planned_due"]),
+                "original_estimate_hours": _round_hours(float(row["original_estimate_hours"] or 0.0)),
+            }
+
+        def _story_from_row(row: sqlite3.Row) -> dict[str, object]:
+            key = _to_text(row["story_key"]).upper()
+            return {
+                "issue_key": key,
+                "epic_key": _to_text(row["epic_key"]).upper(),
+                "project_key": _to_text(row["project_key"]).upper(),
+                "project_name": _to_text(row["project_name"]),
+                "summary": _to_text(row["summary"]),
+                "status": _to_text(row["status"]),
+                "assignee": _to_text(row["assignee"]) or "Unassigned",
+                "jira_url": _to_text(row["jira_url"]) or _jira_browse_url(key),
+                "planned_start": _to_text(row["planned_start"]),
+                "planned_due": _to_text(row["planned_due"]),
+                "original_estimate_hours": _round_hours(float(row["original_estimate_hours"] or 0.0)),
+            }
+
+        def _subtask_from_row(row: sqlite3.Row) -> dict[str, object]:
+            key = _to_text(row["subtask_key"]).upper()
+            return {
+                "issue_key": key,
+                "story_key": _to_text(row["story_key"]).upper(),
+                "epic_key": _to_text(row["epic_key"]).upper(),
+                "project_key": _to_text(row["project_key"]).upper(),
+                "project_name": _to_text(row["project_name"]),
+                "summary": _to_text(row["summary"]),
+                "status": _to_text(row["status"]),
+                "assignee": _to_text(row["assignee"]) or "Unassigned",
+                "jira_url": _to_text(row["jira_url"]) or _jira_browse_url(key),
+                "planned_start": _to_text(row["planned_start"]),
+                "planned_due": _to_text(row["planned_due"]),
+                "original_estimate_hours": _round_hours(float(row["original_estimate_hours"] or 0.0)),
+            }
+
+        epics = [_epic_from_row(row) for row in epic_rows]
+        stories = [_story_from_row(row) for row in story_rows]
+        subtasks = [_subtask_from_row(row) for row in subtask_rows]
+        if selected_projects:
+            allowed = {_to_text(item).upper() for item in selected_projects}
+            epics = [item for item in epics if _to_text(item.get("project_key")).upper() in allowed]
+            stories = [item for item in stories if _to_text(item.get("project_key")).upper() in allowed]
+            subtasks = [item for item in subtasks if _to_text(item.get("project_key")).upper() in allowed]
+
+        stories_by_epic: dict[str, list[dict]] = defaultdict(list)
+        subtasks_by_story: dict[str, list[dict]] = defaultdict(list)
+        for story in stories:
+            stories_by_epic[_to_text(story.get("epic_key")).upper()].append(story)
+        for subtask in subtasks:
+            subtasks_by_story[_to_text(subtask.get("story_key")).upper()].append(subtask)
+
+        out_epics: list[dict[str, object]] = []
+        total_original = 0.0
+        total_sum = 0.0
+        statuses = sorted({
+            _to_text(item.get("status"))
+            for item in (epics + stories + subtasks)
+            if _to_text(item.get("status"))
+        })
+        assignees = sorted({
+            _to_text(item.get("assignee"))
+            for item in (epics + stories + subtasks)
+            if _to_text(item.get("assignee"))
+        })
+        project_options_raw: dict[str, str] = {}
+        for item in epics + stories + subtasks:
+            key = _to_text(item.get("project_key")).upper()
+            if not key:
+                continue
+            project_options_raw[key] = _to_text(item.get("project_name")) or key
+
+        for epic in sorted(epics, key=lambda item: (_to_text(item.get("summary")).lower(), _to_text(item.get("issue_key")))):
+            epic_key = _to_text(epic.get("issue_key")).upper()
+            raw_stories = sorted(stories_by_epic.get(epic_key, []), key=lambda item: (_to_text(item.get("summary")).lower(), _to_text(item.get("issue_key"))))
+            story_out: list[dict[str, object]] = []
+            has_descendant = False
+            for story in raw_stories:
+                story_key = _to_text(story.get("issue_key")).upper()
+                raw_subtasks = sorted(subtasks_by_story.get(story_key, []), key=lambda item: (_to_text(item.get("summary")).lower(), _to_text(item.get("issue_key"))))
+                subtask_out = [
+                    subtask for subtask in raw_subtasks
+                    if _oeh_filter_item(
+                        subtask,
+                        from_date,
+                        to_date,
+                        selected_statuses,
+                        selected_assignees,
+                        apply_date_range=False,
+                    )
+                ]
+                story_matches = _oeh_filter_item(
+                    story,
+                    from_date,
+                    to_date,
+                    selected_statuses,
+                    selected_assignees,
+                    apply_date_range=False,
+                )
+                if not story_matches and not subtask_out:
+                    continue
+                has_descendant = has_descendant or bool(subtask_out)
+                story_sum = _round_hours(sum(float(item.get("original_estimate_hours") or 0.0) for item in subtask_out))
+                story_out.append(
+                    {
+                        **story,
+                        "sum_original_estimate_hours": story_sum,
+                        "subtasks": [
+                            {
+                                **subtask,
+                                "sum_original_estimate_hours": 0.0,
+                            }
+                            for subtask in subtask_out
+                        ],
+                    }
+                )
+            epic_matches = _oeh_filter_item(epic, from_date, to_date, selected_statuses, selected_assignees)
+            if not epic_matches and not story_out and not has_descendant:
+                continue
+            epic_sum = _round_hours(sum(float(item.get("original_estimate_hours") or 0.0) for item in story_out))
+            out_epics.append(
+                {
+                    **epic,
+                    "sum_original_estimate_hours": epic_sum,
+                    "stories": story_out,
+                }
+            )
+            total_original += float(epic.get("original_estimate_hours") or 0.0)
+            total_sum += epic_sum
+
+        project_options = [
+            {"project_key": key, "project_name": name}
+            for key, name in sorted(project_options_raw.items(), key=lambda item: item[0])
+        ]
+        return {
+            "ok": True,
+            "from_date": from_date.isoformat(),
+            "to_date": to_date.isoformat(),
+            "totals": {
+                "epic_count": len(out_epics),
+                "total_original_estimate_hours": _round_hours(total_original),
+                "total_sum_original_estimate_hours": _round_hours(total_sum),
+            },
+            "filter_options": {
+                "projects": [item["project_key"] for item in project_options],
+                "project_options": project_options,
+                "statuses": statuses,
+                "assignees": assignees,
+            },
+            "selected_projects": sorted(selected_projects),
+            "updated_at_utc": _to_text(latest_row["latest"]) if latest_row and "latest" in latest_row.keys() else "",
+            "epics": out_epics,
+        }
+
     def _load_latest_global_report_date_filter(db_path: Path) -> dict[str, str] | None:
         _init_global_report_date_filter_db(db_path)
         conn = sqlite3.connect(db_path)
@@ -10637,7 +12654,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         return {
             "from_date": from_parsed.isoformat(),
             "to_date": to_parsed.isoformat(),
-            "source_page": _to_text(row["source_page"]),
+            "source_page": _canonical_page_key(row["source_page"]),
             "updated_at_utc": _to_text(row["created_at_utc"]),
         }
 
@@ -10660,7 +12677,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 (
                     from_parsed.isoformat(),
                     to_parsed.isoformat(),
-                    _to_text(source_page),
+                    _canonical_page_key(source_page),
                     created_at,
                 ),
             )
@@ -10670,7 +12687,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         return {
             "from_date": from_parsed.isoformat(),
             "to_date": to_parsed.isoformat(),
-            "source_page": _to_text(source_page),
+            "source_page": _canonical_page_key(source_page),
             "updated_at_utc": created_at,
         }
 
@@ -10699,6 +12716,8 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
 
     _init_global_report_date_filter_db(capacity_paths["db_path"])
     _init_pvd_ui_settings_db(capacity_paths["db_path"])
+    _init_original_estimates_db(capacity_paths["db_path"])
+    _migrate_report_page_renames(capacity_paths["db_path"])
 
     @app.after_request
     def add_cors_headers(response):
@@ -10706,7 +12725,12 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         response.headers["Access-Control-Allow-Headers"] = "Content-Type"
         response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
         req_path = _to_text(getattr(request, "path", ""))
-        if req_path.startswith("/api/planned-vs-dispensed/") or req_path.startswith("/api/planned-actual-table-view/"):
+        if (
+            req_path.startswith(f"{LEGACY_PVD_API_PREFIX}/")
+            or req_path.startswith(f"{CANONICAL_PVD_API_PREFIX}/")
+            or req_path.startswith("/api/planned-actual-table-view/")
+            or req_path.startswith("/api/original-estimates/")
+        ):
             response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
             response.headers["Pragma"] = "no-cache"
             response.headers["Expires"] = "0"
@@ -10744,12 +12768,339 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             + "</body></html>"
         )
 
+    def _epf_serialize_run(run_row: dict[str, object] | None) -> dict[str, object]:
+        row = run_row or {}
+        stats_raw = _to_text(row.get("stats_json"))
+        try:
+            stats = json.loads(stats_raw) if stats_raw else {}
+        except Exception:
+            stats = {}
+        return {
+            "run_id": _to_text(row.get("run_id")),
+            "status": _to_text(row.get("status")) or "unknown",
+            "step": _to_text(row.get("progress_step")),
+            "progress": int(row.get("progress_pct") or 0),
+            "cancel_requested": bool(int(row.get("cancel_requested") or 0)),
+            "trigger_source": _to_text(row.get("trigger_source")),
+            "started_at_utc": _to_text(row.get("started_at_utc")),
+            "ended_at_utc": _to_text(row.get("ended_at_utc")),
+            "updated_at_utc": _to_text(row.get("updated_at_utc")),
+            "error": _to_text(row.get("error_message")),
+            "stats": stats if isinstance(stats, dict) else {},
+        }
+
+    def _run_employee_performance_isolated_refresh(
+        assignee_name: str = "",
+        run_id_override: str = "",
+        trigger_source_override: str = "",
+    ) -> tuple[bool, dict[str, object], int]:
+        started = time.perf_counter()
+        run_id = _to_text(run_id_override) or uuid.uuid4().hex
+        run_started_at = _epf_now_utc()
+        target_assignee = _to_text(assignee_name)
+        target_assignee_lower = target_assignee.casefold()
+        is_assignee_refresh = bool(target_assignee)
+        trigger_source = _to_text(trigger_source_override) or ("api_refresh_assignee" if is_assignee_refresh else "api_refresh")
+        with sqlite3.connect(capacity_paths["db_path"]) as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO epf_refresh_runs(
+                    run_id, started_at_utc, ended_at_utc, status, trigger_source, error_message, stats_json,
+                    progress_step, progress_pct, cancel_requested, updated_at_utc
+                )
+                VALUES (?, ?, NULL, 'running', ?, '', '{}', 'initializing', 5, 0, ?)
+                """,
+                (run_id, run_started_at, trigger_source, run_started_at),
+            )
+            conn.commit()
+
+        temp_root_raw = _to_text(os.getenv("EPF_REFRESH_TEMP_DIR"))
+        temp_root: Path | None = None
+        if temp_root_raw:
+            temp_root = Path(temp_root_raw)
+            if not temp_root.is_absolute():
+                temp_root = base_dir / temp_root
+            temp_root.mkdir(parents=True, exist_ok=True)
+
+        def _is_canceled() -> bool:
+            return _epf_is_cancel_requested(capacity_paths["db_path"], run_id)
+
+        def _update_progress(step: str, progress_pct: int) -> None:
+            _epf_update_run_progress(capacity_paths["db_path"], run_id, step, progress_pct)
+
+        def _cancel(step: str, stdout_tail: str = "", stderr_tail: str = "") -> tuple[bool, dict[str, object], int]:
+            duration_sec = round(time.perf_counter() - started, 2)
+            sources = {
+                "work_items": {"refreshed": False, "rows": 0},
+                "worklogs": {"refreshed": False, "rows": 0},
+                "leaves": {"refreshed": False, "rows": 0, "issue_keys": 0},
+            }
+            stats = {
+                "canceled_step": _to_text(step),
+                "duration_sec": duration_sec,
+                "sources": sources,
+                "stdout_tail": stdout_tail,
+                "stderr_tail": stderr_tail,
+            }
+            _epf_mark_run_status(
+                capacity_paths["db_path"],
+                run_id=run_id,
+                status="canceled",
+                error_message=f"Canceled by user during '{step}'. Previous snapshot retained.",
+                stats=stats,
+                activate=False,
+            )
+            _update_progress("canceled", 100)
+            return False, {
+                "ok": False,
+                "report": "employee_performance",
+                "mode": "isolated_latest_db_assignee" if is_assignee_refresh else "isolated_latest_db",
+                "run_id": run_id,
+                "error": f"Canceled by user during '{step}'. Previous snapshot retained.",
+                "duration_sec": duration_sec,
+                "sources": sources,
+                "assignee": target_assignee if is_assignee_refresh else "",
+                "status": "canceled",
+            }, 200
+
+        def _fail(source: str, message: str, stderr_tail: str = "", stdout_tail: str = "", code: int = 500) -> tuple[bool, dict[str, object], int]:
+            duration_sec = round(time.perf_counter() - started, 2)
+            sources = {
+                "work_items": {"refreshed": False, "rows": 0},
+                "worklogs": {"refreshed": False, "rows": 0},
+                "leaves": {"refreshed": False, "rows": 0, "issue_keys": 0},
+            }
+            stats = {
+                "failed_source": source,
+                "duration_sec": duration_sec,
+                "sources": sources,
+                "stdout_tail": stdout_tail,
+                "stderr_tail": stderr_tail,
+            }
+            _epf_mark_run_status(
+                capacity_paths["db_path"],
+                run_id=run_id,
+                status="failed",
+                error_message=message,
+                stats=stats,
+                activate=False,
+            )
+            _update_progress("failed", 100)
+            return False, {
+                "ok": False,
+                "report": "employee_performance",
+                "mode": "isolated_latest_db_assignee" if is_assignee_refresh else "isolated_latest_db",
+                "run_id": run_id,
+                "error": message,
+                "failed_source": source,
+                "duration_sec": duration_sec,
+                "sources": sources,
+                "assignee": target_assignee if is_assignee_refresh else "",
+            }, code
+
+        try:
+            if _is_canceled():
+                return _cancel("initializing")
+            if is_assignee_refresh:
+                _update_progress("preparing_assignee_snapshot", 10)
+                active_run_id = _epf_active_run_id(capacity_paths["db_path"])
+                if not active_run_id:
+                    return _fail(
+                        "assignee_refresh",
+                        "No active snapshot found for assignee-only refresh. Run full refresh first.",
+                        code=400,
+                    )
+                _epf_clone_run_snapshot(capacity_paths["db_path"], active_run_id, run_id)
+
+            with tempfile.TemporaryDirectory(prefix="epf_refresh_", dir=str(temp_root) if temp_root else None) as tmp_dir:
+                tmp_path = Path(tmp_dir)
+                work_items_xlsx = tmp_path / "epf_work_items.xlsx"
+                worklogs_xlsx = tmp_path / "epf_worklogs.xlsx"
+                leave_xlsx = tmp_path / "epf_leave.xlsx"
+
+                common_env = {
+                    "JIRA_INCREMENTAL_DISABLE": "0",
+                    "JIRA_SYNC_DB_PATH": str(base_dir / "jira_sync_cache.db"),
+                }
+
+                _update_progress("fetching_worklogs", 20)
+                code, stdout, stderr = _run_script_interruptible(
+                    "export_jira_subtask_worklogs.py",
+                    base_dir,
+                    env_overrides={**common_env, "JIRA_WORKLOG_XLSX_PATH": str(worklogs_xlsx)},
+                    cancel_check=_is_canceled,
+                )
+                if code == -1:
+                    return _cancel("fetching_worklogs", stdout_tail=_tail(stdout), stderr_tail=_tail(stderr))
+                if code != 0:
+                    return _fail(
+                        "worklogs",
+                        "Worklog refresh failed during isolated employee refresh.",
+                        stderr_tail=_tail(stderr),
+                        stdout_tail=_tail(stdout),
+                    )
+
+                _update_progress("fetching_work_items", 40)
+                code, stdout, stderr = _run_script_interruptible(
+                    "export_jira_work_items.py",
+                    base_dir,
+                    env_overrides={
+                        **common_env,
+                        "JIRA_EXPORT_XLSX_PATH": str(work_items_xlsx),
+                        "JIRA_WORKLOG_XLSX_PATH": str(worklogs_xlsx),
+                    },
+                    cancel_check=_is_canceled,
+                )
+                if code == -1:
+                    return _cancel("fetching_work_items", stdout_tail=_tail(stdout), stderr_tail=_tail(stderr))
+                if code != 0:
+                    return _fail(
+                        "work_items",
+                        "Work-item refresh failed during isolated employee refresh.",
+                        stderr_tail=_tail(stderr),
+                        stdout_tail=_tail(stdout),
+                    )
+
+                _update_progress("fetching_leaves", 60)
+                code, stdout, stderr = _run_script_interruptible(
+                    "generate_rlt_leave_report.py",
+                    base_dir,
+                    extra_args=["--xlsx-out", str(leave_xlsx)],
+                    env_overrides=common_env,
+                    cancel_check=_is_canceled,
+                )
+                if code == -1:
+                    return _cancel("fetching_leaves", stdout_tail=_tail(stdout), stderr_tail=_tail(stderr))
+                if code != 0:
+                    return _fail(
+                        "leaves",
+                        "Leave refresh failed during isolated employee refresh.",
+                        stderr_tail=_tail(stderr),
+                        stdout_tail=_tail(stdout),
+                    )
+
+                _update_progress("loading_data", 75)
+                if _is_canceled():
+                    return _cancel("loading_data")
+                work_items = epf_load_work_items(work_items_xlsx)
+                worklogs = epf_load_worklogs(worklogs_xlsx, work_items)
+                leave_rows = epf_load_unplanned_leave_rows(leave_xlsx)
+                leave_issue_keys = epf_load_leave_issue_keys(leave_xlsx)
+
+                if is_assignee_refresh:
+                    work_items_filtered = {
+                        key: val
+                        for key, val in (work_items or {}).items()
+                        if _to_text((val or {}).get("assignee")).casefold() == target_assignee_lower
+                    }
+                    worklogs_filtered = [
+                        row
+                        for row in (worklogs or [])
+                        if _to_text((row or {}).get("issue_assignee")).casefold() == target_assignee_lower
+                    ]
+                    leave_rows_filtered = [
+                        row
+                        for row in (leave_rows or [])
+                        if _to_text((row or {}).get("assignee")).casefold() == target_assignee_lower
+                    ]
+                    with sqlite3.connect(capacity_paths["db_path"]) as conn:
+                        conn.execute("DELETE FROM epf_work_items WHERE run_id = ? AND lower(assignee) = lower(?)", (run_id, target_assignee))
+                        conn.execute("DELETE FROM epf_worklogs WHERE run_id = ? AND lower(issue_assignee) = lower(?)", (run_id, target_assignee))
+                        conn.execute("DELETE FROM epf_leave_rows WHERE run_id = ? AND lower(assignee) = lower(?)", (run_id, target_assignee))
+                        conn.execute("DELETE FROM epf_leave_issue_keys WHERE run_id = ?", (run_id,))
+                        conn.commit()
+                    counts = _epf_insert_run_data(
+                        capacity_paths["db_path"],
+                        run_id=run_id,
+                        work_items=work_items_filtered,
+                        worklogs=worklogs_filtered,
+                        leave_rows=leave_rows_filtered,
+                        leave_issue_keys=leave_issue_keys,
+                        replace_run=False,
+                    )
+                else:
+                    counts = _epf_insert_run_data(
+                        capacity_paths["db_path"],
+                        run_id=run_id,
+                        work_items=work_items,
+                        worklogs=worklogs,
+                        leave_rows=leave_rows,
+                        leave_issue_keys=leave_issue_keys,
+                    )
+
+            _update_progress("generating_html", 90)
+            if _is_canceled():
+                return _cancel("generating_html")
+            code, stdout, stderr = _run_script_interruptible(
+                "generate_employee_performance_report.py",
+                base_dir,
+                env_overrides={
+                    "JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH": str(capacity_paths["db_path"]),
+                    "JIRA_EMP_PERF_INPUT_SOURCE": "db",
+                    "JIRA_EMP_PERF_RUN_ID": run_id,
+                },
+                cancel_check=_is_canceled,
+            )
+            if code == -1:
+                return _cancel("generating_html", stdout_tail=_tail(stdout), stderr_tail=_tail(stderr))
+            if code != 0:
+                return _fail(
+                    "html_generation",
+                    "Employee performance HTML generation failed from staged DB snapshot.",
+                    stderr_tail=_tail(stderr),
+                    stdout_tail=_tail(stdout),
+                )
+
+            _update_progress("syncing_report_html", 97)
+            if _is_canceled():
+                return _cancel("syncing_report_html")
+            sync_report_html(base_dir, folder_raw)
+            duration_sec = round(time.perf_counter() - started, 2)
+            sources = {
+                "work_items": {"refreshed": True, "rows": int(counts.get("work_items", 0))},
+                "worklogs": {"refreshed": True, "rows": int(counts.get("worklogs", 0))},
+                "leaves": {
+                    "refreshed": True,
+                    "rows": int(counts.get("leave_rows", 0)),
+                    "issue_keys": int(counts.get("leave_issue_keys", 0)),
+                },
+            }
+            stats = {
+                "duration_sec": duration_sec,
+                "sources": sources,
+            }
+            _epf_mark_run_status(
+                capacity_paths["db_path"],
+                run_id=run_id,
+                status="success",
+                error_message="",
+                stats=stats,
+                activate=True,
+            )
+            _update_progress("done", 100)
+            _epf_prune_old_runs(capacity_paths["db_path"], _epf_retention_runs())
+            return True, {
+                "ok": True,
+                "report": "employee_performance",
+                "mode": "isolated_latest_db_assignee" if is_assignee_refresh else "isolated_latest_db",
+                "run_id": run_id,
+                "duration_sec": duration_sec,
+                "completed_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+                "sources": sources,
+                "assignee": target_assignee if is_assignee_refresh else "",
+            }, 200
+        except Exception as exc:
+            return _fail("refresh_orchestration", f"Isolated employee refresh failed: {exc}", code=500)
+
     @app.route("/api/report/refresh", methods=["POST", "OPTIONS"])
     def refresh_report():
         if request.method == "OPTIONS":
             return ("", 204)
         payload = request.get_json(silent=True) or {}
         report_id = str(payload.get("report", "")).strip()
+        assignee_name = _to_text(payload.get("assignee"))
+        refresh_mode = _to_text(payload.get("mode")).lower()
+        isolated_requested = bool(payload.get("isolated")) or refresh_mode == "isolated_latest_db"
         if report_id not in REPORT_REFRESH_CHAINS:
             return jsonify(
                 {
@@ -10769,6 +13120,9 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         started = time.perf_counter()
         steps: list[dict[str, object]] = []
         try:
+            if report_id == "employee_performance" and (assignee_name or isolated_requested):
+                ok, payload, status_code = _run_employee_performance_isolated_refresh(assignee_name=assignee_name)
+                return jsonify(payload), status_code
             for script_name in REPORT_REFRESH_CHAINS[report_id]:
                 code, stdout, stderr = _run_script(script_name, base_dir)
                 step_data = {
@@ -10804,6 +13158,403 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         finally:
             refresh_lock.release()
 
+    def _run_missed_entries_refresh(run_id: str, trigger_source: str = "api_refresh_async") -> tuple[dict[str, object], int]:
+        started = time.perf_counter()
+        run_started_at = _me_now_utc()
+        with sqlite3.connect(capacity_paths["db_path"]) as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO me_refresh_runs(
+                    run_id, started_at_utc, ended_at_utc, status, trigger_source, error_message,
+                    stats_json, progress_step, progress_pct, cancel_requested, updated_at_utc
+                ) VALUES (?, ?, NULL, 'running', ?, '', '{}', 'queued', 1, 0, ?)
+                """,
+                (run_id, run_started_at, trigger_source, run_started_at),
+            )
+            conn.execute(
+                """
+                UPDATE me_refresh_state
+                SET active_run_id = ?, updated_at_utc = ?
+                WHERE id = 1
+                """,
+                (run_id, run_started_at),
+            )
+            conn.commit()
+
+        def _is_canceled() -> bool:
+            return _me_is_cancel_requested(capacity_paths["db_path"], run_id)
+
+        def _cancel(step: str) -> tuple[dict[str, object], int]:
+            _me_mark_run_status(
+                capacity_paths["db_path"],
+                run_id=run_id,
+                status="canceled",
+                error_message=f"Canceled by user during '{step}'. Previous snapshot retained.",
+                stats={"canceled_step": _to_text(step)},
+                activate=False,
+            )
+            _me_update_progress(capacity_paths["db_path"], run_id, "canceled", 100)
+            return {
+                "ok": True,
+                "report": "missed_entries",
+                "run_id": run_id,
+                "status": "canceled",
+                "error": f"Canceled by user during '{step}'. Previous snapshot retained.",
+            }, 200
+
+        try:
+            if _is_canceled():
+                return _cancel("initializing")
+            _me_update_progress(capacity_paths["db_path"], run_id, "refreshing_sources", 10)
+
+            scripts = REPORT_REFRESH_CHAINS.get("missed_entries", [])
+            total = len(scripts) or 1
+            for idx, script_name in enumerate(scripts):
+                if _is_canceled():
+                    return _cancel(script_name)
+                step_pct = 10 + int(((idx + 1) / total) * 70)
+                code, stdout, stderr = _run_script_interruptible(
+                    script_name,
+                    base_dir,
+                    cancel_check=_is_canceled,
+                )
+                if code == -1 or _is_canceled():
+                    return _cancel(script_name)
+                if code != 0:
+                    _me_mark_run_status(
+                        capacity_paths["db_path"],
+                        run_id=run_id,
+                        status="failed",
+                        error_message=f"Step failed: {script_name}",
+                        stats={
+                            "failed_script": script_name,
+                            "stdout_tail": _tail(stdout),
+                            "stderr_tail": _tail(stderr),
+                        },
+                        activate=False,
+                    )
+                    _me_update_progress(capacity_paths["db_path"], run_id, "failed", 100)
+                    return {
+                        "ok": False,
+                        "report": "missed_entries",
+                        "run_id": run_id,
+                        "status": "failed",
+                        "error": f"Step failed: {script_name}",
+                    }, 500
+                _me_update_progress(capacity_paths["db_path"], run_id, script_name, step_pct)
+
+            if _is_canceled():
+                return _cancel("loading_snapshot")
+            _me_update_progress(capacity_paths["db_path"], run_id, "loading_snapshot", 90)
+            input_name = os.getenv("JIRA_EXPORT_XLSX_PATH", MISSED_ENTRIES_DEFAULT_INPUT_XLSX).strip() or MISSED_ENTRIES_DEFAULT_INPUT_XLSX
+            input_path = Path(input_name)
+            if not input_path.is_absolute():
+                input_path = base_dir / input_path
+            rows, default_from, default_to = missed_entries_load_rows(input_path)
+            row_count = _me_store_snapshot_rows(capacity_paths["db_path"], run_id, rows)
+            duration_sec = round(time.perf_counter() - started, 2)
+            stats = {
+                "duration_sec": duration_sec,
+                "rows_saved": int(row_count),
+                "source_file": str(input_path),
+                "default_date_from": _to_text(default_from),
+                "default_date_to": _to_text(default_to),
+            }
+            _me_mark_run_status(
+                capacity_paths["db_path"],
+                run_id=run_id,
+                status="success",
+                error_message="",
+                stats=stats,
+                activate=True,
+            )
+            _me_update_progress(capacity_paths["db_path"], run_id, "done", 100)
+            _me_prune_old_runs(capacity_paths["db_path"], _me_retention_runs())
+            sync_report_html(base_dir, folder_raw)
+            return {
+                "ok": True,
+                "report": "missed_entries",
+                "run_id": run_id,
+                "status": "success",
+                "duration_sec": duration_sec,
+                "completed_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+                "rows_saved": int(row_count),
+            }, 200
+        except Exception as exc:
+            _me_mark_run_status(
+                capacity_paths["db_path"],
+                run_id=run_id,
+                status="failed",
+                error_message=f"Missed entries refresh failed: {exc}",
+                stats={},
+                activate=False,
+            )
+            _me_update_progress(capacity_paths["db_path"], run_id, "failed", 100)
+            return {
+                "ok": False,
+                "report": "missed_entries",
+                "run_id": run_id,
+                "status": "failed",
+                "error": f"Missed entries refresh failed: {exc}",
+            }, 500
+
+    def _start_missed_entries_refresh_async() -> tuple[dict[str, object], int]:
+        with me_jobs_lock:
+            active_runtime_run = _to_text(me_runtime_state.get("active_run_id"))
+            if active_runtime_run:
+                current = _me_get_run(capacity_paths["db_path"], active_runtime_run)
+                if current and _to_text(current.get("status")) == "running":
+                    return {
+                        "ok": False,
+                        "error": "Another refresh is already running. Try again shortly.",
+                        "run": _me_serialize_run(current),
+                    }, 409
+                me_runtime_state["active_run_id"] = ""
+            db_running = _me_find_running_run(capacity_paths["db_path"])
+            if db_running:
+                me_runtime_state["active_run_id"] = _to_text(db_running.get("run_id"))
+                return {
+                    "ok": False,
+                    "error": "Another refresh is already running. Try again shortly.",
+                    "run": _me_serialize_run(db_running),
+                }, 409
+            if not refresh_lock.acquire(blocking=False):
+                return {
+                    "ok": False,
+                    "error": "Another refresh is already running. Try again shortly.",
+                }, 409
+            run_id = f"me-{int(time.time())}-{uuid.uuid4().hex[:8]}"
+            me_runtime_state["active_run_id"] = run_id
+
+        def _runner() -> None:
+            try:
+                _run_missed_entries_refresh(run_id=run_id, trigger_source="api_refresh_async")
+            finally:
+                with me_jobs_lock:
+                    if _to_text(me_runtime_state.get("active_run_id")) == run_id:
+                        me_runtime_state["active_run_id"] = ""
+                try:
+                    refresh_lock.release()
+                except Exception:
+                    pass
+
+        threading.Thread(target=_runner, daemon=True).start()
+        run_row = _me_get_run(capacity_paths["db_path"], run_id)
+        return {
+            "ok": True,
+            "report": "missed_entries",
+            "run_id": run_id,
+            "status": "running",
+            "run": _me_serialize_run(run_row),
+        }, 202
+
+    @app.route("/api/missed-entries/refresh", methods=["POST"])
+    def missed_entries_refresh():
+        response, status_code = _start_missed_entries_refresh_async()
+        return jsonify(response), status_code
+
+    @app.route("/api/missed-entries/refresh/<path:run_id>", methods=["GET"])
+    def missed_entries_refresh_status(run_id: str):
+        row = _me_get_run(capacity_paths["db_path"], _to_text(run_id))
+        if not row:
+            return jsonify({"ok": False, "error": "Run not found."}), 404
+        return jsonify({"ok": True, "run": _me_serialize_run(row)})
+
+    @app.route("/api/missed-entries/refresh/current", methods=["GET"])
+    def missed_entries_refresh_current():
+        with me_jobs_lock:
+            active_runtime_run = _to_text(me_runtime_state.get("active_run_id"))
+        row = _me_get_run(capacity_paths["db_path"], active_runtime_run) if active_runtime_run else _me_find_running_run(capacity_paths["db_path"])
+        if not row:
+            return jsonify({"ok": True, "run": None})
+        return jsonify({"ok": True, "run": _me_serialize_run(row)})
+
+    @app.route("/api/missed-entries/cancel", methods=["POST"])
+    def missed_entries_cancel():
+        payload = request.get_json(silent=True) or {}
+        run_id = _to_text(payload.get("run_id"))
+        if not run_id:
+            with me_jobs_lock:
+                run_id = _to_text(me_runtime_state.get("active_run_id"))
+        if not run_id:
+            running = _me_find_running_run(capacity_paths["db_path"])
+            run_id = _to_text((running or {}).get("run_id"))
+        if not run_id:
+            return jsonify({"ok": False, "error": "No running missed entries refresh found."}), 404
+
+        row_before = _me_get_run(capacity_paths["db_path"], run_id)
+        if not row_before:
+            return jsonify({"ok": False, "error": "Run not found."}), 404
+        status_before = _to_text(row_before.get("status")).lower()
+        if status_before != "running":
+            return jsonify({"ok": False, "error": f"Run is not cancelable (status={status_before})."}), 409
+        accepted = _me_request_cancel(capacity_paths["db_path"], run_id)
+        if not accepted:
+            return jsonify({"ok": False, "error": "Cancel request was not accepted."}), 409
+        row_after = _me_get_run(capacity_paths["db_path"], run_id)
+        return jsonify(
+            {
+                "ok": True,
+                "run_id": run_id,
+                "status": "cancel_requested",
+                "message": "Cancel requested. Refresh will stop at a safe checkpoint and keep the previous snapshot.",
+                "run": _me_serialize_run(row_after),
+            }
+        )
+
+    def _start_employee_performance_refresh_async(assignee_name: str = "", trigger_source: str = "api_refresh_async") -> tuple[dict[str, object], int]:
+        with epf_jobs_lock:
+            active_runtime_run = _to_text(epf_runtime_state.get("active_run_id"))
+            if active_runtime_run:
+                current = _epf_get_run(capacity_paths["db_path"], active_runtime_run)
+                if current and _to_text(current.get("status")) == "running":
+                    return {
+                        "ok": False,
+                        "error": "Another refresh is already running. Try again shortly.",
+                        "run": _epf_serialize_run(current),
+                    }, 409
+                epf_runtime_state["active_run_id"] = ""
+            db_running = _epf_find_running_run(capacity_paths["db_path"])
+            if db_running:
+                epf_runtime_state["active_run_id"] = _to_text(db_running.get("run_id"))
+                return {
+                    "ok": False,
+                    "error": "Another refresh is already running. Try again shortly.",
+                    "run": _epf_serialize_run(db_running),
+                }, 409
+            if not refresh_lock.acquire(blocking=False):
+                return {
+                    "ok": False,
+                    "error": "Another refresh is already running. Try again shortly.",
+                }, 409
+            run_id = f"epf-{int(time.time())}-{uuid.uuid4().hex[:8]}"
+            epf_runtime_state["active_run_id"] = run_id
+
+        def _runner() -> None:
+            try:
+                _run_employee_performance_isolated_refresh(
+                    assignee_name=assignee_name,
+                    run_id_override=run_id,
+                    trigger_source_override=trigger_source,
+                )
+            finally:
+                with epf_jobs_lock:
+                    if _to_text(epf_runtime_state.get("active_run_id")) == run_id:
+                        epf_runtime_state["active_run_id"] = ""
+                try:
+                    refresh_lock.release()
+                except Exception:
+                    pass
+
+        threading.Thread(target=_runner, daemon=True).start()
+        run_row = _epf_get_run(capacity_paths["db_path"], run_id)
+        return {
+            "ok": True,
+            "report": "employee_performance",
+            "mode": "isolated_latest_db_assignee" if assignee_name else "isolated_latest_db",
+            "run_id": run_id,
+            "status": "running",
+            "run": _epf_serialize_run(run_row),
+            "assignee": _to_text(assignee_name),
+        }, 202
+
+    @app.route("/api/employee-performance/refresh", methods=["POST"])
+    def employee_performance_refresh():
+        payload = request.get_json(silent=True) or {}
+        assignee_name = _to_text(payload.get("assignee"))
+        replace_running_raw = _to_text(payload.get("replace_running")).lower()
+        replace_running = replace_running_raw not in {"0", "false", "no", "n", "off"}
+
+        canceled_run_id = ""
+        wait_deadline = time.time() + 30.0
+        while True:
+            response, status_code = _start_employee_performance_refresh_async(
+                assignee_name=assignee_name,
+                trigger_source="api_refresh_assignee_async" if assignee_name else "api_refresh_async",
+            )
+            if status_code != 409 or not replace_running:
+                if status_code == 202 and canceled_run_id:
+                    response["replaced_previous_run_id"] = canceled_run_id
+                return jsonify(response), status_code
+
+            running_run_id = _to_text(((response or {}).get("run") or {}).get("run_id"))
+            if not running_run_id:
+                running = _epf_find_running_run(capacity_paths["db_path"])
+                running_run_id = _to_text((running or {}).get("run_id"))
+            if running_run_id:
+                canceled_run_id = running_run_id
+                accepted = _epf_request_cancel(capacity_paths["db_path"], running_run_id)
+                if accepted and not refresh_lock.locked():
+                    row_now = _epf_get_run(capacity_paths["db_path"], running_run_id) or {}
+                    if _to_text(row_now.get("status")).lower() == "running":
+                        _epf_mark_run_status(
+                            capacity_paths["db_path"],
+                            run_id=running_run_id,
+                            status="canceled",
+                            error_message="Canceled by user before start of replacement run. Previous snapshot retained.",
+                            stats={"canceled_step": "replacement_request", "forced_cleanup": True},
+                            activate=False,
+                        )
+                        _epf_update_run_progress(capacity_paths["db_path"], running_run_id, "canceled", 100)
+                        with epf_jobs_lock:
+                            if _to_text(epf_runtime_state.get("active_run_id")) == running_run_id:
+                                epf_runtime_state["active_run_id"] = ""
+
+            if time.time() >= wait_deadline:
+                response["error"] = "Running refresh did not stop in time. Try again shortly."
+                return jsonify(response), 409
+            time.sleep(0.4)
+
+    @app.route("/api/employee-performance/refresh/<path:run_id>", methods=["GET"])
+    def employee_performance_refresh_status(run_id: str):
+        row = _epf_get_run(capacity_paths["db_path"], _to_text(run_id))
+        if not row:
+            return jsonify({"ok": False, "error": "Run not found."}), 404
+        return jsonify({"ok": True, "run": _epf_serialize_run(row)})
+
+    @app.route("/api/employee-performance/refresh/current", methods=["GET"])
+    def employee_performance_refresh_current():
+        with epf_jobs_lock:
+            active_runtime_run = _to_text(epf_runtime_state.get("active_run_id"))
+        row = _epf_get_run(capacity_paths["db_path"], active_runtime_run) if active_runtime_run else _epf_find_running_run(capacity_paths["db_path"])
+        if not row:
+            return jsonify({"ok": True, "run": None})
+        return jsonify({"ok": True, "run": _epf_serialize_run(row)})
+
+    @app.route("/api/employee-performance/cancel", methods=["POST"])
+    def employee_performance_cancel():
+        payload = request.get_json(silent=True) or {}
+        run_id = _to_text(payload.get("run_id"))
+        if not run_id:
+            with epf_jobs_lock:
+                run_id = _to_text(epf_runtime_state.get("active_run_id"))
+        if not run_id:
+            running = _epf_find_running_run(capacity_paths["db_path"])
+            run_id = _to_text((running or {}).get("run_id"))
+        if not run_id:
+            return jsonify({"ok": False, "error": "No running employee refresh found."}), 404
+
+        row_before = _epf_get_run(capacity_paths["db_path"], run_id)
+        if not row_before:
+            return jsonify({"ok": False, "error": "Run not found."}), 404
+        status_before = _to_text(row_before.get("status")).lower()
+        if status_before != "running":
+            return jsonify({"ok": False, "error": f"Run is not cancelable (status={status_before})."}), 409
+
+        accepted = _epf_request_cancel(capacity_paths["db_path"], run_id)
+        if not accepted:
+            return jsonify({"ok": False, "error": "Cancel request was not accepted."}), 409
+        row_after = _epf_get_run(capacity_paths["db_path"], run_id)
+        return jsonify(
+            {
+                "ok": True,
+                "run_id": run_id,
+                "status": "cancel_requested",
+                "message": "Cancel requested. Refresh will stop at a safe checkpoint and keep the previous snapshot.",
+                "run": _epf_serialize_run(row_after),
+            }
+        )
+
     @app.route("/api/report-date-filter", methods=["GET"])
     def get_report_date_filter():
         latest = _load_latest_global_report_date_filter(capacity_paths["db_path"])
@@ -10823,12 +13574,14 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         except ValueError as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400
 
-    @app.route("/api/planned-vs-dispensed/ui-settings", methods=["GET"])
+    @app.route(f"{CANONICAL_PVD_API_PREFIX}/ui-settings", methods=["GET"])
+    @app.route(f"{LEGACY_PVD_API_PREFIX}/ui-settings", methods=["GET"])
     def get_pvd_ui_settings():
         settings = _load_pvd_ui_settings(capacity_paths["db_path"])
         return jsonify({"ok": True, "settings": settings})
 
-    @app.route("/api/planned-vs-dispensed/ui-settings", methods=["POST"])
+    @app.route(f"{CANONICAL_PVD_API_PREFIX}/ui-settings", methods=["POST"])
+    @app.route(f"{LEGACY_PVD_API_PREFIX}/ui-settings", methods=["POST"])
     def save_pvd_ui_settings():
         payload = request.get_json(silent=True) or {}
         try:
@@ -10836,6 +13589,131 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             return jsonify({"ok": True, "settings": settings})
         except ValueError as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400
+
+    @app.route("/api/original-estimates/filter-options", methods=["GET"])
+    def original_estimates_filter_options():
+        try:
+            latest = _load_latest_global_report_date_filter(capacity_paths["db_path"])
+            if latest:
+                from_date = _parse_iso_date(_to_text(latest.get("from_date")))
+                to_date = _parse_iso_date(_to_text(latest.get("to_date")))
+            else:
+                today = datetime.now(timezone.utc).date()
+                from_date = today - timedelta(days=30)
+                to_date = today
+            if from_date is None or to_date is None:
+                raise ValueError("Unable to resolve date range.")
+            default_scope, _managed_keys, defaults = _managed_project_scope_defaults()
+            summary = _oeh_load_summary(
+                from_date=from_date,
+                to_date=to_date,
+                selected_projects=set(default_scope),
+                selected_statuses=set(),
+                selected_assignees=set(),
+            )
+            return jsonify(
+                {
+                    "ok": True,
+                    "from_date": from_date.isoformat(),
+                    "to_date": to_date.isoformat(),
+                    "selected_projects": sorted(set(defaults or default_scope)),
+                    "filter_options": summary.get("filter_options", {"projects": [], "project_options": [], "statuses": [], "assignees": []}),
+                    "updated_at_utc": summary.get("updated_at_utc", ""),
+                }
+            )
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"ok": False, "error": f"Failed to load filter options: {exc}"}), 500
+
+    @app.route("/api/original-estimates/summary", methods=["GET"])
+    def original_estimates_summary():
+        try:
+            from_date, to_date, selected_projects, selected_statuses, selected_assignees, default_selected_projects = _oeh_filters_from_request(request.args)
+            summary = _oeh_load_summary(
+                from_date=from_date,
+                to_date=to_date,
+                selected_projects=selected_projects,
+                selected_statuses=selected_statuses,
+                selected_assignees=selected_assignees,
+            )
+            summary["default_selected_projects"] = sorted(default_selected_projects)
+            summary["source"] = "snapshot_db"
+            return jsonify(summary)
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"ok": False, "error": f"Failed to load summary: {exc}"}), 500
+
+    @app.route("/api/original-estimates/refresh", methods=["POST"])
+    def original_estimates_refresh():
+        payload = request.get_json(silent=True) or {}
+        try:
+            from_date, to_date, selected_projects = _oeh_filters_from_payload(payload)
+            hierarchy = _load_planned_vs_dispensed_hierarchy(
+                session=get_session(),
+                from_date=from_date,
+                to_date=to_date,
+                mode="planned_dates",
+                selected_projects=selected_projects,
+            )
+            epics = hierarchy.get("epics", []) or []
+            stories = hierarchy.get("stories", []) or []
+            subtasks = hierarchy.get("subtasks", []) or []
+            _oeh_replace_all(epics, stories, subtasks)
+            stats = {"epics": len(epics), "stories": len(stories), "subtasks": len(subtasks)}
+            run_id = _oeh_insert_sync_run("all", "", "success", stats=stats)
+            return jsonify(
+                {
+                    "ok": True,
+                    "run_id": run_id,
+                    "scope": "all",
+                    "from_date": from_date.isoformat(),
+                    "to_date": to_date.isoformat(),
+                    "selected_projects": sorted(selected_projects),
+                    "stats": stats,
+                }
+            )
+        except ValueError as exc:
+            _oeh_insert_sync_run("all", "", "failed", error_message=str(exc))
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        except Exception as exc:
+            _oeh_insert_sync_run("all", "", "failed", error_message=str(exc))
+            return jsonify({"ok": False, "error": f"Refresh failed: {exc}"}), 500
+
+    @app.route("/api/original-estimates/refresh-epic/<path:epic_key>", methods=["POST"])
+    def original_estimates_refresh_epic(epic_key: str):
+        payload = request.get_json(silent=True) or {}
+        try:
+            from_date, to_date, _selected_projects = _oeh_filters_from_payload(payload)
+            key = _to_text(epic_key).upper()
+            epic, stories, subtasks = _oeh_fetch_epic_subtree(
+                session=get_session(),
+                epic_key=key,
+                from_date=from_date,
+                to_date=to_date,
+            )
+            _oeh_upsert_epic_subtree(epic, stories, subtasks)
+            stats = {"epics": 1, "stories": len(stories), "subtasks": len(subtasks)}
+            run_id = _oeh_insert_sync_run("epic", key, "success", stats=stats)
+            return jsonify(
+                {
+                    "ok": True,
+                    "run_id": run_id,
+                    "scope": "epic",
+                    "epic_key": key,
+                    "stats": stats,
+                }
+            )
+        except LookupError as exc:
+            _oeh_insert_sync_run("epic", epic_key, "failed", error_message=str(exc))
+            return jsonify({"ok": False, "error": str(exc)}), 404
+        except ValueError as exc:
+            _oeh_insert_sync_run("epic", epic_key, "failed", error_message=str(exc))
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        except Exception as exc:
+            _oeh_insert_sync_run("epic", epic_key, "failed", error_message=str(exc))
+            return jsonify({"ok": False, "error": f"Epic refresh failed: {exc}"}), 500
 
     @app.route("/api/capacity", methods=["GET"])
     def get_capacity():
@@ -10994,7 +13872,8 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             }
         )
 
-    @app.route("/api/planned-vs-dispensed/summary", methods=["GET"])
+    @app.route(f"{CANONICAL_PVD_API_PREFIX}/summary", methods=["GET"])
+    @app.route(f"{LEGACY_PVD_API_PREFIX}/summary", methods=["GET"])
     def planned_vs_dispensed_summary():
         mode = _to_text(request.args.get("mode")).lower() or "log_date"
         plan_source = _normalize_pvd_plan_source(_to_text(request.args.get("plan_source")))
@@ -11063,40 +13942,30 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             week_key = _iso_week_code(day_value)
             return week_key, week_key
 
+        def _subtask_matches_planned_range(subtask: dict) -> bool:
+            planned_start = _parse_iso_date(_to_text(subtask.get("planned_start")))
+            planned_due = _parse_iso_date(_to_text(subtask.get("planned_due")))
+            if planned_start is not None and from_date <= planned_start <= to_date:
+                return True
+            if planned_due is not None and from_date <= planned_due <= to_date:
+                return True
+            return False
+
         def _dispensed_bucket_allocations(subtask: dict) -> list[tuple[str, str, float]]:
             estimate_hours = float(subtask.get("estimate_hours") or 0.0)
             if estimate_hours <= 0:
                 return []
+            if not _subtask_matches_planned_range(subtask):
+                return []
             planned_start = _parse_iso_date(_to_text(subtask.get("planned_start")))
             planned_due = _parse_iso_date(_to_text(subtask.get("planned_due")))
             if planned_start is None and planned_due is None:
-                return [("unscheduled", "Unscheduled", estimate_hours)]
-            span_start = planned_start or planned_due
-            span_end = planned_due or planned_start
-            if span_start is None or span_end is None:
-                return [("unscheduled", "Unscheduled", estimate_hours)]
-            if span_end < span_start:
-                span_start, span_end = span_end, span_start
-            overlap_start = max(span_start, from_date)
-            overlap_end = min(span_end, to_date)
-            if overlap_start > overlap_end:
-                # No overlap with selected range: keep these hours in "Remaining Hours" only.
                 return []
-            effective_start = overlap_start
-            effective_end = overlap_end
-            buckets_ordered: list[tuple[str, str]] = []
-            seen_keys: set[str] = set()
-            day_cursor = effective_start
-            while day_cursor <= effective_end:
-                bucket_key, bucket_label = _bucket_key_label(day_cursor)
-                if bucket_key not in seen_keys:
-                    seen_keys.add(bucket_key)
-                    buckets_ordered.append((bucket_key, bucket_label))
-                day_cursor = day_cursor + timedelta(days=1)
-            if not buckets_ordered:
+            anchor_day = planned_start if planned_start is not None and from_date <= planned_start <= to_date else planned_due
+            if anchor_day is None:
                 return []
-            share = estimate_hours / float(len(buckets_ordered))
-            return [(bucket_key, bucket_label, share) for bucket_key, bucket_label in buckets_ordered]
+            bucket_key, bucket_label = _bucket_key_label(anchor_day)
+            return [(bucket_key, bucket_label, estimate_hours)]
 
         try:
             hierarchy, source = _get_planned_vs_dispensed_hierarchy_cached(
@@ -11183,13 +14052,14 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             for subtask in filtered_subtasks:
                 estimate_hours = float(subtask.get("estimate_hours") or 0.0)
                 row["dispensed_subtask_hours"] = float(row["dispensed_subtask_hours"]) + estimate_hours
+                subtask_in_selected_range = _subtask_matches_planned_range(subtask)
                 for bucket_key, bucket_label, bucket_hours in _dispensed_bucket_allocations(subtask):
                     current_bucket_total = float((row.get("dispensed_bucket_hours") or {}).get(bucket_key) or 0.0)
                     row["dispensed_bucket_hours"][bucket_key] = current_bucket_total + float(bucket_hours)
                     row["dispensed_bucket_labels"][bucket_key] = bucket_label
                 planned_start = _parse_iso_date(_to_text(subtask.get("planned_start")))
                 planned_due = _parse_iso_date(_to_text(subtask.get("planned_due")))
-                if planned_start is not None or planned_due is not None:
+                if subtask_in_selected_range and (planned_start is not None or planned_due is not None):
                     span_start = planned_start or planned_due
                     span_end = planned_due or planned_start
                     if span_start is not None and span_end is not None:
@@ -11358,7 +14228,8 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         )
         return jsonify(payload)
 
-    @app.route("/api/planned-vs-dispensed/details", methods=["GET"])
+    @app.route(f"{CANONICAL_PVD_API_PREFIX}/details", methods=["GET"])
+    @app.route(f"{LEGACY_PVD_API_PREFIX}/details", methods=["GET"])
     def planned_vs_dispensed_details():
         mode = _to_text(request.args.get("mode")).lower() or "log_date"
         plan_source = _normalize_pvd_plan_source(_to_text(request.args.get("plan_source")))
@@ -12426,6 +15297,24 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
 
+    @app.route("/api/performance/teams/<path:team_name>", methods=["PUT"])
+    def update_performance_team(team_name: str):
+        try:
+            payload = request.get_json(silent=True) or {}
+            new_team_name = payload.get("team_name")
+            team_leader = payload.get("team_leader")
+            assignees = payload.get("assignees") or []
+            saved = _update_performance_team(
+                capacity_paths["db_path"],
+                existing_team_name=team_name,
+                team_name=new_team_name,
+                assignees=assignees,
+                team_leader=team_leader,
+            )
+            return jsonify({"team": saved})
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+
     @app.route("/api/performance/teams/<path:team_name>", methods=["DELETE"])
     def delete_performance_team(team_name: str):
         try:
@@ -12590,11 +15479,15 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
     @app.route("/api/jira/projects/search", methods=["GET"])
     def jira_projects_search_api():
         query = _to_text(request.args.get("q"))
-        limit_raw = _to_text(request.args.get("limit")) or "25"
-        try:
-            limit = int(limit_raw)
-        except ValueError:
-            limit = 25
+        limit_raw = _to_text(request.args.get("limit"))
+        limit: int | None
+        if not limit_raw:
+            limit = None
+        else:
+            try:
+                limit = int(limit_raw)
+            except ValueError:
+                limit = None
         try:
             projects = _jira_search_projects(query, limit=limit)
             return jsonify({"projects": projects, "query": query, "source": "jira"})
@@ -12920,8 +15813,33 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
     def capacity_settings_typo_redirect():
         return redirect(CAPACITY_SETTINGS_ROUTE, code=302)
 
+    @app.route(f"/{CANONICAL_PVD_HTML_FILE}", methods=["GET"])
+    def canonical_pvd_report_route():
+        target = report_dir / CANONICAL_PVD_HTML_FILE
+        if not target.exists():
+            target = report_dir / LEGACY_PVD_HTML_FILE
+        if not target.exists():
+            return jsonify({"error": "Not found"}), 404
+        html = target.read_text(encoding="utf-8")
+        html = _use_local_icons(html)
+        html = _inject_shared_date_filter_script(html)
+        html = _inject_refresh_ui(html, "planned_vs_dispensed")
+        return html
+
     @app.route("/<path:requested_path>")
     def serve_report_asset(requested_path: str):
+        requested_name = _to_text(requested_path)
+        if requested_name in {"shared-nav.js", "shared-nav.css", "shared-date-filter.js", "material-symbols.css"}:
+            source_candidates = [
+                base_dir / requested_name,
+                base_dir / "report_html" / requested_name,
+                report_dir / requested_name,
+            ]
+            source_asset = next((p for p in source_candidates if p.exists() and p.is_file()), None)
+            if not source_asset:
+                return jsonify({"error": "Not found"}), 404
+            return send_file(source_asset)
+
         target = (report_dir / requested_path).resolve()
         if not target.exists() or not target.is_file():
             return jsonify({"error": "Not found"}), 404

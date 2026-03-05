@@ -81,7 +81,8 @@ class AdminNavigationTests(unittest.TestCase):
     def test_shared_nav_contract_contains_admin_section(self):
         nav_js = (Path(__file__).resolve().parents[1] / "shared-nav.js").read_text(encoding="utf-8")
         self.assertIn('title: "Reports"', nav_js)
-        self.assertIn("planned_vs_dispensed_report.html", nav_js)
+        self.assertIn("approved_vs_planned_hours_report.html", nav_js)
+        self.assertIn("original_estimates_hierarchy_report.html", nav_js)
         self.assertIn('title: "Admin Settings"', nav_js)
         self.assertIn(CAPACITY_SETTINGS_ROUTE, nav_js)
         self.assertIn(PERFORMANCE_SETTINGS_ROUTE, nav_js)

@@ -197,6 +197,11 @@ class ReportUiSmokeTests(unittest.TestCase):
         self.assertIn('id="shortcut-previous-month"', html)
         self.assertIn('id="shortcut-last-30-days"', html)
         self.assertIn('id="shortcut-quarter-to-date"', html)
+        self.assertIn('id="employee-refresh-btn"', html)
+        self.assertIn('id="employee-refresh-cancel-btn"', html)
+        self.assertIn('id="assignee-extended-actuals-toggle"', html)
+        self.assertIn("/api/employee-performance/refresh", html)
+        self.assertIn("/api/employee-performance/cancel", html)
 
     def test_report_entities_formula_editor_controls_exist(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
@@ -249,6 +254,8 @@ class ReportUiSmokeTests(unittest.TestCase):
             self.assertNotIn('href="/settings/manage-fields"', capacity_html)
             perf_html = client.get("/settings/performance").get_data(as_text=True)
             self.assertNotIn('href="/settings/manage-fields"', perf_html)
+            self.assertIn('id="team-unassigned-list"', perf_html)
+            self.assertIn("Assignees Not in Any Team", perf_html)
             entities_html = client.get("/settings/report-entities").get_data(as_text=True)
             self.assertNotIn('href="/settings/manage-fields"', entities_html)
             self.assertNotIn('href="/settings/projects"', entities_html)
@@ -845,7 +852,7 @@ class ReportUiSmokeTests(unittest.TestCase):
         self.assertIn('id="date-filter-apply"', html)
         self.assertIn('id="date-filter-reset"', html)
         self.assertIn('id="adv-filter-menu"', html)
-        self.assertIn('id="perspective"', html)
+        self.assertIn('id="planned-hours-source"', html)
         self.assertIn('id="plan-source"', html)
         self.assertIn('id="projects-trigger"', html)
         self.assertIn('id="projects-menu"', html)
@@ -855,7 +862,9 @@ class ReportUiSmokeTests(unittest.TestCase):
         self.assertIn("By Log Date", html)
         self.assertIn("By Planned Date", html)
         self.assertIn("col-resize-handle", html)
-        self.assertIn("/api/planned-vs-dispensed/ui-settings", html)
+        self.assertIn("/api/approved-vs-planned-hours/ui-settings", html)
+        self.assertIn("Approved vs Planned Hours Report", html)
+        self.assertIn("Total Approved Hours", html)
         self.assertIn("Total Planned Hours", html)
         self.assertIn("Planned Hours (Subtask Original Estimates)", html)
         self.assertIn("Epic Drill-down", html)
@@ -865,8 +874,8 @@ class ReportUiSmokeTests(unittest.TestCase):
         self.assertNotIn('<details class="story"', html)
         self.assertIn('id="pvd-comparison-chart"', html)
         self.assertIn('id="pvd-detail-root"', html)
-        self.assertIn("/api/planned-vs-dispensed/summary", html)
-        self.assertIn("/api/planned-vs-dispensed/details", html)
+        self.assertIn("/api/approved-vs-planned-hours/summary", html)
+        self.assertIn("/api/approved-vs-planned-hours/details", html)
 
     def test_planned_actual_table_view_page_controls_exist(self):
         html_path = Path(__file__).resolve().parents[1] / "report_html" / "planned_actual_table_view.html"
@@ -890,6 +899,25 @@ class ReportUiSmokeTests(unittest.TestCase):
         self.assertIn("/api/planned-actual-table-view/export", html)
         self.assertIn("Fetch Queue", html)
         self.assertIn("Cancel and Rollback", html)
+
+    def test_original_estimates_hierarchy_page_controls_exist(self):
+        html_path = Path(__file__).resolve().parents[1] / "report_html" / "original_estimates_hierarchy_report.html"
+        self.assertTrue(html_path.exists())
+        html = html_path.read_text(encoding="utf-8")
+        self.assertIn('id="from-date"', html)
+        self.assertIn('id="to-date"', html)
+        self.assertIn('id="projects"', html)
+        self.assertIn('id="statuses"', html)
+        self.assertIn('id="assignees"', html)
+        self.assertIn('id="search-anything"', html)
+        self.assertIn('id="apply-btn"', html)
+        self.assertIn('id="reset-btn"', html)
+        self.assertIn('id="fetch-btn"', html)
+        self.assertIn('id="table-body"', html)
+        self.assertIn("/api/original-estimates/filter-options", html)
+        self.assertIn("/api/original-estimates/summary", html)
+        self.assertIn("/api/original-estimates/refresh", html)
+        self.assertIn("/api/original-estimates/refresh-epic/", html)
 
 
 if __name__ == "__main__":

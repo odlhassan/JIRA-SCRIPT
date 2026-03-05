@@ -249,7 +249,7 @@ class PlannedVsDispensedApiTests(unittest.TestCase):
                     ],
                 )
 
-    def test_summary_splits_subtask_estimates_across_overlapping_weeks(self):
+    def test_summary_assigns_full_subtask_hours_to_anchor_week(self):
         hierarchy = {
             "epics": [
                 {
@@ -311,12 +311,12 @@ class PlannedVsDispensedApiTests(unittest.TestCase):
                 self.assertEqual(row.get("dispensed_bucket_mode"), "week")
                 buckets = row.get("dispensed_buckets") or []
                 keys = [item.get("bucket_key") for item in buckets]
-                self.assertEqual(keys, ["2026-W06", "2026-W07", "2026-W08", "remaining_hours"])
+                self.assertEqual(keys, ["2026-W06", "remaining_hours"])
                 hours = [float(item.get("hours") or 0.0) for item in buckets]
-                self.assertTrue(all(value > 0 for value in hours))
                 self.assertAlmostEqual(sum(hours), 120.0, places=1)
+                self.assertEqual(float(buckets[0].get("hours") or 0.0), 40.0)
 
-    def test_summary_places_remaining_first_when_hours_are_before_range(self):
+    def test_summary_places_remaining_after_in_range_bucket_when_outside_subtasks_excluded(self):
         hierarchy = {
             "epics": [
                 {
@@ -388,7 +388,69 @@ class PlannedVsDispensedApiTests(unittest.TestCase):
                 self.assertIsNotNone(row)
                 buckets = row.get("dispensed_buckets") or []
                 self.assertGreaterEqual(len(buckets), 2)
-                self.assertEqual(buckets[0].get("bucket_key"), "remaining_hours")
+                self.assertNotEqual(buckets[0].get("bucket_key"), "remaining_hours")
+                self.assertEqual(buckets[-1].get("bucket_key"), "remaining_hours")
+
+    def test_summary_counts_subtask_when_only_due_date_is_in_range(self):
+        hierarchy = {
+            "epics": [
+                {
+                    "issue_key": "O2-EP1",
+                    "project_key": "O2",
+                    "summary": "Epic One",
+                    "status": "In Progress",
+                    "assignee": "Alice",
+                    "estimate_hours": 100.0,
+                    "planned_start": "2026-01-01",
+                    "planned_due": "2026-02-28",
+                }
+            ],
+            "stories": [
+                {
+                    "issue_key": "O2-ST1",
+                    "epic_key": "O2-EP1",
+                    "summary": "Story One",
+                    "status": "In Progress",
+                    "assignee": "Alice",
+                    "estimate_hours": 0.0,
+                    "planned_start": "2026-01-01",
+                    "planned_due": "2026-02-28",
+                }
+            ],
+            "subtasks": [
+                {
+                    "issue_key": "O2-SUB1",
+                    "story_key": "O2-ST1",
+                    "epic_key": "O2-EP1",
+                    "summary": "Cross Range Subtask",
+                    "status": "In Progress",
+                    "assignee": "Alice",
+                    "estimate_hours": 18.0,
+                    "planned_start": "2026-01-20",
+                    "planned_due": "2026-02-05",
+                }
+            ],
+        }
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            app = _build_app(root)
+            client = app.test_client()
+            with (
+                patch("report_server.get_session", return_value=object()),
+                patch("report_server._load_planned_vs_dispensed_hierarchy", return_value=hierarchy),
+            ):
+                summary_resp = client.get(
+                    "/api/planned-vs-dispensed/summary?from=2026-02-01&to=2026-02-28&mode=log_date"
+                )
+                self.assertEqual(summary_resp.status_code, 200)
+                summary = summary_resp.get_json()
+                self.assertTrue(summary.get("ok"))
+                row = next(
+                    (item for item in (summary.get("rows", []) or []) if item.get("project_key") == "O2"),
+                    None,
+                )
+                self.assertIsNotNone(row)
+                self.assertEqual(float(row.get("dispensed_in_range_hours") or 0.0), 18.0)
 
     def test_summary_does_not_create_week_buckets_for_fully_outside_subtasks(self):
         hierarchy = {

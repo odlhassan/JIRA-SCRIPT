@@ -30,7 +30,9 @@
         { page_key: "rnd_data_story", title: "RnD Data Story", href: resolveReportHref("rnd_data_story.html"), icon: "auto_stories", file: "rnd_data_story.html" },
         { page_key: "planned_rmis_report", title: "Planned RMIs", href: resolveReportHref("planned_rmis_report.html"), icon: "assignment_turned_in", file: "planned_rmis_report.html" },
         { page_key: "phase_rmi_gantt_report", title: "Phase RMI Gantt", href: resolveReportHref("phase_rmi_gantt_report.html"), icon: "view_timeline", file: "phase_rmi_gantt_report.html" },
-        { page_key: "planned_vs_dispensed_report", title: "Planned vs Dispensed", href: resolveReportHref("planned_vs_dispensed_report.html"), icon: "analytics", file: "planned_vs_dispensed_report.html" },
+        { page_key: "approved_vs_planned_hours_report", title: "Approved vs Planned Hours Report", href: resolveReportHref("approved_vs_planned_hours_report.html"), icon: "analytics", file: "approved_vs_planned_hours_report.html" },
+        { page_key: "planned_actual_table_view", title: "Planned vs Actual Table View", href: resolveReportHref("planned_actual_table_view.html"), icon: "table_view", file: "planned_actual_table_view.html" },
+        { page_key: "original_estimates_hierarchy_report", title: "Epic Estimate Report", href: resolveReportHref("original_estimates_hierarchy_report.html"), icon: "schema", file: "original_estimates_hierarchy_report.html" },
         { page_key: "ipp_meeting_dashboard", title: "IPP Meeting Dashboard", href: resolveReportHref("ipp_meeting_dashboard.html"), icon: "groups", file: "ipp_meeting_dashboard.html" }
       ],
       categories: []

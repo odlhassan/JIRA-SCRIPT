@@ -90,14 +90,14 @@ class ReportDateFilterApiTests(unittest.TestCase):
 
             save = client.post(
                 "/api/report-date-filter",
-                json={"from_date": "2026-02-01", "to_date": "2026-02-28", "source_page": "planned_vs_dispensed_report"},
+                json={"from_date": "2026-02-01", "to_date": "2026-02-28", "source_page": "approved_vs_planned_hours_report"},
             )
             self.assertEqual(save.status_code, 200)
             saved_payload = save.get_json()
             self.assertTrue(saved_payload.get("ok"))
             self.assertEqual(saved_payload["filter"]["from_date"], "2026-02-01")
             self.assertEqual(saved_payload["filter"]["to_date"], "2026-02-28")
-            self.assertEqual(saved_payload["filter"]["source_page"], "planned_vs_dispensed_report")
+            self.assertEqual(saved_payload["filter"]["source_page"], "approved_vs_planned_hours_report")
 
             get_saved = client.get("/api/report-date-filter")
             self.assertEqual(get_saved.status_code, 200)

@@ -70,6 +70,14 @@ class PageCategoriesApiTests(unittest.TestCase):
             self.assertGreaterEqual(len(body["categories"]), 2)
             self.assertTrue(any(item["page_key"] == "dashboard" for item in body["assignments"]))
             self.assertTrue(any(item["page_key"] == "page_categories" for item in body["page_catalog"]))
+            self.assertTrue(any(item["page_key"] == "original_estimates_hierarchy_report" for item in body["page_catalog"]))
+            self.assertTrue(
+                any(
+                    item["page_key"] == "original_estimates_hierarchy_report"
+                    and item["title"] == "Epic Estimate Report"
+                    for item in body["page_catalog"]
+                )
+            )
 
             reports_categories = body["navigation"]["reports"]["categories"]
             self.assertTrue(any(group["name"] == "Operations" for group in reports_categories))

@@ -963,6 +963,48 @@ def _build_html(data: dict) -> str:
     .score-card.is-expanded {{
       box-shadow: 0 0 0 2px rgba(244, 63, 94, 0.28);
     }}
+    .efficiency-inline-wrap {{
+      margin-top: 0;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(120px, 1fr));
+      gap: 8px;
+    }}
+    #efficiency-under-actual {{
+      grid-column: 2;
+      align-self: start;
+    }}
+    .efficiency-inline-item {{
+      border: 1px dashed #93c5fd;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.72);
+      padding: 6px 8px;
+    }}
+    .efficiency-inline-label {{
+      color: #355564;
+      font-size: 0.68rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.01em;
+      margin: 0 0 4px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }}
+    .efficiency-inline-value {{
+      margin: 0;
+      color: #1d4ed8;
+      font-size: 0.95rem;
+      font-weight: 800;
+      line-height: 1.15;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    }}
+    .efficiency-inline-formula {{
+      margin: 4px 0 0;
+      color: #475569;
+      font-size: 0.66rem;
+      line-height: 1.25;
+      font-weight: 600;
+    }}
     .score-formula-chip {{
       position: absolute;
       top: 6px;
@@ -1001,8 +1043,7 @@ def _build_html(data: dict) -> str:
       border-color: #fda4af;
     }}
     #score-total-planned-card,
-    #score-total-logged-card,
-    #score-loading-efficiency-card {{
+    #score-total-logged-card {{
       background: #eff6ff;
       border-color: #93c5fd;
     }}
@@ -1125,8 +1166,7 @@ def _build_html(data: dict) -> str:
     #score-total-leaves-planned-card .score-value,
     #score-total-capacity-planned-leaves-adjusted-card .score-value {{ color: #9f1239; }}
     #score-total-planned-card .score-value,
-    #score-total-logged-card .score-value,
-    #score-loading-efficiency-card .score-value {{ color: #1d4ed8; }}
+    #score-total-logged-card .score-value {{ color: #1d4ed8; }}
     .score-card.delta-pos .score-value {{
       color: #15803d;
     }}
@@ -1834,6 +1874,12 @@ def _build_html(data: dict) -> str:
       .scorecards {{
         grid-template-columns: repeat(2, minmax(150px, 1fr));
       }}
+      .efficiency-inline-wrap {{
+        grid-template-columns: 1fr;
+      }}
+      #efficiency-under-actual {{
+        grid-column: 1 / -1;
+      }}
       .capacity-profile-select {{
         min-width: 100%;
       }}
@@ -1884,10 +1930,20 @@ def _build_html(data: dict) -> str:
       border-color: #fb7185;
     }}
     html[data-theme="dark"] #score-total-planned-card,
-    html[data-theme="dark"] #score-total-logged-card,
-    html[data-theme="dark"] #score-loading-efficiency-card {{
+    html[data-theme="dark"] #score-total-logged-card {{
       background: #172554;
       border-color: #60a5fa;
+    }}
+    html[data-theme="dark"] .efficiency-inline-item {{
+      background: rgba(2, 6, 23, 0.62);
+      border-color: #60a5fa;
+    }}
+    html[data-theme="dark"] .efficiency-inline-label,
+    html[data-theme="dark"] .efficiency-inline-value {{
+      color: #bfdbfe;
+    }}
+    html[data-theme="dark"] .efficiency-inline-formula {{
+      color: #cbd5e1;
     }}
     html[data-theme="dark"] .capacity-profile-bar {{
       background: #0f172a;
@@ -2381,23 +2437,23 @@ Total Capacity = 0h</span>
         </article>
         <article class="score-card" id="score-total-planned-card">
           <p class="score-label">
-            Total Planned Projects (Hours)
-            <span class="score-info" tabindex="0" aria-label="Total Planned Projects information">
+            Total Planned Hours
+            <span class="score-info" tabindex="0" aria-label="Total Planned Hours information">
               i
-              <span class="score-info-tip" id="score-total-planned-tip">Formula: Total Planned Projects = Sum(Subtask Planned Hours) where subtask Start OR Due date is within selected range, excluding RLT (RnD Leave Tracker).
+              <span class="score-info-tip" id="score-total-planned-tip">Formula: Total Planned Hours = Sum(Subtask Planned Hours) where subtask Start OR Due date is within selected range, excluding RLT (RnD Leave Tracker).
 Values:
 Included Subtasks Count = 0
 Excluded (RLT) Subtasks Count = 0
 Excluded (RLT) Subtasks Planned Sum = 0h
-Total Planned Projects = 0h</span>
+Total Planned Hours = 0h</span>
             </span>
           </p>
           <p class="score-value" id="score-total-planned">0h</p>
           <section class="score-details-panel" id="score-total-planned-details" hidden>
-            <h3 class="score-details-title">Total Planned Projects - Epic Breakdown</h3>
+            <h3 class="score-details-title">Total Planned Hours - Epic Breakdown</h3>
             <p class="score-details-meta" id="score-total-planned-details-meta">No rows.</p>
             <div class="score-details-table-wrap">
-              <table class="score-details-table" aria-label="Total Planned Projects details table">
+              <table class="score-details-table" aria-label="Total Planned Hours details table">
                 <thead>
                   <tr>
                     <th>Project Name</th>
@@ -2461,14 +2517,14 @@ Total Leaves Planned = 0h</span>
         </article>
         <article class="score-card" id="score-total-logged-card">
           <p class="score-label">
-            Total Actual Project Hours
-            <span class="score-info" tabindex="0" aria-label="Total Actual Project Hours information">
+            Total Actual Hours
+            <span class="score-info" tabindex="0" aria-label="Total Actual Hours information">
               i
-              <span class="score-info-tip" id="score-total-logged-tip">Formula: Total Actual Project Hours = Sum(Project Actual Hours), excluding RLT (RnD Leave Tracker).
+              <span class="score-info-tip" id="score-total-logged-tip">Formula: Total Actual Hours = Sum(Project Actual Hours), excluding RLT (RnD Leave Tracker).
 Values:
 Included Projects Actual Sum = 0h
 Excluded Projects Actual Sum = 0h
-Total Actual Project Hours = 0h</span>
+Total Actual Hours = 0h</span>
             </span>
           </p>
           <p class="score-value" id="score-total-logged">0h</p>
@@ -2488,21 +2544,38 @@ Availability = 0h</span>
           </p>
           <p class="score-value" id="score-total-capacity-planned-leaves-adjusted">0h</p>
         </article>
-        <article class="score-card" id="score-loading-efficiency-card">
-          <span class="score-formula-chip" id="score-loading-efficiency-formula">Total Planned Projects / Availability x 100</span>
-          <p class="score-label">
-            Loading Efficiency
-            <span class="score-info" tabindex="0" aria-label="Loading Efficiency information">
-              i
-              <span class="score-info-tip" id="score-loading-efficiency-tip">Formula: Loading Efficiency = Total Planned Projects / Availability x 100.
+        <div class="efficiency-inline-wrap" id="efficiency-under-actual">
+          <div class="efficiency-inline-item">
+            <p class="efficiency-inline-label">
+              Planning Efficiency
+              <span class="score-info" tabindex="0" aria-label="Planning Efficiency information">
+                i
+                <span class="score-info-tip" id="score-loading-efficiency-tip">Formula: Planning Efficiency = Total Planned Hours / Availability x 100.
 Values:
-Total Planned Projects = 0h
+Total Planned Hours = 0h
 Availability = 0h
-Loading Efficiency = 0%</span>
-            </span>
-          </p>
-          <p class="score-value" id="score-loading-efficiency">0%</p>
-        </article>
+Planning Efficiency = 0%</span>
+              </span>
+            </p>
+            <p class="efficiency-inline-value" id="score-loading-efficiency">0%</p>
+            <p class="efficiency-inline-formula">Formula: Total Planned Hours / Availability x 100</p>
+          </div>
+          <div class="efficiency-inline-item">
+            <p class="efficiency-inline-label">
+              Delivery Efficiency
+              <span class="score-info" tabindex="0" aria-label="Delivery Efficiency information">
+                i
+                <span class="score-info-tip" id="score-delivery-efficiency-tip">Formula: Delivery Efficiency = Total Planned Hours / Total Actual Hours x 100.
+Values:
+Total Planned Hours = 0h
+Total Actual Hours = 0h
+Delivery Efficiency = 0%</span>
+              </span>
+            </p>
+            <p class="efficiency-inline-value" id="score-delivery-efficiency">0%</p>
+            <p class="efficiency-inline-formula">Formula: Total Planned Hours / Total Actual Hours x 100</p>
+          </div>
+        </div>
         <!--
         <article class="score-card" id="score-total-leaves-card">
           <p class="score-label">
@@ -2643,6 +2716,7 @@ Total Leaves Taken = 0h</span>
     const totalLeavesPlannedAssigneeSummaryBodyEl = document.getElementById("score-total-leaves-planned-assignee-summary-body");
     const totalCapacityPlannedLeavesAdjustedScoreNode = document.getElementById("score-total-capacity-planned-leaves-adjusted");
     const loadingEfficiencyScoreNode = document.getElementById("score-loading-efficiency");
+    const deliveryEfficiencyScoreNode = document.getElementById("score-delivery-efficiency");
     const capacityGapScoreNode = document.getElementById("score-capacity-gap");
     const deltaScoreCard = document.getElementById("score-delta-card");
     const totalCapacityTipNode = document.getElementById("score-total-capacity-tip");
@@ -2653,6 +2727,7 @@ Total Leaves Taken = 0h</span>
     const totalLeavesPlannedTipNode = document.getElementById("score-total-leaves-planned-tip");
     const totalCapacityPlannedLeavesAdjustedTipNode = document.getElementById("score-total-capacity-planned-leaves-adjusted-tip");
     const loadingEfficiencyTipNode = document.getElementById("score-loading-efficiency-tip");
+    const deliveryEfficiencyTipNode = document.getElementById("score-delivery-efficiency-tip");
     const capacityGapTipNode = document.getElementById("score-capacity-gap-tip");
     const availabilityFormulaNode = document.getElementById("score-availability-formula");
     const scoreCapacityProfileOpenButton = document.getElementById("score-capacity-profile-open");
@@ -2706,8 +2781,10 @@ Total Leaves Taken = 0h</span>
     const hasManagedFieldsApi = window.location.protocol !== "file:";
     const ACTUAL_HOURS_AGGREGATE_ENDPOINT = "/api/actual-hours/aggregate";
     const NESTED_ACTUALS_ENDPOINT = "/api/nested-view/actual-hours";
+    const APPROVED_PLANNED_SUMMARY_ENDPOINT = "/api/approved-vs-planned-hours/summary";
     const PERFORMANCE_TEAMS_ENDPOINT = "/api/performance/teams";
     const hasNestedActualsApi = window.location.protocol !== "file:";
+    const hasPlannedParityApi = window.location.protocol !== "file:";
     const hasTeamsApi = window.location.protocol !== "file:";
     const originalMetricsById = new Map();
     let managedFieldsByKey = new Map();
@@ -2720,6 +2797,7 @@ Total Leaves Taken = 0h</span>
     let totalLeavesPlannedDetailsOpen = false;
     let totalLeavesPlannedDetailsRows = [];
     let subtaskLogHoursByIssue = {{}};
+    const plannedHoursInRangeParityCache = new Map();
 
     function toFiniteNumber(value, fallback = 0) {{
       const n = Number(value);
@@ -2735,6 +2813,64 @@ Total Leaves Taken = 0h</span>
       if (raw === "subtask_logs") return "subtask_logs";
       if (raw === "epic_estimates") return "epic_estimates";
       return "subtask_estimates";
+    }}
+
+    function buildPlannedHoursInRangeParityKey() {{
+      const projectScope = Array.from(selectedProjectKeys).sort().join(",");
+      const assigneeScope = (!isAllTeamsSelected() && selectedTeamAssignees.size)
+        ? Array.from(selectedTeamAssignees).sort().join(",")
+        : "";
+      return [
+        selectedDateFrom,
+        selectedDateTo,
+        selectedPlannedHoursSource,
+        projectScope,
+        assigneeScope,
+      ].join("|");
+    }}
+
+    async function fetchPlannedHoursInRangeParityTotal() {{
+      if (!hasPlannedParityApi) {{
+        return null;
+      }}
+      if (normalizePlannedHoursSource(selectedPlannedHoursSource) !== "subtask_estimates") {{
+        return null;
+      }}
+      if (selectedProjectKeys.size === 0) {{
+        return 0;
+      }}
+      if (!isAllTeamsSelected() && selectedTeamAssignees.size === 0) {{
+        return 0;
+      }}
+      const parityKey = buildPlannedHoursInRangeParityKey();
+      if (plannedHoursInRangeParityCache.has(parityKey)) {{
+        return plannedHoursInRangeParityCache.get(parityKey);
+      }}
+      const params = new URLSearchParams();
+      params.set("from", selectedDateFrom);
+      params.set("to", selectedDateTo);
+      params.set("mode", "planned_dates");
+      params.set("plan_source", "jira_estimates");
+      params.set("projects", Array.from(selectedProjectKeys).sort().join(","));
+      if (!isAllTeamsSelected() && selectedTeamAssignees.size) {{
+        params.set("assignees", Array.from(selectedTeamAssignees).sort().join(","));
+      }}
+      const response = await fetch(
+        APPROVED_PLANNED_SUMMARY_ENDPOINT + "?" + params.toString(),
+        {{
+          method: "GET",
+        }}
+      );
+      const payload = await response.json().catch(() => ({{}}));
+      if (!response.ok || !payload || payload.ok === false) {{
+        throw new Error(String(payload && payload.error || "Failed to fetch planned-hours parity total."));
+      }}
+      const rows = Array.isArray(payload && payload.rows) ? payload.rows : [];
+      const total = roundHours(rows.reduce((sum, item) => (
+        sum + toFiniteNumber(item && item.dispensed_in_range_hours, 0)
+      ), 0));
+      plannedHoursInRangeParityCache.set(parityKey, total);
+      return total;
     }}
 
     function extractSubtaskHoursMap(payload) {{
@@ -3150,7 +3286,7 @@ Total Leaves Taken = 0h</span>
       }}
       renderCapacityProfileOptions();
       renderCapacityProfileDetails();
-      updateScoreCards(scorecardSourceRows);
+      void updateScoreCards(scorecardSourceRows);
     }}
 
     async function refreshCapacityProfilesFromApi() {{
@@ -3178,7 +3314,7 @@ Total Leaves Taken = 0h</span>
         next.set(key, field);
       }}
       managedFieldsByKey = next;
-      updateScoreCards(scorecardSourceRows);
+      void updateScoreCards(scorecardSourceRows);
     }}
 
     async function refreshManagedFieldsFromApi() {{
@@ -3441,7 +3577,7 @@ Total Leaves Taken = 0h</span>
       return toFiniteNumber(breakdown.profileCapacityHours, 0);
     }}
 
-    function updateScoreCards(sourceRows) {{
+    async function updateScoreCards(sourceRows) {{
       const rows = Array.isArray(sourceRows) ? sourceRows : [];
       const rowsById = new Map();
       const rowsByIdText = new Map();
@@ -3699,6 +3835,16 @@ Total Leaves Taken = 0h</span>
           }}
         }}
       }}
+      if (normalizePlannedHoursSource(selectedPlannedHoursSource) === "subtask_estimates") {{
+        try {{
+          const parityPlannedInRangeHours = await fetchPlannedHoursInRangeParityTotal();
+          if (Number.isFinite(parityPlannedInRangeHours)) {{
+            totalPlannedHours = toFiniteNumber(parityPlannedInRangeHours, totalPlannedHours);
+          }}
+        }} catch (error) {{
+          console.warn("Failed to align planned-hours total with Approved vs Planned summary:", error);
+        }}
+      }}
       const totalActualProjectHours = hasNestedActualsApi
         ? totalActualProjectHoursFromProjects
         : (filteredSubtaskActualCount > 0 ? totalActualProjectHoursFromFilteredSubtasks : totalActualProjectHoursFromProjects);
@@ -3924,6 +4070,9 @@ Total Leaves Taken = 0h</span>
       const loadingEfficiencyPercent = totalCapacityPlannedLeavesAdjustedHours === 0
         ? 0
         : ((totalPlannedHours / totalCapacityPlannedLeavesAdjustedHours) * 100);
+      const deliveryEfficiencyPercent = totalActualProjectHours === 0
+        ? 0
+        : ((totalPlannedHours / totalActualProjectHours) * 100);
       totalCapacityScoreNode.textContent = formatHours(totalCapacityHoursValue);
       totalPlannedScoreNode.textContent = formatHours(totalPlannedHours);
       totalLoggedScoreNode.textContent = formatHours(totalActualProjectHours);
@@ -3937,6 +4086,9 @@ Total Leaves Taken = 0h</span>
       totalCapacityPlannedLeavesAdjustedScoreNode.textContent = formatHours(totalCapacityPlannedLeavesAdjustedHours);
       if (loadingEfficiencyScoreNode) {{
         loadingEfficiencyScoreNode.textContent = formatPercent(loadingEfficiencyPercent);
+      }}
+      if (deliveryEfficiencyScoreNode) {{
+        deliveryEfficiencyScoreNode.textContent = formatPercent(deliveryEfficiencyPercent);
       }}
       if (capacityGapScoreNode) {{
         capacityGapScoreNode.textContent = formatHours(capacityGapHours);
@@ -3983,31 +4135,31 @@ Total Leaves Taken = 0h</span>
       }}
       if (totalPlannedTipNode) {{
         totalPlannedTipNode.textContent =
-          "Formula: Total Planned Projects = Sum(Subtask Planned Hours) where subtask Start OR Due date is within selected range, excluding RLT (RnD Leave Tracker).\\n"
+          "Formula: Total Planned Hours = Sum(Subtask Planned Hours) where subtask Start OR Due date is within selected range, excluding RLT (RnD Leave Tracker).\\n"
           + "Values:\\n"
           + "Included Subtasks Count = " + String(includedSubtaskCount) + "\\n"
           + "Excluded (RLT) Subtasks Count = " + String(excludedSubtaskCount) + "\\n"
           + "Excluded (RLT) Subtasks Planned Sum = " + formatHours(excludedPlannedHours) + "\\n"
-          + "Total Planned Projects = " + formatHours(totalPlannedHours);
+          + "Total Planned Hours = " + formatHours(totalPlannedHours);
       }}
       if (totalLoggedTipNode) {{
         totalLoggedTipNode.textContent =
-          "Formula: Total Actual Project Hours = Sum(Project Actual Hours), excluding RLT (RnD Leave Tracker).\\n"
+          "Formula: Total Actual Hours = Sum(Project Actual Hours), excluding RLT (RnD Leave Tracker).\\n"
           + "Values:\\n"
           + "Included Projects Actual Sum = " + formatHours(totalActualProjectHours) + "\\n"
           + "Excluded Projects Actual Sum = " + formatHours(excludedActualHours) + "\\n"
-          + "Total Actual Project Hours = " + formatHours(totalActualProjectHours);
+          + "Total Actual Hours = " + formatHours(totalActualProjectHours);
       }}
       if (deltaTipNode) {{
         const deltaFormulaText = managedFieldFormulaText(
           "hours_required_to_complete_projects",
-          "Total Planned Projects - Total Actual Project Hours"
+          "Total Planned Hours - Total Actual Hours"
         );
         deltaTipNode.textContent =
           "Formula: Hours Required To Complete Projects = " + deltaFormulaText + ".\\n"
           + "Values:\\n"
-          + "Total Planned Projects = " + formatHours(totalPlannedHours) + "\\n"
-          + "Total Actual Project Hours = " + formatHours(totalActualProjectHours) + "\\n"
+          + "Total Planned Hours = " + formatHours(totalPlannedHours) + "\\n"
+          + "Total Actual Hours = " + formatHours(totalActualProjectHours) + "\\n"
           + "Hours Required To Complete Projects = " + formatHours(hoursRequiredToCompleteProjectsHours);
       }}
       if (totalLeavesTipNode) {{
@@ -4041,11 +4193,19 @@ Total Leaves Taken = 0h</span>
       }}
       if (loadingEfficiencyTipNode) {{
         loadingEfficiencyTipNode.textContent =
-          "Formula: Loading Efficiency = Total Planned Projects / Availability x 100.\\n"
+          "Formula: Planning Efficiency = Total Planned Hours / Availability x 100.\\n"
           + "Values:\\n"
-          + "Total Planned Projects = " + formatHours(totalPlannedHours) + "\\n"
+          + "Total Planned Hours = " + formatHours(totalPlannedHours) + "\\n"
           + "Availability = " + formatHours(totalCapacityPlannedLeavesAdjustedHours) + "\\n"
-          + "Loading Efficiency = " + formatPercent(loadingEfficiencyPercent);
+          + "Planning Efficiency = " + formatPercent(loadingEfficiencyPercent);
+      }}
+      if (deliveryEfficiencyTipNode) {{
+        deliveryEfficiencyTipNode.textContent =
+          "Formula: Delivery Efficiency = Total Planned Hours / Total Actual Hours x 100.\\n"
+          + "Values:\\n"
+          + "Total Planned Hours = " + formatHours(totalPlannedHours) + "\\n"
+          + "Total Actual Hours = " + formatHours(totalActualProjectHours) + "\\n"
+          + "Delivery Efficiency = " + formatPercent(deliveryEfficiencyPercent);
       }}
       if (capacityGapTipNode) {{
         const capacityGapFormulaText = managedFieldFormulaText(
@@ -4056,7 +4216,7 @@ Total Leaves Taken = 0h</span>
           "Formula: Capacity available for more work = " + capacityGapFormulaText + ".\\n"
           + "Values:\\n"
           + "Total Capacity = " + formatHours(totalCapacityHoursValue) + "\\n"
-          + "Total Planned Projects = " + formatHours(totalPlannedHours) + "\\n"
+          + "Total Planned Hours = " + formatHours(totalPlannedHours) + "\\n"
           + "Total Leaves Planned = " + formatHours(totalPlannedLeavesHours) + "\\n"
           + "Capacity available for more work = " + formatHours(capacityGapHours);
       }}
@@ -4080,14 +4240,14 @@ Total Leaves Taken = 0h</span>
       }}
       appliedCapacityProfile = profile;
       appliedCapacityProfileKey = capacityProfileKey(profile);
-      updateScoreCards(scorecardSourceRows);
+      void updateScoreCards(scorecardSourceRows);
       renderCapacityProfileDetails();
     }}
 
     function resetCapacityProfileOverride() {{
       appliedCapacityProfile = null;
       appliedCapacityProfileKey = "";
-      updateScoreCards(scorecardSourceRows);
+      void updateScoreCards(scorecardSourceRows);
       renderCapacityProfileDetails();
       if (capacityProfileDetailsEl) {{
         capacityProfileDetailsEl.textContent += " | Using project totals.";
@@ -5857,7 +6017,7 @@ Total Leaves Taken = 0h</span>
       const displayRows = buildDisplayRows();
       rowCountNode.textContent = String(displayRows.length);
       updateNoEntryToggle(displayRows);
-      updateScoreCards(scorecardSourceRows);
+      void updateScoreCards(scorecardSourceRows);
       renderRows(displayRows);
       applyVisibility();
     }}

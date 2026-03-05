@@ -10,7 +10,8 @@
     "rnd_data_story.html": "rnd_data_story",
     "phase_rmi_gantt_report.html": "phase_rmi_gantt_report",
     "planned_rmis_report.html": "planned_rmis_report",
-    "planned_vs_dispensed_report.html": "planned_vs_dispensed_report"
+    "planned_vs_dispensed_report.html": "approved_vs_planned_hours_report",
+    "approved_vs_planned_hours_report.html": "approved_vs_planned_hours_report"
   };
 
   function currentPageKey() {

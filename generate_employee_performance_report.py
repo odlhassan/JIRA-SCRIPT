@@ -31,6 +31,8 @@ DEFAULT_PERFORMANCE_SETTINGS: dict[str, float] = {
     "points_per_subtask_late_hour": 1.0,
     "points_per_estimate_overrun_hour": 1.25,
     "points_per_missed_due_date": 2.0,
+    "overloaded_penalty_enabled": 1.0,
+    "overloaded_penalty_threshold_pct": 10.0,
 }
 
 
@@ -96,6 +98,11 @@ def _normalize_performance_settings(payload: dict, require_all_fields: bool = Tr
         value = _to_float(source.get(key, default))
         if key.startswith("points_per_") and value < 0:
             raise ValueError(f"{key} must be >= 0")
+        if key == "overloaded_penalty_enabled":
+            value = 1.0 if value > 0 else 0.0
+        if key == "overloaded_penalty_threshold_pct":
+            if value < 0 or value > 100:
+                raise ValueError("overloaded_penalty_threshold_pct must be between 0 and 100")
         out[key] = round(value, 4)
     if out["min_score"] > out["base_score"] or out["base_score"] > out["max_score"]:
         raise ValueError("Score bounds must satisfy: max_score >= base_score >= min_score")
@@ -118,6 +125,8 @@ def _init_performance_settings_db(db_path: Path) -> None:
                 points_per_subtask_late_hour REAL NOT NULL,
                 points_per_estimate_overrun_hour REAL NOT NULL,
                 points_per_missed_due_date REAL NOT NULL,
+                overloaded_penalty_enabled INTEGER NOT NULL DEFAULT 1,
+                overloaded_penalty_threshold_pct REAL NOT NULL DEFAULT 10.0,
                 updated_at TEXT NOT NULL
             )
             """
@@ -156,6 +165,10 @@ def _init_performance_settings_db(db_path: Path) -> None:
         settings_cols = [str(row[1]).lower() for row in conn.execute("PRAGMA table_info(performance_point_settings)").fetchall()]
         if "points_per_missed_due_date" not in settings_cols:
             conn.execute("ALTER TABLE performance_point_settings ADD COLUMN points_per_missed_due_date REAL NOT NULL DEFAULT 2.0")
+        if "overloaded_penalty_enabled" not in settings_cols:
+            conn.execute("ALTER TABLE performance_point_settings ADD COLUMN overloaded_penalty_enabled INTEGER NOT NULL DEFAULT 1")
+        if "overloaded_penalty_threshold_pct" not in settings_cols:
+            conn.execute("ALTER TABLE performance_point_settings ADD COLUMN overloaded_penalty_threshold_pct REAL NOT NULL DEFAULT 10.0")
         row = conn.execute("SELECT id FROM performance_point_settings WHERE id = 1").fetchone()
         if not row:
             defaults = _normalize_performance_settings(DEFAULT_PERFORMANCE_SETTINGS, require_all_fields=True)
@@ -164,8 +177,9 @@ def _init_performance_settings_db(db_path: Path) -> None:
                 INSERT INTO performance_point_settings (
                     id, base_score, min_score, max_score,
                     points_per_bug_hour, points_per_bug_late_hour, points_per_unplanned_leave_hour,
-                    points_per_subtask_late_hour, points_per_estimate_overrun_hour, points_per_missed_due_date, updated_at
-                ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    points_per_subtask_late_hour, points_per_estimate_overrun_hour, points_per_missed_due_date,
+                    overloaded_penalty_enabled, overloaded_penalty_threshold_pct, updated_at
+                ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     defaults["base_score"],
@@ -177,6 +191,8 @@ def _init_performance_settings_db(db_path: Path) -> None:
                     defaults["points_per_subtask_late_hour"],
                     defaults["points_per_estimate_overrun_hour"],
                     defaults["points_per_missed_due_date"],
+                    int(defaults["overloaded_penalty_enabled"]),
+                    defaults["overloaded_penalty_threshold_pct"],
                     datetime.now(timezone.utc).isoformat(),
                 ),
             )
@@ -189,7 +205,8 @@ def _load_performance_settings(db_path: Path) -> dict[str, float]:
         row = conn.execute(
             """
             SELECT base_score, min_score, max_score, points_per_bug_hour, points_per_bug_late_hour,
-                   points_per_unplanned_leave_hour, points_per_subtask_late_hour, points_per_estimate_overrun_hour, points_per_missed_due_date
+                   points_per_unplanned_leave_hour, points_per_subtask_late_hour, points_per_estimate_overrun_hour, points_per_missed_due_date,
+                   overloaded_penalty_enabled, overloaded_penalty_threshold_pct
             FROM performance_point_settings WHERE id = 1
             """
         ).fetchone()
@@ -206,6 +223,8 @@ def _load_performance_settings(db_path: Path) -> dict[str, float]:
             "points_per_subtask_late_hour": row[6],
             "points_per_estimate_overrun_hour": row[7],
             "points_per_missed_due_date": row[8],
+            "overloaded_penalty_enabled": row[9],
+            "overloaded_penalty_threshold_pct": row[10],
         },
         require_all_fields=True,
     )
@@ -219,7 +238,8 @@ def _save_performance_settings(db_path: Path, payload: dict) -> dict[str, float]
             """
             UPDATE performance_point_settings
             SET base_score=?, min_score=?, max_score=?, points_per_bug_hour=?, points_per_bug_late_hour=?,
-                points_per_unplanned_leave_hour=?, points_per_subtask_late_hour=?, points_per_estimate_overrun_hour=?, points_per_missed_due_date=?, updated_at=?
+                points_per_unplanned_leave_hour=?, points_per_subtask_late_hour=?, points_per_estimate_overrun_hour=?, points_per_missed_due_date=?,
+                overloaded_penalty_enabled=?, overloaded_penalty_threshold_pct=?, updated_at=?
             WHERE id=1
             """,
             (
@@ -232,6 +252,8 @@ def _save_performance_settings(db_path: Path, payload: dict) -> dict[str, float]
                 normalized["points_per_subtask_late_hour"],
                 normalized["points_per_estimate_overrun_hour"],
                 normalized["points_per_missed_due_date"],
+                int(normalized["overloaded_penalty_enabled"]),
+                normalized["overloaded_penalty_threshold_pct"],
                 datetime.now(timezone.utc).isoformat(),
             ),
         )
@@ -322,6 +344,56 @@ def _save_performance_team(db_path: Path, team_name: Any, assignees: list[Any], 
               updated_at=excluded.updated_at
             """,
             (normalized_name, normalized_leader, json.dumps(normalized_assignees, ensure_ascii=True), updated_at),
+        )
+        conn.commit()
+    return {
+        "team_name": normalized_name,
+        "team_leader": normalized_leader,
+        "assignees": normalized_assignees,
+        "updated_at": updated_at,
+    }
+
+
+def _update_performance_team(
+    db_path: Path,
+    existing_team_name: Any,
+    team_name: Any,
+    assignees: list[Any],
+    team_leader: Any,
+) -> dict:
+    _init_performance_settings_db(db_path)
+    normalized_existing_name = _normalize_team_name(existing_team_name)
+    normalized_name = _normalize_team_name(team_name)
+    normalized_assignees = _normalize_assignees(assignees)
+    normalized_leader = _normalize_team_leader(team_leader, normalized_assignees)
+    updated_at = datetime.now(timezone.utc).isoformat()
+    with sqlite3.connect(db_path) as conn:
+        current = conn.execute(
+            "SELECT team_name FROM performance_teams WHERE team_name = ?",
+            (normalized_existing_name,),
+        ).fetchone()
+        if not current:
+            raise ValueError("Team not found.")
+        if normalized_existing_name.casefold() != normalized_name.casefold():
+            conflict = conn.execute(
+                "SELECT team_name FROM performance_teams WHERE team_name = ?",
+                (normalized_name,),
+            ).fetchone()
+            if conflict:
+                raise ValueError("A team with this name already exists.")
+        conn.execute(
+            """
+            UPDATE performance_teams
+            SET team_name = ?, team_leader = ?, assignees_json = ?, updated_at = ?
+            WHERE team_name = ?
+            """,
+            (
+                normalized_name,
+                normalized_leader,
+                json.dumps(normalized_assignees, ensure_ascii=True),
+                updated_at,
+                normalized_existing_name,
+            ),
         )
         conn.commit()
     return {
@@ -537,6 +609,149 @@ def _load_leave_issue_keys(path: Path) -> list[str]:
         wb.close()
 
 
+def _resolve_epf_run_id(db_path: Path, requested_run_id: str) -> str:
+    run_id = _to_text(requested_run_id)
+    if run_id:
+        return run_id
+    if not db_path.exists():
+        return ""
+    with sqlite3.connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT active_run_id FROM epf_refresh_state WHERE id = 1"
+        ).fetchone()
+    return _to_text(row[0] if row else "")
+
+
+def _load_work_items_from_epf_db(db_path: Path, run_id: str) -> dict[str, dict]:
+    if not db_path.exists() or not run_id:
+        return {}
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            """
+            SELECT issue_key, project_key, issue_type, fix_type, summary, status, assignee,
+                   start_date, due_date, resolved_stable_since_date, original_estimate_hours, parent_issue_key
+            FROM epf_work_items
+            WHERE run_id = ?
+            """,
+            (run_id,),
+        ).fetchall()
+    out: dict[str, dict] = {}
+    for row in rows:
+        issue_key = _to_text(row["issue_key"]).upper()
+        if not issue_key:
+            continue
+        out[issue_key] = {
+            "issue_key": issue_key,
+            "project_key": _to_text(row["project_key"]).upper() or _extract_project_key(issue_key),
+            "issue_type": _to_text(row["issue_type"]),
+            "fix_type": _to_text(row["fix_type"]).lower(),
+            "summary": _to_text(row["summary"]),
+            "status": _to_text(row["status"]),
+            "assignee": _to_text(row["assignee"]),
+            "start_date": _parse_iso_date(row["start_date"]),
+            "due_date": _parse_iso_date(row["due_date"]),
+            "resolved_stable_since_date": _parse_iso_date(row["resolved_stable_since_date"]),
+            "original_estimate_hours": round(_to_float(row["original_estimate_hours"]), 2),
+            "parent_issue_key": _to_text(row["parent_issue_key"]).upper(),
+        }
+    return out
+
+
+def _load_worklogs_from_epf_db(db_path: Path, run_id: str, work_items: dict[str, dict]) -> list[dict]:
+    if not db_path.exists() or not run_id:
+        return []
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            """
+            SELECT issue_id, issue_assignee, worklog_date, hours_logged, project_key, is_bug, fix_type,
+                   item_summary, item_status, item_issue_type, item_assignee, item_parent_issue_key,
+                   item_start_date, item_due_date, item_resolved_stable_since_date, story_due_date,
+                   original_estimate_hours
+            FROM epf_worklogs
+            WHERE run_id = ?
+            """,
+            (run_id,),
+        ).fetchall()
+    out: list[dict] = []
+    for row in rows:
+        issue_id = _to_text(row["issue_id"]).upper()
+        if not issue_id:
+            continue
+        issue_assignee = _to_text(row["issue_assignee"]) or "Unassigned"
+        worklog_date = _parse_iso_date(row["worklog_date"])
+        hours_logged = round(_to_float(row["hours_logged"]), 2)
+        if not worklog_date or hours_logged <= 0:
+            continue
+        item = work_items.get(issue_id, {})
+        issue_type = _to_text(row["item_issue_type"]) or _to_text(item.get("issue_type"))
+        out.append(
+            {
+                "issue_id": issue_id,
+                "issue_assignee": issue_assignee,
+                "worklog_date": worklog_date,
+                "hours_logged": hours_logged,
+                "project_key": _to_text(row["project_key"]).upper()
+                or _to_text(item.get("project_key"))
+                or _extract_project_key(issue_id),
+                "is_bug": bool(int(_to_float(row["is_bug"]))) if _to_text(row["is_bug"]) else _is_bug_type(issue_type),
+                "fix_type": _to_text(row["fix_type"]).lower(),
+                "item_summary": _to_text(row["item_summary"]) or _to_text(item.get("summary")),
+                "item_status": _to_text(row["item_status"]) or _to_text(item.get("status")),
+                "item_issue_type": issue_type,
+                "item_assignee": _to_text(row["item_assignee"]) or _to_text(item.get("assignee")),
+                "item_parent_issue_key": _to_text(row["item_parent_issue_key"]).upper() or _to_text(item.get("parent_issue_key")).upper(),
+                "item_start_date": _parse_iso_date(row["item_start_date"]) or _to_text(item.get("start_date")),
+                "item_due_date": _parse_iso_date(row["item_due_date"]) or _to_text(item.get("due_date")),
+                "item_resolved_stable_since_date": _parse_iso_date(row["item_resolved_stable_since_date"]) or _to_text(item.get("resolved_stable_since_date")),
+                "story_due_date": _parse_iso_date(row["story_due_date"]),
+                "original_estimate_hours": round(_to_float(row["original_estimate_hours"]), 2),
+            }
+        )
+    return out
+
+
+def _load_unplanned_leave_rows_from_epf_db(db_path: Path, run_id: str) -> list[dict]:
+    if not db_path.exists() or not run_id:
+        return []
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            """
+            SELECT assignee, period_day, unplanned_taken_hours, planned_taken_hours
+            FROM epf_leave_rows
+            WHERE run_id = ?
+            """,
+            (run_id,),
+        ).fetchall()
+    out: list[dict] = []
+    for row in rows:
+        period_day = _parse_iso_date(row["period_day"])
+        if not period_day:
+            continue
+        out.append(
+            {
+                "assignee": _to_text(row["assignee"]) or "Unassigned",
+                "period_day": period_day,
+                "unplanned_taken_hours": round(_to_float(row["unplanned_taken_hours"]), 2),
+                "planned_taken_hours": round(_to_float(row["planned_taken_hours"]), 2),
+            }
+        )
+    return out
+
+
+def _load_leave_issue_keys_from_epf_db(db_path: Path, run_id: str) -> list[str]:
+    if not db_path.exists() or not run_id:
+        return []
+    with sqlite3.connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT issue_key FROM epf_leave_issue_keys WHERE run_id = ? ORDER BY issue_key",
+            (run_id,),
+        ).fetchall()
+    return sorted({_to_text(r[0]).upper() for r in rows if _to_text(r[0])})
+
+
 def _default_range(rows: list[dict]) -> tuple[str, str]:
     today = datetime.now(timezone.utc).date()
     month_start = date(today.year, today.month, 1)
@@ -732,6 +947,9 @@ def _build_html(payload: dict) -> str:
     .f label {{ display:block; font-size:.7rem; color:var(--muted); margin-bottom:3px; text-transform:uppercase; font-weight:700; }} .f input,.f select {{ width:100%; border:1px solid #3a5c91; border-radius:8px; background:#0d1830; color:var(--ink); padding:7px; }}
     #projects option {{ color:#0f172a; background:#ffffff; }}
     .btn {{ border:1px solid #4a6ea9; background:#1b325a; color:#eef4ff; border-radius:8px; font-weight:700; padding:7px 10px; cursor:pointer; text-decoration:none; display:inline-flex; align-items:center; }}
+    .report-refresh-wrap {{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }}
+    .report-refresh-status {{ font-size:.72rem; color:#9db1d8; min-height:18px; }}
+    .report-refresh-details {{ width:100%; font-size:.68rem; color:#c7d7f3; min-height:16px; }}
     .guide {{ margin-top:8px; border:1px solid #2f517e; border-radius:10px; background:#0f2140; padding:8px; }}
     .guide h2 {{ margin:0; font-size:.86rem; }}
     .guide p {{ margin:5px 0 0; font-size:.77rem; color:#c7d7f3; line-height:1.35; }}
@@ -739,11 +957,25 @@ def _build_html(payload: dict) -> str:
     .discover .pill {{ border:1px solid #365c8d; border-radius:999px; padding:4px 10px; font-size:.74rem; color:#dce8ff; background:#132949; }}
     .leader-controls {{ display:flex; gap:8px; flex-wrap:wrap; align-items:end; padding:8px 10px 0; }}
     .leader-controls .f {{ min-width:160px; }}
+    .leader-actions-wrap {{ margin-left:auto; display:flex; align-items:center; gap:8px; }}
+    .leader-actions-menu-wrap {{ position:relative; }}
+    .leader-icon-btn {{ width:34px; height:34px; border:1px solid #3f5f93; border-radius:8px; background:#102949; color:#dce8ff; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; }}
+    .leader-icon-btn:hover {{ background:#17325a; border-color:#7cb2ff; }}
+    .leader-icon-btn .material-symbols-outlined {{ font-size:18px; }}
+    .leader-actions-menu {{ position:absolute; top:calc(100% + 6px); right:0; min-width:210px; padding:6px; border:1px solid #314d7a; border-radius:10px; background:#0f1b32; box-shadow:0 10px 20px rgba(2,8,23,.4); z-index:45; }}
+    .leader-actions-item {{ width:100%; border:0; background:transparent; color:#dce8ff; text-align:left; padding:7px 8px; border-radius:8px; font-size:.76rem; cursor:pointer; display:flex; align-items:center; gap:6px; }}
+    .leader-actions-item:hover {{ background:#17325a; }}
+    .leader-actions-item .material-symbols-outlined {{ font-size:16px; }}
+    .leader-action-status {{ padding:0 10px 8px; min-height:16px; }}
     .section-head {{ margin:10px 0 4px; font-size:.8rem; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; font-weight:800; }}
     .section-head.collapse-toggle {{ cursor:pointer; user-select:none; }}
     .section-head.collapse-toggle .hint {{ font-size:.68rem; color:#7fa3d6; margin-left:8px; text-transform:none; letter-spacing:0; }}
     .is-collapsed {{ display:none; }}
     .kpis {{ display:grid; gap:8px; grid-template-columns:repeat(4,minmax(0,1fr)); margin-top:8px; }} .kpi {{ border:1px solid var(--line); border-radius:10px; background:var(--panel); padding:8px; }} .kpi .k {{ font-size:.72rem; color:var(--muted); text-transform:uppercase; }} .kpi .v {{ margin-top:4px; font-size:1.1rem; font-weight:800; }}
+    .kpi.actionable {{ cursor:pointer; transition:background .15s ease, border-color .15s ease; }}
+    .kpi.actionable:hover {{ background:#173158; border-color:#5f88c0; }}
+    .kpi .kpi-note {{ margin-top:3px; font-size:.66rem; color:#9db1d8; }}
+    .rmi-list-wrap {{ margin-top:8px; }}
     .planning-kpis .kpi {{ border-color:#315a86; background:#10223f; }}
     .top3-wrap {{ display:grid; gap:8px; grid-template-columns:repeat(2,minmax(0,1fr)); margin-top:8px; }}
     .top3-card {{ border:1px solid var(--line); border-radius:10px; background:var(--panel); padding:8px; }}
@@ -770,6 +1002,10 @@ def _build_html(payload: dict) -> str:
     .team-detail-shell {{ border:1px solid #2b446e; border-radius:10px; background:#0f1b32; padding:8px; }}
     .team-detail-body {{ margin-top:6px; }}
     .arena {{ display:grid; gap:10px; grid-template-columns:minmax(320px,38%) minmax(0,62%); margin-top:10px; align-items:stretch; }} .panel {{ border:1px solid var(--line); border-radius:12px; background:var(--panel); overflow:hidden; }} .panel h2 {{ margin:0; padding:9px 10px; font-size:.9rem; border-bottom:1px solid var(--line); }}
+    .panel-head {{ display:flex; justify-content:space-between; align-items:center; gap:10px; padding:9px 10px; border-bottom:1px solid var(--line); }}
+    .panel-head-title {{ margin:0; padding:0; border-bottom:0; font-size:.9rem; }}
+    .panel-inline-toggle {{ display:inline-flex; align-items:center; gap:6px; font-size:.72rem; color:#c7d7f3; font-weight:700; user-select:none; }}
+    .panel-inline-toggle input {{ margin:0; accent-color:#60a5fa; }}
     .arena > .panel {{ display:flex; flex-direction:column; min-height:72vh; max-height:72vh; }}
     .leaderboard {{ overflow:auto; flex:1; min-height:0; max-height:none; }} .row {{ display:grid; gap:6px; grid-template-columns:24px 1fr auto; align-items:center; padding:8px 10px; border-bottom:1px solid #243b61; cursor:pointer; }} .row.sel {{ background:#193766; box-shadow:inset 0 0 0 1px #5d89cf; }} .rank {{ color:#5eead4; font-weight:800; }} .sub {{ color:var(--muted); font-size:.72rem; }} .score {{ border:1px solid #3f5f93; border-radius:999px; padding:2px 8px; font-weight:800; display:inline-flex; gap:4px; align-items:center; }}
     .leader-metrics {{ display:flex; gap:6px; flex-wrap:wrap; margin-top:2px; }}
@@ -777,6 +1013,9 @@ def _build_html(payload: dict) -> str:
     .metric-chip .metric-value {{ color:#e2ecff; font-weight:900; font-size:.74rem; }}
     .metric-chip .metric-value.warn {{ color:#f59e0b; }}
     .metric-chip .material-symbols-outlined {{ font-size:15px; color:#93c5fd; font-variation-settings:"FILL" 1, "wght" 500, "GRAD" 0, "opsz" 20; }}
+    .assignee-refresh-btn {{ width:26px; height:26px; border:1px solid #36598a; border-radius:999px; background:#112546; color:#93c5fd; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; }}
+    .assignee-refresh-btn:hover {{ border-color:#7cb2ff; color:#dbeafe; background:#17325a; }}
+    .assignee-refresh-btn .material-symbols-outlined {{ font-size:16px; }}
     .detail {{ padding:10px; overflow-y:auto; flex:1; min-height:0; }} .score-arena {{ margin-top:10px; }} .score-drill {{ padding:10px; }} .card {{ border:1px solid #314e7f; border-radius:10px; background:#12213d; padding:10px; }} .big {{ font-size:2rem; font-weight:900; line-height:1; }}
     .tabs {{ display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }}
     .tab-btn {{ border:1px solid #3b5f91; background:#12284b; color:#e6efff; border-radius:999px; padding:4px 10px; font-size:.74rem; cursor:pointer; }}
@@ -859,6 +1098,10 @@ def _build_html(payload: dict) -> str:
     .issue-type-pill.issue-story .material-symbols-outlined {{ color:#60a5fa; }}
     .issue-type-pill.issue-subtask .material-symbols-outlined {{ color:#4ade80; }}
     .issue-type-pill.issue-bug-subtask .material-symbols-outlined {{ color:#f87171; }}
+    .subtask-type-icon {{ display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:700; }}
+    .subtask-type-icon .material-symbols-outlined {{ font-size:16px; line-height:1; font-variation-settings:"FILL" 1, "wght" 500, "GRAD" 0, "opsz" 20; }}
+    .subtask-type-icon.issue-subtask {{ color:#4ade80; }}
+    .subtask-type-icon.issue-bug-subtask {{ color:#f87171; }}
     .issue-kind-inline {{ margin-left:6px; font-size:.68rem; font-weight:800; color:#fecdd3; }}
     .tree-children {{ margin-left:14px; margin-top:6px; border-left:1px dashed #2e4f7d; padding-left:8px; }}
     .exec-metrics {{ display:grid; gap:10px; }}
@@ -896,6 +1139,7 @@ def _build_html(payload: dict) -> str:
     .ss-tbl {{ width:100%; border-collapse:collapse; margin-top:8px; font-size:.74rem; }}
     .ss-tbl th {{ color:#9db1d8; text-transform:uppercase; font-size:.66rem; letter-spacing:.04em; padding:5px 6px; border-bottom:1px solid #21385e; text-align:left; position:sticky; top:0; background:#10223f; }}
     .ss-tbl td {{ padding:5px 6px; border-bottom:1px solid #1b2f52; vertical-align:top; }}
+    .ramadan-chip {{ display:inline-flex; align-items:center; margin-left:6px; border:1px solid #7c3aed; border-radius:999px; padding:1px 7px; font-size:.66rem; font-weight:800; color:#e9d5ff; background:rgba(124,58,237,.22); }}
     .ss-tbl .ss-row-within td {{ background:rgba(34,197,94,.10); }}
     .ss-tbl .ss-row-commitment td {{ background:rgba(129,140,248,.12); }}
     .ss-tbl .ss-row-over td {{ background:rgba(249,115,22,.10); }}
@@ -1017,6 +1261,12 @@ def _build_html(payload: dict) -> str:
         <div class="meta" id="meta"></div>
       </div>
       <div class="hero-actions">
+        <div class="report-refresh-wrap">
+          <button id="employee-refresh-btn" class="btn" type="button">Refresh Report</button>
+          <button id="employee-refresh-cancel-btn" class="btn" type="button">Cancel Run</button>
+          <span id="employee-refresh-status" class="report-refresh-status" aria-live="polite"></span>
+          <div id="employee-refresh-details" class="report-refresh-details" aria-live="polite"></div>
+        </div>
         <button id="header-toggle" class="btn" type="button" aria-expanded="true" aria-controls="performance-header">Collapse Header</button>
       </div>
     </div>
@@ -1075,8 +1325,8 @@ def _build_html(payload: dict) -> str:
     </div>
   </section>
   <section class="arena">
-    <article class="panel"><h2 id="leaderboard-title">Leaderboard</h2><div class="leader-controls"><div class="f"><label for="leader-scoring-mode">Scoring Mode</label><select id="leader-scoring-mode"><option value="simple" selected>Simple Scoring</option><option value="advanced">Advanced Scoring</option></select></div><div class="f"><label for="leader-sort">Sort By</label><select id="leader-sort"><option value="rmis">RMIs In Range (Desc)</option><option value="score" selected>Performance Score</option><option value="missed">Missed Start Ratio</option><option value="capacity_gap">Capacity Gap (Cap - Planned)</option></select></div><div class="f"><label for="filter-risk">At-Risk View</label><select id="filter-risk"><option value="all" selected>All Assignees</option><option value="risk">Only At-Risk (&lt;60)</option></select></div><div class="f"><label for="filter-missed">Start Discipline</label><select id="filter-missed"><option value="all" selected>All</option><option value="missed">Only Missed Starts</option></select></div></div><div id="leaderboard-filter" class="sub" style="padding:0 10px 8px;"></div><div id="leaderboard" class="leaderboard"></div></article>
-    <article class="panel"><h2>Assignee Drilldown</h2><div id="detail" class="detail"><div class="empty">Select an assignee.</div></div></article>
+    <article class="panel"><h2 id="leaderboard-title">Leaderboard</h2><div class="leader-controls"><div class="f"><label for="leader-scoring-mode">Scoring Mode</label><select id="leader-scoring-mode"><option value="simple" selected>Simple Scoring</option><option value="advanced">Advanced Scoring</option></select></div><div class="f"><label for="leader-sort">Sort By</label><select id="leader-sort"><option value="rmis">RMIs In Range (Desc)</option><option value="score" selected>Performance Score</option><option value="missed">Missed Start Ratio</option><option value="capacity_gap">Capacity Gap (Cap - Planned)</option></select></div><div class="f"><label for="filter-risk">At-Risk View</label><select id="filter-risk"><option value="all" selected>All Assignees</option><option value="risk">Only At-Risk (&lt;60)</option></select></div><div class="f"><label for="filter-missed">Start Discipline</label><select id="filter-missed"><option value="all" selected>All</option><option value="missed">Only Missed Starts</option></select></div><div class="f"><label for="leader-search">Leaderboard Search</label><input id="leader-search" type="text" placeholder="Search assignee"></div><div class="leader-actions-wrap"><div class="leader-actions-menu-wrap"><button id="leader-actions-toggle" class="leader-icon-btn" type="button" aria-label="Leaderboard actions" aria-expanded="false"><span class="material-symbols-outlined">settings</span></button><div id="leader-actions-menu" class="leader-actions-menu" hidden><button type="button" class="leader-actions-item" data-action="copy-gap-people"><span class="material-symbols-outlined">content_copy</span><span>Copy Gap People</span></button></div></div></div></div><div id="leaderboard-filter" class="sub" style="padding:0 10px 8px;"></div><div id="leaderboard-action-status" class="sub leader-action-status"></div><div id="leaderboard" class="leaderboard"></div></article>
+    <article class="panel"><div class="panel-head"><h2 class="panel-head-title">Assignee Drilldown</h2><label class="panel-inline-toggle" for="assignee-overloaded-penalty-toggle"><input id="assignee-overloaded-penalty-toggle" type="checkbox"><span>Overloaded Penalty</span></label><label class="panel-inline-toggle" for="assignee-extended-actuals-toggle"><input id="assignee-extended-actuals-toggle" type="checkbox"><span>Extended Actuals</span></label></div><div id="detail" class="detail"><div class="empty">Select an assignee.</div></div></article>
   </section>
   <section class="score-arena">
     <article class="panel"><h2>Score Drilldown</h2><div id="score-drilldown" class="score-drill"><div class="empty">Select an assignee.</div></div></article>
@@ -1106,6 +1356,16 @@ const headerExpandFabButton = document.getElementById("header-expand-fab");
 const advFilterToggleButton = document.getElementById("adv-filter-toggle");
 const advFilterMenu = document.getElementById("adv-filter-menu");
 const dateFilterStatusNode = document.getElementById("date-filter-status");
+const employeeRefreshBtn = document.getElementById("employee-refresh-btn");
+const employeeRefreshCancelBtn = document.getElementById("employee-refresh-cancel-btn");
+const employeeRefreshStatus = document.getElementById("employee-refresh-status");
+const employeeRefreshDetails = document.getElementById("employee-refresh-details");
+const leaderActionsToggle = document.getElementById("leader-actions-toggle");
+const leaderActionsMenu = document.getElementById("leader-actions-menu");
+const leaderboardActionStatusEl = document.getElementById("leaderboard-action-status");
+const assigneeExtendedActualsToggleEl = document.getElementById("assignee-extended-actuals-toggle");
+const assigneeOverloadedPenaltyToggleEl = document.getElementById("assignee-overloaded-penalty-toggle");
+let employeeRefreshPollHandle = null;
 const HEADER_COLLAPSED_STORAGE_KEY = "employee-performance-header-collapsed";
 const workItemsByKey = new Map(workItems.map((row) => [String(row && row.issue_key || "").toUpperCase(), row || {{}}]));
 const defaultFrom = payload.default_from || "";
@@ -1117,10 +1377,16 @@ let selectedTeam = "";
 let availabilityBreakdownForAssignee = "";
 let plannedHoursBreakdownForAssignee = "";
 let actualHoursBreakdownForAssignee = "";
+let extendedActualsEnabled = false;
+let rmiListForAssignee = "";
 let dueCompletionEnabled = false;
+let overloadedPenaltyEnabled = n(settings.overloaded_penalty_enabled) > 0;
+let overloadedPenaltyThresholdPct = clamp(n(settings.overloaded_penalty_threshold_pct), 0, 100);
 let activeScoringTab = "simple";
 let simpleFormulaGuideExpanded = true;
 let advancedFormulaGuideExpanded = true;
+let lastLeaderboardViewItems = [];
+let leaderboardActionStatusTimer = null;
 function n(v) {{ const x = Number(v); return Number.isFinite(x) ? x : 0; }}
 function e(t) {{ return String(t ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }}
 function jiraIssueUrl(issueKey) {{
@@ -1131,6 +1397,20 @@ function jiraIssueUrl(issueKey) {{
 }}
 function clamp(v, minv, maxv) {{ return Math.max(minv, Math.min(maxv, v)); }}
 function inRange(day, from, to) {{ if (!day) return false; if (from && day < from) return false; if (to && day > to) return false; return true; }}
+function setEmployeeRefreshStatus(text, tone) {{
+  if (!employeeRefreshStatus) return;
+  employeeRefreshStatus.textContent = String(text || "");
+  if (tone === "ok") employeeRefreshStatus.style.color = "#86efac";
+  else if (tone === "err") employeeRefreshStatus.style.color = "#fca5a5";
+  else employeeRefreshStatus.style.color = "#9db1d8";
+}}
+function setEmployeeRefreshDetails(text, tone) {{
+  if (!employeeRefreshDetails) return;
+  employeeRefreshDetails.textContent = String(text || "");
+  if (tone === "ok") employeeRefreshDetails.style.color = "#86efac";
+  else if (tone === "err") employeeRefreshDetails.style.color = "#fca5a5";
+  else employeeRefreshDetails.style.color = "#c7d7f3";
+}}
 function selectedProjects() {{ return new Set(Array.from(document.getElementById("projects").selectedOptions).map(o => o.value)); }}
 function addDayPenalty(rec, day, points) {{
   const d = String(day || "");
@@ -1153,7 +1433,7 @@ function dateRangeDays(from, to) {{
   return out;
 }}
 function ensure(map, name) {{
-  if (!map.has(name)) map.set(name, {{assignee:name, bug_hours:0, bug_late_hours:0, subtask_late_hours:0, estimate_overrun_hours:0, rework_hours:0, unplanned_leave_hours:0, planned_leave_hours:0, unplanned_leave_count:0, planned_leave_count:0, unplanned_leave_days:0, planned_leave_days:0, missing_story_due_count:0, missing_due_count:0, missing_estimate_issue_count:0, total_hours:0, planned_hours_assigned:0, base_capacity_hours:0, employee_capacity_hours:0, assigned_counts:{{epic:0,story:0,subtask:0}}, total_assigned_count:0, due_dated_assigned_count:0, missed_start_count:0, missed_start_ratio:0, missed_due_date_count:0, missed_due_date_ratio:0, active_rmi_count:0, assigned_hierarchy:[], missed_start_items:[], due_compliance_items:[], start_day_activity:[], last_log_by_issue:{{}}, issue_logged_hours_by_issue:{{}}, subtask_late_by_issue:{{}}, entity_values:{{}}, managed_values:{{}}, managed_scope:{{}}, feed:[], daily_penalty_by_day:{{}}, daily_series:[], ss_total_estimate:0, ss_total_overrun:0, ss_commitment_overrun:0, ss_commitment_count:0, ss_within_count:0, ss_over_count:0, ss_no_estimate_count:0, ss_on_time_count:0, ss_late_count:0, ss_subtask_details:[]}});
+  if (!map.has(name)) map.set(name, {{assignee:name, bug_hours:0, bug_late_hours:0, subtask_late_hours:0, estimate_overrun_hours:0, rework_hours:0, unplanned_leave_hours:0, planned_leave_hours:0, unplanned_leave_count:0, planned_leave_count:0, unplanned_leave_days:0, planned_leave_days:0, missing_story_due_count:0, missing_due_count:0, missing_estimate_issue_count:0, total_hours:0, planned_hours_assigned:0, base_capacity_hours:0, employee_capacity_hours:0, assigned_counts:{{epic:0,story:0,subtask:0}}, total_assigned_count:0, due_dated_assigned_count:0, missed_start_count:0, missed_start_ratio:0, missed_due_date_count:0, missed_due_date_ratio:0, active_rmi_count:0, active_rmi_keys:[], assigned_hierarchy:[], missed_start_items:[], due_compliance_items:[], start_day_activity:[], last_log_by_issue:{{}}, issue_logged_hours_by_issue:{{}}, subtask_late_by_issue:{{}}, entity_values:{{}}, managed_values:{{}}, managed_scope:{{}}, feed:[], daily_penalty_by_day:{{}}, daily_series:[], ss_total_estimate:0, ss_total_actual:0, ss_total_overrun:0, ss_commitment_overrun:0, ss_commitment_count:0, ss_within_count:0, ss_over_count:0, ss_no_estimate_count:0, ss_on_time_count:0, ss_late_count:0, ss_subtask_details:[], simple_score_overloaded:100, simple_score_overloaded_applied:0}});
   return map.get(name);
 }}
 function normalizeType(t) {{
@@ -1545,13 +1825,21 @@ function compute() {{
   const s = String(document.getElementById("search").value || "").trim().toLowerCase();
   const pset = selectedProjects();
   const useP = pset.size > 0;
-  const logs = worklogs.filter((r) => {{
+  const scopedWorklogs = worklogs.filter((r) => {{
     if (useP && !pset.has(String(r.project_key || "UNKNOWN"))) return false;
-    if (!inRange(String(r.worklog_date || ""), from, to)) return false;
     if (s && !String(r.issue_assignee || "").toLowerCase().includes(s)) return false;
     const issueType = String(r.item_issue_type || r.issue_type || "");
     return isSubtaskPerformanceType(issueType);
   }});
+  const logs = scopedWorklogs.filter((r) => inRange(String(r.worklog_date || ""), from, to));
+  const allLoggedHoursByAssigneeIssue = new Map();
+  for (const wl of scopedWorklogs) {{
+    const assignee = String(wl.issue_assignee || "Unassigned");
+    const issueKey = String(wl.issue_id || "").toUpperCase();
+    if (!issueKey) continue;
+    const compound = `${{assignee}}\\u0000${{issueKey}}`;
+    allLoggedHoursByAssigneeIssue.set(compound, n(allLoggedHoursByAssigneeIssue.get(compound)) + n(wl.hours_logged));
+  }}
   const assignedItems = workItems.filter((r) => {{
     const assignee = String(r.assignee || "");
     if (!assignee) return false;
@@ -1725,6 +2013,7 @@ function compute() {{
       const ssDueStatus = String(ssRow.due_completion_status || "");
       const ssCommit = n(ssRow.is_commitment);
       a.ss_total_estimate += ssEst;
+      a.ss_total_actual += ssAct;
       a.ss_total_overrun += ssOver;
       if (ssCommit) {{ a.ss_commitment_overrun += ssOver; a.ss_commitment_count += 1; }}
       if (ssEstStatus === "within_estimate") a.ss_within_count += 1;
@@ -1763,9 +2052,35 @@ function compute() {{
       }}
     }}
   }}
+  for (const it of byA.values()) {{
+    const statsByIssue = {{}};
+    const seenIssueKeys = new Set();
+    let statsTotal = 0;
+    for (const row of (Array.isArray(it.assigned_hierarchy) ? it.assigned_hierarchy : [])) {{
+      const issueKey = String(row?.issue_key || "").toUpperCase();
+      if (!issueKey || seenIssueKeys.has(issueKey)) continue;
+      seenIssueKeys.add(issueKey);
+      const compound = `${{String(it.assignee || "Unassigned")}}\\u0000${{issueKey}}`;
+      const hours = extendedActualsEnabled
+        ? n(allLoggedHoursByAssigneeIssue.get(compound))
+        : n(it.issue_logged_hours_by_issue[issueKey]);
+      if (hours > 0) {{
+        statsByIssue[issueKey] = hours;
+        statsTotal += hours;
+      }}
+    }}
+    it.issue_logged_hours_stats_by_issue = statsByIssue;
+    it.actual_hours_stats_total = statsTotal;
+    for (const row of (Array.isArray(it.assigned_hierarchy) ? it.assigned_hierarchy : [])) {{
+      const issueKey = String(row?.issue_key || "").toUpperCase();
+      row.actual_hours = n(statsByIssue[issueKey]);
+    }}
+  }}
   const items = Array.from(byA.values());
   for (const it of items) {{
-    it.active_rmi_count = (epicKeysByAssignee.get(String(it.assignee || "")) || new Set()).size;
+    const activeRmiSet = epicKeysByAssignee.get(String(it.assignee || "")) || new Set();
+    it.active_rmi_count = activeRmiSet.size;
+    it.active_rmi_keys = Array.from(activeRmiSet).sort((a, b) => String(a || "").localeCompare(String(b || "")));
   }}
   const seriesDays = dateRangeDays(from, to);
   for (const it of items) {{
@@ -1823,12 +2138,18 @@ function compute() {{
   }}
   for (const it of items) {{
     const totalEst = n(it.ss_total_estimate);
+    const totalActual = n(it.ss_total_actual);
     const totalOver = n(it.ss_total_overrun);
     const commitOver = n(it.ss_commitment_overrun);
     it.simple_score_raw = totalEst > 0 ? clamp(100 * (1 - totalOver / totalEst), 0, 100) : 100;
     const adjOver = Math.max(0, totalOver - commitOver);
     it.simple_score_due = totalEst > 0 ? clamp(100 * (1 - adjOver / totalEst), 0, 100) : 100;
-    it.simple_score = dueCompletionEnabled ? it.simple_score_due : it.simple_score_raw;
+    it.simple_score_overloaded = totalEst > 0 ? clamp((totalActual / totalEst) * 100, 0, 100) : 100;
+    const minRequiredHours = totalEst > 0 ? totalEst * (1 - overloadedPenaltyThresholdPct / 100) : 0;
+    const overloadedApplies = overloadedPenaltyEnabled && totalEst > 0 && totalActual < minRequiredHours;
+    it.simple_score_overloaded_applied = overloadedApplies ? 1 : 0;
+    const baseSimpleScore = dueCompletionEnabled ? it.simple_score_due : it.simple_score_raw;
+    it.simple_score = overloadedApplies ? Math.min(baseSimpleScore, it.simple_score_overloaded) : baseSimpleScore;
   }}
   items.sort((a,b)=>n(b.final_score)-n(a.final_score) || a.assignee.localeCompare(b.assignee));
   return items;
@@ -1953,6 +2274,14 @@ function issueTypePill(rawType) {{
   const low = String(rawType || "").toLowerCase();
   const tone = low === "epic" ? "issue-epic" : (low === "story" ? "issue-story" : (low === "bug_subtask" ? "issue-bug-subtask" : "issue-subtask"));
   return `<span class="metric-pill issue-type-pill ${{tone}}" title="${{e(meta.label)}}" aria-label="${{e(meta.label)}}"><span class="material-symbols-outlined" aria-hidden="true">${{e(meta.icon)}}</span></span>`;
+}}
+function subtaskTypeIcon(rawType) {{
+  const low = String(rawType || "").toLowerCase();
+  const isBug = low === "bug_subtask";
+  const icon = isBug ? "bug_report" : "construction";
+  const label = isBug ? "Bug Subtask" : "Subtask";
+  const tone = isBug ? "issue-bug-subtask" : "issue-subtask";
+  return `<span class="subtask-type-icon ${{tone}}" title="${{e(label)}}" aria-label="${{e(label)}}"><span class="material-symbols-outlined" aria-hidden="true">${{e(icon)}}</span><span>${{e(label)}}</span></span>`;
 }}
 function renderHierarchyTable(rows, dueRows, missedRows) {{
   const data = Array.isArray(rows) ? rows : [];
@@ -2125,6 +2454,78 @@ function toTitleCaseKey(key) {{
   if (!txt) return "Metric";
   return txt.replace(/\\w\\S*/g, (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
 }}
+function leaderboardCapacityValue(it) {{
+  const managed = getManagedValue(it, ["capacity_available_for_more_work", "capacityavailableformorework", "capacity_available_more_work"]);
+  if (Number.isFinite(managed)) return managed;
+  return n(it && it.capacity_gap_hours);
+}}
+async function copyTextToClipboard(value) {{
+  const text = String(value || "");
+  if (!text) return false;
+  if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {{
+    try {{
+      await navigator.clipboard.writeText(text);
+      return true;
+    }} catch (error) {{}}
+  }}
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "readonly");
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  textarea.style.pointerEvents = "none";
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+  let copied = false;
+  try {{
+    copied = document.execCommand("copy");
+  }} catch (error) {{
+    copied = false;
+  }}
+  document.body.removeChild(textarea);
+  return copied;
+}}
+function setLeaderboardActionStatus(text, tone) {{
+  if (!leaderboardActionStatusEl) return;
+  if (leaderboardActionStatusTimer) {{
+    clearTimeout(leaderboardActionStatusTimer);
+    leaderboardActionStatusTimer = null;
+  }}
+  leaderboardActionStatusEl.textContent = String(text || "");
+  if (tone === "ok") leaderboardActionStatusEl.style.color = "#86efac";
+  else if (tone === "warn") leaderboardActionStatusEl.style.color = "#facc15";
+  else if (tone === "err") leaderboardActionStatusEl.style.color = "#fca5a5";
+  else leaderboardActionStatusEl.style.color = "#9db1d8";
+  if (text) {{
+    leaderboardActionStatusTimer = setTimeout(() => {{
+      if (!leaderboardActionStatusEl) return;
+      leaderboardActionStatusEl.textContent = "";
+      leaderboardActionStatusEl.style.color = "#9db1d8";
+    }}, 3500);
+  }}
+}}
+function setLeaderActionsMenuOpen(isOpen) {{
+  if (!leaderActionsMenu || !leaderActionsToggle) return;
+  const open = Boolean(isOpen);
+  leaderActionsMenu.hidden = !open;
+  leaderActionsToggle.setAttribute("aria-expanded", open ? "true" : "false");
+}}
+async function copyGapPeopleFromLeaderboard() {{
+  const source = Array.isArray(lastLeaderboardViewItems) ? lastLeaderboardViewItems : [];
+  const names = source
+    .filter((it) => leaderboardCapacityValue(it) < 0)
+    .map((it) => String(it && it.assignee || "").trim())
+    .filter(Boolean);
+  const uniqueNames = Array.from(new Set(names));
+  if (!uniqueNames.length) {{
+    setLeaderboardActionStatus("No gap people found in the current leaderboard filter.", "warn");
+    return;
+  }}
+  const copied = await copyTextToClipboard(uniqueNames.join("\\n"));
+  if (copied) setLeaderboardActionStatus(`Copied ${{uniqueNames.length}} gap people.`, "ok");
+  else setLeaderboardActionStatus("Could not copy. Please allow clipboard access.", "err");
+}}
 function getManagedValue(item, candidates) {{
   const values = item && item.managed_values ? item.managed_values : {{}};
   const byKey = new Map(Object.entries(values).map(([k, v]) => [String(k || "").toLowerCase(), n(v)]));
@@ -2228,6 +2629,7 @@ function render(items) {{
   const riskMode = String(document.getElementById("filter-risk")?.value || "all");
   const missedMode = String(document.getElementById("filter-missed")?.value || "all");
   const sortMode = String(document.getElementById("leader-sort")?.value || "score");
+  const leaderSearchText = String(document.getElementById("leader-search")?.value || "").trim().toLowerCase();
   const leaderScoringMode = String(document.getElementById("leader-scoring-mode")?.value || "simple");
   activeScoringTab = leaderScoringMode;
   function lbScore(it) {{ return leaderScoringMode === "simple" ? n(it.simple_score) : n(it.final_score); }}
@@ -2235,12 +2637,16 @@ function render(items) {{
     const allowed = new Set((selectedTeamRow.members || []).map((m) => String(m || "").toLowerCase()));
     viewItems = viewItems.filter((it) => allowed.has(String(it.assignee || "").toLowerCase()));
   }}
+  if (leaderSearchText) {{
+    viewItems = viewItems.filter((it) => String(it.assignee || "").toLowerCase().includes(leaderSearchText));
+  }}
   if (riskMode === "risk") viewItems = viewItems.filter((it) => lbScore(it) < 60);
   if (missedMode === "missed") viewItems = viewItems.filter((it) => n(it.missed_start_count) > 0);
   if (sortMode === "rmis") viewItems.sort((a,b)=>n(b.active_rmi_count)-n(a.active_rmi_count)||lbScore(b)-lbScore(a)||a.assignee.localeCompare(b.assignee));
   else if (sortMode === "missed") viewItems.sort((a,b)=>n(b.missed_start_ratio)-n(a.missed_start_ratio)||lbScore(b)-lbScore(a));
   else if (sortMode === "capacity_gap") viewItems.sort((a,b)=>n(a.capacity_gap_hours)-n(b.capacity_gap_hours)||lbScore(b)-lbScore(a));
   else viewItems.sort((a,b)=>lbScore(b)-lbScore(a)||a.assignee.localeCompare(b.assignee));
+  lastLeaderboardViewItems = viewItems.slice();
   document.getElementById("leaderboard-title").textContent = selectedTeam ? `Leaderboard - ${{selectedTeam}}` : "Leaderboard";
   document.getElementById("leaderboard-filter").textContent = selectedTeam
     ? `Filtered by team "${{selectedTeam}}" (${{viewItems.length}} assignee${{viewItems.length === 1 ? "" : "s"}})`
@@ -2248,8 +2654,7 @@ function render(items) {{
   const lb = document.getElementById("leaderboard");
   if (!viewItems.length) {{ lb.innerHTML = '<div class="empty" style="padding:10px;">No assignee activity for current filter.</div>'; document.getElementById("detail").innerHTML = '<div class="empty">No assignee activity for current filter.</div>'; document.getElementById("score-drilldown").innerHTML = '<div class="empty">No assignee activity for current filter.</div>'; return; }}
   lb.innerHTML = viewItems.map((it, i) => {{
-    const capMoreManaged = getManagedValue(it, ["capacity_available_for_more_work", "capacityavailableformorework", "capacity_available_more_work"]);
-    const capMore = Number.isFinite(capMoreManaged) ? capMoreManaged : n(it.capacity_gap_hours);
+    const capMore = leaderboardCapacityValue(it);
     const rowScore = lbScore(it);
     const ssPlanned = n(it.ss_total_estimate);
     const ssActual = (Array.isArray(it.ss_subtask_details) ? it.ss_subtask_details : []).reduce((acc, row) => acc + n(row?.actual), 0);
@@ -2257,9 +2662,19 @@ function render(items) {{
     const simpleFormulaSub = `Simple: 100 x (1 - Overrun/Planned) | Planned: ${{ssPlanned.toFixed(1)}}h | Actual: ${{ssActual.toFixed(1)}}h | Overrun: ${{ssOverrun.toFixed(1)}}h`;
     const advancedSub = `${{n(it.total_hours).toFixed(1)}}h logged | Missed: ${{n(it.missed_start_ratio).toFixed(1)}}% | Cap Gap: ${{n(it.capacity_gap_hours).toFixed(1)}}h`;
     const rowSub = leaderScoringMode === "simple" ? simpleFormulaSub : advancedSub;
-    return `<div class="row${{it.assignee===selectedName?' sel':''}}" data-name="${{e(it.assignee)}}"><div class="rank">#${{i+1}}</div><div><div>${{e(it.assignee)}}</div><div class="leader-metrics"><span class="metric-chip"><span class="material-symbols-outlined">deployed_code</span><span class="metric-value">${{n(it.active_rmi_count).toFixed(0)}}</span></span><span class="metric-chip"><span class="material-symbols-outlined">sliders</span><span class="metric-value${{capMore < 0 ? " warn" : ""}}">${{capMore.toFixed(1)}}h</span></span><span class="metric-chip"><span class="material-symbols-outlined">award_star</span><span class="metric-value">${{rowScore.toFixed(1)}}</span></span></div><div class="sub">${{rowSub}}</div></div><div class="score"><span class="material-symbols-outlined">award_star</span>${{rowScore.toFixed(1)}}</div></div>`;
+    return `<div class="row${{it.assignee===selectedName?' sel':''}}" data-name="${{e(it.assignee)}}"><div class="rank">#${{i+1}}</div><div><div>${{e(it.assignee)}}</div><div class="leader-metrics"><button type="button" class="assignee-refresh-btn" data-assignee="${{e(it.assignee)}}" title="Refresh this assignee" aria-label="Refresh ${{e(it.assignee)}}"><span class="material-symbols-outlined">refresh</span></button><span class="metric-chip"><span class="material-symbols-outlined">deployed_code</span><span class="metric-value">${{n(it.active_rmi_count).toFixed(0)}}</span></span><span class="metric-chip"><span class="material-symbols-outlined">sliders</span><span class="metric-value${{capMore < 0 ? " warn" : ""}}">${{capMore.toFixed(1)}}h</span></span><span class="metric-chip"><span class="material-symbols-outlined">award_star</span><span class="metric-value">${{rowScore.toFixed(1)}}</span></span></div><div class="sub">${{rowSub}}</div></div><div class="score"><span class="material-symbols-outlined">award_star</span>${{rowScore.toFixed(1)}}</div></div>`;
   }}).join("");
-  Array.from(lb.querySelectorAll(".row")).forEach((el)=>el.addEventListener("click", ()=>{{ selectedName = String(el.getAttribute("data-name") || ""); availabilityBreakdownForAssignee = ""; plannedHoursBreakdownForAssignee = ""; actualHoursBreakdownForAssignee = ""; render(compute()); }}));
+  Array.from(lb.querySelectorAll(".row")).forEach((el)=>el.addEventListener("click", ()=>{{ selectedName = String(el.getAttribute("data-name") || ""); availabilityBreakdownForAssignee = ""; plannedHoursBreakdownForAssignee = ""; actualHoursBreakdownForAssignee = ""; rmiListForAssignee = ""; render(compute()); }}));
+  Array.from(lb.querySelectorAll(".assignee-refresh-btn")).forEach((btn)=>btn.addEventListener("click", async (event)=>{{
+    event.stopPropagation();
+    const assignee = String(btn.getAttribute("data-assignee") || "");
+    if (!assignee) return;
+    if (typeof window !== "undefined" && typeof window.__startEmployeeRefreshRun === "function") {{
+      await window.__startEmployeeRefreshRun(assignee, btn);
+      return;
+    }}
+    setEmployeeRefreshStatus("Refresh monitor is unavailable on this page build.", "err");
+  }}));
   let item = viewItems.find(x => x.assignee === selectedName); if (!item) {{ item = viewItems[0]; selectedName = item.assignee; }}
   const feed = (item.feed || []).map((v) => `<div class="i"><strong>${{e(v.label)}}</strong><br>${{n(v.hours).toFixed(2)}}h | <span class="neg">-${{n(v.points).toFixed(2)}}</span></div>`).join("") || '<div class="i empty">No violations.</div>';
   const hierarchyTable = renderHierarchyTable(item.assigned_hierarchy, item.due_compliance_items, item.missed_start_items);
@@ -2297,8 +2712,10 @@ function render(items) {{
   const actualHoursSpentEntry = {{
     key: "actual_hours_spent_static",
     label: "Actual Hours Spent",
-    meaning: "Total actual logged hours for assigned work items within current filters.",
-    value: n(item.total_hours),
+    meaning: extendedActualsEnabled
+      ? "Total actual logged hours for selected subtasks (based on start OR due date in selected range), using full logged history."
+      : "Total actual logged hours for assigned work items within current filters.",
+    value: n(item.actual_hours_stats_total),
   }};
   const availabilityIndex = managedEntries.findIndex((entry) => {{
     const key = String(entry?.key || "").trim().toLowerCase();
@@ -2444,6 +2861,27 @@ function render(items) {{
   const activeTo = document.getElementById("to").value || defaultTo;
   const activeProfileForBreakdown = resolveActiveCapacityProfile(activeFrom, activeTo);
   const businessDaysInRange = computeBusinessDays(activeFrom, activeTo, activeProfileForBreakdown);
+  function normIsoDay(value) {{
+    const text = String(value || "").trim();
+    if (!text) return "";
+    const day = text.slice(0, 10);
+    return /^\\d{{4}}-\\d{{2}}-\\d{{2}}$/.test(day) ? day : "";
+  }}
+  const activeRamadanStart = normIsoDay(activeProfileForBreakdown?.ramadan_start_date);
+  const activeRamadanEnd = normIsoDay(activeProfileForBreakdown?.ramadan_end_date);
+  function overlapsActiveRamadan(startIso, dueIso) {{
+    if (!activeRamadanStart || !activeRamadanEnd) return false;
+    const start = normIsoDay(startIso);
+    const due = normIsoDay(dueIso);
+    if (!start && !due) return false;
+    if (start && due) {{
+      const itemStart = start <= due ? start : due;
+      const itemEnd = start <= due ? due : start;
+      return itemStart <= activeRamadanEnd && itemEnd >= activeRamadanStart;
+    }}
+    const singleDate = start || due;
+    return singleDate >= activeRamadanStart && singleDate <= activeRamadanEnd;
+  }}
   const managedHtml = managedEntries.length
     ? `<div class="exec-metrics">${{managedEntries.map((m) => {{
       const b = barMeta(m);
@@ -2465,36 +2903,40 @@ function render(items) {{
         : "";
       const plannedRows = (Array.isArray(item.assigned_hierarchy) ? item.assigned_hierarchy : [])
         .filter((row) => {{
-          const t = String(row?.issue_type || "").toLowerCase();
+          const t = String(row?.hierarchy_type || row?.issue_type || "").toLowerCase();
           return t === "subtask" || t === "bug_subtask";
         }});
       const plannedTotal = plannedRows.reduce((acc, row) => acc + n(row?.original_estimate_hours), 0);
       const plannedTableBody = plannedRows.length
         ? plannedRows.map((row) => {{
-          const rowType = String(row?.issue_type || "").toLowerCase() === "bug_subtask" ? "Bug" : "Subtask";
+          const rawType = String(row?.hierarchy_type || row?.issue_type || "").toLowerCase();
           const issueKey = String(row?.issue_key || "").toUpperCase();
+          const itemRef = workItemsByKey.get(issueKey) || {{}};
+          const plannedStart = String(row?.start_date || itemRef?.start_date || "");
+          const plannedDue = String(row?.due_date || itemRef?.due_date || "");
+          const ramadanChip = overlapsActiveRamadan(plannedStart, plannedDue)
+            ? '<span class="ramadan-chip">Ramadan</span>'
+            : "";
           const issueUrl = jiraIssueUrl(issueKey);
           const linkCell = issueUrl
             ? `<a class="jira-link-icon" href="${{e(issueUrl)}}" target="_blank" rel="noopener noreferrer" title="Open in Jira" onclick="event.stopPropagation();"><span class="material-symbols-outlined">open_in_new</span></a>`
             : `<span class="jira-link-disabled">-</span>`;
-          return `<tr><td class="issue-id">${{e(issueKey || "-")}}</td><td>${{e(rowType)}}</td><td>${{n(row?.original_estimate_hours).toFixed(2)}}h</td><td>${{linkCell}}</td></tr>`;
+          return `<tr><td class="issue-id">${{e(issueKey || "-")}}</td><td>${{subtaskTypeIcon(rawType)}}</td><td>${{n(row?.original_estimate_hours).toFixed(2)}}h${{ramadanChip}}</td><td>${{linkCell}}</td></tr>`;
         }}).join("")
         : '<tr><td colspan="4" class="empty">No subtasks in current scope.</td></tr>';
       const plannedBreakdownBlock = b.isPlannedAssigned && isPlannedOpen
         ? `<div class="availability-breakdown"><div class="availability-note">Assigned subtasks in current filters (including bug subtasks).</div><div class="tbl-wrap" style="max-height:240px;overflow:auto;"><table class="ss-tbl"><thead><tr><th>Jira Subtask ID</th><th>Type</th><th>Original Estimate</th><th>Jira</th></tr></thead><tbody>${{plannedTableBody}}</tbody></table></div><div class="availability-line"><span class="availability-name"><strong>Total Original Estimates</strong></span><span class="availability-num"><strong>${{plannedTotal.toFixed(2)}}h</strong></span></div></div>`
         : "";
-      const actualRows = Object.entries(item.issue_logged_hours_by_issue || {{}})
+      const actualRows = Object.entries(item.issue_logged_hours_stats_by_issue || {{}})
         .map(([issueKeyRaw, loggedHoursRaw]) => {{
           const issueKey = String(issueKeyRaw || "").toUpperCase();
           const loggedHours = n(loggedHoursRaw);
           const wi = workItemsByKey.get(issueKey) || {{}};
           const rawType = String(wi.issue_type || wi.work_item_type || wi.jira_issue_type || "");
           const normalizedType = normalizeHierarchyType(rawType);
-          const rowType = normalizedType === "bug_subtask" ? "Bug" : "Subtask";
           return {{
             issue_key: issueKey,
             issue_type: normalizedType || "subtask",
-            row_type: rowType,
             actual_hours: loggedHours,
           }};
         }})
@@ -2508,11 +2950,14 @@ function render(items) {{
           const linkCell = issueUrl
             ? `<a class="jira-link-icon" href="${{e(issueUrl)}}" target="_blank" rel="noopener noreferrer" title="Open in Jira" onclick="event.stopPropagation();"><span class="material-symbols-outlined">open_in_new</span></a>`
             : `<span class="jira-link-disabled">-</span>`;
-          return `<tr><td class="issue-id">${{e(issueKey || "-")}}</td><td>${{e(row?.row_type || "Subtask")}}</td><td>${{n(row?.actual_hours).toFixed(2)}}h</td><td>${{linkCell}}</td></tr>`;
+          return `<tr><td class="issue-id">${{e(issueKey || "-")}}</td><td>${{subtaskTypeIcon(row?.issue_type || "subtask")}}</td><td>${{n(row?.actual_hours).toFixed(2)}}h</td><td>${{linkCell}}</td></tr>`;
         }}).join("")
         : '<tr><td colspan="4" class="empty">No logged subtasks in current scope.</td></tr>';
+      const actualNote = extendedActualsEnabled
+        ? "Selected subtasks (start OR due date in current range) with full logged history (including bug subtasks)."
+        : "Subtasks with logged hours in current date/project filters (including bug subtasks).";
       const actualBreakdownBlock = b.isActualSpent && isActualOpen
-        ? `<div class="availability-breakdown"><div class="availability-note">Subtasks with logged hours in current date/project filters (including bug subtasks).</div><div class="tbl-wrap" style="max-height:240px;overflow:auto;"><table class="ss-tbl"><thead><tr><th>Jira Subtask ID</th><th>Type</th><th>Actual Logged Hours</th><th>Jira</th></tr></thead><tbody>${{actualTableBody}}</tbody></table></div><div class="availability-line"><span class="availability-name"><strong>Total Actual Logged Hours</strong></span><span class="availability-num"><strong>${{actualTotal.toFixed(2)}}h</strong></span></div></div>`
+        ? `<div class="availability-breakdown"><div class="availability-note">${{actualNote}}</div><div class="tbl-wrap" style="max-height:240px;overflow:auto;"><table class="ss-tbl"><thead><tr><th>Jira Subtask ID</th><th>Type</th><th>Actual Logged Hours</th><th>Jira</th></tr></thead><tbody>${{actualTableBody}}</tbody></table></div><div class="availability-line"><span class="availability-name"><strong>Total Actual Logged Hours</strong></span><span class="availability-num"><strong>${{actualTotal.toFixed(2)}}h</strong></span></div></div>`
         : "";
       const clickHint = b.isAvailability
         ? " | Click to view formula"
@@ -2529,15 +2974,34 @@ function render(items) {{
   const summaryCapacityManaged = getManagedValue(item, ["capacity_available_for_more_work", "capacityavailableformorework", "capacity_available_more_work"]);
   const summaryCapacity = Number.isFinite(summaryCapacityManaged) ? summaryCapacityManaged : (n(item.employee_capacity_hours) - n(item.planned_hours_assigned));
   const summaryRmis = n(item.active_rmi_count);
+  const summaryRmiKeys = Array.isArray(item.active_rmi_keys) ? item.active_rmi_keys : [];
+  const isRmiListOpen = rmiListForAssignee === String(item.assignee || "");
+  const rmiListRows = summaryRmiKeys.length
+    ? summaryRmiKeys.map((epicKey) => {{
+      const issueKey = String(epicKey || "").toUpperCase();
+      const epicRow = workItemsByKey.get(issueKey) || {{}};
+      const epicName = String(epicRow.summary || epicRow.item_summary || epicRow.epic_name || "").trim() || "-";
+      const issueUrl = jiraIssueUrl(issueKey);
+      const linkCell = issueUrl
+        ? `<a class="jira-link-icon" href="${{e(issueUrl)}}" target="_blank" rel="noopener noreferrer" title="Open in Jira"><span class="material-symbols-outlined">open_in_new</span></a>`
+        : `<span class="jira-link-disabled">-</span>`;
+      return `<tr><td class="issue-id">${{e(issueKey || "-")}}</td><td class="issue-title">${{e(epicName)}}</td><td>${{linkCell}}</td></tr>`;
+    }}).join("")
+    : '<tr><td colspan="3" class="empty">No RMIs in selected date/project filters.</td></tr>';
+  const rmiListHtml = isRmiListOpen
+    ? `<div class="tbl-wrap rmi-list-wrap"><h3 class="tbl-title">RMIs In Current Scope</h3><table class="ss-tbl"><thead><tr><th>RMI (Epic Key)</th><th>RMI Name</th><th>Jira</th></tr></thead><tbody>${{rmiListRows}}</tbody></table></div>`
+    : "";
   const summaryScore = n(item.final_score);
-  const activeSimpleScore = dueCompletionEnabled ? n(item.simple_score_due) : n(item.simple_score_raw);
+  const baseSimpleScore = dueCompletionEnabled ? n(item.simple_score_due) : n(item.simple_score_raw);
+  const overloadedApplied = n(item.simple_score_overloaded_applied) > 0;
+  const activeSimpleScore = overloadedApplied ? Math.min(baseSimpleScore, n(item.simple_score_overloaded)) : baseSimpleScore;
   const activeBigScore = activeScoringTab === "simple" ? activeSimpleScore : summaryScore;
   const activeBigLabel = activeScoringTab === "simple" ? "Simple Score" : "Advanced Score";
   const activeBigSub = activeScoringTab === "simple"
-    ? `Simple efficiency${{dueCompletionEnabled ? " (due-adjusted)" : ""}} = 100 x (1 - Overrun/Planned) | Overrun: ${{n(item.ss_total_overrun).toFixed(1)}}h | Planned: ${{n(item.ss_total_estimate).toFixed(1)}}h`
+    ? `Simple efficiency${{dueCompletionEnabled ? " (due-adjusted)" : ""}}${{overloadedApplied ? " + overloaded penalty" : ""}} | Overrun: ${{n(item.ss_total_overrun).toFixed(1)}}h | Planned: ${{n(item.ss_total_estimate).toFixed(1)}}h${{overloadedApplied ? ` | Logged: ${{n(item.ss_total_actual).toFixed(1)}}h` : ""}}`
     : `Penalty-based | Raw ${{n(item.raw_score).toFixed(2)}} | Penalty -${{n(item.total_penalty).toFixed(2)}} | Base ${{n(settings.base_score).toFixed(0)}}`;
-  const summaryMetricsHtml = `<div class="kpis" style="margin-top:8px;"><div class="kpi"><div class="k"><span class="material-symbols-outlined" style="font-size:15px;vertical-align:middle;margin-right:4px;">deployed_code</span>RMIs</div><div class="v">${{summaryRmis.toFixed(0)}}</div></div><div class="kpi"><div class="k"><span class="material-symbols-outlined" style="font-size:15px;vertical-align:middle;margin-right:4px;">sliders</span>Capacity</div><div class="v">${{summaryCapacity.toFixed(1)}}h</div></div><div class="kpi"><div class="k"><span class="material-symbols-outlined" style="font-size:15px;vertical-align:middle;margin-right:4px;">award_star</span>Score</div><div class="v" id="summary-score-kpi">${{activeBigScore.toFixed(1)}}</div></div></div>`;
-  const summaryHtml = `<div class="card"><div style="display:flex;justify-content:space-between;align-items:end;"><div><div class="sub">Assignee</div><div style="font-size:1.1rem;font-weight:800;">${{e(item.assignee)}}</div></div><div><div class="big" id="summary-big-score">${{activeBigScore.toFixed(1)}}</div><div class="score-label" id="summary-score-label">${{activeBigLabel}}</div></div></div>${{summaryMetricsHtml}}<div class="sub" id="summary-score-sub">${{activeBigSub}}</div><div class="discover"><span class="pill" style="border-color:${{healthColor}};">Health: ${{healthTag}}</span><span class="pill">Capacity Gap: ${{(n(item.employee_capacity_hours)-n(item.planned_hours_assigned)).toFixed(1)}}h</span><span class="pill">Missed Starts: ${{n(item.missed_start_ratio).toFixed(1)}}%</span><span class="pill">Missed Due Dates: ${{n(item.missed_due_date_ratio).toFixed(1)}}%</span></div></div>`;
+  const summaryMetricsHtml = `<div class="kpis" style="margin-top:8px;"><div class="kpi actionable" data-action="toggle-rmis-list"><div class="k"><span class="material-symbols-outlined" style="font-size:15px;vertical-align:middle;margin-right:4px;">deployed_code</span>RMIs</div><div class="v">${{summaryRmis.toFixed(0)}}</div><div class="kpi-note">${{isRmiListOpen ? "Click to hide RMIs list" : "Click to view RMIs list"}}</div></div><div class="kpi"><div class="k"><span class="material-symbols-outlined" style="font-size:15px;vertical-align:middle;margin-right:4px;">sliders</span>Capacity</div><div class="v">${{summaryCapacity.toFixed(1)}}h</div></div><div class="kpi"><div class="k"><span class="material-symbols-outlined" style="font-size:15px;vertical-align:middle;margin-right:4px;">award_star</span>Score</div><div class="v" id="summary-score-kpi">${{activeBigScore.toFixed(1)}}</div></div></div>`;
+  const summaryHtml = `<div class="card"><div style="display:flex;justify-content:space-between;align-items:end;"><div><div class="sub">Assignee</div><div style="font-size:1.1rem;font-weight:800;">${{e(item.assignee)}}</div></div><div><div class="big" id="summary-big-score">${{activeBigScore.toFixed(1)}}</div><div class="score-label" id="summary-score-label">${{activeBigLabel}}</div></div></div>${{summaryMetricsHtml}}${{rmiListHtml}}<div class="sub" id="summary-score-sub">${{activeBigSub}}</div><div class="discover"><span class="pill" style="border-color:${{healthColor}};">Health: ${{healthTag}}</span><span class="pill">Capacity Gap: ${{(n(item.employee_capacity_hours)-n(item.planned_hours_assigned)).toFixed(1)}}h</span><span class="pill">Missed Starts: ${{n(item.missed_start_ratio).toFixed(1)}}%</span><span class="pill">Missed Due Dates: ${{n(item.missed_due_date_ratio).toFixed(1)}}%</span></div></div>`;
   const managedSectionHtml = `<div class="mini" style="margin:8px 0;"><h3>Managed Field Metrics - ${{e(item.assignee)}}</h3><div class="sub">Employee-only metrics within filters | Date: ${{e(activeFrom)}} to ${{e(activeTo)}} | Projects: ${{e(activeProjectsText)}}</div>${{managedHtml}}</div>`;
   const ssDetails = item.ss_subtask_details || [];
   function ssRowClass(row) {{
@@ -2571,18 +3035,19 @@ function render(items) {{
   const ssCommit = n(item.ss_commitment_count);
   const ssTotal = ssWithin + ssOver;
   const ssPlannedHours = n(item.ss_total_estimate);
-  const ssActualHours = ssDetails.reduce((acc, row) => acc + n(row?.actual), 0);
+  const ssActualHours = n(item.ss_total_actual);
   const ssOverrunHours = n(item.ss_total_overrun);
   const ssAdjustedOverrunHours = Math.max(0, ssOverrunHours - n(item.ss_commitment_overrun));
   const ssAppliedOverrunHours = dueCompletionEnabled ? ssAdjustedOverrunHours : ssOverrunHours;
   const ssFormulaText = dueCompletionEnabled
     ? "Score % = max(0, min(100, 100 x (1 - (Total Overrun - Commitment Forgiven) / Planned Hours)))"
     : "Score % = max(0, min(100, 100 x (1 - Total Overrun / Planned Hours)))";
+  const ssOverloadedFormulaText = "Overloaded Penalty: if Logged < Planned x (1 - N/100), then Final Simple Score = min(Base Simple Score, Logged/Planned x 100)";
   const ssOverrunFormulaText = "Item Overrun = max(0, Item Actual - Item Planned)";
   const ssFormulaAppliedText = dueCompletionEnabled
     ? `100 x (1 - (${{ssOverrunHours.toFixed(1)}} - ${{n(item.ss_commitment_overrun).toFixed(1)}}) / ${{ssPlannedHours.toFixed(1)}})`
     : `100 x (1 - ${{ssOverrunHours.toFixed(1)}} / ${{ssPlannedHours.toFixed(1)}})`;
-  const ssFormulaIngredientsHtml = `<section class="formula-guide"><div class="formula-head"><h3 class="formula-title">Simple Scoring Formula Guide</h3><div class="formula-head-actions"><button type="button" class="formula-toggle-btn" id="toggle-formula-guide" aria-controls="simple-formula-guide-body" aria-expanded="${{simpleFormulaGuideExpanded ? "true" : "false"}}"><span class="material-symbols-outlined">${{simpleFormulaGuideExpanded ? "expand_less" : "expand_more"}}</span><span>${{simpleFormulaGuideExpanded ? "Collapse" : "Expand"}}</span></button><div class="formula-score-pill">${{activeSimpleScore.toFixed(1)}}%</div></div></div><div class="formula-layout" id="simple-formula-guide-body" ${{simpleFormulaGuideExpanded ? "" : "hidden"}}><div class="formula-steps"><div class="formula-step step-gap"><div class="formula-kicker">Step 1: Per Item Overrun</div><p class="formula-eq">${{e(ssOverrunFormulaText)}}</p><div class="formula-mini-help">max(a, b) means: choose the bigger number.</div></div><div class="formula-step"><div class="formula-kicker">Step 2: Final Score</div><p class="formula-eq">${{e(ssFormulaText)}}</p><p class="formula-applied">${{ssPlannedHours > 0 ? `Applied: ${{e(ssFormulaAppliedText)}}` : "Applied: Planned Hours is 0, so score defaults to 100%"}}</p></div><div class="formula-note">Total Overrun = only positive overruns added together. Extra savings (underrun) do not cancel overruns.</div>${{dueCompletionEnabled ? `<div class="formula-note"><strong>Commitment Forgiven</strong> = overrun hours from items finished on time are not counted in penalty.</div>` : ""}}<div class="formula-safeguards"><div class="formula-safeguards-title">Why we use max (simple examples)</div><div class="formula-safeguard-item">1. <strong>Stop negative overrun:</strong> <code>max(0, Actual - Planned)</code><br>Example: Planned 5h, Actual 3h -> Actual - Planned = -2h -> Overrun = max(0, -2) = 0h.</div><div class="formula-safeguard-item">2. <strong>Keep score between 0% and 100%:</strong> <code>max(0, min(100, ...))</code><br>Example: If math gives 108%, final shown score is 100%. If math gives -12%, final shown score is 0%.</div></div></div><div class="formula-metrics"><div class="formula-row"><span>Planned Hours</span><span>${{ssPlannedHours.toFixed(1)}}h</span></div><div class="formula-row"><span>Actual Hours Spent</span><span>${{ssActualHours.toFixed(1)}}h</span></div><div class="formula-row"><span>Total Overrun</span><span>${{ssOverrunHours.toFixed(1)}}h</span></div>${{dueCompletionEnabled ? `<div class="formula-row"><span>Commitment Forgiven</span><span>${{n(item.ss_commitment_overrun).toFixed(1)}}h</span></div><div class="formula-row"><span>Applied Overrun</span><span>${{ssAppliedOverrunHours.toFixed(1)}}h</span></div>` : ""}}<div class="formula-row final"><span>Final Simple Score</span><span>${{activeSimpleScore.toFixed(1)}}%</span></div></div></div></section>`;
+  const ssFormulaIngredientsHtml = `<section class="formula-guide"><div class="formula-head"><h3 class="formula-title">Simple Scoring Formula Guide</h3><div class="formula-head-actions"><button type="button" class="formula-toggle-btn" id="toggle-formula-guide" aria-controls="simple-formula-guide-body" aria-expanded="${{simpleFormulaGuideExpanded ? "true" : "false"}}"><span class="material-symbols-outlined">${{simpleFormulaGuideExpanded ? "expand_less" : "expand_more"}}</span><span>${{simpleFormulaGuideExpanded ? "Collapse" : "Expand"}}</span></button><div class="formula-score-pill">${{activeSimpleScore.toFixed(1)}}%</div></div></div><div class="formula-layout" id="simple-formula-guide-body" ${{simpleFormulaGuideExpanded ? "" : "hidden"}}><div class="formula-steps"><div class="formula-step step-gap"><div class="formula-kicker">Step 1: Per Item Overrun</div><p class="formula-eq">${{e(ssOverrunFormulaText)}}</p><div class="formula-mini-help">max(a, b) means: choose the bigger number.</div></div><div class="formula-step"><div class="formula-kicker">Step 2: Base Simple Score</div><p class="formula-eq">${{e(ssFormulaText)}}</p><p class="formula-applied">${{ssPlannedHours > 0 ? `Applied: ${{e(ssFormulaAppliedText)}}` : "Applied: Planned Hours is 0, so score defaults to 100%"}}</p></div><div class="formula-step"><div class="formula-kicker">Step 3: Overloaded Penalty (Optional)</div><p class="formula-eq">${{e(ssOverloadedFormulaText)}}</p><p class="formula-applied">${{overloadedPenaltyEnabled ? `Threshold N: ${{overloadedPenaltyThresholdPct.toFixed(1)}}% | Min Required Logged: ${{(ssPlannedHours * (1 - overloadedPenaltyThresholdPct / 100)).toFixed(1)}}h | Logged: ${{ssActualHours.toFixed(1)}}h | Score from logged/planned: ${{n(item.simple_score_overloaded).toFixed(1)}}%${{overloadedApplied ? " (Applied)" : " (Not applied)"}}` : "Overloaded penalty is turned off."}}</p></div><div class="formula-note">Total Overrun = only positive overruns added together. Extra savings (underrun) do not cancel overruns.</div>${{dueCompletionEnabled ? `<div class="formula-note"><strong>Commitment Forgiven</strong> = overrun hours from items finished on time are not counted in penalty.</div>` : ""}}<div class="formula-safeguards"><div class="formula-safeguards-title">Why we use max (simple examples)</div><div class="formula-safeguard-item">1. <strong>Stop negative overrun:</strong> <code>max(0, Actual - Planned)</code><br>Example: Planned 5h, Actual 3h -> Actual - Planned = -2h -> Overrun = max(0, -2) = 0h.</div><div class="formula-safeguard-item">2. <strong>Keep score between 0% and 100%:</strong> <code>max(0, min(100, ...))</code><br>Example: If math gives 108%, final shown score is 100%. If math gives -12%, final shown score is 0%.</div></div></div><div class="formula-metrics"><div class="formula-row"><span>Planned Hours</span><span>${{ssPlannedHours.toFixed(1)}}h</span></div><div class="formula-row"><span>Actual Hours Spent</span><span>${{ssActualHours.toFixed(1)}}h</span></div><div class="formula-row"><span>Total Overrun</span><span>${{ssOverrunHours.toFixed(1)}}h</span></div>${{dueCompletionEnabled ? `<div class="formula-row"><span>Commitment Forgiven</span><span>${{n(item.ss_commitment_overrun).toFixed(1)}}h</span></div><div class="formula-row"><span>Applied Overrun</span><span>${{ssAppliedOverrunHours.toFixed(1)}}h</span></div>` : ""}}<div class="formula-row"><span>Overloaded Penalty</span><span>${{overloadedPenaltyEnabled ? (overloadedApplied ? "Applied" : "Not Applied") : "Off"}}</span></div><div class="formula-row final"><span>Final Simple Score</span><span>${{activeSimpleScore.toFixed(1)}}%</span></div></div></div></section>`;
   function renderSsDonut(within, over, commit, total) {{
     if (total <= 0) return '<div class="empty">No data.</div>';
     const r = 50, cx = 60, cy = 60, sw = 18;
@@ -2606,7 +3071,7 @@ function render(items) {{
     return `<div class="ss-donut-wrap"><svg width="120" height="120" viewBox="0 0 120 120">${{paths}}<text x="${{cx}}" y="${{cy + 4}}" text-anchor="middle" fill="#e6f0ff" font-size="16" font-weight="900">${{total}}</text></svg><div class="ss-legend">${{legendItems}}</div></div>`;
   }}
   const ssDonutHtml = renderSsDonut(ssWithin, ssOver, ssCommit, ssTotal);
-  const simpleScoringContent = `<div class="scoring-section"><div class="scoring-section-head"><div class="scoring-section-title">Simple Scoring</div><div class="ss-toggle"><span class="ss-toggle-label">Due Completion</span><label class="ss-switch"><input type="checkbox" id="due-completion-toggle" ${{dueCompletionEnabled ? "checked" : ""}}><span class="ss-slider"></span></label></div></div><div class="ss-big-score">${{activeSimpleScore.toFixed(1)}}</div><div class="sub">Simple efficiency score${{dueCompletionEnabled ? " (adjusted for due completion)" : ""}} | Planned: ${{ssPlannedHours.toFixed(1)}}h | Actual: ${{ssActualHours.toFixed(1)}}h | Overrun: ${{ssOverrunHours.toFixed(1)}}h${{dueCompletionEnabled && ssCommit > 0 ? ` | Commitment forgiven: ${{n(item.ss_commitment_overrun).toFixed(1)}}h` : ""}}</div><div class="ss-summary-row"><span class="ss-chip">Within: ${{ssWithin}}</span><span class="ss-chip">Over: ${{ssOver}}</span>${{dueCompletionEnabled ? `<span class="ss-chip">Commitment: ${{ssCommit}}</span><span class="ss-chip">On Time: ${{n(item.ss_on_time_count)}}</span><span class="ss-chip">Late: ${{n(item.ss_late_count)}}</span>` : ""}}<span class="ss-chip">No Estimate: ${{n(item.ss_no_estimate_count)}}</span></div>${{ssFormulaIngredientsHtml}}${{ssDonutHtml}}${{ssTableHtml}}</div>`;
+  const simpleScoringContent = `<div class="scoring-section"><div class="scoring-section-head"><div class="scoring-section-title">Simple Scoring</div><div class="ss-toggle"><span class="ss-toggle-label">Due Completion</span><label class="ss-switch"><input type="checkbox" id="due-completion-toggle" ${{dueCompletionEnabled ? "checked" : ""}}><span class="ss-slider"></span></label></div></div><div class="ss-big-score">${{activeSimpleScore.toFixed(1)}}</div><div class="sub">Simple efficiency score${{dueCompletionEnabled ? " (adjusted for due completion)" : ""}}${{overloadedApplied ? " + overloaded penalty" : ""}} | Planned: ${{ssPlannedHours.toFixed(1)}}h | Actual: ${{ssActualHours.toFixed(1)}}h | Overrun: ${{ssOverrunHours.toFixed(1)}}h${{dueCompletionEnabled && ssCommit > 0 ? ` | Commitment forgiven: ${{n(item.ss_commitment_overrun).toFixed(1)}}h` : ""}}</div><div class="ss-summary-row"><span class="ss-chip">Within: ${{ssWithin}}</span><span class="ss-chip">Over: ${{ssOver}}</span>${{dueCompletionEnabled ? `<span class="ss-chip">Commitment: ${{ssCommit}}</span><span class="ss-chip">On Time: ${{n(item.ss_on_time_count)}}</span><span class="ss-chip">Late: ${{n(item.ss_late_count)}}</span>` : ""}}<span class="ss-chip">No Estimate: ${{n(item.ss_no_estimate_count)}}</span><span class="ss-chip">Overloaded Penalty: ${{overloadedPenaltyEnabled ? (overloadedApplied ? "Applied" : "On") : "Off"}}</span></div>${{ssFormulaIngredientsHtml}}${{ssDonutHtml}}${{ssTableHtml}}</div>`;
   const advPenaltyFormulaText = "Total Penalty = (Bug Hours x Points/Bug Hour) + (Bug Late Hours x Points/Bug Late Hour) + (Unplanned Leave Hours x Points/Unplanned Leave Hour) + (Subtask Late Hours x Points/Subtask Late Hour) + (Estimate Overrun Hours x Points/Estimate Overrun Hour) + (Missed Due Dates x Points/Missed Due Date)";
   const advRawFormulaText = "Raw Score = Base Score - Total Penalty";
   const advFinalFormulaText = "Final Score = clamp(Raw Score, Min Score, Max Score)";
@@ -2638,7 +3103,7 @@ function render(items) {{
       if (tab === "simple") {{
         if (bigEl) bigEl.textContent = activeSimpleScore.toFixed(1);
         if (lblEl) lblEl.textContent = "Simple Score";
-        if (subEl) subEl.textContent = `Simple efficiency${{dueCompletionEnabled ? " (due-adjusted)" : ""}} = 100 x (1 - Overrun/Planned) | Overrun: ${{n(item.ss_total_overrun).toFixed(1)}}h | Planned: ${{n(item.ss_total_estimate).toFixed(1)}}h`;
+        if (subEl) subEl.textContent = `Simple efficiency${{dueCompletionEnabled ? " (due-adjusted)" : ""}}${{overloadedApplied ? " + overloaded penalty" : ""}} | Overrun: ${{n(item.ss_total_overrun).toFixed(1)}}h | Planned: ${{n(item.ss_total_estimate).toFixed(1)}}h${{overloadedApplied ? ` | Logged: ${{n(item.ss_total_actual).toFixed(1)}}h` : ""}}`;
         if (kpiEl) kpiEl.textContent = activeSimpleScore.toFixed(1);
       }} else {{
         if (bigEl) bigEl.textContent = summaryScore.toFixed(1);
@@ -2671,6 +3136,14 @@ function render(items) {{
   if (missedDueTrigger) {{
     missedDueTrigger.addEventListener("click", () => {{
       focusContext("#due-compliance-context");
+    }});
+  }}
+  const rmiListTrigger = detailHost.querySelector('[data-action="toggle-rmis-list"]');
+  if (rmiListTrigger) {{
+    rmiListTrigger.addEventListener("click", () => {{
+      const assigneeName = String(item.assignee || "");
+      rmiListForAssignee = rmiListForAssignee === assigneeName ? "" : assigneeName;
+      render(items);
     }});
   }}
   const availabilityTrigger = detailHost.querySelector('[data-action="toggle-availability-breakdown"]');
@@ -2737,7 +3210,7 @@ function render(items) {{
     }});
   }}
 }}
-function renderAll() {{ availabilityBreakdownForAssignee = ""; plannedHoursBreakdownForAssignee = ""; actualHoursBreakdownForAssignee = ""; render(compute()); }}
+function renderAll() {{ availabilityBreakdownForAssignee = ""; plannedHoursBreakdownForAssignee = ""; actualHoursBreakdownForAssignee = ""; rmiListForAssignee = ""; render(compute()); }}
 function setHeaderCollapsed(isCollapsed) {{
   const collapsed = Boolean(isCollapsed);
   if (headerSectionEl) {{
@@ -2821,19 +3294,271 @@ if (capacityProfileTopSelectEl) {{
     renderAll();
   }});
 }}
+if (assigneeExtendedActualsToggleEl) {{
+  assigneeExtendedActualsToggleEl.addEventListener("change", () => {{
+    extendedActualsEnabled = Boolean(assigneeExtendedActualsToggleEl.checked);
+    actualHoursBreakdownForAssignee = "";
+    renderAll();
+  }});
+}}
+if (assigneeOverloadedPenaltyToggleEl) {{
+  assigneeOverloadedPenaltyToggleEl.checked = overloadedPenaltyEnabled;
+  assigneeOverloadedPenaltyToggleEl.addEventListener("change", () => {{
+    overloadedPenaltyEnabled = Boolean(assigneeOverloadedPenaltyToggleEl.checked);
+    renderAll();
+  }});
+}}
+if (leaderActionsToggle && leaderActionsMenu) {{
+  leaderActionsToggle.addEventListener("click", () => {{
+    const expanded = leaderActionsToggle.getAttribute("aria-expanded") === "true";
+    setLeaderActionsMenuOpen(!expanded);
+  }});
+  leaderActionsMenu.addEventListener("click", async (event) => {{
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    const actionButton = target.closest("[data-action]");
+    if (!actionButton) return;
+    const action = String(actionButton.getAttribute("data-action") || "");
+    if (action === "copy-gap-people") {{
+      await copyGapPeopleFromLeaderboard();
+      setLeaderActionsMenuOpen(false);
+    }}
+  }});
+  document.addEventListener("click", (event) => {{
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    if (target.closest(".leader-actions-menu-wrap")) return;
+    setLeaderActionsMenuOpen(false);
+  }});
+  document.addEventListener("keydown", (event) => {{
+    if (event.key === "Escape") setLeaderActionsMenuOpen(false);
+  }});
+}}
 document.getElementById("leader-scoring-mode").addEventListener("change", renderAll);
 document.getElementById("leader-sort").addEventListener("change", renderAll);
 document.getElementById("filter-risk").addEventListener("change", renderAll);
 document.getElementById("filter-missed").addEventListener("change", renderAll);
-document.getElementById("reset").addEventListener("click", ()=>{{ document.getElementById("from").value=defaultFrom; document.getElementById("to").value=defaultTo; document.getElementById("search").value=\"\"; document.getElementById("leader-sort").value=\"score\"; document.getElementById("leader-scoring-mode").value=\"simple\"; document.getElementById("filter-risk").value=\"all\"; document.getElementById("filter-missed").value=\"all\"; syncCapacityProfileSelection(\"auto\", \"\"); selectedTeam = \"\"; setDateFilterStatus(""); Array.from(document.getElementById("projects").options).forEach(o => o.selected=true); renderAll(); }});
+document.getElementById("leader-search").addEventListener("input", renderAll);
+document.getElementById("reset").addEventListener("click", ()=>{{ document.getElementById("from").value=defaultFrom; document.getElementById("to").value=defaultTo; document.getElementById("search").value=\"\"; document.getElementById("leader-search").value=\"\"; document.getElementById("leader-sort").value=\"score\"; document.getElementById("leader-scoring-mode").value=\"simple\"; document.getElementById("filter-risk").value=\"all\"; document.getElementById("filter-missed").value=\"all\"; if (assigneeExtendedActualsToggleEl) assigneeExtendedActualsToggleEl.checked = false; extendedActualsEnabled = false; syncCapacityProfileSelection(\"auto\", \"\"); selectedTeam = \"\"; setDateFilterStatus(""); Array.from(document.getElementById("projects").options).forEach(o => o.selected=true); renderAll(); }});
 document.getElementById("shortcut-current-month").addEventListener("click", ()=>{{ applyDateShortcut("current_month"); renderAll(); }});
 document.getElementById("shortcut-previous-month").addEventListener("click", ()=>{{ applyDateShortcut("previous_month"); renderAll(); }});
 document.getElementById("shortcut-last-30-days").addEventListener("click", ()=>{{ applyDateShortcut("last_30_days"); renderAll(); }});
 document.getElementById("shortcut-quarter-to-date").addEventListener("click", ()=>{{ applyDateShortcut("quarter_to_date"); renderAll(); }});
 document.getElementById("shortcut-reset").addEventListener("click", ()=>{{ applyDateShortcut("reset"); renderAll(); }});
+if (employeeRefreshBtn) {{
+  function clearEmployeeRefreshPoll() {{
+    if (employeeRefreshPollHandle) {{
+      clearTimeout(employeeRefreshPollHandle);
+      employeeRefreshPollHandle = null;
+    }}
+  }}
+
+  function setEmployeeRefreshUiState(isRunning) {{
+    employeeRefreshBtn.disabled = Boolean(isRunning);
+    if (employeeRefreshCancelBtn) {{
+      employeeRefreshCancelBtn.style.display = "";
+      employeeRefreshCancelBtn.disabled = !isRunning;
+    }}
+  }}
+
+  function refreshDetailsText(run) {{
+    const row = run && typeof run === "object" ? run : {{}};
+    const stats = row.stats && typeof row.stats === "object" ? row.stats : {{}};
+    const sources = stats.sources && typeof stats.sources === "object" ? stats.sources : {{}};
+    const wi = sources.work_items || {{}};
+    const wl = sources.worklogs || {{}};
+    const lv = sources.leaves || {{}};
+    const out = [];
+    out.push(`Run ID: ${{String(row.run_id || "-")}}`);
+    if (Number.isFinite(Number(row.progress))) out.push(`Progress: ${{Math.max(0, Math.min(100, Math.round(Number(row.progress))))}}%`);
+    if (Number.isFinite(Number(stats.duration_sec))) out.push(`Duration: ${{Number(stats.duration_sec).toFixed(2)}}s`);
+    if (row.started_at_utc) out.push(`Started: ${{String(row.started_at_utc)}}`);
+    if (row.ended_at_utc) out.push(`Ended: ${{String(row.ended_at_utc)}}`);
+    out.push(`Rows -> WI: ${{n(wi.rows).toFixed(0)}}, WL: ${{n(wl.rows).toFixed(0)}}, Leaves: ${{n(lv.rows).toFixed(0)}}`);
+    if (String(row.error || "").trim()) out.push(`Error: ${{String(row.error).trim()}}`);
+    return out.join(" | ");
+  }}
+
+  function refreshToneByStatus(status) {{
+    const key = String(status || "").toLowerCase();
+    if (key === "success") return "ok";
+    if (key === "failed" || key === "canceled") return "err";
+    return "";
+  }}
+
+  function refreshStatusText(run) {{
+    const status = String((run && run.status) || "").toLowerCase();
+    const step = String((run && run.step) || "").replace(/_/g, " ").trim();
+    const progress = Number(run && run.progress);
+    if (status === "running") {{
+      const pct = Number.isFinite(progress) ? `${{Math.max(0, Math.min(100, Math.round(progress)))}}%` : "";
+      const stepText = step ? ` (${{step}})` : "";
+      return `Refresh running${{stepText}}${{pct ? ` - ${{pct}}` : ""}}`;
+    }}
+    if (status === "canceled") return String((run && run.error) || "Refresh canceled. Previous snapshot retained.");
+    if (status === "failed") return String((run && run.error) || "Refresh failed.");
+    if (status === "success") return "Refresh complete. Reloading...";
+    if (status === "cancel_requested") return "Cancel requested. Waiting for safe stop...";
+    return String((run && run.error) || "Refresh status unavailable.");
+  }}
+
+  async function pollEmployeeRefresh(runId) {{
+    if (!runId) return;
+    try {{
+      const response = await fetch(`/api/employee-performance/refresh/${{encodeURIComponent(runId)}}`);
+      const body = await response.json().catch(() => ({{ ok: false, error: "Invalid refresh status response." }}));
+      if (!response.ok || !body.ok || !body.run) {{
+        const msg = body && body.error ? String(body.error) : `Failed to check refresh status (${{response.status}})`;
+        setEmployeeRefreshStatus(msg, "err");
+        setEmployeeRefreshUiState(false);
+        clearEmployeeRefreshPoll();
+        return;
+      }}
+      const run = body.run || {{}};
+      const status = String(run.status || "").toLowerCase();
+      setEmployeeRefreshStatus(refreshStatusText(run), refreshToneByStatus(status));
+      setEmployeeRefreshDetails(refreshDetailsText(run), refreshToneByStatus(status));
+      if (status === "running") {{
+        setEmployeeRefreshUiState(true);
+        clearEmployeeRefreshPoll();
+        employeeRefreshPollHandle = setTimeout(() => pollEmployeeRefresh(runId), 1500);
+        return;
+      }}
+      setEmployeeRefreshUiState(false);
+      clearEmployeeRefreshPoll();
+      if (status === "success") {{
+        setTimeout(() => window.location.reload(), 800);
+      }}
+    }} catch (error) {{
+      setEmployeeRefreshStatus(error && error.message ? error.message : String(error), "err");
+      setEmployeeRefreshUiState(false);
+      clearEmployeeRefreshPoll();
+    }}
+  }}
+
+  async function resumeEmployeeRefreshIfRunning() {{
+    if (typeof window === "undefined" || !window.location || window.location.protocol === "file:") return;
+    try {{
+      const response = await fetch("/api/employee-performance/refresh/current");
+      const body = await response.json().catch(() => ({{ ok: false }}));
+      const run = body && body.ok ? body.run : null;
+      if (!run) {{
+        setEmployeeRefreshUiState(false);
+        setEmployeeRefreshDetails("", "");
+        return;
+      }}
+      const status = String(run.status || "").toLowerCase();
+      setEmployeeRefreshStatus(refreshStatusText(run), refreshToneByStatus(status));
+      setEmployeeRefreshDetails(refreshDetailsText(run), refreshToneByStatus(status));
+      if (status === "running") {{
+        setEmployeeRefreshUiState(true);
+        clearEmployeeRefreshPoll();
+        employeeRefreshPollHandle = setTimeout(() => pollEmployeeRefresh(String(run.run_id || "")), 1200);
+      }} else {{
+        setEmployeeRefreshUiState(false);
+      }}
+    }} catch (_err) {{
+      setEmployeeRefreshUiState(false);
+    }}
+  }}
+
+  window.__startEmployeeRefreshRun = async (assigneeName, triggerButton) => {{
+    if (typeof window !== "undefined" && window.location && window.location.protocol === "file:") {{
+      setEmployeeRefreshStatus("Offline mode: refresh API unavailable.", "err");
+      return;
+    }}
+    const targetAssignee = String(assigneeName || "").trim();
+    if (triggerButton) triggerButton.disabled = true;
+    setEmployeeRefreshUiState(true);
+    setEmployeeRefreshStatus(targetAssignee ? `Starting refresh for ${{targetAssignee}}...` : "Starting refresh...", "");
+    setEmployeeRefreshDetails("", "");
+    try {{
+      const response = await fetch("/api/employee-performance/refresh", {{
+        method: "POST",
+        headers: {{"Content-Type":"application/json"}},
+        body: JSON.stringify(targetAssignee ? {{ assignee: targetAssignee, replace_running: true }} : {{ replace_running: true }}),
+      }});
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload || !payload.ok) {{
+        const legacyResp = await fetch("/api/report/refresh", {{
+          method: "POST",
+          headers: {{"Content-Type":"application/json"}},
+          body: JSON.stringify(
+            targetAssignee
+              ? {{ report: "employee_performance", assignee: targetAssignee, isolated: true }}
+              : {{ report: "employee_performance", isolated: true }}
+          ),
+        }});
+        const legacyPayload = await legacyResp.json().catch(() => null);
+        if (!legacyResp.ok || !legacyPayload || !legacyPayload.ok) {{
+          const errMsg = (legacyPayload && legacyPayload.error)
+            ? String(legacyPayload.error)
+            : (payload && payload.error)
+              ? String(payload.error)
+              : `Refresh failed (${{response.status}})`;
+          throw new Error(errMsg);
+        }}
+        setEmployeeRefreshStatus("Refresh complete. Reloading...", "ok");
+        setEmployeeRefreshDetails("", "");
+        setTimeout(() => window.location.reload(), 800);
+        return;
+      }}
+      const runId = String(payload.run_id || (payload.run && payload.run.run_id) || "");
+      if (!runId) throw new Error("Refresh started without run_id.");
+      const run = payload.run && typeof payload.run === "object" ? payload.run : {{}};
+      setEmployeeRefreshStatus(targetAssignee ? `Refresh started for ${{targetAssignee}}. Monitoring run...` : "Refresh started. Monitoring run...", "");
+      setEmployeeRefreshDetails(refreshDetailsText(run), "");
+      clearEmployeeRefreshPoll();
+      employeeRefreshPollHandle = setTimeout(() => pollEmployeeRefresh(runId), 700);
+    }} catch (error) {{
+      setEmployeeRefreshStatus(error && error.message ? error.message : String(error), "err");
+      setEmployeeRefreshUiState(false);
+      clearEmployeeRefreshPoll();
+    }} finally {{
+      if (triggerButton) triggerButton.disabled = false;
+    }}
+  }};
+
+  employeeRefreshBtn.addEventListener("click", async () => {{
+    await window.__startEmployeeRefreshRun("", employeeRefreshBtn);
+  }});
+
+  if (employeeRefreshCancelBtn) {{
+    employeeRefreshCancelBtn.addEventListener("click", async () => {{
+      employeeRefreshCancelBtn.disabled = true;
+      try {{
+        const response = await fetch("/api/employee-performance/cancel", {{
+          method: "POST",
+          headers: {{"Content-Type":"application/json"}},
+          body: JSON.stringify({{}}),
+        }});
+        const payload = await response.json().catch(() => ({{ ok: false, error: "Invalid cancel response." }}));
+        if (!response.ok || !payload.ok) {{
+          const msg = payload && payload.error ? String(payload.error) : `Cancel failed (${{response.status}})`;
+          throw new Error(msg);
+        }}
+        setEmployeeRefreshStatus(String(payload.message || "Cancel requested. Waiting for safe stop..."), "");
+        setEmployeeRefreshDetails(String(payload.message || ""), "");
+      }} catch (error) {{
+        setEmployeeRefreshStatus(error && error.message ? error.message : String(error), "err");
+      }} finally {{
+        employeeRefreshCancelBtn.disabled = false;
+      }}
+    }});
+  }}
+
+  setEmployeeRefreshUiState(false);
+  resumeEmployeeRefreshIfRunning();
+}}
 renderAll();
 </script>
-<script src="shared-nav.js"></script>
+<script>
+if (typeof window !== "undefined" && window.location && window.location.protocol !== "file:") {{
+  const navScript = document.createElement("script");
+  navScript.src = "shared-nav.js";
+  document.body.appendChild(navScript);
+}}
+</script>
 </body>
 </html>"""
 
@@ -2844,12 +3569,16 @@ def _resolve_runtime_paths(base_dir: Path) -> dict[str, Path]:
     leave_name = os.getenv("JIRA_LEAVE_REPORT_XLSX_PATH", DEFAULT_LEAVE_REPORT_INPUT_XLSX).strip() or DEFAULT_LEAVE_REPORT_INPUT_XLSX
     html_name = os.getenv("JIRA_EMPLOYEE_PERFORMANCE_HTML_PATH", DEFAULT_HTML_OUTPUT).strip() or DEFAULT_HTML_OUTPUT
     db_name = os.getenv("JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH", DEFAULT_CAPACITY_DB).strip() or DEFAULT_CAPACITY_DB
+    source_mode = _to_text(os.getenv("JIRA_EMP_PERF_INPUT_SOURCE", "xlsx")).lower() or "xlsx"
+    run_id = _to_text(os.getenv("JIRA_EMP_PERF_RUN_ID"))
     return {
         "worklog_path": _resolve_path(worklog_name, base_dir),
         "work_items_path": _resolve_path(work_items_name, base_dir),
         "leave_report_path": _resolve_path(leave_name, base_dir),
         "html_path": _resolve_path(html_name, base_dir),
         "db_path": _resolve_path(db_name, base_dir),
+        "source_mode": source_mode,
+        "run_id": run_id,
     }
 
 
@@ -2862,10 +3591,21 @@ def main() -> None:
     entities_catalog = load_report_entities(paths["db_path"])
     managed_fields = load_manage_fields(paths["db_path"], include_inactive=False)
     capacity_profiles = _list_capacity_profiles(paths["db_path"])
-    work_items = _load_work_items(paths["work_items_path"])
-    worklogs = _load_worklogs(paths["worklog_path"], work_items)
-    leave_rows = _load_unplanned_leave_rows(paths["leave_report_path"])
-    leave_issue_keys = _load_leave_issue_keys(paths["leave_report_path"])
+    source_mode = _to_text(paths.get("source_mode")).lower() or "xlsx"
+    if source_mode == "db":
+        requested_run = _to_text(paths.get("run_id"))
+        run_id = _resolve_epf_run_id(paths["db_path"], requested_run)
+        if not run_id:
+            raise ValueError("DB source mode selected but no active epf run_id found.")
+        work_items = _load_work_items_from_epf_db(paths["db_path"], run_id)
+        worklogs = _load_worklogs_from_epf_db(paths["db_path"], run_id, work_items)
+        leave_rows = _load_unplanned_leave_rows_from_epf_db(paths["db_path"], run_id)
+        leave_issue_keys = _load_leave_issue_keys_from_epf_db(paths["db_path"], run_id)
+    else:
+        work_items = _load_work_items(paths["work_items_path"])
+        worklogs = _load_worklogs(paths["worklog_path"], work_items)
+        leave_rows = _load_unplanned_leave_rows(paths["leave_report_path"])
+        leave_issue_keys = _load_leave_issue_keys(paths["leave_report_path"])
     simple_scoring = _precompute_simple_scoring(paths["db_path"], work_items, worklogs)
     payload = _build_payload(
         worklogs,

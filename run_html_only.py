@@ -100,6 +100,7 @@ def main() -> None:
         ("assignee-hours-html", "generate_assignee_hours_report.py"),
         ("planned-vs-dispensed-html", "generate_planned_vs_dispensed_report.py"),
         ("planned-actual-table-view-html", "generate_planned_actual_table_view.py"),
+        ("original-estimates-hierarchy-html", "generate_original_estimates_hierarchy_report.py"),
         ("leaves-planned-calendar-html", "generate_leaves_planned_calendar_html.py"),
         ("rnd-data-story-html", "generate_rnd_data_story.py"),
         ("planned-rmis-html", "generate_planned_rmis_html.py"),

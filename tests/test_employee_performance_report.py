@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -35,6 +36,8 @@ class EmployeePerformanceReportTests(unittest.TestCase):
                 "points_per_subtask_late_hour": 4,
                 "points_per_estimate_overrun_hour": 5,
                 "points_per_missed_due_date": 2,
+                "overloaded_penalty_enabled": 1,
+                "overloaded_penalty_threshold_pct": 10,
             }
         )
         self.assertEqual(valid["base_score"], 100)
@@ -51,6 +54,8 @@ class EmployeePerformanceReportTests(unittest.TestCase):
                     "points_per_subtask_late_hour": 4,
                     "points_per_estimate_overrun_hour": 5,
                     "points_per_missed_due_date": 2,
+                    "overloaded_penalty_enabled": 1,
+                    "overloaded_penalty_threshold_pct": 10,
                 }
             )
 
@@ -72,11 +77,15 @@ class EmployeePerformanceReportTests(unittest.TestCase):
                     "points_per_subtask_late_hour": 1.2,
                     "points_per_estimate_overrun_hour": 1.4,
                     "points_per_missed_due_date": 2.0,
+                    "overloaded_penalty_enabled": 1,
+                    "overloaded_penalty_threshold_pct": 12.5,
                 },
             )
             loaded = _load_performance_settings(db)
             self.assertEqual(saved["base_score"], loaded["base_score"])
             self.assertEqual(saved["points_per_bug_late_hour"], loaded["points_per_bug_late_hour"])
+            self.assertEqual(saved["overloaded_penalty_enabled"], loaded["overloaded_penalty_enabled"])
+            self.assertEqual(saved["overloaded_penalty_threshold_pct"], loaded["overloaded_penalty_threshold_pct"])
 
     def test_html_contains_core_controls(self):
         payload = _build_payload([], [], [], dict(DEFAULT_PERFORMANCE_SETTINGS), [], [], [], [])
@@ -92,6 +101,7 @@ class EmployeePerformanceReportTests(unittest.TestCase):
         self.assertIn('id="shortcut-previous-month"', html)
         self.assertIn('id="shortcut-last-30-days"', html)
         self.assertIn('id="shortcut-quarter-to-date"', html)
+        self.assertIn('id="assignee-overloaded-penalty-toggle"', html)
 
     def test_html_applies_subtask_only_scope_for_performance_kpis(self):
         payload = _build_payload([], [], [], dict(DEFAULT_PERFORMANCE_SETTINGS), [], [], [], [])
@@ -110,9 +120,10 @@ class EmployeePerformanceReportTests(unittest.TestCase):
         self.assertNotIn("if (!matchesPlannedRange(r, from, to)) return false;", html)
         self.assertIn("const assignedItemsWork = assignedItems.filter((r) => !isLeaveIssueKey(String(r.issue_key || \"\")));", html)
         self.assertIn("value: n(item.planned_hours_assigned),", html)
-        self.assertIn("value: n(item.total_hours),", html)
+        self.assertIn("value: n(item.actual_hours_stats_total),", html)
         self.assertIn("toggle-actual-hours-breakdown", html)
-        self.assertIn("Object.entries(item.issue_logged_hours_by_issue || {})", html)
+        self.assertIn("Object.entries(item.issue_logged_hours_stats_by_issue || {})", html)
+        self.assertIn('id="assignee-extended-actuals-toggle"', html)
 
     def test_html_subtask_type_helper_includes_subtask_and_bug_subtask_patterns(self):
         payload = _build_payload([], [], [], dict(DEFAULT_PERFORMANCE_SETTINGS), [], [], [], [])
@@ -215,6 +226,8 @@ class EmployeePerformanceReportTests(unittest.TestCase):
                     "points_per_subtask_late_hour": 1.2,
                     "points_per_estimate_overrun_hour": 1.3,
                     "points_per_missed_due_date": 2.0,
+                    "overloaded_penalty_enabled": 1,
+                    "overloaded_penalty_threshold_pct": 10.0,
                 },
             )
             self.assertEqual(post_resp.status_code, 200)
@@ -251,14 +264,73 @@ class EmployeePerformanceReportTests(unittest.TestCase):
             self.assertEqual(created["team"]["team_name"], "Core Team")
             self.assertEqual(created["team"]["team_leader"], "Alice")
 
+            update_resp = client.put(
+                "/api/performance/teams/Core%20Team",
+                json={"team_name": "Core Platform", "team_leader": "Bob", "assignees": ["Bob"]},
+            )
+            self.assertEqual(update_resp.status_code, 200)
+            updated = update_resp.get_json()
+            self.assertEqual(updated["team"]["team_name"], "Core Platform")
+            self.assertEqual(updated["team"]["team_leader"], "Bob")
+            self.assertEqual(updated["team"]["assignees"], ["Bob"])
+
             list_resp = client.get("/api/performance/teams")
             self.assertEqual(list_resp.status_code, 200)
             teams = list_resp.get_json()["teams"]
-            self.assertTrue(any(t["team_name"] == "Core Team" for t in teams))
+            self.assertFalse(any(t["team_name"] == "Core Team" for t in teams))
+            self.assertTrue(any(t["team_name"] == "Core Platform" for t in teams))
 
-            del_resp = client.delete("/api/performance/teams/Core%20Team")
+            del_resp = client.delete("/api/performance/teams/Core%20Platform")
             self.assertEqual(del_resp.status_code, 200)
             self.assertTrue(del_resp.get_json()["deleted"])
+
+    def test_employee_refresh_cancel_marks_running_run(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            tdp = Path(td)
+            (tdp / "report_html").mkdir(parents=True, exist_ok=True)
+            (tdp / "report_html" / "dashboard.html").write_text("<html><body>ok</body></html>", encoding="utf-8")
+            wb = Workbook()
+            ws = wb.active
+            ws.append(["project_key", "worklog_date", "period_day", "period_week", "period_month", "issue_assignee", "hours_logged"])
+            ws.append(["O2", "2026-02-01", "2026-02-01", "2026-W05", "2026-02", "Alice", 2.0])
+            wb.save(tdp / "assignee_hours_report.xlsx")
+            app = create_report_server_app(base_dir=tdp, folder_raw="report_html")
+            client = app.test_client()
+            db_path = tdp / "assignee_hours_capacity.db"
+
+            with sqlite3.connect(db_path) as conn:
+                conn.execute(
+                    """
+                    INSERT INTO epf_refresh_runs(
+                        run_id, started_at_utc, status, trigger_source, error_message, stats_json,
+                        progress_step, progress_pct, cancel_requested, updated_at_utc
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        "epf-test-run-1",
+                        "2026-03-05T00:00:00+00:00",
+                        "running",
+                        "api_refresh_async",
+                        "",
+                        "{}",
+                        "fetching_worklogs",
+                        20,
+                        0,
+                        "2026-03-05T00:00:00+00:00",
+                    ),
+                )
+                conn.commit()
+
+            cancel_resp = client.post("/api/employee-performance/cancel", json={"run_id": "epf-test-run-1"})
+            self.assertEqual(cancel_resp.status_code, 200)
+            body = cancel_resp.get_json() or {}
+            self.assertTrue(body.get("ok"))
+            self.assertEqual(body.get("status"), "cancel_requested")
+
+            with sqlite3.connect(db_path) as conn:
+                row = conn.execute("SELECT cancel_requested FROM epf_refresh_runs WHERE run_id = ?", ("epf-test-run-1",)).fetchone()
+            self.assertIsNotNone(row)
+            self.assertEqual(int(row[0] or 0), 1)
 
     def test_fix_type_rework_flows_from_work_items_to_worklogs(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
