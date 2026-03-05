@@ -332,6 +332,63 @@ class EmployeePerformanceReportTests(unittest.TestCase):
             self.assertIsNotNone(row)
             self.assertEqual(int(row[0] or 0), 1)
 
+    def test_employee_refresh_current_auto_finalizes_stale_canceled_running_run(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            tdp = Path(td)
+            (tdp / "report_html").mkdir(parents=True, exist_ok=True)
+            (tdp / "report_html" / "dashboard.html").write_text("<html><body>ok</body></html>", encoding="utf-8")
+            wb = Workbook()
+            ws = wb.active
+            ws.append(["project_key", "worklog_date", "period_day", "period_week", "period_month", "issue_assignee", "hours_logged"])
+            ws.append(["O2", "2026-02-01", "2026-02-01", "2026-W05", "2026-02", "Alice", 2.0])
+            wb.save(tdp / "assignee_hours_report.xlsx")
+            app = create_report_server_app(base_dir=tdp, folder_raw="report_html")
+            client = app.test_client()
+            db_path = tdp / "assignee_hours_capacity.db"
+
+            with sqlite3.connect(db_path) as conn:
+                conn.execute(
+                    """
+                    INSERT INTO epf_refresh_runs(
+                        run_id, started_at_utc, status, trigger_source, error_message, stats_json,
+                        progress_step, progress_pct, cancel_requested, updated_at_utc
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        "epf-test-stale-run-1",
+                        "2026-03-05T00:00:00+00:00",
+                        "running",
+                        "api_refresh_async",
+                        "",
+                        "{}",
+                        "",
+                        0,
+                        1,
+                        "2026-03-05T00:00:00+00:00",
+                    ),
+                )
+                conn.commit()
+
+            resp = client.get("/api/employee-performance/refresh/current")
+            self.assertEqual(resp.status_code, 200)
+            body = resp.get_json() or {}
+            self.assertTrue(body.get("ok"))
+            run = body.get("run") or {}
+            self.assertEqual(run.get("run_id"), "epf-test-stale-run-1")
+            self.assertEqual(run.get("status"), "canceled")
+            self.assertEqual(int(run.get("progress") or 0), 100)
+
+            with sqlite3.connect(db_path) as conn:
+                row = conn.execute(
+                    "SELECT status, progress_step, progress_pct, ended_at_utc FROM epf_refresh_runs WHERE run_id = ?",
+                    ("epf-test-stale-run-1",),
+                ).fetchone()
+            self.assertIsNotNone(row)
+            self.assertEqual(str(row[0]), "canceled")
+            self.assertEqual(str(row[1]), "canceled")
+            self.assertEqual(int(row[2] or 0), 100)
+            self.assertTrue(str(row[3] or "").strip())
+
     def test_fix_type_rework_flows_from_work_items_to_worklogs(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             tdp = Path(td)

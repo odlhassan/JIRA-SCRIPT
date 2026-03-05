@@ -19,7 +19,17 @@ def main() -> None:
     output = _resolve_output_path(base_dir)
 
     if not source.exists() or not source.is_file():
-        raise FileNotFoundError(f"Source template missing: {source}")
+        if output.exists() and output.is_file():
+            print(
+                "[planned-actual-table-view-html] Source template missing; keeping existing output "
+                f"at {output}"
+            )
+            return
+        print(
+            "[planned-actual-table-view-html] Source template missing; skipping generation: "
+            f"{source}"
+        )
+        return
 
     output.parent.mkdir(parents=True, exist_ok=True)
     if source.resolve() == output.resolve():

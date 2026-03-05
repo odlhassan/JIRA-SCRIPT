@@ -627,6 +627,27 @@ def _build_html(data: dict) -> str:
       outline: none;
       box-shadow: 0 0 0 2px rgba(255, 237, 213, 0.38);
     }}
+    .date-chip-check {{
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border: 1px solid #d4b896;
+      border-radius: 999px;
+      background: #fff7ed;
+      color: #92400e;
+      padding: 4px 10px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      min-height: 30px;
+      cursor: pointer;
+      user-select: none;
+    }}
+    .date-chip-check input[type="checkbox"] {{
+      margin: 0;
+      width: 14px;
+      height: 14px;
+      accent-color: #0d9488;
+    }}
     .adv-filter-wrap {{ position: relative; display: inline-flex; }}
     .adv-filter-btn {{
       display: inline-flex;
@@ -2140,6 +2161,11 @@ def _build_html(data: dict) -> str:
       color: #d6d3d1;
     }}
     html[data-theme="dark"] .date-chip-reset:hover {{ background: #374151; }}
+    html[data-theme="dark"] .date-chip-check {{
+      background: #1f2937;
+      border-color: #475569;
+      color: #e5e7eb;
+    }}
     html[data-theme="dark"] .adv-filter-btn {{
       background: #4338ca;
       border-color: #6366f1;
@@ -2279,6 +2305,10 @@ def _build_html(data: dict) -> str:
         <option value="subtask_logs">Subtask Logs</option>
         <option value="epic_estimates">Epic Estimates</option>
       </select>
+      <label class="date-chip-check" for="extended-actuals-toggle">
+        <input id="extended-actuals-toggle" type="checkbox" aria-label="Extended Actuals">
+        <span>Extended Actuals</span>
+      </label>
       <select id="actual-hours-mode" style="display:none" aria-hidden="true">
         <option value="log_date">By Log Date</option>
         <option value="planned_dates">By Planned Dates</option>
@@ -2672,6 +2702,7 @@ Total Leaves Taken = 0h</span>
     const dateFilterFromInput = document.getElementById("date-filter-from");
     const dateFilterToInput = document.getElementById("date-filter-to");
     const plannedHoursSourceSelect = document.getElementById("planned-hours-source");
+    const extendedActualsToggleInput = document.getElementById("extended-actuals-toggle");
     const actualHoursModeSelect = document.getElementById("actual-hours-mode");
     const dateFilterApplyButton = document.getElementById("date-filter-apply");
     const dateFilterResetButton = document.getElementById("date-filter-reset");
@@ -2746,8 +2777,10 @@ Total Leaves Taken = 0h</span>
     const DATE_FILTER_WORK_TYPES = new Set(["rmi"]);
     const ACTUAL_HOURS_MODE_STORAGE_KEY = "actual-hours-mode:nested-view";
     const PLANNED_HOURS_SOURCE_STORAGE_KEY = "planned-hours-source:nested-view";
+    const EXTENDED_ACTUALS_STORAGE_KEY = "extended-actuals:nested-view";
     const DEFAULT_ACTUAL_HOURS_MODE = "log_date";
     const DEFAULT_PLANNED_HOURS_SOURCE = "subtask_estimates";
+    const DEFAULT_EXTENDED_ACTUALS = false;
     const DEFAULT_DATE_FROM = "2026-01-01";
     const DEFAULT_DATE_TO = new Date().toISOString().slice(0, 10);
     let selectedDateFrom = DEFAULT_DATE_FROM;
@@ -2758,6 +2791,8 @@ Total Leaves Taken = 0h</span>
     let pendingActualHoursMode = DEFAULT_ACTUAL_HOURS_MODE;
     let selectedPlannedHoursSource = DEFAULT_PLANNED_HOURS_SOURCE;
     let pendingPlannedHoursSource = DEFAULT_PLANNED_HOURS_SOURCE;
+    let selectedExtendedActuals = DEFAULT_EXTENDED_ACTUALS;
+    let pendingExtendedActuals = DEFAULT_EXTENDED_ACTUALS;
     let isApplyingDateRange = false;
     let activeSearchQuery = "";
     let showProductCategorization = false;
@@ -3845,9 +3880,11 @@ Total Leaves Taken = 0h</span>
           console.warn("Failed to align planned-hours total with Approved vs Planned summary:", error);
         }}
       }}
-      const totalActualProjectHours = hasNestedActualsApi
+      const totalActualProjectHours = selectedExtendedActuals
         ? totalActualProjectHoursFromProjects
-        : (filteredSubtaskActualCount > 0 ? totalActualProjectHoursFromFilteredSubtasks : totalActualProjectHoursFromProjects);
+        : (hasNestedActualsApi
+        ? totalActualProjectHoursFromProjects
+        : (filteredSubtaskActualCount > 0 ? totalActualProjectHoursFromFilteredSubtasks : totalActualProjectHoursFromProjects));
       const groupedEpicSummaries = new Map();
       for (const summary of epicSummariesById.values()) {{
         const projectKey = String(summary && summary.project_key || "").trim().toUpperCase();
@@ -4143,12 +4180,23 @@ Total Leaves Taken = 0h</span>
           + "Total Planned Hours = " + formatHours(totalPlannedHours);
       }}
       if (totalLoggedTipNode) {{
-        totalLoggedTipNode.textContent =
-          "Formula: Total Actual Hours = Sum(Project Actual Hours), excluding RLT (RnD Leave Tracker).\\n"
-          + "Values:\\n"
-          + "Included Projects Actual Sum = " + formatHours(totalActualProjectHours) + "\\n"
-          + "Excluded Projects Actual Sum = " + formatHours(excludedActualHours) + "\\n"
-          + "Total Actual Hours = " + formatHours(totalActualProjectHours);
+        if (selectedExtendedActuals) {{
+          totalLoggedTipNode.textContent =
+            "Formula: Total Actual Hours = Sum(Subtask Original Estimates) where subtask Start OR Due date is in selected range, excluding RLT (RnD Leave Tracker).\\n"
+            + "Values:\\n"
+            + "Extended Actuals = On\\n"
+            + "Included Projects Actual Sum = " + formatHours(totalActualProjectHours) + "\\n"
+            + "Excluded Projects Actual Sum = " + formatHours(excludedActualHours) + "\\n"
+            + "Total Actual Hours = " + formatHours(totalActualProjectHours);
+        }} else {{
+          totalLoggedTipNode.textContent =
+            "Formula: Total Actual Hours = Sum(Project Actual Hours), excluding RLT (RnD Leave Tracker).\\n"
+            + "Values:\\n"
+            + "Extended Actuals = Off\\n"
+            + "Included Projects Actual Sum = " + formatHours(totalActualProjectHours) + "\\n"
+            + "Excluded Projects Actual Sum = " + formatHours(excludedActualHours) + "\\n"
+            + "Total Actual Hours = " + formatHours(totalActualProjectHours);
+        }}
       }}
       if (deltaTipNode) {{
         const deltaFormulaText = managedFieldFormulaText(
@@ -4692,20 +4740,30 @@ Total Leaves Taken = 0h</span>
     async function applyTeamFilterSelection() {{
       recomputeSelectedTeamAssignees();
       updateTeamFilterSummary();
-      if (!hasNestedActualsApi) {{
-        applyOriginalMetricsToRows();
-        rerender(true);
-        return;
-      }}
       setDateApplyBusy(true);
       try {{
-        const payload = await fetchActualHoursForDateRange(
-          selectedDateFrom,
-          selectedDateTo,
-          selectedActualHoursMode,
-          selectedTeamAssignees
-        );
-        applyFetchedActualHours(payload);
+        if (selectedExtendedActuals) {{
+          applyExtendedActualHoursForDateRange(selectedDateFrom, selectedDateTo);
+          if (hasNestedActualsApi) {{
+            const logPayload = await fetchActualHoursForDateRange(
+              selectedDateFrom,
+              selectedDateTo,
+              "log_date",
+              selectedTeamAssignees
+            );
+            subtaskLogHoursByIssue = extractSubtaskHoursMap(logPayload);
+          }}
+        }} else if (hasNestedActualsApi) {{
+          const payload = await fetchActualHoursForDateRange(
+            selectedDateFrom,
+            selectedDateTo,
+            selectedActualHoursMode,
+            selectedTeamAssignees
+          );
+          applyFetchedActualHours(payload);
+        }} else {{
+          applyOriginalMetricsToRows();
+        }}
         rerender(true);
       }} catch (error) {{
         setDateFilterStatus(String(error && error.message || error || "Failed to apply team filter."));
@@ -4945,6 +5003,7 @@ Total Leaves Taken = 0h</span>
         pendingActualHoursMode = DEFAULT_ACTUAL_HOURS_MODE;
       }}
       pendingPlannedHoursSource = normalizePlannedHoursSource(pendingPlannedHoursSource);
+      pendingExtendedActuals = !!pendingExtendedActuals;
       if (dateFilterFromInput) {{
         dateFilterFromInput.value = pendingDateFrom;
       }}
@@ -4957,6 +5016,9 @@ Total Leaves Taken = 0h</span>
       if (actualHoursModeSelect) {{
         actualHoursModeSelect.value = pendingActualHoursMode;
       }}
+      if (extendedActualsToggleInput) {{
+        extendedActualsToggleInput.checked = pendingExtendedActuals;
+      }}
     }}
 
     function hasPendingDateChange() {{
@@ -4964,7 +5026,8 @@ Total Leaves Taken = 0h</span>
       return pendingDateFrom !== selectedDateFrom
         || pendingDateTo !== selectedDateTo
         || pendingActualHoursMode !== selectedActualHoursMode
-        || pendingPlannedHoursSource !== selectedPlannedHoursSource;
+        || pendingPlannedHoursSource !== selectedPlannedHoursSource
+        || pendingExtendedActuals !== selectedExtendedActuals;
     }}
 
     function updateDateRangeApplyState() {{
@@ -4981,7 +5044,7 @@ Total Leaves Taken = 0h</span>
       }} else if (!isValid) {{
         setDateFilterStatus("Select a valid date range.");
       }} else if (dirty) {{
-        setDateFilterStatus("Date range, mode, or planned hours source changed. Click apply.");
+        setDateFilterStatus("Date range, mode, planned hours source, or Extended Actuals changed. Click apply.");
       }} else {{
         setDateFilterStatus("");
       }}
@@ -5034,10 +5097,7 @@ Total Leaves Taken = 0h</span>
       }}
     }}
 
-    function applyFetchedActualHours(payload) {{
-      const subtaskHours = payload && payload.subtask_hours_by_issue && typeof payload.subtask_hours_by_issue === "object"
-        ? payload.subtask_hours_by_issue
-        : {{}};
+    function buildRowGraph() {{
       const childrenByParentId = new Map();
       const byId = new Map();
       for (const row of allRows) {{
@@ -5050,16 +5110,31 @@ Total Leaves Taken = 0h</span>
         }}
         childrenByParentId.get(row.parent_id).push(row.id);
       }}
+      return {{ childrenByParentId, byId }};
+    }}
 
-      for (const row of allRows) {{
-        if (row.row_type !== "subtask") {{
-          continue;
-        }}
-        const jiraKey = String(row.jira_key || "").trim().toUpperCase();
-        const nextHours = jiraKey ? toFiniteNumber(subtaskHours[jiraKey], 0) : 0;
-        assignComputedMetrics(row, nextHours);
+    function subtaskEstimateHours(row) {{
+      const manHours = Number(row && row.man_hours);
+      if (Number.isFinite(manHours)) {{
+        return manHours;
       }}
+      const manDays = Number(row && row.man_days);
+      if (Number.isFinite(manDays)) {{
+        return manDays * 8;
+      }}
+      return 0;
+    }}
 
+    function subtaskStartOrDueInBounds(row, bounds) {{
+      if (String(row && row.row_type || "") !== "subtask") {{
+        return false;
+      }}
+      const plannedStart = parseDateValue(row && (row.planned_start || row.start_date));
+      const plannedDue = parseDateValue(row && (row.planned_end || row.planned_due || row.due_date));
+      return isDateWithinBounds(plannedStart, bounds) || isDateWithinBounds(plannedDue, bounds);
+    }}
+
+    function rollupSubtaskActualsToAncestors(childrenByParentId, byId) {{
       function sumSubtaskHoursDescendants(parentId) {{
         const childIds = childrenByParentId.get(parentId) || [];
         let total = 0;
@@ -5085,6 +5160,43 @@ Total Leaves Taken = 0h</span>
           assignComputedMetrics(row, rolledHours);
         }}
       }}
+    }}
+
+    function applyFetchedActualHours(payload) {{
+      const subtaskHours = payload && payload.subtask_hours_by_issue && typeof payload.subtask_hours_by_issue === "object"
+        ? payload.subtask_hours_by_issue
+        : {{}};
+      const graph = buildRowGraph();
+      const childrenByParentId = graph.childrenByParentId;
+      const byId = graph.byId;
+
+      for (const row of allRows) {{
+        if (row.row_type !== "subtask") {{
+          continue;
+        }}
+        const jiraKey = String(row.jira_key || "").trim().toUpperCase();
+        const nextHours = jiraKey ? toFiniteNumber(subtaskHours[jiraKey], 0) : 0;
+        assignComputedMetrics(row, nextHours);
+      }}
+      rollupSubtaskActualsToAncestors(childrenByParentId, byId);
+    }}
+
+    function applyExtendedActualHoursForDateRange(fromDate, toDate) {{
+      const bounds = {{
+        start: parseFilterDate(fromDate),
+        end: parseFilterDate(toDate),
+      }};
+      const graph = buildRowGraph();
+      for (const row of allRows) {{
+        if (row.row_type !== "subtask") {{
+          continue;
+        }}
+        const nextHours = subtaskStartOrDueInBounds(row, bounds)
+          ? subtaskEstimateHours(row)
+          : 0;
+        assignComputedMetrics(row, nextHours);
+      }}
+      rollupSubtaskActualsToAncestors(graph.childrenByParentId, graph.byId);
     }}
 
     async function fetchActualHoursForDateRange(fromDate, toDate, mode, selectedAssigneesSet) {{
@@ -5120,13 +5232,20 @@ Total Leaves Taken = 0h</span>
       const nextTo = pendingDateTo;
       const nextMode = pendingActualHoursMode;
       const nextPlannedHoursSource = pendingPlannedHoursSource;
+      const nextExtendedActuals = !!pendingExtendedActuals;
       if (!parseFilterDate(nextFrom) || !parseFilterDate(nextTo)) {{
         updateDateRangeApplyState();
         return;
       }}
       setDateApplyBusy(true);
       try {{
-        if (hasNestedActualsApi) {{
+        if (nextExtendedActuals) {{
+          applyExtendedActualHoursForDateRange(nextFrom, nextTo);
+          if (hasNestedActualsApi) {{
+            const logPayload = await fetchActualHoursForDateRange(nextFrom, nextTo, "log_date", selectedTeamAssignees);
+            subtaskLogHoursByIssue = extractSubtaskHoursMap(logPayload);
+          }}
+        }} else if (hasNestedActualsApi) {{
           const payload = await fetchActualHoursForDateRange(nextFrom, nextTo, nextMode, selectedTeamAssignees);
           applyFetchedActualHours(payload);
           const logPayload = nextMode === "log_date"
@@ -5140,8 +5259,10 @@ Total Leaves Taken = 0h</span>
         selectedDateTo = nextTo;
         selectedActualHoursMode = nextMode;
         selectedPlannedHoursSource = nextPlannedHoursSource;
+        selectedExtendedActuals = nextExtendedActuals;
         localStorage.setItem(ACTUAL_HOURS_MODE_STORAGE_KEY, selectedActualHoursMode);
         localStorage.setItem(PLANNED_HOURS_SOURCE_STORAGE_KEY, selectedPlannedHoursSource);
+        localStorage.setItem(EXTENDED_ACTUALS_STORAGE_KEY, selectedExtendedActuals ? "1" : "0");
         rerender(true);
       }} catch (error) {{
         setDateFilterStatus(String(error && error.message || error || "Failed to apply date range."));
@@ -6047,11 +6168,19 @@ Total Leaves Taken = 0h</span>
     }}
     const storedPlannedHoursSource = localStorage.getItem(PLANNED_HOURS_SOURCE_STORAGE_KEY);
     pendingPlannedHoursSource = normalizePlannedHoursSource(storedPlannedHoursSource || DEFAULT_PLANNED_HOURS_SOURCE);
+    const storedExtendedActuals = localStorage.getItem(EXTENDED_ACTUALS_STORAGE_KEY);
+    if (storedExtendedActuals === "1" || storedExtendedActuals === "0") {{
+      pendingExtendedActuals = storedExtendedActuals === "1";
+    }}
     normalizePendingDateRange();
     selectedDateFrom = pendingDateFrom;
     selectedDateTo = pendingDateTo;
     selectedActualHoursMode = pendingActualHoursMode;
     selectedPlannedHoursSource = pendingPlannedHoursSource;
+    selectedExtendedActuals = pendingExtendedActuals;
+    if (selectedExtendedActuals) {{
+      applyExtendedActualHoursForDateRange(selectedDateFrom, selectedDateTo);
+    }}
     if (!hasNestedActualsApi) {{
       setDateFilterStatus("Date apply works without live recompute in file mode.");
     }}
@@ -6240,6 +6369,14 @@ Total Leaves Taken = 0h</span>
       plannedHoursSourceSelect.value = pendingPlannedHoursSource;
       plannedHoursSourceSelect.addEventListener("change", () => {{
         pendingPlannedHoursSource = normalizePlannedHoursSource(plannedHoursSourceSelect.value || DEFAULT_PLANNED_HOURS_SOURCE);
+        normalizePendingDateRange();
+        updateDateRangeApplyState();
+      }});
+    }}
+    if (extendedActualsToggleInput) {{
+      extendedActualsToggleInput.checked = pendingExtendedActuals;
+      extendedActualsToggleInput.addEventListener("change", () => {{
+        pendingExtendedActuals = !!extendedActualsToggleInput.checked;
         normalizePendingDateRange();
         updateDateRangeApplyState();
       }});

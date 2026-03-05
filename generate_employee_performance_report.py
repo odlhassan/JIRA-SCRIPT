@@ -949,6 +949,10 @@ def _build_html(payload: dict) -> str:
     .btn {{ border:1px solid #4a6ea9; background:#1b325a; color:#eef4ff; border-radius:8px; font-weight:700; padding:7px 10px; cursor:pointer; text-decoration:none; display:inline-flex; align-items:center; }}
     .report-refresh-wrap {{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }}
     .report-refresh-status {{ font-size:.72rem; color:#9db1d8; min-height:18px; }}
+    .refresh-progress {{ width:220px; max-width:100%; height:8px; border:1px solid #32527f; border-radius:999px; background:#0d1830; overflow:hidden; }}
+    .refresh-progress-fill {{ height:100%; width:0%; background:linear-gradient(90deg,#38bdf8,#60a5fa); transition:width .25s ease; }}
+    .refresh-progress.ok .refresh-progress-fill {{ background:linear-gradient(90deg,#22c55e,#86efac); }}
+    .refresh-progress.err .refresh-progress-fill {{ background:linear-gradient(90deg,#ef4444,#fca5a5); }}
     .report-refresh-details {{ width:100%; font-size:.68rem; color:#c7d7f3; min-height:16px; }}
     .guide {{ margin-top:8px; border:1px solid #2f517e; border-radius:10px; background:#0f2140; padding:8px; }}
     .guide h2 {{ margin:0; font-size:.86rem; }}
@@ -971,7 +975,7 @@ def _build_html(payload: dict) -> str:
     .section-head.collapse-toggle {{ cursor:pointer; user-select:none; }}
     .section-head.collapse-toggle .hint {{ font-size:.68rem; color:#7fa3d6; margin-left:8px; text-transform:none; letter-spacing:0; }}
     .is-collapsed {{ display:none; }}
-    .kpis {{ display:grid; gap:8px; grid-template-columns:repeat(4,minmax(0,1fr)); margin-top:8px; }} .kpi {{ border:1px solid var(--line); border-radius:10px; background:var(--panel); padding:8px; }} .kpi .k {{ font-size:.72rem; color:var(--muted); text-transform:uppercase; }} .kpi .v {{ margin-top:4px; font-size:1.1rem; font-weight:800; }}
+    .kpis {{ display:grid; gap:8px; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); margin-top:8px; }} .kpi {{ border:1px solid var(--line); border-radius:10px; background:var(--panel); padding:8px; }} .kpi .k {{ font-size:.72rem; color:var(--muted); text-transform:uppercase; }} .kpi .v {{ margin-top:4px; font-size:1.1rem; font-weight:800; }}
     .kpi.actionable {{ cursor:pointer; transition:background .15s ease, border-color .15s ease; }}
     .kpi.actionable:hover {{ background:#173158; border-color:#5f88c0; }}
     .kpi .kpi-note {{ margin-top:3px; font-size:.66rem; color:#9db1d8; }}
@@ -1004,8 +1008,14 @@ def _build_html(payload: dict) -> str:
     .arena {{ display:grid; gap:10px; grid-template-columns:minmax(320px,38%) minmax(0,62%); margin-top:10px; align-items:stretch; }} .panel {{ border:1px solid var(--line); border-radius:12px; background:var(--panel); overflow:hidden; }} .panel h2 {{ margin:0; padding:9px 10px; font-size:.9rem; border-bottom:1px solid var(--line); }}
     .panel-head {{ display:flex; justify-content:space-between; align-items:center; gap:10px; padding:9px 10px; border-bottom:1px solid var(--line); }}
     .panel-head-title {{ margin:0; padding:0; border-bottom:0; font-size:.9rem; }}
-    .panel-inline-toggle {{ display:inline-flex; align-items:center; gap:6px; font-size:.72rem; color:#c7d7f3; font-weight:700; user-select:none; }}
-    .panel-inline-toggle input {{ margin:0; accent-color:#60a5fa; }}
+    .panel-inline-toggle {{ display:inline-flex; align-items:center; gap:8px; font-size:.72rem; color:#c7d7f3; font-weight:700; user-select:none; cursor:pointer; }}
+    .panel-inline-toggle input {{ position:absolute; opacity:0; width:1px; height:1px; pointer-events:none; }}
+    .panel-check-ui {{ width:18px; height:18px; border:1px solid #4a6ea9; border-radius:6px; background:linear-gradient(180deg,#12284b 0%,#0f2342 100%); display:inline-flex; align-items:center; justify-content:center; transition:border-color .15s ease, background .15s ease, box-shadow .15s ease; }}
+    .panel-check-ui .material-symbols-outlined {{ font-size:14px; color:#eaf3ff; opacity:0; transform:scale(.65); transition:opacity .15s ease, transform .15s ease; font-variation-settings:"FILL" 1, "wght" 600, "GRAD" 0, "opsz" 20; }}
+    .panel-inline-toggle:hover .panel-check-ui {{ border-color:#7cb2ff; background:linear-gradient(180deg,#173866 0%,#14345f 100%); }}
+    .panel-inline-toggle input:checked + .panel-check-ui {{ border-color:#7cc5ff; background:linear-gradient(180deg,#2563eb 0%,#1d4ed8 100%); box-shadow:0 0 0 1px rgba(147,197,253,.25) inset; }}
+    .panel-inline-toggle input:checked + .panel-check-ui .material-symbols-outlined {{ opacity:1; transform:scale(1); }}
+    .panel-inline-toggle input:focus-visible + .panel-check-ui {{ box-shadow:0 0 0 2px rgba(124,178,255,.35); border-color:#7cb2ff; }}
     .arena > .panel {{ display:flex; flex-direction:column; min-height:72vh; max-height:72vh; }}
     .leaderboard {{ overflow:auto; flex:1; min-height:0; max-height:none; }} .row {{ display:grid; gap:6px; grid-template-columns:24px 1fr auto; align-items:center; padding:8px 10px; border-bottom:1px solid #243b61; cursor:pointer; }} .row.sel {{ background:#193766; box-shadow:inset 0 0 0 1px #5d89cf; }} .rank {{ color:#5eead4; font-weight:800; }} .sub {{ color:var(--muted); font-size:.72rem; }} .score {{ border:1px solid #3f5f93; border-radius:999px; padding:2px 8px; font-weight:800; display:inline-flex; gap:4px; align-items:center; }}
     .leader-metrics {{ display:flex; gap:6px; flex-wrap:wrap; margin-top:2px; }}
@@ -1016,6 +1026,11 @@ def _build_html(payload: dict) -> str:
     .assignee-refresh-btn {{ width:26px; height:26px; border:1px solid #36598a; border-radius:999px; background:#112546; color:#93c5fd; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; }}
     .assignee-refresh-btn:hover {{ border-color:#7cb2ff; color:#dbeafe; background:#17325a; }}
     .assignee-refresh-btn .material-symbols-outlined {{ font-size:16px; }}
+    .assignee-refresh-inline-status {{ margin-top:8px; font-size:.74rem; color:#9db1d8; }}
+    .assignee-refresh-inline-status.ok {{ color:#86efac; }}
+    .assignee-refresh-inline-status.err {{ color:#fca5a5; }}
+    .assignee-refresh-inline-time {{ margin-top:4px; font-size:.7rem; color:#9db1d8; }}
+    .refresh-progress-inline {{ margin-top:6px; width:260px; max-width:100%; }}
     .detail {{ padding:10px; overflow-y:auto; flex:1; min-height:0; }} .score-arena {{ margin-top:10px; }} .score-drill {{ padding:10px; }} .card {{ border:1px solid #314e7f; border-radius:10px; background:#12213d; padding:10px; }} .big {{ font-size:2rem; font-weight:900; line-height:1; }}
     .tabs {{ display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }}
     .tab-btn {{ border:1px solid #3b5f91; background:#12284b; color:#e6efff; border-radius:999px; padding:4px 10px; font-size:.74rem; cursor:pointer; }}
@@ -1265,6 +1280,7 @@ def _build_html(payload: dict) -> str:
           <button id="employee-refresh-btn" class="btn" type="button">Refresh Report</button>
           <button id="employee-refresh-cancel-btn" class="btn" type="button">Cancel Run</button>
           <span id="employee-refresh-status" class="report-refresh-status" aria-live="polite"></span>
+          <div id="employee-refresh-progress" class="refresh-progress" aria-hidden="true"><div id="employee-refresh-progress-fill" class="refresh-progress-fill"></div></div>
           <div id="employee-refresh-details" class="report-refresh-details" aria-live="polite"></div>
         </div>
         <button id="header-toggle" class="btn" type="button" aria-expanded="true" aria-controls="performance-header">Collapse Header</button>
@@ -1298,6 +1314,7 @@ def _build_html(payload: dict) -> str:
       <div class="kpi"><div class="k">At Risk (&lt;60)</div><div class="v" id="kpi-risk">0</div></div>
       <div class="kpi"><div class="k">Total Penalty</div><div class="v" id="kpi-pen">0</div></div>
       <div class="kpi"><div class="k">Total Rework Hours</div><div class="v" id="kpi-rework">0h</div></div>
+      <div class="kpi"><div class="k">Avg Simple Score (%)</div><div class="v" id="kpi-simple-total">0.0%</div></div>
     </div>
     </div>
     <div class="top3-wrap">
@@ -1326,7 +1343,7 @@ def _build_html(payload: dict) -> str:
   </section>
   <section class="arena">
     <article class="panel"><h2 id="leaderboard-title">Leaderboard</h2><div class="leader-controls"><div class="f"><label for="leader-scoring-mode">Scoring Mode</label><select id="leader-scoring-mode"><option value="simple" selected>Simple Scoring</option><option value="advanced">Advanced Scoring</option></select></div><div class="f"><label for="leader-sort">Sort By</label><select id="leader-sort"><option value="rmis">RMIs In Range (Desc)</option><option value="score" selected>Performance Score</option><option value="missed">Missed Start Ratio</option><option value="capacity_gap">Capacity Gap (Cap - Planned)</option></select></div><div class="f"><label for="filter-risk">At-Risk View</label><select id="filter-risk"><option value="all" selected>All Assignees</option><option value="risk">Only At-Risk (&lt;60)</option></select></div><div class="f"><label for="filter-missed">Start Discipline</label><select id="filter-missed"><option value="all" selected>All</option><option value="missed">Only Missed Starts</option></select></div><div class="f"><label for="leader-search">Leaderboard Search</label><input id="leader-search" type="text" placeholder="Search assignee"></div><div class="leader-actions-wrap"><div class="leader-actions-menu-wrap"><button id="leader-actions-toggle" class="leader-icon-btn" type="button" aria-label="Leaderboard actions" aria-expanded="false"><span class="material-symbols-outlined">settings</span></button><div id="leader-actions-menu" class="leader-actions-menu" hidden><button type="button" class="leader-actions-item" data-action="copy-gap-people"><span class="material-symbols-outlined">content_copy</span><span>Copy Gap People</span></button></div></div></div></div><div id="leaderboard-filter" class="sub" style="padding:0 10px 8px;"></div><div id="leaderboard-action-status" class="sub leader-action-status"></div><div id="leaderboard" class="leaderboard"></div></article>
-    <article class="panel"><div class="panel-head"><h2 class="panel-head-title">Assignee Drilldown</h2><label class="panel-inline-toggle" for="assignee-overloaded-penalty-toggle"><input id="assignee-overloaded-penalty-toggle" type="checkbox"><span>Overloaded Penalty</span></label><label class="panel-inline-toggle" for="assignee-extended-actuals-toggle"><input id="assignee-extended-actuals-toggle" type="checkbox"><span>Extended Actuals</span></label></div><div id="detail" class="detail"><div class="empty">Select an assignee.</div></div></article>
+    <article class="panel"><div class="panel-head"><h2 class="panel-head-title">Assignee Drilldown</h2><label class="panel-inline-toggle" for="assignee-overloaded-penalty-toggle"><input id="assignee-overloaded-penalty-toggle" type="checkbox"><span class="panel-check-ui" aria-hidden="true"><span class="material-symbols-outlined">check</span></span><span>Overloaded Penalty</span></label><label class="panel-inline-toggle" for="assignee-extended-actuals-toggle"><input id="assignee-extended-actuals-toggle" type="checkbox"><span class="panel-check-ui" aria-hidden="true"><span class="material-symbols-outlined">check</span></span><span>Extended Actuals</span></label></div><div id="detail" class="detail"><div class="empty">Select an assignee.</div></div></article>
   </section>
   <section class="score-arena">
     <article class="panel"><h2>Score Drilldown</h2><div id="score-drilldown" class="score-drill"><div class="empty">Select an assignee.</div></div></article>
@@ -1360,11 +1377,14 @@ const employeeRefreshBtn = document.getElementById("employee-refresh-btn");
 const employeeRefreshCancelBtn = document.getElementById("employee-refresh-cancel-btn");
 const employeeRefreshStatus = document.getElementById("employee-refresh-status");
 const employeeRefreshDetails = document.getElementById("employee-refresh-details");
+const employeeRefreshProgress = document.getElementById("employee-refresh-progress");
+const employeeRefreshProgressFill = document.getElementById("employee-refresh-progress-fill");
 const leaderActionsToggle = document.getElementById("leader-actions-toggle");
 const leaderActionsMenu = document.getElementById("leader-actions-menu");
 const leaderboardActionStatusEl = document.getElementById("leaderboard-action-status");
 const assigneeExtendedActualsToggleEl = document.getElementById("assignee-extended-actuals-toggle");
 const assigneeOverloadedPenaltyToggleEl = document.getElementById("assignee-overloaded-penalty-toggle");
+const metaEl = document.getElementById("meta");
 let employeeRefreshPollHandle = null;
 const HEADER_COLLAPSED_STORAGE_KEY = "employee-performance-header-collapsed";
 const workItemsByKey = new Map(workItems.map((row) => [String(row && row.issue_key || "").toUpperCase(), row || {{}}]));
@@ -1387,8 +1407,143 @@ let simpleFormulaGuideExpanded = true;
 let advancedFormulaGuideExpanded = true;
 let lastLeaderboardViewItems = [];
 let leaderboardActionStatusTimer = null;
+let generatedAtText = String(payload.generated_at || "-");
+let assigneeAtomicRefresh = {{ assignee: "", run_id: "", status: "", progress: 0, step: "", updated_at_utc: "", message: "" }};
 function n(v) {{ const x = Number(v); return Number.isFinite(x) ? x : 0; }}
 function e(t) {{ return String(t ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }}
+function formatUtcFromIso(isoText) {{
+  const raw = String(isoText || "").trim();
+  if (!raw) return "";
+  const dt = new Date(raw);
+  if (Number.isNaN(dt.getTime())) return "";
+  const y = dt.getUTCFullYear();
+  const m = String(dt.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(dt.getUTCDate()).padStart(2, "0");
+  const hh = String(dt.getUTCHours()).padStart(2, "0");
+  const mm = String(dt.getUTCMinutes()).padStart(2, "0");
+  return `${{y}}-${{m}}-${{d}} ${{hh}}:${{mm}} UTC`;
+}}
+function renderMetaLine() {{
+  if (!metaEl) return;
+  metaEl.textContent = `Generated: ${{generatedAtText}} | Data window: ${{defaultFrom}} to ${{defaultTo}}`;
+}}
+function setGeneratedAtFromRun(run) {{
+  const row = run && typeof run === "object" ? run : {{}};
+  const next = formatUtcFromIso(row.ended_at_utc || row.updated_at_utc || "");
+  if (!next) return;
+  generatedAtText = next;
+  renderMetaLine();
+}}
+function reloadAfterRefresh(run) {{
+  if (typeof window === "undefined" || !window.location) return;
+  const marker = String((run && (run.ended_at_utc || run.updated_at_utc)) || Date.now());
+  try {{
+    const url = new URL(window.location.href);
+    url.searchParams.set("_refresh_ts", marker);
+    window.location.assign(url.toString());
+  }} catch (_err) {{
+    window.location.reload();
+  }}
+}}
+function atomicRefreshTone(status) {{
+  const key = String(status || "").toLowerCase();
+  if (key === "success") return "ok";
+  if (key === "failed" || key === "canceled") return "err";
+  return "";
+}}
+function atomicRefreshText(state) {{
+  const row = state && typeof state === "object" ? state : {{}};
+  const status = String(row.status || "").toLowerCase();
+  const step = String(row.step || "").replace(/_/g, " ").trim();
+  const progress = Number(row.progress);
+  if (status === "running") {{
+    const pct = Number.isFinite(progress) ? `${{Math.max(0, Math.min(100, Math.round(progress)))}}%` : "";
+    return `Assignee refresh running${{step ? ` (${{step}})` : ""}}${{pct ? ` - ${{pct}}` : ""}}`;
+  }}
+  if (status === "cancel_requested") return "Assignee refresh cancel requested...";
+  if (status === "success") return "Assignee refresh complete. Reloading...";
+  if (status === "canceled") return String(row.message || "Assignee refresh canceled.");
+  if (status === "failed") return String(row.message || "Assignee refresh failed.");
+  return String(row.message || "");
+}}
+function globalRefreshTone(status) {{
+  const key = String(status || "").toLowerCase();
+  if (key === "success") return "ok";
+  if (key === "failed" || key === "canceled") return "err";
+  return "";
+}}
+function setEmployeeRefreshProgress(progressValue, statusValue) {{
+  if (!employeeRefreshProgress || !employeeRefreshProgressFill) return;
+  const status = String(statusValue || "").toLowerCase();
+  const pctRaw = Number(progressValue);
+  const pct = Number.isFinite(pctRaw) ? Math.max(0, Math.min(100, Math.round(pctRaw))) : 0;
+  employeeRefreshProgressFill.style.width = `${{pct}}%`;
+  employeeRefreshProgress.className = `refresh-progress${{globalRefreshTone(status) ? ` ${{globalRefreshTone(status)}}` : ""}}`;
+  if (status === "running" || status === "cancel_requested" || status === "success" || status === "failed" || status === "canceled") {{
+    employeeRefreshProgress.style.display = "";
+  }} else {{
+    employeeRefreshProgress.style.display = "none";
+  }}
+}}
+function renderSelectedAssigneeRefreshStatus() {{
+  const node = document.getElementById("assignee-refresh-inline-status");
+  const timeNode = document.getElementById("assignee-refresh-inline-time");
+  const bar = document.getElementById("assignee-refresh-inline-progress");
+  const fill = document.getElementById("assignee-refresh-inline-progress-fill");
+  if (!node) return;
+  const state = assigneeAtomicRefresh && typeof assigneeAtomicRefresh === "object" ? assigneeAtomicRefresh : {{}};
+  const isMatch = String(selectedName || "") && String(state.assignee || "") === String(selectedName || "");
+  if (!isMatch) {{
+    node.style.display = "none";
+    node.textContent = "";
+    node.className = "assignee-refresh-inline-status";
+    if (timeNode) {{
+      timeNode.style.display = "none";
+      timeNode.textContent = "";
+    }}
+    if (bar) bar.style.display = "none";
+    return;
+  }}
+  const text = atomicRefreshText(state);
+  const status = String(state.status || "").toLowerCase();
+  const progressRaw = Number(state.progress);
+  const progress = Number.isFinite(progressRaw) ? Math.max(0, Math.min(100, Math.round(progressRaw))) : 0;
+  if (!text) {{
+    node.style.display = "none";
+    node.textContent = "";
+    node.className = "assignee-refresh-inline-status";
+    if (timeNode) {{
+      timeNode.style.display = "none";
+      timeNode.textContent = "";
+    }}
+    if (bar) bar.style.display = "none";
+    return;
+  }}
+  const tone = atomicRefreshTone(state.status);
+  node.style.display = "";
+  node.textContent = text;
+  node.className = `assignee-refresh-inline-status${{tone ? ` ${{tone}}` : ""}}`;
+  if (timeNode) {{
+    const stamp = formatUtcFromIso(String(state.updated_at_utc || ""));
+    if (stamp) {{
+      timeNode.style.display = "";
+      timeNode.textContent = `Last refresh update: ${{stamp}}`;
+    }} else {{
+      timeNode.style.display = "none";
+      timeNode.textContent = "";
+    }}
+  }}
+  if (bar && fill) {{
+    fill.style.width = `${{progress}}%`;
+    bar.className = `refresh-progress refresh-progress-inline${{tone ? ` ${{tone}}` : ""}}`;
+    bar.style.display = (status === "running" || status === "cancel_requested" || status === "success" || status === "failed" || status === "canceled") ? "" : "none";
+  }}
+}}
+function setAssigneeAtomicRefresh(nextState) {{
+  const patch = nextState && typeof nextState === "object" ? nextState : {{}};
+  assigneeAtomicRefresh = {{ ...assigneeAtomicRefresh, ...patch }};
+  renderSelectedAssigneeRefreshStatus();
+}}
 function jiraIssueUrl(issueKey) {{
   const key = String(issueKey || "").trim().toUpperCase();
   if (!key) return "";
@@ -2137,10 +2292,30 @@ function compute() {{
     }});
   }}
   for (const it of items) {{
-    const totalEst = n(it.ss_total_estimate);
-    const totalActual = n(it.ss_total_actual);
-    const totalOver = n(it.ss_total_overrun);
+    const hierarchyRows = Array.isArray(it.assigned_hierarchy) ? it.assigned_hierarchy : [];
+    let derivedEst = 0;
+    let derivedActual = 0;
+    let derivedOverrun = 0;
+    for (const row of hierarchyRows) {{
+      const issueType = String(row?.issue_type || row?.hierarchy_type || "").toLowerCase();
+      if (!isSubtaskPerformanceType(issueType)) continue;
+      const est = Math.max(0, n(row?.original_estimate_hours));
+      const act = Math.max(0, n(row?.actual_hours));
+      derivedEst += est;
+      derivedActual += act;
+      derivedOverrun += Math.max(0, act - est);
+    }}
+    const fallbackEst = n(it.ss_total_estimate);
+    const fallbackActual = extendedActualsEnabled ? n(it.actual_hours_stats_total) : n(it.ss_total_actual);
+    const totalEst = derivedEst > 0 ? derivedEst : fallbackEst;
+    const totalActual = derivedEst > 0 ? derivedActual : fallbackActual;
+    const totalOver = derivedEst > 0
+      ? derivedOverrun
+      : (extendedActualsEnabled ? Math.max(0, totalActual - totalEst) : n(it.ss_total_overrun));
     const commitOver = n(it.ss_commitment_overrun);
+    it.ss_total_estimate_effective = totalEst;
+    it.ss_total_actual_effective = totalActual;
+    it.ss_total_overrun_effective = totalOver;
     it.simple_score_raw = totalEst > 0 ? clamp(100 * (1 - totalOver / totalEst), 0, 100) : 100;
     const adjOver = Math.max(0, totalOver - commitOver);
     it.simple_score_due = totalEst > 0 ? clamp(100 * (1 - adjOver / totalEst), 0, 100) : 100;
@@ -2541,6 +2716,8 @@ function render(items) {{
   document.getElementById("kpi-risk").textContent = String(items.filter(i => n(i.final_score) < 60).length);
   document.getElementById("kpi-pen").textContent = items.reduce((a,b)=>a+n(b.total_penalty),0).toFixed(1);
   document.getElementById("kpi-rework").textContent = items.reduce((a,b)=>a+n(b.rework_hours),0).toFixed(1) + "h";
+  const averageSimpleScore = items.length ? (items.reduce((a,b)=>a+n(b.simple_score),0) / items.length) : 0;
+  document.getElementById("kpi-simple-total").textContent = averageSimpleScore.toFixed(1) + "%";
   const totalAssignees = items.length;
   const atRiskCount = items.filter((i) => n(i.final_score) < 60).length;
   const highMissed = items.filter((i) => n(i.missed_start_ratio) >= 30).length;
@@ -2549,7 +2726,8 @@ function render(items) {{
     `<span class="pill">Assignees: ${{totalAssignees}}</span>`,
     `<span class="pill">At-Risk: ${{atRiskCount}}</span>`,
     `<span class="pill">High Missed-Start (>=30%): ${{highMissed}}</span>`,
-    `<span class="pill">Over Capacity: ${{overloaded}}</span>`
+    `<span class="pill">Over Capacity: ${{overloaded}}</span>`,
+    `<span class="pill">Avg Simple Score: ${{averageSimpleScore.toFixed(1)}}%</span>`
   ].join("");
   const topHigh = items.slice(0, 3);
   const topLow = items.slice(-3).reverse();
@@ -2669,6 +2847,21 @@ function render(items) {{
     event.stopPropagation();
     const assignee = String(btn.getAttribute("data-assignee") || "");
     if (!assignee) return;
+    selectedName = assignee;
+    availabilityBreakdownForAssignee = "";
+    plannedHoursBreakdownForAssignee = "";
+    actualHoursBreakdownForAssignee = "";
+    rmiListForAssignee = "";
+    render(compute());
+    setAssigneeAtomicRefresh({{
+      assignee,
+      run_id: "",
+      status: "running",
+      progress: 0,
+      step: "starting",
+      updated_at_utc: "",
+      message: "",
+    }});
     if (typeof window !== "undefined" && typeof window.__startEmployeeRefreshRun === "function") {{
       await window.__startEmployeeRefreshRun(assignee, btn);
       return;
@@ -2997,11 +3190,14 @@ function render(items) {{
   const activeSimpleScore = overloadedApplied ? Math.min(baseSimpleScore, n(item.simple_score_overloaded)) : baseSimpleScore;
   const activeBigScore = activeScoringTab === "simple" ? activeSimpleScore : summaryScore;
   const activeBigLabel = activeScoringTab === "simple" ? "Simple Score" : "Advanced Score";
+  const effectiveSimplePlanned = n(item.ss_total_estimate_effective || item.ss_total_estimate);
+  const effectiveSimpleActual = n(item.ss_total_actual_effective || item.ss_total_actual);
+  const effectiveSimpleOverrun = n(item.ss_total_overrun_effective || item.ss_total_overrun);
   const activeBigSub = activeScoringTab === "simple"
-    ? `Simple efficiency${{dueCompletionEnabled ? " (due-adjusted)" : ""}}${{overloadedApplied ? " + overloaded penalty" : ""}} | Overrun: ${{n(item.ss_total_overrun).toFixed(1)}}h | Planned: ${{n(item.ss_total_estimate).toFixed(1)}}h${{overloadedApplied ? ` | Logged: ${{n(item.ss_total_actual).toFixed(1)}}h` : ""}}`
+    ? `Simple efficiency${{dueCompletionEnabled ? " (due-adjusted)" : ""}}${{overloadedApplied ? " + overloaded penalty" : ""}} | Overrun: ${{effectiveSimpleOverrun.toFixed(1)}}h | Planned: ${{effectiveSimplePlanned.toFixed(1)}}h${{overloadedApplied ? ` | Logged: ${{effectiveSimpleActual.toFixed(1)}}h` : ""}}`
     : `Penalty-based | Raw ${{n(item.raw_score).toFixed(2)}} | Penalty -${{n(item.total_penalty).toFixed(2)}} | Base ${{n(settings.base_score).toFixed(0)}}`;
   const summaryMetricsHtml = `<div class="kpis" style="margin-top:8px;"><div class="kpi actionable" data-action="toggle-rmis-list"><div class="k"><span class="material-symbols-outlined" style="font-size:15px;vertical-align:middle;margin-right:4px;">deployed_code</span>RMIs</div><div class="v">${{summaryRmis.toFixed(0)}}</div><div class="kpi-note">${{isRmiListOpen ? "Click to hide RMIs list" : "Click to view RMIs list"}}</div></div><div class="kpi"><div class="k"><span class="material-symbols-outlined" style="font-size:15px;vertical-align:middle;margin-right:4px;">sliders</span>Capacity</div><div class="v">${{summaryCapacity.toFixed(1)}}h</div></div><div class="kpi"><div class="k"><span class="material-symbols-outlined" style="font-size:15px;vertical-align:middle;margin-right:4px;">award_star</span>Score</div><div class="v" id="summary-score-kpi">${{activeBigScore.toFixed(1)}}</div></div></div>`;
-  const summaryHtml = `<div class="card"><div style="display:flex;justify-content:space-between;align-items:end;"><div><div class="sub">Assignee</div><div style="font-size:1.1rem;font-weight:800;">${{e(item.assignee)}}</div></div><div><div class="big" id="summary-big-score">${{activeBigScore.toFixed(1)}}</div><div class="score-label" id="summary-score-label">${{activeBigLabel}}</div></div></div>${{summaryMetricsHtml}}${{rmiListHtml}}<div class="sub" id="summary-score-sub">${{activeBigSub}}</div><div class="discover"><span class="pill" style="border-color:${{healthColor}};">Health: ${{healthTag}}</span><span class="pill">Capacity Gap: ${{(n(item.employee_capacity_hours)-n(item.planned_hours_assigned)).toFixed(1)}}h</span><span class="pill">Missed Starts: ${{n(item.missed_start_ratio).toFixed(1)}}%</span><span class="pill">Missed Due Dates: ${{n(item.missed_due_date_ratio).toFixed(1)}}%</span></div></div>`;
+  const summaryHtml = `<div class="card"><div style="display:flex;justify-content:space-between;align-items:end;"><div><div class="sub">Assignee</div><div style="font-size:1.1rem;font-weight:800;">${{e(item.assignee)}}</div></div><div><div class="big" id="summary-big-score">${{activeBigScore.toFixed(1)}}</div><div class="score-label" id="summary-score-label">${{activeBigLabel}}</div></div></div><div id="assignee-refresh-inline-status" class="assignee-refresh-inline-status" style="display:none;"></div><div id="assignee-refresh-inline-time" class="assignee-refresh-inline-time" style="display:none;"></div><div id="assignee-refresh-inline-progress" class="refresh-progress refresh-progress-inline" style="display:none;"><div id="assignee-refresh-inline-progress-fill" class="refresh-progress-fill"></div></div>${{summaryMetricsHtml}}${{rmiListHtml}}<div class="sub" id="summary-score-sub">${{activeBigSub}}</div><div class="discover"><span class="pill" style="border-color:${{healthColor}};">Health: ${{healthTag}}</span><span class="pill">Capacity Gap: ${{(n(item.employee_capacity_hours)-n(item.planned_hours_assigned)).toFixed(1)}}h</span><span class="pill">Missed Starts: ${{n(item.missed_start_ratio).toFixed(1)}}%</span><span class="pill">Missed Due Dates: ${{n(item.missed_due_date_ratio).toFixed(1)}}%</span></div></div>`;
   const managedSectionHtml = `<div class="mini" style="margin:8px 0;"><h3>Managed Field Metrics - ${{e(item.assignee)}}</h3><div class="sub">Employee-only metrics within filters | Date: ${{e(activeFrom)}} to ${{e(activeTo)}} | Projects: ${{e(activeProjectsText)}}</div>${{managedHtml}}</div>`;
   const ssDetails = item.ss_subtask_details || [];
   function ssRowClass(row) {{
@@ -3034,9 +3230,9 @@ function render(items) {{
   const ssOver = n(item.ss_over_count);
   const ssCommit = n(item.ss_commitment_count);
   const ssTotal = ssWithin + ssOver;
-  const ssPlannedHours = n(item.ss_total_estimate);
-  const ssActualHours = n(item.ss_total_actual);
-  const ssOverrunHours = n(item.ss_total_overrun);
+  const ssPlannedHours = effectiveSimplePlanned;
+  const ssActualHours = effectiveSimpleActual;
+  const ssOverrunHours = effectiveSimpleOverrun;
   const ssAdjustedOverrunHours = Math.max(0, ssOverrunHours - n(item.ss_commitment_overrun));
   const ssAppliedOverrunHours = dueCompletionEnabled ? ssAdjustedOverrunHours : ssOverrunHours;
   const ssFormulaText = dueCompletionEnabled
@@ -3085,6 +3281,7 @@ function render(items) {{
   document.getElementById("detail").innerHTML = `${{summaryHtml}}${{managedSectionHtml}}`;
   document.getElementById("score-drilldown").innerHTML = `${{scoringTabsHtml}}${{execPlanTabsHtml}}`;
   const detailHost = document.getElementById("detail");
+  renderSelectedAssigneeRefreshStatus();
   const scoreHost = document.getElementById("score-drilldown");
   function activateGroupTab(host, group, tab) {{
     if (!host) return;
@@ -3103,7 +3300,7 @@ function render(items) {{
       if (tab === "simple") {{
         if (bigEl) bigEl.textContent = activeSimpleScore.toFixed(1);
         if (lblEl) lblEl.textContent = "Simple Score";
-        if (subEl) subEl.textContent = `Simple efficiency${{dueCompletionEnabled ? " (due-adjusted)" : ""}}${{overloadedApplied ? " + overloaded penalty" : ""}} | Overrun: ${{n(item.ss_total_overrun).toFixed(1)}}h | Planned: ${{n(item.ss_total_estimate).toFixed(1)}}h${{overloadedApplied ? ` | Logged: ${{n(item.ss_total_actual).toFixed(1)}}h` : ""}}`;
+        if (subEl) subEl.textContent = `Simple efficiency${{dueCompletionEnabled ? " (due-adjusted)" : ""}}${{overloadedApplied ? " + overloaded penalty" : ""}} | Overrun: ${{effectiveSimpleOverrun.toFixed(1)}}h | Planned: ${{effectiveSimplePlanned.toFixed(1)}}h${{overloadedApplied ? ` | Logged: ${{effectiveSimpleActual.toFixed(1)}}h` : ""}}`;
         if (kpiEl) kpiEl.textContent = activeSimpleScore.toFixed(1);
       }} else {{
         if (bigEl) bigEl.textContent = summaryScore.toFixed(1);
@@ -3229,7 +3426,7 @@ function setHeaderCollapsed(isCollapsed) {{
 document.getElementById("projects").innerHTML = projects.map((p) => `<option value="${{e(p)}}" selected>${{e(p)}}</option>`).join("");
 refreshCapacityProfileOptions();
 document.getElementById("from").value = defaultFrom; document.getElementById("to").value = defaultTo;
-document.getElementById("meta").textContent = `Generated: ${{payload.generated_at || "-"}} | Data window: ${{defaultFrom}} to ${{defaultTo}}`;
+renderMetaLine();
 setHeaderCollapsed(localStorage.getItem(HEADER_COLLAPSED_STORAGE_KEY) === "1");
 if (headerToggleButton) {{
   headerToggleButton.addEventListener("click", () => {{
@@ -3402,14 +3599,25 @@ if (employeeRefreshBtn) {{
     return String((run && run.error) || "Refresh status unavailable.");
   }}
 
-  async function pollEmployeeRefresh(runId) {{
+  async function pollEmployeeRefresh(runId, assigneeContext) {{
     if (!runId) return;
+    const ctxAssignee = String(assigneeContext || "");
     try {{
       const response = await fetch(`/api/employee-performance/refresh/${{encodeURIComponent(runId)}}`);
       const body = await response.json().catch(() => ({{ ok: false, error: "Invalid refresh status response." }}));
       if (!response.ok || !body.ok || !body.run) {{
         const msg = body && body.error ? String(body.error) : `Failed to check refresh status (${{response.status}})`;
         setEmployeeRefreshStatus(msg, "err");
+        setEmployeeRefreshProgress(100, "failed");
+        if (ctxAssignee) {{
+          setAssigneeAtomicRefresh({{
+            assignee: ctxAssignee,
+            run_id: runId,
+            status: "failed",
+            message: msg,
+            updated_at_utc: new Date().toISOString(),
+          }});
+        }}
         setEmployeeRefreshUiState(false);
         clearEmployeeRefreshPoll();
         return;
@@ -3418,19 +3626,33 @@ if (employeeRefreshBtn) {{
       const status = String(run.status || "").toLowerCase();
       setEmployeeRefreshStatus(refreshStatusText(run), refreshToneByStatus(status));
       setEmployeeRefreshDetails(refreshDetailsText(run), refreshToneByStatus(status));
+      setEmployeeRefreshProgress(Number(run.progress || 0), status);
+      if (ctxAssignee) {{
+        setAssigneeAtomicRefresh({{
+          assignee: ctxAssignee,
+          run_id: runId,
+          status,
+          step: String(run.step || ""),
+          progress: Number(run.progress || 0),
+          updated_at_utc: String(run.updated_at_utc || ""),
+          message: String(run.error || ""),
+        }});
+      }}
       if (status === "running") {{
         setEmployeeRefreshUiState(true);
         clearEmployeeRefreshPoll();
-        employeeRefreshPollHandle = setTimeout(() => pollEmployeeRefresh(runId), 1500);
+        employeeRefreshPollHandle = setTimeout(() => pollEmployeeRefresh(runId, ctxAssignee), 1500);
         return;
       }}
       setEmployeeRefreshUiState(false);
       clearEmployeeRefreshPoll();
       if (status === "success") {{
-        setTimeout(() => window.location.reload(), 800);
+        setGeneratedAtFromRun(run);
+        setTimeout(() => reloadAfterRefresh(run), 800);
       }}
     }} catch (error) {{
       setEmployeeRefreshStatus(error && error.message ? error.message : String(error), "err");
+      setEmployeeRefreshProgress(100, "failed");
       setEmployeeRefreshUiState(false);
       clearEmployeeRefreshPoll();
     }}
@@ -3445,11 +3667,13 @@ if (employeeRefreshBtn) {{
       if (!run) {{
         setEmployeeRefreshUiState(false);
         setEmployeeRefreshDetails("", "");
+        setEmployeeRefreshProgress(0, "");
         return;
       }}
       const status = String(run.status || "").toLowerCase();
       setEmployeeRefreshStatus(refreshStatusText(run), refreshToneByStatus(status));
       setEmployeeRefreshDetails(refreshDetailsText(run), refreshToneByStatus(status));
+      setEmployeeRefreshProgress(Number(run.progress || 0), status);
       if (status === "running") {{
         setEmployeeRefreshUiState(true);
         clearEmployeeRefreshPoll();
@@ -3459,6 +3683,7 @@ if (employeeRefreshBtn) {{
       }}
     }} catch (_err) {{
       setEmployeeRefreshUiState(false);
+      setEmployeeRefreshProgress(0, "");
     }}
   }}
 
@@ -3468,10 +3693,22 @@ if (employeeRefreshBtn) {{
       return;
     }}
     const targetAssignee = String(assigneeName || "").trim();
+    if (targetAssignee) {{
+      setAssigneeAtomicRefresh({{
+        assignee: targetAssignee,
+        run_id: "",
+        status: "running",
+        progress: 0,
+        step: "starting",
+        updated_at_utc: "",
+        message: "",
+      }});
+    }}
     if (triggerButton) triggerButton.disabled = true;
     setEmployeeRefreshUiState(true);
     setEmployeeRefreshStatus(targetAssignee ? `Starting refresh for ${{targetAssignee}}...` : "Starting refresh...", "");
     setEmployeeRefreshDetails("", "");
+    setEmployeeRefreshProgress(1, "running");
     try {{
       const response = await fetch("/api/employee-performance/refresh", {{
         method: "POST",
@@ -3500,7 +3737,9 @@ if (employeeRefreshBtn) {{
         }}
         setEmployeeRefreshStatus("Refresh complete. Reloading...", "ok");
         setEmployeeRefreshDetails("", "");
-        setTimeout(() => window.location.reload(), 800);
+        setEmployeeRefreshProgress(100, "success");
+        setGeneratedAtFromRun({{ ended_at_utc: new Date().toISOString() }});
+        setTimeout(() => reloadAfterRefresh({{ ended_at_utc: new Date().toISOString() }}), 800);
         return;
       }}
       const runId = String(payload.run_id || (payload.run && payload.run.run_id) || "");
@@ -3508,10 +3747,31 @@ if (employeeRefreshBtn) {{
       const run = payload.run && typeof payload.run === "object" ? payload.run : {{}};
       setEmployeeRefreshStatus(targetAssignee ? `Refresh started for ${{targetAssignee}}. Monitoring run...` : "Refresh started. Monitoring run...", "");
       setEmployeeRefreshDetails(refreshDetailsText(run), "");
+      setEmployeeRefreshProgress(Number(run.progress || 1), "running");
+      if (targetAssignee) {{
+        setAssigneeAtomicRefresh({{
+          assignee: targetAssignee,
+          run_id: runId,
+          status: String(run.status || "running"),
+          step: String(run.step || ""),
+          progress: Number(run.progress || 0),
+          updated_at_utc: String(run.updated_at_utc || ""),
+          message: "",
+        }});
+      }}
       clearEmployeeRefreshPoll();
-      employeeRefreshPollHandle = setTimeout(() => pollEmployeeRefresh(runId), 700);
+      employeeRefreshPollHandle = setTimeout(() => pollEmployeeRefresh(runId, targetAssignee), 700);
     }} catch (error) {{
       setEmployeeRefreshStatus(error && error.message ? error.message : String(error), "err");
+      setEmployeeRefreshProgress(100, "failed");
+      if (targetAssignee) {{
+        setAssigneeAtomicRefresh({{
+          assignee: targetAssignee,
+          status: "failed",
+          message: error && error.message ? error.message : String(error),
+          updated_at_utc: new Date().toISOString(),
+        }});
+      }}
       setEmployeeRefreshUiState(false);
       clearEmployeeRefreshPoll();
     }} finally {{
@@ -3539,8 +3799,11 @@ if (employeeRefreshBtn) {{
         }}
         setEmployeeRefreshStatus(String(payload.message || "Cancel requested. Waiting for safe stop..."), "");
         setEmployeeRefreshDetails(String(payload.message || ""), "");
+        const currentProgress = Number(assigneeAtomicRefresh && assigneeAtomicRefresh.progress);
+        setEmployeeRefreshProgress(Number.isFinite(currentProgress) ? currentProgress : 0, "cancel_requested");
       }} catch (error) {{
         setEmployeeRefreshStatus(error && error.message ? error.message : String(error), "err");
+        setEmployeeRefreshProgress(100, "failed");
       }} finally {{
         employeeRefreshCancelBtn.disabled = false;
       }}
@@ -3548,6 +3811,7 @@ if (employeeRefreshBtn) {{
   }}
 
   setEmployeeRefreshUiState(false);
+  setEmployeeRefreshProgress(0, "");
   resumeEmployeeRefreshIfRunning();
 }}
 renderAll();

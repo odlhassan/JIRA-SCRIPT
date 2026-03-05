@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections import defaultdict
+from collections import defaultdict, deque
 from datetime import date, datetime, timedelta, timezone
 import io
 import json
@@ -7558,11 +7558,21 @@ def sync_report_html(base_dir: Path, folder_raw: str) -> int:
         destination_path = target_dir / report_name
         if source_path.resolve() == destination_path.resolve():
             continue
-        if destination_path.exists():
-            destination_path.unlink()
-        shutil.move(str(source_path), str(destination_path))
-        moved += 1
-        print(f"[report-html-sync] Moved: {source_path.name} -> {destination_path}")
+        try:
+            if destination_path.exists():
+                destination_path.unlink()
+            shutil.move(str(source_path), str(destination_path))
+            moved += 1
+            print(f"[report-html-sync] Moved: {source_path.name} -> {destination_path}")
+        except PermissionError:
+            # On Windows, a browser or another process can keep an HTML file locked.
+            # Fall back to copy so server startup continues in normal mode.
+            try:
+                shutil.copy2(str(source_path), str(destination_path))
+                moved += 1
+                print(f"[report-html-sync] Copied (locked source/destination): {source_path.name} -> {destination_path}")
+            except Exception as exc:
+                print(f"[report-html-sync] Warning: could not sync {source_path.name}: {exc}")
 
     # Keep canonical + legacy aliases for Approved vs Planned report filename.
     legacy_pvd_path = target_dir / LEGACY_PVD_HTML_FILE
@@ -8726,6 +8736,7 @@ def _run_script_interruptible(
     env_overrides: dict[str, str] | None = None,
     cancel_check=None,
     poll_interval_sec: float = 0.5,
+    heartbeat_callback=None,
 ) -> tuple[int, str, str]:
     script_path = base_dir / script_name
     if not script_path.exists():
@@ -8745,7 +8756,31 @@ def _run_script_interruptible(
         text=True,
         env=env,
     )
+    stdout_lines: deque[str] = deque(maxlen=4000)
+    stderr_lines: deque[str] = deque(maxlen=4000)
+
+    def _consume_stream(stream, bucket: deque[str]) -> None:
+        if stream is None:
+            return
+        try:
+            for line in iter(stream.readline, ""):
+                bucket.append(line)
+        except Exception:
+            pass
+        finally:
+            try:
+                stream.close()
+            except Exception:
+                pass
+
+    stdout_thread = threading.Thread(target=_consume_stream, args=(proc.stdout, stdout_lines), daemon=True)
+    stderr_thread = threading.Thread(target=_consume_stream, args=(proc.stderr, stderr_lines), daemon=True)
+    stdout_thread.start()
+    stderr_thread.start()
+
     try:
+        started = time.perf_counter()
+        last_heartbeat_at = 0.0
         while proc.poll() is None:
             if callable(cancel_check) and bool(cancel_check()):
                 try:
@@ -8756,11 +8791,30 @@ def _run_script_interruptible(
                         proc.kill()
                     except Exception:
                         pass
-                out, err = proc.communicate()
+                try:
+                    proc.wait(timeout=5)
+                except Exception:
+                    pass
+                stdout_thread.join(timeout=2)
+                stderr_thread.join(timeout=2)
+                out = "".join(stdout_lines)
+                err = "".join(stderr_lines)
                 canceled_err = (err or "") + ("\n" if err else "") + "Canceled by user."
                 return -1, out or "", canceled_err
+            if callable(heartbeat_callback):
+                elapsed = max(0.0, time.perf_counter() - started)
+                # Keep DB writes bounded; heartbeat at most once per second.
+                if elapsed - last_heartbeat_at >= 1.0:
+                    try:
+                        heartbeat_callback(elapsed)
+                    except Exception:
+                        pass
+                    last_heartbeat_at = elapsed
             time.sleep(max(0.1, float(poll_interval_sec)))
-        out, err = proc.communicate()
+        stdout_thread.join(timeout=5)
+        stderr_thread.join(timeout=5)
+        out = "".join(stdout_lines)
+        err = "".join(stderr_lines)
         return int(proc.returncode or 0), out or "", err or ""
     finally:
         try:
@@ -12789,6 +12843,43 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             "stats": stats if isinstance(stats, dict) else {},
         }
 
+    def _epf_finalize_stale_running_run(run_row: dict[str, object] | None) -> dict[str, object] | None:
+        row = run_row or {}
+        run_id = _to_text(row.get("run_id"))
+        if not run_id:
+            return run_row
+        status = _to_text(row.get("status")).lower()
+        if status != "running":
+            return run_row
+
+        with epf_jobs_lock:
+            active_runtime_run = _to_text(epf_runtime_state.get("active_run_id"))
+        if active_runtime_run and active_runtime_run == run_id:
+            return run_row
+
+        cancel_requested = bool(int(row.get("cancel_requested") or 0))
+        if not cancel_requested:
+            return run_row
+
+        reason = "Cancel requested previously; stale running run auto-finalized."
+        _epf_mark_run_status(
+            capacity_paths["db_path"],
+            run_id=run_id,
+            status="canceled",
+            error_message=reason,
+            stats={
+                "canceled_step": "stale_runtime_recovery",
+                "cancel_requested": cancel_requested,
+                "runtime_active_run_id": active_runtime_run,
+            },
+            activate=False,
+        )
+        _epf_update_run_progress(capacity_paths["db_path"], run_id, "canceled", 100)
+        with epf_jobs_lock:
+            if _to_text(epf_runtime_state.get("active_run_id")) == run_id:
+                epf_runtime_state["active_run_id"] = ""
+        return _epf_get_run(capacity_paths["db_path"], run_id)
+
     def _run_employee_performance_isolated_refresh(
         assignee_name: str = "",
         run_id_override: str = "",
@@ -12827,6 +12918,41 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
 
         def _update_progress(step: str, progress_pct: int) -> None:
             _epf_update_run_progress(capacity_paths["db_path"], run_id, step, progress_pct)
+
+        def _run_step_with_progress_heartbeat(
+            *,
+            step_name: str,
+            start_pct: int,
+            end_pct: int,
+            est_seconds: int,
+            script_name: str,
+            extra_args: list[str] | None = None,
+            env_overrides: dict[str, str] | None = None,
+        ) -> tuple[int, str, str]:
+            start_value = max(0, min(100, int(start_pct)))
+            end_value = max(start_value, min(100, int(end_pct)))
+            span = max(0, end_value - start_value)
+            eta = max(10, int(est_seconds or 0))
+            _update_progress(step_name, start_value)
+
+            def _heartbeat(elapsed_sec: float) -> None:
+                if span <= 1:
+                    return
+                # Gradually move toward end_pct while subprocess runs.
+                # Keep 1% headroom for explicit step completion transitions.
+                max_live = max(start_value, end_value - 1)
+                inc = int((min(elapsed_sec, float(eta)) / float(eta)) * float(span))
+                live_pct = max(start_value, min(max_live, start_value + inc))
+                _update_progress(step_name, live_pct)
+
+            return _run_script_interruptible(
+                script_name,
+                base_dir,
+                extra_args=extra_args,
+                env_overrides=env_overrides,
+                cancel_check=_is_canceled,
+                heartbeat_callback=_heartbeat,
+            )
 
         def _cancel(step: str, stdout_tail: str = "", stderr_tail: str = "") -> tuple[bool, dict[str, object], int]:
             duration_sec = round(time.perf_counter() - started, 2)
@@ -12923,12 +13049,13 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                     "JIRA_SYNC_DB_PATH": str(base_dir / "jira_sync_cache.db"),
                 }
 
-                _update_progress("fetching_worklogs", 20)
-                code, stdout, stderr = _run_script_interruptible(
-                    "export_jira_subtask_worklogs.py",
-                    base_dir,
+                code, stdout, stderr = _run_step_with_progress_heartbeat(
+                    step_name="fetching_worklogs",
+                    start_pct=20,
+                    end_pct=40,
+                    est_seconds=300,
+                    script_name="export_jira_subtask_worklogs.py",
                     env_overrides={**common_env, "JIRA_WORKLOG_XLSX_PATH": str(worklogs_xlsx)},
-                    cancel_check=_is_canceled,
                 )
                 if code == -1:
                     return _cancel("fetching_worklogs", stdout_tail=_tail(stdout), stderr_tail=_tail(stderr))
@@ -12940,16 +13067,17 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                         stdout_tail=_tail(stdout),
                     )
 
-                _update_progress("fetching_work_items", 40)
-                code, stdout, stderr = _run_script_interruptible(
-                    "export_jira_work_items.py",
-                    base_dir,
+                code, stdout, stderr = _run_step_with_progress_heartbeat(
+                    step_name="fetching_work_items",
+                    start_pct=40,
+                    end_pct=60,
+                    est_seconds=180,
+                    script_name="export_jira_work_items.py",
                     env_overrides={
                         **common_env,
                         "JIRA_EXPORT_XLSX_PATH": str(work_items_xlsx),
                         "JIRA_WORKLOG_XLSX_PATH": str(worklogs_xlsx),
                     },
-                    cancel_check=_is_canceled,
                 )
                 if code == -1:
                     return _cancel("fetching_work_items", stdout_tail=_tail(stdout), stderr_tail=_tail(stderr))
@@ -12961,13 +13089,14 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                         stdout_tail=_tail(stdout),
                     )
 
-                _update_progress("fetching_leaves", 60)
-                code, stdout, stderr = _run_script_interruptible(
-                    "generate_rlt_leave_report.py",
-                    base_dir,
+                code, stdout, stderr = _run_step_with_progress_heartbeat(
+                    step_name="fetching_leaves",
+                    start_pct=60,
+                    end_pct=75,
+                    est_seconds=120,
+                    script_name="generate_rlt_leave_report.py",
                     extra_args=["--xlsx-out", str(leave_xlsx)],
                     env_overrides=common_env,
-                    cancel_check=_is_canceled,
                 )
                 if code == -1:
                     return _cancel("fetching_leaves", stdout_tail=_tail(stdout), stderr_tail=_tail(stderr))
@@ -13028,18 +13157,19 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                         leave_issue_keys=leave_issue_keys,
                     )
 
-            _update_progress("generating_html", 90)
             if _is_canceled():
                 return _cancel("generating_html")
-            code, stdout, stderr = _run_script_interruptible(
-                "generate_employee_performance_report.py",
-                base_dir,
+            code, stdout, stderr = _run_step_with_progress_heartbeat(
+                step_name="generating_html",
+                start_pct=90,
+                end_pct=97,
+                est_seconds=90,
+                script_name="generate_employee_performance_report.py",
                 env_overrides={
                     "JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH": str(capacity_paths["db_path"]),
                     "JIRA_EMP_PERF_INPUT_SOURCE": "db",
                     "JIRA_EMP_PERF_RUN_ID": run_id,
                 },
-                cancel_check=_is_canceled,
             )
             if code == -1:
                 return _cancel("generating_html", stdout_tail=_tail(stdout), stderr_tail=_tail(stderr))
@@ -13407,6 +13537,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             active_runtime_run = _to_text(epf_runtime_state.get("active_run_id"))
             if active_runtime_run:
                 current = _epf_get_run(capacity_paths["db_path"], active_runtime_run)
+                current = _epf_finalize_stale_running_run(current)
                 if current and _to_text(current.get("status")) == "running":
                     return {
                         "ok": False,
@@ -13415,6 +13546,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                     }, 409
                 epf_runtime_state["active_run_id"] = ""
             db_running = _epf_find_running_run(capacity_paths["db_path"])
+            db_running = _epf_finalize_stale_running_run(db_running)
             if db_running:
                 epf_runtime_state["active_run_id"] = _to_text(db_running.get("run_id"))
                 return {
@@ -13510,6 +13642,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         row = _epf_get_run(capacity_paths["db_path"], _to_text(run_id))
         if not row:
             return jsonify({"ok": False, "error": "Run not found."}), 404
+        row = _epf_finalize_stale_running_run(row)
         return jsonify({"ok": True, "run": _epf_serialize_run(row)})
 
     @app.route("/api/employee-performance/refresh/current", methods=["GET"])
@@ -13519,6 +13652,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         row = _epf_get_run(capacity_paths["db_path"], active_runtime_run) if active_runtime_run else _epf_find_running_run(capacity_paths["db_path"])
         if not row:
             return jsonify({"ok": True, "run": None})
+        row = _epf_finalize_stale_running_run(row)
         return jsonify({"ok": True, "run": _epf_serialize_run(row)})
 
     @app.route("/api/employee-performance/cancel", methods=["POST"])
@@ -13537,8 +13671,19 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         row_before = _epf_get_run(capacity_paths["db_path"], run_id)
         if not row_before:
             return jsonify({"ok": False, "error": "Run not found."}), 404
+        row_before = _epf_finalize_stale_running_run(row_before)
         status_before = _to_text(row_before.get("status")).lower()
         if status_before != "running":
+            if status_before == "canceled":
+                return jsonify(
+                    {
+                        "ok": True,
+                        "run_id": run_id,
+                        "status": "canceled",
+                        "message": _to_text(row_before.get("error_message")) or "Run is already canceled.",
+                        "run": _epf_serialize_run(row_before),
+                    }
+                )
             return jsonify({"ok": False, "error": f"Run is not cancelable (status={status_before})."}), 409
 
         accepted = _epf_request_cancel(capacity_paths["db_path"], run_id)
