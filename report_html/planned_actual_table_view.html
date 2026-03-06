@@ -1,0 +1,3296 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Planned vs Actual Table View</title>
+  <link rel="stylesheet" href="/material-symbols.css" />
+  <link rel="stylesheet" href="/shared-nav.css" />
+  <style>
+    :root {
+      --bg: #f4f7fb;
+      --card: #ffffff;
+      --line: #d4dbe6;
+      --text: #1f2a37;
+      --muted: #5b6b7f;
+      --accent: #0f766e;
+      --accent-2: #115e59;
+      --warn: #b45309;
+      --danger: #b91c1c;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      background: linear-gradient(180deg, #f8fbff 0%, var(--bg) 55%);
+      color: var(--text);
+    }
+    .page {
+      max-width: 1320px;
+      margin: 0 auto;
+      padding: 18px;
+    }
+    .panel {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 14px;
+      margin-bottom: 14px;
+    }
+    .title {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .title-right {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 8px;
+      min-width: 340px;
+    }
+    .title h1 {
+      margin: 0;
+      font-size: 22px;
+      letter-spacing: 0.2px;
+    }
+    .meta { color: var(--muted); font-size: 12px; }
+    .queue-box {
+      width: 100%;
+      border: 1px solid #d6e1ed;
+      border-radius: 10px;
+      padding: 8px 10px;
+      background: #fafcff;
+    }
+    .queue-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+    .queue-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: #21415f;
+      letter-spacing: 0.02em;
+    }
+    .queue-count {
+      font-size: 11px;
+      color: #4b6278;
+    }
+    .queue-controls {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .queue-cancel-btn {
+      border: 1px solid #e2b8b8;
+      background: #fff6f6;
+      color: #9b1c1c;
+      border-radius: 8px;
+      padding: 4px 8px;
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .queue-cancel-btn:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+    .queue-list {
+      max-height: 92px;
+      overflow: auto;
+      font-size: 11px;
+      color: #334c64;
+      display: grid;
+      gap: 4px;
+    }
+    .queue-item {
+      border: 1px solid #e4ecf5;
+      border-radius: 8px;
+      padding: 4px 6px;
+      background: #ffffff;
+    }
+    .queue-item .row {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .queue-empty {
+      color: #6f8499;
+      font-style: italic;
+    }
+    .filters {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(140px, 1fr));
+      gap: 10px;
+      align-items: end;
+    }
+    label { font-size: 12px; color: var(--muted); display: block; margin-bottom: 4px; }
+    input, select, button {
+      width: 100%;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      padding: 8px 10px;
+      font-size: 14px;
+      background: #fff;
+    }
+    button.primary {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button.primary:disabled { opacity: 0.7; cursor: not-allowed; }
+    .multi { position: relative; }
+    .multi-trigger {
+      width: 100%;
+      border-radius: 10px;
+      border: 1px solid #7bb7ae;
+      padding: 9px 12px;
+      font-size: 14px;
+      background: linear-gradient(180deg, #f5fffd 0%, #edfbf8 100%);
+      text-align: left;
+      cursor: pointer;
+      min-height: 38px;
+      color: #0f2930;
+      font-weight: 700;
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.66);
+      transition: border-color .15s ease, box-shadow .15s ease, background .15s ease;
+    }
+    .multi-trigger:hover {
+      border-color: #4ca699;
+      background: linear-gradient(180deg, #f0fffb 0%, #e4faf4 100%);
+    }
+    .multi-trigger.is-open {
+      border-color: #0f766e;
+      box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.16), inset 0 0 0 1px rgba(255, 255, 255, 0.7);
+    }
+    .multi-trigger:focus-visible {
+      outline: none;
+      border-color: #0f766e;
+      box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.18);
+    }
+    .multi-menu {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: calc(100% + 6px);
+      background: #fff;
+      border: 1px solid #c4d9e6;
+      border-radius: 14px;
+      box-shadow: 0 18px 36px rgba(15, 23, 42, 0.2);
+      z-index: 30;
+      padding: 12px;
+      display: none;
+    }
+    .multi-menu.is-open { display: block; }
+    .multi-actions {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .multi-actions button {
+      flex: 1;
+      padding: 8px 8px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      background: #f6fafc;
+      border: 1px solid #d3e0ea;
+      border-radius: 10px;
+      color: #2c4357;
+    }
+    .multi-actions button:hover {
+      background: #eaf6ff;
+      border-color: #aac8df;
+    }
+    .multi-options {
+      max-height: 220px;
+      overflow: auto;
+      border: 1px solid #e0e9f1;
+      border-radius: 10px;
+      padding: 6px;
+      background: #fbfdff;
+      scrollbar-width: thin;
+      scrollbar-color: #9fb4ca #eef3f8;
+    }
+    .multi-options::-webkit-scrollbar {
+      width: 10px;
+    }
+    .multi-options::-webkit-scrollbar-track {
+      background: #eef3f8;
+      border-radius: 999px;
+    }
+    .multi-options::-webkit-scrollbar-thumb {
+      background: #9fb4ca;
+      border-radius: 999px;
+      border: 2px solid #eef3f8;
+    }
+    .multi-option {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 0;
+      padding: 8px 8px;
+      font-size: 13px;
+      color: #2a3c52;
+      border-radius: 8px;
+      cursor: pointer;
+      border: 1px solid transparent;
+    }
+    .multi-option:hover {
+      background: #f2f8ff;
+      border-color: #d8e8f6;
+    }
+    .multi-option.is-selected {
+      background: #eafaf5;
+      border-color: #bfe6d8;
+      color: #16453f;
+    }
+    .multi-option input {
+      accent-color: #0f766e;
+    }
+    .multi-option .mono {
+      color: #5b6b7f;
+      font-size: 11px;
+      margin-left: 4px;
+    }
+    .status { min-height: 18px; font-size: 12px; color: var(--muted); margin-top: 8px; }
+    .status.warn { color: var(--warn); }
+    .status.err { color: var(--danger); }
+    .section-title {
+      margin: 0 0 6px;
+      font-size: 18px;
+      color: #14324a;
+      letter-spacing: 0.2px;
+    }
+    .section-note {
+      margin: 0 0 12px;
+      color: #5b6b7f;
+      font-size: 12px;
+    }
+    .scorecards {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(190px, 1fr));
+      gap: 10px;
+    }
+    .score-card {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px;
+      background: #f9fcff;
+    }
+    .score-label {
+      margin: 0;
+      color: #334155;
+      font-size: 12px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .score-value {
+      margin: 8px 0 0;
+      color: #1d4ed8;
+      font-size: 22px;
+      font-weight: 800;
+      letter-spacing: .02em;
+    }
+    .score-formula-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 8px;
+      border-radius: 999px;
+      background: #eef2ff;
+      border: 1px solid #c7d2fe;
+      color: #312e81;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 8px;
+    }
+    .score-formula-part {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .score-formula-mult {
+      color: #6366f1;
+      font-weight: 800;
+    }
+    .score-info {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 16px;
+      height: 16px;
+      border-radius: 999px;
+      border: 1px solid #94a3b8;
+      background: #f8fafc;
+      color: #334155;
+      font-size: 10px;
+      cursor: help;
+    }
+    .score-info-tip {
+      display: none;
+      position: absolute;
+      top: 20px;
+      right: 0;
+      z-index: 50;
+      min-width: 280px;
+      max-width: 360px;
+      white-space: pre-wrap;
+      font-size: 11px;
+      font-weight: 600;
+      line-height: 1.35;
+      color: #1e293b;
+      background: #ffffff;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      box-shadow: 0 14px 24px rgba(15, 23, 42, 0.18);
+      padding: 8px 10px;
+    }
+    .score-info:hover .score-info-tip,
+    .score-info:focus .score-info-tip,
+    .score-info:focus-visible .score-info-tip { display: block; }
+    .score-action-btn {
+      width: 24px;
+      height: 24px;
+      border-radius: 8px;
+      border: 1px solid #cbd5e1;
+      background: #f8fafc;
+      color: #334155;
+      cursor: pointer;
+      padding: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .score-action-btn .material-icons-outlined { font-size: 15px; }
+    .score-card.delta-pos .score-value { color: #166534; }
+    .score-card.delta-neg .score-value { color: #b91c1c; }
+    .score-card.delta-zero .score-value { color: #475569; }
+    .capacity-profile-drawer {
+      display: none;
+      margin-top: 12px;
+      border: 1px solid #cbd5e1;
+      border-radius: 10px;
+      background: #ffffff;
+      padding: 10px;
+    }
+    .capacity-profile-drawer.is-open { display: block; }
+    .capacity-profile-drawer-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+    .capacity-profile-drawer-title { margin: 0; font-size: 16px; color: #0f172a; }
+    .capacity-profile-close {
+      width: 30px;
+      height: 30px;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      background: #fff;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .capacity-profile-bar {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(120px, 1fr));
+      gap: 8px;
+      align-items: end;
+    }
+    .capacity-profile-label { grid-column: 1 / -1; }
+    .capacity-profile-select { grid-column: span 2; }
+    .capacity-profile-status { grid-column: 1 / -1; font-size: 12px; color: #475569; min-height: 18px; }
+    .capacity-profile-status[data-variant="error"] { color: #b91c1c; }
+    .capacity-profile-status[data-variant="success"] { color: #166534; }
+    .capacity-profile-details { grid-column: 1 / -1; font-size: 12px; color: #334155; }
+    .capacity-expanded {
+      grid-column: 1 / -1;
+      margin-top: 8px;
+      border: 1px solid #cbd5e1;
+      border-radius: 10px;
+      background: #f8fafc;
+      padding: 10px;
+    }
+    .capacity-expanded-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 8px;
+    }
+    .capacity-expanded-title {
+      font-size: 12px;
+      font-weight: 800;
+      color: #0f172a;
+      letter-spacing: .02em;
+      text-transform: uppercase;
+    }
+    .capacity-expanded-sub { font-size: 12px; color: #475569; }
+    .capacity-expanded-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+    .capacity-chip {
+      border: 1px solid #d7e3ee;
+      border-radius: 8px;
+      background: #ffffff;
+      padding: 6px 8px;
+    }
+    .capacity-chip .k {
+      font-size: 10px;
+      color: #64748b;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      font-weight: 700;
+    }
+    .capacity-chip .v {
+      font-size: 13px;
+      color: #0f172a;
+      font-weight: 700;
+      margin-top: 2px;
+    }
+    .capacity-legend { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px; }
+    .capacity-legend .pill {
+      font-size: 10px;
+      padding: 2px 7px;
+      border-radius: 999px;
+      border: 1px solid #cbd5e1;
+      color: #334155;
+      background: #f8fafc;
+      font-weight: 700;
+    }
+    .capacity-calendar-wrap {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding-bottom: 6px;
+      scroll-snap-type: x proximity;
+      scrollbar-width: thin;
+      scrollbar-color: #94a3b8 #e2e8f0;
+    }
+    .capacity-month {
+      border: 1px solid #d2dbe6;
+      border-radius: 10px;
+      background: #ffffff;
+      padding: 8px;
+      flex: 0 0 calc((100% - 16px)/3);
+      min-width: 280px;
+      scroll-snap-align: start;
+    }
+    .capacity-month-head { font-size: 12px; font-weight: 800; color: #0f172a; margin-bottom: 6px; }
+    .capacity-month-grid { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:4px; }
+    .capacity-dow { font-size: 10px; color: #64748b; text-transform: uppercase; text-align: center; }
+    .capacity-day {
+      min-height: 36px;
+      border: 1px solid #dbe7f2;
+      border-radius: 6px;
+      background: #ffffff;
+      padding: 3px 4px;
+    }
+    .capacity-day.is-out { opacity: .4; }
+    .capacity-day.is-weekend { background: #f1f5f9; border-color: #d1d5db; }
+    .capacity-day.is-ramadan { border-color: #38bdf8; box-shadow: inset 0 0 0 1px rgba(14,165,233,.2); }
+    .capacity-day.is-holiday { border-color: #f59e0b; box-shadow: inset 0 0 0 1px rgba(245,158,11,.25); }
+    .capacity-day.is-today { background: #fef9c3; border-color: #facc15; }
+    .capacity-day-num { font-size: 11px; font-weight: 700; color: #334155; line-height: 1.1; }
+    .capacity-day-tags { margin-top: 2px; display: flex; gap: 3px; flex-wrap: wrap; }
+    .capacity-day-tag {
+      font-size: 9px;
+      line-height: 1;
+      padding: 2px 4px;
+      border-radius: 999px;
+      border: 1px solid #cbd5e1;
+      background: #f8fafc;
+      color: #334155;
+      font-weight: 700;
+    }
+    .capacity-day-tag.r { border-color: #38bdf8; background: #e0f2fe; color: #0c4a6e; }
+    .capacity-day-tag.h { border-color: #f59e0b; background: #ffedd5; color: #9a3412; }
+    .capacity-empty { font-size: 12px; color: #64748b; }
+    @media (max-width: 1200px) { .capacity-month { flex-basis: calc((100% - 8px)/2); } }
+    @media (max-width: 760px) { .capacity-month { flex-basis: 100%; } }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border-bottom: 1px solid var(--line); padding: 8px; text-align: left; font-size: 13px; }
+    th { background: #eef3f9; font-size: 12px; color: #30455d; position: sticky; top: 0; }
+    .mono { font-family: Consolas, monospace; font-size: 12px; }
+    .row-project { background: #f6fbfa; font-weight: 700; }
+    .row-epic { background: #fbfffd; }
+    .row-story { background: #ffffff; }
+    .row-subtask { background: #ffffff; color: #3f4b59; }
+    .row-danger { background: #fff7ed; }
+    .indent-0 { padding-left: 8px; }
+    .indent-1 { padding-left: 24px; }
+    .indent-2 { padding-left: 40px; }
+    .indent-3 { padding-left: 56px; }
+    .aspect-cell { display: inline-flex; align-items: center; gap: 8px; min-height: 22px; }
+    .node-text { min-width: 0; }
+    .toggle {
+      width: 20px;
+      height: 20px;
+      min-width: 20px;
+      border-radius: 6px;
+      border: 1px solid #b8c7d8;
+      background: #ffffff;
+      color: #264461;
+      font-size: 12px;
+      line-height: 1;
+      font-weight: 700;
+      cursor: pointer;
+      padding: 0;
+    }
+    .toggle.placeholder {
+      border-color: transparent;
+      background: transparent;
+      color: transparent;
+      cursor: default;
+    }
+    .delta-neg { color: #b91c1c; font-weight: 700; }
+    .delta-pos { color: #166534; font-weight: 700; }
+    .delta-zero { color: #475569; font-weight: 700; }
+    .danger-chip {
+      display: inline-flex;
+      align-items: center;
+      border: 1px solid #f3c38e;
+      background: #ffedd5;
+      color: #9a3412;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 1px 7px;
+      line-height: 1.5;
+    }
+    .toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .toolbar .btn {
+      width: auto;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: #f8fafc;
+      color: #30455d;
+      padding: 7px 10px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .toolbar .btn:hover { background: #eef4fa; }
+    @media (max-width: 1000px) {
+      .filters { grid-template-columns: repeat(2, minmax(140px, 1fr)); }
+      .scorecards { grid-template-columns: repeat(1, minmax(180px, 1fr)); }
+      .capacity-profile-bar { grid-template-columns: repeat(1, minmax(140px, 1fr)); }
+      .capacity-profile-select { grid-column: 1 / -1; }
+      .page { padding: 10px; }
+      .title { flex-direction: column; }
+      .title-right { width: 100%; align-items: stretch; min-width: 0; }
+      .toolbar { justify-content: flex-start; flex-wrap: wrap; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <section class="panel title">
+      <h1>Planned vs Actual Table View</h1>
+      <div class="title-right">
+        <div class="meta" id="meta-line">DB snapshot report</div>
+        <div class="queue-box">
+          <div class="queue-head">
+            <div class="queue-title">Fetch Queue</div>
+            <div class="queue-controls">
+              <div class="queue-count" id="queue-count">0 active</div>
+              <button type="button" id="queue-cancel-btn" class="queue-cancel-btn" disabled>Cancel and Rollback</button>
+            </div>
+          </div>
+          <div class="queue-list" id="queue-list">
+            <div class="queue-empty">No queued or running fetches.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="filters">
+        <div>
+          <label for="from-date">From</label>
+          <input id="from-date" type="date" />
+        </div>
+        <div>
+          <label for="to-date">To</label>
+          <input id="to-date" type="date" />
+        </div>
+        <div>
+          <label for="mode">Mode</label>
+          <select id="mode">
+            <option value="log_date">By Log Date</option>
+            <option value="planned_dates">By Planned Date</option>
+          </select>
+        </div>
+        <div class="multi">
+          <label for="projects-trigger">Projects</label>
+          <input id="projects" type="hidden" value="" />
+          <button id="projects-trigger" type="button" class="multi-trigger" aria-haspopup="true" aria-expanded="false" aria-controls="projects-menu">All Projects</button>
+          <div id="projects-menu" class="multi-menu" aria-hidden="true">
+            <div class="multi-actions">
+              <button type="button" id="projects-select-all">Select All</button>
+              <button type="button" id="projects-clear-all">Clear</button>
+            </div>
+            <div id="projects-options" class="multi-options"></div>
+          </div>
+        </div>
+        <div>
+          <label for="statuses">Statuses (comma)</label>
+          <input id="statuses" placeholder="In Progress,To Do" />
+        </div>
+        <div>
+          <label for="assignees">Assignees (comma)</label>
+          <input id="assignees" placeholder="Alice,Bob" />
+        </div>
+        <div>
+          <button id="load-btn">Load Snapshot</button>
+        </div>
+        <div>
+          <button id="fetch-btn" class="primary">Fetch & Recompute</button>
+        </div>
+      </div>
+      <div id="status" class="status"></div>
+    </section>
+
+    <section class="panel">
+      <h2 class="section-title">Performance Overview</h2>
+      <p class="section-note">KPIs react to the selected date range, project filter, and applied capacity profile.</p>
+      <div class="scorecards">
+        <article class="score-card" id="score-total-capacity-card">
+          <span class="score-formula-chip" id="score-total-capacity-formula" aria-label="Employee count multiplied by business days multiplied by per day hours">
+            <span class="score-formula-part"><span class="material-icons-outlined" aria-hidden="true">person</span><span id="score-total-capacity-formula-employee">-</span></span>
+            <span class="score-formula-mult">x</span>
+            <span class="score-formula-part"><span class="material-icons-outlined" aria-hidden="true">calendar_month</span><span id="score-total-capacity-formula-days">-</span></span>
+            <span class="score-formula-mult">x</span>
+            <span class="score-formula-part"><span class="material-icons-outlined" aria-hidden="true">hourglass_top</span><span id="score-total-capacity-formula-hours">-</span></span>
+          </span>
+          <p class="score-label">
+            Total Capacity (Hours)
+            <span class="score-info" tabindex="0" aria-label="Total Capacity information">i
+              <span class="score-info-tip" id="score-total-capacity-tip">Formula: Total Capacity (Hours) = Employee Count x Available Business Days x Per Day Hours.
+Values:
+Selected Profile = None
+Date Range = -
+Employee Count = 0
+Per Day Hours = 0h
+Standard Hours/Day = 0h
+Ramadan Hours/Day = 0h
+Working Weekdays (Mon-Fri) = 0
+Ramadan Weekdays (Mon-Fri, non-holiday) = 0
+Non-Ramadan Weekdays (Mon-Fri, non-holiday) = 0
+Holiday Weekdays in Range = 0
+Capacity Profile Hours = N/A
+Fallback Project Capacity = 0h
+Total Capacity = 0h</span>
+            </span>
+            <button type="button" class="score-action-btn" id="score-capacity-profile-open" title="Load capacity profile" aria-label="Load capacity profile">
+              <span class="material-icons-outlined" aria-hidden="true">tune</span>
+            </button>
+          </p>
+          <p class="score-value" id="score-total-capacity">0h</p>
+        </article>
+        <article class="score-card" id="score-total-planned-card">
+          <p class="score-label">
+            Total Planned Projects (Hours)
+            <span class="score-info" tabindex="0" aria-label="Total Planned Projects information">i
+              <span class="score-info-tip" id="score-total-planned-tip">Formula: Total Planned Projects = Sum(Project Man-hours), excluding RLT (RnD Leave Tracker).
+Values:
+Included Projects Count = 0
+Excluded Projects Count = 0
+Excluded Projects Planned Sum = 0h
+Total Planned Projects = 0h</span>
+            </span>
+          </p>
+          <p class="score-value" id="score-total-planned">0h</p>
+        </article>
+        <article class="score-card" id="score-total-leaves-planned-card">
+          <p class="score-label">
+            Total Leaves Planned
+            <span class="score-info" tabindex="0" aria-label="Total Leaves Planned information">i
+              <span class="score-info-tip" id="score-total-leaves-planned-tip">Formula: Total Leaves Planned = Planned Taken + Planned Not Yet Taken from day-bucketed leave rows in selected date range.
+Values:
+Planned Taken + Planned Not Yet Taken = 0h
+Total Leaves Planned = 0h</span>
+            </span>
+          </p>
+          <p class="score-value" id="score-total-leaves-planned">0h</p>
+        </article>
+        <article class="score-card" id="score-total-logged-card">
+          <p class="score-label">
+            Total Actual Project Hours
+            <span class="score-info" tabindex="0" aria-label="Total Actual Project Hours information">i
+              <span class="score-info-tip" id="score-total-logged-tip">Formula: Total Actual Project Hours = Sum(Project Actual Hours), excluding RLT (RnD Leave Tracker).
+Values:
+Included Projects Actual Sum = 0h
+Excluded Projects Actual Sum = 0h
+Total Actual Project Hours = 0h</span>
+            </span>
+          </p>
+          <p class="score-value" id="score-total-logged">0h</p>
+        </article>
+        <article class="score-card" id="score-total-capacity-planned-leaves-adjusted-card">
+          <span class="score-formula-chip" id="score-availability-formula">Total Capacity - Total Leaves Planned</span>
+          <p class="score-label">
+            Availability
+            <span class="score-info" tabindex="0" aria-label="Availability information">i
+              <span class="score-info-tip" id="score-total-capacity-planned-leaves-adjusted-tip">Formula: Availability = Total Capacity (Hours) - Total Leaves Planned.
+Values:
+Total Capacity = 0h
+Total Leaves Planned = 0h
+Availability = 0h</span>
+            </span>
+          </p>
+          <p class="score-value" id="score-total-capacity-planned-leaves-adjusted">0h</p>
+        </article>
+        <article class="score-card" id="score-delta-card">
+          <p class="score-label">
+            Hours Required To Complete Projects
+            <span class="score-info" tabindex="0" aria-label="Hours Required To Complete Projects information">i
+              <span class="score-info-tip" id="score-delta-tip">Formula: Plan Gap = Total Planned Projects - Total Actual Project Hours.
+Values:
+Total Planned Projects = 0h
+Total Actual Project Hours = 0h
+Plan Gap = 0h</span>
+            </span>
+          </p>
+          <p class="score-value" id="score-delta">0h</p>
+        </article>
+        <article class="score-card" id="score-capacity-gap-card">
+          <p class="score-label">
+            Capacity available for more work
+            <span class="score-info" tabindex="0" aria-label="Capacity available for more work information">i
+              <span class="score-info-tip" id="score-capacity-gap-tip">Formula: Capacity available for more work = Total Capacity (Hours) - Total Planned Projects (Hours) - RLT RnD Leave Tracker Original Estimates.
+Values:
+Total Capacity = 0h
+Total Planned Projects = 0h
+RLT RnD Leave Tracker Original Estimates = 0h
+Capacity available for more work = 0h</span>
+            </span>
+          </p>
+          <p class="score-value" id="score-capacity-gap">0h</p>
+        </article>
+      </div>
+      <div class="capacity-profile-drawer" id="capacity-profile-drawer" role="dialog" aria-modal="true" aria-label="Capacity profile">
+        <div class="capacity-profile-drawer-head">
+          <h2 class="capacity-profile-drawer-title">Capacity Profile</h2>
+          <button class="capacity-profile-close" type="button" id="capacity-profile-close" aria-label="Close capacity profile">
+            <span class="material-icons-outlined" aria-hidden="true">close</span>
+          </button>
+        </div>
+        <p class="section-note">Apply a saved profile to this page range. Capacity profile management is available on the dedicated settings page.</p>
+        <div class="capacity-profile-bar">
+          <label class="capacity-profile-label" for="capacity-profile-select">Saved Capacity Profiles</label>
+          <select id="capacity-profile-select" class="capacity-profile-select"></select>
+          <button class="btn alt" type="button" id="capacity-profile-apply">Apply</button>
+          <button class="btn alt" type="button" id="capacity-profile-refresh">Refresh</button>
+          <button class="btn alt" type="button" id="capacity-profile-reset">Use Project Totals</button>
+          <a class="btn alt" href="/settings/capacity">Manage Capacity Profiles</a>
+          <div class="capacity-profile-status" id="capacity-profile-status" data-variant="info"></div>
+          <div class="capacity-profile-details" id="capacity-profile-details"></div>
+          <div id="capacity-profile-expanded" class="capacity-expanded"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="toolbar">
+        <button type="button" class="btn" id="expand-all">Expand All</button>
+        <button type="button" class="btn" id="collapse-projects">Collapse To Projects</button>
+        <button type="button" class="btn" id="collapse-epics">Collapse To Epics</button>
+      </div>
+      <div style="overflow:auto; max-height:70vh;">
+        <table>
+          <thead>
+            <tr>
+              <th>Aspect</th>
+              <th>Type</th>
+              <th>Assignee</th>
+              <th>Man-days</th>
+              <th>Actual Days</th>
+              <th>Delta Days</th>
+              <th>Man-hours</th>
+              <th>Actual Hours</th>
+              <th>Delta Hours</th>
+              <th>Resource Logged</th>
+              <th>Planned Start Date</th>
+              <th>Planned End Date</th>
+            </tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const API_SUMMARY = "/api/planned-actual-table-view/summary";
+    const API_REFRESH = "/api/planned-actual-table-view/refresh";
+    const API_STATUS_BASE = "/api/planned-actual-table-view/refresh/";
+    const API_FILTER_OPTIONS = "/api/planned-actual-table-view/filter-options";
+    const API_QUEUE = "/api/planned-actual-table-view/queue";
+    const API_CANCEL = "/api/planned-actual-table-view/cancel";
+    const API_HISTORY = "/api/planned-actual-table-view/history";
+    const API_DIFF = "/api/planned-actual-table-view/diff";
+    const API_EXPORT = "/api/planned-actual-table-view/export";
+
+    const els = {
+      from: document.getElementById("from-date"),
+      to: document.getElementById("to-date"),
+      mode: document.getElementById("mode"),
+      projects: document.getElementById("projects"),
+      projectsTrigger: document.getElementById("projects-trigger"),
+      projectsMenu: document.getElementById("projects-menu"),
+      projectsSelectAll: document.getElementById("projects-select-all"),
+      projectsClearAll: document.getElementById("projects-clear-all"),
+      projectsOptions: document.getElementById("projects-options"),
+      statuses: document.getElementById("statuses"),
+      assignees: document.getElementById("assignees"),
+      load: document.getElementById("load-btn"),
+      fetch: document.getElementById("fetch-btn"),
+      status: document.getElementById("status"),
+      meta: document.getElementById("meta-line"),
+      rows: document.getElementById("rows"),
+      queueCount: document.getElementById("queue-count"),
+      queueList: document.getElementById("queue-list"),
+      queueCancelBtn: document.getElementById("queue-cancel-btn"),
+      expandAll: document.getElementById("expand-all"),
+      collapseProjects: document.getElementById("collapse-projects"),
+      collapseEpics: document.getElementById("collapse-epics"),
+      scoreTotalCapacity: document.getElementById("score-total-capacity"),
+      scoreTotalPlanned: document.getElementById("score-total-planned"),
+      scoreTotalLeavesPlanned: document.getElementById("score-total-leaves-planned"),
+      scoreTotalLogged: document.getElementById("score-total-logged"),
+      scoreAvailability: document.getElementById("score-total-capacity-planned-leaves-adjusted"),
+      scoreDelta: document.getElementById("score-delta"),
+      scoreCapacityGap: document.getElementById("score-capacity-gap"),
+      scoreDeltaCard: document.getElementById("score-delta-card"),
+      scoreTotalCapacityTip: document.getElementById("score-total-capacity-tip"),
+      scoreTotalPlannedTip: document.getElementById("score-total-planned-tip"),
+      scoreTotalLoggedTip: document.getElementById("score-total-logged-tip"),
+      scoreLeavesPlannedTip: document.getElementById("score-total-leaves-planned-tip"),
+      scoreAvailabilityTip: document.getElementById("score-total-capacity-planned-leaves-adjusted-tip"),
+      scoreDeltaTip: document.getElementById("score-delta-tip"),
+      scoreCapacityGapTip: document.getElementById("score-capacity-gap-tip"),
+      scoreFormulaEmployees: document.getElementById("score-total-capacity-formula-employee"),
+      scoreFormulaDays: document.getElementById("score-total-capacity-formula-days"),
+      scoreFormulaHours: document.getElementById("score-total-capacity-formula-hours"),
+      capacityDrawer: document.getElementById("capacity-profile-drawer"),
+      capacityOpenBtn: document.getElementById("score-capacity-profile-open"),
+      capacityCloseBtn: document.getElementById("capacity-profile-close"),
+      capacitySelect: document.getElementById("capacity-profile-select"),
+      capacityApply: document.getElementById("capacity-profile-apply"),
+      capacityRefresh: document.getElementById("capacity-profile-refresh"),
+      capacityReset: document.getElementById("capacity-profile-reset"),
+      capacityStatus: document.getElementById("capacity-profile-status"),
+      capacityDetails: document.getElementById("capacity-profile-details"),
+      capacityExpanded: document.getElementById("capacity-profile-expanded"),
+    };
+    const projectOptions = [];
+    const selectedProjectKeys = new Set();
+    let queueRows = [];
+    let queuePollTimer = null;
+    let queueAccessDenied = false;
+    const collapsed = new Set();
+    const rowsById = new Map();
+    const childrenByParent = new Map();
+    let latestRenderRows = [];
+    let capacityProfiles = [];
+    let appliedCapacityProfile = null;
+
+    function todayIso() { return new Date().toISOString().slice(0, 10); }
+    function monthStartIso() {
+      const d = new Date();
+      return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10);
+    }
+    function q() {
+      const p = new URLSearchParams();
+      p.set("from", String(els.from.value || ""));
+      p.set("to", String(els.to.value || ""));
+      p.set("mode", String(els.mode.value || "log_date"));
+      const projectCsv = String(els.projects.value || "").trim();
+      if (projectCsv) p.set("projects", projectCsv);
+      if (String(els.statuses.value || "").trim()) p.set("statuses", String(els.statuses.value || ""));
+      if (String(els.assignees.value || "").trim()) p.set("assignees", String(els.assignees.value || ""));
+      return p;
+    }
+
+    function normalizeProjectKey(v) {
+      return String(v || "").trim().toUpperCase();
+    }
+
+    function displayProjectLabel(name, key) {
+      const cleanName = String(name || "").trim();
+      const cleanKey = normalizeProjectKey(key);
+      if (!cleanName || cleanName.toUpperCase() === cleanKey) return cleanKey;
+      return `${cleanName} (${cleanKey})`;
+    }
+
+    function syncProjectsHiddenInput() {
+      els.projects.value = Array.from(selectedProjectKeys).sort().join(",");
+    }
+
+    function projectLabelByKey(key) {
+      const k = normalizeProjectKey(key);
+      for (const item of projectOptions) {
+        if (normalizeProjectKey(item && item.project_key) === k) {
+          return displayProjectLabel(item && item.project_name, item && item.project_key);
+        }
+      }
+      return k;
+    }
+
+    function updateProjectsSummary() {
+      const count = selectedProjectKeys.size;
+      if (!count) {
+        els.projectsTrigger.textContent = "All Projects";
+      } else if (count === 1) {
+        els.projectsTrigger.textContent = projectLabelByKey(Array.from(selectedProjectKeys)[0]);
+      } else {
+        els.projectsTrigger.textContent = `${count} projects selected`;
+      }
+      syncProjectsHiddenInput();
+    }
+
+    function setProjectSelection(keys) {
+      selectedProjectKeys.clear();
+      for (const key of Array.isArray(keys) ? keys : []) {
+        const k = normalizeProjectKey(key);
+        if (!k) continue;
+        selectedProjectKeys.add(k);
+      }
+      updateProjectsSummary();
+      renderProjectsMenu();
+    }
+
+    function renderProjectsMenu() {
+      const options = projectOptions.slice();
+      if (!options.length) {
+        els.projectsOptions.innerHTML = "<div class='multi-option'>No managed projects found</div>";
+        return;
+      }
+      els.projectsOptions.innerHTML = options.map((item) => {
+        const key = normalizeProjectKey(item && item.project_key);
+        const name = displayProjectLabel(item && item.project_name, key);
+        const checked = selectedProjectKeys.has(key) ? "checked" : "";
+        const selectedClass = checked ? " is-selected" : "";
+        return `<label class="multi-option${selectedClass}"><input type="checkbox" data-project-key="${key}" ${checked} /> <span>${name}</span></label>`;
+      }).join("");
+      for (const input of Array.from(els.projectsOptions.querySelectorAll("input[data-project-key]"))) {
+        input.addEventListener("change", () => {
+          const key = normalizeProjectKey(input.getAttribute("data-project-key"));
+          if (!key) return;
+          if (input.checked) selectedProjectKeys.add(key);
+          else selectedProjectKeys.delete(key);
+          updateProjectsSummary();
+          renderProjectsMenu();
+        });
+      }
+    }
+
+    async function loadProjectOptions() {
+      try {
+        const res = await fetch(API_FILTER_OPTIONS, { cache: "no-store" });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.ok) return;
+        const byName = Array.isArray((data.options || {}).project_options) ? data.options.project_options : [];
+        const projects = Array.isArray((data.options || {}).projects) ? data.options.projects : [];
+        const normalizedByName = byName
+          .map((x) => ({ project_key: normalizeProjectKey(x && x.project_key), project_name: String((x && x.project_name) || "") }))
+          .filter((x) => x.project_key);
+        const normalizedFallback = projects
+          .map((x) => ({ project_key: normalizeProjectKey(x), project_name: normalizeProjectKey(x) }))
+          .filter((x) => x.project_key);
+        projectOptions.splice(0, projectOptions.length, ...(normalizedByName.length ? normalizedByName : normalizedFallback));
+        if (!selectedProjectKeys.size && projectOptions.length) {
+          for (const item of projectOptions) selectedProjectKeys.add(normalizeProjectKey(item.project_key));
+        } else if (selectedProjectKeys.size) {
+          const valid = new Set(projectOptions.map((x) => normalizeProjectKey(x.project_key)));
+          for (const key of Array.from(selectedProjectKeys)) {
+            if (!valid.has(key)) selectedProjectKeys.delete(key);
+          }
+        }
+        updateProjectsSummary();
+        renderProjectsMenu();
+      } catch (_err) {}
+    }
+
+    function setStatus(msg, kind) {
+      els.status.textContent = msg || "";
+      els.status.className = "status" + (kind ? " " + kind : "");
+    }
+
+    function renderQueue(rows) {
+      const items = Array.isArray(rows) ? rows : [];
+      queueRows = items.slice();
+      els.queueCount.textContent = `${items.length} active`;
+      const running = items.find((x) => String(x && x.status || "") === "running");
+      els.queueCancelBtn.disabled = !running;
+      els.queueCancelBtn.setAttribute("data-run-id", running ? String(running.run_id || "") : "");
+      if (!items.length) {
+        els.queueList.innerHTML = '<div class="queue-empty">No queued or running fetches.</div>';
+        return;
+      }
+      els.queueList.innerHTML = items.map((row) => {
+        const runId = String(row.run_id || "");
+        const status = String(row.status || "");
+        const step = String(row.progress_step || "");
+        const pct = Number(row.progress_pct || 0);
+        const range = `${String(row.from_date || "")} to ${String(row.to_date || "")}`;
+        return `
+          <div class="queue-item">
+            <div class="row"><span class="mono">${runId}</span><strong>${status}</strong></div>
+            <div class="row"><span>${step}</span><span>${pct}%</span></div>
+            <div class="row"><span>${range}</span><span>${String(row.mode || "")}</span></div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function disableQueuePolling(message) {
+      queueRows = [];
+      queueAccessDenied = true;
+      if (queuePollTimer) {
+        window.clearInterval(queuePollTimer);
+        queuePollTimer = null;
+      }
+      els.queueCount.textContent = "Access restricted";
+      els.queueCancelBtn.disabled = true;
+      els.queueCancelBtn.setAttribute("data-run-id", "");
+      els.queueList.innerHTML = `<div class="queue-empty">${String(message || "Queue access is restricted.")}</div>`;
+    }
+
+    async function loadQueue() {
+      try {
+        const res = await fetch(API_QUEUE, { cache: "no-store" });
+        if (res.status === 403) {
+          disableQueuePolling("Queue requires role headers. Polling paused.");
+          return;
+        }
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.ok) return;
+        renderQueue(data.rows || []);
+      } catch (_err) {}
+    }
+
+    async function cancelAndRollback() {
+      const running = queueRows.find((x) => String(x && x.status || "") === "running");
+      const runId = String((running && running.run_id) || "");
+      if (!runId) {
+        setStatus("No running fetch to cancel.", "warn");
+        return;
+      }
+      els.queueCancelBtn.disabled = true;
+      try {
+        const res = await fetch(API_CANCEL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ run_id: runId }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.ok) {
+          throw new Error(String(data.error || "Cancel failed."));
+        }
+        setStatus(String(data.message || "Cancel requested."), "warn");
+        await loadQueue();
+      } catch (err) {
+        setStatus(String((err && err.message) || err || "Cancel failed."), "err");
+      } finally {
+        const stillRunning = queueRows.find((x) => String(x && x.status || "") === "running");
+        els.queueCancelBtn.disabled = !stillRunning;
+      }
+    }
+
+    function num(v) {
+      const n = Number(v || 0);
+      return Number.isFinite(n) ? n : 0;
+    }
+
+    function toFiniteNumber(value, fallback) {
+      const n = Number(value);
+      return Number.isFinite(n) ? n : Number(fallback || 0);
+    }
+
+    function formatHours(value) {
+      const n = toFiniteNumber(value, 0);
+      const text = n.toFixed(2).replace(/\.00$/, "");
+      return `${text}h`;
+    }
+
+    function parseDateValue(value) {
+      const text = String(value || "").trim();
+      if (!text) return null;
+      const m = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+      const d = new Date(text);
+      return Number.isNaN(d.getTime()) ? null : new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    }
+
+    function toIsoDate(dateValue) {
+      const d = parseDateValue(dateValue) || (dateValue instanceof Date ? dateValue : null);
+      if (!d) return "";
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, "0");
+      const dd = String(d.getDate()).padStart(2, "0");
+      return `${yyyy}-${mm}-${dd}`;
+    }
+
+    function getDateBounds() {
+      const start = parseDateValue(els.from.value);
+      const end = parseDateValue(els.to.value);
+      if (!start || !end || end < start) return null;
+      return { start, end };
+    }
+
+    function isLeaveProject(row) {
+      const projectKey = String(row && row.project_key || "").trim().toUpperCase();
+      const projectName = String(row && row.project_name || "").trim().toUpperCase();
+      if (projectKey === "RLT") return true;
+      return projectName === "RND LEAVE TRACKER" || projectName === "RLT RND LEAVE TRACKER";
+    }
+
+    function computeCapacityBreakdownForRange(profile, bounds) {
+      const employees = Math.max(0, Math.round(toFiniteNumber(profile && profile.employee_count, 0)));
+      const standardHours = toFiniteNumber(profile && profile.standard_hours_per_day, 0);
+      const ramadanHours = toFiniteNumber(profile && profile.ramadan_hours_per_day, standardHours);
+      if (!bounds || !bounds.start || !bounds.end) {
+        return {
+          profileCapacityHours: toFiniteNumber(profile && profile.available_capacity_hours, 0),
+          employees, standardHours, ramadanHours, weekdayCount: 0, ramadanWeekdayCount: 0, regularWeekdayCount: 0, holidayWeekdayCount: 0,
+        };
+      }
+      const start = new Date(bounds.start.getFullYear(), bounds.start.getMonth(), bounds.start.getDate());
+      const end = new Date(bounds.end.getFullYear(), bounds.end.getMonth(), bounds.end.getDate());
+      const ramadanStart = parseDateValue(profile && profile.ramadan_start_date);
+      const ramadanEnd = parseDateValue(profile && profile.ramadan_end_date);
+      const holidaySet = new Set(Array.isArray(profile && profile.holiday_dates) ? profile.holiday_dates.map((x) => String(x || "").trim()).filter(Boolean) : []);
+      let capacity = 0;
+      let weekdayCount = 0;
+      let ramadanWeekdayCount = 0;
+      let regularWeekdayCount = 0;
+      let holidayWeekdayCount = 0;
+      const cursor = new Date(start);
+      while (cursor <= end) {
+        const day = cursor.getDay();
+        if (day >= 1 && day <= 5) {
+          weekdayCount += 1;
+          const iso = toIsoDate(cursor);
+          if (holidaySet.has(iso)) {
+            holidayWeekdayCount += 1;
+          } else {
+            const inRamadan = ramadanStart && ramadanEnd && cursor >= ramadanStart && cursor <= ramadanEnd;
+            const perDay = inRamadan ? ramadanHours : standardHours;
+            capacity += (employees * perDay);
+            if (inRamadan) ramadanWeekdayCount += 1;
+            else regularWeekdayCount += 1;
+          }
+        }
+        cursor.setDate(cursor.getDate() + 1);
+      }
+      return {
+        profileCapacityHours: Math.round(capacity * 100) / 100,
+        employees, standardHours, ramadanHours, weekdayCount, ramadanWeekdayCount, regularWeekdayCount, holidayWeekdayCount,
+      };
+    }
+
+    function setCapacityStatus(message, variant) {
+      if (!els.capacityStatus) return;
+      els.capacityStatus.textContent = String(message || "");
+      els.capacityStatus.setAttribute("data-variant", String(variant || "info"));
+    }
+
+    function renderCapacityProfiles() {
+      if (!els.capacitySelect) return;
+      const options = capacityProfiles.slice();
+      if (!options.length) {
+        els.capacitySelect.innerHTML = "<option value=''>No saved profiles</option>";
+        return;
+      }
+      els.capacitySelect.innerHTML = options.map((item, idx) => {
+        const fromDate = String(item && item.from_date || "").trim();
+        const toDate = String(item && item.to_date || "").trim();
+        const updated = String(item && item.updated_at_utc || "").trim();
+        const name = String(item && item.name || "").trim() || `${fromDate} to ${toDate}`;
+        return `<option value="${idx}">${esc(name)} (${esc(fromDate)} to ${esc(toDate)}) ${esc(updated)}</option>`;
+      }).join("");
+    }
+
+    async function refreshCapacityProfilesFromApi() {
+      try {
+        const res = await fetch("/api/capacity/profiles", { cache: "no-store" });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(String(payload.error || "Failed to load capacity profiles."));
+        capacityProfiles = Array.isArray(payload.profiles) ? payload.profiles : [];
+        renderCapacityProfiles();
+        if (!capacityProfiles.length) {
+          setCapacityStatus("No saved capacity profiles found.", "info");
+        } else {
+          setCapacityStatus(`Loaded ${capacityProfiles.length} saved profile(s).`, "success");
+        }
+      } catch (err) {
+        setCapacityStatus(String((err && err.message) || err || "Failed to load capacity profiles."), "error");
+      }
+    }
+
+    function getSelectedCapacityProfile() {
+      const idx = Number(els.capacitySelect && els.capacitySelect.value);
+      if (!Number.isFinite(idx) || idx < 0) return null;
+      return capacityProfiles[idx] || null;
+    }
+
+    function renderCapacityDetails(bounds) {
+      if (!els.capacityDetails) return;
+      if (!appliedCapacityProfile) {
+        els.capacityDetails.textContent = "Using project totals.";
+        renderCapacityProfileExpanded(bounds, null, null);
+        return;
+      }
+      const breakdown = computeCapacityBreakdownForRange(appliedCapacityProfile, bounds);
+      els.capacityDetails.textContent =
+        `Applied: ${String(appliedCapacityProfile.name || "").trim() || `${appliedCapacityProfile.from_date} to ${appliedCapacityProfile.to_date}`} | ` +
+        `Employees: ${String(breakdown.employees)} | Weekdays: ${String(breakdown.weekdayCount)} | Capacity: ${formatHours(breakdown.profileCapacityHours)}`;
+      renderCapacityProfileExpanded(bounds, appliedCapacityProfile, breakdown);
+    }
+
+    function renderCapacityProfileExpanded(bounds, profile, breakdown) {
+      if (!els.capacityExpanded) return;
+      if (!profile || !bounds || !bounds.start || !bounds.end) {
+        els.capacityExpanded.innerHTML = '<div class="capacity-empty">Apply a saved capacity profile to view expanded settings.</div>';
+        return;
+      }
+      const e = esc;
+      const startIso = toIsoDate(bounds.start);
+      const endIso = toIsoDate(bounds.end);
+      const holidays = Array.isArray(profile && profile.holiday_dates)
+        ? profile.holiday_dates.map((x) => String(x || "").trim()).filter(Boolean)
+        : [];
+      const holidaySet = new Set(holidays);
+      const ramadanStart = String(profile && profile.ramadan_start_date || "").trim();
+      const ramadanEnd = String(profile && profile.ramadan_end_date || "").trim();
+      const standard = toFiniteNumber(profile && profile.standard_hours_per_day, 0);
+      const ramadan = toFiniteNumber(profile && profile.ramadan_hours_per_day, standard);
+      const employees = Math.max(0, Math.round(toFiniteNumber(profile && profile.employee_count, 0)));
+      const rangeLabel = `${e(String(profile && profile.from_date || ""))} -> ${e(String(profile && profile.to_date || ""))}`;
+      const ramadanLabel = ramadanStart && ramadanEnd ? `${e(ramadanStart)} -> ${e(ramadanEnd)}` : "Not configured";
+      const businessDays = Math.max(0, Number(breakdown && breakdown.weekdayCount || 0) - Number(breakdown && breakdown.holidayWeekdayCount || 0));
+      const perAssignee = employees > 0 ? (toFiniteNumber(breakdown && breakdown.profileCapacityHours, 0) / employees) : 0;
+
+      const monthCards = [];
+      const cursor = new Date(bounds.start.getFullYear(), bounds.start.getMonth(), 1);
+      const endMonth = new Date(bounds.end.getFullYear(), bounds.end.getMonth(), 1);
+      const maxMonths = 12;
+      let monthCount = 0;
+      const todayIso = toIsoDate(new Date());
+      while (cursor <= endMonth && monthCount < maxMonths) {
+        monthCount += 1;
+        const mStart = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
+        const mEnd = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0);
+        const firstDow = (mStart.getDay() + 6) % 7;
+        const lastDow = (mEnd.getDay() + 6) % 7;
+        const gridStart = new Date(mStart);
+        gridStart.setDate(gridStart.getDate() - firstDow);
+        const gridEnd = new Date(mEnd);
+        gridEnd.setDate(gridEnd.getDate() + (6 - lastDow));
+        const cells = ['<div class="capacity-dow">Mon</div><div class="capacity-dow">Tue</div><div class="capacity-dow">Wed</div><div class="capacity-dow">Thu</div><div class="capacity-dow">Fri</div><div class="capacity-dow">Sat</div><div class="capacity-dow">Sun</div>'];
+        for (const d = new Date(gridStart); d <= gridEnd; d.setDate(d.getDate() + 1)) {
+          const iso = toIsoDate(d);
+          const isOut = d.getMonth() !== mStart.getMonth();
+          const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+          const isRamadan = ramadanStart && ramadanEnd && iso >= ramadanStart && iso <= ramadanEnd;
+          const isHoliday = holidaySet.has(iso);
+          const isToday = iso === todayIso;
+          const classes = ["capacity-day"];
+          if (isOut) classes.push("is-out");
+          if (isWeekend) classes.push("is-weekend");
+          if (isRamadan) classes.push("is-ramadan");
+          if (isHoliday) classes.push("is-holiday");
+          if (isToday) classes.push("is-today");
+          const tags = [];
+          if (isRamadan) tags.push('<span class="capacity-day-tag r">R</span>');
+          if (isHoliday) tags.push('<span class="capacity-day-tag h">H</span>');
+          cells.push(`<div class="${classes.join(" ")}"><div class="capacity-day-num">${String(d.getDate())}</div><div class="capacity-day-tags">${tags.join("")}</div></div>`);
+        }
+        const label = mStart.toLocaleString(undefined, { month: "long", year: "numeric" });
+        monthCards.push(`<div class="capacity-month"><div class="capacity-month-head">${e(label)}</div><div class="capacity-month-grid">${cells.join("")}</div></div>`);
+        cursor.setMonth(cursor.getMonth() + 1, 1);
+      }
+
+      els.capacityExpanded.innerHTML = `
+        <div class="capacity-expanded-head">
+          <div class="capacity-expanded-title">Capacity Profile Expanded Settings</div>
+          <div class="capacity-expanded-sub">Active filter: ${e(startIso)} -> ${e(endIso)}</div>
+        </div>
+        <div class="capacity-expanded-grid">
+          <div class="capacity-chip"><div class="k">Profile Range</div><div class="v">${rangeLabel}</div></div>
+          <div class="capacity-chip"><div class="k">Employee Count</div><div class="v">${employees}</div></div>
+          <div class="capacity-chip"><div class="k">Standard Hours/Day</div><div class="v">${standard.toFixed(2)}h</div></div>
+          <div class="capacity-chip"><div class="k">Ramadan Hours/Day</div><div class="v">${ramadan.toFixed(2)}h</div></div>
+          <div class="capacity-chip"><div class="k">Ramadan Range</div><div class="v">${ramadanLabel}</div></div>
+          <div class="capacity-chip"><div class="k">Holiday Dates</div><div class="v">${holidays.length}</div></div>
+          <div class="capacity-chip"><div class="k">Business Days</div><div class="v">${businessDays.toFixed(0)}d</div></div>
+          <div class="capacity-chip"><div class="k">Per Assignee Capacity</div><div class="v">${perAssignee.toFixed(2)}h</div></div>
+          <div class="capacity-chip"><div class="k">Range Capacity</div><div class="v">${formatHours(toFiniteNumber(breakdown && breakdown.profileCapacityHours, 0))}</div></div>
+        </div>
+        <div class="capacity-legend">
+          <span class="pill">R = Ramadan</span>
+          <span class="pill">H = Holiday</span>
+          <span class="pill">Weekend highlighted</span>
+          <span class="pill">Today highlighted</span>
+        </div>
+        <div class="capacity-expanded-sub" style="margin-bottom:8px;">Holiday dates: ${holidays.length ? e(holidays.join(", ")) : "None"}</div>
+        <div class="capacity-calendar-wrap">${monthCards.join("") || '<div class="capacity-empty">No calendar data available for this range.</div>'}</div>
+      `;
+    }
+
+    function setCapacityDrawerOpen(open) {
+      if (!els.capacityDrawer) return;
+      els.capacityDrawer.classList.toggle("is-open", Boolean(open));
+    }
+
+    function updateScoreCards(rows) {
+      const list = Array.isArray(rows) ? rows : [];
+      let totalCapacityHoursFallback = 0;
+      let totalPlannedHours = 0;
+      let excludedPlannedHours = 0;
+      let includedProjectCount = 0;
+      let excludedProjectCount = 0;
+      let totalActualProjectHours = 0;
+      let excludedActualHours = 0;
+      let plannedLeavesTaken = 0;
+      let plannedLeavesNotTakenYet = 0;
+      let unplannedLeavesTaken = 0;
+      for (const row of list) {
+        if (String(row && row.row_type || "") !== "project") continue;
+        const plannedHours = toFiniteNumber(row && row.man_hours, toFiniteNumber(row && row.man_days, 0) * 8);
+        const capacityHours = toFiniteNumber(row && row.man_days, plannedHours / 8) * 8;
+        const actualHours = toFiniteNumber(row && row.actual_hours, 0);
+        totalCapacityHoursFallback += capacityHours;
+        if (!isLeaveProject(row)) {
+          totalPlannedHours += plannedHours;
+          totalActualProjectHours += actualHours;
+          includedProjectCount += 1;
+        } else {
+          excludedPlannedHours += plannedHours;
+          excludedActualHours += actualHours;
+          excludedProjectCount += 1;
+          const cappedPlannedTaken = Math.max(0, Math.min(actualHours, plannedHours));
+          plannedLeavesTaken += cappedPlannedTaken;
+          plannedLeavesNotTakenYet += Math.max(0, plannedHours - cappedPlannedTaken);
+          unplannedLeavesTaken += Math.max(0, actualHours - plannedHours);
+        }
+      }
+      const bounds = getDateBounds();
+      const capacityBreakdown = appliedCapacityProfile ? computeCapacityBreakdownForRange(appliedCapacityProfile, bounds) : null;
+      const profileCapacityHours = appliedCapacityProfile ? toFiniteNumber(capacityBreakdown && capacityBreakdown.profileCapacityHours, 0) : NaN;
+      const totalCapacity = Number.isFinite(profileCapacityHours) ? profileCapacityHours : totalCapacityHoursFallback;
+      const totalLeavesPlanned = plannedLeavesTaken + plannedLeavesNotTakenYet;
+      const availability = totalCapacity - totalLeavesPlanned;
+      const hoursRequired = totalPlannedHours - totalActualProjectHours;
+      const capacityGap = totalCapacity - totalPlannedHours - totalLeavesPlanned;
+
+      if (els.scoreTotalCapacity) els.scoreTotalCapacity.textContent = formatHours(totalCapacity);
+      if (els.scoreTotalPlanned) els.scoreTotalPlanned.textContent = formatHours(totalPlannedHours);
+      if (els.scoreTotalLeavesPlanned) els.scoreTotalLeavesPlanned.textContent = formatHours(totalLeavesPlanned);
+      if (els.scoreTotalLogged) els.scoreTotalLogged.textContent = formatHours(totalActualProjectHours);
+      if (els.scoreAvailability) els.scoreAvailability.textContent = formatHours(availability);
+      if (els.scoreDelta) els.scoreDelta.textContent = formatHours(hoursRequired);
+      if (els.scoreCapacityGap) els.scoreCapacityGap.textContent = formatHours(capacityGap);
+      if (els.scoreDeltaCard) {
+        els.scoreDeltaCard.classList.remove("delta-pos", "delta-neg", "delta-zero");
+        if (hoursRequired > 0) els.scoreDeltaCard.classList.add("delta-pos");
+        else if (hoursRequired < 0) els.scoreDeltaCard.classList.add("delta-neg");
+        else els.scoreDeltaCard.classList.add("delta-zero");
+      }
+      if (els.scoreFormulaEmployees) els.scoreFormulaEmployees.textContent = appliedCapacityProfile ? String(Math.round(toFiniteNumber(capacityBreakdown && capacityBreakdown.employees, 0))) : "-";
+      if (els.scoreFormulaDays) els.scoreFormulaDays.textContent = appliedCapacityProfile ? String(Math.round(toFiniteNumber(capacityBreakdown && capacityBreakdown.weekdayCount, 0))) : "-";
+      if (els.scoreFormulaHours) {
+        const e = toFiniteNumber(capacityBreakdown && capacityBreakdown.employees, 0);
+        const d = toFiniteNumber(capacityBreakdown && capacityBreakdown.weekdayCount, 0);
+        const perDay = (appliedCapacityProfile && e > 0 && d > 0) ? (profileCapacityHours / (e * d)) : NaN;
+        els.scoreFormulaHours.textContent = Number.isFinite(perDay) ? formatHours(perDay) : "-";
+      }
+      if (els.scoreTotalCapacityTip) {
+        const fromDate = bounds ? toIsoDate(bounds.start) : "-";
+        const toDate = bounds ? toIsoDate(bounds.end) : "-";
+        const selectedProfileLabel = appliedCapacityProfile ? (String(appliedCapacityProfile.name || "").trim() || `${appliedCapacityProfile.from_date} to ${appliedCapacityProfile.to_date}`) : "None";
+        els.scoreTotalCapacityTip.textContent =
+          "Formula: Total Capacity (Hours) = Employee Count x Available Business Days x Per Day Hours.\n"
+          + "Values:\n"
+          + "Selected Profile = " + selectedProfileLabel + "\n"
+          + "Date Range = " + fromDate + " to " + toDate + "\n"
+          + "Employee Count = " + String(Math.round(toFiniteNumber(capacityBreakdown && capacityBreakdown.employees, 0))) + "\n"
+          + "Per Day Hours = " + (els.scoreFormulaHours ? els.scoreFormulaHours.textContent : "0h") + "\n"
+          + "Standard Hours/Day = " + formatHours(toFiniteNumber(capacityBreakdown && capacityBreakdown.standardHours, 0)) + "\n"
+          + "Ramadan Hours/Day = " + formatHours(toFiniteNumber(capacityBreakdown && capacityBreakdown.ramadanHours, 0)) + "\n"
+          + "Working Weekdays (Mon-Fri) = " + String(Math.round(toFiniteNumber(capacityBreakdown && capacityBreakdown.weekdayCount, 0))) + "\n"
+          + "Ramadan Weekdays (Mon-Fri, non-holiday) = " + String(Math.round(toFiniteNumber(capacityBreakdown && capacityBreakdown.ramadanWeekdayCount, 0))) + "\n"
+          + "Non-Ramadan Weekdays (Mon-Fri, non-holiday) = " + String(Math.round(toFiniteNumber(capacityBreakdown && capacityBreakdown.regularWeekdayCount, 0))) + "\n"
+          + "Holiday Weekdays in Range = " + String(Math.round(toFiniteNumber(capacityBreakdown && capacityBreakdown.holidayWeekdayCount, 0))) + "\n"
+          + "Capacity Profile Hours = " + (Number.isFinite(profileCapacityHours) ? formatHours(profileCapacityHours) : "N/A") + "\n"
+          + "Fallback Project Capacity = " + formatHours(totalCapacityHoursFallback) + "\n"
+          + "Total Capacity = " + formatHours(totalCapacity);
+      }
+      if (els.scoreTotalPlannedTip) {
+        els.scoreTotalPlannedTip.textContent =
+          "Formula: Total Planned Projects = Sum(Project Man-hours), excluding RLT (RnD Leave Tracker).\n"
+          + "Values:\n"
+          + "Included Projects Count = " + String(includedProjectCount) + "\n"
+          + "Excluded Projects Count = " + String(excludedProjectCount) + "\n"
+          + "Excluded Projects Planned Sum = " + formatHours(excludedPlannedHours) + "\n"
+          + "Total Planned Projects = " + formatHours(totalPlannedHours);
+      }
+      if (els.scoreTotalLoggedTip) {
+        els.scoreTotalLoggedTip.textContent =
+          "Formula: Total Actual Project Hours = Sum(Project Actual Hours), excluding RLT (RnD Leave Tracker).\n"
+          + "Values:\n"
+          + "Included Projects Actual Sum = " + formatHours(totalActualProjectHours) + "\n"
+          + "Excluded Projects Actual Sum = " + formatHours(excludedActualHours) + "\n"
+          + "Total Actual Project Hours = " + formatHours(totalActualProjectHours);
+      }
+      if (els.scoreLeavesPlannedTip) {
+        els.scoreLeavesPlannedTip.textContent =
+          "Formula: Total Leaves Planned = Planned Taken + Planned Not Yet Taken from day-bucketed leave rows in selected date range.\n"
+          + "Values:\n"
+          + "Planned Taken + Planned Not Yet Taken = " + formatHours(totalLeavesPlanned) + "\n"
+          + "Total Leaves Planned = " + formatHours(totalLeavesPlanned);
+      }
+      if (els.scoreAvailabilityTip) {
+        els.scoreAvailabilityTip.textContent =
+          "Formula: Availability = Total Capacity (Hours) - Total Leaves Planned.\n"
+          + "Values:\n"
+          + "Total Capacity = " + formatHours(totalCapacity) + "\n"
+          + "Total Leaves Planned = " + formatHours(totalLeavesPlanned) + "\n"
+          + "Availability = " + formatHours(availability);
+      }
+      if (els.scoreDeltaTip) {
+        els.scoreDeltaTip.textContent =
+          "Formula: Plan Gap = Total Planned Projects - Total Actual Project Hours.\n"
+          + "Values:\n"
+          + "Total Planned Projects = " + formatHours(totalPlannedHours) + "\n"
+          + "Total Actual Project Hours = " + formatHours(totalActualProjectHours) + "\n"
+          + "Plan Gap = " + formatHours(hoursRequired);
+      }
+      if (els.scoreCapacityGapTip) {
+        els.scoreCapacityGapTip.textContent =
+          "Formula: Capacity available for more work = Total Capacity (Hours) - Total Planned Projects (Hours) - RLT RnD Leave Tracker Original Estimates.\n"
+          + "Values:\n"
+          + "Total Capacity = " + formatHours(totalCapacity) + "\n"
+          + "Total Planned Projects = " + formatHours(totalPlannedHours) + "\n"
+          + "RLT RnD Leave Tracker Original Estimates = " + formatHours(totalLeavesPlanned) + "\n"
+          + "Capacity available for more work = " + formatHours(capacityGap);
+      }
+      renderCapacityDetails(bounds);
+    }
+
+    function levelForRow(rowType) {
+      if (rowType === "project") return 0;
+      if (rowType === "epic") return 1;
+      if (rowType === "story") return 2;
+      if (rowType === "subtask") return 3;
+      return 0;
+    }
+
+    function flatRows(rows) {
+      const out = [];
+      for (const row of Array.isArray(rows) ? rows : []) {
+        out.push({ ...row, __level: levelForRow(String(row && row.row_type || "")) });
+        if (Array.isArray(row && row.children)) {
+          for (const c1 of row.children) {
+            out.push({ ...c1, __level: levelForRow(String(c1 && c1.row_type || "")) });
+            if (Array.isArray(c1 && c1.children)) {
+              for (const c2 of c1.children) {
+                out.push({ ...c2, __level: levelForRow(String(c2 && c2.row_type || "")) });
+              }
+            }
+          }
+        }
+      }
+      return out;
+    }
+
+    function esc(value) {
+      return String(value == null ? "" : value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+    }
+
+    function toMetricHtml(value, noEntry) {
+      const n = Number(value);
+      if (!Number.isFinite(n)) return "";
+      const text = n.toFixed(2);
+      if (noEntry && n === 0) return '<span class="danger-chip">No entry</span>';
+      return text;
+    }
+
+    function toDeltaHtml(value) {
+      const n = Number(value);
+      if (!Number.isFinite(n)) return "";
+      const text = n.toFixed(2);
+      if (n < 0) return `<span class="delta-neg">${text}</span>`;
+      if (n > 0) return `<span class="delta-pos">${text}</span>`;
+      return `<span class="delta-zero">${text}</span>`;
+    }
+
+    function clearTreeState() {
+      rowsById.clear();
+      childrenByParent.clear();
+    }
+
+    function addChild(parentId, childId) {
+      if (!childrenByParent.has(parentId)) {
+        childrenByParent.set(parentId, []);
+      }
+      childrenByParent.get(parentId).push(childId);
+    }
+
+    function hasChildren(id) {
+      const children = childrenByParent.get(id) || [];
+      return children.length > 0;
+    }
+
+    function hideDescendants(id) {
+      const children = childrenByParent.get(id) || [];
+      for (const childId of children) {
+        const child = rowsById.get(childId);
+        if (!child) continue;
+        child.el.style.display = "none";
+        hideDescendants(childId);
+      }
+    }
+
+    function showChildren(id) {
+      const children = childrenByParent.get(id) || [];
+      for (const childId of children) {
+        const child = rowsById.get(childId);
+        if (!child) continue;
+        child.el.style.display = "";
+        if (collapsed.has(childId)) {
+          hideDescendants(childId);
+        } else {
+          showChildren(childId);
+        }
+      }
+    }
+
+    function updateToggleIcon(id) {
+      const row = rowsById.get(id);
+      if (!row || !row.toggle) return;
+      row.toggle.textContent = collapsed.has(id) ? "+" : "-";
+    }
+
+    function toggleRow(id) {
+      if (!hasChildren(id)) return;
+      if (collapsed.has(id)) {
+        collapsed.delete(id);
+      } else {
+        collapsed.add(id);
+      }
+      applyCollapsedState();
+    }
+
+    function applyCollapsedState() {
+      for (const row of rowsById.values()) {
+        let visible = true;
+        let parentId = row.parentId ? String(row.parentId) : "";
+        while (parentId) {
+          if (collapsed.has(parentId)) {
+            visible = false;
+            break;
+          }
+          const parentRow = rowsById.get(parentId);
+          parentId = parentRow && parentRow.parentId ? String(parentRow.parentId) : "";
+        }
+        row.el.style.display = visible ? "" : "none";
+      }
+      for (const id of rowsById.keys()) updateToggleIcon(id);
+    }
+
+    function collapseToProjects() {
+      collapsed.clear();
+      for (const [id, row] of rowsById.entries()) {
+        if (row.level === 0 && hasChildren(id)) {
+          collapsed.add(id);
+        }
+      }
+      applyCollapsedState();
+    }
+
+    function collapseToEpics() {
+      collapsed.clear();
+      for (const [id, row] of rowsById.entries()) {
+        if (row.rowType === "epic" && hasChildren(id)) {
+          collapsed.add(id);
+        }
+      }
+      applyCollapsedState();
+    }
+
+    function expandAll() {
+      collapsed.clear();
+      applyCollapsedState();
+    }
+
+    function withHierarchy(rows) {
+      const list = Array.isArray(rows) ? rows.map((item, idx) => ({ ...item, __index: idx })) : [];
+      const projectIds = new Map();
+      const epicIds = new Map();
+      const storyIds = new Map();
+      for (const row of list) {
+        const rowType = String(row.row_type || "").toLowerCase();
+        const id = `${rowType}|${String(row.issue_key || row.project_key || row.summary || row.aspect || "")}|${row.__index}`;
+        row.__id = id;
+        row.__level = levelForRow(rowType);
+        if (rowType === "project") projectIds.set(String(row.project_key || row.issue_key || "").toUpperCase(), id);
+        if (rowType === "epic") epicIds.set(String(row.issue_key || "").toUpperCase(), id);
+        if (rowType === "story") storyIds.set(String(row.issue_key || "").toUpperCase(), id);
+      }
+      for (const row of list) {
+        const rowType = String(row.row_type || "").toLowerCase();
+        let parentId = "";
+        let missingReason = "";
+        if (rowType === "epic") {
+          parentId = projectIds.get(String(row.parent_key || row.project_key || "").toUpperCase()) || "";
+          if (!parentId) missingReason = "Missing Project Parent";
+        } else if (rowType === "story") {
+          parentId = epicIds.get(String(row.parent_key || "").toUpperCase()) || "";
+          if (!parentId) missingReason = "Missing Epic Parent";
+        } else if (rowType === "subtask") {
+          parentId = storyIds.get(String(row.parent_key || "").toUpperCase()) || "";
+          if (!parentId) missingReason = "Missing Story Parent";
+        }
+        row.__parentId = parentId;
+        row.__missingParentReason = missingReason;
+      }
+      return list;
+    }
+
+    function renderTableRows(rows) {
+      clearTreeState();
+      const rowById = new Map();
+      for (const row of rows) {
+        rowById.set(String(row.__id), row);
+        if (row.__parentId) addChild(row.__parentId, row.__id);
+      }
+
+      els.rows.innerHTML = rows.map((row) => {
+        const t = String(row.type || row.row_type || "");
+        const rowType = String(row.row_type || "").toLowerCase();
+        const lvl = Number(row.__level || 0);
+        const cls = t ? ("row-" + rowType) : "";
+        const noEntryWarning = (rowType === "epic" || rowType === "story" || rowType === "subtask")
+          && (num(row.man_days) === 0 || num(row.man_hours) === 0 || num(row.actual_hours) === 0);
+        const isMissingParent = Boolean(row.__missingParentReason);
+        const rowDangerClass = (noEntryWarning || isMissingParent) ? " row-danger" : "";
+        const hasDate = String(row.planned_start_date || row.planned_start || "").trim() && String(row.planned_end_date || row.planned_due || "").trim();
+        const dateWarn = (!hasDate && (rowType === "epic" || rowType === "story" || rowType === "subtask")) ? ' <span class="danger-chip">No date</span>' : "";
+        const parentWarn = isMissingParent ? ` <span class="danger-chip">${esc(row.__missingParentReason)}</span>` : "";
+        const noEntryChip = noEntryWarning ? ' <span class="danger-chip">No entry</span>' : "";
+        const typeCell = `${esc(t)}${parentWarn}${noEntryChip}${dateWarn}`;
+        const toggleBtn = hasChildren(row.__id)
+          ? `<button type="button" class="toggle" data-toggle-id="${esc(row.__id)}">-</button>`
+          : `<button type="button" class="toggle placeholder" disabled>.</button>`;
+        return `
+          <tr class="${cls}${rowDangerClass}" data-id="${esc(row.__id)}" data-parent-id="${esc(row.__parentId || "")}">
+            <td class="indent-${lvl}">
+              <div class="aspect-cell">
+                ${toggleBtn}
+                <span class="node-text">${esc(String(row.aspect || row.summary || ""))}</span>
+              </div>
+            </td>
+            <td>${typeCell}</td>
+            <td>${esc(String(row.assignee || ""))}</td>
+            <td>${toMetricHtml(row.man_days, noEntryWarning)}</td>
+            <td>${toMetricHtml(row.actual_days, noEntryWarning)}</td>
+            <td>${toDeltaHtml(row.delta_days)}</td>
+            <td>${toMetricHtml(row.man_hours, noEntryWarning)}</td>
+            <td>${toMetricHtml(row.actual_hours, noEntryWarning)}</td>
+            <td>${toDeltaHtml(row.delta_hours)}</td>
+            <td>${esc(String(row.resource_logged || ""))}</td>
+            <td>${esc(String(row.planned_start_date || row.planned_start || ""))}</td>
+            <td>${esc(String(row.planned_end_date || row.planned_due || ""))}</td>
+          </tr>
+        `;
+      }).join("");
+
+      for (const tr of Array.from(els.rows.querySelectorAll("tr[data-id]"))) {
+        const id = String(tr.getAttribute("data-id") || "");
+        const parentId = String(tr.getAttribute("data-parent-id") || "");
+        const toggle = tr.querySelector("button[data-toggle-id]");
+        const rowMeta = rowById.get(id) || {};
+        rowsById.set(id, {
+          id,
+          rowType: String(rowMeta.row_type || "").toLowerCase(),
+          level: Number(rowMeta.__level || 0),
+          parentId: parentId || null,
+          el: tr,
+          toggle: toggle || null,
+        });
+      }
+      applyCollapsedState();
+    }
+
+    function render(data) {
+      const rows = withHierarchy(flatRows((data && data.rows) || []));
+      latestRenderRows = rows.slice();
+      renderTableRows(rows);
+      updateScoreCards(rows);
+      els.meta.textContent = `Snapshot: ${String(data && data.snapshot_id || "-")} | Computed: ${String(data && data.computed_at_utc || "-")}`;
+    }
+
+    async function loadSummary() {
+      setStatus("Loading snapshot...", "");
+      const res = await fetch(`${API_SUMMARY}?${q().toString()}`, { cache: "no-store" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) {
+        setStatus(String(data.error || "Failed to load summary."), "err");
+        return;
+      }
+      render(data);
+      const serverProjects = Array.isArray(((data || {}).filter_options || {}).projects)
+        ? ((data || {}).filter_options || {}).projects
+        : [];
+      const serverProjectOptions = Array.isArray(((data || {}).filter_options || {}).project_options)
+        ? ((data || {}).filter_options || {}).project_options
+        : [];
+      if (serverProjectOptions.length) {
+        projectOptions.splice(
+          0,
+          projectOptions.length,
+          ...serverProjectOptions
+            .map((x) => ({ project_key: normalizeProjectKey(x && x.project_key), project_name: String((x && x.project_name) || "") }))
+            .filter((x) => x.project_key)
+        );
+      } else if (serverProjects.length) {
+        projectOptions.splice(
+          0,
+          projectOptions.length,
+          ...serverProjects.map((x) => ({ project_key: normalizeProjectKey(x), project_name: normalizeProjectKey(x) })).filter((x) => x.project_key)
+        );
+      }
+      if (Array.isArray((data || {}).selected_projects)) {
+        setProjectSelection((data || {}).selected_projects);
+      } else {
+        updateProjectsSummary();
+        renderProjectsMenu();
+      }
+      if (data.needs_refresh) {
+        setStatus("No snapshot for this scope. Click Fetch & Recompute.", "warn");
+      } else {
+        setStatus("Loaded snapshot from database.", "");
+      }
+    }
+
+    async function pollRun(runId) {
+      while (true) {
+        const res = await fetch(API_STATUS_BASE + encodeURIComponent(runId), { cache: "no-store" });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.ok) {
+          throw new Error(String(data.error || "Failed to get run status."));
+        }
+        setStatus(`Run ${runId}: ${String(data.step || "")} (${String(data.progress || 0)}%)`, "");
+        if (data.status === "success") return data;
+        if (data.status === "failed") throw new Error(String(data.error || "Refresh failed."));
+        await new Promise((r) => setTimeout(r, 1200));
+      }
+    }
+
+    async function refreshAndReload() {
+      els.fetch.disabled = true;
+      try {
+        setStatus("Starting refresh...", "");
+        const body = {
+          from: String(els.from.value || ""),
+          to: String(els.to.value || ""),
+          mode: String(els.mode.value || "log_date"),
+          projects: String(els.projects.value || ""),
+          statuses: String(els.statuses.value || ""),
+          assignees: String(els.assignees.value || ""),
+        };
+        const res = await fetch(API_REFRESH, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.ok) {
+          throw new Error(String(data.error || "Refresh start failed."));
+        }
+        if (String(data.status || "") === "queued") {
+          setStatus(`Queued at position ${String(data.queue_position || 1)}. A fetch is already running for this scope.`, "warn");
+          await loadQueue();
+          return;
+        }
+        await pollRun(String(data.run_id || ""));
+        await loadSummary();
+        await loadQueue();
+      } catch (err) {
+        setStatus(String((err && err.message) || err || "Refresh failed."), "err");
+      } finally {
+        els.fetch.disabled = false;
+      }
+    }
+
+    (function init() {
+      els.from.value = monthStartIso();
+      els.to.value = todayIso();
+      els.projectsTrigger.addEventListener("click", () => {
+        const open = els.projectsMenu.classList.toggle("is-open");
+        els.projectsMenu.setAttribute("aria-hidden", open ? "false" : "true");
+        els.projectsTrigger.classList.toggle("is-open", open);
+        els.projectsTrigger.setAttribute("aria-expanded", open ? "true" : "false");
+      });
+      els.projectsSelectAll.addEventListener("click", () => {
+        setProjectSelection(projectOptions.map((x) => x.project_key));
+      });
+      els.projectsClearAll.addEventListener("click", () => {
+        setProjectSelection([]);
+      });
+      document.addEventListener("click", (ev) => {
+        if (!els.projectsMenu.classList.contains("is-open")) return;
+        const target = ev.target;
+        if (!target) return;
+        if (els.projectsMenu.contains(target) || els.projectsTrigger.contains(target)) return;
+        els.projectsMenu.classList.remove("is-open");
+        els.projectsMenu.setAttribute("aria-hidden", "true");
+        els.projectsTrigger.classList.remove("is-open");
+        els.projectsTrigger.setAttribute("aria-expanded", "false");
+      });
+      els.load.addEventListener("click", loadSummary);
+      els.fetch.addEventListener("click", refreshAndReload);
+      els.queueCancelBtn.addEventListener("click", cancelAndRollback);
+      els.rows.addEventListener("click", (ev) => {
+        const target = ev.target;
+        if (!target || !(target instanceof Element)) return;
+        const btn = target.closest("button[data-toggle-id]");
+        if (!btn || !els.rows.contains(btn)) return;
+        const id = String(btn.getAttribute("data-toggle-id") || "");
+        if (!id) return;
+        toggleRow(id);
+      });
+      els.expandAll.addEventListener("click", expandAll);
+      els.collapseProjects.addEventListener("click", collapseToProjects);
+      els.collapseEpics.addEventListener("click", collapseToEpics);
+      els.from.addEventListener("change", () => updateScoreCards(latestRenderRows));
+      els.to.addEventListener("change", () => updateScoreCards(latestRenderRows));
+      els.mode.addEventListener("change", () => updateScoreCards(latestRenderRows));
+      if (els.capacityOpenBtn) {
+        els.capacityOpenBtn.addEventListener("click", () => setCapacityDrawerOpen(true));
+      }
+      if (els.capacityCloseBtn) {
+        els.capacityCloseBtn.addEventListener("click", () => setCapacityDrawerOpen(false));
+      }
+      if (els.capacityApply) {
+        els.capacityApply.addEventListener("click", () => {
+          appliedCapacityProfile = getSelectedCapacityProfile();
+          if (appliedCapacityProfile) {
+            setCapacityStatus("Capacity profile applied.", "success");
+          } else {
+            setCapacityStatus("No profile selected. Using project totals.", "info");
+          }
+          updateScoreCards(latestRenderRows);
+        });
+      }
+      if (els.capacityRefresh) {
+        els.capacityRefresh.addEventListener("click", async () => {
+          await refreshCapacityProfilesFromApi();
+          updateScoreCards(latestRenderRows);
+        });
+      }
+      if (els.capacityReset) {
+        els.capacityReset.addEventListener("click", () => {
+          appliedCapacityProfile = null;
+          setCapacityStatus("Using project totals.", "info");
+          updateScoreCards(latestRenderRows);
+        });
+      }
+      loadQueue();
+      queuePollTimer = window.setInterval(loadQueue, 2500);
+      refreshCapacityProfilesFromApi();
+      loadProjectOptions().finally(loadSummary);
+    })();
+  </script>
+  <script src="/shared-date-filter.js"></script>
+  <script src="/shared-nav.js"></script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!-- codex-info-drawer-start -->
+<!-- codex-info-drawer-v1 -->
+<style>
+.report-info-inline-btn {
+  margin-left: 6px;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 1px solid #94a3b8;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+}
+.report-info-inline-btn:hover { background: #eef2ff; border-color: #64748b; }
+#report-info-drawer-backdrop {
+  position: fixed; inset: 0; background: rgba(15,23,42,.45); opacity: 0; visibility: hidden;
+  transition: opacity .16s ease; z-index: 2500;
+}
+#report-info-drawer-backdrop.is-open { opacity: 1; visibility: visible; }
+#report-info-drawer {
+  position: fixed; right: 0; top: 0; height: 100vh; width: min(520px, 94vw);
+  background: #ffffff; border-left: 1px solid #cbd5e1; box-shadow: -16px 0 30px rgba(15,23,42,.18);
+  transform: translateX(105%); transition: transform .18s ease; z-index: 2501; display: flex; flex-direction: column;
+}
+#report-info-drawer.is-open { transform: translateX(0); }
+.report-info-drawer-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 12px 14px; border-bottom: 1px solid #e2e8f0; background: linear-gradient(180deg,#f8fafc,#f1f5f9);
+}
+.report-info-drawer-title { margin: 0; font-size: 1rem; color: #0f172a; }
+.report-info-drawer-close {
+  border: 1px solid #94a3b8; background: #fff; color: #334155; border-radius: 8px; padding: 6px 8px; cursor: pointer; font-weight: 700;
+}
+#report-info-drawer-body { padding: 12px 14px; overflow: auto; color: #1f2937; font-size: .86rem; line-height: 1.45; }
+.report-info-section { margin-bottom: 10px; }
+.report-info-section h4 { margin: 0 0 4px; font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; color: #475569; }
+.report-info-section p { margin: 0; }
+.report-info-list { margin: 0; padding-left: 18px; }
+.report-info-list li { margin: 0 0 3px; }
+body.report-info-drawer-open { overflow: hidden; }
+</style>
+<div id="report-info-drawer-backdrop" aria-hidden="true"></div>
+<aside id="report-info-drawer" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="report-info-drawer-title">
+  <div class="report-info-drawer-head">
+    <h3 class="report-info-drawer-title" id="report-info-drawer-title">Field Information</h3>
+    <button type="button" class="report-info-drawer-close" id="report-info-drawer-close">Close</button>
+  </div>
+  <div id="report-info-drawer-body"></div>
+</aside>
+<script>
+(function () {
+  const seeded = [];
+  const byId = Object.create(null);
+  function txt(v) { return String(v == null ? "" : v).trim(); }
+  function asArr(v) { return Array.isArray(v) ? v : []; }
+  function slug(v) { return txt(v).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "info"; }
+  function listHtml(values) {
+    const vals = asArr(values).map((x) => txt(x)).filter(Boolean);
+    if (!vals.length) return "<p>-</p>";
+    return "<ul class=\"report-info-list\">" + vals.map((x) => "<li>" + esc(x) + "</li>").join("") + "</ul>";
+  }
+  function esc(v) {
+    return txt(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+  function addCatalog(item) {
+    if (!item || !txt(item.id)) return;
+    byId[item.id] = Object.assign({
+      id: txt(item.id), label: "Field", report: txt(window.__activeReportId || ""),
+      ui_targets: [], definition: "", formula: "", ingredients: [],
+      business_validations: [], field_linkages: [], cross_report_linkages: [],
+      data_sources: [], leadership_interpretation: ""
+    }, item);
+  }
+  for (const item of asArr(seeded)) addCatalog(item);
+  function ensureInfoButton(host, infoId, label) {
+    if (!host || !txt(infoId)) return;
+    if (host.querySelector && host.querySelector('[data-info-id="' + infoId + '"]')) return;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "report-info-inline-btn";
+    btn.textContent = "i";
+    btn.setAttribute("data-info-id", infoId);
+    btn.setAttribute("aria-label", (txt(label) || "Field") + " information");
+    host.appendChild(btn);
+  }
+  function extractFromTooltips() {
+    const defs = [
+      [".score-info", ".score-info-tip"],
+      [".kpi-info", ".kpi-info-tip"],
+      [".stat-info", ".stat-info-tip"],
+      [".card-i-wrap", ".card-i-tip"]
+    ];
+    for (const pair of defs) {
+      const wrapSel = pair[0];
+      const tipSel = pair[1];
+      const wraps = Array.from(document.querySelectorAll(wrapSel));
+      for (const wrap of wraps) {
+        const tip = wrap.querySelector(tipSel);
+        const raw = txt(tip ? tip.textContent : "");
+        const parentLabelNode = wrap.closest(".score-label,.label,.k,.story-title,h3,h4,.card,.kpi,.stat,.summary-card");
+        const label = txt(parentLabelNode ? parentLabelNode.textContent : "");
+        const id = wrap.getAttribute("data-info-id") || slug((window.__activeReportId || "report") + "-" + (label || raw.slice(0, 36)));
+        wrap.setAttribute("data-info-id", id);
+        wrap.setAttribute("role", "button");
+        wrap.setAttribute("tabindex", "0");
+        if (tip) tip.style.display = "none";
+        if (!byId[id]) {
+          addCatalog({
+            id: id,
+            label: label || "Field",
+            report: txt(window.__activeReportId || ""),
+            ui_targets: [],
+            definition: "Auto-captured from report tooltip content.",
+            formula: raw.split("\n")[0] || raw,
+            ingredients: [],
+            business_validations: [],
+            field_linkages: [],
+            cross_report_linkages: [],
+            data_sources: [],
+            leadership_interpretation: raw
+          });
+        }
+      }
+    }
+  }
+  extractFromTooltips();
+  for (const item of Object.values(byId)) {
+    for (const selector of asArr(item.ui_targets)) {
+      try {
+        const nodes = Array.from(document.querySelectorAll(selector));
+        for (const node of nodes) {
+          const target = node.querySelector ? (node.querySelector(".label,.k,.score-label,h2,h3,h4,th") || node) : node;
+          ensureInfoButton(target, item.id, item.label);
+        }
+      } catch (_err) {}
+    }
+  }
+  const backdrop = document.getElementById("report-info-drawer-backdrop");
+  const drawer = document.getElementById("report-info-drawer");
+  const drawerBody = document.getElementById("report-info-drawer-body");
+  const closeBtn = document.getElementById("report-info-drawer-close");
+  let activeId = "";
+  let lastFocus = null;
+  function sectionHtml(title, contentHtml) {
+    return '<section class="report-info-section"><h4>' + esc(title) + '</h4>' + contentHtml + '</section>';
+  }
+  function render(item) {
+    if (!item) {
+      drawerBody.innerHTML = "<p>No information is configured for this field yet.</p>";
+      return;
+    }
+    drawerBody.innerHTML =
+      sectionHtml("Definition", "<p>" + esc(item.definition || "-") + "</p>") +
+      sectionHtml("Formula", "<p>" + esc(item.formula || "-") + "</p>") +
+      sectionHtml("Ingredients", listHtml(item.ingredients)) +
+      sectionHtml("Business Validations", listHtml(item.business_validations)) +
+      sectionHtml("Linked Fields (This Report)", listHtml(item.field_linkages)) +
+      sectionHtml("Cross-Report Linkages", listHtml(item.cross_report_linkages)) +
+      sectionHtml("Data Sources", listHtml(item.data_sources)) +
+      sectionHtml("Leadership Interpretation", "<p>" + esc(item.leadership_interpretation || "-") + "</p>");
+    const title = document.getElementById("report-info-drawer-title");
+    if (title) title.textContent = txt(item.label) || "Field Information";
+  }
+  function openDrawer(id) {
+    const item = byId[id];
+    activeId = id;
+    lastFocus = document.activeElement;
+    render(item);
+    backdrop.classList.add("is-open");
+    drawer.classList.add("is-open");
+    drawer.setAttribute("aria-hidden", "false");
+    document.body.classList.add("report-info-drawer-open");
+    if (closeBtn) closeBtn.focus();
+  }
+  function closeDrawer() {
+    activeId = "";
+    backdrop.classList.remove("is-open");
+    drawer.classList.remove("is-open");
+    drawer.setAttribute("aria-hidden", "true");
+    document.body.classList.remove("report-info-drawer-open");
+    if (lastFocus && lastFocus.focus) lastFocus.focus();
+  }
+  function triggerFromEvent(e) {
+    const el = e.target.closest("[data-info-id]");
+    if (!el) return;
+    const id = txt(el.getAttribute("data-info-id"));
+    if (!id) return;
+    e.preventDefault();
+    openDrawer(id);
+  }
+  document.addEventListener("click", triggerFromEvent);
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && activeId) {
+      e.preventDefault();
+      closeDrawer();
+      return;
+    }
+    const inInfo = e.target && e.target.closest && e.target.closest("[data-info-id]");
+    if (inInfo && (e.key === "Enter" || e.key === " ")) {
+      e.preventDefault();
+      openDrawer(txt(inInfo.getAttribute("data-info-id")));
+    }
+    if (!activeId || e.key !== "Tab") return;
+    const f = drawer.querySelectorAll("button,[href],[tabindex]:not([tabindex='-1'])");
+    const nodes = Array.from(f).filter((x) => !x.disabled);
+    if (!nodes.length) return;
+    const first = nodes[0];
+    const last = nodes[nodes.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  });
+  closeBtn.addEventListener("click", closeDrawer);
+  backdrop.addEventListener("click", closeDrawer);
+  window.reportInfoCatalog = Object.values(byId);
+})();
+</script>
+<!-- codex-info-drawer-end -->
+
+
+<!-- codex-refresh-widget-start -->
+<!-- codex-refresh-widget-v2 -->
+<style>
+#codex-refresh-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+#codex-refresh-btn {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  box-sizing: border-box;
+  border: 1px solid rgba(126, 214, 242, 0.65);
+  background: rgba(14, 116, 144, 0.58);
+  color: #fff;
+  border-radius: 9px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+}
+#codex-refresh-btn[disabled] {
+  cursor: not-allowed;
+  opacity: 0.8;
+}
+#codex-refresh-cancel-btn {
+  width: 100%;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  box-sizing: border-box;
+  border: 1px solid rgba(248, 113, 113, 0.75);
+  background: rgba(153, 27, 27, 0.55);
+  color: #fff;
+  border-radius: 9px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+#codex-refresh-cancel-btn[disabled] {
+  cursor: not-allowed;
+  opacity: 0.75;
+}
+#codex-refresh-btn .material-symbols-outlined {
+  font-size: 18px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.app-shell.sidebar-collapsed #codex-refresh-btn,
+.unified-nav.is-collapsed #codex-refresh-btn {
+  padding-left: 8px;
+  padding-right: 8px;
+  gap: 0;
+  justify-content: center;
+}
+.app-shell.sidebar-collapsed #codex-refresh-btn-label,
+.unified-nav.is-collapsed #codex-refresh-btn-label {
+  display: none;
+}
+.app-shell.sidebar-collapsed #codex-refresh-status,
+.unified-nav.is-collapsed #codex-refresh-status {
+  display: none;
+}
+#codex-refresh-status {
+  min-height: 14px;
+  font-size: 11px;
+  color: rgba(219, 246, 255, 0.9);
+  text-align: left;
+}
+</style>
+<div id="codex-refresh-wrap" aria-live="polite">
+  <button id="codex-refresh-btn" type="button">
+    <span class="material-symbols-outlined" aria-hidden="true">refresh</span>
+    <span id="codex-refresh-btn-label">Refresh</span>
+  </button>
+  <button id="codex-refresh-cancel-btn" type="button">Cancel Refresh Run</button>
+  <div id="codex-refresh-status"></div>
+</div>
+<script>
+(function () {
+  const reportId = 'planned_actual_table_view';
+  const endpointPath = "/api/report/refresh";
+  const isMissedEntries = reportId === "missed_entries";
+  const wrap = document.getElementById("codex-refresh-wrap");
+  const btn = document.getElementById("codex-refresh-btn");
+  const cancelBtn = document.getElementById("codex-refresh-cancel-btn");
+  const btnLabel = document.getElementById("codex-refresh-btn-label");
+  const status = document.getElementById("codex-refresh-status");
+  if (!wrap || !btn || !btnLabel || !status || !reportId) return;
+  let activeRunId = "";
+  let pollTimer = 0;
+
+  if (!isMissedEntries && cancelBtn) {
+    cancelBtn.style.display = "none";
+  } else if (cancelBtn) {
+    cancelBtn.style.display = "";
+    cancelBtn.disabled = true;
+  }
+
+  function mountRefreshInNav() {
+    const navTargets = [
+      ".app-sidebar .sidebar-nav",
+      ".unified-nav .unified-nav-list",
+      ".sidebar-nav",
+      ".unified-nav-list",
+    ];
+    for (const selector of navTargets) {
+      const target = document.querySelector(selector);
+      if (target) {
+        target.appendChild(wrap);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  if (!mountRefreshInNav()) {
+    const observer = new MutationObserver(function () {
+      if (mountRefreshInNav()) {
+        observer.disconnect();
+      }
+    });
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+    window.setTimeout(function () { observer.disconnect(); }, 5000);
+  }
+
+  function setBusy(isBusy) {
+    btn.disabled = !!isBusy;
+    btnLabel.textContent = isBusy ? "Refreshing..." : "Refresh";
+    if (isMissedEntries && cancelBtn) {
+      cancelBtn.disabled = !isBusy || !activeRunId;
+    }
+  }
+
+  function setStatus(msg) {
+    status.textContent = msg || "";
+  }
+
+  function endpointCandidates(path) {
+    const endpointSuffix = String(path || endpointPath);
+    if (window.location.protocol === "http:" || window.location.protocol === "https:") {
+      return [endpointSuffix];
+    }
+    const savedOrigin = String(localStorage.getItem("codex-report-server-origin") || "").trim();
+    const defaults = [
+      "http://127.0.0.1:8000",
+      "http://localhost:8000",
+      "http://127.0.0.1:5000",
+      "http://localhost:5000",
+    ];
+    const origins = [savedOrigin, ...defaults]
+      .map((item) => String(item || "").trim().replace(/\/$/, ""))
+      .filter(Boolean);
+    return Array.from(new Set(origins)).map((origin) => origin + endpointSuffix);
+  }
+
+  async function requestJson(path, options) {
+    const endpoints = endpointCandidates(path);
+    let lastError = "Failed to fetch";
+    for (const endpoint of endpoints) {
+      try {
+        const response = await fetch(endpoint, options || {});
+        if (endpoint.startsWith("http")) {
+          try {
+            localStorage.setItem("codex-report-server-origin", new URL(endpoint).origin);
+          } catch (_err) {}
+        }
+        const payload = await response.json().catch(() => ({}));
+        return { response, payload };
+      } catch (err) {
+        lastError = (err && err.message) ? err.message : String(err);
+      }
+    }
+    throw new Error(lastError);
+  }
+
+  function runStatusText(run) {
+    const item = run || {};
+    const state = String(item.status || "").toLowerCase();
+    const pct = Number(item.progress_pct || 0);
+    const step = String(item.progress_step || "");
+    if (state === "running") {
+      return `Refresh running${step ? ` (${step})` : ""}${pct > 0 ? ` - ${pct}%` : ""}`;
+    }
+    if (state === "cancel_requested") {
+      return "Cancel requested. Waiting for safe stop...";
+    }
+    if (state === "success") {
+      return "Refresh completed.";
+    }
+    if (state === "canceled") {
+      return String(item.error_message || "Refresh canceled. Previous snapshot retained.");
+    }
+    if (state === "failed") {
+      return String(item.error_message || "Refresh failed.");
+    }
+    return "";
+  }
+
+  function clearPolling() {
+    if (pollTimer) {
+      window.clearTimeout(pollTimer);
+      pollTimer = 0;
+    }
+  }
+
+  async function pollMissedEntriesRun(runId) {
+    const runIdText = String(runId || "").trim();
+    if (!runIdText) return;
+    activeRunId = runIdText;
+    setBusy(true);
+    clearPolling();
+    const tick = async function () {
+      try {
+        const result = await requestJson(`/api/missed-entries/refresh/${encodeURIComponent(runIdText)}`, {
+          method: "GET",
+          headers: { "Accept": "application/json" },
+        });
+        const payload = result.payload || {};
+        const run = payload.run || {};
+        const state = String(run.status || "").toLowerCase();
+        setStatus(runStatusText(run));
+        if (state === "running" || state === "cancel_requested") {
+          setBusy(true);
+          pollTimer = window.setTimeout(tick, 1200);
+          return;
+        }
+        clearPolling();
+        activeRunId = "";
+        setBusy(false);
+        if (state === "success") {
+          window.location.reload();
+        }
+      } catch (err) {
+        clearPolling();
+        activeRunId = "";
+        setBusy(false);
+        const msg = (err && err.message) ? err.message : String(err);
+        setStatus(msg || "Failed to poll refresh status.");
+      }
+    };
+    tick();
+  }
+
+  btn.addEventListener("click", async function () {
+    setBusy(true);
+    setStatus("Running scripts...");
+    try {
+      if (!isMissedEntries) {
+        const result = await requestJson(endpointPath, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ report: reportId }),
+        });
+        const response = result.response;
+        const payload = result.payload || {};
+        if (!response.ok || !payload.ok) {
+          const msg = payload.error || "Refresh failed.";
+          setStatus(msg);
+          alert(msg);
+          return;
+        }
+        const ts = payload.completed_at || "";
+        setStatus(ts ? ("Updated: " + ts) : "Updated.");
+        window.location.reload();
+        return;
+      }
+
+      const result = await requestJson("/api/missed-entries/refresh", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const response = result.response;
+      const payload = result.payload || {};
+      if (!response.ok || !payload.ok) {
+        const msg = payload.error || "Refresh failed.";
+        setStatus(msg);
+        alert(msg);
+        return;
+      }
+      const run = payload.run || {};
+      const runId = String(payload.run_id || run.run_id || "").trim();
+      if (!runId) {
+        setBusy(false);
+        setStatus("Refresh started but no run ID was returned.");
+        return;
+      }
+      setStatus(runStatusText(run) || "Refresh started.");
+      await pollMissedEntriesRun(runId);
+    } catch (err) {
+      const base = (err && err.message) ? err.message : String(err);
+      const hint = "If report is opened from file path, use server URL like http://127.0.0.1:8000/dashboard.html";
+      const msg = base ? (base + ". " + hint) : hint;
+      setStatus(msg);
+      alert(msg);
+    } finally {
+      if (!isMissedEntries) {
+        setBusy(false);
+      }
+    }
+  });
+
+  if (isMissedEntries && cancelBtn) {
+    cancelBtn.addEventListener("click", async function () {
+      if (!activeRunId) return;
+      cancelBtn.disabled = true;
+      try {
+        const result = await requestJson("/api/missed-entries/cancel", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ run_id: activeRunId }),
+        });
+        const response = result.response;
+        const payload = result.payload || {};
+        if (!response.ok || !payload.ok) {
+          const msg = payload.error || "Cancel failed.";
+          setStatus(msg);
+          alert(msg);
+          cancelBtn.disabled = false;
+          return;
+        }
+        setStatus(String(payload.message || "Cancel requested. Waiting for safe stop..."));
+      } catch (err) {
+        const msg = (err && err.message) ? err.message : String(err);
+        setStatus(msg || "Cancel failed.");
+        cancelBtn.disabled = false;
+      }
+    });
+
+    (async function attachCurrentRun() {
+      try {
+        const result = await requestJson("/api/missed-entries/refresh/current", {
+          method: "GET",
+          headers: { "Accept": "application/json" },
+        });
+        const payload = result.payload || {};
+        const run = payload.run || null;
+        if (!run) return;
+        const state = String(run.status || "").toLowerCase();
+        if (state === "running" || state === "cancel_requested") {
+          setStatus(runStatusText(run));
+          await pollMissedEntriesRun(String(run.run_id || ""));
+        } else if (state) {
+          setStatus(runStatusText(run));
+        }
+      } catch (_err) {
+        // Best effort only.
+      }
+    })();
+  }
+})();
+</script>
+<!-- codex-refresh-widget-end -->
+
+</body>
+</html>

@@ -1,0 +1,3938 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Approved vs Planned Hours Report</title>
+  <link rel="stylesheet" href="/shared-nav.css">
+  <style>
+    :root { --bg:#f3f6fb; --card:#fff; --line:#d7e0ea; --text:#1f2937; --muted:#64748b; --brand:#0f4c5c; --planned:#6495ed; --dispensed:#eab308; }
+    * { box-sizing:border-box; }
+    body { margin:0; font-family:"Segoe UI", Tahoma, sans-serif; color:var(--text); background:linear-gradient(180deg,#f7fbff,var(--bg)); }
+    .page { max-width:1500px; margin:0 auto; padding:16px; display:grid; gap:12px; }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px; }
+    .header-card { display:grid; gap:12px; }
+    .header-head { min-width:0; }
+    .header-scorecards {
+      display:grid;
+      grid-template-columns:repeat(3,minmax(0,1fr));
+      gap:12px;
+      align-items:stretch;
+    }
+    .title { margin:0; font-size:1.24rem; color:#0b3142; }
+    .meta { margin:6px 0 0; font-size:.84rem; color:var(--muted); }
+    .scorecard {
+      border:1px solid #d9e4ef;
+      border-radius:10px;
+      background:#f8fbff;
+      min-width:0;
+      padding:8px 10px;
+      display:grid;
+      gap:2px;
+    }
+    .scorecard-k {
+      font-size:.72rem;
+      text-transform:uppercase;
+      letter-spacing:.03em;
+      color:#35556a;
+      font-weight:800;
+    }
+    .scorecard-v {
+      font-size:1.15rem;
+      font-weight:900;
+      color:#0f172a;
+      line-height:1.1;
+    }
+    .scorecard-s {
+      font-size:.72rem;
+      color:#64748b;
+    }
+    @media (max-width: 1100px) {
+      .header-scorecards { grid-template-columns:repeat(2,minmax(0,1fr)); }
+    }
+    @media (max-width: 700px) {
+      .header-scorecards { grid-template-columns:1fr; }
+    }
+    .top-date-range-wrap {
+      position: sticky;
+      top: 0;
+      z-index: 1200;
+      width: 100%;
+      background: linear-gradient(180deg, rgba(247,251,255,.98), rgba(247,251,255,.94));
+      border-bottom: 1px solid #d5e3f0;
+      backdrop-filter: blur(4px);
+      padding: 10px 14px;
+    }
+    .top-date-range-chip {
+      max-width: 1500px;
+      margin: 0 auto;
+      border: 1px solid #d5e3f0;
+      border-radius: 12px;
+      background: #f8fbff;
+      padding: 8px 10px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+    }
+    .date-chip-segment {
+      font-size: .75rem;
+      font-weight: 800;
+      color: #334155;
+      text-transform: uppercase;
+      letter-spacing: .03em;
+      padding: 0 2px;
+    }
+    .date-chip-input {
+      border: 1px solid #b7c9d7;
+      border-radius: 8px;
+      padding: 7px 9px;
+      background: #fff;
+      color: #12313f;
+      font-size: .86rem;
+      min-width: 160px;
+    }
+    .date-chip-input:focus {
+      outline: 2px solid #bfdbfe;
+      outline-offset: 1px;
+    }
+    .date-chip-apply {
+      border: 1px solid #255f73;
+      border-radius: 8px;
+      background: #0f4c5c;
+      color: #fff;
+      font-size: .84rem;
+      font-weight: 700;
+      padding: 8px 12px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      position: relative;
+      overflow: hidden;
+    }
+    .date-chip-apply:hover { background: #0d4452; }
+    .date-chip-apply:disabled { opacity: .92; cursor: progress; }
+    .date-chip-apply-progress {
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 0%;
+      background: rgba(255,255,255,.22);
+      transition: width .22s ease;
+      pointer-events: none;
+    }
+    .date-chip-apply-content {
+      position: relative;
+      z-index: 1;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .date-chip-reset {
+      border: 1px solid #b7c9d7;
+      border-radius: 8px;
+      background: #fff;
+      color: #35556a;
+      font-size: .84rem;
+      font-weight: 700;
+      padding: 8px 10px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .date-chip-reset:hover { background: #f8fafc; }
+    .date-chip-fetch {
+      border: 1px solid #0f766e;
+      border-radius: 8px;
+      background: #ecfeff;
+      color: #0f766e;
+      font-size: .84rem;
+      font-weight: 700;
+      padding: 8px 10px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .date-chip-fetch:hover { background: #cffafe; }
+    .date-chip-fetch:disabled { opacity: .7; cursor: progress; }
+    .adv-filter-wrap { position: relative; display: inline-flex; }
+    .adv-filter-btn {
+      border: 1px solid #255f73;
+      border-radius: 8px;
+      background: #fff;
+      color: #255f73;
+      font-size: .84rem;
+      font-weight: 700;
+      padding: 8px 10px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .adv-filter-menu {
+      position: absolute;
+      top: calc(100% + 6px);
+      right: 0;
+      width: min(680px, 92vw);
+      max-height: 70vh;
+      overflow: auto;
+      scrollbar-gutter: stable;
+      border: 1px solid #c7d7e6;
+      border-radius: 10px;
+      background: #ffffff;
+      box-shadow: 0 10px 28px rgba(15, 23, 42, .16);
+      padding: 10px;
+      display: grid;
+      gap: 8px;
+    }
+    .adv-filter-menu[hidden] { display: none !important; }
+    .adv-filter-group-label {
+      font-size: .72rem;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      font-weight: 800;
+      color: #475569;
+      margin-top: 2px;
+    }
+    .adv-preset-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit,minmax(130px,1fr));
+      gap: 6px;
+    }
+    .adv-filter-item {
+      border: 1px solid #d2dfed;
+      border-radius: 8px;
+      background: #f8fbff;
+      color: #1e3a52;
+      font-size: .8rem;
+      padding: 7px 8px;
+      text-align: left;
+      cursor: pointer;
+    }
+    .adv-filter-item:hover { background: #edf5ff; border-color: #bfd5ee; }
+    .adv-filter-divider { height: 1px; background: #e2eaf3; margin: 2px 0; }
+    .adv-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; align-items:start; }
+    @media (max-width: 860px) {
+      .adv-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+    }
+    @media (max-width: 560px) {
+      .adv-grid { grid-template-columns:1fr; }
+    }
+    .ctl { display:grid; gap:4px; min-width:160px; }
+    .ctl label { font-size:.7rem; text-transform:uppercase; letter-spacing:.04em; font-weight:700; color:#33556a; }
+    .ctl input, .ctl select { border:1px solid #b7c9d7; border-radius:8px; padding:7px 9px; background:#fff; color:#12313f; font-size:.86rem; }
+    .date-chip-status { font-size: .78rem; color: #475569; }
+    .ctl select[multiple] { min-height:100px; }
+    .projects-multiselect { position:relative; }
+    .projects-trigger {
+      width:100%;
+      border:1px solid #1f6f8b;
+      border-radius:10px;
+      background:#ffffff;
+      color:#12313f;
+      font-size:.86rem;
+      padding:8px 10px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:8px;
+      cursor:pointer;
+    }
+    .projects-trigger-label {
+      min-width:0;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      white-space:nowrap;
+      text-align:left;
+    }
+    .projects-trigger .material-icons-outlined {
+      font-size:1rem;
+      line-height:1;
+      color:#35556a;
+    }
+    .projects-menu {
+      position:absolute;
+      top:calc(100% + 6px);
+      left:0;
+      right:0;
+      border:1px solid #c7d7e6;
+      border-radius:10px;
+      background:#fff;
+      box-shadow:0 10px 28px rgba(15,23,42,.16);
+      padding:8px;
+      z-index:60;
+      display:grid;
+      gap:8px;
+    }
+    .projects-menu[hidden] { display:none !important; }
+    .projects-menu-actions { display:flex; gap:8px; flex-wrap:wrap; }
+    .projects-menu-btn {
+      border:1px solid #cbd5e1;
+      background:#f3f4f6;
+      color:#334155;
+      border-radius:8px;
+      font-size:.78rem;
+      padding:5px 10px;
+      cursor:pointer;
+    }
+    .projects-options {
+      border:1px solid #dbe3ec;
+      border-radius:8px;
+      background:#f8fafc;
+      max-height:180px;
+      overflow:auto;
+      padding:6px;
+      display:grid;
+      gap:4px;
+    }
+    .projects-option {
+      display:flex;
+      align-items:center;
+      gap:8px;
+      font-size:.82rem;
+      color:#1f2937;
+      padding:3px 2px;
+    }
+    .projects-option input[type="checkbox"] {
+      accent-color:#16a34a;
+      width:14px;
+      height:14px;
+      margin:0;
+    }
+    .chart-shell { display:grid; gap:8px; }
+    .chart-toggle-row { display:flex; align-items:center; justify-content:flex-end; }
+    .chart-toggle {
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+      border:1px solid #d4e0ec;
+      border-radius:999px;
+      background:#f8fafc;
+      padding:4px 10px;
+      font-size:.74rem;
+      font-weight:700;
+      color:#334155;
+      user-select:none;
+    }
+    .chart-toggle input[type="checkbox"] {
+      accent-color:#2563eb;
+      width:14px;
+      height:14px;
+      margin:0;
+    }
+    .legend { display:flex; gap:8px; flex-wrap:wrap; font-size:.78rem; color:#334155; }
+    .pill { display:inline-flex; align-items:center; gap:6px; border:1px solid #d4e0ec; border-radius:999px; background:#f8fafc; padding:3px 9px; }
+    .dot { width:10px; height:10px; border-radius:999px; display:inline-block; }
+    .dot.planned { background:var(--planned); }
+    .dot.dispensed { background:var(--dispensed); }
+    .stack-legend { display:flex; gap:8px; flex-wrap:wrap; font-size:.74rem; color:#334155; margin-top:2px; }
+    .stack-pill { display:inline-flex; align-items:center; gap:6px; border:1px solid #d7e2ee; border-radius:999px; background:#f8fafc; padding:3px 8px; }
+    .stack-dot { width:10px; height:10px; border-radius:999px; display:inline-block; }
+    .bars { display:grid; gap:10px; min-height:280px; }
+    .group { border:1px solid #dce6f0; border-radius:10px; background:#f9fcff; padding:10px; display:grid; gap:8px; position:relative; }
+    .project { font-size:.82rem; font-weight:800; color:#1e3a52; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .epic-head { display:flex; align-items:center; gap:8px; min-width:0; padding-right:28px; }
+    .epic-status-badge { display:inline-flex; align-items:center; border:1px solid #cbd5e1; border-radius:999px; background:#f8fafc; color:#334155; font-size:.66rem; font-weight:800; padding:1px 7px; white-space:nowrap; text-transform:uppercase; }
+    .drill-filter-row { display:grid; grid-template-columns:minmax(180px,1.3fr) minmax(160px,.9fr) minmax(160px,.9fr) auto; gap:8px; align-items:end; margin-top:2px; }
+    .drill-filter label { display:block; font-size:.68rem; font-weight:700; color:#64748b; margin-bottom:3px; text-transform:uppercase; letter-spacing:.03em; }
+    .drill-filter input, .drill-filter select { width:100%; border:1px solid #cbd5e1; border-radius:8px; background:#ffffff; color:#0f172a; padding:6px 8px; font-size:.74rem; }
+    .drill-filter-count { font-size:.72rem; font-weight:700; color:#475569; justify-self:end; padding-bottom:4px; }
+    .epic-open-link {
+      position:absolute;
+      right:10px;
+      top:10px;
+      width:24px;
+      height:24px;
+      border:1px solid #bfdbfe;
+      border-radius:7px;
+      background:#eff6ff;
+      color:#1d4ed8;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      text-decoration:none;
+      z-index:2;
+    }
+    .epic-open-link .material-icons-outlined { font-size:16px; line-height:1; }
+    .epic-open-link:hover { background:#dbeafe; border-color:#93c5fd; }
+    .compare-layout {
+      display:grid;
+      grid-template-columns:1fr;
+      grid-template-rows:auto auto;
+      gap:10px;
+      align-items:start;
+    }
+    .pre-bar-metrics {
+      display:grid;
+      grid-template-columns:repeat(4, minmax(120px,1fr));
+      border:1px solid #d4e1ee;
+      border-radius:8px;
+      background:#ffffff;
+      overflow:hidden;
+    }
+    .compare-rows { display:grid; gap:8px; }
+    .compare-row { display:grid; grid-template-columns:minmax(180px,220px) 1fr; align-items:center; gap:10px; }
+    .compare-label { font-size:.76rem; font-weight:700; color:#334155; line-height:1.3; }
+    .compare-label-mode { display:block; font-size:.68rem; font-weight:600; color:#64748b; margin-top:2px; }
+    .epic-mini-table-wrap {
+      border:1px solid #d4e1ee;
+      border-radius:8px;
+      background:#ffffff;
+      overflow-x:auto;
+    }
+    .epic-mini-table {
+      width:100%;
+      border-collapse:collapse;
+      min-width:620px;
+    }
+    .epic-mini-table th,
+    .epic-mini-table td {
+      border-right:1px solid #d4e1ee;
+      border-bottom:1px solid #d4e1ee;
+      padding:5px 8px;
+      text-align:left;
+      line-height:1.2;
+    }
+    .epic-mini-table th:last-child,
+    .epic-mini-table td:last-child { border-right:none; }
+    .epic-mini-table tbody tr:last-child td { border-bottom:none; }
+    .epic-mini-table th {
+      font-size:.62rem;
+      font-weight:700;
+      color:#64748b;
+      text-transform:uppercase;
+      letter-spacing:.03em;
+      background:#f8fbff;
+      white-space:nowrap;
+    }
+    .epic-mini-table td {
+      font-size:.76rem;
+      font-weight:800;
+      color:#0f172a;
+      white-space:nowrap;
+    }
+    .pre-bar-col {
+      padding:4px 8px;
+      min-height:32px;
+      display:grid;
+      align-content:center;
+      gap:2px;
+      border-right:1px solid #d4e1ee;
+    }
+    .pre-bar-col:last-child { border-right:none; }
+    .pre-bar-k {
+      font-size:.62rem;
+      font-weight:700;
+      color:#64748b;
+      text-transform:uppercase;
+      letter-spacing:.03em;
+      line-height:1.1;
+    }
+    .pre-bar-v {
+      font-size:.76rem;
+      font-weight:800;
+      color:#0f172a;
+      line-height:1.1;
+    }
+    .hbar {
+      width:100%;
+      border:1px solid #d1dbe7;
+      border-radius:999px;
+      background:#eef2f7;
+      height:28px;
+      padding:0;
+      cursor:pointer;
+      position:relative;
+      display:flex;
+      overflow:hidden;
+    }
+    .hbar:hover { filter:brightness(.98); }
+    .hbar-fill.planned { background:linear-gradient(90deg,#9bbaf3,var(--planned)); }
+    .hbar-seg { height:100%; display:block; }
+    .hbar-seg {
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      position:relative;
+      overflow:visible;
+      white-space:nowrap;
+    }
+    .hbar-seg-label {
+      font-size:.68rem;
+      font-weight:800;
+      color:#0f172a;
+      text-shadow:0 1px 0 rgba(255,255,255,.45);
+      padding:0 4px;
+      pointer-events:none;
+      line-height:1;
+    }
+    .hbar-value {
+      position:absolute;
+      right:10px;
+      top:50%;
+      transform:translateY(-50%);
+      font-size:.73rem;
+      font-weight:800;
+      color:#0f172a;
+      text-shadow:0 1px 0 rgba(255,255,255,.45);
+      pointer-events:none;
+    }
+    @media (max-width: 700px) {
+      .pre-bar-metrics { grid-template-columns:1fr; }
+      .compare-row { grid-template-columns:1fr; gap:6px; }
+      .compare-label-mode { display:inline; margin-left:6px; }
+      .drill-filter-row { grid-template-columns:1fr; }
+      .drill-filter-count { justify-self:start; padding-bottom:0; }
+    }
+    .empty { color:#64748b; font-style:italic; font-size:.9rem; }
+    .subhead { font-size:.9rem; color:#0f172a; margin:0 0 8px; }
+    .totals { display:flex; gap:8px; flex-wrap:wrap; margin:0 0 8px; }
+    .metric { border:1px solid #d9e4ef; border-radius:8px; background:#f8fbff; padding:6px 9px; font-size:.78rem; }
+    .table-search-row { display:flex; align-items:center; gap:8px; margin:0 0 8px; flex-wrap:wrap; }
+    .table-search-label { font-size:.74rem; font-weight:700; color:#35556a; text-transform:uppercase; letter-spacing:.03em; }
+    .table-search-input {
+      min-width:260px;
+      max-width:420px;
+      width:100%;
+      border:1px solid #b7c9d7;
+      border-radius:8px;
+      padding:7px 9px;
+      background:#fff;
+      color:#12313f;
+      font-size:.84rem;
+    }
+    .table-search-count { font-size:.76rem; color:#475569; }
+    .tbl-wrap { overflow:auto; margin:8px; border:1px solid #e2eaf3; border-radius:8px; }
+    table { width:100%; border-collapse:collapse; font-size:.78rem; }
+    th, td { border-bottom:1px solid #e8eef5; padding:7px 8px; text-align:left; vertical-align:top; }
+    th { position:sticky; top:0; background:#f3f8fd; text-transform:uppercase; letter-spacing:.03em; font-size:.68rem; color:#35556a; }
+    .tbl-wrap table th:nth-child(2),
+    .tbl-wrap table td:nth-child(2),
+    .tbl-wrap table th:nth-child(3),
+    .tbl-wrap table td:nth-child(3) {
+      background:#f3f4f6;
+    }
+    .tbl-wrap table th:nth-child(4),
+    .tbl-wrap table td:nth-child(4),
+    .tbl-wrap table th:nth-child(5),
+    .tbl-wrap table td:nth-child(5),
+    .tbl-wrap table th:nth-child(6),
+    .tbl-wrap table td:nth-child(6) {
+      background:#fffbeb;
+    }
+    .tbl-wrap table th:nth-child(1), .tbl-wrap table td:nth-child(1) { width: var(--pvd-item-col-width, 420px); min-width: 290px; max-width: 900px; }
+    th.item-col { position:sticky; top:0; z-index:2; }
+    .item-col-head { position:relative; display:flex; align-items:center; justify-content:space-between; padding-right:8px; }
+    .col-resize-handle {
+      position:absolute;
+      right:-8px;
+      top:-7px;
+      bottom:-7px;
+      width:14px;
+      cursor:col-resize;
+      touch-action:none;
+    }
+    .col-resize-handle::before {
+      content:"";
+      position:absolute;
+      top:6px;
+      bottom:6px;
+      left:6px;
+      width:2px;
+      background:#94a3b8;
+      border-radius:999px;
+      opacity:.7;
+    }
+    .col-resize-handle:hover::before { opacity:1; background:#64748b; }
+    body.pvd-col-resizing { user-select:none; cursor:col-resize; }
+    tr.summary { background:#fbfdff; font-weight:700; }
+    tr.hierarchy-row.depth-0 { background:#fdf7ff; }
+    tr.hierarchy-row.depth-0 td { border-top:3px solid #7c3aed; }
+    tr.hierarchy-row.depth-1 { background:#f8fbff; }
+    tr.hierarchy-row.depth-2 { background:#ffffff; }
+    .row-item { display:flex; align-items:flex-start; gap:6px; min-width:0; }
+    .row-item.depth-0 { padding-left:0; }
+    .row-item.depth-1 { padding-left:18px; }
+    .row-item.depth-2 { padding-left:36px; }
+    .row-toggle {
+      border:1px solid #c7d2fe;
+      border-radius:6px;
+      width:22px;
+      height:22px;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      background:#eef2ff;
+      color:#3730a3;
+      cursor:pointer;
+      padding:0;
+      margin-top:2px;
+      flex:0 0 auto;
+    }
+    .row-toggle:hover { background:#e0e7ff; }
+    .row-toggle .material-icons-outlined {
+      font-size:1rem;
+      line-height:1;
+      transition:transform .16s ease;
+      transform:rotate(0deg);
+    }
+    .row-toggle[aria-expanded="true"] .material-icons-outlined { transform:rotate(90deg); }
+    .row-toggle-spacer {
+      width:22px;
+      height:22px;
+      display:inline-flex;
+      flex:0 0 auto;
+    }
+    .item-meta {
+      display:inline-flex;
+      gap:8px;
+      align-items:center;
+      flex-wrap:wrap;
+      color:#4c1d95;
+      font-weight:700;
+    }
+    .alert-cell {
+      background:#fff1f2 !important;
+      color:#b91c1c;
+      border-color:#fecdd3;
+      font-weight:800;
+    }
+    .benchmark-alert {
+      color:#b91c1c;
+      font-weight:800;
+    }
+    .missing-entry {
+      color:#b91c1c;
+      font-weight:800;
+    }
+    .epic-problem-note {
+      display:inline-flex;
+      align-items:center;
+      gap:4px;
+      padding:2px 7px;
+      border-radius:999px;
+      border:1px solid #fca5a5;
+      background:#fee2e2;
+      color:#b91c1c;
+      font-size:.72rem;
+      font-weight:800;
+      vertical-align:middle;
+    }
+    .epic-problem-note .material-icons-outlined {
+      font-size:.9rem;
+      line-height:1;
+    }
+    .name { display:flex; gap:6px; align-items:flex-start; }
+    .item-cell-td { position:relative; padding-right:180px; padding-bottom:30px; }
+    .item-cell-td.has-plan-mismatch { padding-bottom:78px; }
+    .item-cell-td .epic-problem-note {
+      position:absolute;
+      right:8px;
+      bottom:6px;
+      margin:0;
+    }
+    .item-cell-td .jira-link-icon,
+    .item-cell-td .jira-link-disabled {
+      position:absolute;
+      right:8px;
+      top:6px;
+      margin:0;
+    }
+    .item-cell { display:flex; flex-direction:column; gap:2px; min-width:0; }
+    .item-title-row { display:flex; align-items:center; gap:6px; min-width:0; }
+    .item-title-text { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .item-assignee {
+      position:absolute;
+      right:8px;
+      bottom:6px;
+      font-size:.7rem;
+      color:#1d4ed8;
+      border:1px solid #bfdbfe;
+      border-radius:999px;
+      padding:1px 6px;
+      background:#eff6ff;
+      white-space:nowrap;
+      max-width:170px;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+    .item-cell-td.has-plan-mismatch .item-assignee { bottom:30px; }
+    .jira-link-icon {
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      width:20px;
+      height:20px;
+      border:1px solid #bfdbfe;
+      border-radius:6px;
+      color:#1d4ed8;
+      background:#eff6ff;
+      text-decoration:none;
+      flex:0 0 auto;
+    }
+    .jira-link-icon .material-icons-outlined { font-size:14px; line-height:1; }
+    .jira-link-icon:hover { background:#dbeafe; border-color:#93c5fd; }
+    .jira-link-disabled {
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      width:20px;
+      height:20px;
+      border:1px solid #cbd5e1;
+      border-radius:6px;
+      color:#94a3b8;
+      background:#f1f5f9;
+      flex:0 0 auto;
+    }
+    .assignee { font-size:.7rem; color:#1d4ed8; border:1px solid #bfdbfe; border-radius:999px; padding:1px 6px; background:#eff6ff; white-space:nowrap; }
+    .right { text-align:right; font-variant-numeric:tabular-nums; }
+    .type-legend { display:flex; gap:8px; flex-wrap:wrap; margin:0 0 8px; }
+    .issue-type-pill {
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      min-width:30px;
+      padding:2px 7px;
+      border:1px solid #d0def0;
+      border-radius:999px;
+      background:#f8fbff;
+    }
+    .issue-type-pill .material-icons-outlined { font-size:16px; line-height:1; }
+    .issue-type-pill.issue-epic .material-icons-outlined { color:#a855f7; }
+    .issue-type-pill.issue-story .material-icons-outlined { color:#2563eb; }
+    .issue-type-pill.issue-subtask .material-icons-outlined { color:#16a34a; }
+    .issue-type-pill.issue-bug-subtask .material-icons-outlined { color:#dc2626; }
+    .drawer-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, .45);
+      z-index: 1800;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity .18s ease, visibility .18s ease;
+    }
+    .drawer-overlay.is-open {
+      opacity: 1;
+      visibility: visible;
+    }
+    .story-drawer {
+      position: fixed;
+      top: 0;
+      right: 0;
+      width: min(880px, 96vw);
+      height: 100vh;
+      background: #ffffff;
+      border-left: 1px solid #dbe6f1;
+      box-shadow: -14px 0 30px rgba(15, 23, 42, .2);
+      z-index: 1801;
+      transform: translateX(102%);
+      transition: transform .2s ease;
+      display: grid;
+      grid-template-rows: auto 1fr;
+    }
+    .story-drawer.is-open { transform: translateX(0); }
+    .story-drawer-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 12px 14px;
+      border-bottom: 1px solid #e2e8f0;
+      background: linear-gradient(180deg,#f8fbff,#f1f5f9);
+    }
+    .story-drawer-title {
+      margin: 0;
+      font-size: .94rem;
+      color: #0f172a;
+      font-weight: 800;
+    }
+    .story-drawer-meta {
+      font-size: .78rem;
+      color: #64748b;
+      margin-top: 2px;
+    }
+    .story-drawer-close {
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      background: #fff;
+      color: #334155;
+      font-size: .82rem;
+      font-weight: 700;
+      padding: 6px 10px;
+      cursor: pointer;
+    }
+    .story-drawer-close:hover { background: #f8fafc; }
+    .story-drawer-body {
+      overflow: auto;
+      padding: 10px 12px 14px;
+      background: #f8fbff;
+    }
+    body.story-drawer-open { overflow: hidden; }
+  </style>
+</head>
+<body>
+  <div class="top-date-range-wrap">
+    <div class="top-date-range-chip" aria-label="Date range filter">
+      <span class="date-chip-segment">From</span>
+      <input id="date-filter-from" class="date-chip-input" type="date" aria-label="From date">
+      <span class="date-chip-segment">To</span>
+      <input id="date-filter-to" class="date-chip-input" type="date" aria-label="To date">
+      <button id="date-filter-apply" class="date-chip-apply" type="button" aria-label="Apply date range">
+        <span class="date-chip-apply-progress" aria-hidden="true"></span>
+        <span class="date-chip-apply-content">
+          <span class="material-icons-outlined" aria-hidden="true">check_circle</span>
+          <span class="date-chip-apply-label">Apply</span>
+        </span>
+      </button>
+      <button id="date-filter-reset" class="date-chip-reset" type="button" aria-label="Reset date range" title="Reset">
+        <span class="material-icons-outlined" aria-hidden="true">restart_alt</span>
+      </button>
+      <button id="date-filter-fetch" class="date-chip-fetch" type="button" aria-label="Fetch latest data">
+        <span class="material-icons-outlined" aria-hidden="true">sync</span>
+        <span>Fetch</span>
+      </button>
+      <div class="adv-filter-wrap">
+        <button id="adv-filter-toggle" class="adv-filter-btn" type="button" aria-expanded="false" aria-haspopup="true" aria-label="Advanced Filters">
+          <span class="material-icons-outlined" aria-hidden="true">tune</span>
+          <span>Advanced Filters</span>
+        </button>
+        <div class="adv-filter-menu" id="adv-filter-menu" role="menu" hidden>
+          <div class="adv-filter-group-label">Date Presets</div>
+          <div class="adv-preset-grid">
+            <button class="adv-filter-item" type="button" data-preset="last30" role="menuitem">Last 30 Days</button>
+            <button class="adv-filter-item" type="button" data-preset="lastMonth" role="menuitem">Last Month</button>
+            <button class="adv-filter-item" type="button" data-preset="currentMonth" role="menuitem">Current Month</button>
+            <button class="adv-filter-item" type="button" data-preset="last90" role="menuitem">Last 90 Days</button>
+            <button class="adv-filter-item" type="button" data-preset="lastQuarter" role="menuitem">Last Quarter</button>
+            <button class="adv-filter-item" type="button" data-preset="currentQuarter" role="menuitem">Current Quarter</button>
+          </div>
+          <div class="adv-filter-divider"></div>
+          <div class="adv-filter-group-label">Filters</div>
+          <div class="adv-grid">
+            <div class="ctl">
+              <label for="planned-hours-source">Planned Hours Source</label>
+              <select id="planned-hours-source">
+                <option value="subtask_estimates">Subtask Estimates</option>
+                <option value="subtask_logs">Subtask Logs</option>
+                <option value="epic_estimates">Epic Estimates</option>
+              </select>
+            </div>
+            <div class="ctl">
+              <label for="plan-source">Leadership Approved Hours Source</label>
+              <select id="plan-source">
+                <option value="jira_estimates">Jira Estimates</option>
+                <option value="epic_planner">Epics Planner</option>
+              </select>
+            </div>
+            <div class="ctl">
+              <label for="projects-trigger">Projects</label>
+              <div class="projects-multiselect">
+                <button id="projects-trigger" class="projects-trigger" type="button" aria-haspopup="true" aria-expanded="false">
+                  <span id="projects-trigger-label" class="projects-trigger-label">Projects: All</span>
+                  <span class="material-icons-outlined" aria-hidden="true">expand_more</span>
+                </button>
+                <div id="projects-menu" class="projects-menu" hidden>
+                  <div class="projects-menu-actions">
+                    <button id="projects-select-all" class="projects-menu-btn" type="button">Select all</button>
+                    <button id="projects-clear-all" class="projects-menu-btn" type="button">Clear all</button>
+                  </div>
+                  <div id="projects-options" class="projects-options" role="group" aria-label="Projects options"></div>
+                </div>
+                <select id="projects" multiple hidden aria-hidden="true"></select>
+              </div>
+            </div>
+            <div class="ctl"><label for="statuses">Statuses</label><select id="statuses" multiple></select></div>
+            <div class="ctl"><label for="assignees">Assignees</label><select id="assignees" multiple></select></div>
+          </div>
+        </div>
+      </div>
+      <select id="actual-hours-mode" style="display:none" aria-hidden="true">
+        <option value="log_date">By Log Date</option>
+        <option value="planned_dates">By Planned Date</option>
+      </select>
+      <span id="date-filter-status" class="date-chip-status" aria-live="polite"></span>
+    </div>
+  </div>
+
+  <div class="page">
+    <section class="card header-card">
+      <div class="header-head">
+        <h1 class="title">Approved vs Planned Hours Report</h1>
+        <p class="meta">Approved epic estimates compared with time-based planned subtask estimate breakdown.</p>
+      </div>
+      <div class="header-scorecards">
+        <div class="scorecard">
+          <div class="scorecard-k">Total Approved Hours</div>
+          <div id="pvd-total-approved-hours" class="scorecard-v">0.00h</div>
+          <div class="scorecard-s">Sum of approved epic estimates across selected projects</div>
+        </div>
+        <div class="scorecard">
+          <div class="scorecard-k">TOTAL PLANNED HOURS</div>
+          <div id="pvd-total-planned-hours-all" class="scorecard-v">0.00h</div>
+          <div class="scorecard-s">Sum of planned subtask estimates regardless of selected date range</div>
+        </div>
+        <div class="scorecard">
+          <div class="scorecard-k">PLANNED HOURS IN RANGE</div>
+          <div id="pvd-total-planned-hours" class="scorecard-v">0.00h</div>
+          <div class="scorecard-s">Sum of planned subtask estimates in selected date range</div>
+        </div>
+      </div>
+    </section>
+    <section class="card chart-shell">
+      <h2 class="subhead">Comparison Bar Chart</h2>
+      <div class="chart-toggle-row">
+        <label class="chart-toggle" for="pvd-comparative-bars">
+          <input id="pvd-comparative-bars" type="checkbox">
+          <span>Comparitive Bars</span>
+        </label>
+      </div>
+      <div class="legend">
+        <span class="pill"><span class="dot planned"></span> Leadership Approved Hours (Epic Original Estimates)</span>
+        <span class="pill"><span class="dot dispensed"></span> Planned Hours (Subtask Original Estimates)</span>
+      </div>
+      <div id="pvd-stack-legend" class="stack-legend"></div>
+      <div id="pvd-missing-plan" class="empty" style="display:none;margin:8px 0 0;"></div>
+      <div id="pvd-comparison-chart" class="bars"><div class="empty">Apply filters to load chart.</div></div>
+    </section>
+
+    <section class="card">
+      <h2 class="subhead">Project Drill-down</h2>
+      <div id="pvd-detail-root"><div class="empty">Click any bar in the chart to load project hierarchy details.</div></div>
+    </section>
+  </div>
+  <div id="story-drawer-overlay" class="drawer-overlay" aria-hidden="true"></div>
+  <aside id="story-drawer" class="story-drawer" role="dialog" aria-modal="true" aria-labelledby="story-drawer-title" aria-hidden="true">
+    <div class="story-drawer-head">
+      <div>
+        <h3 id="story-drawer-title" class="story-drawer-title">Leadership Approved Hours Stories</h3>
+        <div id="story-drawer-meta" class="story-drawer-meta"></div>
+      </div>
+      <button id="story-drawer-close" class="story-drawer-close" type="button">Close</button>
+    </div>
+    <div id="story-drawer-body" class="story-drawer-body"></div>
+  </aside>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const st = {
+      rows: [],
+      selectedProject: "",
+      applying: false,
+      lastDetailsRows: [],
+      lastDetailsData: null,
+      itemColWidthPx: 420,
+      widthSaveTimer: null,
+      activeResize: null,
+    };
+
+    function n(v){ const x=Number(v||0); return Number.isFinite(x)?x:0; }
+    function esc(v){ return String(v==null?"":v).replace(/[&<>"']/g,(c)=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c])); }
+    function h(v){ return n(v).toFixed(2)+"h"; }
+    function hRound(v){ return String(Math.round(n(v))) + "h"; }
+    function hMaybe(v){ return (v == null || String(v).trim()==="") ? "-" : h(v); }
+    function shortText(v, maxLen){
+      const text = String(v || "").replace(/\s+/g, " ").trim();
+      const limit = Math.max(12, Number(maxLen || 0) || 56);
+      if (!text) return "";
+      return text.length > limit ? (text.slice(0, limit - 1) + "\u2026") : text;
+    }
+    function storySegmentTooltip(story){
+      const item = story || {};
+      const key = String(item.issue_key || "").trim();
+      const summary = String(item.name || item.summary || "").trim();
+      const assignee = String(item.assignee || "Unassigned").trim() || "Unassigned";
+      const status = String(item.status || "").trim();
+      const titleText = shortText(key && summary && !summary.startsWith(key) ? `${key} - ${summary}` : (summary || key || "Story"), 68);
+      const statusText = status ? ` | ${shortText(status, 22)}` : "";
+      return `${titleText} | ${shortText(assignee, 24)}${statusText} | ${h(item.hours)}`;
+    }
+    function isMissingPlannedDate(v){
+      return String(v || "").trim() === "";
+    }
+    function plannedDateHtml(v){
+      if (isMissingPlannedDate(v)) return '<span class="missing-entry">Entry missing</span>';
+      return fmtDateDisplay(v);
+    }
+    function dispensedHoursHtml(item){
+      return h(item && item.dispensed_estimates);
+    }
+    function parseIsoDateUtc(v){
+      const raw = String(v || "").trim();
+      const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if(!m) return null;
+      const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+      if (Number.isNaN(d.getTime())) return null;
+      return d;
+    }
+    function isoWeekKeyUtc(d){
+      const date = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+      const day = date.getUTCDay() || 7;
+      date.setUTCDate(date.getUTCDate() + 4 - day);
+      const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+      const weekNo = Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
+      return `${date.getUTCFullYear()}-W${String(weekNo).padStart(2, "0")}`;
+    }
+    function monthKeyUtc(d){
+      return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2, "0")}`;
+    }
+    function eachDayUtc(start, end, cb){
+      if (!(start instanceof Date) || !(end instanceof Date) || end < start) return;
+      const cur = new Date(start.getTime());
+      while (cur <= end){
+        cb(cur);
+        cur.setUTCDate(cur.getUTCDate() + 1);
+      }
+    }
+    function dateMismatch(planned, dispensed){
+      const p = String(planned || "").trim();
+      const d = String(dispensed || "").trim();
+      if (!p && !d) return false;
+      return p !== d;
+    }
+    function epicHasProblem(epic){
+      if (dateMismatch(epic && epic.planned_start, epic && epic.dispensed_start)) return true;
+      if (dateMismatch(epic && epic.planned_due, epic && epic.dispensed_due)) return true;
+      const stories = Array.isArray(epic && epic.stories) ? epic.stories : [];
+      for (const story of stories){
+        if (dateMismatch(story && story.planned_start, story && story.dispensed_start)) return true;
+        if (dateMismatch(story && story.planned_due, story && story.dispensed_due)) return true;
+        const subtasks = Array.isArray(story && story.subtasks) ? story.subtasks : [];
+        for (const st of subtasks){
+          if (dateMismatch(st && st.planned_start, st && st.dispensed_start)) return true;
+          if (dateMismatch(st && st.planned_due, st && st.dispensed_due)) return true;
+        }
+      }
+      return false;
+    }
+    function fmtDateDisplay(v){
+      const raw = String(v || "").trim();
+      if(!raw) return "-";
+      const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if(!m) return esc(raw);
+      const dt = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+      return dt.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+    }
+    function issueTypeMeta(item, fallbackKind){
+      const kindRaw = String((item && item.issue_kind) || fallbackKind || "").trim().toLowerCase();
+      const typeRaw = String((item && item.issue_type_name) || "").trim().toLowerCase();
+      if (kindRaw === "epic") return { cls: "issue-epic", icon: "electric_bolt", label: "Epic" };
+      if (kindRaw === "story") return { cls: "issue-story", icon: "person", label: "Story" };
+      const isBugSubtask = kindRaw === "subtask" && typeRaw.includes("bug");
+      if (isBugSubtask) return { cls: "issue-bug-subtask", icon: "bug_report", label: "Bug Subtask" };
+      return { cls: "issue-subtask", icon: "construction", label: "Subtask" };
+    }
+    function issueTypeHtml(item, fallbackKind){
+      const meta = issueTypeMeta(item, fallbackKind);
+      return `<span class="issue-type-pill ${meta.cls}" title="${esc(meta.label)}"><span class="material-icons-outlined" aria-hidden="true">${meta.icon}</span></span>`;
+    }
+    function issueTypeLegendHtml(item, fallbackKind){
+      const meta = issueTypeMeta(item, fallbackKind);
+      return `<span class="issue-type-pill ${meta.cls}" title="${esc(meta.label)}"><span class="material-icons-outlined" aria-hidden="true">${meta.icon}</span><span>${esc(meta.label)}</span></span>`;
+    }
+    function jiraPrefix(url){
+      const href = String(url || "").trim();
+      if(!href){
+        return '<span class="jira-link-disabled" title="No Jira link"><span class="material-icons-outlined" aria-hidden="true">link_off</span></span>';
+      }
+      return `<a class="jira-link-icon" href="${esc(href)}" target="_blank" rel="noopener noreferrer" title="Open in Jira"><span class="material-icons-outlined" aria-hidden="true">open_in_new</span></a>`;
+    }
+    function jiraUrlFor(item){
+      const direct = String((item && item.jira_url) || "").trim();
+      if (direct) return direct;
+      const key = String((item && item.issue_key) || "").trim();
+      if (!key) return "";
+      const base = String(st.jiraBaseUrl || "").trim().replace(/\/+$/, "");
+      if (!base) return "";
+      return `${base}/browse/${key}`;
+    }
+    function setStoryDrawerOpen(isOpen){
+      const drawer = $("story-drawer");
+      const overlay = $("story-drawer-overlay");
+      if (!drawer || !overlay) return;
+      drawer.classList.toggle("is-open", !!isOpen);
+      overlay.classList.toggle("is-open", !!isOpen);
+      drawer.setAttribute("aria-hidden", isOpen ? "false" : "true");
+      overlay.setAttribute("aria-hidden", isOpen ? "false" : "true");
+      document.body.classList.toggle("story-drawer-open", !!isOpen);
+    }
+    function closeStoryDrawer(){
+      setStoryDrawerOpen(false);
+    }
+    function openStoryDrawerLoading(projectKey){
+      const body = $("story-drawer-body");
+      const meta = $("story-drawer-meta");
+      if (meta) meta.textContent = `Project: ${projectKey || "-"}`;
+      if (body) body.innerHTML = '<div class="empty">Loading stories...</div>';
+      setStoryDrawerOpen(true);
+    }
+    async function openLeadershipStoriesDrawer(projectKey, forceRefresh, epicKeyFilter){
+      if(!projectKey) return;
+      openStoryDrawerLoading(projectKey);
+      const body = $("story-drawer-body");
+      const meta = $("story-drawer-meta");
+      const epicFilter = String(epicKeyFilter || "").trim().toUpperCase();
+      try {
+        const res = await fetch(`/api/approved-vs-planned-hours/details?${queryBase(projectKey, !!forceRefresh)}`, { cache: "no-store" });
+        const data = await res.json().catch(()=>({}));
+        if(!res.ok || !data.ok){
+          if (body) body.innerHTML = `<div class="empty">${esc(data.error || "Failed to load stories.")}</div>`;
+          return;
+        }
+        if (meta){
+          const projectName = String(data.project_name || projectKey || "").trim();
+          meta.textContent = `Project: ${projectName || projectKey}`;
+        }
+        const epics = Array.isArray(data.epics) ? data.epics : [];
+        const stories = [];
+        epics.forEach((epic)=>{
+          const epicKey = String((epic && epic.issue_key) || "").trim();
+          if (epicFilter && epicKey.toUpperCase() !== epicFilter) return;
+          const epicTitle = String((epic && epic.summary) || (epic && epic.issue_key) || "Epic").trim();
+          const epicStories = Array.isArray(epic && epic.stories) ? epic.stories : [];
+          epicStories.forEach((story)=>{
+            stories.push({
+              epic_key: epicKey,
+              epic_title: epicTitle,
+              issue_key: String((story && story.issue_key) || "").trim(),
+              jira_url: String((story && story.jira_url) || "").trim(),
+              summary: String((story && story.summary) || "").trim(),
+              assignee: String((story && story.assignee) || "Unassigned").trim() || "Unassigned",
+              status: String((story && story.status) || "").trim(),
+              estimate_hours: n(story && story.estimate_hours),
+              planned_start: String((story && story.planned_start) || "").trim(),
+              planned_due: String((story && story.planned_due) || "").trim(),
+            });
+          });
+        });
+        if (!stories.length){
+          if (body) body.innerHTML = '<div class="empty">No stories found for Leadership Approved Hours.</div>';
+          return;
+        }
+        if (meta){
+          const projectName = String(data.project_name || projectKey || "").trim();
+          const epicMeta = epicFilter ? ` | Epic: ${epicFilter}` : "";
+          meta.textContent = `Project: ${projectName || projectKey}${epicMeta}`;
+        }
+        stories.sort((a,b)=> (a.epic_title.localeCompare(b.epic_title) || a.summary.localeCompare(b.summary) || a.issue_key.localeCompare(b.issue_key)));
+        if (body){
+          body.innerHTML = `
+            <table class="tbl">
+              <thead>
+                <tr>
+                  <th>Epic</th>
+                  <th>Story</th>
+                  <th>Assignee</th>
+                  <th>Status</th>
+                  <th>Start</th>
+                  <th>Due</th>
+                  <th class="right">Original Estimates</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${stories.map((row)=>`
+                  <tr>
+                    <td>${esc(row.epic_title)}</td>
+                    <td>
+                      ${row.jira_url ? `<a href="${esc(row.jira_url)}" target="_blank" rel="noopener noreferrer">${esc(row.issue_key || row.summary || "-")}</a>` : esc(row.issue_key || row.summary || "-")}
+                      ${row.summary && row.summary !== row.issue_key ? `<div class="mono" style="color:#64748b;margin-top:2px;">${esc(row.summary)}</div>` : ""}
+                    </td>
+                    <td>${esc(row.assignee || "Unassigned")}</td>
+                    <td>${esc(row.status || "-")}</td>
+                    <td>${fmtDateDisplay(row.planned_start)}</td>
+                    <td>${fmtDateDisplay(row.planned_due)}</td>
+                    <td class="right">${h(row.estimate_hours)}</td>
+                  </tr>
+                `).join("")}
+              </tbody>
+            </table>
+          `;
+        }
+      } catch(_err){
+        if (body) body.innerHTML = '<div class="empty">Failed to load stories.</div>';
+      }
+    }
+    function itemCellHtml(item, fallbackKind){
+      return `
+        <div class="item-cell">
+          ${jiraPrefix(jiraUrlFor(item))}
+          <div class="item-title-row">
+            ${issueTypeHtml(item, fallbackKind)}
+            <span class="item-title-text">${esc((item && item.summary) || "")}</span>
+          </div>
+          <div class="item-assignee">${esc((item && item.assignee) || "Unassigned")}</div>
+        </div>
+      `;
+    }
+    function clampItemColWidth(px){
+      const num = Number(px || 0);
+      if (!Number.isFinite(num)) return 420;
+      return Math.max(290, Math.min(900, Math.round(num)));
+    }
+    function setItemColWidth(px){
+      const root = $("pvd-detail-root");
+      const next = clampItemColWidth(px);
+      st.itemColWidthPx = next;
+      if (root) root.style.setProperty("--pvd-item-col-width", `${next}px`);
+      return next;
+    }
+    async function loadPvdUiSettings(){
+      try {
+        const res = await fetch("/api/approved-vs-planned-hours/ui-settings", { cache: "no-store" });
+        const data = await res.json().catch(()=>({}));
+        if (!res.ok || !data.ok || !data.settings) return;
+        setItemColWidth(data.settings.first_column_width_px);
+      } catch(_err){}
+    }
+    async function savePvdUiSettings(widthPx){
+      const width = clampItemColWidth(widthPx);
+      try {
+        const res = await fetch("/api/approved-vs-planned-hours/ui-settings", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ first_column_width_px: width }),
+        });
+        const data = await res.json().catch(()=>({}));
+        if (res.ok && data.ok && data.settings){
+          setItemColWidth(data.settings.first_column_width_px);
+        }
+      } catch(_err){}
+    }
+    function schedulePvdUiWidthSave(widthPx){
+      if (st.widthSaveTimer){
+        clearTimeout(st.widthSaveTimer);
+        st.widthSaveTimer = null;
+      }
+      st.widthSaveTimer = setTimeout(()=>{
+        st.widthSaveTimer = null;
+        savePvdUiSettings(widthPx);
+      }, 260);
+    }
+    function selectedValues(id){ return Array.from($(id).selectedOptions||[]).map(o=>String(o.value||"").trim()).filter(Boolean); }
+    function updateProjectsTriggerLabel(){
+      const label = $("projects-trigger-label");
+      if (!label) return;
+      const selected = selectedValues("projects");
+      const total = Array.from($("projects").options || []).length;
+      if (!selected.length || selected.length === total){
+        label.textContent = "Projects: All";
+        return;
+      }
+      if (selected.length === 1){
+        label.textContent = "Projects: " + selected[0];
+        return;
+      }
+      label.textContent = "Projects: " + selected.length + " selected";
+    }
+    function renderProjectsMultiSelect(){
+      const host = $("projects-options");
+      if (!host) return;
+      const options = Array.from($("projects").options || []);
+      host.innerHTML = options.map((opt)=>{
+        const value = String(opt.value || "").trim();
+        return `
+          <label class="projects-option">
+            <input type="checkbox" data-project-value="${esc(value)}" ${opt.selected ? "checked" : ""}>
+            <span>${esc(String(opt.textContent || value))}</span>
+          </label>
+        `;
+      }).join("");
+      updateProjectsTriggerLabel();
+    }
+    function setAllProjectsSelected(nextSelected){
+      Array.from($("projects").options || []).forEach((opt)=>{
+        opt.selected = !!nextSelected;
+      });
+      renderProjectsMultiSelect();
+      $("projects").dispatchEvent(new Event("change", { bubbles: true }));
+    }
+    function setDefaultDates(){
+      const now = new Date();
+      const to = now.toISOString().slice(0,10);
+      const from = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0,10);
+      $("date-filter-from").value = from;
+      $("date-filter-to").value = to;
+    }
+    function fmtDate(d){
+      return new Date(d.getTime() - d.getTimezoneOffset()*60000).toISOString().slice(0,10);
+    }
+    function applyPresetRange(preset){
+      const now = new Date();
+      let from = null;
+      let to = null;
+      if (preset === "last30") {
+        to = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        from = new Date(to.getFullYear(), to.getMonth(), to.getDate() - 29);
+      } else if (preset === "last90") {
+        to = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        from = new Date(to.getFullYear(), to.getMonth(), to.getDate() - 89);
+      } else if (preset === "currentMonth") {
+        from = new Date(now.getFullYear(), now.getMonth(), 1);
+        to = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+      } else if (preset === "lastMonth") {
+        from = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        to = new Date(now.getFullYear(), now.getMonth(), 0);
+      } else if (preset === "currentQuarter") {
+        const quarterStartMonth = Math.floor(now.getMonth() / 3) * 3;
+        from = new Date(now.getFullYear(), quarterStartMonth, 1);
+        to = new Date(now.getFullYear(), quarterStartMonth + 3, 0);
+      } else if (preset === "lastQuarter") {
+        const quarterStartMonth = Math.floor(now.getMonth() / 3) * 3;
+        from = new Date(now.getFullYear(), quarterStartMonth - 3, 1);
+        to = new Date(now.getFullYear(), quarterStartMonth, 0);
+      }
+      if (!from || !to) return;
+      $("date-filter-from").value = fmtDate(from);
+      $("date-filter-to").value = fmtDate(to);
+      markPending("Date preset selected. Click Apply.");
+    }
+    function buildBaseParams(forceRefresh){
+      const p = new URLSearchParams();
+      p.set("from", $("date-filter-from").value || "");
+      p.set("to", $("date-filter-to").value || "");
+      p.set("mode", plannedHoursSourceToMode($("planned-hours-source").value || "subtask_estimates"));
+      p.set("plan_source", $("plan-source").value || "jira_estimates");
+      if (forceRefresh) {
+        p.set("refresh", "1");
+        p.set("_ts", String(Date.now()));
+      }
+      const statuses = selectedValues("statuses");
+      const assignees = selectedValues("assignees");
+      if (statuses.length) p.set("statuses", statuses.join(","));
+      if (assignees.length) p.set("assignees", assignees.join(","));
+      return p;
+    }
+    function queryBase(projectKey, forceRefresh){
+      const p = buildBaseParams(forceRefresh);
+      const projects = selectedValues("projects");
+      if (projects.length) p.set("projects", projects.join(","));
+      if (projectKey) p.set("project_key", projectKey);
+      return p.toString();
+    }
+    function summaryQueryForProjects(projects, forceRefresh){
+      const p = buildBaseParams(forceRefresh);
+      const keys = (Array.isArray(projects) ? projects : []).map(v => String(v || "").trim()).filter(Boolean);
+      if (keys.length) p.set("projects", keys.join(","));
+      return p.toString();
+    }
+    function fillOptions(id, values){
+      const cur = new Set(selectedValues(id));
+      const opts = (Array.isArray(values)?values:[]).map(v=>String(v||"").trim()).filter(Boolean);
+      $(id).innerHTML = opts.map(v=>`<option value="${esc(v)}" ${cur.has(v)?"selected":""}>${esc(v)}</option>`).join("");
+    }
+    function fillProjectOptions(items){
+      const cur = new Set(selectedValues("projects"));
+      const rows = Array.isArray(items) ? items : [];
+      const opts = rows
+        .map((item)=>{
+          if (item && typeof item === "object"){
+            const key = String(item.project_key || "").trim();
+            const name = String(item.project_name || key || "").trim();
+            if (!key) return "";
+            const label = (name && name !== key) ? `${key} - ${name}` : key;
+            return `<option value="${esc(key)}" ${cur.has(key)?"selected":""}>${esc(label)}</option>`;
+          }
+          const key = String(item || "").trim();
+          if (!key) return "";
+          return `<option value="${esc(key)}" ${cur.has(key)?"selected":""}>${esc(key)}</option>`;
+        })
+        .filter(Boolean);
+      $("projects").innerHTML = opts.join("");
+      renderProjectsMultiSelect();
+    }
+    function setSelectedOptions(id, values){
+      const wanted = new Set((Array.isArray(values)?values:[]).map(v=>String(v||"").trim()).filter(Boolean));
+      Array.from($(id).options || []).forEach(opt => {
+        opt.selected = wanted.has(String(opt.value || "").trim());
+      });
+      if (id === "projects"){
+        renderProjectsMultiSelect();
+      }
+    }
+    function normalizePlannedHoursSource(value){
+      const raw = String(value || "").trim().toLowerCase();
+      if (raw === "subtask_logs") return "subtask_logs";
+      if (raw === "epic_estimates") return "epic_estimates";
+      return "subtask_estimates";
+    }
+    function plannedHoursSourceToMode(value){
+      const normalized = normalizePlannedHoursSource(value);
+      if (normalized === "subtask_logs") return "log_date";
+      return "planned_dates";
+    }
+    function syncPlannedHoursSourceToHidden(){
+      const source = normalizePlannedHoursSource($("planned-hours-source").value || "subtask_estimates");
+      $("planned-hours-source").value = source;
+      $("actual-hours-mode").value = plannedHoursSourceToMode(source);
+    }
+    function setApplyProgress(done, total){
+      const label = $("date-filter-apply").querySelector(".date-chip-apply-label");
+      const bar = $("date-filter-apply").querySelector(".date-chip-apply-progress");
+      const safeTotal = Math.max(1, Number(total || 0));
+      const safeDone = Math.max(0, Math.min(safeTotal, Number(done || 0)));
+      const pct = Math.round((safeDone / safeTotal) * 100);
+      if (bar) bar.style.width = pct + "%";
+      if (label) label.textContent = safeDone < safeTotal ? (safeDone + "/" + safeTotal + " (" + pct + "%)") : "Apply";
+      return pct;
+    }
+    function beginApplyProgress(total){
+      st.applying = true;
+      $("date-filter-apply").disabled = true;
+      setApplyProgress(0, total);
+      $("date-filter-status").textContent = "Fetching projects: 0/" + Math.max(1, Number(total || 0));
+    }
+    function advanceApplyProgress(done, total){
+      const pct = setApplyProgress(done, total);
+      $("date-filter-status").textContent = "Fetching projects: " + done + "/" + total + " (" + pct + "%)";
+    }
+    function endApplyProgress(message){
+      st.applying = false;
+      $("date-filter-apply").disabled = false;
+      setApplyProgress(1, 1);
+      markApplied(message || "Applied.");
+    }
+    function markPending(msg){
+      if (st.applying) return;
+      const applyLabel = $("date-filter-apply").querySelector(".date-chip-apply-label");
+      if (applyLabel) applyLabel.textContent = "Apply*";
+      $("date-filter-status").textContent = msg || "Filters changed. Click Apply.";
+    }
+    function markApplied(msg){
+      if (st.applying) return;
+      const applyLabel = $("date-filter-apply").querySelector(".date-chip-apply-label");
+      if (applyLabel) applyLabel.textContent = "Apply";
+      $("date-filter-status").textContent = msg || "";
+    }
+
+    async function loadSummary(forceRefresh){
+      const host = $("pvd-comparison-chart");
+      host.innerHTML = '<div class="empty">Loading...</div>';
+      const res = await fetch(`/api/approved-vs-planned-hours/summary?${queryBase("", !!forceRefresh)}`, { cache: "no-store" });
+      const data = await res.json().catch(()=>({}));
+      if(!res.ok || !data.ok){ host.innerHTML = `<div class="empty">${esc(data.error||"Failed to load summary.")}</div>`; return; }
+      st.rows = Array.isArray(data.rows)?data.rows:[];
+      const fo = data.filter_options || {};
+      const hadProjectSelection = selectedValues("projects").length > 0;
+      fillProjectOptions(fo.project_options || fo.projects || []);
+      fillOptions("statuses", fo.statuses || []);
+      fillOptions("assignees", fo.assignees || []);
+      if(!hadProjectSelection){
+        const defaults = Array.isArray(data.default_selected_projects) ? data.default_selected_projects : [];
+        if(defaults.length){
+          setSelectedOptions("projects", defaults);
+        }
+      }
+      renderMissingPlan(data.missing_plan || null);
+      renderChart();
+    }
+    async function loadSummaryWithProgress(projectKeys, forceRefresh){
+      const host = $("pvd-comparison-chart");
+      host.innerHTML = '<div class="empty">Loading...</div>';
+      const keys = Array.from(new Set((Array.isArray(projectKeys) ? projectKeys : []).map(v => String(v || "").trim()).filter(Boolean)));
+      if (!keys.length){
+        await loadSummary(forceRefresh);
+        return;
+      }
+      beginApplyProgress(keys.length);
+      const rowsByProject = new Map();
+      const missingByProject = new Map();
+      let done = 0;
+      let failures = 0;
+      for (const key of keys){
+        try {
+          const res = await fetch(`/api/approved-vs-planned-hours/summary?${summaryQueryForProjects([key], !!forceRefresh)}`, { cache: "no-store" });
+          const data = await res.json().catch(()=>({}));
+          if(res.ok && data.ok){
+            const rows = Array.isArray(data.rows) ? data.rows : [];
+            rows.forEach((row)=>{
+              const rowKey = String(row && row.project_key || "").trim();
+              if (rowKey) rowsByProject.set(rowKey, row);
+            });
+            const mp = data.missing_plan || {};
+            if(Array.isArray(mp.projects)){
+              mp.projects.forEach((projectItem)=>{
+                const pKey = String((projectItem && projectItem.project_key) || "").trim();
+                if(!pKey) return;
+                const existing = missingByProject.get(pKey) || [];
+                const nextKeys = Array.isArray(projectItem.epic_keys) ? projectItem.epic_keys : [];
+                missingByProject.set(pKey, existing.concat(nextKeys));
+              });
+            }
+          } else {
+            failures += 1;
+          }
+        } catch(_err) {
+          failures += 1;
+        }
+        done += 1;
+        advanceApplyProgress(done, keys.length);
+      }
+      st.rows = keys.map((key)=> rowsByProject.get(key)).filter(Boolean);
+      renderMissingPlan({
+        enabled: ($("plan-source").value || "jira_estimates") === "epic_planner",
+        count: Array.from(missingByProject.values()).reduce((sum, arr)=>sum + new Set((arr || []).map((x)=>String(x||"").trim()).filter(Boolean)).size, 0),
+        message: "The following epics in selected date range do not have planned hours in Epics Planner. Either switch source or specify plan in Epics Planner.",
+        projects: Array.from(missingByProject.entries()).map(([project_key, epic_keys])=>({
+          project_key,
+          epic_keys:Array.from(new Set((epic_keys || []).map((x)=>String(x||"").trim()).filter(Boolean)))
+        })),
+      });
+      if (forceRefresh && keys.length > 1){
+        try {
+          const combinedRes = await fetch(`/api/approved-vs-planned-hours/summary?${summaryQueryForProjects(keys, true)}`, { cache: "no-store" });
+          const combinedData = await combinedRes.json().catch(()=>({}));
+          if (combinedRes.ok && combinedData.ok){
+            st.rows = Array.isArray(combinedData.rows) ? combinedData.rows : st.rows;
+            const fo = combinedData.filter_options || {};
+            fillProjectOptions(fo.project_options || fo.projects || []);
+            fillOptions("statuses", fo.statuses || []);
+            fillOptions("assignees", fo.assignees || []);
+            renderMissingPlan(combinedData.missing_plan || null);
+          }
+        } catch(_err) {}
+      }
+      renderChart();
+      const suffix = failures ? (" | Failed: " + failures) : "";
+      endApplyProgress("Applied. Completed " + done + "/" + keys.length + suffix);
+    }
+
+    function renderChart(){
+      const host = $("pvd-comparison-chart");
+      const legendHost = $("pvd-stack-legend");
+      const totalApprovedEl = $("pvd-total-approved-hours");
+      const totalPlannedAllEl = $("pvd-total-planned-hours-all");
+      const totalPlannedEl = $("pvd-total-planned-hours");
+      const comparativeOn = !!($("pvd-comparative-bars") && $("pvd-comparative-bars").checked);
+      if(!st.rows.length){
+        host.innerHTML = '<div class="empty">No data for current filters.</div>';
+        if (legendHost) legendHost.innerHTML = "";
+        if (totalApprovedEl) totalApprovedEl.textContent = "0.00h";
+        if (totalPlannedAllEl) totalPlannedAllEl.textContent = "0.00h";
+        if (totalPlannedEl) totalPlannedEl.textContent = "0.00h";
+        return;
+      }
+      const totalApproved = st.rows.reduce((sum, row)=> sum + n(row.planned_epic_hours), 0);
+      const totalPlannedAll = st.rows.reduce((sum, row)=> sum + n(row.dispensed_subtask_hours), 0);
+      const totalPlannedInRange = st.rows.reduce((sum, row)=> sum + n(row.dispensed_in_range_hours || row.dispensed_subtask_hours), 0);
+      if (totalApprovedEl) totalApprovedEl.textContent = h(totalApproved);
+      if (totalPlannedAllEl) totalPlannedAllEl.textContent = h(totalPlannedAll);
+      if (totalPlannedEl) totalPlannedEl.textContent = h(totalPlannedInRange);
+      const maxVal = Math.max(1, ...st.rows.map(r=>Math.max(n(r.planned_epic_hours), n(r.dispensed_stack_hours || r.dispensed_subtask_hours))));
+      const segmentPalette = ["#f59e0b", "#fbbf24", "#fcd34d", "#f97316", "#fca5a5", "#fda4af", "#fb7185", "#fb923c"];
+      const segmentColor = (idx) => segmentPalette[idx % segmentPalette.length];
+      const remainingColor = "#6b7280";
+      const isDarkHex = (hex) => {
+        const raw = String(hex || "").trim().replace("#", "");
+        if (!/^[0-9a-fA-F]{6}$/.test(raw)) return false;
+        const r = parseInt(raw.slice(0,2), 16);
+        const g = parseInt(raw.slice(2,4), 16);
+        const b = parseInt(raw.slice(4,6), 16);
+        const luminance = (0.299 * r) + (0.587 * g) + (0.114 * b);
+        return luminance < 150;
+      };
+      const weekMode = String((st.rows[0] && st.rows[0].dispensed_bucket_mode) || "").toLowerCase() === "week";
+      const monthByKey = new Map();
+      let hasRemaining = false;
+      let maxWeekCount = 0;
+      st.rows.forEach((row)=>{
+        const buckets = Array.isArray(row.dispensed_buckets) ? row.dispensed_buckets : [];
+        let rowWeekCount = 0;
+        buckets.forEach((item)=>{
+          const isRemaining = String(item.bucket_key || "").toLowerCase() === "remaining_hours";
+          if (isRemaining){
+            hasRemaining = true;
+            return;
+          }
+          if (weekMode){
+            rowWeekCount += 1;
+            return;
+          }
+          const key = String(item.bucket_key || "").trim();
+          const label = String(item.bucket_label || item.bucket_key || "").trim();
+          if (key && label && !monthByKey.has(key)) monthByKey.set(key, label);
+        });
+        if (weekMode) maxWeekCount = Math.max(maxWeekCount, rowWeekCount);
+      });
+      const monthEntries = Array.from(monthByKey.entries()).sort((a,b)=>String(a[0]).localeCompare(String(b[0])));
+      const monthColorIndex = new Map(monthEntries.map(([key], idx)=>[key, idx]));
+      const monthKeyToParts = (key) => {
+        const m = /^(\d{4})-(\d{2})$/.exec(String(key || "").trim());
+        if (!m) return null;
+        const year = Number(m[1]);
+        const month = Number(m[2]);
+        if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) return null;
+        return { year, month };
+      };
+      const monthNameShort = (month) => {
+        const names = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+        return names[Math.max(1, Math.min(12, month)) - 1] || String(month);
+      };
+      const parsedMonths = monthEntries.map(([key]) => monthKeyToParts(key)).filter(Boolean);
+      const multipleYearsInLegend = new Set(parsedMonths.map((x)=>x.year)).size > 1;
+      const monthLegendLabel = (key, fallback) => {
+        const parts = monthKeyToParts(key);
+        if (!parts) return String(fallback || key || "");
+        const base = monthNameShort(parts.month);
+        return multipleYearsInLegend ? `${base} ${parts.year}` : base;
+      };
+      if (legendHost){
+        if (weekMode){
+          const weekItems = Array.from({length:maxWeekCount}).map((_, idx)=>(
+            `<span class="stack-pill"><span class="stack-dot" style="background:${segmentColor(idx)}"></span>Week ${idx+1}</span>`
+          ));
+          if (hasRemaining) weekItems.push(`<span class="stack-pill"><span class="stack-dot" style="background:${remainingColor}"></span>Remaining Hours</span>`);
+          legendHost.innerHTML = weekItems.join("");
+        } else {
+          const monthItems = monthEntries.map(([key, label])=>(
+            `<span class="stack-pill"><span class="stack-dot" style="background:${segmentColor(monthColorIndex.get(key) || 0)}"></span>${esc(monthLegendLabel(key, label))}</span>`
+          ));
+          if (hasRemaining) monthItems.push(`<span class="stack-pill"><span class="stack-dot" style="background:${remainingColor}"></span>Remaining Hours</span>`);
+          legendHost.innerHTML = monthItems.join("");
+        }
+      }
+      host.innerHTML = st.rows.map(r=>{
+        const planned = n(r.planned_epic_hours);
+        const dispensed = n(r.dispensed_stack_hours || r.dispensed_subtask_hours);
+        const plannedPct = comparativeOn
+          ? Math.max(0, Math.min(100, (planned / maxVal) * 100))
+          : (planned > 0 ? 100 : 0);
+        const dispensedPct = comparativeOn
+          ? Math.max(0, Math.min(100, (dispensed / maxVal) * 100))
+          : (dispensed > 0 ? 100 : 0);
+        const rawBuckets = Array.isArray(r.dispensed_buckets) ? r.dispensed_buckets : [];
+        const buckets = rawBuckets.filter((item)=>n(item.hours) > 0);
+        const inRangeHours = n(r.dispensed_in_range_hours || r.dispensed_subtask_hours);
+        const mode = String(r.dispensed_bucket_mode || "").toLowerCase() || "week";
+        const modeLabel = mode === "month" ? "Month-wise stack" : "Week-wise stack";
+        let timedIdx = 0;
+        const dispensedSegments = (dispensed > 0 && buckets.length ? buckets : [{ bucket_label: "Unscheduled", hours: dispensed }]).map((item)=>{
+          const hours = n(item.hours);
+          const segPct = dispensed > 0 ? ((hours / dispensed) * dispensedPct) : 0;
+          const width = Math.max(0, Math.min(100, segPct));
+          const isRemaining = String(item.bucket_key || "").toLowerCase() === "remaining_hours";
+          let label = String(item.bucket_label || item.bucket_key || "Unscheduled");
+          let color = remainingColor;
+          if (!isRemaining){
+            if (mode === "week"){
+              label = `Week ${timedIdx + 1}`;
+              color = segmentColor(timedIdx);
+            } else {
+              const monthKey = String(item.bucket_key || "").trim();
+              color = segmentColor(monthColorIndex.get(monthKey) || 0);
+            }
+            timedIdx += 1;
+          }
+          const labelColor = isDarkHex(color) ? "#f8fafc" : "#0f172a";
+          const labelShadow = isDarkHex(color) ? "0 1px 0 rgba(0,0,0,.35)" : "0 1px 0 rgba(255,255,255,.45)";
+          return `<span class="hbar-seg" data-show-label="1" style="width:${width.toFixed(2)}%;background:${color}" title="${esc(label)}: ${hRound(hours)}"><span class="hbar-seg-label" style="color:${labelColor};text-shadow:${labelShadow}">${hRound(hours)}</span></span>`;
+        }).join("");
+        return `
+          <div class="group">
+            <div class="project" title="${esc(r.project_name || r.project_key)}">${esc(r.project_name || r.project_key)}</div>
+            <div class="compare-layout">
+              <div class="pre-bar-metrics">
+                <div class="pre-bar-col">
+                  <div class="pre-bar-k">Leadership Approved Hours</div>
+                  <div class="pre-bar-v">${h(planned)}</div>
+                </div>
+                <div class="pre-bar-col">
+                  <div class="pre-bar-k">Total Planned Hours</div>
+                  <div class="pre-bar-v">${h(dispensed)}</div>
+                </div>
+                <div class="pre-bar-col">
+                  <div class="pre-bar-k">Planned Hours in Range</div>
+                  <div class="pre-bar-v">${h(inRangeHours)}</div>
+                </div>
+                <div class="pre-bar-col">
+                  <div class="pre-bar-k">No. of Epics</div>
+                  <div class="pre-bar-v">${Math.max(0, Math.trunc(n(r.epic_count)))}</div>
+                </div>
+              </div>
+              <div class="compare-rows">
+                <div class="compare-row">
+                  <div class="compare-label">Leadership Approved Hours</div>
+                  <button class="hbar" data-project="${esc(r.project_key)}" data-kind="planned" title="Leadership Approved Hours: ${h(planned)}">
+                    <span class="hbar-fill planned" style="width:${plannedPct.toFixed(2)}%"></span>
+                    <span class="hbar-value">${h(planned)}</span>
+                  </button>
+                </div>
+                <div class="compare-row">
+                  <div class="compare-label">
+                    Planned Hours
+                    <span class="compare-label-mode">${modeLabel}</span>
+                  </div>
+                  <button class="hbar" data-project="${esc(r.project_key)}" data-kind="dispensed" title="Planned Hours: ${h(dispensed)}">
+                    ${dispensedSegments}
+                    <span class="hbar-value">${h(dispensed)}</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join("");
+      Array.from(host.querySelectorAll(".hbar")).forEach(btn=>{
+        btn.addEventListener("click", ()=>{
+          const projectKey = String(btn.getAttribute("data-project") || "");
+          const kind = String(btn.getAttribute("data-kind") || "").toLowerCase();
+          if (kind === "planned"){
+            openLeadershipStoriesDrawer(projectKey, false);
+            return;
+          }
+          loadDetails(projectKey);
+        });
+      });
+    }
+
+    async function loadDetails(projectKey, forceRefresh){
+      if(!projectKey) return;
+      st.selectedProject = projectKey;
+      const host = $("pvd-detail-root");
+      host.innerHTML = '<div class="empty">Loading details...</div>';
+      const res = await fetch(`/api/approved-vs-planned-hours/details?${queryBase(projectKey, !!forceRefresh)}`, { cache: "no-store" });
+      const data = await res.json().catch(()=>({}));
+      if(!res.ok || !data.ok){ host.innerHTML = `<div class="empty">${esc(data.error||"Failed to load details.")}</div>`; return; }
+      st.lastDetailsData = data;
+      renderMissingPlan(data.missing_plan || null);
+      renderDetails(data);
+    }
+    function renderMissingPlan(missingPlan){
+      const host = $("pvd-missing-plan");
+      if(!host) return;
+      const item = missingPlan || {};
+      const enabled = !!item.enabled;
+      const count = Number(item.count || 0);
+      if(!enabled || count <= 0){
+        host.style.display = "none";
+        host.innerHTML = "";
+        return;
+      }
+      let epicKeys = [];
+      if(Array.isArray(item.epic_keys)){
+        epicKeys = item.epic_keys;
+      } else if(Array.isArray(item.projects)){
+        epicKeys = item.projects.flatMap((p)=>Array.isArray(p.epic_keys)?p.epic_keys:[]);
+      }
+      const unique = Array.from(new Set(epicKeys.map((v)=>String(v||"").trim()).filter(Boolean))).sort();
+      host.style.display = "";
+      host.innerHTML = `<strong>Missing Epic Planner Plans (${count}):</strong> ${esc(item.message || "")}<br>${esc(unique.join(", "))}`;
+    }
+
+    function renderDetails(data){
+      const host = $("pvd-detail-root");
+      const epics = Array.isArray(data && data.epics) ? data.epics : [];
+      if(!epics.length){ host.innerHTML = '<div class="empty">No epic data for selected project and filters.</div>'; return; }
+      const comparativeOn = !!($("pvd-comparative-bars") && $("pvd-comparative-bars").checked);
+
+      const fromDate = parseIsoDateUtc(data && data.from_date);
+      const toDate = parseIsoDateUtc(data && data.to_date);
+      const monthMode = !!(fromDate && toDate && (fromDate.getUTCFullYear() !== toDate.getUTCFullYear() || fromDate.getUTCMonth() !== toDate.getUTCMonth()));
+      const bucketMode = monthMode ? "month" : "week";
+
+      const epicRows = epics.map((epic)=>{
+        const leadershipHours = n(epic && epic.planned_hours);
+        const storyRows = Array.isArray(epic && epic.stories) ? epic.stories : [];
+        const storySegmentsRaw = storyRows
+          .map((story)=>{
+            const hours = n(story && story.estimate_hours);
+            const name = String((story && story.summary) || (story && story.issue_key) || "Unnamed Story");
+            return {
+              name,
+              summary: name,
+              issue_key: String((story && story.issue_key) || "").trim(),
+              assignee: String((story && story.assignee) || "Unassigned").trim() || "Unassigned",
+              status: String((story && story.status) || "").trim(),
+              hours,
+            };
+          })
+          .filter((item)=>item.hours > 0);
+        const storySegments = storySegmentsRaw.length
+          ? storySegmentsRaw
+          : (leadershipHours > 0 ? [{ name: "No Story Estimates", hours: leadershipHours }] : []);
+        const subtaskRows = storyRows
+          .flatMap((story)=>Array.isArray(story && story.subtasks) ? story.subtasks : []);
+        const totalPlannedHours = subtaskRows.reduce((sum, subtask)=>sum + n(subtask && subtask.estimate_hours), 0);
+        const bucketHours = new Map();
+        const outside = { before: 0, after: 0 };
+        subtaskRows.forEach((subtask)=>{
+          const estimate = n(subtask && subtask.estimate_hours);
+          if (estimate <= 0) return;
+          const start = parseIsoDateUtc(subtask && subtask.planned_start);
+          const due = parseIsoDateUtc(subtask && subtask.planned_due);
+          if (!start && !due) return;
+          let spanStart = start || due;
+          let spanEnd = due || start;
+          if (!spanStart || !spanEnd) return;
+          if (spanEnd < spanStart){ const t = spanStart; spanStart = spanEnd; spanEnd = t; }
+          const totalDays = Math.floor((spanEnd - spanStart) / 86400000) + 1;
+          if (totalDays <= 0) return;
+          if (fromDate && toDate){
+            const beforeEnd = new Date(Math.min(spanEnd.getTime(), fromDate.getTime() - 86400000));
+            const beforeDays = beforeEnd >= spanStart ? (Math.floor((beforeEnd - spanStart) / 86400000) + 1) : 0;
+            const afterStart = new Date(Math.max(spanStart.getTime(), toDate.getTime() + 86400000));
+            const afterDays = spanEnd >= afterStart ? (Math.floor((spanEnd - afterStart) / 86400000) + 1) : 0;
+            if (beforeDays > 0) outside.before += estimate * (beforeDays / totalDays);
+            if (afterDays > 0) outside.after += estimate * (afterDays / totalDays);
+          }
+          const overlapStart = fromDate ? new Date(Math.max(spanStart.getTime(), fromDate.getTime())) : spanStart;
+          const overlapEnd = toDate ? new Date(Math.min(spanEnd.getTime(), toDate.getTime())) : spanEnd;
+          if (overlapStart > overlapEnd) return;
+          const seen = new Set();
+          eachDayUtc(overlapStart, overlapEnd, (d)=>{
+            const key = bucketMode === "month" ? monthKeyUtc(d) : isoWeekKeyUtc(d);
+            seen.add(key);
+          });
+          if (!seen.size) return;
+          const share = estimate / seen.size;
+          Array.from(seen).forEach((key)=>{
+            bucketHours.set(key, n(bucketHours.get(key)) + share);
+          });
+        });
+        const sortedKeys = Array.from(bucketHours.keys()).sort((a,b)=>String(a).localeCompare(String(b)));
+        const buckets = sortedKeys.map((key)=>({
+          bucket_key:key,
+          bucket_label:key,
+          hours:n(bucketHours.get(key)),
+        }));
+        const inRangeHours = buckets.reduce((sum, item)=>sum + n(item.hours), 0);
+        const remaining = Math.max(0, leadershipHours - inRangeHours);
+        if (remaining > 0){
+          const remainingItem = { bucket_key:"remaining_hours", bucket_label:"Remaining Hours", hours:remaining };
+          const remainingFirst = outside.before > 0 && outside.after <= 0;
+          if (remainingFirst) buckets.unshift(remainingItem); else buckets.push(remainingItem);
+        }
+        const stackHours = buckets.reduce((sum, item)=>sum + n(item.hours), 0);
+        return {
+          epic_key: String((epic && epic.issue_key) || "").trim(),
+          epic_name: String((epic && epic.summary) || (epic && epic.issue_key) || "Unnamed Epic"),
+          epic_status: String((epic && epic.status) || "").trim() || "Unknown",
+          epic_assignee: String((epic && epic.assignee) || "Unassigned").trim() || "Unassigned",
+          epic_url: String((epic && epic.jira_url) || ""),
+          planned_epic_hours: leadershipHours,
+          total_planned_hours: Number(totalPlannedHours.toFixed(2)),
+          planned_in_range_hours: Number(inRangeHours.toFixed(2)),
+          story_count: storyRows.length,
+          story_segments: storySegments,
+          dispensed_bucket_mode: bucketMode,
+          dispensed_buckets: buckets.map((b)=>({ ...b, hours: Number(n(b.hours).toFixed(2)) })),
+          dispensed_stack_hours: Number(stackHours.toFixed(2)),
+        };
+      });
+
+      const maxVal = Math.max(1, ...epicRows.map((r)=>Math.max(n(r.planned_epic_hours), n(r.dispensed_stack_hours))));
+      const segmentPalette = ["#f59e0b", "#fbbf24", "#fcd34d", "#f97316", "#fca5a5", "#fda4af", "#fb7185", "#fb923c"];
+      const segmentColor = (idx) => segmentPalette[idx % segmentPalette.length];
+      const remainingColor = "#6b7280";
+      const storyPalette = ["#4f7fdd", "#5f90ef", "#3f74d2", "#87a8f1", "#2f64c3", "#a7bef5", "#6c92e8", "#7f9eea"];
+      const storyColor = (idx) => storyPalette[idx % storyPalette.length];
+      const isDarkHex = (hex) => {
+        const raw = String(hex || "").trim().replace("#", "");
+        if (!/^[0-9a-fA-F]{6}$/.test(raw)) return false;
+        const r = parseInt(raw.slice(0,2), 16);
+        const g = parseInt(raw.slice(2,4), 16);
+        const b = parseInt(raw.slice(4,6), 16);
+        return ((0.299 * r) + (0.587 * g) + (0.114 * b)) < 150;
+      };
+      const monthByKey = new Map();
+      let maxWeekCount = 0;
+      let hasRemaining = false;
+      epicRows.forEach((row)=>{
+        const buckets = Array.isArray(row.dispensed_buckets) ? row.dispensed_buckets : [];
+        let weekCount = 0;
+        buckets.forEach((b)=>{
+          const isRemaining = String(b.bucket_key || "").toLowerCase() === "remaining_hours";
+          if (isRemaining){ hasRemaining = true; return; }
+          if (bucketMode === "week"){ weekCount += 1; return; }
+          const key = String(b.bucket_key || "").trim();
+          const label = String(b.bucket_label || key).trim();
+          if (key && label && !monthByKey.has(key)) monthByKey.set(key, label);
+        });
+        maxWeekCount = Math.max(maxWeekCount, weekCount);
+      });
+      const monthEntries = Array.from(monthByKey.entries()).sort((a,b)=>String(a[0]).localeCompare(String(b[0])));
+      const monthColorIndex = new Map(monthEntries.map(([key], idx)=>[key, idx]));
+      const monthLegendLabel = (key) => {
+        const m = /^(\d{4})-(\d{2})$/.exec(String(key || "").trim());
+        if (!m) return String(key || "");
+        const monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+        return monthNames[Math.max(1, Math.min(12, Number(m[2]))) - 1] || String(key || "");
+      };
+
+      const stackLegend = bucketMode === "week"
+        ? Array.from({ length:maxWeekCount }).map((_, idx)=>`<span class="stack-pill"><span class="stack-dot" style="background:${segmentColor(idx)}"></span>Week ${idx+1}</span>`).join("")
+        : monthEntries.map(([key])=>`<span class="stack-pill"><span class="stack-dot" style="background:${segmentColor(monthColorIndex.get(key) || 0)}"></span>${esc(monthLegendLabel(key))}</span>`).join("");
+      const legendHtml = hasRemaining
+        ? stackLegend + `<span class="stack-pill"><span class="stack-dot" style="background:${remainingColor}"></span>Remaining Hours</span>`
+        : stackLegend;
+      const drillStatuses = Array.from(new Set(epicRows.map((r)=>String(r.epic_status || "").trim()).filter(Boolean))).sort((a,b)=>a.localeCompare(b));
+      const drillAssignees = Array.from(new Set(epicRows.map((r)=>String(r.epic_assignee || "").trim()).filter(Boolean))).sort((a,b)=>a.localeCompare(b));
+
+      host.innerHTML = `
+        <div class="totals">
+          <div class="metric"><strong>Project:</strong> ${esc(data.project_name || data.project_key || "-")}</div>
+          <div class="metric"><strong>Epic Drill-down:</strong> ${bucketMode === "month" ? "Month-wise" : "Week-wise"} Planned Hours</div>
+        </div>
+        <div class="legend">
+          <span class="pill"><span class="dot planned"></span> Leadership Approved Hours (Epic Original Estimates)</span>
+          <span class="pill"><span class="dot dispensed"></span> Planned Hours (Subtask Original Estimates)</span>
+        </div>
+        <div class="stack-legend">${legendHtml}</div>
+        <div class="drill-filter-row">
+          <div class="drill-filter">
+            <label for="pvd-drill-search">Search Epic</label>
+            <input id="pvd-drill-search" type="text" placeholder="Epic key/title contains...">
+          </div>
+          <div class="drill-filter">
+            <label for="pvd-drill-status">Epic Status</label>
+            <select id="pvd-drill-status">
+              <option value="">All Statuses</option>
+              ${drillStatuses.map((v)=>`<option value="${esc(v)}">${esc(v)}</option>`).join("")}
+            </select>
+          </div>
+          <div class="drill-filter">
+            <label for="pvd-drill-assignee">Epic Assignee</label>
+            <select id="pvd-drill-assignee">
+              <option value="">All Assignees</option>
+              ${drillAssignees.map((v)=>`<option value="${esc(v)}">${esc(v)}</option>`).join("")}
+            </select>
+          </div>
+          <div id="pvd-drill-count" class="drill-filter-count">0 / ${epicRows.length} epics</div>
+        </div>
+        <div id="pvd-drill-bars" class="bars">
+          ${epicRows.map((r)=>{
+            const planned = n(r.planned_epic_hours);
+            const dispensed = n(r.dispensed_stack_hours);
+            const plannedPct = comparativeOn
+              ? Math.max(0, Math.min(100, (planned / maxVal) * 100))
+              : (planned > 0 ? 100 : 0);
+            const dispensedPct = comparativeOn
+              ? Math.max(0, Math.min(100, (dispensed / maxVal) * 100))
+              : (dispensed > 0 ? 100 : 0);
+            let timedIdx = 0;
+            const segments = (Array.isArray(r.dispensed_buckets) ? r.dispensed_buckets : []).filter((x)=>n(x.hours) > 0).map((b)=>{
+              const isRemaining = String(b.bucket_key || "").toLowerCase() === "remaining_hours";
+              let color = remainingColor;
+              let label = String(b.bucket_label || b.bucket_key || "");
+              if (!isRemaining){
+                if (bucketMode === "week"){
+                  label = `Week ${timedIdx + 1}`;
+                  color = segmentColor(timedIdx);
+                } else {
+                  const key = String(b.bucket_key || "");
+                  color = segmentColor(monthColorIndex.get(key) || 0);
+                }
+                timedIdx += 1;
+              }
+              const width = dispensed > 0 ? Math.max(0, Math.min(100, (n(b.hours) / dispensed) * dispensedPct)) : 0;
+              const dark = /^#/.test(color) && (()=>{ const c=color.slice(1); if(c.length!==6) return false; const rr=parseInt(c.slice(0,2),16),gg=parseInt(c.slice(2,4),16),bb=parseInt(c.slice(4,6),16); return ((0.299*rr)+(0.587*gg)+(0.114*bb)) < 150; })();
+              const lblColor = dark ? "#f8fafc" : "#0f172a";
+              const lblShadow = dark ? "0 1px 0 rgba(0,0,0,.35)" : "0 1px 0 rgba(255,255,255,.45)";
+              return `<span class="hbar-seg" data-show-label="1" style="width:${width.toFixed(2)}%;background:${color}" title="${esc(label)}: ${hRound(b.hours)}"><span class="hbar-seg-label" style="color:${lblColor};text-shadow:${lblShadow}">${hRound(b.hours)}</span></span>`;
+            }).join("");
+            return `
+              <div class="group" data-epic-name="${esc(r.epic_name || "")}" data-epic-key="${esc(r.epic_key || "")}" data-epic-status="${esc(String(r.epic_status || "").toLowerCase())}" data-epic-assignee="${esc(String(r.epic_assignee || "").toLowerCase())}">
+                ${String(r.epic_url || "").trim() ? `<a class="epic-open-link" href="${esc(r.epic_url)}" target="_blank" rel="noopener noreferrer" title="Open epic in Jira"><span class="material-icons-outlined" aria-hidden="true">open_in_new</span></a>` : ""}
+                <div class="epic-head">
+                  <span class="epic-status-badge" title="Epic Status">${esc(r.epic_status)}</span>
+                  <div class="project" title="${esc(r.epic_name)}">${esc(r.epic_name)}</div>
+                </div>
+                <div class="compare-rows">
+                  <div class="compare-row">
+                <div class="compare-label">Leadership Approved Hours</div>
+                    <button class="hbar" type="button" data-story-drill="1" data-project="${esc(data.project_key || "")}" data-epic-key="${esc(r.epic_key || "")}" title="Leadership Approved Hours: ${h(planned)}. Click to open stories drawer.">${
+                      (() => {
+                        const stories = Array.isArray(r.story_segments) ? r.story_segments : [];
+                        const totalStoryHours = stories.reduce((sum, item)=>sum + n(item.hours), 0);
+                        if (totalStoryHours <= 0) return `<span class="hbar-fill planned" style="width:${plannedPct.toFixed(2)}%"></span>`;
+                        return stories.map((s, idx)=>{
+                          const width = Math.max(0, Math.min(100, (n(s.hours) / totalStoryHours) * plannedPct));
+                          const color = storyColor(idx);
+                          const dark = isDarkHex(color);
+                          const lblColor = dark ? "#f8fafc" : "#0f172a";
+                          const lblShadow = dark ? "0 1px 0 rgba(0,0,0,.35)" : "0 1px 0 rgba(255,255,255,.45)";
+                          return `<span class="hbar-seg" data-show-label="1" style="width:${width.toFixed(2)}%;background:${color}" title="${esc(storySegmentTooltip(s))}"><span class="hbar-seg-label" style="color:${lblColor};text-shadow:${lblShadow}">${h(s.hours)}</span></span>`;
+                        }).join("");
+                      })()
+                    }<span class="hbar-value">${h(planned)}</span></button>
+                  </div>
+                  <div class="compare-row">
+                    <div class="compare-label">Planned Hours <span class="compare-label-mode">${bucketMode === "month" ? "Month-wise stack" : "Week-wise stack"}</span></div>
+                    <div class="hbar" title="Planned Hours: ${h(dispensed)}">${segments}<span class="hbar-value">${h(dispensed)}</span></div>
+                  </div>
+                </div>
+                <div class="epic-mini-table-wrap">
+                  <table class="epic-mini-table">
+                    <thead>
+                      <tr>
+                        <th>Leadership Approved Hours</th>
+                        <th>Total Planned Hours</th>
+                        <th>Planned Hours in Range</th>
+                        <th>No. of Stories</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>${h(planned)}</td>
+                        <td>${h(r.total_planned_hours)}</td>
+                        <td>${h(r.planned_in_range_hours)}</td>
+                        <td>${Math.max(0, Math.trunc(n(r.story_count)))}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div class="stack-legend">${
+                  (Array.isArray(r.story_segments) ? r.story_segments : []).map((s, idx)=>
+                    `<span class="stack-pill"><span class="stack-dot" style="background:${storyColor(idx)}"></span>${esc(s.name)}</span>`
+                  ).join("")
+                }</div>
+              </div>
+            `;
+          }).join("")}
+        </div>
+      `;
+      const drillBarsHost = $("pvd-drill-bars");
+      const drillSearchEl = $("pvd-drill-search");
+      const drillStatusEl = $("pvd-drill-status");
+      const drillAssigneeEl = $("pvd-drill-assignee");
+      const drillCountEl = $("pvd-drill-count");
+      const applyDrillFilters = () => {
+        const groups = Array.from((drillBarsHost || host).querySelectorAll(".group[data-epic-name]"));
+        const q = String((drillSearchEl && drillSearchEl.value) || "").trim().toLowerCase();
+        const statusFilter = String((drillStatusEl && drillStatusEl.value) || "").trim().toLowerCase();
+        const assigneeFilter = String((drillAssigneeEl && drillAssigneeEl.value) || "").trim().toLowerCase();
+        let shown = 0;
+        groups.forEach((card)=>{
+          const name = String(card.getAttribute("data-epic-name") || "").toLowerCase();
+          const key = String(card.getAttribute("data-epic-key") || "").toLowerCase();
+          const stKey = String(card.getAttribute("data-epic-status") || "").toLowerCase();
+          const asKey = String(card.getAttribute("data-epic-assignee") || "").toLowerCase();
+          const matchesSearch = !q || name.includes(q) || key.includes(q);
+          const matchesStatus = !statusFilter || stKey === statusFilter;
+          const matchesAssignee = !assigneeFilter || asKey === assigneeFilter;
+          const visible = matchesSearch && matchesStatus && matchesAssignee;
+          card.style.display = visible ? "" : "none";
+          if (visible) shown += 1;
+        });
+        if (drillCountEl) drillCountEl.textContent = `${shown} / ${groups.length} epics`;
+      };
+      [drillSearchEl, drillStatusEl, drillAssigneeEl].forEach((el)=>{
+        if (!el) return;
+        el.addEventListener("input", applyDrillFilters);
+        el.addEventListener("change", applyDrillFilters);
+      });
+      applyDrillFilters();
+      Array.from(host.querySelectorAll('button[data-story-drill="1"]')).forEach((btn)=>{
+        btn.addEventListener("click", ()=>{
+          const projectKey = String(btn.getAttribute("data-project") || "").trim() || String(data.project_key || "").trim();
+          const epicKey = String(btn.getAttribute("data-epic-key") || "").trim();
+          if (!projectKey) return;
+          openLeadershipStoriesDrawer(projectKey, false, epicKey);
+        });
+      });
+    }
+
+    function buildHierarchyRows(epics){
+      const rows = [];
+      epics.forEach((epic, epiIdx)=>{
+        const epicRowId = `epic-${epiIdx}`;
+        const stories = Array.isArray(epic && epic.stories) ? epic.stories : [];
+        rows.push({
+          rowType: "epic",
+          rowId: epicRowId,
+          parentId: "",
+          depth: 0,
+          hidden: false,
+          expandable: stories.length > 0,
+          item: epic,
+          hasProblem: epicHasProblem(epic),
+        });
+        stories.forEach((story, sIdx)=>{
+          const storyRowId = `${epicRowId}-story-${sIdx}`;
+          const subtasks = Array.isArray(story && story.subtasks) ? story.subtasks : [];
+          rows.push({
+            rowType: "story",
+            rowId: storyRowId,
+            parentId: epicRowId,
+            depth: 1,
+            hidden: true,
+            expandable: subtasks.length > 0,
+            item: story,
+            hasProblem: false,
+          });
+          subtasks.forEach((subtask, stIdx)=>{
+            rows.push({
+              rowType: "subtask",
+              rowId: `${storyRowId}-subtask-${stIdx}`,
+              parentId: storyRowId,
+              depth: 2,
+              hidden: true,
+              expandable: false,
+              item: subtask,
+              hasProblem: false,
+            });
+          });
+        });
+      });
+      return rows;
+    }
+
+    function renderHierarchyRow(row){
+      const item = row.item || {};
+      const startBad = dateMismatch(item.planned_start, item.dispensed_start);
+      const dueBad = dateMismatch(item.planned_due, item.dispensed_due);
+      const summaryCls = row.rowType === "subtask" ? "" : " summary";
+      const toggleHtml = row.expandable
+        ? `<button type="button" class="row-toggle" data-row-id="${esc(row.rowId)}" aria-expanded="false" aria-label="Toggle ${esc(row.rowType)}"><span class="material-icons-outlined" aria-hidden="true">chevron_right</span></button>`
+        : '<span class="row-toggle-spacer" aria-hidden="true"></span>';
+      const planMismatchHtml = row.hasProblem
+        ? `<span class="epic-problem-note"><span class="material-icons-outlined" aria-hidden="true">warning</span>Plan mismatch</span>`
+        : "";
+      return `
+        <tr class="hierarchy-row depth-${row.depth}${summaryCls}" data-row-type="${esc(row.rowType)}" data-row-id="${esc(row.rowId)}" data-parent-id="${esc(row.parentId || "")}" data-depth="${row.depth}" ${row.hidden ? "hidden" : ""}>
+          <td class="item-cell-td ${row.hasProblem ? "has-plan-mismatch" : ""}">
+            <div class="row-item depth-${row.depth}">
+              ${toggleHtml}
+              <div class="name">${itemCellHtml(item, row.rowType)}</div>
+            </div>
+            ${planMismatchHtml}
+          </td>
+          <td class="${startBad ? "benchmark-alert" : ""}">${plannedDateHtml(item.planned_start)}</td>
+          <td class="${dueBad ? "benchmark-alert" : ""}">${plannedDateHtml(item.planned_due)}</td>
+          <td class="${startBad ? "alert-cell" : ""}">${fmtDateDisplay(item.dispensed_start)}</td>
+          <td class="${dueBad ? "alert-cell" : ""}">${fmtDateDisplay(item.dispensed_due)}</td>
+          <td class="right">${dispensedHoursHtml(item)}</td>
+          <td class="right">${h(item.remaining)}</td>
+        </tr>
+      `;
+    }
+
+    function collapseDescendants(table, rowId){
+      if (!table || !rowId) return;
+      const childRows = Array.from(table.querySelectorAll(`tr[data-parent-id="${rowId}"]`));
+      childRows.forEach((childRow)=>{
+        childRow.hidden = true;
+        const childId = String(childRow.getAttribute("data-row-id") || "");
+        const childToggle = childRow.querySelector(".row-toggle");
+        if (childToggle) childToggle.setAttribute("aria-expanded", "false");
+        collapseDescendants(table, childId);
+      });
+    }
+
+    function setRowExpanded(table, rowId, expanded){
+      if (!table || !rowId) return;
+      const toggle = table.querySelector(`.row-toggle[data-row-id="${rowId}"]`);
+      if (toggle) toggle.setAttribute("aria-expanded", expanded ? "true" : "false");
+      const childRows = Array.from(table.querySelectorAll(`tr[data-parent-id="${rowId}"]`));
+      childRows.forEach((childRow)=>{
+        childRow.hidden = !expanded;
+      });
+      if (!expanded){
+        collapseDescendants(table, rowId);
+      }
+    }
+    function rowSearchText(row){
+      const item = row && row.item ? row.item : {};
+      return [
+        row && row.rowType,
+        item.issue_key,
+        item.summary,
+        item.assignee,
+        item.issue_type_name,
+      ].map((v)=>String(v || "").toLowerCase()).join(" ");
+    }
+    function applyHierarchySearch(queryRaw){
+      const rows = Array.isArray(st.lastDetailsRows) ? st.lastDetailsRows : [];
+      const detailRoot = $("pvd-detail-root");
+      if (!detailRoot || !rows.length) return;
+      const table = detailRoot.querySelector("table");
+      if (!table) return;
+      const q = String(queryRaw || "").trim().toLowerCase();
+
+      const byId = new Map();
+      const childrenByParent = new Map();
+      rows.forEach((row)=>{
+        byId.set(row.rowId, row);
+        const parentId = String(row.parentId || "");
+        if (!childrenByParent.has(parentId)) childrenByParent.set(parentId, []);
+        childrenByParent.get(parentId).push(row.rowId);
+      });
+
+      const matched = new Set();
+      if (!q){
+        rows.forEach((row)=>{ if (!row.hidden) matched.add(row.rowId); });
+      } else {
+        rows.forEach((row)=>{ if (rowSearchText(row).includes(q)) matched.add(row.rowId); });
+      }
+
+      const visible = new Set();
+      const expandedParents = new Set();
+      const markAncestors = (rowId)=>{
+        let cur = byId.get(rowId);
+        while (cur && cur.parentId){
+          const pid = String(cur.parentId || "");
+          if (!pid) break;
+          visible.add(pid);
+          expandedParents.add(pid);
+          cur = byId.get(pid);
+        }
+      };
+      matched.forEach((rowId)=>{
+        visible.add(rowId);
+        markAncestors(rowId);
+      });
+
+      rows.forEach((row)=>{
+        const tr = table.querySelector(`tr[data-row-id="${row.rowId}"]`);
+        if (!tr) return;
+        tr.hidden = !visible.has(row.rowId);
+        const toggle = tr.querySelector(".row-toggle");
+        if (toggle){
+          const expanded = q ? expandedParents.has(row.rowId) : (toggle.getAttribute("aria-expanded") === "true");
+          toggle.setAttribute("aria-expanded", expanded ? "true" : "false");
+        }
+      });
+
+      const countEl = $("pvd-table-search-count");
+      if (countEl){
+        if (!q) {
+          countEl.textContent = rows.filter((row)=>visible.has(row.rowId)).length + " rows";
+        } else {
+          countEl.textContent = matched.size + " match" + (matched.size === 1 ? "" : "es");
+        }
+      }
+    }
+
+    function bind(){
+      const advToggle = $("adv-filter-toggle");
+      const advMenu = $("adv-filter-menu");
+      const detailRoot = $("pvd-detail-root");
+      const projectsTrigger = $("projects-trigger");
+      const projectsMenu = $("projects-menu");
+      const storyDrawerOverlay = $("story-drawer-overlay");
+      const storyDrawerClose = $("story-drawer-close");
+      if (storyDrawerOverlay){
+        storyDrawerOverlay.addEventListener("click", closeStoryDrawer);
+      }
+      if (storyDrawerClose){
+        storyDrawerClose.addEventListener("click", closeStoryDrawer);
+      }
+      advToggle.addEventListener("click", (ev)=>{
+        ev.preventDefault();
+        const open = advToggle.getAttribute("aria-expanded") === "true";
+        advToggle.setAttribute("aria-expanded", open ? "false" : "true");
+        advMenu.hidden = open;
+      });
+      document.addEventListener("click", (ev)=>{
+        if (advMenu.hidden) return;
+        if (advMenu.contains(ev.target) || advToggle.contains(ev.target)) return;
+        advToggle.setAttribute("aria-expanded", "false");
+        advMenu.hidden = true;
+        projectsTrigger.setAttribute("aria-expanded", "false");
+        projectsMenu.hidden = true;
+      });
+      document.addEventListener("keydown", (ev)=>{
+        if(ev.key === "Escape"){
+          advToggle.setAttribute("aria-expanded", "false");
+          advMenu.hidden = true;
+          projectsTrigger.setAttribute("aria-expanded", "false");
+          projectsMenu.hidden = true;
+          closeStoryDrawer();
+        }
+      });
+      projectsTrigger.addEventListener("click", (ev)=>{
+        ev.preventDefault();
+        const open = projectsTrigger.getAttribute("aria-expanded") === "true";
+        projectsTrigger.setAttribute("aria-expanded", open ? "false" : "true");
+        projectsMenu.hidden = open;
+      });
+      $("projects-select-all").addEventListener("click", ()=>{
+        setAllProjectsSelected(true);
+      });
+      $("projects-clear-all").addEventListener("click", ()=>{
+        setAllProjectsSelected(false);
+      });
+      $("projects-options").addEventListener("change", (ev)=>{
+        const target = ev.target;
+        if (!(target instanceof HTMLInputElement)) return;
+        const val = String(target.getAttribute("data-project-value") || "").trim();
+        if (!val) return;
+        Array.from($("projects").options || []).forEach((opt)=>{
+          if (String(opt.value || "").trim() === val){
+            opt.selected = !!target.checked;
+          }
+        });
+        updateProjectsTriggerLabel();
+        $("projects").dispatchEvent(new Event("change", { bubbles: true }));
+      });
+      detailRoot.addEventListener("mousedown", (ev)=>{
+        const handle = ev.target && ev.target.closest ? ev.target.closest(".col-resize-handle") : null;
+        if(!handle) return;
+        const th = handle.closest("th");
+        if(!th) return;
+        ev.preventDefault();
+        const startX = ev.clientX;
+        const startWidth = th.getBoundingClientRect().width;
+        st.activeResize = {
+          startX,
+          startWidth,
+        };
+        document.body.classList.add("pvd-col-resizing");
+      });
+      document.addEventListener("mousemove", (ev)=>{
+        if(!st.activeResize) return;
+        const delta = ev.clientX - st.activeResize.startX;
+        setItemColWidth(st.activeResize.startWidth + delta);
+      });
+      document.addEventListener("mouseup", ()=>{
+        if(!st.activeResize) return;
+        const widthToSave = st.itemColWidthPx;
+        st.activeResize = null;
+        document.body.classList.remove("pvd-col-resizing");
+        schedulePvdUiWidthSave(widthToSave);
+      });
+      detailRoot.addEventListener("click", (ev)=>{
+        if (ev.target && ev.target.closest && ev.target.closest(".col-resize-handle")) return;
+        const btn = ev.target && ev.target.closest ? ev.target.closest(".row-toggle") : null;
+        if(!btn) return;
+        const searchEl = $("pvd-table-search");
+        if (searchEl && String(searchEl.value || "").trim()) return;
+        const table = btn.closest("table");
+        if(!table) return;
+        const rowId = String(btn.getAttribute("data-row-id") || "");
+        if(!rowId) return;
+        const isExpanded = btn.getAttribute("aria-expanded") === "true";
+        setRowExpanded(table, rowId, !isExpanded);
+      });
+      detailRoot.addEventListener("input", (ev)=>{
+        const target = ev.target;
+        if (!(target instanceof HTMLInputElement)) return;
+        if (target.id !== "pvd-table-search") return;
+        applyHierarchySearch(target.value || "");
+      });
+      Array.from(document.querySelectorAll(".adv-filter-item[data-preset]")).forEach(btn=>{
+        btn.addEventListener("click", ()=>{
+          applyPresetRange(String(btn.getAttribute("data-preset") || ""));
+        });
+      });
+      $("date-filter-apply").addEventListener("click", async ()=>{
+        const keys = selectedValues("projects");
+        if (keys.length){
+          await loadSummaryWithProgress(keys, false);
+        } else {
+          beginApplyProgress(1);
+          try {
+            await loadSummary(false);
+            endApplyProgress("Applied.");
+          } catch(_err){
+            endApplyProgress("Apply failed.");
+          }
+        }
+        if(st.selectedProject){ loadDetails(st.selectedProject, false); }
+      });
+      $("date-filter-fetch").addEventListener("click", async ()=>{
+        $("date-filter-fetch").disabled = true;
+        $("date-filter-status").textContent = "Fetching latest data from Jira...";
+        try {
+          const keys = selectedValues("projects");
+          if (keys.length){
+            await loadSummaryWithProgress(keys, true);
+          } else {
+            beginApplyProgress(1);
+            await loadSummary(true);
+            endApplyProgress("Fetched latest and saved.");
+          }
+          if(st.selectedProject){ await loadDetails(st.selectedProject, true); }
+          $("date-filter-status").textContent = "Fetched latest and saved.";
+        } catch(_err){
+          $("date-filter-status").textContent = "Fetch failed.";
+        } finally {
+          $("date-filter-fetch").disabled = false;
+        }
+      });
+      $("date-filter-reset").addEventListener("click", ()=>{
+        setDefaultDates();
+        markPending("Date range reset. Click Apply.");
+      });
+      ["date-filter-from","date-filter-to","projects","statuses","assignees","plan-source"].forEach((id)=>{
+        const el = $(id);
+        if (!el) return;
+        el.addEventListener("change", ()=>{
+          if (id === "projects") updateProjectsTriggerLabel();
+          markPending("Date range or filters changed. Click Apply.");
+        });
+      });
+      $("planned-hours-source").addEventListener("change", ()=>{
+        syncPlannedHoursSourceToHidden();
+        localStorage.setItem("pvd-planned-hours-source", $("planned-hours-source").value || "subtask_estimates");
+        markPending("Planned Hours Source changed. Click Apply.");
+      });
+      $("plan-source").addEventListener("change", ()=>{
+        localStorage.setItem("pvd-plan-source", $("plan-source").value || "jira_estimates");
+      });
+    }
+
+    (async function init(){
+      setDefaultDates();
+      const savedPlannedHoursSource = normalizePlannedHoursSource(localStorage.getItem("pvd-planned-hours-source") || "subtask_estimates");
+      $("planned-hours-source").value = savedPlannedHoursSource;
+      $("plan-source").value = "jira_estimates";
+      syncPlannedHoursSourceToHidden();
+      await loadPvdUiSettings();
+      bind();
+      const comparativeToggle = $("pvd-comparative-bars");
+      if (comparativeToggle){
+        comparativeToggle.checked = false;
+        comparativeToggle.addEventListener("change", ()=>{
+          renderChart();
+          if (st.lastDetailsData) renderDetails(st.lastDetailsData);
+        });
+      }
+      loadSummary(false);
+    })();
+  </script>
+  <script src="/shared-date-filter.js"></script>
+  <script src="/shared-nav.js"></script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!-- codex-info-drawer-start -->
+<!-- codex-info-drawer-v1 -->
+<style>
+.report-info-inline-btn {
+  margin-left: 6px;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 1px solid #94a3b8;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+}
+.report-info-inline-btn:hover { background: #eef2ff; border-color: #64748b; }
+#report-info-drawer-backdrop {
+  position: fixed; inset: 0; background: rgba(15,23,42,.45); opacity: 0; visibility: hidden;
+  transition: opacity .16s ease; z-index: 2500;
+}
+#report-info-drawer-backdrop.is-open { opacity: 1; visibility: visible; }
+#report-info-drawer {
+  position: fixed; right: 0; top: 0; height: 100vh; width: min(520px, 94vw);
+  background: #ffffff; border-left: 1px solid #cbd5e1; box-shadow: -16px 0 30px rgba(15,23,42,.18);
+  transform: translateX(105%); transition: transform .18s ease; z-index: 2501; display: flex; flex-direction: column;
+}
+#report-info-drawer.is-open { transform: translateX(0); }
+.report-info-drawer-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 12px 14px; border-bottom: 1px solid #e2e8f0; background: linear-gradient(180deg,#f8fafc,#f1f5f9);
+}
+.report-info-drawer-title { margin: 0; font-size: 1rem; color: #0f172a; }
+.report-info-drawer-close {
+  border: 1px solid #94a3b8; background: #fff; color: #334155; border-radius: 8px; padding: 6px 8px; cursor: pointer; font-weight: 700;
+}
+#report-info-drawer-body { padding: 12px 14px; overflow: auto; color: #1f2937; font-size: .86rem; line-height: 1.45; }
+.report-info-section { margin-bottom: 10px; }
+.report-info-section h4 { margin: 0 0 4px; font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; color: #475569; }
+.report-info-section p { margin: 0; }
+.report-info-list { margin: 0; padding-left: 18px; }
+.report-info-list li { margin: 0 0 3px; }
+body.report-info-drawer-open { overflow: hidden; }
+</style>
+<div id="report-info-drawer-backdrop" aria-hidden="true"></div>
+<aside id="report-info-drawer" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="report-info-drawer-title">
+  <div class="report-info-drawer-head">
+    <h3 class="report-info-drawer-title" id="report-info-drawer-title">Field Information</h3>
+    <button type="button" class="report-info-drawer-close" id="report-info-drawer-close">Close</button>
+  </div>
+  <div id="report-info-drawer-body"></div>
+</aside>
+<script>
+(function () {
+  const seeded = [{"id": "planned_vs_dispensed.project_gap", "label": "Approved vs Planned Hours Gap", "report": "approved_vs_planned_hours_report", "ui_targets": ["#pvd-comparison-chart", "#pvd-detail-root"], "definition": "Compares approved epic estimates against subtotal of descendant planned subtask estimates per project.", "formula": "Project Approved (Epic Estimates) - Project Planned (Subtask Estimates)", "ingredients": ["epic.timeoriginalestimate", "subtask.timeoriginalestimate", "planned_hours_source", "date_range"], "business_validations": ["Planned hours source must be valid.", "Date range must be valid.", "Hierarchy linkage epic->story->subtask is required."], "field_linkages": ["Date Range", "Advanced Filters", "Planned Hours Source"], "cross_report_linkages": ["assignee.project_plan_actual_gap", "rnd.pending_hours_required"], "data_sources": ["/api/approved-vs-planned-hours/summary", "/api/approved-vs-planned-hours/details"], "leadership_interpretation": "Positive gap indicates approved hours exceed planned decomposition; near-zero gap indicates healthy decomposition."}];
+  const byId = Object.create(null);
+  function txt(v) { return String(v == null ? "" : v).trim(); }
+  function asArr(v) { return Array.isArray(v) ? v : []; }
+  function slug(v) { return txt(v).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "info"; }
+  function listHtml(values) {
+    const vals = asArr(values).map((x) => txt(x)).filter(Boolean);
+    if (!vals.length) return "<p>-</p>";
+    return "<ul class=\"report-info-list\">" + vals.map((x) => "<li>" + esc(x) + "</li>").join("") + "</ul>";
+  }
+  function esc(v) {
+    return txt(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+  function addCatalog(item) {
+    if (!item || !txt(item.id)) return;
+    byId[item.id] = Object.assign({
+      id: txt(item.id), label: "Field", report: txt(window.__activeReportId || ""),
+      ui_targets: [], definition: "", formula: "", ingredients: [],
+      business_validations: [], field_linkages: [], cross_report_linkages: [],
+      data_sources: [], leadership_interpretation: ""
+    }, item);
+  }
+  for (const item of asArr(seeded)) addCatalog(item);
+  function ensureInfoButton(host, infoId, label) {
+    if (!host || !txt(infoId)) return;
+    if (host.querySelector && host.querySelector('[data-info-id="' + infoId + '"]')) return;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "report-info-inline-btn";
+    btn.textContent = "i";
+    btn.setAttribute("data-info-id", infoId);
+    btn.setAttribute("aria-label", (txt(label) || "Field") + " information");
+    host.appendChild(btn);
+  }
+  function extractFromTooltips() {
+    const defs = [
+      [".score-info", ".score-info-tip"],
+      [".kpi-info", ".kpi-info-tip"],
+      [".stat-info", ".stat-info-tip"],
+      [".card-i-wrap", ".card-i-tip"]
+    ];
+    for (const pair of defs) {
+      const wrapSel = pair[0];
+      const tipSel = pair[1];
+      const wraps = Array.from(document.querySelectorAll(wrapSel));
+      for (const wrap of wraps) {
+        const tip = wrap.querySelector(tipSel);
+        const raw = txt(tip ? tip.textContent : "");
+        const parentLabelNode = wrap.closest(".score-label,.label,.k,.story-title,h3,h4,.card,.kpi,.stat,.summary-card");
+        const label = txt(parentLabelNode ? parentLabelNode.textContent : "");
+        const id = wrap.getAttribute("data-info-id") || slug((window.__activeReportId || "report") + "-" + (label || raw.slice(0, 36)));
+        wrap.setAttribute("data-info-id", id);
+        wrap.setAttribute("role", "button");
+        wrap.setAttribute("tabindex", "0");
+        if (tip) tip.style.display = "none";
+        if (!byId[id]) {
+          addCatalog({
+            id: id,
+            label: label || "Field",
+            report: txt(window.__activeReportId || ""),
+            ui_targets: [],
+            definition: "Auto-captured from report tooltip content.",
+            formula: raw.split("\n")[0] || raw,
+            ingredients: [],
+            business_validations: [],
+            field_linkages: [],
+            cross_report_linkages: [],
+            data_sources: [],
+            leadership_interpretation: raw
+          });
+        }
+      }
+    }
+  }
+  extractFromTooltips();
+  for (const item of Object.values(byId)) {
+    for (const selector of asArr(item.ui_targets)) {
+      try {
+        const nodes = Array.from(document.querySelectorAll(selector));
+        for (const node of nodes) {
+          const target = node.querySelector ? (node.querySelector(".label,.k,.score-label,h2,h3,h4,th") || node) : node;
+          ensureInfoButton(target, item.id, item.label);
+        }
+      } catch (_err) {}
+    }
+  }
+  const backdrop = document.getElementById("report-info-drawer-backdrop");
+  const drawer = document.getElementById("report-info-drawer");
+  const drawerBody = document.getElementById("report-info-drawer-body");
+  const closeBtn = document.getElementById("report-info-drawer-close");
+  let activeId = "";
+  let lastFocus = null;
+  function sectionHtml(title, contentHtml) {
+    return '<section class="report-info-section"><h4>' + esc(title) + '</h4>' + contentHtml + '</section>';
+  }
+  function render(item) {
+    if (!item) {
+      drawerBody.innerHTML = "<p>No information is configured for this field yet.</p>";
+      return;
+    }
+    drawerBody.innerHTML =
+      sectionHtml("Definition", "<p>" + esc(item.definition || "-") + "</p>") +
+      sectionHtml("Formula", "<p>" + esc(item.formula || "-") + "</p>") +
+      sectionHtml("Ingredients", listHtml(item.ingredients)) +
+      sectionHtml("Business Validations", listHtml(item.business_validations)) +
+      sectionHtml("Linked Fields (This Report)", listHtml(item.field_linkages)) +
+      sectionHtml("Cross-Report Linkages", listHtml(item.cross_report_linkages)) +
+      sectionHtml("Data Sources", listHtml(item.data_sources)) +
+      sectionHtml("Leadership Interpretation", "<p>" + esc(item.leadership_interpretation || "-") + "</p>");
+    const title = document.getElementById("report-info-drawer-title");
+    if (title) title.textContent = txt(item.label) || "Field Information";
+  }
+  function openDrawer(id) {
+    const item = byId[id];
+    activeId = id;
+    lastFocus = document.activeElement;
+    render(item);
+    backdrop.classList.add("is-open");
+    drawer.classList.add("is-open");
+    drawer.setAttribute("aria-hidden", "false");
+    document.body.classList.add("report-info-drawer-open");
+    if (closeBtn) closeBtn.focus();
+  }
+  function closeDrawer() {
+    activeId = "";
+    backdrop.classList.remove("is-open");
+    drawer.classList.remove("is-open");
+    drawer.setAttribute("aria-hidden", "true");
+    document.body.classList.remove("report-info-drawer-open");
+    if (lastFocus && lastFocus.focus) lastFocus.focus();
+  }
+  function triggerFromEvent(e) {
+    const el = e.target.closest("[data-info-id]");
+    if (!el) return;
+    const id = txt(el.getAttribute("data-info-id"));
+    if (!id) return;
+    e.preventDefault();
+    openDrawer(id);
+  }
+  document.addEventListener("click", triggerFromEvent);
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && activeId) {
+      e.preventDefault();
+      closeDrawer();
+      return;
+    }
+    const inInfo = e.target && e.target.closest && e.target.closest("[data-info-id]");
+    if (inInfo && (e.key === "Enter" || e.key === " ")) {
+      e.preventDefault();
+      openDrawer(txt(inInfo.getAttribute("data-info-id")));
+    }
+    if (!activeId || e.key !== "Tab") return;
+    const f = drawer.querySelectorAll("button,[href],[tabindex]:not([tabindex='-1'])");
+    const nodes = Array.from(f).filter((x) => !x.disabled);
+    if (!nodes.length) return;
+    const first = nodes[0];
+    const last = nodes[nodes.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  });
+  closeBtn.addEventListener("click", closeDrawer);
+  backdrop.addEventListener("click", closeDrawer);
+  window.reportInfoCatalog = Object.values(byId);
+})();
+</script>
+<!-- codex-info-drawer-end -->
+
+
+<!-- codex-refresh-widget-start -->
+<!-- codex-refresh-widget-v2 -->
+<style>
+#codex-refresh-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+#codex-refresh-btn {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  box-sizing: border-box;
+  border: 1px solid rgba(126, 214, 242, 0.65);
+  background: rgba(14, 116, 144, 0.58);
+  color: #fff;
+  border-radius: 9px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+}
+#codex-refresh-btn[disabled] {
+  cursor: not-allowed;
+  opacity: 0.8;
+}
+#codex-refresh-cancel-btn {
+  width: 100%;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  box-sizing: border-box;
+  border: 1px solid rgba(248, 113, 113, 0.75);
+  background: rgba(153, 27, 27, 0.55);
+  color: #fff;
+  border-radius: 9px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+#codex-refresh-cancel-btn[disabled] {
+  cursor: not-allowed;
+  opacity: 0.75;
+}
+#codex-refresh-btn .material-symbols-outlined {
+  font-size: 18px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.app-shell.sidebar-collapsed #codex-refresh-btn,
+.unified-nav.is-collapsed #codex-refresh-btn {
+  padding-left: 8px;
+  padding-right: 8px;
+  gap: 0;
+  justify-content: center;
+}
+.app-shell.sidebar-collapsed #codex-refresh-btn-label,
+.unified-nav.is-collapsed #codex-refresh-btn-label {
+  display: none;
+}
+.app-shell.sidebar-collapsed #codex-refresh-status,
+.unified-nav.is-collapsed #codex-refresh-status {
+  display: none;
+}
+#codex-refresh-status {
+  min-height: 14px;
+  font-size: 11px;
+  color: rgba(219, 246, 255, 0.9);
+  text-align: left;
+}
+</style>
+<div id="codex-refresh-wrap" aria-live="polite">
+  <button id="codex-refresh-btn" type="button">
+    <span class="material-symbols-outlined" aria-hidden="true">refresh</span>
+    <span id="codex-refresh-btn-label">Refresh</span>
+  </button>
+  <button id="codex-refresh-cancel-btn" type="button">Cancel Refresh Run</button>
+  <div id="codex-refresh-status"></div>
+</div>
+<script>
+(function () {
+  const reportId = 'planned_vs_dispensed';
+  const endpointPath = "/api/report/refresh";
+  const isMissedEntries = reportId === "missed_entries";
+  const wrap = document.getElementById("codex-refresh-wrap");
+  const btn = document.getElementById("codex-refresh-btn");
+  const cancelBtn = document.getElementById("codex-refresh-cancel-btn");
+  const btnLabel = document.getElementById("codex-refresh-btn-label");
+  const status = document.getElementById("codex-refresh-status");
+  if (!wrap || !btn || !btnLabel || !status || !reportId) return;
+  let activeRunId = "";
+  let pollTimer = 0;
+
+  if (!isMissedEntries && cancelBtn) {
+    cancelBtn.style.display = "none";
+  } else if (cancelBtn) {
+    cancelBtn.style.display = "";
+    cancelBtn.disabled = true;
+  }
+
+  function mountRefreshInNav() {
+    const navTargets = [
+      ".app-sidebar .sidebar-nav",
+      ".unified-nav .unified-nav-list",
+      ".sidebar-nav",
+      ".unified-nav-list",
+    ];
+    for (const selector of navTargets) {
+      const target = document.querySelector(selector);
+      if (target) {
+        target.appendChild(wrap);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  if (!mountRefreshInNav()) {
+    const observer = new MutationObserver(function () {
+      if (mountRefreshInNav()) {
+        observer.disconnect();
+      }
+    });
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+    window.setTimeout(function () { observer.disconnect(); }, 5000);
+  }
+
+  function setBusy(isBusy) {
+    btn.disabled = !!isBusy;
+    btnLabel.textContent = isBusy ? "Refreshing..." : "Refresh";
+    if (isMissedEntries && cancelBtn) {
+      cancelBtn.disabled = !isBusy || !activeRunId;
+    }
+  }
+
+  function setStatus(msg) {
+    status.textContent = msg || "";
+  }
+
+  function endpointCandidates(path) {
+    const endpointSuffix = String(path || endpointPath);
+    if (window.location.protocol === "http:" || window.location.protocol === "https:") {
+      return [endpointSuffix];
+    }
+    const savedOrigin = String(localStorage.getItem("codex-report-server-origin") || "").trim();
+    const defaults = [
+      "http://127.0.0.1:8000",
+      "http://localhost:8000",
+      "http://127.0.0.1:5000",
+      "http://localhost:5000",
+    ];
+    const origins = [savedOrigin, ...defaults]
+      .map((item) => String(item || "").trim().replace(/\/$/, ""))
+      .filter(Boolean);
+    return Array.from(new Set(origins)).map((origin) => origin + endpointSuffix);
+  }
+
+  async function requestJson(path, options) {
+    const endpoints = endpointCandidates(path);
+    let lastError = "Failed to fetch";
+    for (const endpoint of endpoints) {
+      try {
+        const response = await fetch(endpoint, options || {});
+        if (endpoint.startsWith("http")) {
+          try {
+            localStorage.setItem("codex-report-server-origin", new URL(endpoint).origin);
+          } catch (_err) {}
+        }
+        const payload = await response.json().catch(() => ({}));
+        return { response, payload };
+      } catch (err) {
+        lastError = (err && err.message) ? err.message : String(err);
+      }
+    }
+    throw new Error(lastError);
+  }
+
+  function runStatusText(run) {
+    const item = run || {};
+    const state = String(item.status || "").toLowerCase();
+    const pct = Number(item.progress_pct || 0);
+    const step = String(item.progress_step || "");
+    if (state === "running") {
+      return `Refresh running${step ? ` (${step})` : ""}${pct > 0 ? ` - ${pct}%` : ""}`;
+    }
+    if (state === "cancel_requested") {
+      return "Cancel requested. Waiting for safe stop...";
+    }
+    if (state === "success") {
+      return "Refresh completed.";
+    }
+    if (state === "canceled") {
+      return String(item.error_message || "Refresh canceled. Previous snapshot retained.");
+    }
+    if (state === "failed") {
+      return String(item.error_message || "Refresh failed.");
+    }
+    return "";
+  }
+
+  function clearPolling() {
+    if (pollTimer) {
+      window.clearTimeout(pollTimer);
+      pollTimer = 0;
+    }
+  }
+
+  async function pollMissedEntriesRun(runId) {
+    const runIdText = String(runId || "").trim();
+    if (!runIdText) return;
+    activeRunId = runIdText;
+    setBusy(true);
+    clearPolling();
+    const tick = async function () {
+      try {
+        const result = await requestJson(`/api/missed-entries/refresh/${encodeURIComponent(runIdText)}`, {
+          method: "GET",
+          headers: { "Accept": "application/json" },
+        });
+        const payload = result.payload || {};
+        const run = payload.run || {};
+        const state = String(run.status || "").toLowerCase();
+        setStatus(runStatusText(run));
+        if (state === "running" || state === "cancel_requested") {
+          setBusy(true);
+          pollTimer = window.setTimeout(tick, 1200);
+          return;
+        }
+        clearPolling();
+        activeRunId = "";
+        setBusy(false);
+        if (state === "success") {
+          window.location.reload();
+        }
+      } catch (err) {
+        clearPolling();
+        activeRunId = "";
+        setBusy(false);
+        const msg = (err && err.message) ? err.message : String(err);
+        setStatus(msg || "Failed to poll refresh status.");
+      }
+    };
+    tick();
+  }
+
+  btn.addEventListener("click", async function () {
+    setBusy(true);
+    setStatus("Running scripts...");
+    try {
+      if (!isMissedEntries) {
+        const result = await requestJson(endpointPath, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ report: reportId }),
+        });
+        const response = result.response;
+        const payload = result.payload || {};
+        if (!response.ok || !payload.ok) {
+          const msg = payload.error || "Refresh failed.";
+          setStatus(msg);
+          alert(msg);
+          return;
+        }
+        const ts = payload.completed_at || "";
+        setStatus(ts ? ("Updated: " + ts) : "Updated.");
+        window.location.reload();
+        return;
+      }
+
+      const result = await requestJson("/api/missed-entries/refresh", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const response = result.response;
+      const payload = result.payload || {};
+      if (!response.ok || !payload.ok) {
+        const msg = payload.error || "Refresh failed.";
+        setStatus(msg);
+        alert(msg);
+        return;
+      }
+      const run = payload.run || {};
+      const runId = String(payload.run_id || run.run_id || "").trim();
+      if (!runId) {
+        setBusy(false);
+        setStatus("Refresh started but no run ID was returned.");
+        return;
+      }
+      setStatus(runStatusText(run) || "Refresh started.");
+      await pollMissedEntriesRun(runId);
+    } catch (err) {
+      const base = (err && err.message) ? err.message : String(err);
+      const hint = "If report is opened from file path, use server URL like http://127.0.0.1:8000/dashboard.html";
+      const msg = base ? (base + ". " + hint) : hint;
+      setStatus(msg);
+      alert(msg);
+    } finally {
+      if (!isMissedEntries) {
+        setBusy(false);
+      }
+    }
+  });
+
+  if (isMissedEntries && cancelBtn) {
+    cancelBtn.addEventListener("click", async function () {
+      if (!activeRunId) return;
+      cancelBtn.disabled = true;
+      try {
+        const result = await requestJson("/api/missed-entries/cancel", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ run_id: activeRunId }),
+        });
+        const response = result.response;
+        const payload = result.payload || {};
+        if (!response.ok || !payload.ok) {
+          const msg = payload.error || "Cancel failed.";
+          setStatus(msg);
+          alert(msg);
+          cancelBtn.disabled = false;
+          return;
+        }
+        setStatus(String(payload.message || "Cancel requested. Waiting for safe stop..."));
+      } catch (err) {
+        const msg = (err && err.message) ? err.message : String(err);
+        setStatus(msg || "Cancel failed.");
+        cancelBtn.disabled = false;
+      }
+    });
+
+    (async function attachCurrentRun() {
+      try {
+        const result = await requestJson("/api/missed-entries/refresh/current", {
+          method: "GET",
+          headers: { "Accept": "application/json" },
+        });
+        const payload = result.payload || {};
+        const run = payload.run || null;
+        if (!run) return;
+        const state = String(run.status || "").toLowerCase();
+        if (state === "running" || state === "cancel_requested") {
+          setStatus(runStatusText(run));
+          await pollMissedEntriesRun(String(run.run_id || ""));
+        } else if (state) {
+          setStatus(runStatusText(run));
+        }
+      } catch (_err) {
+        // Best effort only.
+      }
+    })();
+  }
+})();
+</script>
+<!-- codex-refresh-widget-end -->
+
+</body>
+</html>
