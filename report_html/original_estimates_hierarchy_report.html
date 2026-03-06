@@ -1,0 +1,1210 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Epic Estimate Report</title>
+  <link rel="stylesheet" href="/shared-nav.css">
+  <link rel="stylesheet" href="/material-symbols.css">
+  <style>
+    :root { --bg:#f3f6fb; --card:#fff; --line:#d7e0ea; --text:#1f2937; --muted:#64748b; --brand:#0f4c5c; --ok:#166534; --err:#991b1b; }
+    * { box-sizing:border-box; }
+    body { margin:0; font-family:"Segoe UI", Tahoma, sans-serif; color:var(--text); background:linear-gradient(180deg,#f7fbff,var(--bg)); }
+    .top { position:sticky; top:0; z-index:1200; border-bottom:1px solid #d5e3f0; background:rgba(247,251,255,.97); backdrop-filter:blur(4px); padding:10px 14px; }
+    .toolbar { max-width:1500px; margin:0 auto; display:flex; gap:8px; align-items:center; flex-wrap:wrap; border:1px solid #d5e3f0; border-radius:12px; background:#f8fbff; padding:8px 10px; }
+    .seg { font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; color:#334155; font-weight:800; }
+    .ctl { display:grid; gap:4px; min-width:150px; }
+    .ctl.search-anything { min-width:260px; flex:1 1 260px; }
+    .ctl label { font-size:.7rem; text-transform:uppercase; letter-spacing:.04em; color:#35556a; font-weight:700; }
+    .ctl input, .ctl select { border:1px solid #b7c9d7; border-radius:8px; padding:7px 9px; background:#fff; color:#12313f; font-size:.85rem; }
+    .ctl select[multiple] { min-height:90px; }
+    .btn { border:1px solid #255f73; border-radius:8px; background:#0f4c5c; color:#fff; font-size:.84rem; font-weight:700; padding:8px 10px; cursor:pointer; }
+    .btn.alt { background:#fff; color:#255f73; }
+    .btn.fetch { border-color:#0f766e; background:#ecfeff; color:#0f766e; }
+    .btn:disabled { opacity:.7; cursor:progress; }
+    .status { font-size:.78rem; color:#475569; min-height:18px; }
+    .page { max-width:1500px; margin:0 auto; padding:16px; display:grid; gap:12px; }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px; }
+    .title { margin:0; font-size:1.25rem; color:#0b3142; }
+    .meta { margin:6px 0 0; font-size:.84rem; color:var(--muted); }
+    .table-wrap { overflow:auto; border:1px solid #dbe4ef; border-radius:10px; background:#fff; }
+    table { width:100%; min-width:1200px; border-collapse:collapse; }
+    th, td { border-bottom:1px solid #e4ebf3; padding:6px 8px; text-align:left; vertical-align:top; font-size:.8rem; line-height:1.25; }
+    th { position:sticky; top:0; background:#f4f8fd; color:#1e3a52; z-index:1; font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; }
+    tr.row-epic { background:#fbfdff; }
+    tr.row-story { background:#ffffff; }
+    tr.row-subtask { background:#fefefe; }
+    .item-box { display:grid; gap:2px; }
+    .item-main { display:flex; gap:6px; align-items:flex-start; justify-content:space-between; }
+    .item-title-row { display:flex; gap:6px; align-items:center; min-width:0; }
+    .item-title { font-weight:700; color:#0f172a; font-size:.78rem; line-height:1.2; }
+    .item-meta { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+    .level-icon { font-size:16px; line-height:1; }
+    .level-icon.epic { color:#7e22ce; }
+    .level-icon.story { color:#2563eb; }
+    .level-icon.subtask { color:#16a34a; }
+    .assignee { font-size:.7rem; color:#1d4ed8; border:1px solid #bfdbfe; border-radius:999px; padding:1px 6px; background:#eff6ff; white-space:nowrap; }
+    .jira-id { font-family:Consolas,monospace; font-size:.68rem; color:#475569; border:1px solid #cbd5e1; border-radius:999px; padding:1px 6px; background:#f8fafc; white-space:nowrap; }
+    .jira-link, .jira-disabled { display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; border-radius:7px; border:1px solid #bfdbfe; text-decoration:none; font-size:.72rem; font-weight:700; }
+    .jira-link { color:#1d4ed8; background:#eff6ff; }
+    .jira-disabled { color:#94a3b8; background:#f1f5f9; border-color:#cbd5e1; }
+    .num { font-variant-numeric:tabular-nums; font-weight:700; color:#0f172a; }
+    .num-muted { color:#64748b; }
+    .num-mismatch {
+      background:#fff1f2;
+      color:#9f1239;
+      box-shadow: inset 0 0 0 1px #fecdd3;
+    }
+    .epic-refresh-btn { border:1px solid #c7d7e6; border-radius:8px; background:#f8fbff; color:#1e3a52; font-size:.75rem; padding:4px 8px; cursor:pointer; }
+    .epic-refresh-btn:disabled { opacity:.6; cursor:progress; }
+    .empty { padding:18px; text-align:center; color:#64748b; }
+  </style>
+</head>
+<body>
+  <div class="top">
+    <div class="toolbar">
+      <span class="seg">Filters</span>
+      <div class="ctl"><label for="from-date">From</label><input id="from-date" type="date"></div>
+      <div class="ctl"><label for="to-date">To</label><input id="to-date" type="date"></div>
+      <div class="ctl"><label for="projects">Projects</label><select id="projects" multiple></select></div>
+      <div class="ctl"><label for="statuses">Statuses</label><select id="statuses" multiple></select></div>
+      <div class="ctl"><label for="assignees">Assignees</label><select id="assignees" multiple></select></div>
+      <div class="ctl search-anything"><label for="search-anything">Search Anything</label><input id="search-anything" type="text" placeholder="Search key, summary, assignee, status, project..."></div>
+      <button id="apply-btn" class="btn" type="button">Apply</button>
+      <button id="reset-btn" class="btn alt" type="button">Reset</button>
+      <button id="fetch-btn" class="btn fetch" type="button">Fetch Latest</button>
+      <span id="status" class="status" aria-live="polite"></span>
+    </div>
+  </div>
+  <main class="page">
+    <section class="card">
+      <h1 class="title">Epic Estimate Report</h1>
+      <p class="meta">Epic -> Story -> Subtask original estimates with rollup sums.</p>
+      <p class="meta" id="meta-updated"></p>
+    </section>
+    <section class="card">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Epic</th>
+              <th>Story</th>
+              <th>Subtask</th>
+              <th>Original Estimates</th>
+              <th>Sum Of Original Estimates</th>
+            </tr>
+          </thead>
+          <tbody id="table-body">
+            <tr><td colspan="5" class="empty">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    (function () {
+      const $ = (id) => document.getElementById(id);
+      const st = { epics: [], updatedAt: "", selectedProjects: [], searchTerm: "" };
+      const epicsBusy = new Set();
+
+      function esc(v){
+        return String(v == null ? "" : v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+      }
+      function txt(v){ return String(v == null ? "" : v).trim(); }
+      function n(v){ const x = Number(v); return Number.isFinite(x) ? x : 0; }
+      function h(v){ return n(v).toFixed(2); }
+      function canonical(v){ return txt(v).toLowerCase(); }
+      function issueSearchBlob(item){
+        if (!item || typeof item !== "object") return "";
+        return [
+          item.issue_key,
+          item.summary,
+          item.assignee,
+          item.status,
+          item.project_key,
+          item.project_name,
+          item.planned_start,
+          item.planned_due,
+          item.jira_url,
+          item.original_estimate_hours,
+          item.sum_original_estimate_hours,
+        ].map((v)=>txt(v).toLowerCase()).join(" | ");
+      }
+      function matchesIssue(item, term){
+        const q = canonical(term);
+        if (!q) return true;
+        return issueSearchBlob(item).includes(q);
+      }
+      function selectedValues(id){ return Array.from($(id).selectedOptions || []).map((o)=>txt(o.value)).filter(Boolean); }
+      function setStatus(msg, cls){
+        const el = $("status");
+        el.textContent = msg || "";
+        el.style.color = cls === "err" ? "var(--err)" : (cls === "ok" ? "var(--ok)" : "#475569");
+      }
+      function formatUpdatedAt(raw){
+        const t = txt(raw);
+        if (!t) return "";
+        const d = new Date(t);
+        if (Number.isNaN(d.getTime())) return t;
+        return d.toLocaleString();
+      }
+      function fillSelect(id, values, selected){
+        const sel = $(id);
+        const wanted = new Set((Array.isArray(selected) ? selected : []).map((v)=>txt(v).toLowerCase()));
+        sel.innerHTML = "";
+        (Array.isArray(values) ? values : []).forEach((val)=>{
+          const v = txt(val);
+          if (!v) return;
+          const op = document.createElement("option");
+          op.value = v;
+          op.textContent = v;
+          if (wanted.has(v.toLowerCase())) op.selected = true;
+          sel.appendChild(op);
+        });
+      }
+      function issueCell(item, kind){
+        const key = txt(item && item.issue_key);
+        const summary = txt(item && item.summary) || key;
+        const assignee = txt(item && item.assignee) || "Unassigned";
+        const jira = txt(item && item.jira_url);
+        const iconName = kind === "epic" ? "bolt" : (kind === "story" ? "person" : "construction");
+        const refreshBtn = kind === "epic"
+          ? `<button type="button" class="epic-refresh-btn" data-refresh-epic="${esc(key)}" ${epicsBusy.has(key) ? "disabled" : ""}>${epicsBusy.has(key) ? "Refreshing..." : "Refresh Epic"}</button>`
+          : "";
+        const jiraBtn = jira
+          ? `<a class="jira-link" href="${esc(jira)}" target="_blank" rel="noopener noreferrer" title="Open in Jira">J</a>`
+          : `<span class="jira-disabled" title="No Jira link">-</span>`;
+        return `
+          <div class="item-box">
+            <div class="item-main">
+              <div>
+                <div class="item-title-row">
+                  <span class="material-symbols-outlined level-icon ${esc(kind)}" aria-hidden="true">${esc(iconName)}</span>
+                  <div class="item-title">${esc(summary)}</div>
+                </div>
+              </div>
+              <div>${jiraBtn}</div>
+            </div>
+            <div class="item-meta"><span class="assignee">${esc(assignee)}</span><span class="jira-id">${esc(key)}</span>${refreshBtn}</div>
+          </div>
+        `;
+      }
+      function rowHtml(epic, story, subtask){
+        const own = subtask ? n(subtask.original_estimate_hours) : story ? n(story.original_estimate_hours) : n(epic.original_estimate_hours);
+        const sumValue = subtask ? null : story ? n(story.sum_original_estimate_hours) : n(epic.sum_original_estimate_hours);
+        const sum = sumValue == null ? "" : h(sumValue);
+        const cls = subtask ? "row-subtask" : story ? "row-story" : "row-epic";
+        const hasMismatch = sumValue != null && Math.abs(own - sumValue) > 0.009;
+        const ownClass = "num" + (hasMismatch ? " num-mismatch" : "");
+        const sumClass = "num " + (sum ? "" : "num-muted") + (hasMismatch ? " num-mismatch" : "");
+        return `
+          <tr class="${cls}">
+            <td>${story || subtask ? "" : issueCell(epic, "epic")}</td>
+            <td>${story && !subtask ? issueCell(story, "story") : ""}</td>
+            <td>${subtask ? issueCell(subtask, "subtask") : ""}</td>
+            <td class="${ownClass}">${h(own)}</td>
+            <td class="${sumClass}">${sum || "-"}</td>
+          </tr>
+        `;
+      }
+      function renderTable(){
+        const body = $("table-body");
+        if (!Array.isArray(st.epics) || !st.epics.length){
+          body.innerHTML = '<tr><td colspan="5" class="empty">No data for current filters. Click Fetch Latest to load Jira data.</td></tr>';
+          return;
+        }
+        const term = canonical(st.searchTerm);
+        const rows = [];
+        st.epics.forEach((epic)=>{
+          const stories = Array.isArray(epic.stories) ? epic.stories : [];
+          const epicMatch = matchesIssue(epic, term);
+          const storyNodes = [];
+          let epicHasMatch = epicMatch;
+
+          stories.forEach((story)=>{
+            const subtasks = Array.isArray(story.subtasks) ? story.subtasks : [];
+            const storyMatch = matchesIssue(story, term);
+            const matchedSubs = subtasks.filter((sub)=>matchesIssue(sub, term));
+            const includeStory = epicMatch || storyMatch || matchedSubs.length > 0;
+            if (!includeStory) return;
+            epicHasMatch = true;
+            storyNodes.push({
+              story,
+              allSubs: subtasks,
+              matchedSubs,
+              showAllSubs: epicMatch || storyMatch,
+            });
+          });
+          if (!epicHasMatch) return;
+          rows.push(rowHtml(epic, null, null));
+          storyNodes.forEach((node)=>{
+            rows.push(rowHtml(epic, node.story, null));
+            const subs = node.showAllSubs ? node.allSubs : node.matchedSubs;
+            subs.forEach((sub)=> rows.push(rowHtml(epic, node.story, sub)));
+          });
+        });
+        if (!rows.length){
+          body.innerHTML = '<tr><td colspan="5" class="empty">No matches for current search and filters.</td></tr>';
+          return;
+        }
+        body.innerHTML = rows.join("");
+      }
+      function summaryQuery(){
+        const p = new URLSearchParams();
+        p.set("from", $("from-date").value || "");
+        p.set("to", $("to-date").value || "");
+        const projects = selectedValues("projects");
+        const statuses = selectedValues("statuses");
+        const assignees = selectedValues("assignees");
+        if (projects.length) p.set("projects", projects.join(","));
+        if (statuses.length) p.set("statuses", statuses.join(","));
+        if (assignees.length) p.set("assignees", assignees.join(","));
+        return p.toString();
+      }
+      async function loadFilterOptions(){
+        const res = await fetch("/api/original-estimates/filter-options", { cache: "no-store" });
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || "Failed to load filter options.");
+        fillSelect("projects", data.filter_options.projects || [], data.selected_projects || []);
+        fillSelect("statuses", data.filter_options.statuses || [], []);
+        fillSelect("assignees", data.filter_options.assignees || [], []);
+        if (txt(data.from_date)) $("from-date").value = data.from_date;
+        if (txt(data.to_date)) $("to-date").value = data.to_date;
+      }
+      async function loadSummary(){
+        setStatus("Loading data...", "");
+        const res = await fetch(`/api/original-estimates/summary?${summaryQuery()}`, { cache: "no-store" });
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || "Failed to load summary.");
+        st.epics = Array.isArray(data.epics) ? data.epics : [];
+        st.updatedAt = txt(data.updated_at_utc);
+        $("meta-updated").textContent = st.updatedAt ? ("Last updated: " + formatUpdatedAt(st.updatedAt)) : "";
+        renderTable();
+        setStatus("Loaded.", "ok");
+      }
+      async function fetchLatestAll(){
+        $("fetch-btn").disabled = true;
+        try {
+          setStatus("Fetching latest from Jira...", "");
+          const res = await fetch("/api/original-estimates/refresh", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ from: $("from-date").value || "", to: $("to-date").value || "", projects: selectedValues("projects") }),
+          });
+          const data = await res.json();
+          if (!res.ok || !data.ok) throw new Error(data.error || "Failed to refresh.");
+          await loadFilterOptions();
+          await loadSummary();
+          setStatus("Fetched latest and saved.", "ok");
+        } catch (err){
+          setStatus(err.message || String(err), "err");
+        } finally {
+          $("fetch-btn").disabled = false;
+        }
+      }
+      async function refreshEpic(epicKey){
+        if (!txt(epicKey)) return;
+        epicsBusy.add(epicKey);
+        renderTable();
+        try {
+          setStatus("Refreshing epic " + epicKey + "...", "");
+          const res = await fetch(`/api/original-estimates/refresh-epic/${encodeURIComponent(epicKey)}?${summaryQuery()}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ from: $("from-date").value || "", to: $("to-date").value || "" }),
+          });
+          const data = await res.json();
+          if (!res.ok || !data.ok) throw new Error(data.error || "Epic refresh failed.");
+          await loadFilterOptions();
+          await loadSummary();
+          const stories = n(data && data.stats ? data.stats.stories : 0);
+          const subtasks = n(data && data.stats ? data.stats.subtasks : 0);
+          let visibleStories = 0;
+          let visibleSubtasks = 0;
+          const refreshedEpic = (st.epics || []).find((item)=>txt(item && item.issue_key).toUpperCase() === txt(epicKey).toUpperCase());
+          if (refreshedEpic){
+            const storyList = Array.isArray(refreshedEpic.stories) ? refreshedEpic.stories : [];
+            visibleStories = storyList.length;
+            visibleSubtasks = storyList.reduce((sum, story)=>sum + ((Array.isArray(story && story.subtasks) ? story.subtasks.length : 0)), 0);
+          }
+          const hiddenByFilters = (visibleStories < stories) || (visibleSubtasks < subtasks);
+          const filterNote = hiddenByFilters ? " (some are hidden by current filters)" : "";
+          setStatus(
+            "Epic refreshed: " + epicKey
+            + " (stories: " + stories + ", subtasks: " + subtasks
+            + "; visible: " + visibleStories + "/" + visibleSubtasks + ")"
+            + filterNote,
+            "ok"
+          );
+        } catch (err){
+          setStatus(err.message || String(err), "err");
+        } finally {
+          epicsBusy.delete(epicKey);
+          renderTable();
+        }
+      }
+
+      $("apply-btn").addEventListener("click", async ()=>{ try { await loadSummary(); } catch (err) { setStatus(err.message || String(err), "err"); } });
+      $("reset-btn").addEventListener("click", async ()=>{
+        try {
+          await loadFilterOptions();
+          $("search-anything").value = "";
+          st.searchTerm = "";
+          await loadSummary();
+          setStatus("Filters reset.", "ok");
+        } catch (err){
+          setStatus(err.message || String(err), "err");
+        }
+      });
+      $("fetch-btn").addEventListener("click", fetchLatestAll);
+      $("search-anything").addEventListener("input", (e)=>{
+        st.searchTerm = txt(e && e.target ? e.target.value : "");
+        renderTable();
+      });
+      $("table-body").addEventListener("click", (e)=>{
+        const btn = e.target && e.target.closest ? e.target.closest("[data-refresh-epic]") : null;
+        if (!btn) return;
+        refreshEpic(txt(btn.getAttribute("data-refresh-epic")));
+      });
+
+      (async function init(){
+        try {
+          await loadFilterOptions();
+          await loadSummary();
+        } catch (err){
+          setStatus(err.message || String(err), "err");
+          renderTable();
+        }
+      })();
+    })();
+  </script>
+  <script src="/shared-date-filter.js"></script>
+  <script src="/shared-nav.js"></script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!-- codex-info-drawer-start -->
+<!-- codex-info-drawer-v1 -->
+<style>
+.report-info-inline-btn {
+  margin-left: 6px;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 1px solid #94a3b8;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+}
+.report-info-inline-btn:hover { background: #eef2ff; border-color: #64748b; }
+#report-info-drawer-backdrop {
+  position: fixed; inset: 0; background: rgba(15,23,42,.45); opacity: 0; visibility: hidden;
+  transition: opacity .16s ease; z-index: 2500;
+}
+#report-info-drawer-backdrop.is-open { opacity: 1; visibility: visible; }
+#report-info-drawer {
+  position: fixed; right: 0; top: 0; height: 100vh; width: min(520px, 94vw);
+  background: #ffffff; border-left: 1px solid #cbd5e1; box-shadow: -16px 0 30px rgba(15,23,42,.18);
+  transform: translateX(105%); transition: transform .18s ease; z-index: 2501; display: flex; flex-direction: column;
+}
+#report-info-drawer.is-open { transform: translateX(0); }
+.report-info-drawer-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 12px 14px; border-bottom: 1px solid #e2e8f0; background: linear-gradient(180deg,#f8fafc,#f1f5f9);
+}
+.report-info-drawer-title { margin: 0; font-size: 1rem; color: #0f172a; }
+.report-info-drawer-close {
+  border: 1px solid #94a3b8; background: #fff; color: #334155; border-radius: 8px; padding: 6px 8px; cursor: pointer; font-weight: 700;
+}
+#report-info-drawer-body { padding: 12px 14px; overflow: auto; color: #1f2937; font-size: .86rem; line-height: 1.45; }
+.report-info-section { margin-bottom: 10px; }
+.report-info-section h4 { margin: 0 0 4px; font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; color: #475569; }
+.report-info-section p { margin: 0; }
+.report-info-list { margin: 0; padding-left: 18px; }
+.report-info-list li { margin: 0 0 3px; }
+body.report-info-drawer-open { overflow: hidden; }
+</style>
+<div id="report-info-drawer-backdrop" aria-hidden="true"></div>
+<aside id="report-info-drawer" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="report-info-drawer-title">
+  <div class="report-info-drawer-head">
+    <h3 class="report-info-drawer-title" id="report-info-drawer-title">Field Information</h3>
+    <button type="button" class="report-info-drawer-close" id="report-info-drawer-close">Close</button>
+  </div>
+  <div id="report-info-drawer-body"></div>
+</aside>
+<script>
+(function () {
+  const seeded = [];
+  const byId = Object.create(null);
+  function txt(v) { return String(v == null ? "" : v).trim(); }
+  function asArr(v) { return Array.isArray(v) ? v : []; }
+  function slug(v) { return txt(v).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "info"; }
+  function listHtml(values) {
+    const vals = asArr(values).map((x) => txt(x)).filter(Boolean);
+    if (!vals.length) return "<p>-</p>";
+    return "<ul class=\"report-info-list\">" + vals.map((x) => "<li>" + esc(x) + "</li>").join("") + "</ul>";
+  }
+  function esc(v) {
+    return txt(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+  function addCatalog(item) {
+    if (!item || !txt(item.id)) return;
+    byId[item.id] = Object.assign({
+      id: txt(item.id), label: "Field", report: txt(window.__activeReportId || ""),
+      ui_targets: [], definition: "", formula: "", ingredients: [],
+      business_validations: [], field_linkages: [], cross_report_linkages: [],
+      data_sources: [], leadership_interpretation: ""
+    }, item);
+  }
+  for (const item of asArr(seeded)) addCatalog(item);
+  function ensureInfoButton(host, infoId, label) {
+    if (!host || !txt(infoId)) return;
+    if (host.querySelector && host.querySelector('[data-info-id="' + infoId + '"]')) return;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "report-info-inline-btn";
+    btn.textContent = "i";
+    btn.setAttribute("data-info-id", infoId);
+    btn.setAttribute("aria-label", (txt(label) || "Field") + " information");
+    host.appendChild(btn);
+  }
+  function extractFromTooltips() {
+    const defs = [
+      [".score-info", ".score-info-tip"],
+      [".kpi-info", ".kpi-info-tip"],
+      [".stat-info", ".stat-info-tip"],
+      [".card-i-wrap", ".card-i-tip"]
+    ];
+    for (const pair of defs) {
+      const wrapSel = pair[0];
+      const tipSel = pair[1];
+      const wraps = Array.from(document.querySelectorAll(wrapSel));
+      for (const wrap of wraps) {
+        const tip = wrap.querySelector(tipSel);
+        const raw = txt(tip ? tip.textContent : "");
+        const parentLabelNode = wrap.closest(".score-label,.label,.k,.story-title,h3,h4,.card,.kpi,.stat,.summary-card");
+        const label = txt(parentLabelNode ? parentLabelNode.textContent : "");
+        const id = wrap.getAttribute("data-info-id") || slug((window.__activeReportId || "report") + "-" + (label || raw.slice(0, 36)));
+        wrap.setAttribute("data-info-id", id);
+        wrap.setAttribute("role", "button");
+        wrap.setAttribute("tabindex", "0");
+        if (tip) tip.style.display = "none";
+        if (!byId[id]) {
+          addCatalog({
+            id: id,
+            label: label || "Field",
+            report: txt(window.__activeReportId || ""),
+            ui_targets: [],
+            definition: "Auto-captured from report tooltip content.",
+            formula: raw.split("\n")[0] || raw,
+            ingredients: [],
+            business_validations: [],
+            field_linkages: [],
+            cross_report_linkages: [],
+            data_sources: [],
+            leadership_interpretation: raw
+          });
+        }
+      }
+    }
+  }
+  extractFromTooltips();
+  for (const item of Object.values(byId)) {
+    for (const selector of asArr(item.ui_targets)) {
+      try {
+        const nodes = Array.from(document.querySelectorAll(selector));
+        for (const node of nodes) {
+          const target = node.querySelector ? (node.querySelector(".label,.k,.score-label,h2,h3,h4,th") || node) : node;
+          ensureInfoButton(target, item.id, item.label);
+        }
+      } catch (_err) {}
+    }
+  }
+  const backdrop = document.getElementById("report-info-drawer-backdrop");
+  const drawer = document.getElementById("report-info-drawer");
+  const drawerBody = document.getElementById("report-info-drawer-body");
+  const closeBtn = document.getElementById("report-info-drawer-close");
+  let activeId = "";
+  let lastFocus = null;
+  function sectionHtml(title, contentHtml) {
+    return '<section class="report-info-section"><h4>' + esc(title) + '</h4>' + contentHtml + '</section>';
+  }
+  function render(item) {
+    if (!item) {
+      drawerBody.innerHTML = "<p>No information is configured for this field yet.</p>";
+      return;
+    }
+    drawerBody.innerHTML =
+      sectionHtml("Definition", "<p>" + esc(item.definition || "-") + "</p>") +
+      sectionHtml("Formula", "<p>" + esc(item.formula || "-") + "</p>") +
+      sectionHtml("Ingredients", listHtml(item.ingredients)) +
+      sectionHtml("Business Validations", listHtml(item.business_validations)) +
+      sectionHtml("Linked Fields (This Report)", listHtml(item.field_linkages)) +
+      sectionHtml("Cross-Report Linkages", listHtml(item.cross_report_linkages)) +
+      sectionHtml("Data Sources", listHtml(item.data_sources)) +
+      sectionHtml("Leadership Interpretation", "<p>" + esc(item.leadership_interpretation || "-") + "</p>");
+    const title = document.getElementById("report-info-drawer-title");
+    if (title) title.textContent = txt(item.label) || "Field Information";
+  }
+  function openDrawer(id) {
+    const item = byId[id];
+    activeId = id;
+    lastFocus = document.activeElement;
+    render(item);
+    backdrop.classList.add("is-open");
+    drawer.classList.add("is-open");
+    drawer.setAttribute("aria-hidden", "false");
+    document.body.classList.add("report-info-drawer-open");
+    if (closeBtn) closeBtn.focus();
+  }
+  function closeDrawer() {
+    activeId = "";
+    backdrop.classList.remove("is-open");
+    drawer.classList.remove("is-open");
+    drawer.setAttribute("aria-hidden", "true");
+    document.body.classList.remove("report-info-drawer-open");
+    if (lastFocus && lastFocus.focus) lastFocus.focus();
+  }
+  function triggerFromEvent(e) {
+    const el = e.target.closest("[data-info-id]");
+    if (!el) return;
+    const id = txt(el.getAttribute("data-info-id"));
+    if (!id) return;
+    e.preventDefault();
+    openDrawer(id);
+  }
+  document.addEventListener("click", triggerFromEvent);
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && activeId) {
+      e.preventDefault();
+      closeDrawer();
+      return;
+    }
+    const inInfo = e.target && e.target.closest && e.target.closest("[data-info-id]");
+    if (inInfo && (e.key === "Enter" || e.key === " ")) {
+      e.preventDefault();
+      openDrawer(txt(inInfo.getAttribute("data-info-id")));
+    }
+    if (!activeId || e.key !== "Tab") return;
+    const f = drawer.querySelectorAll("button,[href],[tabindex]:not([tabindex='-1'])");
+    const nodes = Array.from(f).filter((x) => !x.disabled);
+    if (!nodes.length) return;
+    const first = nodes[0];
+    const last = nodes[nodes.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  });
+  closeBtn.addEventListener("click", closeDrawer);
+  backdrop.addEventListener("click", closeDrawer);
+  window.reportInfoCatalog = Object.values(byId);
+})();
+</script>
+<!-- codex-info-drawer-end -->
+
+
+<!-- codex-refresh-widget-start -->
+<!-- codex-refresh-widget-v2 -->
+<style>
+#codex-refresh-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+#codex-refresh-btn {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  box-sizing: border-box;
+  border: 1px solid rgba(126, 214, 242, 0.65);
+  background: rgba(14, 116, 144, 0.58);
+  color: #fff;
+  border-radius: 9px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+}
+#codex-refresh-btn[disabled] {
+  cursor: not-allowed;
+  opacity: 0.8;
+}
+#codex-refresh-cancel-btn {
+  width: 100%;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  box-sizing: border-box;
+  border: 1px solid rgba(248, 113, 113, 0.75);
+  background: rgba(153, 27, 27, 0.55);
+  color: #fff;
+  border-radius: 9px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+#codex-refresh-cancel-btn[disabled] {
+  cursor: not-allowed;
+  opacity: 0.75;
+}
+#codex-refresh-btn .material-symbols-outlined {
+  font-size: 18px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.app-shell.sidebar-collapsed #codex-refresh-btn,
+.unified-nav.is-collapsed #codex-refresh-btn {
+  padding-left: 8px;
+  padding-right: 8px;
+  gap: 0;
+  justify-content: center;
+}
+.app-shell.sidebar-collapsed #codex-refresh-btn-label,
+.unified-nav.is-collapsed #codex-refresh-btn-label {
+  display: none;
+}
+.app-shell.sidebar-collapsed #codex-refresh-status,
+.unified-nav.is-collapsed #codex-refresh-status {
+  display: none;
+}
+#codex-refresh-status {
+  min-height: 14px;
+  font-size: 11px;
+  color: rgba(219, 246, 255, 0.9);
+  text-align: left;
+}
+</style>
+<div id="codex-refresh-wrap" aria-live="polite">
+  <button id="codex-refresh-btn" type="button">
+    <span class="material-symbols-outlined" aria-hidden="true">refresh</span>
+    <span id="codex-refresh-btn-label">Refresh</span>
+  </button>
+  <button id="codex-refresh-cancel-btn" type="button">Cancel Refresh Run</button>
+  <div id="codex-refresh-status"></div>
+</div>
+<script>
+(function () {
+  const reportId = 'original_estimates_hierarchy';
+  const endpointPath = "/api/report/refresh";
+  const isMissedEntries = reportId === "missed_entries";
+  const wrap = document.getElementById("codex-refresh-wrap");
+  const btn = document.getElementById("codex-refresh-btn");
+  const cancelBtn = document.getElementById("codex-refresh-cancel-btn");
+  const btnLabel = document.getElementById("codex-refresh-btn-label");
+  const status = document.getElementById("codex-refresh-status");
+  if (!wrap || !btn || !btnLabel || !status || !reportId) return;
+  let activeRunId = "";
+  let pollTimer = 0;
+
+  if (!isMissedEntries && cancelBtn) {
+    cancelBtn.style.display = "none";
+  } else if (cancelBtn) {
+    cancelBtn.style.display = "";
+    cancelBtn.disabled = true;
+  }
+
+  function mountRefreshInNav() {
+    const navTargets = [
+      ".app-sidebar .sidebar-nav",
+      ".unified-nav .unified-nav-list",
+      ".sidebar-nav",
+      ".unified-nav-list",
+    ];
+    for (const selector of navTargets) {
+      const target = document.querySelector(selector);
+      if (target) {
+        target.appendChild(wrap);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  if (!mountRefreshInNav()) {
+    const observer = new MutationObserver(function () {
+      if (mountRefreshInNav()) {
+        observer.disconnect();
+      }
+    });
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+    window.setTimeout(function () { observer.disconnect(); }, 5000);
+  }
+
+  function setBusy(isBusy) {
+    btn.disabled = !!isBusy;
+    btnLabel.textContent = isBusy ? "Refreshing..." : "Refresh";
+    if (isMissedEntries && cancelBtn) {
+      cancelBtn.disabled = !isBusy || !activeRunId;
+    }
+  }
+
+  function setStatus(msg) {
+    status.textContent = msg || "";
+  }
+
+  function endpointCandidates(path) {
+    const endpointSuffix = String(path || endpointPath);
+    if (window.location.protocol === "http:" || window.location.protocol === "https:") {
+      return [endpointSuffix];
+    }
+    const savedOrigin = String(localStorage.getItem("codex-report-server-origin") || "").trim();
+    const defaults = [
+      "http://127.0.0.1:8000",
+      "http://localhost:8000",
+      "http://127.0.0.1:5000",
+      "http://localhost:5000",
+    ];
+    const origins = [savedOrigin, ...defaults]
+      .map((item) => String(item || "").trim().replace(/\/$/, ""))
+      .filter(Boolean);
+    return Array.from(new Set(origins)).map((origin) => origin + endpointSuffix);
+  }
+
+  async function requestJson(path, options) {
+    const endpoints = endpointCandidates(path);
+    let lastError = "Failed to fetch";
+    for (const endpoint of endpoints) {
+      try {
+        const response = await fetch(endpoint, options || {});
+        if (endpoint.startsWith("http")) {
+          try {
+            localStorage.setItem("codex-report-server-origin", new URL(endpoint).origin);
+          } catch (_err) {}
+        }
+        const payload = await response.json().catch(() => ({}));
+        return { response, payload };
+      } catch (err) {
+        lastError = (err && err.message) ? err.message : String(err);
+      }
+    }
+    throw new Error(lastError);
+  }
+
+  function runStatusText(run) {
+    const item = run || {};
+    const state = String(item.status || "").toLowerCase();
+    const pct = Number(item.progress_pct || 0);
+    const step = String(item.progress_step || "");
+    if (state === "running") {
+      return `Refresh running${step ? ` (${step})` : ""}${pct > 0 ? ` - ${pct}%` : ""}`;
+    }
+    if (state === "cancel_requested") {
+      return "Cancel requested. Waiting for safe stop...";
+    }
+    if (state === "success") {
+      return "Refresh completed.";
+    }
+    if (state === "canceled") {
+      return String(item.error_message || "Refresh canceled. Previous snapshot retained.");
+    }
+    if (state === "failed") {
+      return String(item.error_message || "Refresh failed.");
+    }
+    return "";
+  }
+
+  function clearPolling() {
+    if (pollTimer) {
+      window.clearTimeout(pollTimer);
+      pollTimer = 0;
+    }
+  }
+
+  async function pollMissedEntriesRun(runId) {
+    const runIdText = String(runId || "").trim();
+    if (!runIdText) return;
+    activeRunId = runIdText;
+    setBusy(true);
+    clearPolling();
+    const tick = async function () {
+      try {
+        const result = await requestJson(`/api/missed-entries/refresh/${encodeURIComponent(runIdText)}`, {
+          method: "GET",
+          headers: { "Accept": "application/json" },
+        });
+        const payload = result.payload || {};
+        const run = payload.run || {};
+        const state = String(run.status || "").toLowerCase();
+        setStatus(runStatusText(run));
+        if (state === "running" || state === "cancel_requested") {
+          setBusy(true);
+          pollTimer = window.setTimeout(tick, 1200);
+          return;
+        }
+        clearPolling();
+        activeRunId = "";
+        setBusy(false);
+        if (state === "success") {
+          window.location.reload();
+        }
+      } catch (err) {
+        clearPolling();
+        activeRunId = "";
+        setBusy(false);
+        const msg = (err && err.message) ? err.message : String(err);
+        setStatus(msg || "Failed to poll refresh status.");
+      }
+    };
+    tick();
+  }
+
+  btn.addEventListener("click", async function () {
+    setBusy(true);
+    setStatus("Running scripts...");
+    try {
+      if (!isMissedEntries) {
+        const result = await requestJson(endpointPath, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ report: reportId }),
+        });
+        const response = result.response;
+        const payload = result.payload || {};
+        if (!response.ok || !payload.ok) {
+          const msg = payload.error || "Refresh failed.";
+          setStatus(msg);
+          alert(msg);
+          return;
+        }
+        const ts = payload.completed_at || "";
+        setStatus(ts ? ("Updated: " + ts) : "Updated.");
+        window.location.reload();
+        return;
+      }
+
+      const result = await requestJson("/api/missed-entries/refresh", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const response = result.response;
+      const payload = result.payload || {};
+      if (!response.ok || !payload.ok) {
+        const msg = payload.error || "Refresh failed.";
+        setStatus(msg);
+        alert(msg);
+        return;
+      }
+      const run = payload.run || {};
+      const runId = String(payload.run_id || run.run_id || "").trim();
+      if (!runId) {
+        setBusy(false);
+        setStatus("Refresh started but no run ID was returned.");
+        return;
+      }
+      setStatus(runStatusText(run) || "Refresh started.");
+      await pollMissedEntriesRun(runId);
+    } catch (err) {
+      const base = (err && err.message) ? err.message : String(err);
+      const hint = "If report is opened from file path, use server URL like http://127.0.0.1:8000/dashboard.html";
+      const msg = base ? (base + ". " + hint) : hint;
+      setStatus(msg);
+      alert(msg);
+    } finally {
+      if (!isMissedEntries) {
+        setBusy(false);
+      }
+    }
+  });
+
+  if (isMissedEntries && cancelBtn) {
+    cancelBtn.addEventListener("click", async function () {
+      if (!activeRunId) return;
+      cancelBtn.disabled = true;
+      try {
+        const result = await requestJson("/api/missed-entries/cancel", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ run_id: activeRunId }),
+        });
+        const response = result.response;
+        const payload = result.payload || {};
+        if (!response.ok || !payload.ok) {
+          const msg = payload.error || "Cancel failed.";
+          setStatus(msg);
+          alert(msg);
+          cancelBtn.disabled = false;
+          return;
+        }
+        setStatus(String(payload.message || "Cancel requested. Waiting for safe stop..."));
+      } catch (err) {
+        const msg = (err && err.message) ? err.message : String(err);
+        setStatus(msg || "Cancel failed.");
+        cancelBtn.disabled = false;
+      }
+    });
+
+    (async function attachCurrentRun() {
+      try {
+        const result = await requestJson("/api/missed-entries/refresh/current", {
+          method: "GET",
+          headers: { "Accept": "application/json" },
+        });
+        const payload = result.payload || {};
+        const run = payload.run || null;
+        if (!run) return;
+        const state = String(run.status || "").toLowerCase();
+        if (state === "running" || state === "cancel_requested") {
+          setStatus(runStatusText(run));
+          await pollMissedEntriesRun(String(run.run_id || ""));
+        } else if (state) {
+          setStatus(runStatusText(run));
+        }
+      } catch (_err) {
+        // Best effort only.
+      }
+    })();
+  }
+})();
+</script>
+<!-- codex-refresh-widget-end -->
+
+</body>
+</html>
