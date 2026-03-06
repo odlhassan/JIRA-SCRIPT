@@ -4,6 +4,7 @@ from collections import defaultdict, deque
 from datetime import date, datetime, timedelta, timezone
 import io
 import json
+import math
 import os
 import random
 import re
@@ -13859,6 +13860,147 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         except Exception as exc:
             _oeh_insert_sync_run("epic", epic_key, "failed", error_message=str(exc))
             return jsonify({"ok": False, "error": f"Epic refresh failed: {exc}"}), 500
+
+    def _oeh_fetch_epic_subtree_unscoped(session, epic_key: str) -> tuple[dict, list[dict], list[dict]]:
+        key = _to_text(epic_key).upper()
+        if not key:
+            raise ValueError("epic_key is required.")
+        start_field_id = resolve_jira_start_date_field_id(session, BASE_URL, project_keys=None)
+        end_field_ids = resolve_jira_end_date_field_ids(session, BASE_URL, project_keys=None)
+        if "duedate" not in end_field_ids:
+            end_field_ids.append("duedate")
+        fields = _planned_vs_dispensed_issue_fields(start_field_id, end_field_ids)
+        epic_issues = _fetch_jira_issues_by_keys(session, [key], fields)
+        if not epic_issues:
+            raise LookupError(f"Epic '{key}' not found in Jira.")
+        epic = _normalize_pvd_issue(epic_issues[0], start_field_id, end_field_ids, issue_kind_override="epic")
+        stories_raw = _fetch_story_issues_for_epics(session, [key], fields, project_keys=None)
+        stories: list[dict] = []
+        story_to_epic: dict[str, str] = {}
+        for issue in stories_raw:
+            normalized = _normalize_pvd_issue(issue, start_field_id, end_field_ids, issue_kind_override="story")
+            story_fields = issue.get("fields", {}) or {}
+            linked_epic = _resolve_epic_key_for_story(story_fields, {key}) or _to_text(normalized.get("epic_key_candidate")).upper()
+            if linked_epic != key:
+                continue
+            normalized["epic_key"] = key
+            story_to_epic[_to_text(normalized.get("issue_key")).upper()] = key
+            stories.append(normalized)
+        story_keys = sorted(story_to_epic.keys())
+        subtasks: list[dict] = []
+        if story_keys:
+            subtasks_raw = _fetch_subtask_issues_for_stories(session, story_keys, fields, project_keys=None)
+            for issue in subtasks_raw:
+                normalized = _normalize_pvd_issue(issue, start_field_id, end_field_ids, issue_kind_override="subtask")
+                story_key = _to_text(normalized.get("parent_key")).upper()
+                if story_key not in story_to_epic:
+                    continue
+                normalized["story_key"] = story_key
+                normalized["epic_key"] = key
+                subtasks.append(normalized)
+        return epic, stories, subtasks
+
+    def _dashboard_estimate_text_from_hours(hours: object) -> str:
+        try:
+            value = float(hours or 0.0)
+        except Exception:
+            return ""
+        if not math.isfinite(value) or value <= 0:
+            return ""
+        rounded = round(value, 2)
+        if abs(rounded - round(rounded)) < 1e-9:
+            return f"{int(round(rounded))}h"
+        return f"{rounded:.2f}h".rstrip("0").rstrip(".") + "h"
+
+    def _dashboard_refresh_row(
+        item: dict,
+        *,
+        kind: str,
+        epic_key: str = "",
+        story_key: str = "",
+        fetched_at_utc: str = "",
+    ) -> dict[str, object]:
+        issue_key = _to_text(item.get("issue_key")).upper()
+        status = _to_text(item.get("status"))
+        parent_issue_key = ""
+        if kind == "story":
+            parent_issue_key = _to_text(epic_key).upper()
+        elif kind == "subtask":
+            parent_issue_key = _to_text(story_key).upper()
+        issue_type = "Epic" if kind == "epic" else ("Story" if kind == "story" else "Sub-task")
+        return {
+            "issue_key": issue_key,
+            "issue_type": issue_type,
+            "summary": _to_text(item.get("summary")) or issue_key,
+            "assignee": _to_text(item.get("assignee")) or "Unassigned",
+            "project_key": _to_text(item.get("project_key")).upper(),
+            "jira_url": _to_text(item.get("jira_url")) or _jira_browse_url(issue_key),
+            "parent_issue_key": parent_issue_key,
+            "epic_key": _to_text(epic_key).upper() if kind != "epic" else issue_key,
+            "story_key": _to_text(story_key).upper() if kind == "subtask" else "",
+            "jira_start_date": _to_text(item.get("planned_start")),
+            "jira_end_date": _to_text(item.get("planned_due")),
+            "original_estimate": _dashboard_estimate_text_from_hours(item.get("estimate_hours")),
+            "status": status,
+            "jira_status": status,
+            "fetched_at_utc": _to_text(fetched_at_utc),
+        }
+
+    @app.route("/api/dashboard/refresh-epic/<path:epic_key>", methods=["POST"])
+    def dashboard_refresh_epic(epic_key: str):
+        try:
+            key = _to_text(epic_key).upper()
+            if not key:
+                raise ValueError("epic_key is required.")
+            epic, stories, subtasks = _oeh_fetch_epic_subtree_unscoped(
+                session=get_session(),
+                epic_key=key,
+            )
+            _oeh_upsert_epic_subtree(epic, stories, subtasks)
+            fetched_at_utc = _utc_now_iso_z()
+            dashboard_patch = {
+                "epic": _dashboard_refresh_row(epic, kind="epic", fetched_at_utc=fetched_at_utc),
+                "stories": [
+                    _dashboard_refresh_row(
+                        story,
+                        kind="story",
+                        epic_key=key,
+                        fetched_at_utc=fetched_at_utc,
+                    )
+                    for story in stories
+                ],
+                "subtasks": [
+                    _dashboard_refresh_row(
+                        subtask,
+                        kind="subtask",
+                        epic_key=key,
+                        story_key=_to_text(subtask.get("story_key")).upper(),
+                        fetched_at_utc=fetched_at_utc,
+                    )
+                    for subtask in subtasks
+                ],
+            }
+            stats = {"epics": 1, "stories": len(stories), "subtasks": len(subtasks)}
+            run_id = _oeh_insert_sync_run("dashboard_epic", key, "success", stats=stats)
+            return jsonify(
+                {
+                    "ok": True,
+                    "run_id": run_id,
+                    "scope": "epic",
+                    "epic_key": key,
+                    "stats": stats,
+                    "dashboard_patch": dashboard_patch,
+                }
+            )
+        except LookupError as exc:
+            _oeh_insert_sync_run("dashboard_epic", epic_key, "failed", error_message=str(exc))
+            return jsonify({"ok": False, "error": str(exc)}), 404
+        except ValueError as exc:
+            _oeh_insert_sync_run("dashboard_epic", epic_key, "failed", error_message=str(exc))
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        except Exception as exc:
+            _oeh_insert_sync_run("dashboard_epic", epic_key, "failed", error_message=str(exc))
+            return jsonify({"ok": False, "error": f"Epic dashboard refresh failed: {exc}"}), 500
 
     @app.route("/api/capacity", methods=["GET"])
     def get_capacity():

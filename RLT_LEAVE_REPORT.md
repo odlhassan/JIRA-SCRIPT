@@ -10,7 +10,7 @@
 - Unplanned Taken (hours): `82.00`
 - Planned Not Yet Taken (hours): `0.00`
 - Planned Not Yet Taken (No Entry count): `11`
-- Defective subtasks listed: `25`
+- Defective subtasks listed: `26`
 - Clubbed leave subtasks: `12`
 
 ## Assignee-wise Summary
@@ -19,7 +19,7 @@
 | Ali Qumail | 0.00 | 0.00 | 0.00 | 0 | 1 |
 | awais akhter | 0.00 | 0.00 | 0.00 | 0 | 2 |
 | Faiza Nasir | 0.00 | 8.00 | 0.00 | 0 | 0 |
-| Hassan Malik | 8.00 | 16.00 | 0.00 | 0 | 0 |
+| Hassan Malik | 8.00 | 16.00 | 0.00 | 0 | 1 |
 | Hassan Saeed Wattoo | 0.00 | 0.00 | 0.00 | 1 | 0 |
 | Maria Sharafat | 512.00 | 0.00 | 0.00 | 1 | 0 |
 | Muhammad Abbas | 0.00 | 0.00 | 0.00 | 7 | 0 |

@@ -129,6 +129,11 @@
         .card-count-chip.epic { border-color: #93c5fd; background: #eff6ff; color: #1d4ed8; }
         .card-count-chip.story { border-color: #a7f3d0; background: #ecfdf5; color: #047857; }
         .card-actions { display: flex; align-items: flex-start; justify-content: flex-end; gap: .4rem; }
+        .card-refresh-btn { display: inline-flex; align-items: center; justify-content: center; width: 1.9rem; height: 1.9rem; border-radius: 6px; border: 1px solid #93c5fd; background: #eff6ff; color: #1d4ed8; font-size: .95rem; cursor: pointer; }
+        .card-refresh-btn:hover { background: #dbeafe; border-color: #60a5fa; color: #1e40af; }
+        .card-refresh-btn:disabled { opacity: .7; cursor: wait; }
+        .card-refresh-btn.is-loading { animation: card-refresh-spin .9s linear infinite; }
+        @keyframes card-refresh-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         .card-copy-btn { display: inline-flex; align-items: center; justify-content: center; width: 1.9rem; height: 1.9rem; border-radius: 6px; border: 1px solid #cbd5e1; background: #fff; color: #334155; font-size: .88rem; cursor: pointer; }
         .card-copy-btn:hover { background: #f1f5f9; border-color: #93c5fd; color: #1d4ed8; }
         .card-copy-btn.copied { border-color: #86efac; background: #ecfdf5; color: #166534; }
@@ -314,6 +319,8 @@
         html[data-theme="dark"] .active-filter-chip,
         html[data-theme="dark"] .card-link-label { border-color: #1d4ed8; background: #172554; color: #bfdbfe; }
         html[data-theme="dark"] .card-count-chip.story { border-color: #15803d; background: #052e16; color: #86efac; }
+        html[data-theme="dark"] .card-refresh-btn { border-color: #1d4ed8; background: #172554; color: #bfdbfe; }
+        html[data-theme="dark"] .card-refresh-btn:hover { background: #1e3a8a; border-color: #2563eb; color: #dbeafe; }
         html[data-theme="dark"] .card-copy-btn { border-color: #475569; background: #111827; color: #d1d5db; }
         html[data-theme="dark"] .card-copy-btn:hover { background: #1f2937; border-color: #60a5fa; color: #bfdbfe; }
         html[data-theme="dark"] .card-copy-btn.copied { border-color: #15803d; background: #052e16; color: #86efac; }
@@ -629,23 +636,49 @@ const subtaskStatusOptions = buildStatusOptions(allSubtasks.concat(allBugSubtask
 const epicRiskOptions = buildRiskOptions(allEpics);
 const storyRiskOptions = buildRiskOptions(allStories);
 const subtaskRiskOptions = buildRiskOptions(allSubtasks.concat(allBugSubtasks));
+const refreshingEpicKeys = new Set();
+const sessionRefreshedEpicMeta = new Map();
 const storyCountByEpic = new Map();
 const subtaskCountByStory = new Map();
-allStories.forEach(story => {
-    const epicKey = asText(story.epic_key || story.parent_issue_key);
-    if (!epicKey) return;
-    storyCountByEpic.set(epicKey, (storyCountByEpic.get(epicKey) || 0) + 1);
-});
-allSubtasks.forEach(subtask => {
-    const storyKey = asText(subtask.story_key || subtask.parent_issue_key);
-    if (!storyKey) return;
-    subtaskCountByStory.set(storyKey, (subtaskCountByStory.get(storyKey) || 0) + 1);
-});
-allBugSubtasks.forEach(subtask => {
-    const storyKey = asText(subtask.story_key || subtask.parent_issue_key);
-    if (!storyKey) return;
-    subtaskCountByStory.set(storyKey, (subtaskCountByStory.get(storyKey) || 0) + 1);
-});
+
+function replaceArrayValues(target, nextValues) {
+    target.splice(0, target.length, ...nextValues);
+}
+function rebuildRelationshipIndexes() {
+    storyCountByEpic.clear();
+    subtaskCountByStory.clear();
+    allStories.forEach(story => {
+        const epicKey = asText(story.epic_key || story.parent_issue_key);
+        if (!epicKey) return;
+        storyCountByEpic.set(epicKey, (storyCountByEpic.get(epicKey) || 0) + 1);
+    });
+    allSubtasks.forEach(subtask => {
+        const storyKey = asText(subtask.story_key || subtask.parent_issue_key);
+        if (!storyKey) return;
+        subtaskCountByStory.set(storyKey, (subtaskCountByStory.get(storyKey) || 0) + 1);
+    });
+    allBugSubtasks.forEach(subtask => {
+        const storyKey = asText(subtask.story_key || subtask.parent_issue_key);
+        if (!storyKey) return;
+        subtaskCountByStory.set(storyKey, (subtaskCountByStory.get(storyKey) || 0) + 1);
+    });
+}
+function rebuildFilterOptions() {
+    replaceArrayValues(epicAssigneeOptions, buildAssigneeOptions(allEpics));
+    replaceArrayValues(storyAssigneeOptions, buildAssigneeOptions(allStories));
+    replaceArrayValues(subtaskAssigneeOptions, buildAssigneeOptions(allSubtasks.concat(allBugSubtasks)));
+    replaceArrayValues(epicStatusOptions, buildStatusOptions(allEpics));
+    replaceArrayValues(storyStatusOptions, buildStatusOptions(allStories));
+    replaceArrayValues(subtaskStatusOptions, buildStatusOptions(allSubtasks.concat(allBugSubtasks)));
+    replaceArrayValues(epicRiskOptions, buildRiskOptions(allEpics));
+    replaceArrayValues(storyRiskOptions, buildRiskOptions(allStories));
+    replaceArrayValues(subtaskRiskOptions, buildRiskOptions(allSubtasks.concat(allBugSubtasks)));
+}
+function rebuildDerivedCaches() {
+    rebuildRelationshipIndexes();
+    rebuildFilterOptions();
+}
+rebuildDerivedCaches();
 
 function escapeHtml(text) { const div = document.createElement('div'); div.textContent = text || ''; return div.innerHTML; }
 function formatDateDisplay(value) {
@@ -1530,8 +1563,12 @@ function renderWorkItemCard(item, kind, isSelected) {
         : `<span class="card-count-chip ${kind === 'epic' ? 'epic' : 'story'}">${relatedCount} ${kind === 'epic' ? 'Stories' : 'Subtasks'}</span>`;
     const selectable = kind === 'epic' || kind === 'story';
     const kindLabel = kind === 'bug_subtask' ? 'BUG SUBTASK' : kind.toUpperCase();
+    const isEpicRefreshing = kind === 'epic' && refreshingEpicKeys.has(key);
+    const epicRefreshButton = kind === 'epic'
+        ? `<button type="button" class="card-refresh-btn${isEpicRefreshing ? ' is-loading' : ''}" data-refresh-epic-key="${escapeHtml(key)}" title="Refresh this epic from Jira and store snapshot to DB" aria-label="Refresh epic ${escapeHtml(key)}" ${isEpicRefreshing ? 'disabled' : ''}>↻</button>`
+        : '';
     let html = `<div class="card ${getStatusClass(status)}${isSelected ? ' card-selected' : ''}${selectable ? ' card-selectable' : ''}" data-kind="${kind}" data-issue-key="${escapeHtml(key)}" ${selectable ? 'tabindex="0" role="button"' : ''}>`;
-    html += `<div class="card-header"><div><div class="card-type">${escapeHtml(kindLabel)}</div><div class="card-title-row"><p class="card-title">${escapeHtml(asText(item.summary) || '-')}</p>${countChip}</div></div><div class="card-actions"><button type="button" class="card-copy-btn" data-copy-kind="${escapeHtml(kind)}" data-copy-key="${escapeHtml(key)}" title="Copy as Markdown" aria-label="Copy ${escapeHtml(kind)} ${escapeHtml(key)} as Markdown">&#128203;</button><a href="${escapeHtml(asText(item.jira_url))}" target="_blank" class="card-link-label">JIRA Link</a></div></div>`;
+    html += `<div class="card-header"><div><div class="card-type">${escapeHtml(kindLabel)}</div><div class="card-title-row"><p class="card-title">${escapeHtml(asText(item.summary) || '-')}</p>${countChip}</div></div><div class="card-actions">${epicRefreshButton}<button type="button" class="card-copy-btn" data-copy-kind="${escapeHtml(kind)}" data-copy-key="${escapeHtml(key)}" title="Copy as Markdown" aria-label="Copy ${escapeHtml(kind)} ${escapeHtml(key)} as Markdown">&#128203;</button><a href="${escapeHtml(asText(item.jira_url))}" target="_blank" class="card-link-label">JIRA Link</a></div></div>`;
     let metaTop = `<div class="meta-line"><strong>Status:</strong> ${escapeHtml(status)}</div>`;
     metaTop += `<div class="meta-line"><strong>Assignee:</strong> <span class="assignee-chip${missingAssignee ? ' missing' : ''}">${escapeHtml(assigneeLabel(assigneeValue))}</span></div>`;
     html += `<div class="meta-lines">${metaTop}<table class="dates-table"><thead><tr><th>Dates</th><th>Start</th><th>End</th><th>Man-days</th></tr></thead><tbody>${plannedScheduleRow}${plannerScheduleRow}<tr><td>Actual</td><td>${escapeHtml(formatDateDisplay(item.actual_start_date))}</td><td>${escapeHtml(formatDateDisplay(item.actual_end_date))}</td><td>${escapeHtml(formatDayValue(actualDays))}</td></tr></tbody></table></div>`;
@@ -1579,6 +1616,11 @@ function renderWorkItemCard(item, kind, isSelected) {
         const epicsPlannerHref = `/settings/epics-management?epic_key=${encodeURIComponent(key)}&source=dashboard&reason=planner_mismatch`;
         html += `<div class="alert mismatch-alert"><span>Alert: Jira planned dates/hours differ from Epics Planner epic plan.</span><a href="${epicsPlannerHref}" target="_blank" rel="noopener noreferrer" class="mismatch-planner-btn" title="Open this epic in Epics Planner" aria-label="Open this epic in Epics Planner"><span class="material-icons-outlined" aria-hidden="true">open_in_new</span></a></div>`;
     }
+    if (kind === 'epic' && sessionRefreshedEpicMeta.has(key)) {
+        const meta = sessionRefreshedEpicMeta.get(key) || {};
+        const refreshedAt = asText(meta.refreshed_at);
+        html += `<div class="info-note"><span class="material-icons-outlined" aria-hidden="true">check_circle</span><span>Session refresh applied${refreshedAt ? ` at ${escapeHtml(formatDateDisplay(refreshedAt))}` : ''}. Source remains Excel on reload.</span></div>`;
+    }
     return html + '</div>';
 }
 
@@ -1609,6 +1651,90 @@ function attachCopyHandlers() {
             const markdown = buildCardMarkdown(item, kind);
             const copied = await copyText(markdown);
             markCopyButtonState(button, copied);
+        });
+    });
+}
+function mergeDashboardItem(baseItem, refreshedItem) {
+    const base = baseItem && typeof baseItem === 'object' ? baseItem : {};
+    const fresh = refreshedItem && typeof refreshedItem === 'object' ? refreshedItem : {};
+    const merged = { ...base, ...fresh };
+    if (!asText(merged.issue_key)) merged.issue_key = asText(base.issue_key);
+    return merged;
+}
+function applyEpicRefreshPatch(epicKey, patch) {
+    const targetEpicKey = asText(epicKey).toUpperCase();
+    const epicPatch = patch && typeof patch === 'object' ? patch : {};
+    const refreshedEpic = epicPatch.epic && typeof epicPatch.epic === 'object' ? epicPatch.epic : null;
+    const refreshedStories = Array.isArray(epicPatch.stories) ? epicPatch.stories : [];
+    const refreshedSubtasks = Array.isArray(epicPatch.subtasks) ? epicPatch.subtasks : [];
+    const previousEpicIndex = allEpics.findIndex(item => asKey(item) === targetEpicKey);
+    const existingEpic = previousEpicIndex >= 0 ? allEpics[previousEpicIndex] : null;
+    if (refreshedEpic) {
+        const mergedEpic = mergeDashboardItem(existingEpic, refreshedEpic);
+        if (previousEpicIndex >= 0) allEpics.splice(previousEpicIndex, 1, mergedEpic);
+        else allEpics.push(mergedEpic);
+    }
+
+    const existingStoriesByKey = new Map(allStories.map(item => [asKey(item), item]));
+    const retainedStories = allStories.filter(item => storyEpicKey(item).toUpperCase() !== targetEpicKey);
+    const mergedStories = refreshedStories.map((item) => {
+        const key = asText(item.issue_key).toUpperCase();
+        const existing = existingStoriesByKey.get(key);
+        const enriched = { ...item, epic_key: targetEpicKey, parent_issue_key: targetEpicKey };
+        return mergeDashboardItem(existing, enriched);
+    });
+    allStories.splice(0, allStories.length, ...retainedStories, ...mergedStories);
+
+    const refreshedStoryKeys = new Set(mergedStories.map(item => asKey(item)));
+    const existingSubtasksByKey = new Map(allSubtasks.map(item => [asKey(item), item]));
+    const retainedSubtasks = allSubtasks.filter((item) => {
+        const storyKey = subtaskStoryKey(item);
+        if (refreshedStoryKeys.has(storyKey)) return false;
+        const parentEpic = asText(item.epic_key);
+        return parentEpic.toUpperCase() !== targetEpicKey;
+    });
+    const mergedSubtasks = refreshedSubtasks.map((item) => {
+        const key = asText(item.issue_key).toUpperCase();
+        const existing = existingSubtasksByKey.get(key);
+        const enriched = { ...item, epic_key: targetEpicKey };
+        return mergeDashboardItem(existing, enriched);
+    });
+    allSubtasks.splice(0, allSubtasks.length, ...retainedSubtasks, ...mergedSubtasks);
+    rebuildDerivedCaches();
+}
+async function refreshEpicAtomic(epicKey) {
+    const key = asText(epicKey).toUpperCase();
+    if (!key || refreshingEpicKeys.has(key)) return;
+    refreshingEpicKeys.add(key);
+    renderAll();
+    try {
+        const response = await fetch(`/api/dashboard/refresh-epic/${encodeURIComponent(key)}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({}),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload || payload.ok !== true) {
+            throw new Error(asText(payload.error) || `Epic refresh failed for ${key}.`);
+        }
+        applyEpicRefreshPatch(key, payload.dashboard_patch || {});
+        const patchEpic = ((payload.dashboard_patch || {}).epic || {});
+        sessionRefreshedEpicMeta.set(key, { refreshed_at: asText(patchEpic.fetched_at_utc) || new Date().toISOString() });
+    } catch (error) {
+        alert(asText(error && error.message) || `Epic refresh failed for ${key}.`);
+    } finally {
+        refreshingEpicKeys.delete(key);
+        renderAll();
+    }
+}
+function attachEpicRefreshHandlers() {
+    document.querySelectorAll('.card-refresh-btn[data-refresh-epic-key]').forEach(button => {
+        button.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            const epicKey = asText(button.getAttribute('data-refresh-epic-key'));
+            if (!epicKey) return;
+            refreshEpicAtomic(epicKey);
         });
     });
 }
@@ -1719,6 +1845,7 @@ function renderAll() {
     renderGantt(selectedEpic);
     attachSelectionHandlers();
     attachCopyHandlers();
+    attachEpicRefreshHandlers();
 }
 
 renderProjectFilters();

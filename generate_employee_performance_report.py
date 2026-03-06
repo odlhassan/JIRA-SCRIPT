@@ -154,8 +154,14 @@ def _init_performance_settings_db(db_path: Path) -> None:
                 overrun_hours REAL NOT NULL DEFAULT 0,
                 estimate_status TEXT NOT NULL DEFAULT 'unknown',
                 due_date TEXT,
+                completed_marked_date TEXT,
+                last_logged_date TEXT,
                 effective_completion_date TEXT,
                 due_completion_status TEXT NOT NULL DEFAULT 'unknown',
+                verdict_code TEXT NOT NULL DEFAULT 'neutral_insufficient_data',
+                verdict_label TEXT NOT NULL DEFAULT 'Neutral (Insufficient Data)',
+                is_negative_verdict INTEGER NOT NULL DEFAULT 0,
+                verdict_remarks TEXT NOT NULL DEFAULT '[]',
                 is_commitment INTEGER NOT NULL DEFAULT 0,
                 status TEXT,
                 updated_at TEXT NOT NULL
@@ -169,6 +175,19 @@ def _init_performance_settings_db(db_path: Path) -> None:
             conn.execute("ALTER TABLE performance_point_settings ADD COLUMN overloaded_penalty_enabled INTEGER NOT NULL DEFAULT 1")
         if "overloaded_penalty_threshold_pct" not in settings_cols:
             conn.execute("ALTER TABLE performance_point_settings ADD COLUMN overloaded_penalty_threshold_pct REAL NOT NULL DEFAULT 10.0")
+        simple_scoring_cols = [str(row[1]).lower() for row in conn.execute("PRAGMA table_info(simple_scoring_subtasks)").fetchall()]
+        if "completed_marked_date" not in simple_scoring_cols:
+            conn.execute("ALTER TABLE simple_scoring_subtasks ADD COLUMN completed_marked_date TEXT")
+        if "last_logged_date" not in simple_scoring_cols:
+            conn.execute("ALTER TABLE simple_scoring_subtasks ADD COLUMN last_logged_date TEXT")
+        if "verdict_code" not in simple_scoring_cols:
+            conn.execute("ALTER TABLE simple_scoring_subtasks ADD COLUMN verdict_code TEXT NOT NULL DEFAULT 'neutral_insufficient_data'")
+        if "verdict_label" not in simple_scoring_cols:
+            conn.execute("ALTER TABLE simple_scoring_subtasks ADD COLUMN verdict_label TEXT NOT NULL DEFAULT 'Neutral (Insufficient Data)'")
+        if "is_negative_verdict" not in simple_scoring_cols:
+            conn.execute("ALTER TABLE simple_scoring_subtasks ADD COLUMN is_negative_verdict INTEGER NOT NULL DEFAULT 0")
+        if "verdict_remarks" not in simple_scoring_cols:
+            conn.execute("ALTER TABLE simple_scoring_subtasks ADD COLUMN verdict_remarks TEXT NOT NULL DEFAULT '[]'")
         row = conn.execute("SELECT id FROM performance_point_settings WHERE id = 1").fetchone()
         if not row:
             defaults = _normalize_performance_settings(DEFAULT_PERFORMANCE_SETTINGS, require_all_fields=True)
@@ -798,19 +817,61 @@ def _precompute_simple_scoring(
             est_status = "over_estimate"
 
         due_date = _to_text(wi.get("due_date"))
-        resolved_date = _to_text(wi.get("resolved_stable_since_date"))
+        completed_marked_date = _to_text(wi.get("resolved_stable_since_date"))
         last_log = last_log_by_issue.get(key, "")
-        candidates = [d for d in (last_log, resolved_date) if d]
-        effective_completion = max(candidates) if candidates else ""
+        effective_completion = ""
+        remarks: list[str] = []
+
+        if completed_marked_date:
+            remarks.append(f"Completed marked date is present: {completed_marked_date}.")
+            effective_completion = completed_marked_date
+            if last_log:
+                if last_log > completed_marked_date:
+                    effective_completion = last_log
+                    remarks.append(
+                        f"Last logged date ({last_log}) is after completed marked date; effective completion uses last logged date."
+                    )
+                else:
+                    remarks.append(
+                        f"Last logged date ({last_log}) is not after completed marked date; effective completion stays completed marked date."
+                    )
+            else:
+                remarks.append("No logged date found for this issue in scoring scope.")
+        else:
+            remarks.append("Completed marked date is missing (stable resolved is blank).")
+            if last_log:
+                remarks.append(
+                    f"Last logged date exists ({last_log}) but is not used for verdict because completed marked date is required."
+                )
 
         if not due_date:
             due_status = "no_due_date"
-        elif not effective_completion:
+            verdict_code = "neutral_insufficient_data"
+            verdict_label = "Neutral (Insufficient Data)"
+            is_negative_verdict = 0
+            remarks.append("Due date is missing, so verdict is Neutral (Insufficient Data).")
+        elif not completed_marked_date:
             due_status = "not_completed"
+            verdict_code = "neutral_insufficient_data"
+            verdict_label = "Neutral (Insufficient Data)"
+            is_negative_verdict = 0
+            remarks.append("Completed marked date is missing, so verdict is Neutral (Insufficient Data).")
         elif effective_completion <= due_date:
             due_status = "on_time"
+            verdict_code = "positive_on_time"
+            verdict_label = "Positive (On Time)"
+            is_negative_verdict = 0
+            remarks.append(
+                f"Effective completion ({effective_completion}) is on/before due date ({due_date}); positive scenario."
+            )
         else:
             due_status = "late"
+            verdict_code = "negative_late"
+            verdict_label = "Negative (Late)"
+            is_negative_verdict = 1
+            remarks.append(
+                f"Effective completion ({effective_completion}) is after due date ({due_date}); negative scenario."
+            )
 
         is_commitment = 1 if (est_status == "over_estimate" and due_status == "on_time") else 0
 
@@ -822,8 +883,14 @@ def _precompute_simple_scoring(
             "overrun_hours": overrun,
             "estimate_status": est_status,
             "due_date": due_date,
+            "completed_marked_date": completed_marked_date,
+            "last_logged_date": last_log,
             "effective_completion_date": effective_completion,
             "due_completion_status": due_status,
+            "verdict_code": verdict_code,
+            "verdict_label": verdict_label,
+            "is_negative_verdict": is_negative_verdict,
+            "verdict_remarks": json.dumps(remarks, ensure_ascii=True),
             "is_commitment": is_commitment,
             "status": _to_text(wi.get("status")),
             "updated_at": now_iso,
@@ -836,15 +903,17 @@ def _precompute_simple_scoring(
             conn.execute(
                 """INSERT OR REPLACE INTO simple_scoring_subtasks
                    (issue_key, assignee, original_estimate_hours, actual_hours_logged,
-                    overrun_hours, estimate_status, due_date, effective_completion_date,
-                    due_completion_status, is_commitment, status, updated_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    overrun_hours, estimate_status, due_date, completed_marked_date, last_logged_date,
+                    effective_completion_date, due_completion_status, verdict_code, verdict_label,
+                    is_negative_verdict, verdict_remarks, is_commitment, status, updated_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     r["issue_key"], r["assignee"], r["original_estimate_hours"],
                     r["actual_hours_logged"], r["overrun_hours"], r["estimate_status"],
-                    r["due_date"], r["effective_completion_date"],
-                    r["due_completion_status"], r["is_commitment"], r["status"],
-                    r["updated_at"],
+                    r["due_date"], r["completed_marked_date"], r["last_logged_date"],
+                    r["effective_completion_date"], r["due_completion_status"], r["verdict_code"],
+                    r["verdict_label"], r["is_negative_verdict"], r["verdict_remarks"],
+                    r["is_commitment"], r["status"], r["updated_at"],
                 ),
             )
         conn.commit()
@@ -1165,6 +1234,15 @@ def _build_html(payload: dict) -> str:
     .ss-pill-over {{ background:rgba(249,115,22,.2); border-color:#f97316; color:#fed7aa; }}
     .ss-pill-late {{ background:rgba(251,113,133,.18); border-color:#fb7185; color:#fecdd3; }}
     .ss-pill-noest {{ background:rgba(148,163,184,.15); border-color:#94a3b8; color:#cbd5e1; }}
+    .ss-verdict-pill {{ display:inline-block; border-radius:999px; padding:2px 8px; font-size:.68rem; font-weight:700; border:1px solid transparent; }}
+    .ss-verdict-positive {{ background:rgba(34,197,94,.18); border-color:#22c55e; color:#bbf7d0; }}
+    .ss-verdict-negative {{ background:rgba(251,113,133,.18); border-color:#fb7185; color:#fecdd3; }}
+    .ss-verdict-neutral {{ background:rgba(148,163,184,.15); border-color:#94a3b8; color:#cbd5e1; }}
+    .ss-cell-positive {{ background:rgba(34,197,94,.10); color:#d9fbe8; }}
+    .ss-cell-negative {{ background:rgba(251,113,133,.10); color:#ffe1e8; }}
+    .ss-cell-neutral {{ background:rgba(148,163,184,.10); color:#dbe4f0; }}
+    .ss-remarks {{ margin:0; padding-left:16px; }}
+    .ss-remarks li {{ margin:2px 0; }}
     .ss-donut-wrap {{ display:flex; gap:12px; align-items:center; margin-top:8px; }}
     .ss-legend {{ font-size:.72rem; display:grid; gap:3px; }}
     .ss-legend-dot {{ display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:4px; vertical-align:middle; }}
@@ -1385,6 +1463,7 @@ const leaderboardActionStatusEl = document.getElementById("leaderboard-action-st
 const assigneeExtendedActualsToggleEl = document.getElementById("assignee-extended-actuals-toggle");
 const assigneeOverloadedPenaltyToggleEl = document.getElementById("assignee-overloaded-penalty-toggle");
 const metaEl = document.getElementById("meta");
+const PERFORMANCE_SETTINGS_API = "/api/performance/settings";
 let employeeRefreshPollHandle = null;
 const HEADER_COLLAPSED_STORAGE_KEY = "employee-performance-header-collapsed";
 const workItemsByKey = new Map(workItems.map((row) => [String(row && row.issue_key || "").toUpperCase(), row || {{}}]));
@@ -1426,6 +1505,27 @@ function formatUtcFromIso(isoText) {{
 function renderMetaLine() {{
   if (!metaEl) return;
   metaEl.textContent = `Generated: ${{generatedAtText}} | Data window: ${{defaultFrom}} to ${{defaultTo}}`;
+}}
+function applyOverloadedGuardrailSettings(sourceSettings) {{
+  const src = sourceSettings && typeof sourceSettings === "object" ? sourceSettings : {{}};
+  overloadedPenaltyEnabled = n(src.overloaded_penalty_enabled) > 0;
+  overloadedPenaltyThresholdPct = clamp(n(src.overloaded_penalty_threshold_pct), 0, 100);
+  if (assigneeOverloadedPenaltyToggleEl) {{
+    assigneeOverloadedPenaltyToggleEl.checked = overloadedPenaltyEnabled;
+  }}
+}}
+async function hydrateOverloadedGuardrailSettings() {{
+  if (typeof window === "undefined" || !window.location || window.location.protocol === "file:") return;
+  try {{
+    const response = await fetch(PERFORMANCE_SETTINGS_API, {{ cache: "no-store" }});
+    const body = await response.json().catch(() => null);
+    if (!response.ok || !body || !body.settings || typeof body.settings !== "object") return;
+    settings.overloaded_penalty_enabled = n(body.settings.overloaded_penalty_enabled) > 0 ? 1 : 0;
+    settings.overloaded_penalty_threshold_pct = clamp(n(body.settings.overloaded_penalty_threshold_pct), 0, 100);
+    applyOverloadedGuardrailSettings(settings);
+  }} catch (_error) {{
+    // Fall back to embedded payload settings when API is unavailable.
+  }}
 }}
 function setGeneratedAtFromRun(run) {{
   const row = run && typeof run === "object" ? run : {{}};
@@ -1588,7 +1688,7 @@ function dateRangeDays(from, to) {{
   return out;
 }}
 function ensure(map, name) {{
-  if (!map.has(name)) map.set(name, {{assignee:name, bug_hours:0, bug_late_hours:0, subtask_late_hours:0, estimate_overrun_hours:0, rework_hours:0, unplanned_leave_hours:0, planned_leave_hours:0, unplanned_leave_count:0, planned_leave_count:0, unplanned_leave_days:0, planned_leave_days:0, missing_story_due_count:0, missing_due_count:0, missing_estimate_issue_count:0, total_hours:0, planned_hours_assigned:0, base_capacity_hours:0, employee_capacity_hours:0, assigned_counts:{{epic:0,story:0,subtask:0}}, total_assigned_count:0, due_dated_assigned_count:0, missed_start_count:0, missed_start_ratio:0, missed_due_date_count:0, missed_due_date_ratio:0, active_rmi_count:0, active_rmi_keys:[], assigned_hierarchy:[], missed_start_items:[], due_compliance_items:[], start_day_activity:[], last_log_by_issue:{{}}, issue_logged_hours_by_issue:{{}}, subtask_late_by_issue:{{}}, entity_values:{{}}, managed_values:{{}}, managed_scope:{{}}, feed:[], daily_penalty_by_day:{{}}, daily_series:[], ss_total_estimate:0, ss_total_actual:0, ss_total_overrun:0, ss_commitment_overrun:0, ss_commitment_count:0, ss_within_count:0, ss_over_count:0, ss_no_estimate_count:0, ss_on_time_count:0, ss_late_count:0, ss_subtask_details:[], simple_score_overloaded:100, simple_score_overloaded_applied:0}});
+  if (!map.has(name)) map.set(name, {{assignee:name, bug_hours:0, bug_late_hours:0, subtask_late_hours:0, estimate_overrun_hours:0, rework_hours:0, unplanned_leave_hours:0, planned_leave_hours:0, unplanned_leave_count:0, planned_leave_count:0, unplanned_leave_days:0, planned_leave_days:0, missing_story_due_count:0, missing_due_count:0, missing_estimate_issue_count:0, total_hours:0, planned_hours_assigned:0, base_capacity_hours:0, employee_capacity_hours:0, assigned_counts:{{epic:0,story:0,subtask:0}}, total_assigned_count:0, due_dated_assigned_count:0, missed_start_count:0, missed_start_ratio:0, missed_due_date_count:0, missed_due_date_ratio:0, active_rmi_count:0, active_rmi_keys:[], assigned_hierarchy:[], missed_start_items:[], due_compliance_items:[], post_completion_log_items:[], start_day_activity:[], last_log_by_issue:{{}}, issue_logged_hours_by_issue:{{}}, subtask_late_by_issue:{{}}, entity_values:{{}}, managed_values:{{}}, managed_scope:{{}}, feed:[], daily_penalty_by_day:{{}}, daily_series:[], ss_total_estimate:0, ss_total_actual:0, ss_total_overrun:0, ss_commitment_overrun:0, ss_commitment_count:0, ss_within_count:0, ss_over_count:0, ss_no_estimate_count:0, ss_on_time_count:0, ss_late_count:0, ss_subtask_details:[], simple_score_overloaded:100, simple_score_overloaded_applied:0}});
   return map.get(name);
 }}
 function normalizeType(t) {{
@@ -2020,6 +2120,7 @@ function compute() {{
     epicKeysByAssignee.get(assignee).add(epic);
   }}
   const issueAgg = new Map();
+  const logsByAssigneeIssue = new Map();
   for (const wi of assignedItemsWork) ensure(byA, String(wi.assignee || "Unassigned"));
   for (const l of logs) {{
     const a = ensure(byA, String(l.issue_assignee || "Unassigned"));
@@ -2027,9 +2128,18 @@ function compute() {{
     const hrs = n(l.hours_logged);
     a.total_hours += hrs;
     const issueKey = String(l.issue_id || "");
+    const issueKeyUpper = issueKey.toUpperCase();
     const lastLogged = String(a.last_log_by_issue[issueKey] || "");
     if (!lastLogged || String(l.worklog_date || "") > lastLogged) a.last_log_by_issue[issueKey] = String(l.worklog_date || "");
     a.issue_logged_hours_by_issue[issueKey] = n(a.issue_logged_hours_by_issue[issueKey]) + hrs;
+    if (issueKeyUpper) {{
+      const compound = `${{a.assignee}}\u0000${{issueKeyUpper}}`;
+      if (!logsByAssigneeIssue.has(compound)) logsByAssigneeIssue.set(compound, []);
+      logsByAssigneeIssue.get(compound).push({{
+        worklog_date: String(l.worklog_date || ""),
+        hours_logged: hrs
+      }});
+    }}
     const issue = String(l.issue_id || "");
     if (!issueAgg.has(issue)) issueAgg.set(issue, {{ total:0, estimate:n(l.original_estimate_hours), shares:new Map(), dayShares:new Map() }});
     const agg = issueAgg.get(issue);
@@ -2104,8 +2214,10 @@ function compute() {{
     const a = ensure(byA, String(wi.assignee || "Unassigned"));
     addAssigneeEpic(a.assignee, resolveParentEpicKey(wi));
     const issueKey = String(wi.issue_key || "");
+    const issueKeyUpper = issueKey.toUpperCase();
     const startDate = String(wi.start_date || "");
     const dueDate = String(wi.due_date || "");
+    const stableResolved = String(wi.resolved_stable_since_date || "");
     const rawIssueType = wi.issue_type || wi.work_item_type || wi.jira_issue_type;
     const issueType = normalizeType(rawIssueType);
     const hierarchyIssueType = normalizeHierarchyType(rawIssueType);
@@ -2129,7 +2241,7 @@ function compute() {{
       actual_hours: n(a.issue_logged_hours_by_issue[issueKey]),
       negative_hours: n(a.subtask_late_by_issue[issueKey]),
       completion_date: lastLogDate,
-      resolved_stable_since_date: String(wi.resolved_stable_since_date || ""),
+      resolved_stable_since_date: stableResolved,
       status: String(wi.status || "")
     }});
     let dueStatus = "Not completed";
@@ -2155,10 +2267,36 @@ function compute() {{
       summary: String(wi.summary || ""),
       due_date: dueDate,
       completion_date: lastLogDate,
-      resolved_stable_since_date: String(wi.resolved_stable_since_date || ""),
+      resolved_stable_since_date: stableResolved,
       status_bucket: dueStatus,
       is_missed_due_date: missedDueDate
     }});
+    if (stableResolved && issueKeyUpper) {{
+      const compound = `${{a.assignee}}\u0000${{issueKeyUpper}}`;
+      const issueLogs = logsByAssigneeIssue.get(compound) || [];
+      let postCompletionHours = 0;
+      let firstPostCompletionLog = "";
+      let lastPostCompletionLog = "";
+      for (const ent of issueLogs) {{
+        const d = String(ent.worklog_date || "");
+        if (!d || d <= stableResolved) continue;
+        const hrs = n(ent.hours_logged);
+        postCompletionHours += hrs;
+        if (!firstPostCompletionLog || d < firstPostCompletionLog) firstPostCompletionLog = d;
+        if (!lastPostCompletionLog || d > lastPostCompletionLog) lastPostCompletionLog = d;
+      }}
+      if (postCompletionHours > 0) {{
+        a.post_completion_log_items.push({{
+          issue_key: issueKey,
+          summary: String(wi.summary || ""),
+          stable_resolved_since_date: stableResolved,
+          first_post_completion_log: firstPostCompletionLog,
+          last_post_completion_log: lastPostCompletionLog,
+          post_completion_hours: postCompletionHours,
+          current_status: String(wi.status || "")
+        }});
+      }}
+    }}
     const ssRow = simpleScoringByKey.get(issueKey.toUpperCase());
     if (ssRow) {{
       const ssEst = n(ssRow.original_estimate_hours);
@@ -2179,8 +2317,16 @@ function compute() {{
       a.ss_subtask_details.push({{
         issue_key: issueKey, summary: String(wi.summary || ""), estimate: ssEst, actual: ssAct,
         overrun: ssOver, estimate_status: ssEstStatus, due_date: dueDate,
+        completed_marked_date: String(ssRow.completed_marked_date || ""),
+        last_logged_date: String(ssRow.last_logged_date || ""),
         effective_completion_date: String(ssRow.effective_completion_date || ""),
-        due_completion_status: ssDueStatus, is_commitment: ssCommit, status: String(ssRow.status || "")
+        due_completion_status: ssDueStatus,
+        verdict_code: String(ssRow.verdict_code || ""),
+        verdict_label: String(ssRow.verdict_label || ""),
+        is_negative_verdict: n(ssRow.is_negative_verdict),
+        verdict_remarks: String(ssRow.verdict_remarks || "[]"),
+        is_commitment: ssCommit,
+        status: String(ssRow.status || "")
       }});
     }}
     if (startDate && lastLogDate !== startDate) {{
@@ -2511,7 +2657,12 @@ function renderDueTable(rows) {{
     if (b === "After due") return "due-bucket due-after";
     return "due-bucket";
   }}
-  return `<table class="tbl"><thead><tr><th>Issue</th><th>Due</th><th>Completion</th><th>Stable Resolved</th><th>Bucket</th></tr></thead><tbody>${{data.map((r)=>`<tr class="${{r.is_missed_due_date ? "due-missed" : ""}}"><td><div class="issue-id">${{e(r.issue_key)}}</div><div class="issue-title">${{e(r.summary)}}</div></td><td>${{e(r.due_date || "-")}}</td><td>${{e(r.completion_date || "-")}}</td><td>${{e(r.resolved_stable_since_date || "-")}}</td><td><span class="${{dueBucketClass(r.status_bucket)}}">${{e(r.status_bucket)}}</span></td></tr>`).join("")}}</tbody></table>`;
+  return `<table class="tbl"><thead><tr><th>Issue</th><th>Due</th><th>Last Activity (Worklog)</th><th>Stable Resolved</th><th>Bucket</th></tr></thead><tbody>${{data.map((r)=>`<tr class="${{r.is_missed_due_date ? "due-missed" : ""}}"><td><div class="issue-id">${{e(r.issue_key)}}</div><div class="issue-title">${{e(r.summary)}}</div></td><td>${{e(r.due_date || "-")}}</td><td>${{e(r.completion_date || "-")}}</td><td>${{e(r.resolved_stable_since_date || "-")}}</td><td><span class="${{dueBucketClass(r.status_bucket)}}">${{e(r.status_bucket)}}</span></td></tr>`).join("")}}</tbody></table>`;
+}}
+function renderPostCompletionLogsTable(rows) {{
+  const data = (Array.isArray(rows) ? rows : []).slice().sort((a, b) => n(b?.post_completion_hours) - n(a?.post_completion_hours));
+  if (!data.length) return '<div class="empty" style="padding:8px;">No worklogs found after stable resolved date.</div>';
+  return `<table class="tbl"><thead><tr><th>Issue</th><th>Stable Resolved</th><th>First Post-Completion Log</th><th>Last Post-Completion Log</th><th>Hours After Completion</th><th>Current Status</th></tr></thead><tbody>${{data.map((r)=>`<tr><td><div class="issue-id">${{e(r.issue_key)}}</div><div class="issue-title">${{e(r.summary)}}</div></td><td>${{e(r.stable_resolved_since_date || "-")}}</td><td>${{e(r.first_post_completion_log || "-")}}</td><td>${{e(r.last_post_completion_log || "-")}}</td><td>${{n(r.post_completion_hours).toFixed(2)}}h</td><td>${{e(r.current_status || "-")}}</td></tr>`).join("")}}</tbody></table>`;
 }}
 function renderMissedTable(rows) {{
   const data = Array.isArray(rows) ? rows : [];
@@ -2873,6 +3024,7 @@ function render(items) {{
   const hierarchyTable = renderHierarchyTable(item.assigned_hierarchy, item.due_compliance_items, item.missed_start_items);
   const executionHierarchyTable = renderExecutionHierarchyTable(item);
   const dueTable = renderDueTable(item.due_compliance_items);
+  const postCompletionLogsTable = renderPostCompletionLogsTable(item.post_completion_log_items);
   const missedTable = renderMissedTable(item.missed_start_items);
   const assignedHierarchyRows = Array.isArray(item.assigned_hierarchy) ? item.assigned_hierarchy : [];
   const assignmentCounts = assignedHierarchyRows.reduce((acc, row) => {{
@@ -3210,6 +3362,37 @@ function render(items) {{
     if (est === "over_estimate") return "ss-row-over";
     return "";
   }}
+  function ssVerdictTone(row) {{
+    const code = String(row.verdict_code || "");
+    if (code === "negative_late") return "negative";
+    if (code === "positive_on_time") return "positive";
+    return "neutral";
+  }}
+  function ssDateCellClass(row) {{
+    const tone = ssVerdictTone(row);
+    if (tone === "negative") return "ss-cell-negative";
+    if (tone === "positive") return "ss-cell-positive";
+    return "ss-cell-neutral";
+  }}
+  function ssVerdictPillHtml(row) {{
+    const tone = ssVerdictTone(row);
+    const label = String(row.verdict_label || "Neutral (Insufficient Data)");
+    if (tone === "negative") return `<span class="ss-verdict-pill ss-verdict-negative">${{e(label)}}</span>`;
+    if (tone === "positive") return `<span class="ss-verdict-pill ss-verdict-positive">${{e(label)}}</span>`;
+    return `<span class="ss-verdict-pill ss-verdict-neutral">${{e(label)}}</span>`;
+  }}
+  function ssRemarksHtml(row) {{
+    const raw = String(row.verdict_remarks || "[]");
+    let items = [];
+    try {{
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) items = parsed.map((x) => String(x || "").trim()).filter(Boolean);
+    }} catch (_err) {{
+      items = raw.split("||").map((x) => String(x || "").trim()).filter(Boolean);
+    }}
+    if (!items.length) return "-";
+    return `<ul class="ss-remarks">${{items.map((it) => `<li>${{e(it)}}</li>`).join("")}}</ul>`;
+  }}
   function ssPillHtml(row) {{
     const est = String(row.estimate_status || "");
     if (est === "no_estimate") return `<span class="ss-status-pill ss-pill-noest">No Estimate</span>`;
@@ -3222,10 +3405,16 @@ function render(items) {{
   const ssTableRows = ssDetails.map((row) => {{
     const cls = ssRowClass(row);
     const showDue = dueCompletionEnabled;
-    return `<tr class="${{cls}}"><td class="issue-id">${{e(row.issue_key)}}</td><td class="issue-title">${{e(row.summary)}}</td><td>${{n(row.estimate).toFixed(1)}}h</td><td>${{n(row.actual).toFixed(1)}}h</td><td>${{n(row.overrun) > 0 ? n(row.overrun).toFixed(1) + "h" : "-"}}</td>${{showDue ? `<td>${{row.due_date ? e(row.due_date) : "-"}}</td><td>${{row.effective_completion_date ? e(row.effective_completion_date) : "-"}}</td>` : ""}}<td>${{ssPillHtml(row)}}</td></tr>`;
+    const dateCellClass = ssDateCellClass(row);
+    const dueCols = showDue
+      ? `<td class="${{dateCellClass}}">${{row.due_date ? e(row.due_date) : "-"}}</td><td class="${{dateCellClass}}">${{row.completed_marked_date ? e(row.completed_marked_date) : "-"}}</td><td class="${{dateCellClass}}">${{row.last_logged_date ? e(row.last_logged_date) : "-"}}</td><td class="${{dateCellClass}}">${{row.effective_completion_date ? e(row.effective_completion_date) : "-"}}</td><td>${{ssPillHtml(row)}}</td><td>${{ssRemarksHtml(row)}}</td><td>${{ssVerdictPillHtml(row)}}</td>`
+      : `<td>${{ssPillHtml(row)}}</td>`;
+    return `<tr class="${{cls}}"><td class="issue-id">${{e(row.issue_key)}}</td><td class="issue-title">${{e(row.summary)}}</td><td>${{n(row.estimate).toFixed(1)}}h</td><td>${{n(row.actual).toFixed(1)}}h</td><td>${{n(row.overrun) > 0 ? n(row.overrun).toFixed(1) + "h" : "-"}}</td>${{dueCols}}</tr>`;
   }}).join("");
-  const ssDueColHeaders = dueCompletionEnabled ? "<th>Due Date</th><th>Completed</th>" : "";
-  const ssTableHtml = ssDetails.length ? `<div class="table-title" style="margin:10px 0 6px;font-weight:700;">Assignee Task Estimate vs Actual (Overrun & Status)</div><div class="tbl-wrap" style="max-height:320px;overflow:auto;"><table class="ss-tbl"><thead><tr><th>Key</th><th>Summary</th><th>Estimate</th><th>Actual</th><th>Overrun</th>${{ssDueColHeaders}}<th>Status</th></tr></thead><tbody>${{ssTableRows}}</tbody></table></div>` : '<div class="empty">No subtask data for simple scoring.</div>';
+  const ssDueColHeaders = dueCompletionEnabled
+    ? "<th>Due Date</th><th>Completed Marked</th><th>Last Logged</th><th>Effective Completion</th><th>Status</th><th>Remarks</th><th>Verdict</th>"
+    : "<th>Status</th>";
+  const ssTableHtml = ssDetails.length ? `<div class="table-title" style="margin:10px 0 6px;font-weight:700;">Assignee Task Estimate vs Actual (Overrun & Status)</div><div class="tbl-wrap" style="max-height:320px;overflow:auto;"><table class="ss-tbl"><thead><tr><th>Key</th><th>Summary</th><th>Estimate</th><th>Actual</th><th>Overrun</th>${{ssDueColHeaders}}</tr></thead><tbody>${{ssTableRows}}</tbody></table></div>` : '<div class="empty">No subtask data for simple scoring.</div>';
   const ssWithin = n(item.ss_within_count);
   const ssOver = n(item.ss_over_count);
   const ssCommit = n(item.ss_commitment_count);
@@ -3277,7 +3466,7 @@ function render(items) {{
   const advancedFormulaIngredientsHtml = `<section class="formula-guide"><div class="formula-head"><h3 class="formula-title">Advanced Scoring Formula Guide</h3><div class="formula-head-actions"><button type="button" class="formula-toggle-btn" id="toggle-advanced-formula-guide" aria-controls="advanced-formula-guide-body" aria-expanded="${{advancedFormulaGuideExpanded ? "true" : "false"}}"><span class="material-symbols-outlined">${{advancedFormulaGuideExpanded ? "expand_less" : "expand_more"}}</span><span>${{advancedFormulaGuideExpanded ? "Collapse" : "Expand"}}</span></button><div class="formula-score-pill">${{summaryScore.toFixed(1)}}%</div></div></div><div class="formula-layout" id="advanced-formula-guide-body" ${{advancedFormulaGuideExpanded ? "" : "hidden"}}><div class="formula-steps"><div class="formula-step step-gap"><div class="formula-kicker">Step 1: Total Penalty</div><p class="formula-eq">${{e(advPenaltyFormulaText)}}</p><p class="formula-applied">Applied: ${{e(advPenaltyAppliedText)}}</p></div><div class="formula-step"><div class="formula-kicker">Step 2: Raw Score</div><p class="formula-eq">${{e(advRawFormulaText)}}</p><p class="formula-applied">Applied: ${{e(advRawAppliedText)}} = ${{n(item.raw_score).toFixed(2)}}</p></div><div class="formula-step"><div class="formula-kicker">Step 3: Final Score</div><p class="formula-eq">${{e(advFinalFormulaText)}}</p><p class="formula-applied">Applied: ${{e(advFinalAppliedText)}} = ${{summaryScore.toFixed(2)}}</p></div><div class="formula-note">Penalty multipliers come from Performance Settings. Higher multipliers increase score deductions for the same workload pattern.</div><div class="formula-safeguards"><div class="formula-safeguards-title">Safeguards</div><div class="formula-safeguard-item">1. <strong>Penalty-first model:</strong> only <code>base_score</code> adds points; all configured factors reduce score.</div><div class="formula-safeguard-item">2. <strong>Bounds:</strong> <code>clamp(raw, min, max)</code> keeps final score within allowed range.</div></div></div><div class="formula-metrics"><div class="formula-row"><span>Base Score</span><span>${{n(settings.base_score).toFixed(2)}}</span></div><div class="formula-row"><span>Total Penalty</span><span>${{n(item.total_penalty).toFixed(2)}}</span></div><div class="formula-row"><span>Raw Score</span><span>${{n(item.raw_score).toFixed(2)}}</span></div><div class="formula-row"><span>Score Bounds</span><span>${{n(settings.min_score).toFixed(0)}} to ${{n(settings.max_score).toFixed(0)}}</span></div><div class="formula-row final"><span>Final Advanced Score</span><span>${{summaryScore.toFixed(1)}}%</span></div></div></div></section>`;
   const advancedScoringContent = `<div class="scoring-section"><div class="scoring-section-head"><div class="scoring-section-title">Advanced Scoring <span class="beta-tag">beta</span></div></div><div class="ss-big-score">${{summaryScore.toFixed(1)}}</div><div class="sub">Penalty-based | Raw ${{n(item.raw_score).toFixed(2)}} | Total Penalty -${{n(item.total_penalty).toFixed(2)}} | Base ${{n(settings.base_score).toFixed(0)}}</div>${{advancedFormulaIngredientsHtml}}<div class="grid2" style="margin-top:8px;"><section class="mini"><h3>Score Breakdown</h3><div class="l"><span>Bug Hours</span><span class="neg">-${{n(item.penalties.bug).toFixed(2)}}</span></div><div class="l"><span>Bug Late Hours</span><span class="neg">-${{n(item.penalties.bug_late).toFixed(2)}}</span></div><div class="l"><span>Unplanned Leaves</span><span class="neg">-${{n(item.penalties.leave).toFixed(2)}}</span></div><div class="l"><span>Subtask Late Hours</span><span class="neg">-${{n(item.penalties.subtask_late).toFixed(2)}}</span></div><div class="l"><span>Missed Due Dates</span><span class="neg">-${{n(item.penalties.missed_due_date).toFixed(2)}}</span></div><div class="l"><span>Estimate Overrun</span><span class="neg">-${{n(item.penalties.estimate).toFixed(2)}}</span></div></section><section class="mini"><h3>Planning Scorecards</h3><div class="l"><span>Employee Capacity</span><span>${{n(item.employee_capacity_hours).toFixed(2)}}h</span></div><div class="l"><span>Planned Assigned</span><span>${{n(item.planned_hours_assigned).toFixed(2)}}h</span></div><div class="l"><span>Assigned (E/S/ST)</span><span>${{n(item.assigned_counts.epic).toFixed(0)}}/${{n(item.assigned_counts.story).toFixed(0)}}/${{n(item.assigned_counts.subtask).toFixed(0)}}</span></div><div class="l actionable" data-action="open-missed-starts"><span>Missed Starts</span><span><button type="button" class="metric-link-btn">View subtasks</button> ${{n(item.missed_start_count).toFixed(0)}} / ${{n(item.total_assigned_count).toFixed(0)}} (${{n(item.missed_start_ratio).toFixed(1)}}%)</span></div><div class="l actionable" data-action="open-missed-due"><span>Missed Due Dates</span><span><button type="button" class="metric-link-btn">View subtasks</button> ${{n(item.missed_due_date_count).toFixed(0)}} / ${{n(item.due_dated_assigned_count).toFixed(0)}} (${{n(item.missed_due_date_ratio).toFixed(1)}}%)</span></div><div class="l"><span>Planned Leaves</span><span>${{n(item.planned_leave_count).toFixed(0)}} | ${{n(item.planned_leave_hours).toFixed(2)}}h / ${{n(item.planned_leave_days).toFixed(2)}}d</span></div><div class="l"><span>Unplanned Leaves</span><span>${{n(item.unplanned_leave_count).toFixed(0)}} | ${{n(item.unplanned_leave_hours).toFixed(2)}}h / ${{n(item.unplanned_leave_days).toFixed(2)}}d</span></div></section></div><div class="kpi-charts"><div class="mini-chart"><h3 style="margin:0 0 6px;font-size:.82rem;">Assigned Mix Chart</h3>${{assignedMixChart}}</div><div class="mini-chart"><h3 style="margin:0 0 6px;font-size:.82rem;">Due Compliance Chart</h3>${{dueMixChart}}</div></div><div class="ts-card"><h3 style="margin:0 0 6px;font-size:.82rem;">Performance Over Days</h3>${{renderSeriesSvg(item.daily_series)}}</div></div>`;
   const scoringTabsHtml = `<div class="tabs" style="margin-top:10px;" data-tab-group="scoring"><button class="tab-btn tab-btn-score${{activeScoringTab === "simple" ? " active" : ""}}" data-tab="simple"><span class="tab-kicker">Mode</span><span class="tab-main-row"><span class="tab-title">Simple Scoring</span><span class="tab-score">${{activeSimpleScore.toFixed(1)}}</span></span></button><button class="tab-btn tab-btn-score tab-btn-beta${{activeScoringTab === "advanced" ? " active" : ""}}" data-tab="advanced"><span class="tab-kicker">Mode</span><span class="tab-main-row"><span class="tab-title">Advanced Scoring <span class="tab-beta">beta</span></span><span class="tab-score">${{summaryScore.toFixed(1)}}</span></span></button></div><div class="tab-pane${{activeScoringTab === "simple" ? " active" : ""}}" data-pane="simple" data-tab-group="scoring">${{simpleScoringContent}}</div><div class="tab-pane${{activeScoringTab === "advanced" ? " active" : ""}}" data-pane="advanced" data-tab-group="scoring">${{advancedScoringContent}}</div>`;
-  const execPlanTabsHtml = `${{assignmentScorecardsHtml}}<div class="tabs" style="margin-top:10px;" data-tab-group="detail"><button class="tab-btn active" data-tab="planning">Planning</button><button class="tab-btn" data-tab="execution">Execution</button></div><div class="tab-pane active" data-pane="planning" data-tab-group="detail"><div class="tbl-wrap"><h3 class="tbl-title">Interactive Hierarchy Breakdown (Epic -> Story -> Subtask)</h3>${{hierarchyTable}}</div></div><div class="tab-pane" data-pane="execution" data-tab-group="detail"><div class="tbl-wrap"><h3 class="tbl-title">Execution Nested View (Epic -> Story -> Subtask) | Planned vs Actual</h3>${{executionHierarchyTable}}</div><div class="tbl-wrap" id="due-compliance-context"><h3 class="tbl-title">Due Compliance Table (Logged Items)</h3>${{dueTable}}</div><div class="tbl-wrap" id="missed-start-context"><h3 class="tbl-title">Missed Start Context Table</h3>${{missedTable}}</div><div class="feed">${{feed}}</div></div>`;
+  const execPlanTabsHtml = `${{assignmentScorecardsHtml}}<div class="tabs" style="margin-top:10px;" data-tab-group="detail"><button class="tab-btn active" data-tab="planning">Planning</button><button class="tab-btn" data-tab="execution">Execution</button></div><div class="tab-pane active" data-pane="planning" data-tab-group="detail"><div class="tbl-wrap"><h3 class="tbl-title">Interactive Hierarchy Breakdown (Epic -> Story -> Subtask)</h3>${{hierarchyTable}}</div></div><div class="tab-pane" data-pane="execution" data-tab-group="detail"><div class="tbl-wrap"><h3 class="tbl-title">Execution Nested View (Epic -> Story -> Subtask) | Planned vs Actual</h3>${{executionHierarchyTable}}</div><div class="tbl-wrap" id="due-compliance-context"><h3 class="tbl-title">Due Compliance Table (Logged Items)</h3>${{dueTable}}</div><div class="tbl-wrap" id="post-completion-logs-context"><h3 class="tbl-title">Worklogs After Stable Resolved Date</h3>${{postCompletionLogsTable}}</div><div class="tbl-wrap" id="missed-start-context"><h3 class="tbl-title">Missed Start Context Table</h3>${{missedTable}}</div><div class="feed">${{feed}}</div></div>`;
   document.getElementById("detail").innerHTML = `${{summaryHtml}}${{managedSectionHtml}}`;
   document.getElementById("score-drilldown").innerHTML = `${{scoringTabsHtml}}${{execPlanTabsHtml}}`;
   const detailHost = document.getElementById("detail");
@@ -3499,7 +3688,7 @@ if (assigneeExtendedActualsToggleEl) {{
   }});
 }}
 if (assigneeOverloadedPenaltyToggleEl) {{
-  assigneeOverloadedPenaltyToggleEl.checked = overloadedPenaltyEnabled;
+  applyOverloadedGuardrailSettings(settings);
   assigneeOverloadedPenaltyToggleEl.addEventListener("change", () => {{
     overloadedPenaltyEnabled = Boolean(assigneeOverloadedPenaltyToggleEl.checked);
     renderAll();
@@ -3814,7 +4003,9 @@ if (employeeRefreshBtn) {{
   setEmployeeRefreshProgress(0, "");
   resumeEmployeeRefreshIfRunning();
 }}
-renderAll();
+hydrateOverloadedGuardrailSettings().finally(() => {{
+  renderAll();
+}});
 </script>
 <script>
 if (typeof window !== "undefined" && window.location && window.location.protocol !== "file:") {{
