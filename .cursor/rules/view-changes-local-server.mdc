@@ -1,0 +1,23 @@
+---
+description: Agent must tell user how to view latest changes on local server in every message
+alwaysApply: true
+---
+
+# View Latest Changes on Local Server
+
+In **every** response where you have made or discussed code or report changes, include a short note on how to view the latest changes on the local server.
+
+## What to include
+
+- **Dashboard / report HTML changes**: Tell the user to run the report server (if not already running) and open the relevant URL, or to regenerate the dashboard and open it.
+- **Server already running**: e.g. "Refresh the page at http://127.0.0.1:8000 (or your REPORT_PORT) to see changes."
+- **Dashboard-only changes**: "Regenerate the dashboard with `python fetch_jira_dashboard.py` then refresh the dashboard page or open the generated dashboard.html."
+- **Full report rebuild**: "Run `python run_html_only.py` (optionally with `--include-dashboard`) to rebuild reports; the server will start at http://127.0.0.1:8000 by default, or use `--no-server` and start it separately."
+
+## Defaults for this project
+
+- **Report server**: Default host `127.0.0.1`, port `8000` (overridable via `REPORT_PORT` or `PORT`).
+- **Start server**: `python run_html_only.py` (rebuilds HTML then serves); or start the report server directly as used by the project.
+- **Dashboard**: Generated from `dashboard_template.html` by `python fetch_jira_dashboard.py`; served at `/dashboard.html` when using the report server.
+
+Keep the note to one or two sentences. Place it at the end of your message, after the main answer or summary.

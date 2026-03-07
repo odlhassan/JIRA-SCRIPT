@@ -28,6 +28,7 @@ from jira_client import (
     get_session,
     get_board_id,
 )
+from managed_projects_registry import deterministic_color_for_project_key, list_managed_projects
 
 load_dotenv()
 
@@ -1959,6 +1960,29 @@ def fetch_dashboard_data():
         }
     )
 
+    # Load project display names and colors from managed projects database
+    project_names = {}
+    project_colors = {}
+    try:
+        managed_projects = list_managed_projects(planner_db_path, include_inactive=False)
+        for proj in managed_projects:
+            key = proj.get("project_key")
+            display = proj.get("display_name") or proj.get("project_name") or key
+            color = proj.get("color_hex")
+            if key:
+                project_names[key] = display
+                if color:
+                    project_colors[key] = color
+    except Exception:
+        pass
+    # Fallback: deterministic color for projects not in managed_projects
+    for p in projects:
+        if p not in project_colors:
+            try:
+                project_colors[p] = deterministic_color_for_project_key(p)
+            except Exception:
+                project_colors[p] = "#64748b"
+
     return {
         "epics": epics,
         "stories": stories,
@@ -1971,6 +1995,8 @@ def fetch_dashboard_data():
         },
         "risk_config": risk_settings,
         "projects": projects,
+        "project_names": project_names,
+        "project_colors": project_colors,
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
     }
 

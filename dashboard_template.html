@@ -51,11 +51,19 @@
         @media (max-width: 1200px) { .header-grid { grid-template-columns: 1fr; } }
         .meta { color: #6b7280; font-size: 0.9rem; margin-top: 0.4rem; }
         .subtitle { color: #4b5563; font-size: 0.9rem; margin-top: 0.25rem; }
-        .filters { margin-top: 0.9rem; display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; }
+        .filters { margin-top: 0.9rem; display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; }
+        .filters #project-filters { display: flex; flex-wrap: wrap; gap: 0.65rem; margin-left: 0.25rem; }
         .search-wrap { margin-top: 0.75rem; }
         .search-input { width: 100%; max-width: 420px; border: 1px solid #d1d5db; border-radius: 8px; padding: 0.5rem 0.65rem; font-size: 0.9rem; color: #111827; background: #fff; }
         .search-input:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59,130,246,.15); }
-        .project-chip { display: inline-flex; align-items: center; gap: .4rem; padding: .3rem .55rem; border: 1px solid #d1d5db; border-radius: 999px; background: #fff; font-size: .85rem; }
+        .project-pill { display: inline-flex; align-items: center; gap: 0.5rem; padding: .5rem .85rem; margin: 0.15rem; border-radius: 999px; font-size: .85rem; font-weight: 600; cursor: pointer; transition: all 0.22s cubic-bezier(0.4, 0, 0.2, 1); border: none; }
+        .project-pill-name { white-space: nowrap; }
+        .project-pill-count { opacity: 0.9; font-size: .78rem; font-weight: 700; padding-left: 0.25rem; }
+        .project-pill.project-pill-unselected { background: #e5e7eb; color: #64748b; }
+        .project-pill.project-pill-unselected .project-pill-count { opacity: 0.85; }
+        .project-pill.project-pill-unselected:hover { background: #cbd5e1; color: #475569; }
+        .project-pill:focus { outline: none; box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.35); }
+        .project-pill:active { transform: scale(0.97); }
 
         .dashboard-layout { display: grid; grid-template-columns: 50% 25% 25%; gap: 1rem; align-items: start; padding: 0 1.25rem 1.25rem; }
         @media (max-width: 1200px) { .dashboard-layout { grid-template-columns: 1fr 1fr; } .lane-subtasks { grid-column: 1 / -1; } }
@@ -260,7 +268,8 @@
         html[data-theme="dark"] .clear-all-filters:hover { background: #1f2937; }
         html[data-theme="dark"] .search-input { border-color: #374151; background: #0f172a; color: #e5e7eb; }
         html[data-theme="dark"] .search-input:focus { border-color: #60a5fa; box-shadow: 0 0 0 2px rgba(96, 165, 250, .25); }
-        html[data-theme="dark"] .project-chip,
+        html[data-theme="dark"] .project-pill.project-pill-unselected { background: #374151; color: #9ca3af; }
+        html[data-theme="dark"] .project-pill.project-pill-unselected:hover { background: #4b5563; color: #d1d5db; }
         html[data-theme="dark"] .lane-assignee-filter { border-color: #374151; background: #0f172a; color: #d1d5db; }
         html[data-theme="dark"] .lane-assignee-filter::after,
         html[data-theme="dark"] .lane-assignee-filter-label { color: #9ca3af; }
@@ -506,6 +515,8 @@ const allStories = dashboardData.stories || [];
 const allSubtasks = dashboardData.subtasks || [];
 const allBugSubtasks = dashboardData.bug_subtasks || [];
 const allProjects = dashboardData.projects || [];
+const projectNames = dashboardData.project_names || {};
+const projectColors = dashboardData.project_colors || {};
 const orphans = dashboardData.orphans || { stories: [], subtasks: [], bug_subtasks: [] };
 const selectedProjects = new Set(allProjects.includes('O2') ? ['O2'] : []);
 const DEFAULT_DATE_FROM_MONTH = '2026-01';
@@ -1023,14 +1034,41 @@ function resetAllFilters() {
     renderAll();
 }
 
+function luminance(hex) {
+    const m = hex.match(/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i);
+    if (!m) return 0.5;
+    const r = parseInt(m[1], 16) / 255, g = parseInt(m[2], 16) / 255, b = parseInt(m[3], 16) / 255;
+    return 0.299 * r + 0.587 * g + 0.114 * b;
+}
+function textColorForBg(hex) { return luminance(hex) > 0.6 ? '#1f2937' : '#ffffff'; }
+function epicCountByProjectKey() {
+    const counts = {};
+    allEpics.forEach(e => {
+        const pk = asText(e.project_key);
+        if (pk) counts[pk] = (counts[pk] || 0) + 1;
+    });
+    return counts;
+}
 function renderProjectFilters() {
     const host = document.getElementById('project-filters');
     if (!allProjects.length) { host.innerHTML = '<span class="empty">No projects found</span>'; return; }
-    host.innerHTML = allProjects.map(p => `<label class="project-chip"><input type="checkbox" data-project="${escapeHtml(p)}" ${selectedProjects.has(p) ? 'checked' : ''}><span>${escapeHtml(p)}</span></label>`).join('');
-    host.querySelectorAll('input[type="checkbox"]').forEach(cb => {
-        cb.addEventListener('change', () => {
-            const project = cb.getAttribute('data-project');
-            if (cb.checked) selectedProjects.add(project); else selectedProjects.delete(project);
+    const epicCounts = epicCountByProjectKey();
+    host.innerHTML = allProjects.map(p => {
+        const displayName = projectNames[p] || p;
+        const color = projectColors[p] || '#64748b';
+        const selected = selectedProjects.has(p);
+        const count = epicCounts[p] || 0;
+        const countLabel = count === 1 ? '1 epic' : `${count} epics`;
+        const textColor = selected ? textColorForBg(color) : '';
+        const cls = selected ? 'project-pill' : 'project-pill project-pill-unselected';
+        const style = selected ? `background:${color};color:${textColor};` : '';
+        return `<button type="button" class="${cls}" data-project="${escapeHtml(p)}" style="${style}"><span class="project-pill-name">${escapeHtml(displayName)}</span><span class="project-pill-count">${countLabel}</span></button>`;
+    }).join('');
+    host.querySelectorAll('.project-pill').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const project = btn.getAttribute('data-project');
+            if (selectedProjects.has(project)) selectedProjects.delete(project); else selectedProjects.add(project);
+            renderProjectFilters();
             renderAll();
         });
     });
