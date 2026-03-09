@@ -720,6 +720,28 @@ def _build_html(data: dict) -> str:
       margin-left: 2px;
       white-space: nowrap;
     }}
+    .date-chip-toggle {{
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border: 1px solid #f3e8d8;
+      border-radius: 999px;
+      background: #fff7ed;
+      color: #7c2d12;
+      font-size: 0.74rem;
+      font-weight: 700;
+      min-height: 30px;
+      padding: 0 10px;
+      cursor: pointer;
+      user-select: none;
+    }}
+    .date-chip-toggle input[type="checkbox"] {{
+      width: 14px;
+      height: 14px;
+      margin: 0;
+      accent-color: #0f766e;
+      cursor: pointer;
+    }}
     .page {{
       max-width: 1500px;
       margin: 0 auto;
@@ -1324,6 +1346,62 @@ def _build_html(data: dict) -> str:
       position: relative;
       flex: 0 1 290px;
       min-width: 220px;
+    }}
+    .project-filter-progress {{
+      position: absolute;
+      left: 8px;
+      right: 8px;
+      top: calc(100% - 3px);
+      height: 3px;
+      border-radius: 999px;
+      background: rgba(148, 163, 184, 0.2);
+      overflow: hidden;
+      opacity: 0;
+      pointer-events: none;
+      transform: scaleY(0.8);
+      transition: opacity 140ms ease;
+      z-index: 24;
+    }}
+    .project-filter-progress.is-active {{
+      opacity: 1;
+    }}
+    .project-filter-progress-bar {{
+      width: 42%;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #0f766e 0%, #22c55e 55%, #67e8f9 100%);
+      animation: project-filter-progress-slide 1.1s linear infinite;
+      transform: translateX(-110%);
+    }}
+    @keyframes project-filter-progress-slide {{
+      0% {{ transform: translateX(-110%); }}
+      100% {{ transform: translateX(240%); }}
+    }}
+    .team-filter-progress {{
+      position: absolute;
+      left: 8px;
+      right: 8px;
+      top: calc(100% - 3px);
+      height: 3px;
+      border-radius: 999px;
+      background: rgba(148, 163, 184, 0.2);
+      overflow: hidden;
+      opacity: 0;
+      pointer-events: none;
+      transform: scaleY(0.8);
+      transition: opacity 140ms ease;
+      z-index: 24;
+    }}
+    .team-filter-progress.is-active {{
+      opacity: 1;
+    }}
+    .team-filter-progress-bar {{
+      width: 42%;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #2563eb 0%, #22c55e 55%, #67e8f9 100%);
+      animation: project-filter-progress-slide 1.1s linear infinite;
+      transform: translateX(-110%);
     }}
     .project-filter-btn {{
       width: 100%;
@@ -2098,6 +2176,18 @@ def _build_html(data: dict) -> str:
       color: #e5e7eb;
       border-color: #374151;
     }}
+    html[data-theme="dark"] .project-filter-progress {{
+      background: rgba(71, 85, 105, 0.45);
+    }}
+    html[data-theme="dark"] .project-filter-progress-bar {{
+      background: linear-gradient(90deg, #22c55e 0%, #38bdf8 60%, #f8fafc 100%);
+    }}
+    html[data-theme="dark"] .team-filter-progress {{
+      background: rgba(71, 85, 105, 0.45);
+    }}
+    html[data-theme="dark"] .team-filter-progress-bar {{
+      background: linear-gradient(90deg, #60a5fa 0%, #22c55e 60%, #f8fafc 100%);
+    }}
     html[data-theme="dark"] .project-filter-caret {{
       color: #94a3b8;
     }}
@@ -2159,6 +2249,11 @@ def _build_html(data: dict) -> str:
     html[data-theme="dark"] .adv-filter-radio:hover {{ background: #312e81; }}
     html[data-theme="dark"] .adv-filter-radio input[type="radio"]:checked + span {{ color: #a5b4fc; }}
     html[data-theme="dark"] .date-chip-status {{
+      color: #e2e8f0;
+    }}
+    html[data-theme="dark"] .date-chip-toggle {{
+      border-color: #475569;
+      background: #1f2937;
       color: #e2e8f0;
     }}
     html[data-theme="dark"] .project-option {{
@@ -2279,6 +2374,10 @@ def _build_html(data: dict) -> str:
         <option value="subtask_logs">Subtask Logs</option>
         <option value="epic_estimates">Epic Estimates</option>
       </select>
+      <label class="date-chip-toggle" for="extended-actual-hours-toggle" title="For subtasks whose planned start/end is in range, include total logged hours across all dates.">
+        <input id="extended-actual-hours-toggle" type="checkbox" aria-label="Extended Actual Hours">
+        <span>Extended Actual Hours</span>
+      </label>
       <select id="actual-hours-mode" style="display:none" aria-hidden="true">
         <option value="log_date">By Log Date</option>
         <option value="planned_dates">By Planned Dates</option>
@@ -2332,6 +2431,9 @@ def _build_html(data: dict) -> str:
             <span id="project-filter-summary">Projects: All</span>
             <span class="project-filter-caret" aria-hidden="true">v</span>
           </button>
+          <div class="project-filter-progress" id="project-filter-progress" hidden aria-hidden="true">
+            <div class="project-filter-progress-bar"></div>
+          </div>
           <div class="project-filter-menu" id="project-filter-menu">
             <div class="project-filter-actions">
               <button class="project-filter-action" type="button" id="project-filter-select-all">Select all</button>
@@ -2352,6 +2454,9 @@ def _build_html(data: dict) -> str:
             <span id="team-filter-summary">Teams: All</span>
             <span class="project-filter-caret" aria-hidden="true">v</span>
           </button>
+          <div class="team-filter-progress" id="team-filter-progress" hidden aria-hidden="true">
+            <div class="team-filter-progress-bar"></div>
+          </div>
           <div class="project-filter-menu" id="team-filter-menu">
             <div class="project-filter-actions">
               <button class="project-filter-action" type="button" id="team-filter-select-all">Select all</button>
@@ -2672,6 +2777,7 @@ Total Leaves Taken = 0h</span>
     const dateFilterFromInput = document.getElementById("date-filter-from");
     const dateFilterToInput = document.getElementById("date-filter-to");
     const plannedHoursSourceSelect = document.getElementById("planned-hours-source");
+    const extendedActualHoursToggle = document.getElementById("extended-actual-hours-toggle");
     const actualHoursModeSelect = document.getElementById("actual-hours-mode");
     const dateFilterApplyButton = document.getElementById("date-filter-apply");
     const dateFilterResetButton = document.getElementById("date-filter-reset");
@@ -2681,6 +2787,7 @@ Total Leaves Taken = 0h</span>
     const projectFilterMenu = document.getElementById("project-filter-menu");
     const projectFilterOptions = document.getElementById("project-filter-options");
     const projectFilterSummary = document.getElementById("project-filter-summary");
+    const projectFilterProgress = document.getElementById("project-filter-progress");
     const projectFilterSelectAll = document.getElementById("project-filter-select-all");
     const projectFilterClearAll = document.getElementById("project-filter-clear-all");
     const teamFilterRoot = document.getElementById("team-filter");
@@ -2688,6 +2795,7 @@ Total Leaves Taken = 0h</span>
     const teamFilterMenu = document.getElementById("team-filter-menu");
     const teamFilterOptions = document.getElementById("team-filter-options");
     const teamFilterSummary = document.getElementById("team-filter-summary");
+    const teamFilterProgress = document.getElementById("team-filter-progress");
     const teamFilterSelectAll = document.getElementById("team-filter-select-all");
     const teamFilterClearAll = document.getElementById("team-filter-clear-all");
     const viewOptionsRoot = document.getElementById("view-options");
@@ -2798,6 +2906,9 @@ Total Leaves Taken = 0h</span>
     let totalLeavesPlannedDetailsRows = [];
     let subtaskLogHoursByIssue = {{}};
     const plannedHoursInRangeParityCache = new Map();
+    let scorecardUpdateVersion = 0;
+    let projectFilterLoadingVersion = 0;
+    let teamFilterLoadingVersion = 0;
 
     function toFiniteNumber(value, fallback = 0) {{
       const n = Number(value);
@@ -3286,7 +3397,14 @@ Total Leaves Taken = 0h</span>
       }}
       renderCapacityProfileOptions();
       renderCapacityProfileDetails();
-      void updateScoreCards(scorecardSourceRows);
+      const requestVersion = ++scorecardUpdateVersion;
+      if (projectFilterProgress && !projectFilterProgress.hidden) {{
+        setProjectFilterLoading(true, requestVersion);
+      }}
+      if (teamFilterProgress && !teamFilterProgress.hidden) {{
+        setTeamFilterLoading(true, requestVersion);
+      }}
+      void updateScoreCards(scorecardSourceRows, requestVersion);
     }}
 
     async function refreshCapacityProfilesFromApi() {{
@@ -3314,7 +3432,14 @@ Total Leaves Taken = 0h</span>
         next.set(key, field);
       }}
       managedFieldsByKey = next;
-      void updateScoreCards(scorecardSourceRows);
+      const requestVersion = ++scorecardUpdateVersion;
+      if (projectFilterProgress && !projectFilterProgress.hidden) {{
+        setProjectFilterLoading(true, requestVersion);
+      }}
+      if (teamFilterProgress && !teamFilterProgress.hidden) {{
+        setTeamFilterLoading(true, requestVersion);
+      }}
+      void updateScoreCards(scorecardSourceRows, requestVersion);
     }}
 
     async function refreshManagedFieldsFromApi() {{
@@ -3577,7 +3702,13 @@ Total Leaves Taken = 0h</span>
       return toFiniteNumber(breakdown.profileCapacityHours, 0);
     }}
 
-    async function updateScoreCards(sourceRows) {{
+    async function updateScoreCards(sourceRows, requestVersion) {{
+      const activeRequestVersion = Number.isFinite(Number(requestVersion))
+        ? Number(requestVersion)
+        : ++scorecardUpdateVersion;
+      function isStaleScorecardUpdate() {{
+        return activeRequestVersion !== scorecardUpdateVersion;
+      }}
       const rows = Array.isArray(sourceRows) ? sourceRows : [];
       const rowsById = new Map();
       const rowsByIdText = new Map();
@@ -3838,16 +3969,26 @@ Total Leaves Taken = 0h</span>
       if (normalizePlannedHoursSource(selectedPlannedHoursSource) === "subtask_estimates") {{
         try {{
           const parityPlannedInRangeHours = await fetchPlannedHoursInRangeParityTotal();
+          if (isStaleScorecardUpdate()) {{
+            return;
+          }}
           if (Number.isFinite(parityPlannedInRangeHours)) {{
             totalPlannedHours = toFiniteNumber(parityPlannedInRangeHours, totalPlannedHours);
           }}
         }} catch (error) {{
+          if (isStaleScorecardUpdate()) {{
+            return;
+          }}
           console.warn("Failed to align planned-hours total with Approved vs Planned summary:", error);
         }}
       }}
-      const totalActualProjectHours = hasNestedActualsApi
-        ? totalActualProjectHoursFromProjects
-        : (filteredSubtaskActualCount > 0 ? totalActualProjectHoursFromFilteredSubtasks : totalActualProjectHoursFromProjects);
+      if (isStaleScorecardUpdate()) {{
+        return;
+      }}
+      const extendedActualsEnabled = selectedActualHoursMode === "planned_dates";
+      const totalActualProjectHours = (filteredSubtaskActualCount > 0 || hasNestedActualsApi)
+        ? totalActualProjectHoursFromFilteredSubtasks
+        : totalActualProjectHoursFromProjects;
       const groupedEpicSummaries = new Map();
       for (const summary of epicSummariesById.values()) {{
         const projectKey = String(summary && summary.project_key || "").trim().toUpperCase();
@@ -4143,12 +4284,23 @@ Total Leaves Taken = 0h</span>
           + "Total Planned Hours = " + formatHours(totalPlannedHours);
       }}
       if (totalLoggedTipNode) {{
-        totalLoggedTipNode.textContent =
-          "Formula: Total Actual Hours = Sum(Project Actual Hours), excluding RLT (RnD Leave Tracker).\\n"
-          + "Values:\\n"
-          + "Included Projects Actual Sum = " + formatHours(totalActualProjectHours) + "\\n"
-          + "Excluded Projects Actual Sum = " + formatHours(excludedActualHours) + "\\n"
-          + "Total Actual Hours = " + formatHours(totalActualProjectHours);
+        if (extendedActualsEnabled) {{
+          totalLoggedTipNode.textContent =
+            "Formula: Total Actual Hours = Sum(All Logged Hours for subtasks included in Planned Hours set), excluding RLT (RnD Leave Tracker).\\n"
+            + "Values:\\n"
+            + "Included Subtasks Actual Sum = " + formatHours(totalActualProjectHoursFromFilteredSubtasks) + "\\n"
+            + "Included Subtasks Count = " + String(filteredSubtaskActualCount) + "\\n"
+            + "Excluded Projects Actual Sum = " + formatHours(excludedActualHours) + "\\n"
+            + "Total Actual Hours = " + formatHours(totalActualProjectHours);
+        }} else {{
+          totalLoggedTipNode.textContent =
+            "Formula: Total Actual Hours = Sum(Logged Hours in selected date range for subtasks included in Planned Hours set), excluding RLT (RnD Leave Tracker).\\n"
+            + "Values:\\n"
+            + "Included Subtasks Actual Sum = " + formatHours(totalActualProjectHoursFromFilteredSubtasks) + "\\n"
+            + "Included Subtasks Count = " + String(filteredSubtaskActualCount) + "\\n"
+            + "Excluded Projects Actual Sum = " + formatHours(excludedActualHours) + "\\n"
+            + "Total Actual Hours = " + formatHours(totalActualProjectHours);
+        }}
       }}
       if (deltaTipNode) {{
         const deltaFormulaText = managedFieldFormulaText(
@@ -4230,6 +4382,12 @@ Total Leaves Taken = 0h</span>
           deltaScoreCard.classList.add("delta-zero");
         }}
       }}
+      if (activeRequestVersion === projectFilterLoadingVersion) {{
+        setProjectFilterLoading(false);
+      }}
+      if (activeRequestVersion === teamFilterLoadingVersion) {{
+        setTeamFilterLoading(false);
+      }}
     }}
 
     function applySelectedCapacityProfile() {{
@@ -4240,14 +4398,28 @@ Total Leaves Taken = 0h</span>
       }}
       appliedCapacityProfile = profile;
       appliedCapacityProfileKey = capacityProfileKey(profile);
-      void updateScoreCards(scorecardSourceRows);
+      const requestVersion = ++scorecardUpdateVersion;
+      if (projectFilterProgress && !projectFilterProgress.hidden) {{
+        setProjectFilterLoading(true, requestVersion);
+      }}
+      if (teamFilterProgress && !teamFilterProgress.hidden) {{
+        setTeamFilterLoading(true, requestVersion);
+      }}
+      void updateScoreCards(scorecardSourceRows, requestVersion);
       renderCapacityProfileDetails();
     }}
 
     function resetCapacityProfileOverride() {{
       appliedCapacityProfile = null;
       appliedCapacityProfileKey = "";
-      void updateScoreCards(scorecardSourceRows);
+      const requestVersion = ++scorecardUpdateVersion;
+      if (projectFilterProgress && !projectFilterProgress.hidden) {{
+        setProjectFilterLoading(true, requestVersion);
+      }}
+      if (teamFilterProgress && !teamFilterProgress.hidden) {{
+        setTeamFilterLoading(true, requestVersion);
+      }}
+      void updateScoreCards(scorecardSourceRows, requestVersion);
       renderCapacityProfileDetails();
       if (capacityProfileDetailsEl) {{
         capacityProfileDetailsEl.textContent += " | Using project totals.";
@@ -4436,6 +4608,34 @@ Total Leaves Taken = 0h</span>
       projectFilterSummary.textContent = "Projects: " + String(selected) + " selected";
     }}
 
+    function setProjectFilterLoading(isLoading, requestVersion) {{
+      if (Number.isFinite(Number(requestVersion))) {{
+        projectFilterLoadingVersion = Number(requestVersion);
+      }} else if (!isLoading) {{
+        projectFilterLoadingVersion = 0;
+      }}
+      if (!projectFilterProgress) {{
+        return;
+      }}
+      const active = !!isLoading;
+      projectFilterProgress.hidden = !active;
+      projectFilterProgress.classList.toggle("is-active", active);
+    }}
+
+    function setTeamFilterLoading(isLoading, requestVersion) {{
+      if (Number.isFinite(Number(requestVersion))) {{
+        teamFilterLoadingVersion = Number(requestVersion);
+      }} else if (!isLoading) {{
+        teamFilterLoadingVersion = 0;
+      }}
+      if (!teamFilterProgress) {{
+        return;
+      }}
+      const active = !!isLoading;
+      teamFilterProgress.hidden = !active;
+      teamFilterProgress.classList.toggle("is-active", active);
+    }}
+
     function closeProjectFilterMenu() {{
       if (!projectFilterRoot || !projectFilterToggle) {{
         return;
@@ -4513,7 +4713,7 @@ Total Leaves Taken = 0h</span>
             selectedProjectKeys.delete(project.key);
           }}
           updateProjectFilterSummary();
-          rerender(true);
+          rerender(true, {{ projectFilterLoading: true }});
         }});
 
         const text = document.createElement("span");
@@ -4579,7 +4779,7 @@ Total Leaves Taken = 0h</span>
           }}
           renderProjectFilterOptions();
           updateProjectFilterSummary();
-          rerender(true);
+          rerender(true, {{ projectFilterLoading: true }});
         }});
       }}
       if (projectFilterClearAll) {{
@@ -4587,7 +4787,7 @@ Total Leaves Taken = 0h</span>
           selectedProjectKeys.clear();
           renderProjectFilterOptions();
           updateProjectFilterSummary();
-          rerender(true);
+          rerender(true, {{ projectFilterLoading: true }});
         }});
       }}
       document.addEventListener("click", (event) => {{
@@ -4694,11 +4894,12 @@ Total Leaves Taken = 0h</span>
       updateTeamFilterSummary();
       if (!hasNestedActualsApi) {{
         applyOriginalMetricsToRows();
-        rerender(true);
+        rerender(true, {{ teamFilterLoading: true }});
         return;
       }}
       setDateApplyBusy(true);
       try {{
+        setTeamFilterLoading(true);
         const payload = await fetchActualHoursForDateRange(
           selectedDateFrom,
           selectedDateTo,
@@ -4706,8 +4907,9 @@ Total Leaves Taken = 0h</span>
           selectedTeamAssignees
         );
         applyFetchedActualHours(payload);
-        rerender(true);
+        rerender(true, {{ teamFilterLoading: true }});
       }} catch (error) {{
+        setTeamFilterLoading(false);
         setDateFilterStatus(String(error && error.message || error || "Failed to apply team filter."));
       }} finally {{
         setDateApplyBusy(false);
@@ -4935,6 +5137,13 @@ Total Leaves Taken = 0h</span>
       return new Date(year, month, day);
     }}
 
+    function syncExtendedActualHoursToggle() {{
+      if (!extendedActualHoursToggle) {{
+        return;
+      }}
+      extendedActualHoursToggle.checked = pendingActualHoursMode === "planned_dates";
+    }}
+
     function normalizePendingDateRange() {{
       if (pendingDateFrom > pendingDateTo) {{
         const tmp = pendingDateFrom;
@@ -4957,6 +5166,7 @@ Total Leaves Taken = 0h</span>
       if (actualHoursModeSelect) {{
         actualHoursModeSelect.value = pendingActualHoursMode;
       }}
+      syncExtendedActualHoursToggle();
     }}
 
     function hasPendingDateChange() {{
@@ -4975,13 +5185,15 @@ Total Leaves Taken = 0h</span>
       const toDate = parseFilterDate(pendingDateTo);
       const isValid = !!(fromDate && toDate);
       const dirty = hasPendingDateChange();
-      dateFilterApplyButton.disabled = isApplyingDateRange || !isValid || !dirty;
+      dateFilterApplyButton.disabled = isApplyingDateRange || !isValid;
       if (isApplyingDateRange) {{
         setDateFilterStatus("Recomputing actual hours for selected range and mode...");
       }} else if (!isValid) {{
         setDateFilterStatus("Select a valid date range.");
       }} else if (dirty) {{
         setDateFilterStatus("Date range, mode, or planned hours source changed. Click apply.");
+      }} else if (hasNestedActualsApi) {{
+        setDateFilterStatus("Apply recomputes the report even for the current date range.");
       }} else {{
         setDateFilterStatus("");
       }}
@@ -5098,7 +5310,7 @@ Total Leaves Taken = 0h</span>
         ? ("&assignees=" + encodeURIComponent(assignees.join(",")))
         : "";
       const response = await fetch(
-        ACTUAL_HOURS_AGGREGATE_ENDPOINT
+        NESTED_ACTUALS_ENDPOINT
         + "?from=" + fromParam
         + "&to=" + toParam
         + "&mode=" + modeParam
@@ -6008,7 +6220,8 @@ Total Leaves Taken = 0h</span>
       }}
     }}
 
-    function rerender(resetCollapsed) {{
+    function rerender(resetCollapsed, options) {{
+      const nextOptions = options && typeof options === "object" ? options : {{}};
       tbody.innerHTML = "";
       clearTreeState();
       if (resetCollapsed) {{
@@ -6017,7 +6230,14 @@ Total Leaves Taken = 0h</span>
       const displayRows = buildDisplayRows();
       rowCountNode.textContent = String(displayRows.length);
       updateNoEntryToggle(displayRows);
-      void updateScoreCards(scorecardSourceRows);
+      const requestVersion = ++scorecardUpdateVersion;
+      if (nextOptions.projectFilterLoading || (projectFilterProgress && !projectFilterProgress.hidden)) {{
+        setProjectFilterLoading(true, requestVersion);
+      }}
+      if (nextOptions.teamFilterLoading || (teamFilterProgress && !teamFilterProgress.hidden)) {{
+        setTeamFilterLoading(true, requestVersion);
+      }}
+      void updateScoreCards(scorecardSourceRows, requestVersion);
       renderRows(displayRows);
       applyVisibility();
     }}
@@ -6232,6 +6452,14 @@ Total Leaves Taken = 0h</span>
       actualHoursModeSelect.addEventListener("change", () => {{
         const nextValue = String(actualHoursModeSelect.value || DEFAULT_ACTUAL_HOURS_MODE);
         pendingActualHoursMode = (nextValue === "planned_dates") ? "planned_dates" : "log_date";
+        normalizePendingDateRange();
+        updateDateRangeApplyState();
+      }});
+    }}
+    if (extendedActualHoursToggle) {{
+      extendedActualHoursToggle.checked = pendingActualHoursMode === "planned_dates";
+      extendedActualHoursToggle.addEventListener("change", () => {{
+        pendingActualHoursMode = extendedActualHoursToggle.checked ? "planned_dates" : "log_date";
         normalizePendingDateRange();
         updateDateRangeApplyState();
       }});

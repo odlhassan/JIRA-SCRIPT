@@ -40,6 +40,35 @@ class ReportUiSmokeTests(unittest.TestCase):
         self.assertIn("/api/capacity/calculate", html)
         self.assertIn("/api/actual-hours/aggregate", html)
 
+    def test_employee_performance_simple_score_drawer_controls_exist(self):
+        payload = {
+            "worklogs": [],
+            "work_items": [],
+            "leave_rows": [],
+            "settings": {},
+            "teams": [],
+            "projects": [],
+            "default_from": "2026-01-01",
+            "default_to": "2026-01-31",
+            "leave_hours_per_day": 8,
+            "entities_catalog": [],
+            "managed_fields": [],
+            "capacity_profiles": [],
+            "simple_scoring": [],
+            "jira_browse_base": "https://example.atlassian.net/browse",
+            "generated_at": "2026-02-21 00:00 UTC",
+        }
+        html = build_employee_perf_html(payload)
+        self.assertIn('id="score-detail-drawer"', html)
+        self.assertIn('id="score-detail-drawer-close"', html)
+        self.assertIn('id="score-detail-drawer-body"', html)
+        self.assertIn('id="header-average-performance-value"', html)
+        self.assertIn("Average Performance", html)
+        self.assertIn("Simple Score Details", html)
+        self.assertIn("Planned Due Date", html)
+        self.assertIn("Last Logged Date", html)
+        self.assertIn("Actual Complete Date", html)
+
     def test_nested_view_options_and_profile_controls_exist(self):
         payload = {
             "generated_at": "2026-02-21 00:00 UTC",
@@ -61,6 +90,9 @@ class ReportUiSmokeTests(unittest.TestCase):
         self.assertIn('id="date-filter-from"', html)
         self.assertIn('id="date-filter-to"', html)
         self.assertIn('id="planned-hours-source"', html)
+        self.assertIn('id="extended-actual-hours-toggle"', html)
+        self.assertIn('id="project-filter-progress"', html)
+        self.assertIn('id="team-filter-progress"', html)
         self.assertIn('id="actual-hours-mode"', html)
         self.assertIn('href="/settings/capacity"', html)
         self.assertIn('id="score-total-capacity-formula"', html)
@@ -80,6 +112,7 @@ class ReportUiSmokeTests(unittest.TestCase):
         }
         html = build_nested_html(payload)
         self.assertIn("/api/capacity/profiles", html)
+        self.assertIn("/api/nested-view/actual-hours", html)
         self.assertIn("/api/actual-hours/aggregate", html)
         self.assertIn("/api/manage-fields?include_inactive=0", html)
         self.assertIn("hasCapacityApi", html)

@@ -132,6 +132,14 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _target_assignee() -> str:
+    return (os.getenv("JIRA_TARGET_ASSIGNEE", "") or "").strip()
+
+
+def _jql_escape(value: str) -> str:
+    return (value or "").replace("\\", "\\\\").replace('"', '\\"')
+
+
 def _to_jql_updated_value(value: str) -> str:
     return parse_iso_utc(value).strftime("%Y-%m-%d %H:%M")
 
@@ -318,12 +326,52 @@ def _fetch_issues_by_keys(session, issue_keys: list[str], fields: list[str]) -> 
     return results
 
 
-def _build_discovery_jql(project_keys: list[str], from_updated_utc: str | None) -> str:
+def _payload_has_required_detail_fields(
+    issue: dict,
+    detail_fields: list[str],
+    start_date_field_id: str,
+    end_date_field_ids: list[str],
+    fix_type_field_id: str,
+) -> bool:
+    fields = issue.get("fields", {}) or {}
+    if not isinstance(fields, dict):
+        return False
+    required_fields = {
+        "project",
+        "summary",
+        "status",
+        "assignee",
+        "priority",
+        "timetracking",
+        "timeoriginalestimate",
+        "timespent",
+        "aggregatetimespent",
+        "issuetype",
+        "parent",
+        "customfield_10014",
+        "created",
+        "updated",
+    }
+    required_fields.update(str(field_id).strip() for field_id in detail_fields if str(field_id).strip())
+    if start_date_field_id:
+        required_fields.add(start_date_field_id)
+    for field_id in end_date_field_ids:
+        field_text = str(field_id).strip()
+        if field_text:
+            required_fields.add(field_text)
+    if fix_type_field_id:
+        required_fields.add(fix_type_field_id)
+    return all(field_name in fields for field_name in required_fields)
+
+
+def _build_discovery_jql(project_keys: list[str], from_updated_utc: str | None, assignee_name: str = "") -> str:
     keys_str = ", ".join(project_keys)
     base = (
         f'project in ({keys_str}) AND issuetype in ("Epic", "Story", "Task", '
         f'"Sub-task", "Subtask", "Bug Task", "Bug Subtask")'
     )
+    if assignee_name:
+        base += f' AND assignee = "{_jql_escape(assignee_name)}"'
     if from_updated_utc:
         return f'{base} AND updated >= "{_to_jql_updated_value(from_updated_utc)}" ORDER BY updated ASC'
     return f"{base} ORDER BY updated ASC"
@@ -731,6 +779,7 @@ def main() -> None:
     run_started = datetime.now(timezone.utc)
     run_id = uuid.uuid4().hex
     project_keys, project_source = _get_project_keys()
+    target_assignee = _target_assignee()
     session = get_session()
     incremental_disabled = _is_incremental_disabled(args.incremental)
     overlap_minutes = _get_overlap_minutes()
@@ -776,7 +825,7 @@ def main() -> None:
         "issuetype",
         "updated",
     ]
-    discovery_jql = _build_discovery_jql(project_keys, from_updated_utc=from_updated)
+    discovery_jql = _build_discovery_jql(project_keys, from_updated_utc=from_updated, assignee_name=target_assignee)
     print(f"Running discovery query for projects: {', '.join(project_keys)}")
     discovered = _fetch_issues(session, jql=discovery_jql, fields=discovery_fields)
     candidates = _candidate_rows_from_issues(discovered)
@@ -785,7 +834,7 @@ def main() -> None:
 
     active_ids = {row["issue_id"] for row in candidates}
     deleted_count = 0
-    if force_full_sync:
+    if force_full_sync and not target_assignee:
         deleted_count = mark_missing_issues_deleted(conn, project_keys, WORK_ITEM_TYPES, active_ids)
         if deleted_count:
             print(f"Marked deleted/inaccessible work items: {deleted_count}")
@@ -859,13 +908,35 @@ def main() -> None:
         upsert_issue_payloads(conn, payload_rows)
         upsert_issue_index(conn, index_rows)
 
-    active_issue_keys = _get_active_issue_keys(conn, project_keys, WORK_ITEM_TYPES)
+    active_issue_keys = discovered_keys if target_assignee else _get_active_issue_keys(conn, project_keys, WORK_ITEM_TYPES)
     cached_payloads = get_cached_issue_payloads(conn, project_keys=project_keys, issue_types=WORK_ITEM_TYPES)
+    if target_assignee:
+        target_assignee_lower = target_assignee.casefold()
+        cached_payloads = [
+            item
+            for item in cached_payloads
+            if str((((item.get("fields") or {}).get("assignee") or {}).get("displayName") or "")).strip().casefold() == target_assignee_lower
+        ]
     cached_payload_by_key = {str(item.get("key", "")).strip(): item for item in cached_payloads if str(item.get("key", "")).strip()}
     missing_payload_keys = [key for key in active_issue_keys if key not in cached_payload_by_key]
-    if missing_payload_keys:
-        print(f"Backfilling missing cached payloads for {len(missing_payload_keys)} work items")
-        missing_detailed = _fetch_issues_by_keys(session, sorted(missing_payload_keys), detail_fields)
+    incomplete_payload_keys = [
+        key
+        for key, payload in cached_payload_by_key.items()
+        if not _payload_has_required_detail_fields(
+            payload,
+            detail_fields=detail_fields,
+            start_date_field_id=start_date_field_id,
+            end_date_field_ids=end_date_field_ids,
+            fix_type_field_id=fix_type_field_id,
+        )
+    ]
+    refill_payload_keys = sorted({*missing_payload_keys, *incomplete_payload_keys})
+    if refill_payload_keys:
+        if incomplete_payload_keys:
+            print(f"Refetching {len(incomplete_payload_keys)} incomplete cached payloads with full detail fields")
+        if missing_payload_keys:
+            print(f"Backfilling missing cached payloads for {len(missing_payload_keys)} work items")
+        missing_detailed = _fetch_issues_by_keys(session, refill_payload_keys, detail_fields)
         payload_rows: list[dict] = []
         index_rows: list[dict] = []
         now_seen = utc_now_iso()
@@ -901,6 +972,13 @@ def main() -> None:
         upsert_issue_index(conn, index_rows)
 
     issues = get_cached_issue_payloads(conn, project_keys=project_keys, issue_types=WORK_ITEM_TYPES)
+    if target_assignee:
+        target_assignee_lower = target_assignee.casefold()
+        issues = [
+            item
+            for item in issues
+            if str((((item.get("fields") or {}).get("assignee") or {}).get("displayName") or "")).strip().casefold() == target_assignee_lower
+        ]
     print(f"Cached work items available: {len(issues)}")
 
     ipp_issue_keys = load_ipp_issue_keys()

@@ -6,31 +6,16 @@
 - Reporting Window: `2026-02-01` to `2026-04-30`
 
 ## Executive Summary
-- Planned Taken (hours): `582.50`
-- Unplanned Taken (hours): `82.00`
+- Planned Taken (hours): `0.00`
+- Unplanned Taken (hours): `0.00`
 - Planned Not Yet Taken (hours): `0.00`
-- Planned Not Yet Taken (No Entry count): `11`
-- Defective subtasks listed: `25`
-- Clubbed leave subtasks: `12`
+- Planned Not Yet Taken (No Entry count): `0`
+- Defective subtasks listed: `0`
+- Clubbed leave subtasks: `0`
 
 ## Assignee-wise Summary
 | Assignee | Planned Taken (h) | Unplanned Taken (h) | Planned Not Yet Taken (h) | No Entry Count | Unknown Count |
 | --- | --- | --- | --- | --- | --- |
-| Ali Qumail | 0.00 | 0.00 | 0.00 | 0 | 1 |
-| awais akhter | 0.00 | 0.00 | 0.00 | 0 | 2 |
-| Faiza Nasir | 0.00 | 8.00 | 0.00 | 0 | 0 |
-| Hassan Malik | 8.00 | 16.00 | 0.00 | 0 | 0 |
-| Hassan Saeed Wattoo | 0.00 | 0.00 | 0.00 | 1 | 0 |
-| Maria Sharafat | 512.00 | 0.00 | 0.00 | 1 | 0 |
-| Muhammad Abbas | 0.00 | 0.00 | 0.00 | 7 | 0 |
-| Muhammad Abdullah | 0.00 | 6.50 | 0.00 | 0 | 0 |
-| Muhammad Ahmad Saleem | 0.00 | 21.00 | 0.00 | 0 | 0 |
-| Muhammad Imran Aslam | 6.50 | 0.00 | 0.00 | 1 | 0 |
-| Muhammad Usman Javed | 0.00 | 8.00 | 0.00 | 0 | 0 |
-| Sarmad Sabir | 0.00 | 14.50 | 0.00 | 0 | 0 |
-| Taimur Zahid | 8.00 | 8.00 | 0.00 | 1 | 0 |
-| Waqar Rasheed | 48.00 | 0.00 | 0.00 | 0 | 0 |
-| Zeeshan Sarwar | 0.00 | 0.00 | 0.00 | 0 | 11 |
 
 ## Defective and No Entry
 - `No Entry` means planned leave subtask is missing planned date and/or original estimate while no hours are logged.

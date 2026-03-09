@@ -456,6 +456,14 @@ def _fetch_issues_by_keys(session, issue_keys: list[str], fields: list[str]) -> 
     return rows
 
 
+def _target_assignee() -> str:
+    return (os.getenv("JIRA_TARGET_ASSIGNEE", "") or "").strip()
+
+
+def _jql_escape(value: str) -> str:
+    return (value or "").replace("\\", "\\\\").replace('"', '\\"')
+
+
 def _candidate_rows_from_issues(issues: list[dict]) -> list[dict]:
     now_utc = utc_now_iso()
     rows: list[dict] = []
@@ -1730,6 +1738,7 @@ def run_report(
     md_out: Path,
     start_date_field_id: str = DEFAULT_START_DATE_FIELD,
     enable_incremental: bool = False,
+    target_assignee: str = "",
 ) -> dict[str, int]:
     run_started = datetime.now(timezone.utc)
     run_id = uuid.uuid4().hex
@@ -1752,6 +1761,8 @@ def run_report(
 
     discovery_fields = ["project", "issuetype", "updated"]
     discovery_jql = f'project = {project_key} AND issuetype in ("Task", "Sub-task", "Subtask")'
+    if target_assignee:
+        discovery_jql += f' AND assignee = "{_jql_escape(target_assignee)}"'
     if from_updated:
         from_updated_jql = parse_iso_utc(from_updated).strftime("%Y-%m-%d %H:%M")
         discovery_jql += f' AND updated >= "{from_updated_jql}"'
@@ -1763,7 +1774,7 @@ def run_report(
     upsert_issue_index(conn, candidates)
 
     active_ids = {row["issue_id"] for row in candidates}
-    if force_full_sync:
+    if force_full_sync and not target_assignee:
         mark_missing_issues_deleted(conn, [project_key], ["Task", "Sub-task", "Subtask"], active_ids)
 
     detail_fetch_keys = sorted({row["issue_key"] for row in candidates} if force_full_sync else set(changed_issue_keys))
@@ -1816,6 +1827,13 @@ def run_report(
         upsert_issue_index(conn, index_rows)
 
     cached = get_cached_issue_payloads(conn, project_keys=[project_key], issue_types=["Task", "Sub-task", "Subtask"])
+    if target_assignee:
+        target_assignee_lower = target_assignee.casefold()
+        cached = [
+            item
+            for item in cached
+            if _to_text((((item.get("fields") or {}).get("assignee") or {}).get("displayName"))).casefold() == target_assignee_lower
+        ]
     tasks = [i for i in cached if _to_text((i.get("fields", {}).get("issuetype") or {}).get("name")).lower() == "task"]
     subtasks_raw = [i for i in cached if "sub" in _to_text((i.get("fields", {}).get("issuetype") or {}).get("name")).lower()]
 
@@ -1928,6 +1946,7 @@ def _parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = _parse_args()
+    target_assignee = _target_assignee()
     from_date, to_date = resolve_window_range(args.window, _to_text(args.from_date), _to_text(args.to_date))
 
     base = Path(__file__).resolve().parent
@@ -1953,6 +1972,7 @@ def main() -> None:
         md_out=md_out,
         start_date_field_id=args.start_date_field_id,
         enable_incremental=args.incremental,
+        target_assignee=target_assignee,
     )
     print(
         "Report generated: "

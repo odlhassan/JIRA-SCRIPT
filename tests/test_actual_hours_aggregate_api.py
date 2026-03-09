@@ -24,10 +24,10 @@ def _write_work_items(path: Path) -> None:
     )
     ws.append(["O2", "O2-EP1", "Epic", "", "2026-02-10", "2026-02-20"])
     ws.append(["O2", "O2-ST1", "Story", "O2-EP1", "", ""])
-    ws.append(["O2", "O2-SUB1", "Sub-task", "O2-ST1", "", ""])
+    ws.append(["O2", "O2-SUB1", "Sub-task", "O2-ST1", "2026-02-12", "2026-02-18"])
     ws.append(["O2", "O2-EP2", "Epic", "", "2026-01-01", "2026-01-05"])
     ws.append(["O2", "O2-ST2", "Story", "O2-EP2", "", ""])
-    ws.append(["O2", "O2-SUB2", "Sub-task", "O2-ST2", "", ""])
+    ws.append(["O2", "O2-SUB2", "Sub-task", "O2-ST2", "2026-01-02", "2026-01-04"])
     wb.save(path)
 
 
@@ -100,7 +100,17 @@ class ActualHoursAggregateApiTests(unittest.TestCase):
             self.assertTrue(legacy_payload.get("ok"))
             self.assertEqual(legacy_payload.get("mode"), "planned_dates")
             self.assertEqual(legacy_payload["subtask_hours_by_issue"].get("O2-SUB1"), 5.0)
-            self.assertIsNone(legacy_payload["subtask_hours_by_issue"].get("O2-SUB2"))
+            self.assertEqual(legacy_payload["subtask_hours_by_issue"].get("O2-SUB2"), 4.0)
+
+            nested_log_resp = client.get(
+                "/api/nested-view/actual-hours?from=2026-02-01&to=2026-02-28&mode=log_date"
+            )
+            self.assertEqual(nested_log_resp.status_code, 200)
+            nested_log_payload = nested_log_resp.get_json()
+            self.assertTrue(nested_log_payload.get("ok"))
+            self.assertEqual(nested_log_payload.get("mode"), "log_date")
+            self.assertEqual(nested_log_payload["subtask_hours_by_issue"].get("O2-SUB1"), 3.0)
+            self.assertEqual(nested_log_payload["subtask_hours_by_issue"].get("O2-SUB2"), 4.0)
 
 
 if __name__ == "__main__":

@@ -1279,6 +1279,74 @@ def _epf_update_run_progress(db_path: Path, run_id: str, step: str, progress_pct
         conn.commit()
 
 
+def _epf_update_run_progress_and_stats(
+    db_path: Path, run_id: str, step: str, progress_pct: int, stats: dict[str, object] | None = None,
+) -> None:
+    if not run_id:
+        return
+    now = _epf_now_utc()
+    progress = max(0, min(100, int(progress_pct or 0)))
+    with sqlite3.connect(db_path) as conn:
+        if stats is not None:
+            stats_json = json.dumps(stats, ensure_ascii=True)
+            conn.execute(
+                """
+                UPDATE epf_refresh_runs
+                SET progress_step = ?, progress_pct = ?, stats_json = ?, updated_at_utc = ?
+                WHERE run_id = ?
+                """,
+                (_to_text(step), progress, stats_json, now, run_id),
+            )
+        else:
+            conn.execute(
+                """
+                UPDATE epf_refresh_runs
+                SET progress_step = ?, progress_pct = ?, updated_at_utc = ?
+                WHERE run_id = ?
+                """,
+                (_to_text(step), progress, now, run_id),
+            )
+        conn.commit()
+
+
+def _epf_discover_assignees(db_path: Path, base_dir: Path) -> list[str]:
+    active_id = _epf_active_run_id(db_path)
+    if active_id:
+        with sqlite3.connect(db_path) as conn:
+            rows = conn.execute(
+                "SELECT DISTINCT assignee FROM epf_work_items WHERE run_id = ? AND assignee != '' AND assignee IS NOT NULL",
+                (active_id,),
+            ).fetchall()
+        assignees = sorted({_to_text(r[0]) for r in rows if _to_text(r[0])})
+        if assignees:
+            return assignees
+    xlsx_path = base_dir / "assignee_hours_report.xlsx"
+    if xlsx_path.exists():
+        try:
+            from openpyxl import load_workbook
+
+            wb = load_workbook(xlsx_path, read_only=True, data_only=True)
+            ws = wb.active
+            headers = [_to_text(c.value).lower() for c in next(ws.iter_rows(min_row=1, max_row=1))]
+            col_idx = -1
+            for i, h in enumerate(headers):
+                if h in ("issue_assignee", "assignee"):
+                    col_idx = i
+                    break
+            found: set[str] = set()
+            if col_idx >= 0:
+                for row in ws.iter_rows(min_row=2):
+                    if col_idx < len(row):
+                        val = _to_text(row[col_idx].value)
+                        if val:
+                            found.add(val)
+            wb.close()
+            return sorted(found) if found else []
+        except Exception:
+            pass
+    return []
+
+
 def _epf_is_cancel_requested(db_path: Path, run_id: str) -> bool:
     if not run_id:
         return False
@@ -2433,13 +2501,19 @@ def _performance_settings_html() -> str:
       <div class="grid" style="margin-top:8px;">
         <div class="perf-field" data-field-key="overloaded_penalty_enabled">
           <label for="overloaded-penalty-enabled" class="label-row">Overloaded Penalty
-            <span class="material-symbols-outlined field-info" role="button" tabindex="0" data-info-title="Overloaded Penalty" data-info-body="Enable/disable overloaded planning guardrail for simple scoring.\n\nMeaning for simple score:\n- If enabled and logged hours are below minimum expected threshold, simple score is capped by `logged/planned * 100`.\n- Prevents over-planned assignments from looking healthy with low execution.\n- Default is ON." aria-label="Overloaded Penalty info">info</span>
+            <span class="material-symbols-outlined field-info" role="button" tabindex="0" data-info-title="Overloaded Penalty" data-info-body="Enable/disable overload handling for simple scoring.\n\nMeaning for simple score:\n- If enabled and planned workload exceeds effective capacity beyond the configured threshold, the overload score becomes active.\n- If Overload Capping/ Planning Realism is OFF, the overload penalty is deducted from the base simple score.\n- If Overload Capping/ Planning Realism is ON, the final simple score is capped to the overload score instead.\n- Default is OFF." aria-label="Overloaded Penalty info">info</span>
           </label>
           <input id="overloaded-penalty-enabled" type="checkbox" style="width:auto;">
         </div>
+        <div class="perf-field" data-field-key="planning_realism_enabled">
+          <label for="planning-realism-enabled" class="label-row">Overload Capping/ Planning Realism
+            <span class="material-symbols-outlined field-info" role="button" tabindex="0" data-info-title="Overload Capping/ Planning Realism" data-info-body="Enable/disable cap mode for overload handling.\n\nMeaning for simple score:\n- Works only when Overloaded Penalty is enabled.\n- If enabled and overload applies, final simple score becomes the overload score `capacity/planned * 100`.\n- If disabled and overload applies, only the overload penalty amount is deducted from the base simple score.\n- Default is OFF." aria-label="Overload Capping/ Planning Realism info">info</span>
+          </label>
+          <input id="planning-realism-enabled" type="checkbox" style="width:auto;">
+        </div>
         <div class="perf-field" data-field-key="overloaded_penalty_threshold_pct">
           <label for="overloaded-penalty-threshold-pct" class="label-row">Overloaded Threshold (%)
-            <span class="material-symbols-outlined field-info" role="button" tabindex="0" data-info-title="Overloaded Threshold (%)" data-info-body="Allowed shortfall percentage before overloaded penalty applies.\n\nMeaning for simple score:\n- Minimum required logged = `planned * (1 - threshold/100)`.\n- If logged falls below this value, simple score is capped by execution ratio.\n- Example: threshold 10%, planned 200h => minimum required 180h." aria-label="Overloaded Threshold info">info</span>
+            <span class="material-symbols-outlined field-info" role="button" tabindex="0" data-info-title="Overloaded Threshold (%)" data-info-body="Allowed overload percentage above effective capacity before overload handling applies.\n\nMeaning for simple score:\n- Maximum planned before overload = `capacity * (1 + threshold/100)`.\n- If planned exceeds this value and Overloaded Penalty is enabled, the overload score becomes active.\n- Example: threshold 10%, capacity 160h => overload handling starts above 176h planned." aria-label="Overloaded Threshold info">info</span>
           </label>
           <input id="overloaded-penalty-threshold-pct" type="number" min="0" max="100" step="0.1">
         </div>
@@ -2464,7 +2538,8 @@ def _performance_settings_html() -> str:
           <span class="line">   (<span class="token-reduce" data-target-fields="points_per_missed_due_date" tabindex="0">missed_due_dates * points_per_missed_due_date</span>)</span>
           <span class="line" style="margin-top:6px;">2) Raw Score = <span class="token-add" data-target-fields="base_score" tabindex="0">base_score</span> - <span class="token-reduce">Total Penalty</span></span>
           <span class="line" style="margin-top:6px;">3) Final Score = <span class="token-neutral" data-target-fields="min_score,max_score" tabindex="0">clamp(Raw Score, min_score, max_score)</span></span>
-          <span class="line" style="margin-top:6px;">4) Simple Guardrail = <span class="token-neutral" data-target-fields="overloaded_penalty_enabled,overloaded_penalty_threshold_pct" tabindex="0">if enabled and logged &lt; planned x (1 - threshold/100), cap simple score to logged/planned x 100</span></span>
+          <span class="line" style="margin-top:6px;">4) Overloaded Penalty = <span class="token-neutral" data-target-fields="overloaded_penalty_enabled,planning_realism_enabled,overloaded_penalty_threshold_pct" tabindex="0">if enabled and planned &gt; capacity x (1 + threshold/100), calculate overload score = capacity/planned x 100</span></span>
+          <span class="line">5) Overload Capping/ Planning Realism = <span class="token-neutral" data-target-fields="planning_realism_enabled,overloaded_penalty_enabled,overloaded_penalty_threshold_pct" tabindex="0">if enabled, final simple score becomes overload score; otherwise deduct overload penalty amount from base simple score</span></span>
         </p>
       </div>
       <div class="ingredients">
@@ -2496,9 +2571,9 @@ def _performance_settings_html() -> str:
           <div class="ingredient-top"><span class="material-symbols-outlined" aria-hidden="true">add_circle</span>Positive Contributor (Applicable)</div>
           <p>`base_score` is the additive anchor. All configurable penalty multipliers on this page are deduction terms.</p>
         </article>
-        <article class="ingredient" data-target-fields="overloaded_penalty_enabled,overloaded_penalty_threshold_pct" tabindex="0">
-          <div class="ingredient-top"><span class="material-symbols-outlined" aria-hidden="true">rule</span>Overloaded Guardrail</div>
-          <p>When enabled, simple score is capped by logged/planned ratio if execution drops below configured threshold.</p>
+        <article class="ingredient" data-target-fields="overloaded_penalty_enabled,planning_realism_enabled,overloaded_penalty_threshold_pct" tabindex="0">
+          <div class="ingredient-top"><span class="material-symbols-outlined" aria-hidden="true">rule</span>Overload Handling</div>
+          <p>`Overloaded Penalty` activates overload logic. `Overload Capping/ Planning Realism` decides whether overload caps the score or is deducted like a normal penalty.</p>
         </article>
       </div>
       <div class="explain-grid">
@@ -2577,6 +2652,7 @@ def _performance_settings_html() -> str:
       points_per_estimate_overrun_hour: document.getElementById("estimate-hour"),
       points_per_missed_due_date: document.getElementById("missed-due-date"),
       overloaded_penalty_enabled: document.getElementById("overloaded-penalty-enabled"),
+      planning_realism_enabled: document.getElementById("planning-realism-enabled"),
       overloaded_penalty_threshold_pct: document.getElementById("overloaded-penalty-threshold-pct")
     };
     const fieldContainers = Array.from(document.querySelectorAll(".perf-field[data-field-key]"));
@@ -2598,14 +2674,14 @@ def _performance_settings_html() -> str:
     function setStatus(msg, kind) { statusEl.textContent = msg || ""; statusEl.className = kind || ""; }
     function setForm(settings) {
       for (const k of Object.keys(fields)) {
-        if (k === "overloaded_penalty_enabled") fields[k].checked = Number(settings[k] ?? 0) > 0;
+        if (k === "overloaded_penalty_enabled" || k === "planning_realism_enabled") fields[k].checked = Number(settings[k] ?? 0) > 0;
         else fields[k].value = String(Number(settings[k] ?? 0));
       }
     }
     function readForm() {
       const out = {};
       for (const k of Object.keys(fields)) {
-        if (k === "overloaded_penalty_enabled") out[k] = fields[k].checked ? 1 : 0;
+        if (k === "overloaded_penalty_enabled" || k === "planning_realism_enabled") out[k] = fields[k].checked ? 1 : 0;
         else out[k] = Number(fields[k].value || 0);
       }
       return out;
@@ -11128,14 +11204,14 @@ def _resolve_root_epic(issue_key: str, work_items: dict[str, dict[str, str]]) ->
     return ""
 
 
-def _qualifying_epics_by_planned_range(
+def _qualifying_subtasks_by_planned_range(
     work_items: dict[str, dict[str, str]],
     from_date: date,
     to_date: date,
 ) -> set[str]:
     qualifying: set[str] = set()
     for issue_key, item in work_items.items():
-        if _to_text(item.get("issue_kind")).lower() != "epic":
+        if _to_text(item.get("issue_kind")).lower() != "subtask":
             continue
         start_in = _date_in_range(_to_text(item.get("planned_start")), from_date, to_date)
         end_in = _date_in_range(_to_text(item.get("planned_end")), from_date, to_date)
@@ -11174,9 +11250,9 @@ def _compute_actual_hours_aggregate(
         return result
 
     work_items = _load_work_item_index(work_items_path)
-    qualifying_epics: set[str] = set()
+    qualifying_subtasks: set[str] = set()
     if mode == "planned_dates":
-        qualifying_epics = _qualifying_epics_by_planned_range(work_items, from_date, to_date)
+        qualifying_subtasks = _qualifying_subtasks_by_planned_range(work_items, from_date, to_date)
 
     subtask_hours = defaultdict(float)
     epic_hours = defaultdict(float)
@@ -11228,7 +11304,9 @@ def _compute_actual_hours_aggregate(
             if mode == "log_date":
                 include_hours = in_selected_range
             else:
-                include_hours = bool(epic_key and epic_key in qualifying_epics)
+                # Extended actuals mode: include total logged hours for subtasks
+                # whose planned start or end date is in selected range.
+                include_hours = bool(issue_key and issue_key in qualifying_subtasks)
             if not include_hours:
                 continue
             assignee = "Unassigned"
@@ -11274,17 +11352,62 @@ def _compute_nested_actual_hours(
     from_date: date,
     to_date: date,
     mode: str = "log_date",
+    selected_assignees: set[str] | None = None,
 ) -> dict[str, dict[str, float]]:
-    aggregate = _compute_actual_hours_aggregate(
-        worklog_path=worklog_path,
-        work_items_path=work_items_path,
-        from_date=from_date,
-        to_date=to_date,
-        mode=mode,
-    )
-    return {
-        "subtask_hours_by_issue": aggregate.get("subtask_hours_by_issue", {}),
+    result: dict[str, dict[str, float]] = {
+        "subtask_hours_by_issue": {},
     }
+    if not worklog_path.exists() or not worklog_path.is_file():
+        return result
+
+    subtask_hours = defaultdict(float)
+    wb = load_workbook(worklog_path, read_only=True, data_only=True)
+    try:
+        ws = wb.active
+        header = next(ws.iter_rows(min_row=1, max_row=1, values_only=True), None)
+        if not header:
+            return result
+        headers = [str(item or "").strip() for item in header]
+        idx = {name: pos for pos, name in enumerate(headers)}
+        required = ["issue_id", "worklog_started", "hours_logged"]
+        if any(name not in idx for name in required):
+            return result
+        for row in ws.iter_rows(min_row=2, values_only=True):
+            issue_key = str(row[idx["issue_id"]] or "").strip().upper()
+            worklog_started_raw = str(row[idx["worklog_started"]] or "").strip()
+            if not issue_key or not worklog_started_raw:
+                continue
+            worklog_day = _parse_iso_date(worklog_started_raw)
+            if worklog_day is None:
+                continue
+            try:
+                hours = float(row[idx["hours_logged"]] or 0.0)
+            except (TypeError, ValueError):
+                hours = 0.0
+            if hours <= 0:
+                continue
+
+            in_selected_range = from_date <= worklog_day <= to_date
+            if mode == "log_date" and not in_selected_range:
+                continue
+
+            assignee = "Unassigned"
+            if "worklog_author" in idx:
+                assignee = _to_text(row[idx["worklog_author"]]) or assignee
+            if assignee == "Unassigned" and "issue_assignee" in idx:
+                assignee = _to_text(row[idx["issue_assignee"]]) or assignee
+            if selected_assignees and _to_text(assignee).lower() not in selected_assignees:
+                continue
+
+            subtask_hours[issue_key] += hours
+
+        result["subtask_hours_by_issue"] = _round_dict(dict(subtask_hours))
+        return result
+    finally:
+        try:
+            wb.close()
+        except Exception:
+            pass
 
 
 def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
@@ -12775,12 +12898,23 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             stats = json.loads(stats_raw) if stats_raw else {}
         except Exception:
             stats = {}
+        cancel_flag = bool(int(row.get("cancel_requested") or 0))
+        raw_status = _to_text(row.get("status")) or "unknown"
+        # If a cancel has been requested but the DB status is still "running"
+        # (for example, after a server restart where no worker is active),
+        # surface this as "cancel_requested" to the UI so polling can stop
+        # and the header no longer shows an infinite-running job.
+        if raw_status == "running" and cancel_flag:
+            effective_status = "cancel_requested"
+        else:
+            effective_status = raw_status
         return {
             "run_id": _to_text(row.get("run_id")),
-            "status": _to_text(row.get("status")) or "unknown",
+            "status": effective_status,
             "step": _to_text(row.get("progress_step")),
             "progress": int(row.get("progress_pct") or 0),
-            "cancel_requested": bool(int(row.get("cancel_requested") or 0)),
+            "assignee": _to_text((stats or {}).get("assignee")),
+            "cancel_requested": cancel_flag,
             "trigger_source": _to_text(row.get("trigger_source")),
             "started_at_utc": _to_text(row.get("started_at_utc")),
             "ended_at_utc": _to_text(row.get("ended_at_utc")),
@@ -12808,9 +12942,15 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                     run_id, started_at_utc, ended_at_utc, status, trigger_source, error_message, stats_json,
                     progress_step, progress_pct, cancel_requested, updated_at_utc
                 )
-                VALUES (?, ?, NULL, 'running', ?, '', '{}', 'initializing', 5, 0, ?)
+                VALUES (?, ?, NULL, 'running', ?, '', ?, 'initializing', 5, 0, ?)
                 """,
-                (run_id, run_started_at, trigger_source, run_started_at),
+                (
+                    run_id,
+                    run_started_at,
+                    trigger_source,
+                    json.dumps({"assignee": target_assignee} if is_assignee_refresh else {}, ensure_ascii=True),
+                    run_started_at,
+                ),
             )
             conn.commit()
 
@@ -12842,6 +12982,8 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 "stdout_tail": stdout_tail,
                 "stderr_tail": stderr_tail,
             }
+            if is_assignee_refresh:
+                stats["assignee"] = target_assignee
             _epf_mark_run_status(
                 capacity_paths["db_path"],
                 run_id=run_id,
@@ -12877,6 +13019,8 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 "stdout_tail": stdout_tail,
                 "stderr_tail": stderr_tail,
             }
+            if is_assignee_refresh:
+                stats["assignee"] = target_assignee
             _epf_mark_run_status(
                 capacity_paths["db_path"],
                 run_id=run_id,
@@ -12897,6 +13041,9 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 "sources": sources,
                 "assignee": target_assignee if is_assignee_refresh else "",
             }, code
+
+        total_employees = 0
+        failed_employees: list[str] = []
 
         try:
             if _is_canceled():
@@ -12923,71 +13070,73 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                     "JIRA_SYNC_DB_PATH": str(base_dir / "jira_sync_cache.db"),
                 }
 
-                _update_progress("fetching_worklogs", 20)
-                code, stdout, stderr = _run_script_interruptible(
-                    "export_jira_subtask_worklogs.py",
-                    base_dir,
-                    env_overrides={**common_env, "JIRA_WORKLOG_XLSX_PATH": str(worklogs_xlsx)},
-                    cancel_check=_is_canceled,
-                )
-                if code == -1:
-                    return _cancel("fetching_worklogs", stdout_tail=_tail(stdout), stderr_tail=_tail(stderr))
-                if code != 0:
-                    return _fail(
-                        "worklogs",
-                        "Worklog refresh failed during isolated employee refresh.",
-                        stderr_tail=_tail(stderr),
-                        stdout_tail=_tail(stdout),
-                    )
-
-                _update_progress("fetching_work_items", 40)
-                code, stdout, stderr = _run_script_interruptible(
-                    "export_jira_work_items.py",
-                    base_dir,
-                    env_overrides={
-                        **common_env,
-                        "JIRA_EXPORT_XLSX_PATH": str(work_items_xlsx),
-                        "JIRA_WORKLOG_XLSX_PATH": str(worklogs_xlsx),
-                    },
-                    cancel_check=_is_canceled,
-                )
-                if code == -1:
-                    return _cancel("fetching_work_items", stdout_tail=_tail(stdout), stderr_tail=_tail(stderr))
-                if code != 0:
-                    return _fail(
-                        "work_items",
-                        "Work-item refresh failed during isolated employee refresh.",
-                        stderr_tail=_tail(stderr),
-                        stdout_tail=_tail(stdout),
-                    )
-
-                _update_progress("fetching_leaves", 60)
-                code, stdout, stderr = _run_script_interruptible(
-                    "generate_rlt_leave_report.py",
-                    base_dir,
-                    extra_args=["--xlsx-out", str(leave_xlsx)],
-                    env_overrides=common_env,
-                    cancel_check=_is_canceled,
-                )
-                if code == -1:
-                    return _cancel("fetching_leaves", stdout_tail=_tail(stdout), stderr_tail=_tail(stderr))
-                if code != 0:
-                    return _fail(
-                        "leaves",
-                        "Leave refresh failed during isolated employee refresh.",
-                        stderr_tail=_tail(stderr),
-                        stdout_tail=_tail(stdout),
-                    )
-
-                _update_progress("loading_data", 75)
-                if _is_canceled():
-                    return _cancel("loading_data")
-                work_items = epf_load_work_items(work_items_xlsx)
-                worklogs = epf_load_worklogs(worklogs_xlsx, work_items)
-                leave_rows = epf_load_unplanned_leave_rows(leave_xlsx)
-                leave_issue_keys = epf_load_leave_issue_keys(leave_xlsx)
-
                 if is_assignee_refresh:
+                    common_env["JIRA_TARGET_ASSIGNEE"] = target_assignee
+
+                    _update_progress("fetching_worklogs", 20)
+                    code, stdout, stderr = _run_script_interruptible(
+                        "export_jira_subtask_worklogs.py",
+                        base_dir,
+                        env_overrides={**common_env, "JIRA_WORKLOG_XLSX_PATH": str(worklogs_xlsx)},
+                        cancel_check=_is_canceled,
+                    )
+                    if code == -1:
+                        return _cancel("fetching_worklogs", stdout_tail=_tail(stdout), stderr_tail=_tail(stderr))
+                    if code != 0:
+                        return _fail(
+                            "worklogs",
+                            "Worklog refresh failed during isolated employee refresh.",
+                            stderr_tail=_tail(stderr),
+                            stdout_tail=_tail(stdout),
+                        )
+
+                    _update_progress("fetching_work_items", 40)
+                    code, stdout, stderr = _run_script_interruptible(
+                        "export_jira_work_items.py",
+                        base_dir,
+                        env_overrides={
+                            **common_env,
+                            "JIRA_EXPORT_XLSX_PATH": str(work_items_xlsx),
+                            "JIRA_WORKLOG_XLSX_PATH": str(worklogs_xlsx),
+                        },
+                        cancel_check=_is_canceled,
+                    )
+                    if code == -1:
+                        return _cancel("fetching_work_items", stdout_tail=_tail(stdout), stderr_tail=_tail(stderr))
+                    if code != 0:
+                        return _fail(
+                            "work_items",
+                            "Work-item refresh failed during isolated employee refresh.",
+                            stderr_tail=_tail(stderr),
+                            stdout_tail=_tail(stdout),
+                        )
+
+                    _update_progress("fetching_leaves", 60)
+                    code, stdout, stderr = _run_script_interruptible(
+                        "generate_rlt_leave_report.py",
+                        base_dir,
+                        extra_args=["--xlsx-out", str(leave_xlsx)],
+                        env_overrides=common_env,
+                        cancel_check=_is_canceled,
+                    )
+                    if code == -1:
+                        return _cancel("fetching_leaves", stdout_tail=_tail(stdout), stderr_tail=_tail(stderr))
+                    if code != 0:
+                        return _fail(
+                            "leaves",
+                            "Leave refresh failed during isolated employee refresh.",
+                            stderr_tail=_tail(stderr),
+                            stdout_tail=_tail(stdout),
+                        )
+
+                    _update_progress("loading_data", 75)
+                    if _is_canceled():
+                        return _cancel("loading_data")
+                    work_items = epf_load_work_items(work_items_xlsx)
+                    worklogs = epf_load_worklogs(worklogs_xlsx, work_items)
+                    leave_rows = epf_load_unplanned_leave_rows(leave_xlsx)
+                    leave_issue_keys = epf_load_leave_issue_keys(leave_xlsx)
+
                     work_items_filtered = {
                         key: val
                         for key, val in (work_items or {}).items()
@@ -13019,14 +13168,207 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                         replace_run=False,
                     )
                 else:
-                    counts = _epf_insert_run_data(
-                        capacity_paths["db_path"],
-                        run_id=run_id,
-                        work_items=work_items,
-                        worklogs=worklogs,
-                        leave_rows=leave_rows,
-                        leave_issue_keys=leave_issue_keys,
-                    )
+                    # ---- Full refresh: per-employee fetching ----
+                    _update_progress("discovering_assignees", 5)
+                    assignees = _epf_discover_assignees(capacity_paths["db_path"], base_dir)
+                    total_employees = len(assignees)
+
+                    if total_employees == 0:
+                        _update_progress("initial_bulk_discovery", 8)
+                        code, stdout, stderr = _run_script_interruptible(
+                            "export_jira_subtask_worklogs.py",
+                            base_dir,
+                            env_overrides={**common_env, "JIRA_WORKLOG_XLSX_PATH": str(worklogs_xlsx)},
+                            cancel_check=_is_canceled,
+                        )
+                        if code == -1:
+                            return _cancel("initial_bulk_discovery_worklogs", stdout_tail=_tail(stdout), stderr_tail=_tail(stderr))
+                        if code != 0:
+                            return _fail("worklogs", "Worklog discovery fetch failed.", stderr_tail=_tail(stderr), stdout_tail=_tail(stdout))
+
+                        code, stdout, stderr = _run_script_interruptible(
+                            "export_jira_work_items.py",
+                            base_dir,
+                            env_overrides={**common_env, "JIRA_EXPORT_XLSX_PATH": str(work_items_xlsx), "JIRA_WORKLOG_XLSX_PATH": str(worklogs_xlsx)},
+                            cancel_check=_is_canceled,
+                        )
+                        if code == -1:
+                            return _cancel("initial_bulk_discovery_work_items", stdout_tail=_tail(stdout), stderr_tail=_tail(stderr))
+                        if code != 0:
+                            return _fail("work_items", "Work-item discovery fetch failed.", stderr_tail=_tail(stderr), stdout_tail=_tail(stdout))
+
+                        code, stdout, stderr = _run_script_interruptible(
+                            "generate_rlt_leave_report.py",
+                            base_dir,
+                            extra_args=["--xlsx-out", str(leave_xlsx)],
+                            env_overrides=common_env,
+                            cancel_check=_is_canceled,
+                        )
+                        if code == -1:
+                            return _cancel("initial_bulk_discovery_leaves", stdout_tail=_tail(stdout), stderr_tail=_tail(stderr))
+                        if code != 0:
+                            return _fail("leaves", "Leave discovery fetch failed.", stderr_tail=_tail(stderr), stdout_tail=_tail(stdout))
+
+                        disc_work_items = epf_load_work_items(work_items_xlsx)
+                        disc_worklogs = epf_load_worklogs(worklogs_xlsx, disc_work_items)
+                        disc_leave_rows = epf_load_unplanned_leave_rows(leave_xlsx)
+                        disc_leave_keys = epf_load_leave_issue_keys(leave_xlsx)
+                        counts = _epf_insert_run_data(
+                            capacity_paths["db_path"],
+                            run_id=run_id,
+                            work_items=disc_work_items,
+                            worklogs=disc_worklogs,
+                            leave_rows=disc_leave_rows,
+                            leave_issue_keys=disc_leave_keys,
+                        )
+                        disc_assignees = sorted({
+                            _to_text((v or {}).get("assignee"))
+                            for v in (disc_work_items or {}).values()
+                            if _to_text((v or {}).get("assignee"))
+                        })
+                        total_employees = len(disc_assignees)
+                        ep_progress = {
+                            "total_employees": total_employees,
+                            "fetched_employees": total_employees,
+                            "remaining_employees": 0,
+                            "current_assignee": "",
+                        }
+                        _epf_update_run_progress_and_stats(
+                            capacity_paths["db_path"], run_id,
+                            "bulk_discovery_complete", 85,
+                            {"employee_progress": ep_progress, "sources": {
+                                "work_items": {"refreshed": True, "rows": int(counts.get("work_items", 0))},
+                                "worklogs": {"refreshed": True, "rows": int(counts.get("worklogs", 0))},
+                                "leaves": {"refreshed": True, "rows": int(counts.get("leave_rows", 0)), "issue_keys": int(counts.get("leave_issue_keys", 0))},
+                            }},
+                        )
+                    else:
+                        ep_progress = {
+                            "total_employees": total_employees,
+                            "fetched_employees": 0,
+                            "remaining_employees": total_employees,
+                            "current_assignee": "",
+                        }
+                        _epf_update_run_progress_and_stats(
+                            capacity_paths["db_path"], run_id,
+                            "starting_employee_fetch", 10,
+                            {"employee_progress": ep_progress},
+                        )
+
+                        all_counts: dict[str, int] = {"work_items": 0, "worklogs": 0, "leave_rows": 0, "leave_issue_keys": 0}
+
+                        for idx, emp_name in enumerate(assignees):
+                            if _is_canceled():
+                                return _cancel(f"employee_{idx + 1}_of_{total_employees}")
+
+                            pct_before = 10 + int((idx / max(total_employees, 1)) * 75)
+                            ep_progress = {
+                                "total_employees": total_employees,
+                                "fetched_employees": idx,
+                                "remaining_employees": total_employees - idx,
+                                "current_assignee": emp_name,
+                                "failed_employees": failed_employees[:],
+                            }
+                            _epf_update_run_progress_and_stats(
+                                capacity_paths["db_path"], run_id,
+                                f"fetching_employee_{idx + 1}_of_{total_employees}", pct_before,
+                                {
+                                    "employee_progress": ep_progress,
+                                    "sources": {
+                                        "work_items": {"refreshed": True, "rows": all_counts["work_items"]},
+                                        "worklogs": {"refreshed": True, "rows": all_counts["worklogs"]},
+                                        "leaves": {"refreshed": True, "rows": all_counts["leave_rows"], "issue_keys": all_counts["leave_issue_keys"]},
+                                    },
+                                },
+                            )
+
+                            per_emp_env = {**common_env, "JIRA_TARGET_ASSIGNEE": emp_name}
+
+                            code, stdout, stderr = _run_script_interruptible(
+                                "export_jira_subtask_worklogs.py",
+                                base_dir,
+                                env_overrides={**per_emp_env, "JIRA_WORKLOG_XLSX_PATH": str(worklogs_xlsx)},
+                                cancel_check=_is_canceled,
+                            )
+                            if code == -1:
+                                return _cancel(f"worklogs_for_{emp_name}", stdout_tail=_tail(stdout), stderr_tail=_tail(stderr))
+                            if code != 0:
+                                failed_employees.append(emp_name)
+                                continue
+
+                            code, stdout, stderr = _run_script_interruptible(
+                                "export_jira_work_items.py",
+                                base_dir,
+                                env_overrides={
+                                    **per_emp_env,
+                                    "JIRA_EXPORT_XLSX_PATH": str(work_items_xlsx),
+                                    "JIRA_WORKLOG_XLSX_PATH": str(worklogs_xlsx),
+                                },
+                                cancel_check=_is_canceled,
+                            )
+                            if code == -1:
+                                return _cancel(f"work_items_for_{emp_name}", stdout_tail=_tail(stdout), stderr_tail=_tail(stderr))
+                            if code != 0:
+                                failed_employees.append(emp_name)
+                                continue
+
+                            code, stdout, stderr = _run_script_interruptible(
+                                "generate_rlt_leave_report.py",
+                                base_dir,
+                                extra_args=["--xlsx-out", str(leave_xlsx)],
+                                env_overrides=per_emp_env,
+                                cancel_check=_is_canceled,
+                            )
+                            if code == -1:
+                                return _cancel(f"leaves_for_{emp_name}", stdout_tail=_tail(stdout), stderr_tail=_tail(stderr))
+                            if code != 0:
+                                failed_employees.append(emp_name)
+                                continue
+
+                            emp_work_items = epf_load_work_items(work_items_xlsx)
+                            emp_worklogs = epf_load_worklogs(worklogs_xlsx, emp_work_items)
+                            emp_leave_rows = epf_load_unplanned_leave_rows(leave_xlsx)
+                            emp_leave_keys = epf_load_leave_issue_keys(leave_xlsx)
+
+                            emp_counts = _epf_insert_run_data(
+                                capacity_paths["db_path"],
+                                run_id=run_id,
+                                work_items=emp_work_items,
+                                worklogs=emp_worklogs,
+                                leave_rows=emp_leave_rows,
+                                leave_issue_keys=emp_leave_keys,
+                                replace_run=(idx == 0),
+                            )
+
+                            all_counts["work_items"] += int(emp_counts.get("work_items", 0))
+                            all_counts["worklogs"] += int(emp_counts.get("worklogs", 0))
+                            all_counts["leave_rows"] += int(emp_counts.get("leave_rows", 0))
+                            all_counts["leave_issue_keys"] += int(emp_counts.get("leave_issue_keys", 0))
+
+                            fetched = idx + 1
+                            remaining = total_employees - fetched
+                            pct_after = 10 + int((fetched / max(total_employees, 1)) * 75)
+                            ep_progress = {
+                                "total_employees": total_employees,
+                                "fetched_employees": fetched,
+                                "remaining_employees": remaining,
+                                "current_assignee": "",
+                                "failed_employees": failed_employees[:],
+                            }
+                            _epf_update_run_progress_and_stats(
+                                capacity_paths["db_path"], run_id,
+                                f"fetched_employee_{fetched}_of_{total_employees}", pct_after,
+                                {
+                                    "employee_progress": ep_progress,
+                                    "sources": {
+                                        "work_items": {"refreshed": True, "rows": all_counts["work_items"]},
+                                        "worklogs": {"refreshed": True, "rows": all_counts["worklogs"]},
+                                        "leaves": {"refreshed": True, "rows": all_counts["leave_rows"], "issue_keys": all_counts["leave_issue_keys"]},
+                                    },
+                                },
+                            )
+
+                        counts = all_counts
 
             _update_progress("generating_html", 90)
             if _is_canceled():
@@ -13065,10 +13407,19 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                     "issue_keys": int(counts.get("leave_issue_keys", 0)),
                 },
             }
-            stats = {
+            stats: dict[str, object] = {
                 "duration_sec": duration_sec,
                 "sources": sources,
             }
+            if is_assignee_refresh:
+                stats["assignee"] = target_assignee
+            if not is_assignee_refresh and total_employees > 0:
+                stats["employee_progress"] = {
+                    "total_employees": total_employees,
+                    "fetched_employees": total_employees - len(failed_employees),
+                    "remaining_employees": 0,
+                    "failed_employees": failed_employees[:],
+                }
             _epf_mark_run_status(
                 capacity_paths["db_path"],
                 run_id=run_id,
@@ -13518,7 +13869,17 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             active_runtime_run = _to_text(epf_runtime_state.get("active_run_id"))
         row = _epf_get_run(capacity_paths["db_path"], active_runtime_run) if active_runtime_run else _epf_find_running_run(capacity_paths["db_path"])
         if not row:
-            return jsonify({"ok": True, "run": None})
+            # No active in-memory run and no DB row marked as running.
+            # Fall back to the last successful run so that header refresh
+            # details (including employee stats) remain visible after reload.
+            with sqlite3.connect(capacity_paths["db_path"]) as conn:
+                state_row = conn.execute(
+                    "SELECT last_success_run_id FROM epf_refresh_state WHERE id = 1"
+                ).fetchone()
+            last_success_run_id = _to_text(state_row[0] if state_row else "")
+            row = _epf_get_run(capacity_paths["db_path"], last_success_run_id) if last_success_run_id else None
+            if not row:
+                return jsonify({"ok": True, "run": None})
         return jsonify({"ok": True, "run": _epf_serialize_run(row)})
 
     @app.route("/api/employee-performance/cancel", methods=["POST"])
@@ -13544,13 +13905,31 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         accepted = _epf_request_cancel(capacity_paths["db_path"], run_id)
         if not accepted:
             return jsonify({"ok": False, "error": "Cancel request was not accepted."}), 409
+
+        with epf_jobs_lock:
+            active = _to_text(epf_runtime_state.get("active_run_id"))
+        worker_alive = (active == run_id) and refresh_lock.locked()
+
+        if not worker_alive:
+            _epf_mark_run_status(
+                capacity_paths["db_path"],
+                run_id=run_id,
+                status="canceled",
+                error_message="Canceled (no active worker thread found).",
+            )
+            _epf_update_run_progress(capacity_paths["db_path"], run_id, "canceled", 100)
+            with epf_jobs_lock:
+                if _to_text(epf_runtime_state.get("active_run_id")) == run_id:
+                    epf_runtime_state["active_run_id"] = ""
+
         row_after = _epf_get_run(capacity_paths["db_path"], run_id)
+        effective_status = _to_text(row_after.get("status")) if row_after else "cancel_requested"
         return jsonify(
             {
                 "ok": True,
                 "run_id": run_id,
-                "status": "cancel_requested",
-                "message": "Cancel requested. Refresh will stop at a safe checkpoint and keep the previous snapshot.",
+                "status": effective_status,
+                "message": "Cancel requested. Refresh will stop at a safe checkpoint and keep the previous snapshot." if effective_status != "canceled" else "Canceled immediately (orphaned run).",
                 "run": _epf_serialize_run(row_after),
             }
         )
@@ -13772,6 +14151,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         worklog_mtime = worklog_path.stat().st_mtime if worklog_path.exists() else 0.0
         work_items_mtime = work_items_path.stat().st_mtime if work_items_path.exists() else 0.0
         cache_key = (
+            "actual_hours_aggregate",
             from_date.isoformat(),
             to_date.isoformat(),
             mode,
@@ -13836,6 +14216,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         worklog_mtime = worklog_path.stat().st_mtime if worklog_path.exists() else 0.0
         work_items_mtime = work_items_path.stat().st_mtime if work_items_path.exists() else 0.0
         cache_key = (
+            "nested_view_actual_hours",
             from_date.isoformat(),
             to_date.isoformat(),
             mode,
@@ -13849,7 +14230,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         cached = actual_hours_cache.get(cache_key)
         if cached is None:
             try:
-                cached = _compute_actual_hours_aggregate(
+                cached = _compute_nested_actual_hours(
                     worklog_path=worklog_path,
                     work_items_path=work_items_path,
                     from_date=from_date,

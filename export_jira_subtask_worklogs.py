@@ -142,6 +142,14 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _target_assignee() -> str:
+    return (os.getenv("JIRA_TARGET_ASSIGNEE", "") or "").strip()
+
+
+def _jql_escape(value: str) -> str:
+    return (value or "").replace("\\", "\\\\").replace('"', '\\"')
+
+
 def _to_jql_updated_value(value: str) -> str:
     return parse_iso_utc(value).strftime("%Y-%m-%d %H:%M")
 
@@ -200,6 +208,7 @@ def _build_discovery_jql(
     project_keys: list[str],
     issue_types: list[str],
     from_updated_utc: str | None,
+    assignee_name: str = "",
 ) -> str:
     clauses: list[str] = []
     if project_keys:
@@ -208,6 +217,8 @@ def _build_discovery_jql(
     if issue_types:
         kinds = ", ".join(f'"{item}"' for item in issue_types)
         clauses.append(f"issuetype in ({kinds})")
+    if assignee_name:
+        clauses.append(f'assignee = "{_jql_escape(assignee_name)}"')
     base = " AND ".join(clauses) if clauses else "issuekey IS NOT EMPTY"
     if from_updated_utc:
         return f'{base} AND updated >= "{_to_jql_updated_value(from_updated_utc)}" ORDER BY updated ASC'
@@ -427,6 +438,7 @@ def main() -> None:
     args = _parse_args()
     run_started = datetime.now(timezone.utc)
     run_id = uuid.uuid4().hex
+    target_assignee = _target_assignee()
     session = get_session()
     project_keys, project_source = _get_project_keys()
     issue_types = _get_worklog_issue_types()
@@ -459,7 +471,12 @@ def main() -> None:
         "issuetype",
         "updated",
     ]
-    discovery_jql = _build_discovery_jql(project_keys, issue_types, from_updated_utc=from_updated)
+    discovery_jql = _build_discovery_jql(
+        project_keys,
+        issue_types,
+        from_updated_utc=from_updated,
+        assignee_name=target_assignee,
+    )
     print(f"Running discovery query")
     discovered = _fetch_issues(session, jql=discovery_jql, fields=discovery_fields)
     candidates = _candidate_rows_from_issues(discovered)
@@ -468,7 +485,7 @@ def main() -> None:
 
     active_ids = {row["issue_id"] for row in candidates}
     deleted_count = 0
-    if force_full_sync:
+    if force_full_sync and not target_assignee:
         deleted_count = mark_missing_issues_deleted(conn, project_keys, issue_types, active_ids)
         if deleted_count:
             print(f"Marked deleted/inaccessible issues: {deleted_count}")
@@ -526,8 +543,15 @@ def main() -> None:
         upsert_issue_payloads(conn, payload_rows)
         upsert_issue_index(conn, index_rows)
 
-    active_subtask_keys = _get_active_issue_keys(conn, project_keys, issue_types)
+    active_subtask_keys = discovered_keys if target_assignee else _get_active_issue_keys(conn, project_keys, issue_types)
     cached_payloads = get_cached_issue_payloads(conn, project_keys=project_keys, issue_types=issue_types)
+    if target_assignee:
+        target_assignee_lower = target_assignee.casefold()
+        cached_payloads = [
+            item
+            for item in cached_payloads
+            if str((((item.get("fields") or {}).get("assignee") or {}).get("displayName") or "")).strip().casefold() == target_assignee_lower
+        ]
     cached_payload_by_key = {str(item.get("key", "")).strip(): item for item in cached_payloads if str(item.get("key", "")).strip()}
     missing_payload_keys = [key for key in active_subtask_keys if key not in cached_payload_by_key]
     if missing_payload_keys:
@@ -568,6 +592,13 @@ def main() -> None:
         upsert_issue_index(conn, index_rows)
 
     subtasks = get_cached_issue_payloads(conn, project_keys=project_keys, issue_types=issue_types)
+    if target_assignee:
+        target_assignee_lower = target_assignee.casefold()
+        subtasks = [
+            item
+            for item in subtasks
+            if str((((item.get("fields") or {}).get("assignee") or {}).get("displayName") or "")).strip().casefold() == target_assignee_lower
+        ]
     print(f"Issue payloads available in cache: {len(subtasks)}")
     parent_story_keys: set[str] = set()
     subtask_info: dict[str, dict] = {}
