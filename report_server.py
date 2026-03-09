@@ -12905,7 +12905,33 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         # surface this as "cancel_requested" to the UI so polling can stop
         # and the header no longer shows an infinite-running job.
         if raw_status == "running" and cancel_flag:
-            effective_status = "cancel_requested"
+            stale = False
+            updated_str = _to_text(row.get("updated_at_utc"))
+            if updated_str:
+                try:
+                    updated_dt = datetime.fromisoformat(updated_str.replace("Z", "+00:00"))
+                    if (datetime.now(timezone.utc) - updated_dt).total_seconds() > 90:
+                        stale = True
+                except Exception:
+                    pass
+            with epf_jobs_lock:
+                active = _to_text(epf_runtime_state.get("active_run_id"))
+            run_id_text = _to_text(row.get("run_id"))
+            worker_alive = (active == run_id_text) and refresh_lock.locked()
+            if stale or not worker_alive:
+                _epf_mark_run_status(
+                    capacity_paths["db_path"],
+                    run_id=run_id_text,
+                    status="canceled",
+                    error_message="Canceled (orphaned process; worker no longer active).",
+                )
+                _epf_update_run_progress(capacity_paths["db_path"], run_id_text, "canceled", 100)
+                with epf_jobs_lock:
+                    if _to_text(epf_runtime_state.get("active_run_id")) == run_id_text:
+                        epf_runtime_state["active_run_id"] = ""
+                effective_status = "canceled"
+            else:
+                effective_status = "cancel_requested"
         else:
             effective_status = raw_status
         return {

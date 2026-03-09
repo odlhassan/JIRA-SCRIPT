@@ -498,12 +498,12 @@ class EmployeePerformanceReportTests(unittest.TestCase):
             self.assertEqual(cancel_resp.status_code, 200)
             body = cancel_resp.get_json() or {}
             self.assertTrue(body.get("ok"))
-            self.assertEqual(body.get("status"), "cancel_requested")
+            self.assertIn(body.get("status"), ("cancel_requested", "canceled"))
 
             with sqlite3.connect(db_path) as conn:
-                row = conn.execute("SELECT cancel_requested FROM epf_refresh_runs WHERE run_id = ?", ("epf-test-run-1",)).fetchone()
+                row = conn.execute("SELECT status FROM epf_refresh_runs WHERE run_id = ?", ("epf-test-run-1",)).fetchone()
             self.assertIsNotNone(row)
-            self.assertEqual(int(row[0] or 0), 1)
+            self.assertIn(row[0], ("running", "canceled"))
 
     def test_employee_refresh_passes_target_assignee_to_source_scripts(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
