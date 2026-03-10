@@ -1,4 +1,4 @@
-﻿"""
+"""
 Export Jira issues into a hierarchical nested-view Excel report.
 
 Hierarchy:
@@ -41,6 +41,12 @@ from jira_incremental_cache import (
     utc_now_iso,
 )
 from jira_client import BASE_URL, get_session
+from jira_export_db import connect as export_db_connect
+from jira_export_db import ensure_schema as ensure_exports_schema
+from jira_export_db import has_subtask_worklog_rollup
+from jira_export_db import read_subtask_worklog_rollup as read_subtask_worklog_rollup_db
+from jira_export_db import record_export_run
+from jira_export_db import write_nested_view_nodes as write_nested_view_nodes_db
 
 DEFAULT_PROJECT_KEYS = ["DIGITALLOG", "FF", "O2", "ODL", "MN"]
 DEFAULT_OUTPUT = "nested view.xlsx"
@@ -912,7 +918,16 @@ def main() -> None:
     script_dir = Path(__file__).resolve().parent
     rollup_input_name = os.getenv("JIRA_SUBTASK_ROLLUP_XLSX_PATH", DEFAULT_ROLLUP_INPUT).strip() or DEFAULT_ROLLUP_INPUT
     rollup_path = _resolve_output_path(rollup_input_name, script_dir)
-    subtask_rollup_values = _load_subtask_rollup_values(rollup_path)
+
+    # Primary: load subtask rollup from exports DB; fallback to xlsx
+    export_conn = export_db_connect()
+    ensure_exports_schema(export_conn)
+    if has_subtask_worklog_rollup(export_conn):
+        subtask_rollup_values = read_subtask_worklog_rollup_db(export_conn)
+        print("Subtask rollup loaded from DB")
+    else:
+        subtask_rollup_values = _load_subtask_rollup_values(rollup_path)
+        print("Subtask rollup loaded from xlsx")
     print(f"Subtask rollup rows loaded: {len(subtask_rollup_values)}")
 
     detail_fields = [
@@ -1059,6 +1074,13 @@ def main() -> None:
     output_name = os.getenv("JIRA_NESTED_VIEW_XLSX_PATH", DEFAULT_OUTPUT).strip() or DEFAULT_OUTPUT
     output_path = _resolve_output_path(output_name, script_dir)
 
+    # Primary: write nodes to exports DB
+    node_count = len(epics) + len(stories) + len(subtasks)
+    write_nested_view_nodes_db(export_conn, epics, stories, subtasks)
+    record_export_run(export_conn, "nested_view", node_count)
+    export_conn.close()
+
+    # Secondary: write xlsx
     data_rows = _write_nested_view(
         epics=epics,
         stories=stories,

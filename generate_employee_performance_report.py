@@ -820,6 +820,13 @@ def _load_leave_issue_keys_from_epf_db(db_path: Path, run_id: str) -> list[str]:
     return sorted({_to_text(r[0]).upper() for r in rows if _to_text(r[0])})
 
 
+def _format_display_date(dt: datetime) -> str:
+    """Format datetime as '1 Feb 2026, 12:34 UTC' (DD MMM YYYY, HH:MM UTC)."""
+    d = dt.day
+    part = f"{d} {dt.strftime('%b')} {dt.year}"
+    return f"{part}, {dt.strftime('%H:%M')} UTC"
+
+
 def _default_range(rows: list[dict]) -> tuple[str, str]:
     today = datetime.now(timezone.utc).date()
     month_start = date(today.year, today.month, 1)
@@ -977,7 +984,7 @@ def _build_payload(
         "capacity_profiles": capacity_profiles or [],
         "simple_scoring": simple_scoring or [],
         "jira_browse_base": jira_browse_base.rstrip("/"),
-        "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+        "generated_at": _format_display_date(datetime.now(timezone.utc)),
     }
 
 
@@ -1229,34 +1236,53 @@ def _build_html(payload: dict) -> str:
     .scoring-section {{ margin-top:10px; border:1px solid #2b446e; border-radius:10px; background:#0f1b32; padding:10px; }}
     .score-drawer-overlay {{ position:fixed; inset:0; background:rgba(2,8,23,.56); opacity:0; pointer-events:none; transition:opacity .18s ease; z-index:95; }}
     .score-drawer-overlay.open {{ opacity:1; pointer-events:auto; }}
-    .score-drawer {{ position:fixed; top:0; right:0; width:40vw; max-width:96vw; height:100vh; background:#0d1830; border-left:1px solid #315b92; box-shadow:-20px 0 40px rgba(2,8,23,.45); transform:translateX(100%); transition:transform .2s ease; z-index:96; display:flex; flex-direction:column; overflow-y:scroll; }}
+    .score-drawer {{ position:fixed; top:0; right:0; width:40vw; min-width:320px; max-width:96vw; height:100vh; background:#0d1830; border-left:1px solid #315b92; box-shadow:-20px 0 40px rgba(2,8,23,.45); transform:translateX(100%); transition:transform .2s ease; z-index:96; display:flex; flex-direction:column; overflow:hidden; }}
     .score-drawer.open {{ transform:translateX(0); }}
-    .score-drawer-head {{ padding:14px; border-bottom:1px solid #223a61; display:flex; align-items:flex-start; justify-content:space-between; gap:10px; background:#10223f; }}
+    .score-drawer-resize-handle {{ position:absolute; left:0; top:0; bottom:0; width:8px; cursor:col-resize; z-index:10; background:transparent; }}
+    .score-drawer-resize-handle:hover {{ background:rgba(79,127,184,.25); }}
+    .score-drawer-resize-handle:active {{ background:rgba(79,127,184,.4); }}
+    .score-drawer-resize-handle::after {{ content:""; position:absolute; left:3px; top:50%; transform:translateY(-50%); width:2px; height:48px; border-radius:1px; background:#315b92; opacity:0; transition:opacity .15s; }}
+    .score-drawer-resize-handle:hover::after {{ opacity:1; }}
+    .score-drawer-head {{ padding:14px; border-bottom:1px solid #223a61; display:flex; align-items:flex-start; justify-content:space-between; gap:10px; background:#10223f; flex-shrink:0; }}
     .score-drawer-title {{ margin:0; font-size:1rem; font-weight:900; color:#eef4ff; }}
     .score-drawer-subtitle {{ margin:4px 0 0; color:#9db1d8; font-size:.76rem; line-height:1.35; }}
-    .score-drawer-body {{ padding:14px; overflow:auto; display:grid; gap:12px; }}
+    .score-drawer-body {{ padding:14px; overflow-y:auto; overflow-x:hidden; display:flex; flex-direction:column; gap:12px; flex:1; min-height:0; scrollbar-width:thin; scrollbar-color:#4f7fb8 #0b213e; }}
+    .score-drawer-body::-webkit-scrollbar {{ width:10px; }}
+    .score-drawer-body::-webkit-scrollbar-track {{ background:#0b213e; border-radius:999px; }}
+    .score-drawer-body::-webkit-scrollbar-thumb {{ background:#4f7fb8; border-radius:999px; border:2px solid #0b213e; }}
+    .score-drawer-body::-webkit-scrollbar-thumb:hover {{ background:#6fa0de; }}
     .score-drawer-close {{ border:1px solid #4a6ea9; background:#1b325a; color:#eef4ff; border-radius:8px; font-weight:700; padding:7px 10px; cursor:pointer; }}
-    .score-drawer-section {{ border:1px solid #223a61; border-radius:12px; background:#0f1b32; overflow:hidden; display:flex; flex-direction:column; min-height:0; }}
+    .score-drawer-section {{ border:1px solid #223a61; border-radius:12px; background:#0f1b32; overflow:visible; display:flex; flex-direction:column; flex-shrink:0; }}
+    .score-drawer-section-rules {{ }}
+    .score-drawer-section-calculation {{ }}
+    .score-drawer-calculation {{ font-family:ui-monospace, "Cascadia Code","SF Mono",Consolas,monospace; font-size:.9rem; line-height:1.6; padding:10px 12px; }}
+    .score-drawer-calculation-line {{ display:flex; align-items:baseline; gap:12px; }}
+    .score-drawer-calculation-num {{ min-width:4.5em; text-align:right; font-weight:800; }}
+    .score-drawer-calculation-num.positive {{ color:#86efac; }}
+    .score-drawer-calculation-num.negative {{ color:#fda4af; }}
+    .score-drawer-calculation-num.final {{ color:#7dd3fc; font-size:1.05em; }}
+    .score-drawer-calculation-label {{ color:#93acd2; font-size:.78rem; }}
+    .score-drawer-calculation-rule {{ border-top:1px solid #223a61; margin:4px 0; }}
+    .score-drawer-section-all-subtasks {{ }}
+    .score-drawer-section-all-subtasks .score-drawer-section-content {{ }}
     .score-drawer-section-head {{ padding:10px 12px; border-bottom:1px solid #223a61; display:flex; justify-content:space-between; gap:8px; align-items:center; background:#10223f; }}
     .score-drawer-section-title {{ margin:0; font-size:.82rem; text-transform:uppercase; letter-spacing:.05em; color:#cfe0ff; }}
     .score-drawer-section-note {{ color:#93acd2; font-size:.72rem; }}
-    .score-drawer-section-content {{ min-height:0; overflow-y:auto; scrollbar-width:thin; scrollbar-color:#4f7fb8 #0b213e; }}
-    .score-drawer-section-content::-webkit-scrollbar {{ width:10px; }}
-    .score-drawer-section-content::-webkit-scrollbar-track {{ background:#0b213e; border-radius:999px; }}
-    .score-drawer-section-content::-webkit-scrollbar-thumb {{ background:#4f7fb8; border-radius:999px; border:2px solid #0b213e; }}
-    .score-drawer-section-content::-webkit-scrollbar-thumb:hover {{ background:#6fa0de; }}
-    .score-drawer-section-rules .score-drawer-section-content {{ max-height:min(40vh, 420px); }}
-    .score-drawer-section-penalties .score-drawer-section-content {{ max-height:min(42vh, 460px); }}
-    .score-rule-list {{ display:grid; gap:8px; padding:12px; }}
-    .score-rule-card {{ border:1px solid #29486f; border-radius:10px; background:#10223f; padding:10px; display:grid; gap:4px; }}
-    .score-rule-top {{ display:flex; justify-content:space-between; gap:8px; align-items:flex-start; }}
-    .score-rule-name {{ font-size:.82rem; font-weight:800; color:#eef4ff; }}
-    .score-rule-impact {{ font-size:.82rem; font-weight:900; color:#7dd3fc; white-space:nowrap; }}
-    .score-rule-impact.neg {{ color:#fda4af; }}
-    .score-rule-impact.pos {{ color:#86efac; }}
-    .score-rule-desc {{ color:#c7d7f3; font-size:.74rem; line-height:1.35; }}
-    .score-rule-meta {{ color:#93acd2; font-size:.71rem; line-height:1.35; }}
+    .score-drawer-section-content {{ min-height:0; overflow:visible; }}
+    .rules-tbl {{ width:100%; }}
+    .rules-tbl td.rule-name-cell {{ font-size:.78rem; font-weight:800; color:#eef4ff; white-space:nowrap; }}
+    .rules-tbl td.rule-impact-cell {{ font-size:.78rem; font-weight:900; color:#7dd3fc; white-space:nowrap; text-align:center; }}
+    .rules-tbl td.rule-impact-cell.neg {{ color:#fda4af; }}
+    .rules-tbl td.rule-impact-cell.pos {{ color:#86efac; }}
+    .rules-tbl td.rule-desc-cell {{ color:#c7d7f3; font-size:.71rem; line-height:1.3; }}
+    .rules-tbl td.rule-meta-cell {{ color:#93acd2; font-size:.68rem; line-height:1.3; max-width:320px; word-break:break-word; }}
     .score-subtask-table-wrap {{ padding:12px; }}
+    .score-drawer-section-content .ss-tbl-all tbody tr {{ height:30px; max-height:30px; }}
+    .score-drawer-section-content .ss-tbl-all td {{ height:30px; max-height:30px; padding-top:2px; padding-bottom:2px; vertical-align:middle; line-height:1.2; }}
+    .ss-tbl-all td.penalty-cell {{ font-weight:800; font-size:.74rem; text-align:center; }}
+    .ss-tbl-all td.penalty-yes {{ color:#fda4af; }}
+    .ss-tbl-all td.penalty-no {{ color:#86efac; }}
+    .ss-tbl-all td.penalty-reason-cell {{ min-width:550px; max-width:550px; font-size:.68rem; line-height:1.2; color:#93acd2; }}
     .score-drawer-empty {{ color:#9db1d8; font-size:.78rem; font-style:italic; padding:12px; }}
     body.score-drawer-open {{ overflow:hidden; }}
     .scoring-section-head {{ display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }}
@@ -1403,6 +1429,7 @@ def _build_html(payload: dict) -> str:
 <button id="header-expand-fab" class="header-expand-fab" type="button" aria-label="Expand header" title="Expand header">&#9776;</button>
 <div id="score-detail-drawer-overlay" class="score-drawer-overlay" aria-hidden="true"></div>
 <aside id="score-detail-drawer" class="score-drawer" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="score-detail-drawer-title">
+  <div id="score-drawer-resize-handle" class="score-drawer-resize-handle" aria-label="Drag to resize drawer" title="Drag to resize"></div>
   <div class="score-drawer-head">
     <div>
       <h2 id="score-detail-drawer-title" class="score-drawer-title">Simple Score Details</h2>
@@ -1544,6 +1571,9 @@ const scoreDrawerCloseEl = document.getElementById("score-detail-drawer-close");
 const scoreDrawerTitleEl = document.getElementById("score-detail-drawer-title");
 const scoreDrawerSubtitleEl = document.getElementById("score-detail-drawer-subtitle");
 const scoreDrawerBodyEl = document.getElementById("score-detail-drawer-body");
+const scoreDrawerResizeHandleEl = document.getElementById("score-drawer-resize-handle");
+const SCORE_DRAWER_WIDTH_STORAGE_KEY = "employee-performance-score-drawer-width-px";
+let scoreDrawerWidthPx = null;
 let employeeRefreshPollHandle = null;
 let employeeRefreshInlineRun = null;
 let employeeRefreshInlineAssignee = "";
@@ -1558,6 +1588,7 @@ let selectedTeam = "";
 let availabilityBreakdownForAssignee = "";
 let plannedHoursBreakdownForAssignee = "";
 let actualHoursBreakdownForAssignee = "";
+let hoursRequiredBreakdownForAssignee = "";
 let extendedActualsEnabled = false;
 let rmiListForAssignee = "";
 let dueCompletionEnabled = false;
@@ -1574,6 +1605,14 @@ let scoreDrawerAssignee = "";
 let performanceSettingsReady = false;
 function n(v) {{ const x = Number(v); return Number.isFinite(x) ? x : 0; }}
 function e(t) {{ return String(t ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }}
+function formatDate(iso) {{
+  if (!iso || typeof iso !== "string") return "";
+  const s = String(iso).trim().slice(0, 10);
+  if (!/^\\d{{4}}-\\d{{2}}-\\d{{2}}$/.test(s)) return "";
+  const [y, m, d] = s.split("-").map(Number);
+  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  return (months[m - 1] ? `${{d}} ${{months[m - 1]}} ${{y}}` : "");
+}}
 function jiraIssueUrl(issueKey) {{
   const key = String(issueKey || "").trim().toUpperCase();
   if (!key) return "";
@@ -1665,13 +1704,34 @@ function openScoreDrawerForAssignee(item) {{
     }})
     .filter((row) => n(row.applied_overrun_hours) > 0)
     .sort((a, b) => n(b.contribution_pct) - n(a.contribution_pct) || String(a.issue_key || "").localeCompare(String(b.issue_key || "")));
+  const totalOverrunTotal = totalEstimate > 0 ? Math.max(0, totalActual - totalEstimate) : 0;
+  const totalOverrunSubtasks = totalOverrun;
+  const activeOverrunValue = simpleOverrunMode === "total" ? totalOverrunTotal : totalOverrunSubtasks;
+  const inactiveOverrunValue = simpleOverrunMode === "total" ? totalOverrunSubtasks : totalOverrunTotal;
+  const inactiveOverrunLabel = simpleOverrunMode === "total" ? "Overrun Subtask Hours" : "Total Overrun Hours";
+  const overrunGap = Math.abs(activeOverrunValue - inactiveOverrunValue);
+  const overrunGapNote = overrunGap > 0.01
+    ? ` | For comparison, ${{inactiveOverrunLabel}}: ${{hoursText(inactiveOverrunValue)}} (difference: ${{hoursText(overrunGap)}})`
+    : "";
+  const totalSurplusNote = totalActual > totalEstimate && simpleOverrunMode !== "total"
+    ? ` | Note: Total Actual (${{hoursText(totalActual)}}) exceeds Total Planned (${{hoursText(totalEstimate)}}) by ${{hoursText(totalActual - totalEstimate)}}h but per-subtask mode only sums individual overruns; switch to "Total Overrun Hours" to penalize at aggregate level.`
+    : "";
   const ruleCards = [
+    {{
+      name: "Actual Hours Source",
+      impact: extendedActualsEnabled ? "Extended" : "Date Range",
+      tone: "",
+      desc: extendedActualsEnabled
+        ? "Extended Actuals is ON: for each subtask whose planned start or due date is within the filter range, actual hours include ALL worklogs ever logged (across all dates), not just those within the date range."
+        : "Extended Actuals is OFF: actual hours only include worklogs whose log date falls within the selected date range filter.",
+      meta: `Actual Hours Spent: ${{hoursText(totalActual)}} | Planned Hours: ${{hoursText(totalEstimate)}} | Surplus/Deficit: ${{totalActual >= totalEstimate ? "+" : ""}}${{hoursText(totalActual - totalEstimate)}}`,
+    }},
     {{
       name: "Planned Hours Baseline",
       impact: `+${{scorePctText(100)}}`,
       tone: "pos",
       desc: `Simple score starts from the planned estimate baseline and then deducts applied ${{simpleOverrunShortLabel().toLowerCase()}}.`,
-      meta: `Planned total: ${{hoursText(totalEstimate)}}`,
+      meta: `Planned total: ${{hoursText(totalEstimate)}} (sum of original estimates for all scored subtasks)`,
     }},
     {{
       name: dueMode ? `Applied ${{simpleOverrunShortLabel()}} Rule` : simpleOverrunShortLabel(),
@@ -1679,14 +1739,15 @@ function openScoreDrawerForAssignee(item) {{
       tone: penalizedRows.length ? "neg" : "",
       desc: dueMode
         ? (simpleOverrunMode === "total"
-            ? "Only positive total overrun hours reduce the score. Subtask overruns are ignored when overall total actual stays within planned hours."
-            : "Only positive overrun subtask hours reduce the score. Overruns from on-time completions are forgiven in due-completion mode.")
+            ? "Total Overrun Hours mode: overrun = max(0, Total Actual - Total Planned). Individual subtask overruns are ignored; only the aggregate gap matters."
+            : "Overrun Subtask Hours mode: overrun = sum of max(0, actual - estimate) per subtask. Underruns on other subtasks do NOT offset overruns. Overruns from on-time completions are forgiven in due-completion mode.")
         : (simpleOverrunMode === "total"
-            ? "Only positive total overrun hours reduce the score. Subtask overruns are ignored when overall total actual stays within planned hours."
-            : "Only positive overrun subtask hours reduce the score. Underruns do not offset overruns."),
-      meta: dueMode
+            ? "Total Overrun Hours mode: overrun = max(0, Total Actual - Total Planned). Individual subtask overruns are ignored; only the aggregate gap matters."
+            : "Overrun Subtask Hours mode: overrun = sum of max(0, actual - estimate) per subtask. Underruns on other subtasks do NOT offset overruns."),
+      meta: (dueMode
         ? `Actual: ${{hoursText(totalActual)}} | ${{simpleOverrunLabel()}}: ${{hoursText(totalOverrun)}}${{simpleOverrunMode === "total" ? "" : ` | Commitment forgiven: ${{hoursText(commitmentForgiven)}}`}} | Applied overrun: ${{hoursText(appliedOverrun)}}`
-        : `Actual: ${{hoursText(totalActual)}} | ${{simpleOverrunLabel()}}: ${{hoursText(appliedOverrun)}}`,
+        : `Actual: ${{hoursText(totalActual)}} | ${{simpleOverrunLabel()}}: ${{hoursText(appliedOverrun)}}`)
+        + overrunGapNote + totalSurplusNote,
     }},
     {{
       name: "Late Completion Rule",
@@ -1728,7 +1789,36 @@ function openScoreDrawerForAssignee(item) {{
         : "Overloaded penalty is turned off.",
     }},
   ];
-  const ruleHtml = ruleCards.map((rule) => `<article class="score-rule-card"><div class="score-rule-top"><div class="score-rule-name">${{e(rule.name)}}</div><span class="score-rule-impact${{rule.tone ? ` ${{rule.tone}}` : ""}}">${{e(rule.impact)}}</span></div><div class="score-rule-desc">${{e(rule.desc)}}</div><div class="score-rule-meta">${{e(rule.meta)}}</div></article>`).join("");
+  const ruleRowsHtml = ruleCards.map((rule) => `<tr><td class="rule-name-cell">${{e(rule.name)}}</td><td class="rule-impact-cell${{rule.tone ? ` ${{rule.tone}}` : ""}}">${{e(rule.impact)}}</td><td class="rule-desc-cell">${{e(rule.desc)}}</td><td class="rule-meta-cell">${{e(rule.meta)}}</td></tr>`).join("");
+  const ruleHtml = `<table class="ss-tbl rules-tbl"><thead><tr><th>Rule</th><th>Impact</th><th>Description</th><th>Details</th></tr></thead><tbody>${{ruleRowsHtml}}</tbody></table>`;
+  const overrunDeductionPct = totalEstimate > 0 ? (appliedOverrun / totalEstimate) * 100 : 0;
+  const lateDeductionPct = dueMode && totalEstimate > 0 ? (lateCompletionPenalty / totalEstimate) * 100 : 0;
+  const overloadPenaltyPct = n(item.simple_score_overloaded_penalty_pct);
+  const calculationLines = [];
+  calculationLines.push({{ num: "100.0", label: "Planned Hours Baseline", cls: "positive" }});
+  if (overrunDeductionPct > 0.001) calculationLines.push({{ num: "-" + overrunDeductionPct.toFixed(1), label: simpleOverrunShortLabel(), cls: "negative" }});
+  if (dueMode && lateDeductionPct > 0.001) calculationLines.push({{ num: "-" + lateDeductionPct.toFixed(1), label: "Late Completion", cls: "negative" }});
+  calculationLines.push({{ rule: true }});
+  if (Number.isFinite(baseSimpleScore)) calculationLines.push({{ num: baseSimpleScore.toFixed(1), label: "Base Simple Score", cls: "positive" }});
+  if (overloadedApplied) {{
+    if (planningRealismApplied) {{
+      calculationLines.push({{ num: "→ " + n(item.simple_score_overloaded).toFixed(1), label: "Capped (Overload / Planning Realism)", cls: "" }});
+    }} else {{
+      calculationLines.push({{ num: "-" + overloadPenaltyPct.toFixed(1), label: "Overloaded Penalty", cls: "negative" }});
+    }}
+  }}
+  calculationLines.push({{ rule: true }});
+  if (eligibleForScore && Number.isFinite(finalSimpleScore)) {{
+    calculationLines.push({{ num: finalSimpleScore.toFixed(1), label: "Final Simple Score", cls: "final" }});
+  }} else {{
+    calculationLines.push({{ num: "N/A", label: "Final Simple Score (not eligible)", cls: "" }});
+  }}
+  const calculationSectionHtml = `<div class="score-drawer-calculation">${{calculationLines.map((line) => {{
+    if (line.rule) return `<div class="score-drawer-calculation-rule"></div>`;
+    const numCls = line.cls ? ` score-drawer-calculation-num ${{line.cls}}` : "score-drawer-calculation-num";
+    const suffix = line.num === "N/A" ? "" : "%";
+    return `<div class="score-drawer-calculation-line"><span class="${{numCls}}">${{e(line.num)}}${{suffix}}</span><span class="score-drawer-calculation-label">${{e(line.label)}}</span></div>`;
+  }}).join("")}}</div>`;
   const penalizedRowsHtml = penalizedRows.length
     ? penalizedRows.map((row) => {{
       const issueKey = String(row.issue_key || "").toUpperCase();
@@ -1739,19 +1829,70 @@ function openScoreDrawerForAssignee(item) {{
       const penaltyBreakdown = dueMode
         ? `Overrun: ${{hoursText(row.applied_overrun_component_hours)}} | Late estimate: ${{hoursText(row.applied_due_component_hours)}}`
         : `Overrun: ${{hoursText(row.applied_overrun_component_hours)}}`;
-      return `<tr class="${{row.is_penalized_for_due ? "penalized-row" : ""}}"><td class="issue-id">${{e(issueKey || "-")}}</td><td class="issue-title">${{e(row.summary || "-")}}</td><td>${{e(row.project_name || "-")}}</td><td>${{e(row.epic_name || row.epic_key || "-")}}</td><td>${{e(row.planned_due_date || row.due_date || "-")}}</td><td>${{e(row.last_logged_date || "-")}}</td><td>${{e(row.actual_complete_date || row.effective_completion_date || "-")}}<div class="sub">${{e(actualCompletionSourceText(row.actual_complete_source))}}</div></td><td>${{e(row.penalty_reason || "-")}}<div class="sub">${{e(actualCompletionReason(row))}}</div></td><td>${{hoursText(row.applied_overrun_hours)}}<div class="sub">${{e(penaltyBreakdown)}}</div></td><td>${{scorePctText(row.contribution_pct)}}</td><td>${{linkCell}}</td></tr>`;
+      return `<tr class="${{row.is_penalized_for_due ? "penalized-row" : ""}}"><td class="issue-id">${{e(issueKey || "-")}}</td><td class="issue-title">${{e(row.summary || "-")}}</td><td>${{e(row.project_name || "-")}}</td><td>${{e(row.epic_name || row.epic_key || "-")}}</td><td>${{e(formatDate(row.planned_due_date || row.due_date) || "-")}}</td><td>${{e(formatDate(row.last_logged_date) || "-")}}</td><td>${{e(formatDate(row.actual_complete_date || row.effective_completion_date) || "-")}}<div class="sub">${{e(actualCompletionSourceText(row.actual_complete_source))}}</div></td><td>${{e(row.penalty_reason || "-")}}<div class="sub">${{e(actualCompletionReason(row))}}</div></td><td>${{hoursText(row.applied_overrun_hours)}}<div class="sub">${{e(penaltyBreakdown)}}</div></td><td>${{scorePctText(row.contribution_pct)}}</td><td>${{linkCell}}</td></tr>`;
     }}).join("")
     : "";
   const penalizedSectionHtml = penalizedRows.length
     ? `<div class="score-subtask-table-wrap"><table class="ss-tbl"><thead><tr><th>Subtask</th><th>Name</th><th>Project</th><th>Epic</th><th>Planned Due Date</th><th>Last Logged Date</th><th>Actual Complete Date</th><th>Penalty Reason</th><th>Applied Overrun</th><th>Score Impact</th><th>Jira</th></tr></thead><tbody>${{penalizedRowsHtml}}</tbody></table></div>`
     : `<div class="score-drawer-empty">${{dueMode ? "No subtasks are penalizing simple score in due-completion mode." : "No subtasks are penalizing simple score in the current scope."}}</div>`;
+  const allSubtaskDetails = (Array.isArray(item.ss_subtask_details) ? item.ss_subtask_details : [])
+    .map((row) => {{
+      const issueKey = String(row.issue_key || "").toUpperCase();
+      const est = n(row.estimate);
+      const act = n(row.actual);
+      const over = n(row.overrun);
+      const estStatus = String(row.estimate_status || "");
+      const dueStatus = String(row.due_completion_status || "");
+      const isPenalized = over > 0 && estStatus === "over_estimate" && !(n(row.is_commitment) && dueMode);
+      return {{ issueKey, est, act, over, estStatus, dueStatus, isPenalized, row }};
+    }})
+    .sort((a, b) => {{
+      if (a.isPenalized !== b.isPenalized) return a.isPenalized ? -1 : 1;
+      return b.over - a.over || b.act - a.act || String(a.issueKey).localeCompare(String(b.issueKey));
+    }});
+  const allSubtaskRows = allSubtaskDetails
+    .map((d) => {{
+      const row = d.row;
+      const issueUrl = String(row.jira_url || jiraIssueUrl(d.issueKey) || "");
+      const linkCell = issueUrl
+        ? `<a class="jira-link-icon" href="${{e(issueUrl)}}" target="_blank" rel="noopener noreferrer" title="Open in Jira"><span class="material-symbols-outlined">open_in_new</span></a>`
+        : `<span class="jira-link-disabled">-</span>`;
+      const estLabel = d.estStatus === "within_estimate" ? "Within"
+        : d.estStatus === "over_estimate" ? "Over" : "No Est.";
+      const dueLabel = d.dueStatus === "on_time" ? "On Time"
+        : d.dueStatus === "late" ? "Late"
+        : d.dueStatus === "not_completed" ? "Not Done"
+        : d.dueStatus === "no_due_date" ? "No Due" : (d.dueStatus || "-");
+      const penaltyLabel = d.isPenalized ? "Yes" : "No";
+      const rowClass = d.isPenalized ? "status-over" : (d.estStatus === "within_estimate" ? "status-within" : "status-noest");
+      const variance = d.est > 0 ? d.act - d.est : 0;
+      const varianceText = d.est > 0 ? ((variance >= 0 ? "+" : "") + hoursText(variance)) : "-";
+      return `<tr class="${{rowClass}}"><td class="issue-id">${{e(d.issueKey || "-")}}</td><td class="issue-title">${{e(row.summary || "-")}}</td><td>${{e(row.epic_name || row.epic_key || "-")}}</td><td>${{e(row.project_name || "-")}}</td><td>${{hoursText(d.est)}}</td><td>${{hoursText(d.act)}}</td><td>${{varianceText}}</td><td>${{hoursText(d.over)}}</td><td>${{e(estLabel)}}</td><td>${{e(formatDate(row.planned_due_date) || "-")}}</td><td>${{e(dueLabel)}}</td><td class="penalty-cell${{d.isPenalized ? " penalty-yes" : " penalty-no"}}">${{e(penaltyLabel)}}</td><td class="penalty-reason-cell">${{e(row.penalty_reason || "-")}}</td><td>${{linkCell}}</td></tr>`;
+    }}).join("");
+  const penalizedCount = allSubtaskDetails.filter((d) => d.isPenalized).length;
+  const notPenalizedCount = allSubtaskDetails.length - penalizedCount;
+  const allSubtasksSectionHtml = allSubtaskRows
+    ? `<div class="score-subtask-table-wrap"><table class="ss-tbl ss-tbl-all"><thead><tr><th>Subtask</th><th>Name</th><th>Epic</th><th>Project</th><th>Estimate</th><th>Actual</th><th>Variance</th><th>Overrun</th><th>Est. Status</th><th>Due Date</th><th>Due Status</th><th>Penalized?</th><th>Reason</th><th>Jira</th></tr></thead><tbody>${{allSubtaskRows}}</tbody></table></div>`
+    : `<div class="score-drawer-empty">No scored subtasks for this assignee in the current scope.</div>`;
   if (scoreDrawerTitleEl) scoreDrawerTitleEl.textContent = `Simple Score Details${{item.assignee ? ` - ${{String(item.assignee)}}` : ""}}`;
   if (scoreDrawerSubtitleEl) {{
+    const modeParts = [
+      dueMode ? "Due Completion ON" : "Due Completion OFF",
+      `Overrun Basis: ${{simpleOverrunLabel()}}`,
+      extendedActualsEnabled ? "Extended Actuals ON" : "Extended Actuals OFF",
+      overloadedPenaltyEnabled ? "Overloaded Penalty ON" : "Overloaded Penalty OFF",
+      planningRealismEnabled ? "Planning Realism ON" : "Planning Realism OFF",
+    ];
     scoreDrawerSubtitleEl.textContent = eligibleForScore
-      ? `Final Simple Score: ${{scorePctText(finalSimpleScore)}} | Mode: ${{dueMode ? "Due Completion ON" : "Due Completion OFF"}}`
+      ? `Final Simple Score: ${{scorePctText(finalSimpleScore)}} | ${{modeParts.join(" | ")}}`
       : `Simple scoring is not available because Planned Hours Assigned is ${{hoursText(item.planned_hours_assigned)}}.`;
   }}
-  scoreDrawerBodyEl.innerHTML = `<section class="score-drawer-section score-drawer-section-rules"><div class="score-drawer-section-head"><h3 class="score-drawer-section-title">Rules</h3><div class="score-drawer-section-note">Exact formula inputs for this assignee</div></div><div class="score-drawer-section-content"><div class="score-rule-list">${{ruleHtml}}</div></div></section><section class="score-drawer-section score-drawer-section-penalties"><div class="score-drawer-section-head"><h3 class="score-drawer-section-title">Penalized Subtasks</h3><div class="score-drawer-section-note">${{penalizedRows.length ? `${{penalizedRows.length}} item(s) reducing the current simple score` : "No current penalties"}}</div></div><div class="score-drawer-section-content">${{penalizedSectionHtml}}</div></section>`;
+  const allSubtaskCount = (Array.isArray(item.ss_subtask_details) ? item.ss_subtask_details : []).length;
+  const withinCount = n(item.ss_within_count);
+  const overCount = n(item.ss_over_count);
+  const noEstCount = n(item.ss_no_estimate_count);
+  const breakdownNote = `${{allSubtaskCount}} subtask(s): ${{Math.round(withinCount)}} within, ${{Math.round(overCount)}} over, ${{Math.round(noEstCount)}} no est. | ${{penalizedCount}} penalized, ${{notPenalizedCount}} not penalized`;
+  scoreDrawerBodyEl.innerHTML = `<section class="score-drawer-section score-drawer-section-calculation"><div class="score-drawer-section-head"><h3 class="score-drawer-section-title">Calculation</h3><div class="score-drawer-section-note">Add and subtract to get the simple score</div></div><div class="score-drawer-section-content">${{calculationSectionHtml}}</div></section><section class="score-drawer-section score-drawer-section-rules"><div class="score-drawer-section-head"><h3 class="score-drawer-section-title">Rules</h3><div class="score-drawer-section-note">Exact formula inputs for this assignee</div></div><div class="score-drawer-section-content"><div class="score-subtask-table-wrap">${{ruleHtml}}</div></div></section><section class="score-drawer-section score-drawer-section-all-subtasks"><div class="score-drawer-section-head"><h3 class="score-drawer-section-title">All Scored Subtasks</h3><div class="score-drawer-section-note">${{e(breakdownNote)}}</div></div><div class="score-drawer-section-content">${{allSubtasksSectionHtml}}</div></section>`;
   scoreDrawerAssignee = String(item.assignee || "");
   scoreDrawerOverlayEl.classList.add("open");
   scoreDrawerEl.classList.add("open");
@@ -1759,6 +1900,17 @@ function openScoreDrawerForAssignee(item) {{
   scoreDrawerOverlayEl.setAttribute("aria-hidden", "false");
   document.body.classList.add("score-drawer-open");
   if (scoreDrawerCloseEl) scoreDrawerCloseEl.focus();
+  const minDrawerPx = 320;
+  const maxDrawerPx = Math.floor(window.innerWidth * 0.96);
+  let currentPx = scoreDrawerWidthPx;
+  if (currentPx == null && typeof localStorage !== "undefined") {{
+    const stored = localStorage.getItem(SCORE_DRAWER_WIDTH_STORAGE_KEY);
+    if (stored != null) {{ const n = parseInt(stored, 10); if (!isNaN(n)) currentPx = n; }}
+  }}
+  if (currentPx == null) currentPx = Math.floor(window.innerWidth * 0.4);
+  currentPx = Math.max(minDrawerPx, Math.min(maxDrawerPx, currentPx));
+  scoreDrawerWidthPx = currentPx;
+  scoreDrawerEl.style.width = currentPx + "px";
 }}
 function closeScoreDrawer() {{
   if (!scoreDrawerEl || !scoreDrawerOverlayEl) return;
@@ -1896,7 +2048,7 @@ function capacityProfileLabel(profile) {{
   const toDate = String(profile?.to_date || "");
   const std = n(profile?.standard_hours_per_day) > 0 ? n(profile.standard_hours_per_day) : 8;
   const ramadan = n(profile?.ramadan_hours_per_day) > 0 ? n(profile.ramadan_hours_per_day) : std;
-  return `${{fromDate}} -> ${{toDate}} | Std ${{std.toFixed(1)}}h | Ramadan ${{ramadan.toFixed(1)}}h`;
+  return `${{formatDate(fromDate) || fromDate}} -> ${{formatDate(toDate) || toDate}} | Std ${{std.toFixed(1)}}h | Ramadan ${{ramadan.toFixed(1)}}h`;
 }}
 function getActiveCapacityProfileSelection() {{
   if (capacityProfileTopSelectEl) return String(capacityProfileTopSelectEl.value || "auto");
@@ -1939,7 +2091,7 @@ function updateCapacityProfileMeta(fromIso, toIso, profile) {{
     capacityProfileMetaEl.textContent = "Capacity profile: Default weekdays (8h/day)";
   }} else {{
     const mode = selected === "auto" ? "Auto profile" : "Applied profile";
-    capacityProfileMetaEl.textContent = `${{mode}}: ${{capacityProfileLabel(profile)}} | Active range: ${{String(fromIso || "")}} -> ${{String(toIso || "")}}`;
+    capacityProfileMetaEl.textContent = `${{mode}}: ${{capacityProfileLabel(profile)}} | Active range: ${{formatDate(fromIso) || String(fromIso || "")}} -> ${{formatDate(toIso) || String(toIso || "")}}`;
   }}
   renderCapacityProfileExpanded(fromIso, toIso, profile || null);
 }}
@@ -2034,13 +2186,13 @@ function renderCapacityProfileExpanded(fromIso, toIso, profile) {{
     monthCards.push(`<div class="capacity-month"${{isCurrentMonth ? ' data-current-month="1"' : ""}}><div class="capacity-month-head">${{e(label)}}</div><div class="capacity-month-grid">${{cells.join("")}}</div></div>`);
     cursor.setMonth(cursor.getMonth() + 1, 1);
   }}
-  const holidaysText = holidays.length ? e(holidays.join(", ")) : "None";
-  const ramadanText = ramadanStart && ramadanEnd ? `${{e(ramadanStart)}} -> ${{e(ramadanEnd)}}` : "Not configured";
-  const scopeLabel = profile ? `${{e(String(profile.from_date || ""))}} -> ${{e(String(profile.to_date || ""))}}` : "Default weekdays profile";
+  const holidaysText = holidays.length ? e(holidays.map((d) => formatDate(d) || d).join(", ")) : "None";
+  const ramadanText = ramadanStart && ramadanEnd ? `${{e(formatDate(ramadanStart) || ramadanStart)}} -> ${{e(formatDate(ramadanEnd) || ramadanEnd)}}` : "Not configured";
+  const scopeLabel = profile ? `${{e(formatDate(profile.from_date) || String(profile.from_date || ""))}} -> ${{e(formatDate(profile.to_date) || String(profile.to_date || ""))}}` : "Default weekdays profile";
   capacityProfileExpandedEl.innerHTML = `
     <div class="capacity-expanded-head">
       <div class="capacity-expanded-title">Capacity Profile Expanded Settings</div>
-      <div class="capacity-expanded-sub">${{mode}} selection | Active filter: ${{e(from)}} -> ${{e(to)}}</div>
+      <div class="capacity-expanded-sub">${{mode}} selection | Active filter: ${{e(formatDate(from) || from)}} -> ${{e(formatDate(to) || to)}}</div>
     </div>
     <div class="capacity-expanded-grid">
       <div class="capacity-chip"><div class="k">Profile Range</div><div class="v">${{scopeLabel}}</div></div>
@@ -2864,9 +3016,9 @@ function renderHierarchyTable(rows, dueRows, missedRows) {{
     const openAttr = nodeKind === "epic" ? " open" : "";
     const isBugSubtask = nodeKind === "bug_subtask";
     const actualCompleteText = nodeKind === "subtask" || nodeKind === "bug_subtask"
-      ? `Actual Complete: ${{e(node.actual_complete_date || node.completion_date || "-")}}`
-      : `Done: ${{e(node.completion_date || "-")}}`;
-    const summary = `<summary><div class="tree-left"><div class="issue-id">${{e(key)}}</div><div class="issue-title">${{e(node.summary || "")}}${{isBugSubtask ? '<span class="issue-kind-inline">Bug Subtask</span>' : ""}}</div></div><div class="tree-metrics">${{issueTypePill(nodeKind)}}<span class="metric-pill">Est: ${{n(node.original_estimate_hours).toFixed(1)}}h</span><span class="metric-pill">Start: ${{e(node.start_date || "-")}}</span><span class="metric-pill">Planned Due: ${{e(node.planned_due_date || node.due_date || "-")}}</span><span class="metric-pill">${{actualCompleteText}}</span><span class="metric-pill">Due Status: ${{e(dueBucket)}}</span><span class="metric-pill">Missed Start: ${{missed}}</span></div></summary>`;
+      ? `Actual Complete: ${{e(formatDate(node.actual_complete_date || node.completion_date) || "-")}}`
+      : `Done: ${{e(formatDate(node.completion_date) || "-")}}`;
+    const summary = `<summary><div class="tree-left"><div class="issue-id">${{e(key)}}</div><div class="issue-title">${{e(node.summary || "")}}${{isBugSubtask ? '<span class="issue-kind-inline">Bug Subtask</span>' : ""}}</div></div><div class="tree-metrics">${{issueTypePill(nodeKind)}}<span class="metric-pill">Est: ${{n(node.original_estimate_hours).toFixed(1)}}h</span><span class="metric-pill">Start: ${{e(formatDate(node.start_date) || "-")}}</span><span class="metric-pill">Planned Due: ${{e(formatDate(node.planned_due_date || node.due_date) || "-")}}</span><span class="metric-pill">${{actualCompleteText}}</span><span class="metric-pill">Due Status: ${{e(dueBucket)}}</span><span class="metric-pill">Missed Start: ${{missed}}</span></div></summary>`;
     if (!kids.length) return `<div class="tree-node"><details${{openAttr}}>${{summary}}</details></div>`;
     return `<div class="tree-node"><details${{openAttr}}>${{summary}}<div class="tree-children">${{kids.map(renderNode).join("")}}</div></details></div>`;
   }}
@@ -2886,12 +3038,12 @@ function renderDueTable(rows) {{
     if (b === "After due") return "due-bucket due-after";
     return "due-bucket";
   }}
-  return `<table class="tbl"><thead><tr><th>Issue</th><th>Due</th><th>Last Logged Date</th><th>Actual Completed Date</th><th>Stable Resolved</th><th>Bucket</th></tr></thead><tbody>${{data.map((r)=>`<tr class="${{r.is_missed_due_date ? "due-missed penalized-row" : ""}}"><td><div class="issue-id">${{e(r.issue_key)}}</div><div class="issue-title">${{e(r.summary)}}</div></td><td>${{e(r.planned_due_date || r.due_date || "-")}}</td><td>${{e(r.last_logged_date || "-")}}</td><td>${{e(r.actual_complete_date || r.completion_date || "-")}}<div class="sub">${{e(actualCompletionSourceText(r.actual_complete_source))}}</div></td><td>${{e(r.resolved_stable_since_date || "-")}}</td><td><span class="${{dueBucketClass(r.status_bucket)}}">${{e(r.status_bucket)}}</span></td></tr>`).join("")}}</tbody></table>`;
+  return `<table class="tbl"><thead><tr><th>Issue</th><th>Due</th><th>Last Logged Date</th><th>Actual Completed Date</th><th>Stable Resolved</th><th>Bucket</th></tr></thead><tbody>${{data.map((r)=>`<tr class="${{r.is_missed_due_date ? "due-missed penalized-row" : ""}}"><td><div class="issue-id">${{e(r.issue_key)}}</div><div class="issue-title">${{e(r.summary)}}</div></td><td>${{e(formatDate(r.planned_due_date || r.due_date) || "-")}}</td><td>${{e(formatDate(r.last_logged_date) || "-")}}</td><td>${{e(formatDate(r.actual_complete_date || r.completion_date) || "-")}}<div class="sub">${{e(actualCompletionSourceText(r.actual_complete_source))}}</div></td><td>${{e(formatDate(r.resolved_stable_since_date) || "-")}}</td><td><span class="${{dueBucketClass(r.status_bucket)}}">${{e(r.status_bucket)}}</span></td></tr>`).join("")}}</tbody></table>`;
 }}
 function renderMissedTable(rows) {{
   const data = Array.isArray(rows) ? rows : [];
   if (!data.length) return '<div class="empty" style="padding:8px;">No missed starts.</div>';
-  return `<table class="tbl"><thead><tr><th>Issue</th><th>Planned Start</th><th>Other Work</th><th>Leave (h)</th><th>State</th></tr></thead><tbody>${{data.map((r)=>{{ const other=(r.other_work||[]).map((x)=>`${{e(x.issue_id)}} (${{n(x.hours).toFixed(1)}}h)`).join(", "); const state=r.idle ? "Idle" : (n(r.leave_hours)>0 ? "On Leave" : "Working on other items"); return `<tr><td><div class="issue-id">${{e(r.issue_key)}}</div><div class="issue-title">${{e(r.summary)}}</div></td><td>${{e(r.start_date || "-")}}</td><td>${{other || "-"}}</td><td>${{n(r.leave_hours).toFixed(1)}}</td><td>${{state}}</td></tr>`; }}).join("")}}</tbody></table>`;
+  return `<table class="tbl"><thead><tr><th>Issue</th><th>Planned Start</th><th>Other Work</th><th>Leave (h)</th><th>State</th></tr></thead><tbody>${{data.map((r)=>{{ const other=(r.other_work||[]).map((x)=>`${{e(x.issue_id)}} (${{n(x.hours).toFixed(1)}}h)`).join(", "); const state=r.idle ? "Idle" : (n(r.leave_hours)>0 ? "On Leave" : "Working on other items"); return `<tr><td><div class="issue-id">${{e(r.issue_key)}}</div><div class="issue-title">${{e(r.summary)}}</div></td><td>${{e(formatDate(r.start_date) || "-")}}</td><td>${{other || "-"}}</td><td>${{n(r.leave_hours).toFixed(1)}}</td><td>${{state}}</td></tr>`; }}).join("")}}</tbody></table>`;
 }}
 function renderExecutionHierarchyTable(item) {{
   const nodes = Array.isArray(item?.assigned_hierarchy) ? item.assigned_hierarchy : [];
@@ -2994,14 +3146,14 @@ function renderExecutionHierarchyTable(item) {{
       const storyPlannedHours = story.planned_hours > 0 ? story.planned_hours : subRows.reduce((acc, st0) => acc + n(st0.planned_hours), 0);
       const storyStart = story.planned_start || minDate(subRows.map((st0) => st0.planned_start));
       const storyDue = story.planned_due || maxDate(subRows.map((st0) => st0.planned_due));
-      return `<section class="exec-story-block"><div class="exec-story-head"><div><span class="metric-pill">STORY</span><div class="issue-id">${{e(story.story_key || "-")}}</div><div class="issue-title">${{e(story.story_summary || "-")}}</div></div><div class="exec-story-metrics"><span class="metric-pill">Start: ${{e(storyStart || "-")}}</span><span class="metric-pill">Due: ${{e(storyDue || "-")}}</span><span class="metric-pill">Planned: ${{n(storyPlannedHours).toFixed(2)}}h</span><span class="metric-pill">Actual: ${{n(story.actual_hours).toFixed(2)}}h</span><span class="metric-pill">Done: ${{e(maxDate(story.completion_dates) || "-")}}</span></div></div><table class="tbl exec-subtask-table"><thead><tr><th>Subtask</th><th>Planned Start</th><th>Planned Due Date</th><th>Planned Hours</th><th>Actual Hours</th><th>Last Logged Date</th><th>Actual Complete Date</th><th>Status Resolved Date</th><th>Status</th></tr></thead><tbody>${{subRows.map((st) => {{
+      return `<section class="exec-story-block"><div class="exec-story-head"><div><span class="metric-pill">STORY</span><div class="issue-id">${{e(story.story_key || "-")}}</div><div class="issue-title">${{e(story.story_summary || "-")}}</div></div><div class="exec-story-metrics"><span class="metric-pill">Start: ${{e(formatDate(storyStart) || "-")}}</span><span class="metric-pill">Due: ${{e(formatDate(storyDue) || "-")}}</span><span class="metric-pill">Planned: ${{n(storyPlannedHours).toFixed(2)}}h</span><span class="metric-pill">Actual: ${{n(story.actual_hours).toFixed(2)}}h</span><span class="metric-pill">Done: ${{e(formatDate(maxDate(story.completion_dates)) || "-")}}</span></div></div><table class="tbl exec-subtask-table"><thead><tr><th>Subtask</th><th>Planned Start</th><th>Planned Due Date</th><th>Planned Hours</th><th>Actual Hours</th><th>Last Logged Date</th><th>Actual Complete Date</th><th>Status Resolved Date</th><th>Status</th></tr></thead><tbody>${{subRows.map((st) => {{
         const negHrs = n(st.negative_hours);
         const status = negHrs > 0 ? `Penalty hit: late by ${{negHrs.toFixed(2)}}h` : (st.status || "");
         const rowCls = (negHrs > 0 || st.is_penalized_for_due) ? "exec-negative-subtask penalized-row" : "";
-        return `<tr class="${{rowCls}}"><td><div><span class="metric-pill">SUBTASK</span><div class="issue-id">${{e(st.issue_key || "-")}}</div><div class="issue-title">${{e(st.summary || "-")}}</div></div></td><td>${{e(st.planned_start || "-")}}</td><td>${{e(st.planned_due || "-")}}</td><td>${{n(st.planned_hours).toFixed(2)}}h</td><td>${{n(st.actual_hours).toFixed(2)}}h</td><td>${{e(st.last_logged_date || "-")}}</td><td>${{e(st.actual_complete_date || st.completion_date || "-")}}<div class="sub">${{e(actualCompletionSourceText(st.actual_complete_source))}}</div></td><td>${{e(st.resolved_stable || "-")}}</td><td>${{e(status)}}</td></tr>`;
+        return `<tr class="${{rowCls}}"><td><div><span class="metric-pill">SUBTASK</span><div class="issue-id">${{e(st.issue_key || "-")}}</div><div class="issue-title">${{e(st.summary || "-")}}</div></div></td><td>${{e(formatDate(st.planned_start) || "-")}}</td><td>${{e(formatDate(st.planned_due) || "-")}}</td><td>${{n(st.planned_hours).toFixed(2)}}h</td><td>${{n(st.actual_hours).toFixed(2)}}h</td><td>${{e(formatDate(st.last_logged_date) || "-")}}</td><td>${{e(formatDate(st.actual_complete_date || st.completion_date) || "-")}}<div class="sub">${{e(actualCompletionSourceText(st.actual_complete_source))}}</div></td><td>${{e(formatDate(st.resolved_stable) || "-")}}</td><td>${{e(status)}}</td></tr>`;
       }}).join("")}}</tbody></table></section>`;
     }}).join("");
-    return `<details class="exec-epic"${{epicIndex === 0 ? " open" : ""}}><summary><div class="exec-epic-left"><span class="metric-pill">EPIC</span><div class="issue-id">${{e(epic.epic_key || "-")}}</div><div class="issue-title">${{e(epic.epic_summary || "-")}}</div></div><div class="exec-epic-metrics"><span class="metric-pill">Stories: ${{storyNodes.length}}</span><span class="metric-pill">Subtasks: ${{storyNodes.reduce((acc, s0) => acc + s0.subtasks.size, 0)}}</span><span class="metric-pill">Start: ${{e(epicStart || "-")}}</span><span class="metric-pill">Due: ${{e(epicDue || "-")}}</span><span class="metric-pill">Planned: ${{n(epicPlannedHours).toFixed(2)}}h</span><span class="metric-pill">Actual: ${{n(epic.actual_hours).toFixed(2)}}h</span><span class="metric-pill">Done: ${{e(epicDone || "-")}}</span>${{epicNegativeCount > 0 ? `<span class="metric-pill exec-neg-pill">Penalty Subtasks: ${{epicNegativeCount}}</span>` : ""}}</div></summary><div class="exec-epic-body">${{storyHtml}}</div></details>`;
+    return `<details class="exec-epic"${{epicIndex === 0 ? " open" : ""}}><summary><div class="exec-epic-left"><span class="metric-pill">EPIC</span><div class="issue-id">${{e(epic.epic_key || "-")}}</div><div class="issue-title">${{e(epic.epic_summary || "-")}}</div></div><div class="exec-epic-metrics"><span class="metric-pill">Stories: ${{storyNodes.length}}</span><span class="metric-pill">Subtasks: ${{storyNodes.reduce((acc, s0) => acc + s0.subtasks.size, 0)}}</span><span class="metric-pill">Start: ${{e(formatDate(epicStart) || "-")}}</span><span class="metric-pill">Due: ${{e(formatDate(epicDue) || "-")}}</span><span class="metric-pill">Planned: ${{n(epicPlannedHours).toFixed(2)}}h</span><span class="metric-pill">Actual: ${{n(epic.actual_hours).toFixed(2)}}h</span><span class="metric-pill">Done: ${{e(formatDate(epicDone) || "-")}}</span>${{epicNegativeCount > 0 ? `<span class="metric-pill exec-neg-pill">Penalty Subtasks: ${{epicNegativeCount}}</span>` : ""}}</div></summary><div class="exec-epic-body">${{storyHtml}}</div></details>`;
   }}).join("")}}</div>`;
 }}
 function toTitleCaseKey(key) {{
@@ -3303,7 +3455,7 @@ function render(items) {{
     const refreshDisabled = refreshState && refreshState.isBusy ? " disabled" : "";
     return `<div class="row${{it.assignee===selectedName?' sel':''}}" data-name="${{e(it.assignee)}}"><div class="rank">#${{i+1}}</div><div><div>${{e(it.assignee)}}</div><div class="leader-metrics"><button type="button" class="assignee-refresh-btn" data-assignee="${{e(it.assignee)}}" title="Refresh this assignee" aria-label="Refresh ${{e(it.assignee)}}"${{refreshDisabled}}><span class="material-symbols-outlined">refresh</span></button><span class="metric-chip"><span class="material-symbols-outlined">deployed_code</span><span class="metric-value">${{n(it.active_rmi_count).toFixed(0)}}</span></span><span class="metric-chip"><span class="material-symbols-outlined">sliders</span><span class="metric-value${{capMore < 0 ? " warn" : ""}}">${{capMore.toFixed(1)}}h</span></span><span class="metric-chip"><span class="material-symbols-outlined">award_star</span><span class="metric-value">${{rowScoreText}}</span></span></div><div class="sub">${{rowSub}}</div></div><div class="score"><span class="material-symbols-outlined">award_star</span>${{rowScoreText}}</div>${{refreshHtml}}</div>`;
   }}).join("");
-  Array.from(lb.querySelectorAll(".row")).forEach((el)=>el.addEventListener("click", ()=>{{ selectedName = String(el.getAttribute("data-name") || ""); availabilityBreakdownForAssignee = ""; plannedHoursBreakdownForAssignee = ""; actualHoursBreakdownForAssignee = ""; rmiListForAssignee = ""; render(compute()); }}));
+  Array.from(lb.querySelectorAll(".row")).forEach((el)=>el.addEventListener("click", ()=>{{ selectedName = String(el.getAttribute("data-name") || ""); availabilityBreakdownForAssignee = ""; plannedHoursBreakdownForAssignee = ""; actualHoursBreakdownForAssignee = ""; hoursRequiredBreakdownForAssignee = ""; rmiListForAssignee = ""; render(compute()); }}));
   Array.from(lb.querySelectorAll(".assignee-refresh-btn")).forEach((btn)=>btn.addEventListener("click", async (event)=>{{
     event.stopPropagation();
     const assignee = String(btn.getAttribute("data-assignee") || "");
@@ -3459,16 +3611,22 @@ function render(items) {{
     const l = normMetricToken(entry?.label);
     return k === "actualhoursspentstatic" || l === "actualhoursspent";
   }}
+  function isHoursRequiredMetric(entry) {{
+    const k = normMetricToken(entry?.key);
+    const l = normMetricToken(entry?.label);
+    return k === "hoursrequiredtocompleteprojects" || l === "hoursrequiredtocompleteprojects";
+  }}
   function barMeta(entry) {{
     const key = normMetricToken(entry?.key);
     const label = normMetricToken(entry?.label);
     const isAvailability = key === "availability" || label === "availability";
     const isPlannedAssigned = isPlannedHoursAssignedMetric(entry);
     const isActualSpent = isActualHoursSpentMetric(entry);
+    const isHoursRequired = isHoursRequiredMetric(entry);
     const isCapacityAvail = isCapacityAvailableForMoreWork(entry);
     const maxValue = isAvailability
       ? 178
-      : ((isPlannedAssigned || isActualSpent)
+      : ((isPlannedAssigned || isActualSpent || isHoursRequired)
         ? 178
         : (isCapacityAvail
           ? Math.max(1, availabilityRawValue)
@@ -3485,13 +3643,14 @@ function render(items) {{
       isAvailability,
       isPlannedAssigned,
       isActualSpent,
+      isHoursRequired,
       maxValue,
       rawValue,
       pct: Math.max(0, Math.min(100, pct)),
       fill,
       note: isAvailability
         ? "Scale: 0 to 178h"
-        : ((isPlannedAssigned || isActualSpent)
+        : ((isPlannedAssigned || isActualSpent || isHoursRequired)
           ? (overflow ? `Scale: 0 to 178h (Exceeded by ${{(rawValue - 178).toFixed(2)}}h)` : "Scale: 0 to 178h")
           : `Scale: 0 to ${{maxValue.toFixed(2)}}`)
     }};
@@ -3539,12 +3698,13 @@ function render(items) {{
         ? "toggle-availability-breakdown"
         : (b.isPlannedAssigned
           ? "toggle-planned-hours-breakdown"
-          : (b.isActualSpent ? "toggle-actual-hours-breakdown" : ""));
+          : (b.isActualSpent ? "toggle-actual-hours-breakdown" : (b.isHoursRequired ? "toggle-hours-required-breakdown" : "")));
       const toggleAttr = action ? ` data-action="${{action}}"` : "";
       const cardClass = action ? "exec-metric actionable" : "exec-metric";
       const isAvailabilityOpen = b.isAvailability && availabilityBreakdownForAssignee === String(item.assignee || "");
       const isPlannedOpen = b.isPlannedAssigned && plannedHoursBreakdownForAssignee === String(item.assignee || "");
       const isActualOpen = b.isActualSpent && actualHoursBreakdownForAssignee === String(item.assignee || "");
+      const isHoursRequiredOpen = b.isHoursRequired && hoursRequiredBreakdownForAssignee === String(item.assignee || "");
       const ingredientRows = availabilityIngredients.length
         ? availabilityIngredients.map((part) => `<div class="availability-line"><span class="availability-name">${{e(part.key)}}${{part.missing ? " (default)" : ""}}</span><span class="availability-num">${{n(part.value).toFixed(2)}}${{b.isAvailability ? "h" : ""}}</span></div>`).join("")
         : '<div class="availability-note">No ingredients detected from formula.</div>';
@@ -3659,12 +3819,55 @@ function render(items) {{
       const actualBreakdownBlock = b.isActualSpent && isActualOpen
         ? `<div class="availability-breakdown"><div class="availability-note">${{actualNote}}</div><div class="tbl-wrap" style="max-height:240px;overflow:auto;"><table class="ss-tbl"><thead><tr><th>Jira Subtask ID</th><th>Type</th><th>Actual Logged Hours</th><th>Jira</th></tr></thead><tbody>${{actualTableBody}}</tbody></table></div><div class="availability-line"><span class="availability-name"><strong>Total Actual Logged Hours</strong></span><span class="availability-num"><strong>${{actualTotal.toFixed(2)}}h</strong></span></div></div>`
         : "";
+      function isResolvedStatus(statusText) {{
+        const s = String(statusText || "").toLowerCase().trim();
+        return ["done", "resolved", "closed", "complete", "completed"].some((r) => s === r || s.includes(r));
+      }}
+      const hoursRequiredData = (Array.isArray(item.assigned_hierarchy) ? item.assigned_hierarchy : [])
+        .filter((row) => {{
+          const t = String(row?.hierarchy_type || row?.issue_type || "").toLowerCase();
+          if (t !== "subtask" && t !== "bug_subtask") return false;
+          const issueKey = String(row?.issue_key || "").toUpperCase();
+          const wi = workItemsByKey.get(issueKey) || {{}};
+          const status = String(wi.status || "").trim();
+          if (isResolvedStatus(status)) return false;
+          const estimate = n(row?.original_estimate_hours);
+          if (estimate <= 0) return false;
+          const logged = n(item.issue_logged_hours_stats_by_issue?.[issueKey] ?? item.issue_logged_hours_by_issue?.[issueKey]);
+          return logged < estimate;
+        }})
+        .map((row) => {{
+          const issueKey = String(row?.issue_key || "").toUpperCase();
+          const wi = workItemsByKey.get(issueKey) || {{}};
+          const estimate = n(row?.original_estimate_hours);
+          const logged = n(item.issue_logged_hours_stats_by_issue?.[issueKey] ?? item.issue_logged_hours_by_issue?.[issueKey]);
+          const remaining = Math.max(0, estimate - logged);
+          const epicKey = String(row?.parent_epic_key || wi.parent_issue_key || "").toUpperCase();
+          const epicRow = workItemsByKey.get(epicKey) || {{}};
+          const projectName = String(row?.project_name || wi.project_key || "").trim() || "-";
+          const epicName = String(epicRow.summary || epicRow.item_summary || epicKey || "").trim() || "-";
+          return {{ issueKey, summary: row?.summary, projectName, epicName, estimate, logged, remaining, status: wi.status }};
+        }});
+      const hoursRequiredTotal = hoursRequiredData.reduce((acc, r) => acc + r.remaining, 0);
+      const hoursRequiredRows = hoursRequiredData.map((r) => {{
+        const issueUrl = jiraIssueUrl(r.issueKey);
+        const linkCell = issueUrl
+          ? `<a class="jira-link-icon" href="${{e(issueUrl)}}" target="_blank" rel="noopener noreferrer" title="Open in Jira" onclick="event.stopPropagation();"><span class="material-symbols-outlined">open_in_new</span></a>`
+          : `<span class="jira-link-disabled">-</span>`;
+        return `<tr><td class="issue-id">${{e(r.issueKey || "-")}}</td><td class="issue-title">${{e(r.summary || "-")}}</td><td>${{e(r.projectName)}}</td><td>${{e(r.epicName)}}</td><td>${{r.estimate.toFixed(2)}}h</td><td>${{r.logged.toFixed(2)}}h</td><td>${{r.remaining.toFixed(2)}}h</td><td>${{e(String(r.status || "-"))}}</td><td>${{linkCell}}</td></tr>`;
+      }});
+      const hoursRequiredTableBody = hoursRequiredRows.length
+        ? hoursRequiredRows.join("")
+        : '<tr><td colspan="9" class="empty">No unresolved subtasks with logged hours below estimate in current scope.</td></tr>';
+      const hoursRequiredBreakdownBlock = b.isHoursRequired && isHoursRequiredOpen
+        ? `<div class="availability-breakdown"><div class="availability-note">Unresolved subtasks with logged hours less than original estimate (remaining work). Logged hours use the same source as Actual Hours Spent (Extended Actuals ${{extendedActualsEnabled ? "ON" : "OFF"}}).</div><div class="tbl-wrap" style="max-height:280px;overflow:auto;"><table class="ss-tbl"><thead><tr><th>Subtask</th><th>Name</th><th>Project</th><th>Epic</th><th>Original Estimate</th><th>Logged Hours So Far</th><th>Remaining</th><th>Status</th><th>Jira</th></tr></thead><tbody>${{hoursRequiredTableBody}}</tbody></table></div><div class="availability-line"><span class="availability-name"><strong>Total Remaining (these subtasks)</strong></span><span class="availability-num"><strong>${{hoursRequiredTotal.toFixed(2)}}h</strong></span></div></div>`
+        : "";
       const clickHint = b.isAvailability
         ? " | Click to view formula"
         : (b.isPlannedAssigned
           ? " | Click to view subtasks table"
-          : (b.isActualSpent ? " | Click to view logged subtasks table" : ""));
-      return `<div class="${{cardClass}}"${{toggleAttr}}><div class="exec-m-head"><div class="exec-m-name">${{e(m.label)}}</div><div class="exec-m-value">${{b.rawValue.toFixed(2)}}${{(b.isAvailability || b.isPlannedAssigned || b.isActualSpent) ? "h" : ""}}</div></div><div class="exec-m-meaning">${{e(m.meaning)}}</div><div class="exec-bar-track"><div class="exec-bar-fill" style="width:${{b.pct.toFixed(2)}}%;background:${{b.fill}};"></div></div><div class="exec-scale-note">${{e(b.note)}}${{clickHint}}</div>${{formulaBlock}}${{plannedBreakdownBlock}}${{actualBreakdownBlock}}</div>`;
+          : (b.isActualSpent ? " | Click to view logged subtasks table" : (b.isHoursRequired ? " | Click to view remaining-work subtasks table" : "")));
+      return `<div class="${{cardClass}}"${{toggleAttr}}><div class="exec-m-head"><div class="exec-m-name">${{e(m.label)}}</div><div class="exec-m-value">${{b.rawValue.toFixed(2)}}${{(b.isAvailability || b.isPlannedAssigned || b.isActualSpent || b.isHoursRequired) ? "h" : ""}}</div></div><div class="exec-m-meaning">${{e(m.meaning)}}</div><div class="exec-bar-track"><div class="exec-bar-fill" style="width:${{b.pct.toFixed(2)}}%;background:${{b.fill}};"></div></div><div class="exec-scale-note">${{e(b.note)}}${{clickHint}}</div>${{formulaBlock}}${{plannedBreakdownBlock}}${{actualBreakdownBlock}}${{hoursRequiredBreakdownBlock}}</div>`;
     }}).join("")}}</div>`
     : '<div class="empty">No managed metrics configured.</div>';
   const activeProjectList = Array.from(selectedProjects()).sort();
@@ -3737,7 +3940,7 @@ function render(items) {{
   }}
   const ssTableRows = ssDetails.map((row) => {{
     const cls = `${{ssRowClass(row)}}${{row.is_penalized_for_due ? " penalized-row" : ""}}`.trim();
-    return `<tr class="${{cls}}"><td class="issue-id">${{e(row.issue_key)}}</td><td class="issue-title">${{e(row.summary)}}</td><td>${{n(row.estimate).toFixed(1)}}h</td><td>${{n(row.actual).toFixed(1)}}h</td><td>${{n(row.overrun) > 0 ? n(row.overrun).toFixed(1) + "h" : "-"}}</td><td>${{row.planned_due_date ? e(row.planned_due_date) : (row.due_date ? e(row.due_date) : "-")}}</td><td>${{row.last_logged_date ? e(row.last_logged_date) : "-"}}</td><td>${{row.actual_complete_date ? e(row.actual_complete_date) : (row.effective_completion_date ? e(row.effective_completion_date) : "-")}}<div class="sub">${{e(actualCompletionSourceText(row.actual_complete_source))}}</div></td><td>${{ssPillHtml(row)}}<div class="sub">${{e(actualCompletionReason(row))}}</div></td></tr>`;
+    return `<tr class="${{cls}}"><td class="issue-id">${{e(row.issue_key)}}</td><td class="issue-title">${{e(row.summary)}}</td><td>${{n(row.estimate).toFixed(1)}}h</td><td>${{n(row.actual).toFixed(1)}}h</td><td>${{n(row.overrun) > 0 ? n(row.overrun).toFixed(1) + "h" : "-"}}</td><td>${{e(formatDate(row.planned_due_date || row.due_date) || "-")}}</td><td>${{e(formatDate(row.last_logged_date) || "-")}}</td><td>${{e(formatDate(row.actual_complete_date || row.effective_completion_date) || "-")}}<div class="sub">${{e(actualCompletionSourceText(row.actual_complete_source))}}</div></td><td>${{ssPillHtml(row)}}<div class="sub">${{e(actualCompletionReason(row))}}</div></td></tr>`;
   }}).join("");
   const ssTableHtml = ssDetails.length ? `<div class="table-title" style="margin:10px 0 6px;font-weight:700;">Assignee Task Estimate vs Actual (Overrun & Status)</div><div class="tbl-wrap" style="max-height:320px;overflow:auto;"><table class="ss-tbl"><thead><tr><th>Key</th><th>Summary</th><th>Estimate</th><th>Actual</th><th>Overrun</th><th>Planned Due Date</th><th>Last Logged Date</th><th>Actual Complete Date</th><th>Status</th></tr></thead><tbody>${{ssTableRows}}</tbody></table></div>` : '<div class="empty">No subtask data for simple scoring.</div>';
   const ssWithin = n(item.ss_within_count);
@@ -3884,6 +4087,7 @@ function render(items) {{
       availabilityBreakdownForAssignee = availabilityBreakdownForAssignee === assigneeName ? "" : assigneeName;
       plannedHoursBreakdownForAssignee = "";
       actualHoursBreakdownForAssignee = "";
+      hoursRequiredBreakdownForAssignee = "";
       render(items);
     }});
   }}
@@ -3894,6 +4098,7 @@ function render(items) {{
       plannedHoursBreakdownForAssignee = plannedHoursBreakdownForAssignee === assigneeName ? "" : assigneeName;
       availabilityBreakdownForAssignee = "";
       actualHoursBreakdownForAssignee = "";
+      hoursRequiredBreakdownForAssignee = "";
       render(items);
     }});
   }}
@@ -3904,6 +4109,18 @@ function render(items) {{
       actualHoursBreakdownForAssignee = actualHoursBreakdownForAssignee === assigneeName ? "" : assigneeName;
       availabilityBreakdownForAssignee = "";
       plannedHoursBreakdownForAssignee = "";
+      hoursRequiredBreakdownForAssignee = "";
+      render(items);
+    }});
+  }}
+  const hoursRequiredTrigger = detailHost.querySelector('[data-action="toggle-hours-required-breakdown"]');
+  if (hoursRequiredTrigger) {{
+    hoursRequiredTrigger.addEventListener("click", () => {{
+      const assigneeName = String(item.assignee || "");
+      hoursRequiredBreakdownForAssignee = hoursRequiredBreakdownForAssignee === assigneeName ? "" : assigneeName;
+      availabilityBreakdownForAssignee = "";
+      plannedHoursBreakdownForAssignee = "";
+      actualHoursBreakdownForAssignee = "";
       render(items);
     }});
   }}
@@ -3941,7 +4158,7 @@ function render(items) {{
     }});
   }}
 }}
-function renderAll() {{ availabilityBreakdownForAssignee = ""; plannedHoursBreakdownForAssignee = ""; actualHoursBreakdownForAssignee = ""; rmiListForAssignee = ""; render(compute()); }}
+function renderAll() {{ availabilityBreakdownForAssignee = ""; plannedHoursBreakdownForAssignee = ""; actualHoursBreakdownForAssignee = ""; hoursRequiredBreakdownForAssignee = ""; rmiListForAssignee = ""; render(compute()); }}
 function setHeaderCollapsed(isCollapsed) {{
   const collapsed = Boolean(isCollapsed);
   if (headerSectionEl) {{
@@ -3960,7 +4177,7 @@ function setHeaderCollapsed(isCollapsed) {{
 document.getElementById("projects").innerHTML = projects.map((p) => `<option value="${{e(p)}}" selected>${{e(p)}}</option>`).join("");
 refreshCapacityProfileOptions();
 document.getElementById("from").value = defaultFrom; document.getElementById("to").value = defaultTo;
-document.getElementById("meta").textContent = `Generated: ${{payload.generated_at || "-"}} | Data window: ${{defaultFrom}} to ${{defaultTo}}`;
+document.getElementById("meta").textContent = `Generated: ${{payload.generated_at || "-"}} | Data window: ${{formatDate(defaultFrom) || "-"}} to ${{formatDate(defaultTo) || "-"}}`;
 setHeaderCollapsed(localStorage.getItem(HEADER_COLLAPSED_STORAGE_KEY) === "1");
 if (headerToggleButton) {{
   headerToggleButton.addEventListener("click", () => {{
@@ -3978,6 +4195,36 @@ if (scoreDrawerCloseEl) {{
 }}
 if (scoreDrawerOverlayEl) {{
   scoreDrawerOverlayEl.addEventListener("click", closeScoreDrawer);
+}}
+if (scoreDrawerEl && scoreDrawerResizeHandleEl) {{
+  let resizeStartX = 0;
+  let resizeStartWidth = 0;
+  function stopResize() {{
+    document.removeEventListener("mousemove", onResizeMove);
+    document.removeEventListener("mouseup", onResizeEnd);
+    document.body.style.cursor = "";
+    document.body.style.userSelect = "";
+    try {{ localStorage.setItem(SCORE_DRAWER_WIDTH_STORAGE_KEY, String(scoreDrawerWidthPx)); }} catch (e) {{}}
+  }}
+  function onResizeMove(e) {{
+    const delta = resizeStartX - e.clientX;
+    const minPx = 320;
+    const maxPx = Math.floor(window.innerWidth * 0.96);
+    const next = Math.max(minPx, Math.min(maxPx, resizeStartWidth + delta));
+    scoreDrawerWidthPx = next;
+    scoreDrawerEl.style.width = next + "px";
+  }}
+  function onResizeEnd() {{ stopResize(); }}
+  scoreDrawerResizeHandleEl.addEventListener("mousedown", (e) => {{
+    if (e.button !== 0) return;
+    e.preventDefault();
+    resizeStartX = e.clientX;
+    resizeStartWidth = scoreDrawerWidthPx != null ? scoreDrawerWidthPx : Math.floor(window.innerWidth * 0.4);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    document.addEventListener("mousemove", onResizeMove);
+    document.addEventListener("mouseup", onResizeEnd);
+  }});
 }}
 document.addEventListener("keydown", (event) => {{
   if (event.key === "Escape" && document.body.classList.contains("score-drawer-open")) {{
@@ -4046,6 +4293,7 @@ if (assigneeExtendedActualsToggleEl) {{
   assigneeExtendedActualsToggleEl.addEventListener("change", () => {{
     extendedActualsEnabled = Boolean(assigneeExtendedActualsToggleEl.checked);
     actualHoursBreakdownForAssignee = "";
+    hoursRequiredBreakdownForAssignee = "";
     renderAll();
   }});
 }}

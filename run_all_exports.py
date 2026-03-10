@@ -9,6 +9,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+from jira_export_db import connect as export_db_connect
+from jira_export_db import ensure_schema as ensure_exports_schema
+
 
 def _resolve_output_path(value: str, base_dir: Path) -> Path:
     path = Path(value)
@@ -92,9 +95,24 @@ def main() -> None:
         nested_view_output = "nested view.xlsx"
     env["JIRA_NESTED_VIEW_XLSX_PATH"] = nested_view_output
 
+    # Exports DB: ensure path is set and schema exists
+    exports_db_path = env.get("JIRA_EXPORTS_DB_PATH", "jira_exports.db").strip() or "jira_exports.db"
+    exports_db_path_resolved = Path(exports_db_path)
+    if not exports_db_path_resolved.is_absolute():
+        exports_db_path_resolved = base_dir / exports_db_path_resolved
+    env["JIRA_EXPORTS_DB_PATH"] = str(exports_db_path_resolved)
+    os.environ["JIRA_EXPORTS_DB_PATH"] = env["JIRA_EXPORTS_DB_PATH"]
+
+    conn = export_db_connect()
+    try:
+        ensure_exports_schema(conn)
+    finally:
+        conn.close()
+
     print("Starting Jira export orchestration")
     print(f"Incremental sync: {'disabled' if incremental_disabled else 'enabled'}")
     print(f"Sync DB path: {sync_db_path}")
+    print(f"Exports DB path: {env['JIRA_EXPORTS_DB_PATH']}")
     print(f"Work items output: {env['JIRA_EXPORT_XLSX_PATH']}")
     print(f"Worklog output: {env['JIRA_WORKLOG_XLSX_PATH']}")
     print(f"Rollup input: {env['JIRA_SUBTASK_WORKLOG_INPUT_XLSX_PATH']}")

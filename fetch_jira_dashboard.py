@@ -28,6 +28,7 @@ from jira_client import (
     get_session,
     get_board_id,
 )
+from ipp_meeting_utils import normalize_issue_key
 
 load_dotenv()
 
@@ -56,6 +57,464 @@ DEFAULT_DASHBOARD_RISK_SETTINGS = {
         "high": "Highly At Risk",
     },
 }
+
+
+def _dash_as_text(value):
+    return str(value or "").strip()
+
+
+def _dash_normalize_date_text(value):
+    text = _dash_as_text(value)
+    if not text:
+        return ""
+    m = re.match(r"^(\d{4}-\d{2}-\d{2})", text)
+    if m:
+        return m.group(1)
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00")).date().isoformat()
+    except ValueError:
+        pass
+    for fmt in ("%d-%b-%Y", "%d-%B-%Y", "%m/%d/%Y", "%d/%m/%Y"):
+        try:
+            return datetime.strptime(text, fmt).date().isoformat()
+        except ValueError:
+            continue
+    return text
+
+
+def _dash_choose_earlier_date(existing, candidate):
+    a = _dash_normalize_date_text(existing)
+    b = _dash_normalize_date_text(candidate)
+    if not a:
+        return b
+    if not b:
+        return a
+    try:
+        return min(a, b)
+    except TypeError:
+        return a
+
+
+def _dash_choose_later_date(existing, candidate):
+    a = _dash_normalize_date_text(existing)
+    b = _dash_normalize_date_text(candidate)
+    if not a:
+        return b
+    if not b:
+        return a
+    try:
+        return max(a, b)
+    except TypeError:
+        return a
+
+
+def _dash_as_yes_no(value):
+    return "Yes" if _dash_as_text(value).lower() == "yes" else "No"
+
+
+def _dash_merge_yes_no(existing, incoming):
+    return "Yes" if _dash_as_yes_no(existing) == "Yes" or _dash_as_yes_no(incoming) == "Yes" else "No"
+
+
+def _dash_as_float(value):
+    try:
+        return float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _dash_normalize_dashboard_risk_settings(raw):
+    defaults = json.loads(json.dumps(DEFAULT_DASHBOARD_RISK_SETTINGS))
+    settings_in = raw if isinstance(raw, dict) else {}
+    points_in = settings_in.get("indicator_points") if isinstance(settings_in.get("indicator_points"), dict) else {}
+    thresholds_in = settings_in.get("thresholds") if isinstance(settings_in.get("thresholds"), dict) else {}
+    labels_in = settings_in.get("labels") if isinstance(settings_in.get("labels"), dict) else {}
+
+    def as_int(val, default):
+        try:
+            return max(0, int(val))
+        except (TypeError, ValueError):
+            return int(default)
+
+    points = {}
+    for key, default_value in (defaults.get("indicator_points") or {}).items():
+        points[key] = as_int(points_in.get(key, default_value), default_value)
+    thresholds = {
+        "can_be_min": as_int(thresholds_in.get("can_be_min", (defaults.get("thresholds") or {}).get("can_be_min", 1)), 1),
+        "medium_min": as_int(thresholds_in.get("medium_min", (defaults.get("thresholds") or {}).get("medium_min", 2)), 2),
+        "high_min": as_int(thresholds_in.get("high_min", (defaults.get("thresholds") or {}).get("high_min", 4)), 4),
+        "at_risk_min": as_int(thresholds_in.get("at_risk_min", (defaults.get("thresholds") or {}).get("at_risk_min", 2)), 2),
+    }
+    if thresholds["can_be_min"] > thresholds["medium_min"]:
+        thresholds["medium_min"] = thresholds["can_be_min"]
+    if thresholds["medium_min"] > thresholds["high_min"]:
+        thresholds["high_min"] = thresholds["medium_min"]
+    if thresholds["at_risk_min"] < thresholds["medium_min"]:
+        thresholds["at_risk_min"] = thresholds["medium_min"]
+    if thresholds["at_risk_min"] > thresholds["high_min"]:
+        thresholds["at_risk_min"] = thresholds["high_min"]
+    labels = {}
+    for key, default_value in (defaults.get("labels") or {}).items():
+        label = _dash_as_text(labels_in.get(key, default_value))
+        labels[key] = label if label else default_value
+    return {"indicator_points": points, "thresholds": thresholds, "labels": labels}
+
+
+def load_dashboard_risk_settings(db_path: Path):
+    """Load dashboard risk settings from SQLite. Importable for API use."""
+    if not db_path.exists():
+        return _dash_normalize_dashboard_risk_settings({})
+    try:
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        exists = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='dashboard_risk_settings'"
+        ).fetchone()
+        if not exists:
+            conn.close()
+            return _dash_normalize_dashboard_risk_settings({})
+        row = conn.execute("SELECT settings_json FROM dashboard_risk_settings WHERE id=1").fetchone()
+        raw_json = _dash_as_text(row["settings_json"]) if row else ""
+        conn.close()
+        if not raw_json:
+            return _dash_normalize_dashboard_risk_settings({})
+        try:
+            parsed = json.loads(raw_json)
+        except Exception:
+            parsed = {}
+        return _dash_normalize_dashboard_risk_settings(parsed)
+    except Exception:
+        return _dash_normalize_dashboard_risk_settings({})
+
+
+def _dash_is_resolved_status(value):
+    t = _dash_as_text(value).lower().replace("-", " ").replace("_", " ").strip()
+    return bool(t and ("resolved" in t or "done" in t or "closed" in t))
+
+
+def _dash_parse_original_estimate_hours(value):
+    text = _dash_as_text(value)
+    if not text:
+        return 0.0
+    try:
+        n = float(text)
+        if n == n and n > 0:
+            return n
+    except (TypeError, ValueError):
+        pass
+    token_pattern = re.compile(r"(\d+(?:\.\d+)?)\s*([wdhm])", re.IGNORECASE)
+    total = 0.0
+    matched = False
+    for amount_text, unit_text in token_pattern.findall(text):
+        matched = True
+        try:
+            amount = float(amount_text)
+        except ValueError:
+            continue
+        u = unit_text.lower()
+        if u == "w":
+            total += amount * 40.0
+        elif u == "d":
+            total += amount * 8.0
+        elif u == "h":
+            total += amount
+        elif u == "m":
+            total += amount / 60.0
+    return total if matched and total > 0 else 0.0
+
+
+def _dash_parse_json_object(value):
+    text = _dash_as_text(value)
+    if not text:
+        return {}
+    try:
+        parsed = json.loads(text)
+    except Exception:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _dash_parse_planner_hours_from_man_days(value):
+    text = _dash_as_text(value)
+    if not text:
+        return None
+    try:
+        man_days = float(text)
+    except (TypeError, ValueError):
+        return None
+    if man_days != man_days or man_days < 0:
+        return None
+    return round(man_days * 8.0, 4)
+
+
+def _dash_parse_iso_date(value):
+    text = _dash_normalize_date_text(value)
+    if not text:
+        return None
+    try:
+        return datetime.fromisoformat(text).date()
+    except ValueError:
+        return None
+
+
+def _dash_expected_hours_to_date(planned_hours: float, start_text: str, end_text: str, as_of_date):
+    if planned_hours <= 0:
+        return 0.0
+    start_day = _dash_parse_iso_date(start_text)
+    end_day = _dash_parse_iso_date(end_text)
+    if not start_day or not end_day or end_day < start_day:
+        return 0.0
+    if as_of_date < start_day:
+        return 0.0
+    total_days = (end_day - start_day).days + 1
+    elapsed_days = (min(as_of_date, end_day) - start_day).days + 1
+    ratio = max(0.0, min(float(elapsed_days) / float(total_days), 1.0))
+    return round(planned_hours * ratio, 2)
+
+
+def _dash_is_in_progress_status(value):
+    t = _dash_as_text(value).lower().replace("-", " ").replace("_", " ").strip()
+    return bool(t and "in progress" in t)
+
+
+def _dash_risk_level_from_score(score: int, thresholds: dict):
+    safe = max(0, int(score or 0))
+    high_min = int(thresholds.get("high_min", 4))
+    medium_min = int(thresholds.get("medium_min", 2))
+    can_be_min = int(thresholds.get("can_be_min", 1))
+    if safe >= high_min:
+        return "high"
+    if safe >= medium_min:
+        return "medium"
+    if safe >= can_be_min:
+        return "can_be"
+    return "low"
+
+
+def _dash_is_subtask_kind(item: dict):
+    t = _dash_as_text(item.get("issue_type")).lower()
+    return "subtask" in t or "sub-task" in t
+
+
+def _dash_project_from_key(issue_key: str):
+    k = _dash_as_text(issue_key)
+    return k.split("-", 1)[0] if "-" in k else ""
+
+
+def compute_self_risk(item: dict, as_of_date, risk_settings: dict):
+    """Compute self risk score and level on item (mutates item). Importable for API use."""
+    points = risk_settings.get("indicator_points") if isinstance(risk_settings.get("indicator_points"), dict) else {}
+    thresholds = risk_settings.get("thresholds") if isinstance(risk_settings.get("thresholds"), dict) else {}
+    labels = risk_settings.get("labels") if isinstance(risk_settings.get("labels"), dict) else {}
+    point_start = int(points.get("start_passed_not_in_progress", 1))
+    point_due = int(points.get("due_crossed_unresolved", 3))
+    point_sub_late = int(points.get("subtask_late_actual_start", 1))
+    point_sub_lag = int(points.get("subtask_linear_lag", 3))
+    at_risk_min = int(thresholds.get("at_risk_min", 2))
+    status_for_risk = _dash_as_text(item.get("jira_status")) or _dash_as_text(item.get("status"))
+    planned_hours = _dash_parse_original_estimate_hours(item.get("original_estimate"))
+    logged_hours = _dash_as_float(item.get("total_hours_logged"))
+    planned_start_day = _dash_parse_iso_date(item.get("jira_start_date"))
+    planned_end_day = _dash_parse_iso_date(item.get("jira_end_date"))
+    actual_start_day = _dash_parse_iso_date(item.get("actual_start_date"))
+    expected_hours = _dash_expected_hours_to_date(
+        planned_hours, item.get("jira_start_date"), item.get("jira_end_date"), as_of_date
+    )
+    item["planned_hours_numeric"] = round(planned_hours, 2)
+    item["expected_hours_to_date"] = expected_hours
+    item["risk_score_self"] = 0
+    item["risk_score_rollup"] = 0
+    item["risk_score_final"] = 0
+    item["risk_level"] = "low"
+    item["risk_level_label"] = labels.get("low", "Low")
+    item["risk_reasons"] = []
+    item["risk_inherited_from"] = ""
+    item["is_at_risk_self"] = False
+    item["is_at_risk"] = False
+    if _dash_is_resolved_status(status_for_risk):
+        return
+    reasons = []
+    score = 0
+    if planned_start_day and as_of_date > planned_start_day and not _dash_is_in_progress_status(status_for_risk):
+        score += point_start
+        reasons.append(f"+{point_start} Planned start has passed and item is not In Progress.")
+    if planned_end_day and as_of_date > planned_end_day:
+        score += point_due
+        reasons.append(f"+{point_due} Planned end has passed and item is still unresolved.")
+    if _dash_is_subtask_kind(item):
+        if planned_start_day and actual_start_day and actual_start_day > planned_start_day:
+            score += point_sub_late
+            reasons.append(f"+{point_sub_late} Actual start is later than planned start.")
+        if expected_hours > 0 and logged_hours + 1e-6 < expected_hours:
+            score += point_sub_lag
+            reasons.append(
+                f"+{point_sub_lag} Logged hours ({round(logged_hours, 2)}) are below expected effort to date ({round(expected_hours, 2)})."
+            )
+    item["risk_score_self"] = int(score)
+    item["risk_level"] = _dash_risk_level_from_score(score, thresholds)
+    item["risk_level_label"] = labels.get(item["risk_level"], item["risk_level"].replace("_", " ").title())
+    item["risk_reasons"] = reasons
+    item["is_at_risk_self"] = score >= at_risk_min
+
+
+def build_item(row: dict, issue_type_name: str, base_url: str = None):
+    """Build a dashboard item dict from a row. Importable for API use."""
+    base_url = base_url or BASE_URL
+    issue_key = _dash_as_text(row.get("issue_key"))
+    parent_key = _dash_as_text(row.get("parent_issue_key"))
+    status = _dash_as_text(row.get("status"))
+    hours = _dash_as_float(row.get("total_hours_logged"))
+    item = {
+        "issue_key": issue_key,
+        "issue_type": issue_type_name,
+        "summary": _dash_as_text(row.get("summary")),
+        "assignee": _dash_as_text(row.get("assignee")),
+        "project_key": _dash_as_text(row.get("project_key")) or _dash_project_from_key(issue_key),
+        "jira_url": _dash_as_text(row.get("jira_url")) or (f"{base_url}/browse/{issue_key}" if issue_key else ""),
+        "parent_issue_key": parent_key,
+        "epic_key": "",
+        "story_key": "",
+        "jira_start_date": _dash_normalize_date_text(
+            row.get("start_date") or row.get("planned start date") or row.get("planned_start_date")
+        ),
+        "jira_end_date": _dash_normalize_date_text(
+            row.get("end_date") or row.get("planned end date") or row.get("planned_end_date")
+        ),
+        "actual_start_date": _dash_as_text(row.get("actual_start_date")),
+        "actual_end_date": _dash_as_text(row.get("actual_end_date")),
+        "original_estimate": _dash_as_text(row.get("original_estimate")),
+        "total_hours_logged": hours,
+        "latest_ipp_meeting": _dash_as_yes_no(row.get("Latest IPP Meeting", "No")),
+        "jira_ipp_rmi_dates_altered": _dash_as_yes_no(row.get("Jira IPP RMI Dates Altered", "No")),
+        "ipp_actual_date": _dash_normalize_date_text(
+            row.get("IPP Actual Date (Production Date)") or row.get("ipp_actual_date")
+        ),
+        "ipp_remarks": _dash_as_text(row.get("IPP Remarks") or row.get("ipp_remarks")),
+        "ipp_actual_matches_jira_end_date": _dash_as_yes_no(row.get("IPP Actual Date Matches Jira End Date", "No")),
+        "ipp_planned_start_date": _dash_normalize_date_text(
+            row.get("IPP Planned Start Date") or row.get("ipp_planned_start_date")
+        ),
+        "ipp_planned_end_date": _dash_normalize_date_text(
+            row.get("IPP Planned End Date") or row.get("ipp_planned_end_date")
+        ),
+        "jira_status": status,
+        "status": status,
+        "epic_key_legacy": "",
+        "epic_status": "",
+        "subtask_hours_logged_total": 0.0,
+        "planner_has_entry": False,
+        "planner_planned_start_date": "",
+        "planner_planned_end_date": "",
+        "planner_planned_hours": None,
+        "planner_dates_match": "N/A",
+        "planner_hours_match": "N/A",
+        "planner_validation_status": "No Planner Entry",
+        "planner_story_start_date": "",
+        "planner_story_end_date": "",
+        "planner_story_planned_hours": None,
+        "risk_score_self": 0,
+        "risk_score_rollup": 0,
+        "risk_score_final": 0,
+        "risk_level": "low",
+        "risk_level_label": "Low",
+        "risk_reasons": [],
+        "risk_inherited_from": "",
+    }
+    return item
+
+
+def apply_risk_rollup(
+    epics_map: dict,
+    stories_map: dict,
+    subtasks_map: dict,
+    bug_subtasks_map: dict,
+    risk_settings: dict,
+):
+    """Apply risk rollup from subtasks to stories to epics. Mutates items in place. Importable for API use."""
+    points = risk_settings.get("indicator_points") if isinstance(risk_settings.get("indicator_points"), dict) else {}
+    risk_thresholds = risk_settings.get("thresholds") if isinstance(risk_settings.get("thresholds"), dict) else {}
+    risk_labels = risk_settings.get("labels") if isinstance(risk_settings.get("labels"), dict) else {}
+    inherited_child_points = int(points.get("inherited_child_risk", 3))
+    at_risk_min_score = int(risk_thresholds.get("at_risk_min", 2))
+    for subtask in list(subtasks_map.values()) + list(bug_subtasks_map.values()):
+        self_score = int(subtask.get("risk_score_self") or 0)
+        subtask["risk_score_rollup"] = 0
+        subtask["risk_score_final"] = self_score
+        subtask["risk_level"] = _dash_risk_level_from_score(self_score, risk_thresholds)
+        subtask["risk_level_label"] = risk_labels.get(subtask["risk_level"], subtask["risk_level"].replace("_", " ").title())
+        subtask["is_at_risk"] = self_score >= at_risk_min_score
+    subtasks_by_story = defaultdict(list)
+    for subtask in list(subtasks_map.values()) + list(bug_subtasks_map.values()):
+        story_key = _dash_as_text(subtask.get("story_key"))
+        if story_key:
+            subtasks_by_story[story_key].append(subtask)
+    for story in stories_map.values():
+        if _dash_is_resolved_status(_dash_as_text(story.get("jira_status")) or _dash_as_text(story.get("status"))):
+            story["risk_score_rollup"] = 0
+            story["risk_score_final"] = 0
+            story["risk_level"] = "low"
+            story["risk_level_label"] = risk_labels.get("low", "Low")
+            story["risk_inherited_from"] = ""
+            story["is_at_risk"] = False
+            story["risk_reasons"] = []
+            continue
+        children = subtasks_by_story.get(_dash_as_text(story.get("issue_key")), [])
+        strongest_child = max(children, key=lambda c: int(c.get("risk_score_final") or 0)) if children else None
+        rollup_score = int(strongest_child.get("risk_score_final") or 0) if strongest_child else 0
+        score_self = int(story.get("risk_score_self") or 0)
+        reasons = list(story.get("risk_reasons") or [])
+        if strongest_child and bool(strongest_child.get("is_at_risk")):
+            score_self += inherited_child_points
+            reasons.append(f"+{inherited_child_points} Child subtask risk inherited from {_dash_as_text(strongest_child.get('issue_key'))} ({_dash_as_text(strongest_child.get('risk_level_label') or strongest_child.get('risk_level') or 'low')}).")
+            story["risk_inherited_from"] = _dash_as_text(strongest_child.get("issue_key"))
+        else:
+            story["risk_inherited_from"] = ""
+        final_score = max(score_self, rollup_score)
+        if strongest_child and rollup_score > score_self:
+            reasons.append(f"Roll-up used strongest child score: {rollup_score} from {_dash_as_text(strongest_child.get('issue_key'))}.")
+        story["risk_score_self"] = score_self
+        story["risk_score_rollup"] = rollup_score
+        story["risk_score_final"] = final_score
+        story["risk_reasons"] = reasons
+        story["risk_level"] = _dash_risk_level_from_score(final_score, risk_thresholds)
+        story["risk_level_label"] = risk_labels.get(story["risk_level"], story["risk_level"].replace("_", " ").title())
+        story["is_at_risk"] = final_score >= at_risk_min_score
+    stories_by_epic = defaultdict(list)
+    for story in stories_map.values():
+        epic_key = _dash_as_text(story.get("epic_key"))
+        if epic_key:
+            stories_by_epic[epic_key].append(story)
+    for epic in epics_map.values():
+        if _dash_is_resolved_status(_dash_as_text(epic.get("jira_status")) or _dash_as_text(epic.get("status"))):
+            epic["risk_score_rollup"] = 0
+            epic["risk_score_final"] = 0
+            epic["risk_level"] = "low"
+            epic["risk_level_label"] = risk_labels.get("low", "Low")
+            epic["risk_inherited_from"] = ""
+            epic["is_at_risk"] = False
+            epic["risk_reasons"] = []
+            continue
+        children = stories_by_epic.get(_dash_as_text(epic.get("issue_key")), [])
+        strongest_child = max(children, key=lambda c: int(c.get("risk_score_final") or 0)) if children else None
+        rollup_score = int(strongest_child.get("risk_score_final") or 0) if strongest_child else 0
+        score_self = int(epic.get("risk_score_self") or 0)
+        reasons = list(epic.get("risk_reasons") or [])
+        if strongest_child and bool(strongest_child.get("is_at_risk")):
+            score_self += inherited_child_points
+            reasons.append(f"+{inherited_child_points} Child story risk inherited from {_dash_as_text(strongest_child.get('issue_key'))} ({_dash_as_text(strongest_child.get('risk_level_label') or strongest_child.get('risk_level') or 'low')}).")
+            epic["risk_inherited_from"] = _dash_as_text(strongest_child.get("issue_key"))
+        else:
+            epic["risk_inherited_from"] = ""
+        final_score = max(score_self, rollup_score)
+        if strongest_child and rollup_score > score_self:
+            reasons.append(f"Roll-up used strongest child score: {rollup_score} from {_dash_as_text(strongest_child.get('issue_key'))}.")
+        epic["risk_score_self"] = score_self
+        epic["risk_score_rollup"] = rollup_score
+        epic["risk_score_final"] = final_score
+        epic["risk_reasons"] = reasons
+        epic["risk_level"] = _dash_risk_level_from_score(final_score, risk_thresholds)
+        epic["risk_level_label"] = risk_labels.get(epic["risk_level"], epic["risk_level"].replace("_", " ").title())
+        epic["is_at_risk"] = final_score >= at_risk_min_score
 
 
 def _extract_dates_from_planned_cell(text):
@@ -1243,78 +1702,6 @@ def fetch_dashboard_data():
         except (TypeError, ValueError):
             return 0.0
 
-    def normalize_dashboard_risk_settings(raw):
-        defaults = json.loads(json.dumps(DEFAULT_DASHBOARD_RISK_SETTINGS))
-        settings_in = raw if isinstance(raw, dict) else {}
-        points_in = settings_in.get("indicator_points") if isinstance(settings_in.get("indicator_points"), dict) else {}
-        thresholds_in = settings_in.get("thresholds") if isinstance(settings_in.get("thresholds"), dict) else {}
-        labels_in = settings_in.get("labels") if isinstance(settings_in.get("labels"), dict) else {}
-
-        def as_int(value, default_value):
-            try:
-                return max(0, int(value))
-            except (TypeError, ValueError):
-                return int(default_value)
-
-        points = {}
-        for key, default_value in (defaults.get("indicator_points") or {}).items():
-            points[key] = as_int(points_in.get(key, default_value), default_value)
-
-        thresholds = {
-            "can_be_min": as_int(thresholds_in.get("can_be_min", (defaults.get("thresholds") or {}).get("can_be_min", 1)), 1),
-            "medium_min": as_int(thresholds_in.get("medium_min", (defaults.get("thresholds") or {}).get("medium_min", 2)), 2),
-            "high_min": as_int(thresholds_in.get("high_min", (defaults.get("thresholds") or {}).get("high_min", 4)), 4),
-            "at_risk_min": as_int(thresholds_in.get("at_risk_min", (defaults.get("thresholds") or {}).get("at_risk_min", 2)), 2),
-        }
-        if thresholds["can_be_min"] > thresholds["medium_min"]:
-            thresholds["medium_min"] = thresholds["can_be_min"]
-        if thresholds["medium_min"] > thresholds["high_min"]:
-            thresholds["high_min"] = thresholds["medium_min"]
-        if thresholds["at_risk_min"] < thresholds["medium_min"]:
-            thresholds["at_risk_min"] = thresholds["medium_min"]
-        if thresholds["at_risk_min"] > thresholds["high_min"]:
-            thresholds["at_risk_min"] = thresholds["high_min"]
-
-        labels = {}
-        for key, default_value in (defaults.get("labels") or {}).items():
-            label = as_text(labels_in.get(key, default_value))
-            labels[key] = label if label else default_value
-
-        return {
-            "indicator_points": points,
-            "thresholds": thresholds,
-            "labels": labels,
-        }
-
-    def load_dashboard_risk_settings(db_path: Path):
-        if not db_path.exists():
-            return normalize_dashboard_risk_settings({})
-        conn = None
-        try:
-            conn = sqlite3.connect(db_path)
-            conn.row_factory = sqlite3.Row
-            exists = conn.execute(
-                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='dashboard_risk_settings'"
-            ).fetchone()
-            if not exists:
-                return normalize_dashboard_risk_settings({})
-            row = conn.execute(
-                "SELECT settings_json FROM dashboard_risk_settings WHERE id=1"
-            ).fetchone()
-            raw_json = as_text(row["settings_json"]) if row else ""
-            if not raw_json:
-                return normalize_dashboard_risk_settings({})
-            try:
-                parsed = json.loads(raw_json)
-            except Exception:
-                parsed = {}
-            return normalize_dashboard_risk_settings(parsed)
-        except Exception:
-            return normalize_dashboard_risk_settings({})
-        finally:
-            if conn is not None:
-                conn.close()
-
     def is_resolved_status(value):
         status_text = as_text(value).lower().replace("-", " ").replace("_", " ").strip()
         if not status_text:
@@ -1509,148 +1896,6 @@ def fetch_dashboard_data():
         issue_type = as_text(item.get("issue_type")).lower()
         return ("subtask" in issue_type) or ("sub-task" in issue_type)
 
-    def compute_self_risk(item: dict, as_of_date, risk_settings: dict):
-        points = risk_settings.get("indicator_points") if isinstance(risk_settings.get("indicator_points"), dict) else {}
-        thresholds = risk_settings.get("thresholds") if isinstance(risk_settings.get("thresholds"), dict) else {}
-        labels = risk_settings.get("labels") if isinstance(risk_settings.get("labels"), dict) else {}
-        point_start_passed_not_in_progress = int(points.get("start_passed_not_in_progress", 1))
-        point_due_crossed = int(points.get("due_crossed_unresolved", 3))
-        point_subtask_late_start = int(points.get("subtask_late_actual_start", 1))
-        point_subtask_linear_lag = int(points.get("subtask_linear_lag", 3))
-        at_risk_min = int(thresholds.get("at_risk_min", 2))
-        status_for_risk = as_text(item.get("jira_status")) or as_text(item.get("status"))
-        planned_hours = parse_original_estimate_hours(item.get("original_estimate"))
-        logged_hours = as_float(item.get("total_hours_logged"))
-        planned_start_day = parse_iso_date(item.get("jira_start_date"))
-        planned_end_day = parse_iso_date(item.get("jira_end_date"))
-        actual_start_day = parse_iso_date(item.get("actual_start_date"))
-        expected_hours = expected_hours_to_date(
-            planned_hours,
-            item.get("jira_start_date"),
-            item.get("jira_end_date"),
-            as_of_date,
-        )
-
-        item["planned_hours_numeric"] = round(planned_hours, 2)
-        item["expected_hours_to_date"] = expected_hours
-        item["risk_score_self"] = 0
-        item["risk_score_rollup"] = 0
-        item["risk_score_final"] = 0
-        item["risk_level"] = "low"
-        item["risk_level_label"] = labels.get("low", "Low")
-        item["risk_reasons"] = []
-        item["risk_inherited_from"] = ""
-        item["is_at_risk_self"] = False
-        item["is_at_risk"] = False
-
-        if is_resolved_status(status_for_risk):
-            return
-
-        reasons: list[str] = []
-        score = 0
-
-        # Minor: planned start has passed and item is still not in progress.
-        if planned_start_day and as_of_date > planned_start_day and not is_in_progress_status(status_for_risk):
-            score += point_start_passed_not_in_progress
-            reasons.append(f"+{point_start_passed_not_in_progress} Planned start has passed and item is not In Progress.")
-
-        # Major: due date has crossed and item is unresolved.
-        if planned_end_day and as_of_date > planned_end_day:
-            score += point_due_crossed
-            reasons.append(f"+{point_due_crossed} Planned end has passed and item is still unresolved.")
-
-        if is_subtask_kind(item):
-            # Minor: actual start is later than planned start.
-            if planned_start_day and actual_start_day and actual_start_day > planned_start_day:
-                score += point_subtask_late_start
-                reasons.append(f"+{point_subtask_late_start} Actual start is later than planned start.")
-
-            # Major: linear progression effort lag against expected effort to date.
-            if expected_hours > 0 and logged_hours + 1e-6 < expected_hours:
-                score += point_subtask_linear_lag
-                reasons.append(
-                    f"+{point_subtask_linear_lag} Logged hours ({round(logged_hours, 2)}) are below expected effort to date ({round(expected_hours, 2)})."
-                )
-
-        item["risk_score_self"] = int(score)
-        item["risk_level"] = risk_level_from_score(score, thresholds)
-        item["risk_level_label"] = labels.get(item["risk_level"], item["risk_level"].replace("_", " ").title())
-        item["risk_reasons"] = reasons
-        item["is_at_risk_self"] = score >= at_risk_min
-
-    def project_from_key(issue_key: str):
-        key = as_text(issue_key)
-        return key.split("-", 1)[0] if "-" in key else ""
-
-    def build_item(row, issue_type_name: str):
-        issue_key = as_text(row.get("issue_key"))
-        parent_key = as_text(row.get("parent_issue_key"))
-        status = as_text(row.get("status"))
-        hours = as_float(row.get("total_hours_logged"))
-        item = {
-            "issue_key": issue_key,
-            "issue_type": issue_type_name,
-            "summary": as_text(row.get("summary")),
-            "assignee": as_text(row.get("assignee")),
-            "project_key": as_text(row.get("project_key")) or project_from_key(issue_key),
-            "jira_url": as_text(row.get("jira_url")) or (f"{BASE_URL}/browse/{issue_key}" if issue_key else ""),
-            "parent_issue_key": parent_key,
-            "epic_key": "",
-            "story_key": "",
-            "jira_start_date": normalize_date_text(
-                row.get("start_date") or row.get("planned start date") or row.get("planned_start_date")
-            ),
-            "jira_end_date": normalize_date_text(
-                row.get("end_date") or row.get("planned end date") or row.get("planned_end_date")
-            ),
-            "actual_start_date": as_text(row.get("actual_start_date")),
-            "actual_end_date": as_text(row.get("actual_end_date")),
-            "original_estimate": as_text(row.get("original_estimate")),
-            "total_hours_logged": hours,
-            "latest_ipp_meeting": as_yes_no(row.get("Latest IPP Meeting", "No")),
-            "jira_ipp_rmi_dates_altered": as_yes_no(row.get("Jira IPP RMI Dates Altered", "No")),
-            "ipp_actual_date": normalize_date_text(
-                row.get("IPP Actual Date (Production Date)") or row.get("ipp_actual_date")
-            ),
-            "ipp_remarks": as_text(row.get("IPP Remarks") or row.get("ipp_remarks")),
-            "ipp_actual_matches_jira_end_date": as_yes_no(
-                row.get("IPP Actual Date Matches Jira End Date", "No")
-            ),
-            "ipp_planned_start_date": normalize_date_text(
-                row.get("IPP Planned Start Date") or row.get("ipp_planned_start_date")
-            ),
-            "ipp_planned_end_date": normalize_date_text(
-                row.get("IPP Planned End Date") or row.get("ipp_planned_end_date")
-            ),
-            "jira_status": status,
-            "status": status,
-            # Compatibility aliases for existing UI fields.
-            "epic_key_legacy": "",
-            "epic_status": "",
-            "subtask_hours_logged_total": 0.0,
-            # Epics Planner validation fields.
-            "planner_has_entry": False,
-            "planner_planned_start_date": "",
-            "planner_planned_end_date": "",
-            "planner_planned_hours": None,
-            "planner_dates_match": "N/A",
-            "planner_hours_match": "N/A",
-            "planner_validation_status": "No Planner Entry",
-            # Story planner sync fields (from epics_management_story_sync).
-            "planner_story_start_date": "",
-            "planner_story_end_date": "",
-            "planner_story_planned_hours": None,
-            # Risk-scoring fields.
-            "risk_score_self": 0,
-            "risk_score_rollup": 0,
-            "risk_score_final": 0,
-            "risk_level": "low",
-            "risk_level_label": "Low",
-            "risk_reasons": [],
-            "risk_inherited_from": "",
-        }
-        return item
-
     rows1 = read_rows(resolve_path("JIRA_EXPORT_XLSX_PATH", "1_jira_work_items_export.xlsx"))
     rows2 = read_rows(resolve_path("JIRA_WORKLOG_XLSX_PATH", "2_jira_subtask_worklogs.xlsx"))
     rows3 = read_rows(resolve_path("JIRA_SUBTASK_ROLLUP_XLSX_PATH", "3_jira_subtask_worklog_rollup.xlsx"))
@@ -1825,120 +2070,7 @@ def fetch_dashboard_data():
         item["planner_hours_match"] = hours_match
         item["planner_validation_status"] = planner_status
 
-    risk_points = risk_settings.get("indicator_points") if isinstance(risk_settings.get("indicator_points"), dict) else {}
-    risk_thresholds = risk_settings.get("thresholds") if isinstance(risk_settings.get("thresholds"), dict) else {}
-    risk_labels = risk_settings.get("labels") if isinstance(risk_settings.get("labels"), dict) else {}
-    inherited_child_points = int(risk_points.get("inherited_child_risk", 3))
-    at_risk_min_score = int(risk_thresholds.get("at_risk_min", 2))
-
-    # Finalize subtask/bug-subtask risk directly from self score.
-    for subtask in list(subtasks_map.values()) + list(bug_subtasks_map.values()):
-        self_score = int(subtask.get("risk_score_self") or 0)
-        subtask["risk_score_rollup"] = 0
-        subtask["risk_score_final"] = self_score
-        subtask["risk_level"] = risk_level_from_score(self_score, risk_thresholds)
-        subtask["risk_level_label"] = risk_labels.get(subtask["risk_level"], subtask["risk_level"].replace("_", " ").title())
-        subtask["is_at_risk"] = self_score >= at_risk_min_score
-
-    # Story roll-up from subtasks.
-    subtasks_by_story: dict[str, list[dict]] = defaultdict(list)
-    for subtask in list(subtasks_map.values()) + list(bug_subtasks_map.values()):
-        story_key = as_text(subtask.get("story_key"))
-        if story_key:
-            subtasks_by_story[story_key].append(subtask)
-
-    for story in stories_map.values():
-        status_for_risk = as_text(story.get("jira_status")) or as_text(story.get("status"))
-        if is_resolved_status(status_for_risk):
-            story["risk_score_rollup"] = 0
-            story["risk_score_final"] = 0
-            story["risk_level"] = "low"
-            story["risk_level_label"] = risk_labels.get("low", "Low")
-            story["risk_inherited_from"] = ""
-            story["is_at_risk"] = False
-            story["risk_reasons"] = []
-            continue
-
-        children = subtasks_by_story.get(as_text(story.get("issue_key")), [])
-        strongest_child = None
-        if children:
-            strongest_child = max(children, key=lambda child: int(child.get("risk_score_final") or 0))
-        rollup_score = int(strongest_child.get("risk_score_final") or 0) if strongest_child else 0
-
-        score_self = int(story.get("risk_score_self") or 0)
-        reasons = list(story.get("risk_reasons") or [])
-        if strongest_child and bool(strongest_child.get("is_at_risk")):
-            score_self += inherited_child_points
-            child_key = as_text(strongest_child.get("issue_key"))
-            child_level_label = as_text(strongest_child.get("risk_level_label") or strongest_child.get("risk_level") or "low")
-            reasons.append(f"+{inherited_child_points} Child subtask risk inherited from {child_key} ({child_level_label}).")
-            story["risk_inherited_from"] = child_key
-        else:
-            story["risk_inherited_from"] = ""
-
-        final_score = max(score_self, rollup_score)
-        if strongest_child and rollup_score > score_self:
-            reasons.append(
-                f"Roll-up used strongest child score: {rollup_score} from {as_text(strongest_child.get('issue_key'))}."
-            )
-
-        story["risk_score_self"] = score_self
-        story["risk_score_rollup"] = rollup_score
-        story["risk_score_final"] = final_score
-        story["risk_reasons"] = reasons
-        story["risk_level"] = risk_level_from_score(final_score, risk_thresholds)
-        story["risk_level_label"] = risk_labels.get(story["risk_level"], story["risk_level"].replace("_", " ").title())
-        story["is_at_risk"] = final_score >= at_risk_min_score
-
-    # Epic roll-up from stories.
-    stories_by_epic: dict[str, list[dict]] = defaultdict(list)
-    for story in stories_map.values():
-        epic_key = as_text(story.get("epic_key"))
-        if epic_key:
-            stories_by_epic[epic_key].append(story)
-
-    for epic in epics_map.values():
-        status_for_risk = as_text(epic.get("jira_status")) or as_text(epic.get("status"))
-        if is_resolved_status(status_for_risk):
-            epic["risk_score_rollup"] = 0
-            epic["risk_score_final"] = 0
-            epic["risk_level"] = "low"
-            epic["risk_level_label"] = risk_labels.get("low", "Low")
-            epic["risk_inherited_from"] = ""
-            epic["is_at_risk"] = False
-            epic["risk_reasons"] = []
-            continue
-
-        children = stories_by_epic.get(as_text(epic.get("issue_key")), [])
-        strongest_child = None
-        if children:
-            strongest_child = max(children, key=lambda child: int(child.get("risk_score_final") or 0))
-        rollup_score = int(strongest_child.get("risk_score_final") or 0) if strongest_child else 0
-
-        score_self = int(epic.get("risk_score_self") or 0)
-        reasons = list(epic.get("risk_reasons") or [])
-        if strongest_child and bool(strongest_child.get("is_at_risk")):
-            score_self += inherited_child_points
-            child_key = as_text(strongest_child.get("issue_key"))
-            child_level_label = as_text(strongest_child.get("risk_level_label") or strongest_child.get("risk_level") or "low")
-            reasons.append(f"+{inherited_child_points} Child story risk inherited from {child_key} ({child_level_label}).")
-            epic["risk_inherited_from"] = child_key
-        else:
-            epic["risk_inherited_from"] = ""
-
-        final_score = max(score_self, rollup_score)
-        if strongest_child and rollup_score > score_self:
-            reasons.append(
-                f"Roll-up used strongest child score: {rollup_score} from {as_text(strongest_child.get('issue_key'))}."
-            )
-
-        epic["risk_score_self"] = score_self
-        epic["risk_score_rollup"] = rollup_score
-        epic["risk_score_final"] = final_score
-        epic["risk_reasons"] = reasons
-        epic["risk_level"] = risk_level_from_score(final_score, risk_thresholds)
-        epic["risk_level_label"] = risk_labels.get(epic["risk_level"], epic["risk_level"].replace("_", " ").title())
-        epic["is_at_risk"] = final_score >= at_risk_min_score
+    apply_risk_rollup(epics_map, stories_map, subtasks_map, bug_subtasks_map, risk_settings)
 
     epics = sorted(epics_map.values(), key=lambda x: (x.get("project_key", ""), x.get("issue_key", "")))
     stories = sorted(stories_map.values(), key=lambda x: (x.get("project_key", ""), x.get("issue_key", "")))

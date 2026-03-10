@@ -47,6 +47,12 @@ from jira_incremental_cache import (
     utc_now_iso,
 )
 from jira_client import BASE_URL, extract_jira_key_from_url, get_session
+from jira_export_db import connect as export_db_connect
+from jira_export_db import ensure_schema as ensure_exports_schema
+from jira_export_db import has_subtask_worklogs
+from jira_export_db import read_worklogs_actual_dates
+from jira_export_db import record_export_run
+from jira_export_db import write_work_items as write_work_items_db
 
 DEFAULT_PROJECT_KEYS = ["DIGITALLOG", "FF", "O2", "ODL", "MN"]
 DEFAULT_OUTPUT = "1_jira_work_items_export.xlsx"
@@ -1033,13 +1039,22 @@ def main() -> None:
             )
         )
     print(f"Jira epic planned-date keys loaded: {len(jira_epic_dates)}")
+
+    # Primary: load actual dates from exports DB; fallback to worklogs xlsx
+    export_conn = export_db_connect()
+    ensure_exports_schema(export_conn)
     worklog_path_value = os.getenv("JIRA_WORKLOG_XLSX_PATH", "2_jira_subtask_worklogs.xlsx").strip() or "2_jira_subtask_worklogs.xlsx"
     worklog_path = Path(worklog_path_value)
     if not worklog_path.is_absolute():
         worklog_path = Path(__file__).resolve().parent / worklog_path
-    subtask_actual_dates, story_actual_dates, epic_actual_dates = _load_actual_dates_from_worklogs(worklog_path)
+    if has_subtask_worklogs(export_conn):
+        subtask_actual_dates, story_actual_dates, epic_actual_dates = read_worklogs_actual_dates(export_conn)
+        print("Actual date rollups loaded from DB")
+    else:
+        subtask_actual_dates, story_actual_dates, epic_actual_dates = _load_actual_dates_from_worklogs(worklog_path)
+        print("Actual date rollups loaded from worklogs xlsx")
     print(
-        "Actual date rollups loaded from worklogs: "
+        "Actual date rollups: "
         f"subtasks={len(subtask_actual_dates)}, stories={len(story_actual_dates)}, epics={len(epic_actual_dates)}"
     )
 
@@ -1063,6 +1078,23 @@ def main() -> None:
     if not output_path.is_absolute():
         output_path = Path(__file__).resolve().parent / output_path
 
+    # Primary: write to exports DB
+    write_work_items_db(export_conn, rows)
+    run_ended = datetime.now(timezone.utc)
+    run_ended_iso = run_ended.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    run_started_iso = run_started.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    record_export_run(
+        export_conn,
+        "work_items",
+        len(rows),
+        status="success",
+        run_id=run_id,
+        started_at_utc=run_started_iso,
+        finished_at_utc=run_ended_iso,
+    )
+    export_conn.close()
+
+    # Secondary: write xlsx
     _write_excel(rows, output_path)
     generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     print(f"Export written: {output_path}")

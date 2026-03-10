@@ -129,6 +129,102 @@
         .card-count-chip.epic { border-color: #93c5fd; background: #eff6ff; color: #1d4ed8; }
         .card-count-chip.story { border-color: #a7f3d0; background: #ecfdf5; color: #047857; }
         .card-actions { display: flex; align-items: flex-start; justify-content: flex-end; gap: .4rem; }
+        .card-refresh-btn { background: none; border: none; cursor: pointer; padding: .2rem; display: inline-flex; align-items: center; justify-content: center; color: inherit; }
+        .card-refresh-btn:hover { opacity: .85; }
+        .card-refresh-btn:disabled { cursor: not-allowed; opacity: .7; }
+        .card-refresh-btn .material-symbols-outlined.spinning { animation: card-refresh-spin 0.8s linear infinite; }
+        @keyframes card-refresh-spin { to { transform: rotate(360deg); } }
+        .dashboard-refresh-panel { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
+        .dashboard-refresh-dropdown { position: relative; }
+        .dashboard-refresh-dropdown .header-toggle { display: inline-flex; align-items: center; }
+        .dashboard-refresh-dropdown-menu { position: absolute; top: 100%; left: 0; margin-top: .2rem; min-width: 10rem; background: #fff; border: 1px solid #e5e7eb; border-radius: .5rem; box-shadow: 0 4px 12px rgba(0,0,0,.1); z-index: 100; display: none; }
+        .dashboard-refresh-dropdown.open .dashboard-refresh-dropdown-menu { display: block; }
+        .dashboard-refresh-dropdown-menu button { display: block; width: 100%; text-align: left; padding: .4rem .75rem; border: none; background: none; cursor: pointer; font-size: .875rem; }
+        .dashboard-refresh-dropdown-menu button:hover { background: #f3f4f6; }
+        .dashboard-refresh-progress-wrap {
+            margin-top: .5rem; padding: 0; display: none;
+            background: linear-gradient(135deg, #f0f7ff 0%, #e8f4f8 100%);
+            border: 1px solid #bfdbfe; border-radius: .75rem;
+            overflow: hidden; transition: all .25s ease;
+        }
+        .dashboard-refresh-progress-wrap.active { display: block; }
+        .dashboard-refresh-progress-inner { padding: .65rem .85rem .55rem; }
+        .dashboard-refresh-step-row {
+            display: flex; align-items: center; justify-content: space-between;
+            gap: .5rem; margin-bottom: .4rem;
+        }
+        .dashboard-refresh-step-name {
+            font-size: .82rem; font-weight: 700; color: #1e40af;
+            display: flex; align-items: center; gap: .35rem;
+        }
+        .dashboard-refresh-step-name .spinner-dot {
+            display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+            background: #2563eb; animation: refresh-pulse 1s ease-in-out infinite alternate;
+        }
+        @keyframes refresh-pulse { from { opacity: .35; transform: scale(.8); } to { opacity: 1; transform: scale(1.2); } }
+        .dashboard-refresh-step-counter {
+            font-size: .75rem; font-weight: 600; color: #475569;
+            font-variant-numeric: tabular-nums;
+        }
+        .dashboard-refresh-progress-bar {
+            height: 6px; background: #cbd5e1; border-radius: 3px; overflow: hidden;
+            position: relative;
+        }
+        .dashboard-refresh-progress-bar .fill {
+            height: 100%; border-radius: 3px;
+            background: linear-gradient(90deg, #3b82f6 0%, #2563eb 50%, #1d4ed8 100%);
+            transition: width .3s ease; position: relative;
+        }
+        .dashboard-refresh-progress-bar .fill.indeterminate {
+            width: 30% !important;
+            animation: refresh-indeterminate 1.4s ease-in-out infinite;
+        }
+        @keyframes refresh-indeterminate {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(400%); }
+        }
+        .dashboard-refresh-detail-row {
+            display: flex; align-items: center; gap: .35rem;
+            margin-top: .35rem; min-height: 1.1rem;
+        }
+        .dashboard-refresh-current-label {
+            font-size: .75rem; color: #64748b; white-space: nowrap;
+            overflow: hidden; text-overflow: ellipsis; max-width: 100%;
+            font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+        }
+        .dashboard-refresh-pct {
+            font-size: .72rem; font-weight: 700; color: #1e40af;
+            margin-left: auto; white-space: nowrap; flex-shrink: 0;
+        }
+        .dashboard-refresh-resume-banner {
+            margin-top: .5rem; padding: .55rem .85rem;
+            background: #fffbeb; border: 1px solid #fbbf24; border-radius: .75rem;
+            display: none; font-size: .82rem; color: #92400e;
+            align-items: center; gap: .5rem; flex-wrap: wrap;
+        }
+        .dashboard-refresh-resume-banner.visible { display: flex; }
+        .dashboard-refresh-resume-banner button {
+            padding: .25rem .6rem; cursor: pointer; border-radius: .4rem;
+            font-size: .78rem; font-weight: 600; border: 1px solid transparent;
+        }
+        .dashboard-refresh-resume-banner .resume-btn { background: #f59e0b; color: #fff; border-color: #d97706; }
+        .dashboard-refresh-resume-banner .resume-btn:hover { background: #d97706; }
+        .dashboard-refresh-resume-banner .fresh-btn { background: #fff; color: #92400e; border-color: #d97706; }
+        .dashboard-refresh-resume-banner .fresh-btn:hover { background: #fef3c7; }
+        html[data-theme="dark"] .dashboard-refresh-progress-wrap {
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            border-color: #334155;
+        }
+        html[data-theme="dark"] .dashboard-refresh-step-name { color: #93c5fd; }
+        html[data-theme="dark"] .dashboard-refresh-step-counter { color: #94a3b8; }
+        html[data-theme="dark"] .dashboard-refresh-progress-bar { background: #334155; }
+        html[data-theme="dark"] .dashboard-refresh-current-label { color: #94a3b8; }
+        html[data-theme="dark"] .dashboard-refresh-pct { color: #93c5fd; }
+        html[data-theme="dark"] .dashboard-refresh-dropdown-menu { background: #1f2937; border-color: #374151; }
+        html[data-theme="dark"] .dashboard-refresh-dropdown-menu button:hover { background: #374151; }
+        html[data-theme="dark"] .dashboard-refresh-resume-banner {
+            background: #422006; border-color: #92400e; color: #fbbf24;
+        }
         .card-copy-btn { display: inline-flex; align-items: center; justify-content: center; width: 1.9rem; height: 1.9rem; border-radius: 6px; border: 1px solid #cbd5e1; background: #fff; color: #334155; font-size: .88rem; cursor: pointer; }
         .card-copy-btn:hover { background: #f1f5f9; border-color: #93c5fd; color: #1d4ed8; }
         .card-copy-btn.copied { border-color: #86efac; background: #ecfdf5; color: #166534; }
@@ -362,12 +458,43 @@
     <div class="header" id="dashboard-header">
         <div class="header-toolbar">
             <div class="header-toolbar-left">
+                <div id="dashboard-refresh-panel" class="dashboard-refresh-panel">
+                    <div id="dashboard-refresh-dropdown" class="dashboard-refresh-dropdown">
+                        <button type="button" class="header-toggle" id="dashboard-refresh-trigger" aria-haspopup="true" aria-expanded="false"><span class="material-symbols-outlined" aria-hidden="true">refresh</span>Refresh</button>
+                        <div class="dashboard-refresh-dropdown-menu" role="menu" aria-label="Refresh options">
+                            <button type="button" role="menuitem" data-mode="full">Full Refresh</button>
+                            <button type="button" role="menuitem" data-mode="smart">Smart Refresh (Incremental)</button>
+                        </div>
+                    </div>
+                    <button type="button" class="header-toggle" id="dashboard-refresh-cancel" style="display:none;">Cancel</button>
+                </div>
             </div>
             <div class="header-toolbar-right">
                 <button id="theme-toggle" class="header-toggle" type="button" aria-label="Toggle dark mode"><span class="material-icons-outlined" aria-hidden="true">dark_mode</span>Dark mode</button>
                 <button id="remove-filters-btn" class="header-toggle" type="button" aria-label="Remove all filters">remove filters</button>
                 <button id="header-toggle" class="header-toggle" type="button" aria-expanded="true" aria-controls="header-content">Collapse header</button>
             </div>
+        </div>
+        <div id="dashboard-refresh-progress-wrap" class="dashboard-refresh-progress-wrap">
+            <div class="dashboard-refresh-progress-inner">
+                <div class="dashboard-refresh-step-row">
+                    <span class="dashboard-refresh-step-name" id="dashboard-refresh-step-name">
+                        <span class="spinner-dot"></span>
+                        <span id="dashboard-refresh-step-text"></span>
+                    </span>
+                    <span class="dashboard-refresh-step-counter" id="dashboard-refresh-step-counter"></span>
+                </div>
+                <div class="dashboard-refresh-progress-bar"><div class="fill" id="dashboard-refresh-progress-fill" style="width:0%"></div></div>
+                <div class="dashboard-refresh-detail-row">
+                    <span class="dashboard-refresh-current-label" id="dashboard-refresh-current-label"></span>
+                    <span class="dashboard-refresh-pct" id="dashboard-refresh-pct"></span>
+                </div>
+            </div>
+        </div>
+        <div id="dashboard-refresh-resume-banner" class="dashboard-refresh-resume-banner">
+            <span id="dashboard-refresh-resume-text" style="flex:1;"></span>
+            <button type="button" class="resume-btn" id="dashboard-refresh-resume-btn">Resume</button>
+            <button type="button" class="fresh-btn" id="dashboard-refresh-start-fresh-btn">Start Fresh</button>
         </div>
         <div class="header-grid" id="header-content">
             <div class="header-main">
@@ -1531,7 +1658,10 @@ function renderWorkItemCard(item, kind, isSelected) {
     const selectable = kind === 'epic' || kind === 'story';
     const kindLabel = kind === 'bug_subtask' ? 'BUG SUBTASK' : kind.toUpperCase();
     let html = `<div class="card ${getStatusClass(status)}${isSelected ? ' card-selected' : ''}${selectable ? ' card-selectable' : ''}" data-kind="${kind}" data-issue-key="${escapeHtml(key)}" ${selectable ? 'tabindex="0" role="button"' : ''}>`;
-    html += `<div class="card-header"><div><div class="card-type">${escapeHtml(kindLabel)}</div><div class="card-title-row"><p class="card-title">${escapeHtml(asText(item.summary) || '-')}</p>${countChip}</div></div><div class="card-actions"><button type="button" class="card-copy-btn" data-copy-kind="${escapeHtml(kind)}" data-copy-key="${escapeHtml(key)}" title="Copy as Markdown" aria-label="Copy ${escapeHtml(kind)} ${escapeHtml(key)} as Markdown">&#128203;</button><a href="${escapeHtml(asText(item.jira_url))}" target="_blank" class="card-link-label">JIRA Link</a></div></div>`;
+    const refreshBtn = kind === 'epic'
+        ? `<button type="button" class="card-refresh-btn" data-epic-key="${escapeHtml(key)}" title="Refresh this epic from Jira" aria-label="Refresh epic ${escapeHtml(key)} from Jira"><span class="material-symbols-outlined">refresh</span></button>`
+        : '';
+    html += `<div class="card-header"><div><div class="card-type">${escapeHtml(kindLabel)}</div><div class="card-title-row"><p class="card-title">${escapeHtml(asText(item.summary) || '-')}</p>${countChip}</div></div><div class="card-actions">${refreshBtn}<button type="button" class="card-copy-btn" data-copy-kind="${escapeHtml(kind)}" data-copy-key="${escapeHtml(key)}" title="Copy as Markdown" aria-label="Copy ${escapeHtml(kind)} ${escapeHtml(key)} as Markdown">&#128203;</button><a href="${escapeHtml(asText(item.jira_url))}" target="_blank" class="card-link-label">JIRA Link</a></div></div>`;
     let metaTop = `<div class="meta-line"><strong>Status:</strong> ${escapeHtml(status)}</div>`;
     metaTop += `<div class="meta-line"><strong>Assignee:</strong> <span class="assignee-chip${missingAssignee ? ' missing' : ''}">${escapeHtml(assigneeLabel(assigneeValue))}</span></div>`;
     html += `<div class="meta-lines">${metaTop}<table class="dates-table"><thead><tr><th>Dates</th><th>Start</th><th>End</th><th>Man-days</th></tr></thead><tbody>${plannedScheduleRow}${plannerScheduleRow}<tr><td>Actual</td><td>${escapeHtml(formatDateDisplay(item.actual_start_date))}</td><td>${escapeHtml(formatDateDisplay(item.actual_end_date))}</td><td>${escapeHtml(formatDayValue(actualDays))}</td></tr></tbody></table></div>`;
@@ -1609,6 +1739,54 @@ function attachCopyHandlers() {
             const markdown = buildCardMarkdown(item, kind);
             const copied = await copyText(markdown);
             markCopyButtonState(button, copied);
+        });
+    });
+}
+function attachRefreshHandlers() {
+    document.querySelectorAll('.card-refresh-btn').forEach(button => {
+        button.addEventListener('click', async (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            const epicKey = asText(button.getAttribute('data-epic-key'));
+            if (!epicKey) return;
+            const icon = button.querySelector('.material-symbols-outlined');
+            button.disabled = true;
+            if (icon) icon.classList.add('spinning');
+            const fromDate = monthStart(selectedDateFromMonth);
+            const toDate = monthEnd(selectedDateToMonth);
+            const formatYmd = (d) => d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` : '';
+            const body = { from: formatYmd(fromDate), to: formatYmd(toDate) };
+            try {
+                const res = await fetch(`/api/dashboard/refresh-epic/${encodeURIComponent(epicKey)}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                    const msg = data.error || `Refresh failed (${res.status})`;
+                    if (typeof alert !== 'undefined') alert(msg); else console.error(msg);
+                    return;
+                }
+                if (!data.ok) {
+                    const msg = data.error || 'Refresh failed';
+                    if (typeof alert !== 'undefined') alert(msg); else console.error(msg);
+                    return;
+                }
+                const mergeItem = (arr, newItem, keyField) => {
+                    const k = asKey(newItem);
+                    const idx = arr.findIndex((x) => asKey(x) === k);
+                    if (idx >= 0) arr[idx] = newItem; else arr.push(newItem);
+                };
+                if (data.epic) mergeItem(allEpics, data.epic, 'issue_key');
+                (data.stories || []).forEach((s) => mergeItem(allStories, s, 'issue_key'));
+                (data.subtasks || []).forEach((t) => mergeItem(allSubtasks, t, 'issue_key'));
+                (data.bug_subtasks || []).forEach((t) => mergeItem(allBugSubtasks, t, 'issue_key'));
+                renderAll();
+            } finally {
+                button.disabled = false;
+                if (icon) icon.classList.remove('spinning');
+            }
         });
     });
 }
@@ -1719,6 +1897,7 @@ function renderAll() {
     renderGantt(selectedEpic);
     attachSelectionHandlers();
     attachCopyHandlers();
+    attachRefreshHandlers();
 }
 
 renderProjectFilters();
@@ -1727,6 +1906,218 @@ initializeStatusFilterDropdowns();
 initializeRiskFilterDropdowns();
 initializeThemeToggle();
 initializeHeaderToggle();
+
+(function initializeDashboardRefreshPanel() {
+    const progressWrap = document.getElementById('dashboard-refresh-progress-wrap');
+    const progressFill = document.getElementById('dashboard-refresh-progress-fill');
+    const stepTextEl = document.getElementById('dashboard-refresh-step-text');
+    const counterEl = document.getElementById('dashboard-refresh-step-counter');
+    const currentLabelEl = document.getElementById('dashboard-refresh-current-label');
+    const pctEl = document.getElementById('dashboard-refresh-pct');
+    const cancelBtn = document.getElementById('dashboard-refresh-cancel');
+    const dropdown = document.getElementById('dashboard-refresh-dropdown');
+    const trigger = document.getElementById('dashboard-refresh-trigger');
+    const resumeBanner = document.getElementById('dashboard-refresh-resume-banner');
+    const resumeText = document.getElementById('dashboard-refresh-resume-text');
+    const resumeBtn = document.getElementById('dashboard-refresh-resume-btn');
+    const startFreshBtn = document.getElementById('dashboard-refresh-start-fresh-btn');
+
+    const STEP_LABELS = {
+        export_worklogs: 'Exporting worklogs',
+        export_work_items: 'Exporting work items',
+        export_rollup: 'Building worklog rollup',
+        export_nested_view: 'Building nested view',
+        generate_dashboard: 'Generating dashboard',
+        sync_report_html: 'Syncing report files',
+        done: 'Complete',
+    };
+
+    let pollTimer = null;
+
+    function _formatElapsed(ms) {
+        const secs = Math.floor(ms / 1000);
+        if (secs < 60) return secs + 's';
+        const mins = Math.floor(secs / 60);
+        const remSecs = secs % 60;
+        if (mins < 60) return mins + 'm ' + (remSecs > 0 ? remSecs + 's' : '');
+        const hrs = Math.floor(mins / 60);
+        const remMins = mins % 60;
+        return hrs + 'h ' + (remMins > 0 ? remMins + 'm' : '');
+    }
+
+    function setProgress(data) {
+        const step = data.step || '';
+        const pct = data.pct || 0;
+        const total = data.total || 0;
+        const done = data.done || 0;
+        const label = data.label || '';
+        const startedAt = data.started_at_utc || '';
+        const active = !!step || pct > 0;
+
+        if (progressWrap) progressWrap.classList.toggle('active', active);
+        if (!active) return;
+
+        if (stepTextEl) stepTextEl.textContent = STEP_LABELS[step] || step || 'Starting...';
+
+        if (counterEl) {
+            let counterText = '';
+            if (total > 0) counterText = `${done.toLocaleString()} / ${total.toLocaleString()}`;
+            if (startedAt) {
+                const elapsed = Date.now() - new Date(startedAt + (startedAt.endsWith('Z') ? '' : 'Z')).getTime();
+                if (elapsed > 0) counterText += (counterText ? '  \u00B7  ' : '') + _formatElapsed(elapsed);
+            }
+            counterEl.textContent = counterText;
+        }
+
+        if (progressFill) {
+            const hasPct = pct > 0;
+            progressFill.classList.toggle('indeterminate', !hasPct && active);
+            if (hasPct) progressFill.style.width = pct + '%';
+        }
+
+        if (currentLabelEl) currentLabelEl.textContent = label || '';
+        if (pctEl) pctEl.textContent = pct > 0 ? pct + '%' : '';
+    }
+
+    function clearProgress() {
+        if (progressWrap) progressWrap.classList.remove('active');
+        if (progressFill) { progressFill.style.width = '0%'; progressFill.classList.remove('indeterminate'); }
+        if (stepTextEl) stepTextEl.textContent = '';
+        if (counterEl) counterEl.textContent = '';
+        if (currentLabelEl) currentLabelEl.textContent = '';
+        if (pctEl) pctEl.textContent = '';
+    }
+
+    function setCancelVisible(visible) {
+        if (cancelBtn) cancelBtn.style.display = visible ? 'inline-flex' : 'none';
+    }
+
+    function stopPolling() {
+        if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
+        setCancelVisible(false);
+    }
+
+    function showError(msg) {
+        clearProgress();
+        if (progressWrap) progressWrap.classList.add('active');
+        if (stepTextEl) stepTextEl.textContent = 'Error';
+        if (currentLabelEl) { currentLabelEl.textContent = msg || 'Unknown error'; currentLabelEl.style.color = '#dc2626'; }
+        if (progressFill) { progressFill.style.width = '100%'; progressFill.style.background = '#fca5a5'; }
+        setTimeout(() => {
+            clearProgress();
+            if (currentLabelEl) currentLabelEl.style.color = '';
+            if (progressFill) progressFill.style.background = '';
+        }, 8000);
+    }
+
+    function pollRun(runId) {
+        if (!runId) return;
+        fetch(`/api/dashboard/refresh/${encodeURIComponent(runId)}`)
+            .then((r) => r.json())
+            .then((data) => {
+                const status = data.status || '';
+                setProgress({
+                    step: data.progress_step, pct: data.progress_pct,
+                    total: data.progress_total, done: data.progress_done,
+                    label: data.progress_current_label,
+                    started_at_utc: data.started_at_utc,
+                });
+                if (status === 'success') {
+                    stopPolling();
+                    setProgress({ step: 'done', pct: 100, label: 'Reloading page...' });
+                    setTimeout(() => window.location.reload(), 600);
+                    return;
+                }
+                if (['failed', 'canceled', 'interrupted'].includes(status)) {
+                    stopPolling();
+                    showError(data.error_message || status);
+                    return;
+                }
+                pollTimer = setTimeout(() => pollRun(runId), 1200);
+            })
+            .catch(() => { pollTimer = setTimeout(() => pollRun(runId), 1200); });
+    }
+
+    function startRefresh(mode, resume) {
+        if (resumeBanner) resumeBanner.classList.remove('visible');
+        fetch('/api/dashboard/refresh', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mode: mode || 'full', resume: !!resume }),
+        })
+            .then(async (r) => {
+                const text = await r.text();
+                let data;
+                try { data = text ? JSON.parse(text) : {}; }
+                catch (e) { throw new Error('Server returned a non-JSON response. Open the dashboard from the URL the report server prints on startup.'); }
+                return { ok: r.ok, status: r.status, data };
+            })
+            .then(({ ok, status, data }) => {
+                if (status === 409) { alert(data?.error || 'Another refresh is already running.'); return; }
+                if (!ok || !data?.run_id) { alert(data?.error || 'Failed to start refresh.'); return; }
+                setCancelVisible(true);
+                setProgress({ step: 'starting', pct: 0, label: 'Initializing pipeline...' });
+                pollRun(data.run_id);
+            })
+            .catch((e) => { alert('Failed to start refresh: ' + e.message); });
+    }
+
+    if (dropdown && trigger) {
+        trigger.addEventListener('click', (e) => {
+            e.stopPropagation();
+            dropdown.classList.toggle('open');
+            trigger.setAttribute('aria-expanded', dropdown.classList.contains('open'));
+        });
+        document.addEventListener('click', () => {
+            dropdown.classList.remove('open');
+            trigger.setAttribute('aria-expanded', 'false');
+        });
+        dropdown.querySelectorAll('.dashboard-refresh-dropdown-menu button[data-mode]').forEach((btn) => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                dropdown.classList.remove('open');
+                startRefresh(btn.getAttribute('data-mode'), false);
+            });
+        });
+    }
+
+    if (cancelBtn) {
+        cancelBtn.addEventListener('click', () => {
+            fetch('/api/dashboard/cancel', { method: 'POST' }).catch(() => {});
+        });
+    }
+
+    function loadCurrentAndLast() {
+        Promise.all([
+            fetch('/api/dashboard/refresh/current').then((r) => r.json()),
+            fetch('/api/dashboard/refresh/last').then((r) => r.json()),
+        ]).then(([currentRes, lastRes]) => {
+            const activeId = currentRes.active_run_id || null;
+            const last = lastRes.last_run;
+            if (activeId) {
+                setCancelVisible(true);
+                setProgress({
+                    step: currentRes.progress_step || 'running',
+                    pct: currentRes.progress_pct || 0,
+                    total: currentRes.progress_total || 0,
+                    done: currentRes.progress_done || 0,
+                    label: currentRes.progress_current_label || '',
+                    started_at_utc: currentRes.started_at_utc || '',
+                });
+                pollRun(activeId);
+            }
+            if (last && ['failed', 'interrupted', 'canceled'].includes(last.status)) {
+                if (resumeBanner) resumeBanner.classList.add('visible');
+                if (resumeText) resumeText.textContent = `Previous run ${last.status} at step \u201c${last.progress_step || 'unknown'}\u201d.`;
+                if (resumeBtn) resumeBtn.onclick = () => startRefresh(last.mode || 'full', true);
+                if (startFreshBtn) startFreshBtn.onclick = () => startRefresh(last.mode || 'full', false);
+            }
+        }).catch(() => {});
+    }
+
+    loadCurrentAndLast();
+})();
+
 const dateFilterFromInput = document.getElementById('date-filter-from');
 const dateFilterToInput = document.getElementById('date-filter-to');
 const dateFilterResetButton = document.getElementById('date-filter-reset');

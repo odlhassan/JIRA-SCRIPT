@@ -82,8 +82,47 @@ from report_entity_registry import (
     save_report_entities,
     save_report_entity_global_settings,
 )
-from ipp_meeting_utils import resolve_jira_end_date_field_ids, resolve_jira_start_date_field_id
+from ipp_meeting_utils import (
+    fetch_jira_issue_planned_dates as ipp_fetch_jira_issue_planned_dates,
+    load_ipp_actual_and_remarks_by_key as ipp_load_actual_and_remarks,
+    load_ipp_issue_keys as ipp_load_issue_keys,
+    load_ipp_planned_dates_by_key as ipp_load_planned_dates_by_key,
+    normalize_issue_key as ipp_normalize_issue_key,
+    resolve_jira_end_date_field_ids,
+    resolve_jira_start_date_field_id,
+    yes_no_dates_altered as ipp_yes_no_dates_altered,
+    yes_no_in_ipp as ipp_yes_no_in_ipp,
+    yes_no_ipp_actual_matches_jira_end as ipp_yes_no_ipp_actual_matches_jira_end,
+)
 from jira_client import BASE_URL, extract_jira_key_from_url, get_session
+from jira_export_db import (
+    SUBTASK_ROLLUP_COLS,
+    SUBTASK_WORKLOGS_COLS,
+    WORK_ITEMS_COLS,
+    connect as jira_export_db_connect,
+    dashboard_refresh_finish_run as jira_export_dash_finish_run,
+    dashboard_refresh_get_active_run_id as jira_export_dash_get_active_run_id,
+    dashboard_refresh_get_last_run as jira_export_dash_get_last_run,
+    dashboard_refresh_get_run as jira_export_dash_get_run,
+    dashboard_refresh_insert_run as jira_export_dash_insert_run,
+    dashboard_refresh_is_cancel_requested as jira_export_dash_is_cancel_requested,
+    dashboard_refresh_set_cancel_requested as jira_export_dash_set_cancel_requested,
+    dashboard_refresh_update_progress as jira_export_dash_update_progress,
+    ensure_schema as jira_export_db_ensure_schema,
+    upsert_subtask_worklog_rollup_by_keys as jira_export_upsert_rollup_by_keys,
+    upsert_subtask_worklogs_by_keys as jira_export_upsert_worklogs_by_keys,
+    upsert_work_items_by_keys as jira_export_upsert_work_items_by_keys,
+)
+from export_jira_subtask_worklogs import (
+    _fetch_all_worklogs_for_issue as export_fetch_worklogs_for_issue,
+    _seconds_to_hours as export_seconds_to_hours,
+)
+from fetch_jira_dashboard import (
+    apply_risk_rollup as dash_apply_risk_rollup,
+    build_item as dash_build_item,
+    compute_self_risk as dash_compute_self_risk,
+    load_dashboard_risk_settings as dash_load_risk_settings,
+)
 from planned_actual_table_view_service import (
     DEFAULT_RETENTION_DAYS as PACTV_DEFAULT_RETENTION_DAYS,
     VALID_MODES as PACTV_VALID_MODES,
@@ -436,6 +475,302 @@ def _save_dashboard_risk_settings(settings_db_path: Path, payload: object) -> di
     finally:
         conn.close()
     return normalized
+
+
+def _dashboard_refresh_epic_work_item_row(
+    norm: dict,
+    issue_type_label: str,
+    parent_key: str,
+    epic_key: str,
+    total_hours: float = 0.0,
+    ipp_row: dict | None = None,
+) -> list:
+    """Build a work_items row (29 elements in WORK_ITEMS_COLS order) from normalized PVD issue."""
+    ipp = ipp_row or {}
+    est_hours = norm.get("estimate_hours")
+    try:
+        est_hours = float(est_hours) if est_hours is not None else None
+    except (TypeError, ValueError):
+        est_hours = None
+    orig_est = str(est_hours) + "h" if est_hours is not None and est_hours > 0 else ""
+    key = _to_text(norm.get("issue_key")).upper()
+    parent_jira_url = f"{BASE_URL}/browse/{parent_key}" if parent_key else ""
+    return [
+        _to_text(norm.get("project_key")) or "",
+        key,
+        key,
+        issue_type_label,
+        _to_text(norm.get("issue_type_name")) or issue_type_label,
+        None,
+        _to_text(norm.get("summary")) or "",
+        _to_text(norm.get("status")) or "",
+        None,
+        _to_text(norm.get("planned_start")) or None,
+        _to_text(norm.get("planned_due")) or None,
+        None,
+        None,
+        orig_est,
+        est_hours,
+        _to_text(norm.get("assignee")) or "",
+        total_hours,
+        None,
+        parent_key or None,
+        parent_key or None,
+        parent_jira_url or None,
+        _to_text(norm.get("jira_url")) or "",
+        ipp.get("latest_ipp_meeting", ""),
+        ipp.get("jira_ipp_rmi_dates_altered", ""),
+        ipp.get("ipp_actual_date", ""),
+        ipp.get("ipp_remarks", ""),
+        ipp.get("ipp_actual_date_matches_jira_end_date", ""),
+        None,
+        None,
+    ]
+
+
+def _dashboard_refresh_epic_impl(
+    *,
+    capacity_paths: dict,
+    session,
+    epic_norm: dict,
+    stories_norm: list[dict],
+    subtasks_norm: list[dict],
+) -> dict:
+    """Fetch worklogs, upsert jira_exports.db, build enriched epic/stories/subtasks with risk. Returns dict with epic, stories, subtasks, bug_subtasks."""
+    epic_key_val = _to_text(epic_norm.get("issue_key")).upper()
+    story_keys = {_to_text(s.get("issue_key")).upper() for s in stories_norm if _to_text(s.get("issue_key"))}
+    subtask_keys = {_to_text(t.get("issue_key")).upper() for t in subtasks_norm if _to_text(t.get("issue_key"))}
+    all_keys = {epic_key_val} | story_keys | subtask_keys
+
+    ipp_issue_keys = ipp_load_issue_keys()
+    ipp_planned = ipp_load_planned_dates_by_key()
+    ipp_actual = ipp_load_actual_and_remarks()
+    jira_epic_dates = ipp_fetch_jira_issue_planned_dates(session, BASE_URL, [epic_key_val])
+
+    def ipp_for_epic(ek: str):
+        ek = _to_text(ek).upper()
+        actual = ipp_actual.get(ek, {})
+        return {
+            "latest_ipp_meeting": ipp_yes_no_in_ipp(ek, ipp_issue_keys),
+            "jira_ipp_rmi_dates_altered": ipp_yes_no_dates_altered(ek, ipp_planned, jira_epic_dates),
+            "ipp_actual_date": actual.get("ipp_actual_date", ""),
+            "ipp_remarks": actual.get("ipp_remarks", ""),
+            "ipp_actual_date_matches_jira_end_date": ipp_yes_no_ipp_actual_matches_jira_end(ek, ipp_actual, jira_epic_dates),
+        }
+
+    work_item_rows = []
+    epic_norm["epic_key"] = epic_key_val
+    work_item_rows.append(_dashboard_refresh_epic_work_item_row(epic_norm, "Epic", "", epic_key_val, 0.0, ipp_for_epic(epic_key_val)))
+    for s in stories_norm:
+        s["epic_key"] = epic_key_val
+        work_item_rows.append(_dashboard_refresh_epic_work_item_row(s, "Story", epic_key_val, epic_key_val, 0.0, ipp_for_epic(epic_key_val)))
+
+    subtask_info = []
+    for t in subtasks_norm:
+        ik = _to_text(t.get("issue_key")).upper()
+        sk = _to_text(t.get("story_key")).upper()
+        subtask_info.append({
+            "issue_id": ik, "issue_key": ik, "summary": _to_text(t.get("summary")),
+            "issue_type": _to_text(t.get("issue_type_name")) or "Sub-task",
+            "assignee": _to_text(t.get("assignee")) or "Unassigned",
+            "parent_story_key": sk, "parent_epic_id": epic_key_val,
+        })
+
+    worklog_rows = []
+    for info in subtask_info:
+        issue_key = info["issue_id"]
+        issue_link = f"{BASE_URL}/browse/{issue_key}"
+        parent_story_key = info["parent_story_key"]
+        parent_story_link = f"{BASE_URL}/browse/{parent_story_key}" if parent_story_key else ""
+        parent_epic_id = info["parent_epic_id"]
+        parent_epic_key = _to_text(parent_epic_id).upper()
+        ipp_actual_data = ipp_actual.get(parent_epic_key, {})
+        try:
+            worklogs = export_fetch_worklogs_for_issue(session, issue_key, delay_seconds=0.1)
+        except Exception:
+            worklogs = []
+        for wl in worklogs:
+            started = wl.get("started", "") or ""
+            hours = export_seconds_to_hours(wl.get("timeSpentSeconds"))
+            author = wl.get("author", {}) or {}
+            worklog_author = _to_text(author.get("displayName")) or _to_text(author.get("emailAddress")) or _to_text(author.get("accountId")) or "Unknown"
+            worklog_rows.append([
+                issue_link, issue_key, info.get("summary", ""), info.get("issue_type", ""),
+                parent_story_link, parent_story_key, parent_epic_id, info.get("assignee", "Unassigned"),
+                ipp_yes_no_in_ipp(issue_key, ipp_issue_keys),
+                ipp_yes_no_dates_altered(parent_epic_id, ipp_planned, jira_epic_dates),
+                ipp_actual_data.get("ipp_actual_date", ""), ipp_actual_data.get("ipp_remarks", ""),
+                ipp_yes_no_ipp_actual_matches_jira_end(parent_epic_key, ipp_actual, jira_epic_dates),
+                started, hours, worklog_author,
+            ])
+
+    rollup_by_issue = defaultdict(lambda: {
+        "issue_link": "", "issue_id": "", "issue_title": "", "issue_type": "",
+        "parent_story_link": "", "parent_story_id": "", "parent_epic_id": "", "issue_assignee": "",
+        "actual_min_raw": "", "actual_max_raw": "", "total_hours": 0.0,
+    })
+    for row in worklog_rows:
+        issue_id = row[1]
+        g = rollup_by_issue[issue_id]
+        g["issue_link"] = row[0] or g["issue_link"]
+        g["issue_id"] = issue_id
+        g["issue_title"] = row[2] or g["issue_title"]
+        g["issue_type"] = row[3] or g["issue_type"]
+        g["parent_story_link"] = row[4] or g["parent_story_link"]
+        g["parent_story_id"] = row[5] or g["parent_story_id"]
+        g["parent_epic_id"] = row[6] or g["parent_epic_id"]
+        g["issue_assignee"] = row[7] or g["issue_assignee"]
+        ts_raw = row[13]
+        if ts_raw:
+            try:
+                ts_dt = datetime.fromisoformat(ts_raw.replace("Z", "+00:00"))
+            except Exception:
+                ts_dt = None
+            if ts_dt:
+                if not g["actual_min_raw"]:
+                    g["actual_min_raw"] = g["actual_max_raw"] = ts_raw
+                else:
+                    try:
+                        min_dt = datetime.fromisoformat(g["actual_min_raw"].replace("Z", "+00:00"))
+                        max_dt = datetime.fromisoformat(g["actual_max_raw"].replace("Z", "+00:00"))
+                        if ts_dt < min_dt:
+                            g["actual_min_raw"] = ts_raw
+                        if ts_dt > max_dt:
+                            g["actual_max_raw"] = ts_raw
+                    except Exception:
+                        pass
+        g["total_hours"] += float(row[14] or 0)
+
+    story_planned = {_to_text(s.get("issue_key")).upper(): (_to_text(s.get("planned_start")), _to_text(s.get("planned_due"))) for s in stories_norm}
+    rollup_rows = []
+    for issue_id in sorted(rollup_by_issue.keys()):
+        item = rollup_by_issue[issue_id]
+        parent_story_id = _to_text(item["parent_story_id"]).strip()
+        parent_epic_id = _to_text(item["parent_epic_id"]).strip()
+        planned_start, planned_end = story_planned.get(parent_story_id, ("", ""))
+        ipp_actual_data = ipp_actual.get(parent_epic_id.upper(), {})
+        rollup_rows.append([
+            item["issue_link"], item["issue_id"], item["issue_title"], item["issue_type"],
+            item["parent_story_link"], item["parent_story_id"], item["parent_epic_id"], item["issue_assignee"],
+            ipp_yes_no_in_ipp(item["issue_id"], ipp_issue_keys),
+            ipp_yes_no_dates_altered(parent_epic_id, ipp_planned, jira_epic_dates),
+            ipp_actual_data.get("ipp_actual_date", ""), ipp_actual_data.get("ipp_remarks", ""),
+            ipp_yes_no_ipp_actual_matches_jira_end(parent_epic_id.upper(), ipp_actual, jira_epic_dates),
+            planned_start, planned_end, item["actual_min_raw"], item["actual_max_raw"], round(item["total_hours"], 2),
+        ])
+
+    total_hours_by_subtask = {item["issue_id"]: item["total_hours"] for item in rollup_by_issue.values()}
+    for t in subtasks_norm:
+        ik = _to_text(t.get("issue_key")).upper()
+        th = total_hours_by_subtask.get(ik, 0.0)
+        work_item_rows.append(_dashboard_refresh_epic_work_item_row(
+            t, _to_text(t.get("issue_type_name")) or "Sub-task",
+            _to_text(t.get("story_key")).upper(), epic_key_val, th, ipp_for_epic(epic_key_val)
+        ))
+
+    export_conn = jira_export_db_connect()
+    try:
+        jira_export_db_ensure_schema(export_conn)
+        jira_export_upsert_work_items_by_keys(export_conn, work_item_rows, all_keys)
+        jira_export_upsert_worklogs_by_keys(export_conn, worklog_rows, subtask_keys)
+        jira_export_upsert_rollup_by_keys(export_conn, rollup_rows, subtask_keys)
+    finally:
+        export_conn.close()
+
+    planner_db_path = capacity_paths["db_path"]
+    risk_settings = dash_load_risk_settings(Path(planner_db_path))
+    ipp_planned_dates_by_key = ipp_load_planned_dates_by_key()
+
+    def normalize_date_txt(v):
+        if v is None or not str(v).strip():
+            return ""
+        return str(v).strip()[:10]
+
+    def apply_ipp_dates(item_dict: dict, ek: str):
+        ek_norm = ipp_normalize_issue_key(ek)
+        if not ek_norm:
+            return
+        ipp_dates = ipp_planned_dates_by_key.get(ek_norm, {})
+        item_dict["ipp_planned_start_date"] = normalize_date_txt(ipp_dates.get("planned_start") or item_dict.get("ipp_planned_start_date"))
+        item_dict["ipp_planned_end_date"] = normalize_date_txt(ipp_dates.get("planned_end") or item_dict.get("ipp_planned_end_date"))
+
+    today_utc = datetime.now(timezone.utc).date()
+    epics_map = {}
+    stories_map = {}
+    subtasks_map = {}
+    bug_subtasks_map = {}
+
+    def row_from_norm(n, total_hrs, parent_key_attr):
+        pk = _to_text(n.get(parent_key_attr)).upper()
+        ipp_vals = ipp_for_epic(epic_key_val)
+        return {
+            "issue_key": _to_text(n.get("issue_key")).upper(),
+            "jira_issue_type": _to_text(n.get("issue_type_name")) or "Epic",
+            "parent_issue_key": pk,
+            "summary": _to_text(n.get("summary")),
+            "assignee": _to_text(n.get("assignee")),
+            "project_key": _to_text(n.get("project_key")),
+            "jira_url": _to_text(n.get("jira_url")),
+            "start_date": _to_text(n.get("planned_start")),
+            "end_date": _to_text(n.get("planned_due")),
+            "actual_start_date": "",
+            "actual_end_date": "",
+            "original_estimate": str(n.get("estimate_hours") or "") + "h" if n.get("estimate_hours") else "",
+            "total_hours_logged": total_hrs,
+            "status": _to_text(n.get("status")),
+            "Latest IPP Meeting": ipp_vals.get("latest_ipp_meeting", "No"),
+            "Jira IPP RMI Dates Altered": ipp_vals.get("jira_ipp_rmi_dates_altered", "No"),
+            "IPP Actual Date (Production Date)": ipp_vals.get("ipp_actual_date", ""),
+            "IPP Remarks": ipp_vals.get("ipp_remarks", ""),
+            "IPP Actual Date Matches Jira End Date": ipp_vals.get("ipp_actual_date_matches_jira_end_date", "No"),
+        }
+
+    erow = row_from_norm(epic_norm, 0.0, "issue_key")
+    eitem = dash_build_item(erow, "Epic")
+    eitem["epic_key"] = epic_key_val
+    eitem["epic_key_legacy"] = epic_key_val
+    eitem["epic_status"] = eitem.get("status", "")
+    eitem["subtask_hours_logged_total"] = sum(total_hours_by_subtask.get(ik, 0) for ik in subtask_keys)
+    apply_ipp_dates(eitem, epic_key_val)
+    epics_map[epic_key_val] = eitem
+
+    for s in stories_norm:
+        sk = _to_text(s.get("issue_key")).upper()
+        srow = row_from_norm(s, 0.0, "epic_key")
+        srow["parent_issue_key"] = epic_key_val
+        sitem = dash_build_item(srow, "Story")
+        sitem["epic_key"] = epic_key_val
+        apply_ipp_dates(sitem, epic_key_val)
+        stories_map[sk] = sitem
+
+    for t in subtasks_norm:
+        tk = _to_text(t.get("issue_key")).upper()
+        thr = total_hours_by_subtask.get(tk, 0.0)
+        trow = row_from_norm(t, thr, "story_key")
+        trow["parent_issue_key"] = _to_text(t.get("story_key")).upper()
+        titem = dash_build_item(trow, _to_text(t.get("issue_type_name")) or "Sub-task")
+        titem["story_key"] = _to_text(t.get("story_key")).upper()
+        titem["epic_key"] = epic_key_val
+        apply_ipp_dates(titem, epic_key_val)
+        if "bug" in (t.get("issue_type_name") or "").lower():
+            bug_subtasks_map[tk] = titem
+        else:
+            subtasks_map[tk] = titem
+
+    for item in list(subtasks_map.values()) + list(bug_subtasks_map.values()):
+        dash_compute_self_risk(item, today_utc, risk_settings)
+    for item in stories_map.values():
+        dash_compute_self_risk(item, today_utc, risk_settings)
+    for item in epics_map.values():
+        dash_compute_self_risk(item, today_utc, risk_settings)
+    dash_apply_risk_rollup(epics_map, stories_map, subtasks_map, bug_subtasks_map, risk_settings)
+
+    return {
+        "epic": list(epics_map.values())[0] if epics_map else None,
+        "stories": list(stories_map.values()),
+        "subtasks": list(subtasks_map.values()),
+        "bug_subtasks": list(bug_subtasks_map.values()),
+    }
 
 
 def _settings_top_nav_html(active_route: str) -> str:
@@ -8802,11 +9137,14 @@ def _run_script_interruptible(
     env_overrides: dict[str, str] | None = None,
     cancel_check=None,
     poll_interval_sec: float = 0.5,
+    on_stdout_line=None,
+    heartbeat=None,
+    heartbeat_interval_sec: float = 5.0,
 ) -> tuple[int, str, str]:
     script_path = base_dir / script_name
     if not script_path.exists():
         raise FileNotFoundError(f"Missing script: {script_path}")
-    command = [sys.executable, str(script_path)]
+    command = [sys.executable, "-u", str(script_path)]
     if extra_args:
         command.extend([str(x) for x in extra_args])
     env = os.environ.copy()
@@ -8821,6 +9159,21 @@ def _run_script_interruptible(
         text=True,
         env=env,
     )
+    stdout_lines: list[str] = []
+
+    def _read_stdout_thread():
+        assert proc.stdout is not None
+        for line in proc.stdout:
+            stdout_lines.append(line)
+            if callable(on_stdout_line):
+                try:
+                    on_stdout_line(line.rstrip("\n\r"))
+                except Exception:
+                    pass
+
+    reader = threading.Thread(target=_read_stdout_thread, daemon=True)
+    reader.start()
+    last_heartbeat = time.monotonic()
     try:
         while proc.poll() is None:
             if callable(cancel_check) and bool(cancel_check()):
@@ -8832,12 +9185,21 @@ def _run_script_interruptible(
                         proc.kill()
                     except Exception:
                         pass
-                out, err = proc.communicate()
+                reader.join(timeout=5)
+                _, err = proc.communicate()
                 canceled_err = (err or "") + ("\n" if err else "") + "Canceled by user."
-                return -1, out or "", canceled_err
+                return -1, "".join(stdout_lines), canceled_err
+            now = time.monotonic()
+            if callable(heartbeat) and (now - last_heartbeat) >= heartbeat_interval_sec:
+                try:
+                    heartbeat()
+                except Exception:
+                    pass
+                last_heartbeat = now
             time.sleep(max(0.1, float(poll_interval_sec)))
-        out, err = proc.communicate()
-        return int(proc.returncode or 0), out or "", err or ""
+        reader.join(timeout=10)
+        _, err = proc.communicate()
+        return int(proc.returncode or 0), "".join(stdout_lines), err or ""
     finally:
         try:
             if proc.poll() is None:
@@ -12885,11 +13247,26 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             + report_links
             + "</ul>"
         )
-        return (
-            "<!doctype html><html><body>"
+        html = (
+            '<!DOCTYPE html><html lang="en"><head>'
+            '<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">'
+            '<title>Reports</title>'
+            '<link rel="stylesheet" href="/shared-nav.css">'
+            '<style>'
+            'body { font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, sans-serif; margin: 0; padding: 2rem; background: #f5f7fb; color: #1f2937; }'
+            '.page-wrap { max-width: 900px; margin: 0 auto; }'
+            'h1 { margin: 0 0 1.5rem; font-size: 1.5rem; color: #111827; }'
+            'h2 { margin: 1.25rem 0 0.5rem; font-size: 1.1rem; color: #374151; }'
+            'ul { margin: 0; padding-left: 1.5rem; }'
+            'li { margin: 0.35rem 0; }'
+            'a { color: #2563eb; text-decoration: none; }'
+            'a:hover { text-decoration: underline; }'
+            '</style></head><body>'
+            '<div class="page-wrap"><h1>Reports</h1>'
             + links
-            + "</body></html>"
+            + "</div></body></html>"
         )
+        return html
 
     def _epf_serialize_run(run_row: dict[str, object] | None) -> dict[str, object]:
         row = run_row or {}
@@ -15682,6 +16059,374 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
 
+    @app.route("/api/dashboard/refresh-epic/<path:epic_key>", methods=["POST"])
+    def dashboard_refresh_epic(epic_key: str):
+        """Refresh one epic subtree from Jira, update jira_exports.db, return enriched epic + stories + subtasks."""
+        try:
+            payload = request.get_json(silent=True) or {}
+            from_date, to_date, _ = _oeh_filters_from_payload(payload)
+            key = _to_text(epic_key).strip().upper()
+            if not key:
+                return jsonify({"ok": False, "error": "epic_key is required."}), 400
+            session = get_session()
+            epic_norm, stories_norm, subtasks_norm = _oeh_fetch_epic_subtree(
+                session, key, from_date, to_date
+            )
+        except LookupError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 404
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"ok": False, "error": f"Epic refresh failed: {exc}"}), 500
+
+        try:
+            result = _dashboard_refresh_epic_impl(
+                capacity_paths=capacity_paths,
+                session=session,
+                epic_norm=epic_norm,
+                stories_norm=stories_norm,
+                subtasks_norm=subtasks_norm,
+            )
+            return jsonify({
+                "ok": True,
+                "epic": result.get("epic"),
+                "stories": result.get("stories", []),
+                "subtasks": result.get("subtasks", []),
+                "bug_subtasks": result.get("bug_subtasks", []),
+            })
+        except Exception as exc:
+            return jsonify({"ok": False, "error": f"Epic refresh failed: {exc}"}), 500
+
+    _dashboard_refresh_runtime_state: dict = {"active_run_id": ""}
+    _dashboard_refresh_lock = threading.Lock()
+
+    _STEP_LABELS: dict[str, str] = {
+        "export_worklogs": "Exporting worklogs",
+        "export_work_items": "Exporting work items",
+        "export_rollup": "Building worklog rollup",
+        "export_nested_view": "Building nested view",
+        "generate_dashboard": "Generating dashboard",
+        "sync_report_html": "Syncing report files",
+    }
+
+    _STDOUT_PROGRESS_PATTERNS: list[tuple[str, re.Pattern]] = [
+        ("progress_fraction", re.compile(
+            r"(?:fetch progress|Processed|Fetching full .* payloads for|Backfilling).*?(\d+)\s*/\s*(\d+).*?\(([^)]+)\)"
+        )),
+        ("progress_fraction_no_label", re.compile(
+            r"(?:fetch progress|Processed|Fetching).*?(\d+)\s*/\s*(\d+)"
+        )),
+        ("rows_final", re.compile(r"^Rows:\s*(\d+)", re.IGNORECASE)),
+        ("cached_available", re.compile(r"Cached work items available:\s*(\d+)")),
+        ("output_rollup_rows", re.compile(r"Output rollup rows:\s*(\d+)")),
+        ("hierarchy_nodes", re.compile(r"Hierarchy nodes:.*?epics=(\d+).*?stories=(\d+).*?subtasks=(\d+)")),
+        ("rows_written", re.compile(r"Rows written \(excluding header\):\s*(\d+)")),
+        ("found_rmis", re.compile(r"Found (\d+) RMIs/Epics")),
+        ("fetching_batch", re.compile(r"Fetching (?:full )?.*?payloads? for (\d+)")),
+        ("issue_payloads", re.compile(r"Issue payloads available.*?:\s*(\d+)")),
+    ]
+
+    def _run_dashboard_refresh_worker(run_id: str, mode: str, completed_steps: set[str], base_dir: Path, folder_raw: str) -> None:
+        steps = [
+            ("export_worklogs", 10, "export_jira_subtask_worklogs.py"),
+            ("export_work_items", 30, "export_jira_work_items.py"),
+            ("export_rollup", 45, "export_jira_subtask_worklog_rollup.py"),
+            ("export_nested_view", 55, "export_jira_nested_view.py"),
+            ("generate_dashboard", 75, "fetch_jira_dashboard.py"),
+            ("sync_report_html", 90, None),
+        ]
+        incremental = mode == "smart"
+        env_overrides = {"JIRA_INCREMENTAL_DISABLE": "0" if incremental else "1"}
+
+        step_progress: dict[str, Any] = {"total": 0, "done": 0, "label": ""}
+
+        def is_canceled() -> bool:
+            conn = jira_export_db_connect()
+            try:
+                return jira_export_dash_is_cancel_requested(conn, run_id)
+            finally:
+                conn.close()
+
+        def _on_stdout(line: str) -> None:
+            for kind, pat in _STDOUT_PROGRESS_PATTERNS:
+                m = pat.search(line)
+                if not m:
+                    continue
+                if kind == "progress_fraction":
+                    step_progress["done"] = int(m.group(1))
+                    step_progress["total"] = int(m.group(2))
+                    step_progress["label"] = m.group(3).strip()
+                elif kind == "progress_fraction_no_label":
+                    step_progress["done"] = int(m.group(1))
+                    step_progress["total"] = int(m.group(2))
+                elif kind == "rows_final":
+                    step_progress["total"] = int(m.group(1))
+                    step_progress["done"] = step_progress["total"]
+                    step_progress["label"] = "Complete"
+                elif kind == "cached_available":
+                    step_progress["total"] = int(m.group(1))
+                    step_progress["done"] = step_progress["total"]
+                    step_progress["label"] = "Cached items loaded"
+                elif kind == "output_rollup_rows":
+                    step_progress["total"] = int(m.group(1))
+                    step_progress["done"] = step_progress["total"]
+                    step_progress["label"] = "Rollup complete"
+                elif kind == "hierarchy_nodes":
+                    total = int(m.group(1)) + int(m.group(2)) + int(m.group(3))
+                    step_progress["total"] = total
+                    step_progress["done"] = total
+                    step_progress["label"] = f"{m.group(1)} epics, {m.group(2)} stories, {m.group(3)} subtasks"
+                elif kind == "rows_written":
+                    step_progress["total"] = int(m.group(1))
+                    step_progress["done"] = step_progress["total"]
+                    step_progress["label"] = "Written"
+                elif kind == "found_rmis":
+                    step_progress["total"] = int(m.group(1))
+                    step_progress["done"] = step_progress["total"]
+                    step_progress["label"] = f"{m.group(1)} epics processed"
+                elif kind == "fetching_batch":
+                    step_progress["total"] = int(m.group(1))
+                    step_progress["done"] = 0
+                    step_progress["label"] = f"Fetching {m.group(1)} items..."
+                elif kind == "issue_payloads":
+                    step_progress["total"] = int(m.group(1))
+                    step_progress["done"] = step_progress["total"]
+                    step_progress["label"] = "Payloads loaded"
+                conn = jira_export_db_connect()
+                try:
+                    jira_export_dash_update_progress(
+                        conn, run_id,
+                        step_progress.get("_step", ""),
+                        step_progress.get("_pct", 0),
+                        progress_total=step_progress.get("total", 0),
+                        progress_done=step_progress.get("done", 0),
+                        progress_current_label=step_progress.get("label", ""),
+                    )
+                finally:
+                    conn.close()
+                break
+
+        completed_list = list(completed_steps)
+        try:
+            for step_name, pct, script_name in steps:
+                if step_name in completed_steps:
+                    continue
+                if is_canceled():
+                    raise RuntimeError("Canceled by user")
+                step_progress.update({"total": 0, "done": 0, "label": "", "_step": step_name, "_pct": pct})
+                step_label = _STEP_LABELS.get(step_name, step_name)
+                conn = jira_export_db_connect()
+                try:
+                    jira_export_dash_update_progress(
+                        conn, run_id, step_name, pct,
+                        progress_current_label=step_label,
+                    )
+                finally:
+                    conn.close()
+                if script_name:
+                    def _heartbeat_fn(_step=step_name, _pct=pct):
+                        conn2 = jira_export_db_connect()
+                        try:
+                            jira_export_dash_update_progress(
+                                conn2, run_id, _step, _pct,
+                                progress_total=step_progress.get("total", 0),
+                                progress_done=step_progress.get("done", 0),
+                                progress_current_label=step_progress.get("label") or _STEP_LABELS.get(_step, _step),
+                            )
+                        finally:
+                            conn2.close()
+
+                    code, stdout, stderr = _run_script_interruptible(
+                        script_name, base_dir, env_overrides=env_overrides,
+                        cancel_check=is_canceled, on_stdout_line=_on_stdout,
+                        heartbeat=_heartbeat_fn, heartbeat_interval_sec=5.0,
+                    )
+                    if code == -1 or is_canceled():
+                        raise RuntimeError("Canceled by user")
+                    if code != 0:
+                        raise RuntimeError(f"Step {script_name} failed with exit code {code}")
+                else:
+                    sync_report_html(base_dir, folder_raw)
+                completed_list.append(step_name)
+            conn = jira_export_db_connect()
+            try:
+                jira_export_dash_update_progress(
+                    conn, run_id, "done", 100,
+                    progress_current_label="Complete",
+                )
+                jira_export_dash_finish_run(
+                    conn, run_id, "success",
+                    completed_steps_json=json.dumps(completed_list),
+                )
+            finally:
+                conn.close()
+        except Exception as exc:
+            is_canceled = "Canceled" in str(exc)
+            conn = jira_export_db_connect()
+            try:
+                jira_export_dash_finish_run(
+                    conn, run_id,
+                    "canceled" if is_canceled else "failed",
+                    error_message=str(exc),
+                    completed_steps_json=json.dumps(completed_list),
+                )
+            finally:
+                conn.close()
+        finally:
+            with _dashboard_refresh_lock:
+                if _dashboard_refresh_runtime_state.get("active_run_id") == run_id:
+                    _dashboard_refresh_runtime_state["active_run_id"] = ""
+
+    @app.route("/api/dashboard/refresh", methods=["POST"])
+    def dashboard_refresh_start():
+        try:
+            payload = request.get_json(silent=True) or {}
+            mode = _to_text(payload.get("mode")).lower()
+            if mode not in ("full", "smart"):
+                mode = "full"
+            resume = bool(payload.get("resume"))
+
+            with _dashboard_refresh_lock:
+                active = _dashboard_refresh_runtime_state.get("active_run_id")
+                if active:
+                    conn = jira_export_db_connect()
+                    try:
+                        run_row = jira_export_dash_get_run(conn, active)
+                        if run_row and _to_text(run_row.get("status")) == "running":
+                            return jsonify({"ok": False, "error": "Another refresh is already running."}), 409
+                    finally:
+                        conn.close()
+                    _dashboard_refresh_runtime_state["active_run_id"] = ""
+
+            conn = jira_export_db_connect()
+            try:
+                jira_export_db_ensure_schema(conn)
+                run_id = uuid.uuid4().hex
+                completed_steps: set[str] = set()
+                resume_from_run_id = None
+                if resume:
+                    last_run = jira_export_dash_get_last_run(conn)
+                    if last_run and _to_text(last_run.get("status")) in ("failed", "interrupted", "canceled"):
+                        try:
+                            completed_steps = set(json.loads(last_run.get("completed_steps_json") or "[]"))
+                        except Exception:
+                            pass
+                        resume_from_run_id = _to_text(last_run.get("run_id"))
+                jira_export_dash_insert_run(
+                    conn, run_id, mode,
+                    resume_from_run_id=resume_from_run_id,
+                    completed_steps_json=json.dumps(list(completed_steps)),
+                )
+            finally:
+                conn.close()
+
+            _dashboard_refresh_runtime_state["active_run_id"] = run_id
+            thread = threading.Thread(
+                target=_run_dashboard_refresh_worker,
+                args=(run_id, mode, completed_steps, base_dir, folder_raw),
+                daemon=True,
+            )
+            thread.start()
+            return jsonify({"ok": True, "run_id": run_id}), 202
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+
+    @app.route("/api/dashboard/refresh/<path:run_id>", methods=["GET"])
+    def dashboard_refresh_poll(run_id: str):
+        conn = jira_export_db_connect()
+        try:
+            run = jira_export_dash_get_run(conn, run_id)
+        finally:
+            conn.close()
+        if not run:
+            return jsonify({"ok": False, "error": "Run not found."}), 404
+        step_name = run.get("progress_step") or ""
+        step_label = _STEP_LABELS.get(step_name, "") if step_name else ""
+        return jsonify({
+            "ok": True,
+            "run_id": run["run_id"],
+            "mode": run["mode"],
+            "status": run["status"],
+            "progress_step": step_name,
+            "progress_step_label": step_label or run.get("progress_current_label") or step_name,
+            "progress_pct": run.get("progress_pct") or 0,
+            "progress_total": run.get("progress_total") or 0,
+            "progress_done": run.get("progress_done") or 0,
+            "progress_current_label": run.get("progress_current_label") or "",
+            "started_at_utc": run.get("started_at_utc") or "",
+            "updated_at_utc": run.get("updated_at_utc") or "",
+            "error_message": run.get("error_message"),
+        })
+
+    @app.route("/api/dashboard/refresh/current", methods=["GET"])
+    def dashboard_refresh_current():
+        conn = jira_export_db_connect()
+        try:
+            active_id = jira_export_dash_get_active_run_id(conn)
+        finally:
+            conn.close()
+        if not active_id:
+            return jsonify({"ok": True, "active_run_id": None})
+        conn = jira_export_db_connect()
+        try:
+            run = jira_export_dash_get_run(conn, active_id)
+        finally:
+            conn.close()
+        if not run:
+            return jsonify({"ok": True, "active_run_id": None})
+        return jsonify({
+            "ok": True,
+            "active_run_id": active_id,
+            "run_id": run["run_id"],
+            "mode": run["mode"],
+            "status": run["status"],
+            "progress_step": run.get("progress_step") or "",
+            "progress_pct": run.get("progress_pct") or 0,
+            "progress_total": run.get("progress_total") or 0,
+            "progress_done": run.get("progress_done") or 0,
+            "progress_current_label": run.get("progress_current_label") or "",
+            "started_at_utc": run.get("started_at_utc") or "",
+            "updated_at_utc": run.get("updated_at_utc") or "",
+        })
+
+    @app.route("/api/dashboard/cancel", methods=["POST"])
+    def dashboard_refresh_cancel():
+        conn = jira_export_db_connect()
+        try:
+            active_id = jira_export_dash_get_active_run_id(conn)
+        finally:
+            conn.close()
+        if not active_id:
+            return jsonify({"ok": True, "message": "No active refresh to cancel."})
+        conn = jira_export_db_connect()
+        try:
+            jira_export_dash_set_cancel_requested(conn, active_id)
+        finally:
+            conn.close()
+        return jsonify({"ok": True, "run_id": active_id, "message": "Cancel requested."})
+
+    @app.route("/api/dashboard/refresh/last", methods=["GET"])
+    def dashboard_refresh_last():
+        conn = jira_export_db_connect()
+        try:
+            last_run = jira_export_dash_get_last_run(conn)
+        finally:
+            conn.close()
+        if not last_run:
+            return jsonify({"ok": True, "last_run": None})
+        return jsonify({
+            "ok": True,
+            "last_run": {
+                "run_id": last_run["run_id"],
+                "mode": last_run["mode"],
+                "status": last_run["status"],
+                "progress_step": last_run.get("progress_step") or "",
+                "progress_pct": last_run.get("progress_pct") or 0,
+                "error_message": last_run.get("error_message"),
+                "completed_steps_json": last_run.get("completed_steps_json"),
+            },
+        })
+
     @app.route("/api/performance/assignees", methods=["GET"])
     def list_performance_assignees():
         assignees = _list_assignees_from_summary(capacity_paths["summary_path"])
@@ -16233,7 +16978,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         html = _inject_refresh_ui(html, "planned_vs_dispensed")
         return html
 
-    @app.route("/<path:requested_path>")
+    @app.route("/<path:requested_path>", methods=["GET"])
     def serve_report_asset(requested_path: str):
         requested_name = _to_text(requested_path)
         if requested_name in {"shared-nav.js", "shared-nav.css", "shared-date-filter.js", "material-symbols.css"}:

@@ -7,7 +7,7 @@ Output: Excel with actual min/max worklog timestamps and total logged hours per 
 from __future__ import annotations
 
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from openpyxl import Workbook, load_workbook
@@ -21,6 +21,14 @@ from ipp_meeting_utils import (
     yes_no_dates_altered,
     yes_no_ipp_actual_matches_jira_end,
     yes_no_in_ipp,
+)
+from jira_export_db import (
+    connect as export_db_connect,
+    ensure_schema as ensure_exports_schema,
+    has_subtask_worklogs,
+    read_subtask_worklogs as read_subtask_worklogs_db,
+    record_export_run,
+    write_subtask_worklog_rollup as write_subtask_worklog_rollup_db,
 )
 from jira_client import BASE_URL, get_session
 
@@ -271,15 +279,22 @@ def main() -> None:
     input_path = Path(input_name)
     if not input_path.is_absolute():
         input_path = Path(__file__).resolve().parent / input_path
-    if not input_path.exists():
-        raise FileNotFoundError(f"Input file not found: {input_path}")
 
     output_path = Path(output_name)
     if not output_path.is_absolute():
         output_path = Path(__file__).resolve().parent / output_path
 
-    print(f"Reading input worklogs: {input_path}")
-    input_rows = _read_input_rows(input_path)
+    # Primary: read worklogs from exports DB; fallback to xlsx
+    export_conn = export_db_connect()
+    ensure_exports_schema(export_conn)
+    if has_subtask_worklogs(export_conn):
+        input_rows = read_subtask_worklogs_db(export_conn)
+        print("Reading input worklogs: DB")
+    else:
+        if not input_path.exists():
+            raise FileNotFoundError(f"Input file not found (and DB has no worklogs): {input_path}")
+        print(f"Reading input worklogs: {input_path}")
+        input_rows = _read_input_rows(input_path)
     print(f"Input rows: {len(input_rows)}")
 
     story_ids = {
@@ -315,6 +330,14 @@ def main() -> None:
         jira_epic_dates=jira_epic_dates,
     )
     print(f"Output rollup rows: {len(output_rows)}")
+
+    # Primary: write rollup to exports DB
+    write_subtask_worklog_rollup_db(export_conn, output_rows)
+    run_ended = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    record_export_run(export_conn, "subtask_rollup", len(output_rows), finished_at_utc=run_ended)
+    export_conn.close()
+
+    # Secondary: write xlsx
     _write_output(output_rows, output_path)
     print(f"Export written: {output_path}")
 

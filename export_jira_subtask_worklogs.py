@@ -44,6 +44,10 @@ from jira_incremental_cache import (
     upsert_worklog_payload,
     utc_now_iso,
 )
+from jira_export_db import connect as export_db_connect
+from jira_export_db import ensure_schema as ensure_exports_schema
+from jira_export_db import record_export_run
+from jira_export_db import write_subtask_worklogs as write_subtask_worklogs_db
 from jira_client import BASE_URL, get_session
 
 DEFAULT_OUTPUT = "2_jira_subtask_worklogs.xlsx"
@@ -783,6 +787,27 @@ def main() -> None:
     if not output_path.is_absolute():
         output_path = Path(__file__).resolve().parent / output_path
 
+    # Primary: write to exports DB
+    export_conn = export_db_connect()
+    try:
+        ensure_exports_schema(export_conn)
+        write_subtask_worklogs_db(export_conn, rows)
+        run_ended = datetime.now(timezone.utc)
+        run_ended_iso = run_ended.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        run_started_iso = run_started.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        record_export_run(
+            export_conn,
+            "worklogs",
+            len(rows),
+            status="success",
+            run_id=run_id,
+            started_at_utc=run_started_iso,
+            finished_at_utc=run_ended_iso,
+        )
+    finally:
+        export_conn.close()
+
+    # Secondary: write xlsx
     _write_excel(rows, output_path)
     generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     print(f"Export written: {output_path}")
