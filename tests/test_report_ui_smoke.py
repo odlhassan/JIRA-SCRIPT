@@ -235,6 +235,14 @@ class ReportUiSmokeTests(unittest.TestCase):
         self.assertIn('id="assignee-extended-actuals-toggle"', html)
         self.assertIn("/api/employee-performance/refresh", html)
         self.assertIn("/api/employee-performance/cancel", html)
+        self.assertIn('data-score-drawer-accordion="rules"', html)
+        self.assertIn('id="score-drawer-rules-content" class="score-drawer-section-content" hidden', html)
+        self.assertIn('aria-expanded="false"', html)
+        self.assertIn('id="score-subtask-epic-filter"', html)
+        self.assertIn('id="score-subtask-project-filter"', html)
+        self.assertIn('id="score-subtask-table-body"', html)
+        self.assertIn("Actual Completed Date", html)
+        self.assertIn("due-status-pill", html)
 
     def test_report_entities_formula_editor_controls_exist(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:

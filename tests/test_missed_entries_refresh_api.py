@@ -44,6 +44,38 @@ def _write_work_items_xlsx(path: Path) -> None:
     wb.save(path)
 
 
+def _seed_canonical_run(db_path: Path, run_id: str = "canonical-test-run") -> str:
+    with sqlite3.connect(db_path) as conn:
+        now = "2026-03-10T00:00:00+00:00"
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO canonical_refresh_runs(
+                run_id, scope_year, managed_project_keys_json, started_at_utc, ended_at_utc,
+                status, trigger_source, error_message, stats_json,
+                progress_step, progress_pct, cancel_requested, updated_at_utc
+            ) VALUES (?, 2026, '["O2"]', ?, ?, 'success', 'test', '', '{}', 'done', 100, 0, ?)
+            """,
+            (run_id, now, now, now),
+        )
+        conn.execute(
+            "UPDATE canonical_refresh_state SET active_run_id=?, last_success_run_id=?, updated_at_utc=? WHERE id=1",
+            (run_id, run_id, now),
+        )
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO canonical_issues(
+                run_id, issue_id, issue_key, project_key, issue_type, summary, status, assignee,
+                start_date, due_date, created_utc, updated_utc, resolved_stable_since_date,
+                original_estimate_hours, total_hours_logged, fix_type, parent_issue_key, story_key, epic_key, raw_payload_json
+            ) VALUES (?, '101', 'O2-101', 'O2', 'Sub-task', 'Implement sync', 'Done', 'Alice',
+                      '2026-03-01', '2026-03-04', ?, ?, '', 8.0, 2.0, '', '', 'O2-100', 'O2-1', '{}')
+            """,
+            (run_id, now, now),
+        )
+        conn.commit()
+    return run_id
+
+
 class MissedEntriesRefreshApiTests(unittest.TestCase):
     def test_refresh_saves_snapshot_rows_to_database(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
@@ -52,47 +84,43 @@ class MissedEntriesRefreshApiTests(unittest.TestCase):
             (tdp / "report_html" / "dashboard.html").write_text("<html><body>ok</body></html>", encoding="utf-8")
             _write_work_items_xlsx(tdp / "1_jira_work_items_export.xlsx")
             app = create_report_server_app(base_dir=tdp, folder_raw="report_html")
+            _seed_canonical_run(tdp / "assignee_hours_capacity.db")
             client = app.test_client()
+            start_resp = client.post("/api/missed-entries/refresh", json={})
+            self.assertEqual(start_resp.status_code, 202)
+            run_id = str((start_resp.get_json() or {}).get("run_id") or "")
+            self.assertTrue(run_id)
 
-            original_interruptible = report_server._run_script_interruptible
+            status_value = ""
+            for _ in range(60):
+                status_resp = client.get(f"/api/missed-entries/refresh/{run_id}")
+                self.assertEqual(status_resp.status_code, 200)
+                run = (status_resp.get_json() or {}).get("run") or {}
+                status_value = str(run.get("status") or "").lower()
+                if status_value in {"success", "failed", "canceled"}:
+                    break
+                time.sleep(0.1)
+            self.assertEqual(status_value, "success")
 
-            def _fake_interruptible(script_name, base_dir, extra_args=None, env_overrides=None, cancel_check=None, poll_interval_sec=0.5):
-                return 0, f"ok:{script_name}", ""
-
-            report_server._run_script_interruptible = _fake_interruptible
-            try:
-                start_resp = client.post("/api/missed-entries/refresh", json={})
-                self.assertEqual(start_resp.status_code, 202)
-                run_id = str((start_resp.get_json() or {}).get("run_id") or "")
-                self.assertTrue(run_id)
-
-                status_value = ""
-                for _ in range(60):
-                    status_resp = client.get(f"/api/missed-entries/refresh/{run_id}")
-                    self.assertEqual(status_resp.status_code, 200)
-                    run = (status_resp.get_json() or {}).get("run") or {}
-                    status_value = str(run.get("status") or "").lower()
-                    if status_value in {"success", "failed", "canceled"}:
-                        break
-                    time.sleep(0.1)
-                self.assertEqual(status_value, "success")
-
-                db_path = tdp / "assignee_hours_capacity.db"
-                with sqlite3.connect(db_path) as conn:
-                    snapshot_count_row = conn.execute(
-                        "SELECT COUNT(*) FROM me_snapshot_rows WHERE run_id = ?",
-                        (run_id,),
-                    ).fetchone()
-                    state_row = conn.execute(
-                        "SELECT active_run_id, last_success_run_id FROM me_refresh_state WHERE id = 1"
-                    ).fetchone()
-                self.assertIsNotNone(snapshot_count_row)
-                self.assertGreater(int(snapshot_count_row[0] or 0), 0)
-                self.assertIsNotNone(state_row)
-                self.assertEqual(str(state_row[0] or ""), run_id)
-                self.assertEqual(str(state_row[1] or ""), run_id)
-            finally:
-                report_server._run_script_interruptible = original_interruptible
+            db_path = tdp / "assignee_hours_capacity.db"
+            with sqlite3.connect(db_path) as conn:
+                snapshot_count_row = conn.execute(
+                    "SELECT COUNT(*) FROM me_snapshot_rows WHERE run_id = ?",
+                    (run_id,),
+                ).fetchone()
+                state_row = conn.execute(
+                    "SELECT active_run_id, last_success_run_id FROM me_refresh_state WHERE id = 1"
+                ).fetchone()
+                stats_row = conn.execute(
+                    "SELECT stats_json FROM me_refresh_runs WHERE run_id = ?",
+                    (run_id,),
+                ).fetchone()
+            self.assertIsNotNone(snapshot_count_row)
+            self.assertGreater(int(snapshot_count_row[0] or 0), 0)
+            self.assertIsNotNone(state_row)
+            self.assertEqual(str(state_row[0] or ""), run_id)
+            self.assertEqual(str(state_row[1] or ""), run_id)
+            self.assertIn("canonical_db", str(stats_row[0] or ""))
 
     def test_cancel_marks_running_missed_entries_refresh(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
@@ -103,17 +131,16 @@ class MissedEntriesRefreshApiTests(unittest.TestCase):
             app = create_report_server_app(base_dir=tdp, folder_raw="report_html")
             client = app.test_client()
             db_path = tdp / "assignee_hours_capacity.db"
+            _seed_canonical_run(db_path)
 
-            original_interruptible = report_server._run_script_interruptible
+            original_builder = report_server._canonical_build_missed_entries_rows
 
-            def _slow_interruptible(script_name, base_dir, extra_args=None, env_overrides=None, cancel_check=None, poll_interval_sec=0.5):
+            def _slow_builder(db_path, run_id):
                 for _ in range(40):
-                    if callable(cancel_check) and bool(cancel_check()):
-                        return -1, "", "Canceled by user."
                     time.sleep(0.05)
-                return 0, f"ok:{script_name}", ""
+                return original_builder(db_path, run_id)
 
-            report_server._run_script_interruptible = _slow_interruptible
+            report_server._canonical_build_missed_entries_rows = _slow_builder
             try:
                 start_resp = client.post("/api/missed-entries/refresh", json={})
                 self.assertEqual(start_resp.status_code, 202)
@@ -140,7 +167,7 @@ class MissedEntriesRefreshApiTests(unittest.TestCase):
                     time.sleep(0.05)
                 self.assertEqual(cancel_requested, 1)
             finally:
-                report_server._run_script_interruptible = original_interruptible
+                report_server._canonical_build_missed_entries_rows = original_builder
 
 
 if __name__ == "__main__":

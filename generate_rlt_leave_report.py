@@ -730,11 +730,12 @@ def _redistribute_continuous_leave_worklogs(
         for day, hours in zip(weekday_dates, distributed_hours):
             if hours <= 0:
                 continue
+            iso_day = day.isoformat() if isinstance(day, date) else _to_text(day)
             redistributed.append(
                 WorklogRow(
                     issue_key=issue_key,
                     started_raw=f"redistributed:{subtask.start_date}->{subtask.due_date}",
-                    started_date=day,
+                    started_date=iso_day,
                     author=author,
                     hours_logged=round(hours, 2),
                 )
@@ -1728,6 +1729,204 @@ def _normalize_subtasks(issues: list[dict], task_assignee_by_key: dict[str, str]
     return sorted(out, key=lambda s: s.issue_key)
 
 
+def _resolve_canonical_run_id(db_path: Path, requested_run_id: str) -> str:
+    run_id = _to_text(requested_run_id)
+    if run_id:
+        return run_id
+    if not db_path.exists():
+        return ""
+    with sqlite3.connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT last_success_run_id FROM canonical_refresh_state WHERE id = 1"
+        ).fetchone()
+    return _to_text(row[0] if row else "")
+
+
+def _load_canonical_project_rows(
+    db_path: Path,
+    run_id: str,
+    project_key: str,
+    target_assignee: str,
+) -> tuple[list[SubtaskRow], list[WorklogRow]]:
+    if not db_path.exists() or not run_id:
+        return [], []
+    target_lower = _to_text(target_assignee).casefold()
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        issue_rows = conn.execute(
+            """
+            SELECT issue_id, issue_key, issue_type, summary, status, assignee, parent_issue_key,
+                   created_utc, updated_utc, start_date, due_date, original_estimate_hours,
+                   total_hours_logged, raw_payload_json
+            FROM canonical_issues
+            WHERE run_id = ? AND project_key = ?
+            ORDER BY issue_key
+            """,
+            (run_id, project_key),
+        ).fetchall()
+        worklog_rows = conn.execute(
+            """
+            SELECT worklog_id, issue_key, worklog_author, issue_assignee, started_utc, started_date, hours_logged
+            FROM canonical_worklogs
+            WHERE run_id = ? AND project_key = ?
+            ORDER BY started_date, worklog_id
+            """,
+            (run_id, project_key),
+        ).fetchall()
+
+    task_assignee_by_key: dict[str, str] = {}
+    subtask_issue_keys: set[str] = set()
+    subtasks: list[SubtaskRow] = []
+    for row in issue_rows:
+        issue_key = _to_text(row["issue_key"]).upper()
+        issue_type = _to_text(row["issue_type"])
+        issue_type_lower = issue_type.lower()
+        assignee = _to_text(row["assignee"]) or "Unassigned"
+        if target_lower and assignee.casefold() != target_lower:
+            continue
+        if issue_type_lower == "task":
+            task_assignee_by_key[issue_key] = assignee
+            continue
+        if "sub" not in issue_type_lower:
+            continue
+        raw_payload = {}
+        raw_payload_text = _to_text(row["raw_payload_json"])
+        if raw_payload_text:
+            try:
+                raw_payload = json.loads(raw_payload_text)
+            except json.JSONDecodeError:
+                raw_payload = {}
+        fields = raw_payload.get("fields") if isinstance(raw_payload, dict) else {}
+        fields = fields if isinstance(fields, dict) else {}
+        leave_raw = leave_type_text(fields.get(LEAVE_TYPE_FIELD))
+        classification = classify_leave(leave_raw, _to_text(row["status"]), _to_text(row["summary"]))
+        issue_key = _to_text(row["issue_key"]).upper()
+        subtask_issue_keys.add(issue_key)
+        start_date, due_date = normalize_subtask_dates(_to_text(row["start_date"]), _to_text(row["due_date"]), _to_text(row["summary"]))
+        logged_h = round(_to_float_text(row["total_hours_logged"], 0.0), 2)
+        subtasks.append(
+            SubtaskRow(
+                issue_key=issue_key,
+                issue_id=_to_text(row["issue_id"]),
+                summary=_to_text(row["summary"]),
+                status=_to_text(row["status"]),
+                assignee=assignee,
+                parent_task_key=_to_text(row["parent_issue_key"]).upper(),
+                parent_task_assignee="",
+                created=_to_text(row["created_utc"]),
+                updated=_to_text(row["updated_utc"]),
+                start_date=start_date,
+                due_date=due_date,
+                original_estimate_hours=round(_to_float_text(row["original_estimate_hours"], 0.0), 2),
+                timespent_hours=logged_h,
+                leave_type_raw=leave_raw,
+                leave_classification=classification,
+                total_worklog_hours=logged_h,
+                planned_date_for_bucket=choose_planned_date(start_date, due_date),
+                clubbed_leave="No",
+                no_entry_flag="No",
+            )
+        )
+
+    task_assignee_by_key.update(
+        {
+            _to_text(row["issue_key"]).upper(): _to_text(row["assignee"]) or "Unassigned"
+            for row in issue_rows
+            if _to_text(row["issue_type"]).lower() == "task"
+        }
+    )
+
+    for idx, subtask in enumerate(subtasks):
+        parent_assignee = task_assignee_by_key.get(subtask.parent_task_key, "Unassigned")
+        adjusted = SubtaskRow(
+            issue_key=subtask.issue_key,
+            issue_id=subtask.issue_id,
+            summary=subtask.summary,
+            status=subtask.status,
+            assignee=subtask.assignee,
+            parent_task_key=subtask.parent_task_key,
+            parent_task_assignee=parent_assignee,
+            created=subtask.created,
+            updated=subtask.updated,
+            start_date=subtask.start_date,
+            due_date=subtask.due_date,
+            original_estimate_hours=subtask.original_estimate_hours,
+            timespent_hours=subtask.timespent_hours,
+            leave_type_raw=subtask.leave_type_raw,
+            leave_classification=subtask.leave_classification,
+            total_worklog_hours=subtask.total_worklog_hours,
+            planned_date_for_bucket=subtask.planned_date_for_bucket,
+            clubbed_leave="Yes" if is_clubbed_leave(subtask.total_worklog_hours, subtask.original_estimate_hours, subtask.start_date, subtask.due_date) else "No",
+            no_entry_flag="Yes" if is_defective_no_entry(subtask.leave_classification, subtask.total_worklog_hours, subtask.original_estimate_hours, subtask.start_date, subtask.due_date) else "No",
+        )
+        subtasks[idx] = adjusted
+
+    worklogs: list[WorklogRow] = []
+    for row in worklog_rows:
+        issue_key = _to_text(row["issue_key"]).upper()
+        if issue_key not in subtask_issue_keys:
+            continue
+        issue_assignee = next((item.assignee for item in subtasks if item.issue_key == issue_key), "")
+        if target_lower and issue_assignee.casefold() != target_lower:
+            continue
+        started_day = parse_iso_date(row["started_date"]) or parse_iso_date(row["started_utc"])
+        hours_logged = round(_to_float_text(row["hours_logged"], 0.0), 2)
+        if not started_day or hours_logged <= 0:
+            continue
+        worklogs.append(
+            WorklogRow(
+                issue_key=issue_key,
+                started_raw=_to_text(row["started_utc"]),
+                started_date=started_day.isoformat(),
+                author=_to_text(row["worklog_author"]) or issue_assignee or "Unassigned",
+                hours_logged=hours_logged,
+            )
+        )
+    return sorted(subtasks, key=lambda item: item.issue_key), worklogs
+
+
+def run_report_from_canonical(
+    project_key: str,
+    project_name: str,
+    from_date: str,
+    to_date: str,
+    xlsx_out: Path,
+    html_out: Path,
+    md_out: Path,
+    canonical_db_path: Path,
+    canonical_run_id: str,
+    target_assignee: str = "",
+) -> dict[str, int]:
+    subtasks, all_worklogs = _load_canonical_project_rows(
+        canonical_db_path,
+        canonical_run_id,
+        project_key,
+        target_assignee,
+    )
+    day_hours_profile = _day_hours_profile_from_env()
+    distributed_subtasks = _redistribute_continuous_leave_subtasks(subtasks, day_hours_profile)
+    redistributed_worklogs = _redistribute_continuous_leave_worklogs(subtasks, all_worklogs, day_hours_profile)
+    aggr = _compute_aggregates(subtasks, redistributed_worklogs, from_date, to_date, day_hours_profile)
+
+    _write_xlsx(xlsx_out, subtasks, distributed_subtasks, redistributed_worklogs, aggr)
+    _write_html(html_out, project_key, project_name, from_date, to_date, subtasks, aggr)
+    _write_md(md_out, project_key, project_name, from_date, to_date, aggr)
+
+    return {
+        "tasks": len({item.parent_task_key for item in subtasks if item.parent_task_key}),
+        "subtasks": len(subtasks),
+        "worklogs": len(redistributed_worklogs),
+        "assignees": len(aggr["assignee_summary"]),
+        "defective": len(aggr["defective"]),
+        "clubbed": len(aggr["clubbed"]),
+        "issues_scanned": len(subtasks),
+        "issues_changed": 0,
+        "new_issues": 0,
+        "detail_fetches": 0,
+        "worklog_fetches": 0,
+    }
+
+
 def run_report(
     project_key: str,
     project_name: str,
@@ -1936,6 +2135,8 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--html-out", default=DEFAULT_HTML_OUT)
     p.add_argument("--md-out", default=DEFAULT_MD_OUT)
     p.add_argument("--start-date-field-id", default=DEFAULT_START_DATE_FIELD)
+    p.add_argument("--source", default=_to_text(os.getenv("JIRA_LEAVE_REPORT_SOURCE", "jira")) or "jira")
+    p.add_argument("--canonical-run-id", default=_to_text(os.getenv("JIRA_CANONICAL_RUN_ID")))
     p.add_argument(
         "--incremental",
         action="store_true",
@@ -1962,18 +2163,39 @@ def main() -> None:
 
     print(f"Generating leave report for {args.project_key} ({args.project_name})")
     print(f"Window: {from_date} -> {to_date}")
-    stats = run_report(
-        project_key=args.project_key,
-        project_name=args.project_name,
-        from_date=from_date,
-        to_date=to_date,
-        xlsx_out=xlsx_out,
-        html_out=html_out,
-        md_out=md_out,
-        start_date_field_id=args.start_date_field_id,
-        enable_incremental=args.incremental,
-        target_assignee=target_assignee,
-    )
+    source = _to_text(args.source).lower() or "jira"
+    if source == "canonical_db":
+        canonical_db_path = Path(_to_text(os.getenv("JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH", "assignee_hours_capacity.db")) or "assignee_hours_capacity.db")
+        if not canonical_db_path.is_absolute():
+            canonical_db_path = base / canonical_db_path
+        canonical_run_id = _resolve_canonical_run_id(canonical_db_path, _to_text(args.canonical_run_id))
+        if not canonical_run_id:
+            raise ValueError("Canonical source selected but no successful canonical run was found.")
+        stats = run_report_from_canonical(
+            project_key=args.project_key,
+            project_name=args.project_name,
+            from_date=from_date,
+            to_date=to_date,
+            xlsx_out=xlsx_out,
+            html_out=html_out,
+            md_out=md_out,
+            canonical_db_path=canonical_db_path,
+            canonical_run_id=canonical_run_id,
+            target_assignee=target_assignee,
+        )
+    else:
+        stats = run_report(
+            project_key=args.project_key,
+            project_name=args.project_name,
+            from_date=from_date,
+            to_date=to_date,
+            xlsx_out=xlsx_out,
+            html_out=html_out,
+            md_out=md_out,
+            start_date_field_id=args.start_date_field_id,
+            enable_incremental=args.incremental,
+            target_assignee=target_assignee,
+        )
     print(
         "Report generated: "
         f"tasks={stats['tasks']}, subtasks={stats['subtasks']}, worklogs={stats['worklogs']}, "

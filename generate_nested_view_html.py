@@ -4588,7 +4588,7 @@ Total Leaves Taken = 0h</span>
     function projectLabelFor(project) {{
       const key = String(project && project.key || "").trim();
       const name = String(project && project.name || "").trim();
-      return key && name ? (key + " - " + name) : key;
+      return name || key;
     }}
 
     function updateProjectFilterSummary() {{
@@ -6121,7 +6121,7 @@ Total Leaves Taken = 0h</span>
 
         const text = document.createElement("span");
         text.className = "node-text";
-        text.textContent = row.aspect || "";
+        text.textContent = (row.row_type === "project" && (row.project_name || "").trim()) ? String(row.project_name || "").trim() : (row.aspect || "");
 
         wrap.appendChild(btn);
         wrap.appendChild(text);

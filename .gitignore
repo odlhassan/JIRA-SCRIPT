@@ -18,3 +18,9 @@ leaves_planned_calendar.html
 employee_performance_report.html
 planned_vs_dispensed_report.html
 report_html/*.html
+# Large DB files (exceed GitHub limits)
+assignee_hours_capacity.db
+jira_sync_cache.db
+jira_sync_cache.db-shm
+jira_sync_cache.db-wal
+jira_exports.db

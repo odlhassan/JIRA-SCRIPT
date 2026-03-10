@@ -265,6 +265,50 @@ def _init_performance_settings_db(db_path: Path) -> None:
         conn.commit()
 
 
+def _load_managed_project_display_names(db_path: Path) -> dict[str, str]:
+    if not db_path.exists():
+        return {}
+    try:
+        with sqlite3.connect(db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                SELECT project_key, display_name, project_name
+                FROM managed_projects
+                WHERE is_active = 1
+                """
+            ).fetchall()
+    except sqlite3.Error:
+        return {}
+    out: dict[str, str] = {}
+    for row in rows:
+        key = _to_text(row["project_key"]).upper()
+        if not key:
+            continue
+        display = _to_text(row["display_name"]) or _to_text(row["project_name"]) or key
+        out[key] = display
+    return out
+
+
+def _apply_managed_project_display_names(
+    work_items: dict[str, dict],
+    simple_scoring_rows: list[dict],
+    managed_display_names: dict[str, str],
+) -> None:
+    if not managed_display_names:
+        return
+    for item in work_items.values():
+        project_key = _to_text(item.get("project_key")).upper()
+        display_name = managed_display_names.get(project_key, "")
+        if display_name:
+            item["project_name"] = display_name
+    for row in simple_scoring_rows:
+        project_key = _to_text(row.get("project_key")).upper() or _extract_project_key(_to_text(row.get("issue_key")))
+        display_name = managed_display_names.get(project_key, "")
+        if display_name:
+            row["project_name"] = display_name
+
+
 def _load_performance_settings(db_path: Path) -> dict[str, float]:
     _init_performance_settings_db(db_path)
     with sqlite3.connect(db_path) as conn:
@@ -690,6 +734,19 @@ def _resolve_epf_run_id(db_path: Path, requested_run_id: str) -> str:
     return _to_text(row[0] if row else "")
 
 
+def _resolve_canonical_run_id(db_path: Path, requested_run_id: str) -> str:
+    run_id = _to_text(requested_run_id)
+    if run_id:
+        return run_id
+    if not db_path.exists():
+        return ""
+    with sqlite3.connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT last_success_run_id FROM canonical_refresh_state WHERE id = 1"
+        ).fetchone()
+    return _to_text(row[0] if row else "")
+
+
 def _load_work_items_from_epf_db(db_path: Path, run_id: str) -> dict[str, dict]:
     if not db_path.exists() or not run_id:
         return {}
@@ -818,6 +875,94 @@ def _load_leave_issue_keys_from_epf_db(db_path: Path, run_id: str) -> list[str]:
             (run_id,),
         ).fetchall()
     return sorted({_to_text(r[0]).upper() for r in rows if _to_text(r[0])})
+
+
+def _load_work_items_from_canonical_db(db_path: Path, run_id: str) -> dict[str, dict]:
+    if not db_path.exists() or not run_id:
+        return {}
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            """
+            SELECT issue_key, project_key, issue_type, fix_type, summary, status, assignee,
+                   start_date, due_date, resolved_stable_since_date, original_estimate_hours, parent_issue_key
+            FROM canonical_issues
+            WHERE run_id = ?
+            """,
+            (run_id,),
+        ).fetchall()
+    out: dict[str, dict] = {}
+    for row in rows:
+        issue_key = _to_text(row["issue_key"]).upper()
+        if not issue_key:
+            continue
+        out[issue_key] = {
+            "issue_key": issue_key,
+            "project_key": _to_text(row["project_key"]).upper() or _extract_project_key(issue_key),
+            "issue_type": _to_text(row["issue_type"]),
+            "fix_type": _to_text(row["fix_type"]).lower(),
+            "summary": _to_text(row["summary"]),
+            "status": _to_text(row["status"]),
+            "assignee": _to_text(row["assignee"]),
+            "start_date": _parse_iso_date(row["start_date"]),
+            "due_date": _parse_iso_date(row["due_date"]),
+            "resolved_stable_since_date": _parse_iso_date(row["resolved_stable_since_date"]),
+            "original_estimate_hours": round(_to_float(row["original_estimate_hours"]), 2),
+            "parent_issue_key": _to_text(row["parent_issue_key"]).upper(),
+        }
+    return out
+
+
+def _load_worklogs_from_canonical_db(db_path: Path, run_id: str, work_items: dict[str, dict]) -> list[dict]:
+    if not db_path.exists() or not run_id:
+        return []
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            """
+            SELECT issue_key, issue_assignee, started_date, hours_logged, project_key, worklog_author
+            FROM canonical_worklogs
+            WHERE run_id = ?
+            """,
+            (run_id,),
+        ).fetchall()
+    out: list[dict] = []
+    for row in rows:
+        issue_id = _to_text(row["issue_key"]).upper()
+        if not issue_id:
+            continue
+        item = work_items.get(issue_id, {})
+        worklog_date = _parse_iso_date(row["started_date"])
+        hours_logged = round(_to_float(row["hours_logged"]), 2)
+        if not worklog_date or hours_logged <= 0:
+            continue
+        parent_story_id = _to_text(item.get("parent_issue_key")).upper()
+        story_item = work_items.get(parent_story_id, {}) if parent_story_id else {}
+        item_issue_type = _to_text(item.get("issue_type"))
+        out.append(
+            {
+                "issue_id": issue_id,
+                "issue_assignee": _to_text(row["issue_assignee"]) or _to_text(item.get("assignee")) or "Unassigned",
+                "worklog_date": worklog_date,
+                "hours_logged": hours_logged,
+                "project_key": _to_text(row["project_key"]).upper()
+                or _to_text(item.get("project_key"))
+                or _extract_project_key(issue_id),
+                "is_bug": _is_bug_type(item_issue_type),
+                "fix_type": _to_text(item.get("fix_type")).lower(),
+                "item_summary": _to_text(item.get("summary")),
+                "item_status": _to_text(item.get("status")),
+                "item_issue_type": item_issue_type,
+                "item_assignee": _to_text(item.get("assignee")),
+                "item_parent_issue_key": parent_story_id,
+                "item_start_date": _to_text(item.get("start_date")),
+                "item_due_date": _to_text(item.get("due_date")),
+                "item_resolved_stable_since_date": _to_text(item.get("resolved_stable_since_date")),
+                "story_due_date": _to_text(story_item.get("due_date")),
+                "original_estimate_hours": round(_to_float(item.get("original_estimate_hours")), 2),
+            }
+        )
+    return out
 
 
 def _format_display_date(dt: datetime) -> str:
@@ -953,6 +1098,7 @@ def _build_payload(
     capacity_profiles: list[dict],
     leave_issue_keys: list[str] | None = None,
     simple_scoring: list[dict] | None = None,
+    managed_project_display_names: dict[str, str] | None = None,
 ) -> dict:
     jira_browse_base = _to_text(os.getenv("JIRA_BROWSE_BASE"))
     if not jira_browse_base:
@@ -961,12 +1107,17 @@ def _build_payload(
             jira_browse_base = f"{jira_site.rstrip('/')}/browse"
         else:
             jira_browse_base = f"https://{jira_site}.atlassian.net/browse"
-    projects = sorted(
+    project_keys = sorted(
         {
             *({_to_text(r.get("project_key")) or "UNKNOWN" for r in worklogs}),
             *({_to_text(r.get("project_key")) or "UNKNOWN" for r in work_items}),
         }
     )
+    display_names = managed_project_display_names or {}
+    project_display_names: dict[str, str] = {}
+    for key in project_keys:
+        normalized = key.upper() if key else ""
+        project_display_names[key] = _to_text(display_names.get(normalized)) or key
     default_from, default_to = _default_range(worklogs)
     return {
         "worklogs": worklogs,
@@ -974,7 +1125,8 @@ def _build_payload(
         "leave_rows": leave_rows,
         "leave_issue_keys": leave_issue_keys or [],
         "teams": teams or [],
-        "projects": projects,
+        "projects": project_keys,
+        "project_display_names": project_display_names,
         "default_from": default_from,
         "default_to": default_to,
         "leave_hours_per_day": LEAVE_HOURS_PER_DAY,
@@ -1013,7 +1165,11 @@ def _build_html(payload: dict) -> str:
     .adv-filter-btn {{ border:1px solid #4f46e5; border-radius:999px; background:#4338ca; color:#eef2ff; font-size:.74rem; font-weight:700; padding:6px 12px; cursor:pointer; }}
     .adv-filter-btn:hover {{ background:#3730a3; }}
     .adv-filter-btn:focus {{ outline:none; box-shadow:0 0 0 2px rgba(99,102,241,.35); }}
-    .adv-filter-menu {{ position:absolute; top:calc(100% + 6px); right:0; min-width:200px; padding:6px; border:1px solid #314d7a; border-radius:10px; background:#0f1b32; box-shadow:0 10px 20px rgba(2,8,23,.4); z-index:45; }}
+    .adv-filter-menu {{ position:absolute; top:calc(100% + 6px); right:0; min-width:280px; max-width:360px; padding:10px; border:1px solid #314d7a; border-radius:10px; background:#0f1b32; box-shadow:0 10px 20px rgba(2,8,23,.4); z-index:45; }}
+    .adv-filter-menu .adv-filter-group-label {{ margin-top:10px; margin-bottom:4px; }}
+    .adv-filter-menu .adv-filter-group-label:first-child {{ margin-top:0; }}
+    .adv-filter-menu .filter-dropdown-wrap {{ margin-top:6px; margin-bottom:4px; }}
+    .adv-filter-menu .date-chip-control {{ margin-top:6px; margin-bottom:4px; }}
     .adv-filter-group-label {{ padding:4px 8px; color:#9db1d8; font-size:.66rem; text-transform:uppercase; font-weight:800; letter-spacing:.04em; }}
     .adv-filter-item {{ width:100%; border:0; background:transparent; color:#dce8ff; text-align:left; padding:7px 8px; border-radius:8px; font-size:.76rem; cursor:pointer; }}
     .adv-filter-item:hover {{ background:#17325a; }}
@@ -1027,12 +1183,35 @@ def _build_html(payload: dict) -> str:
     .hero-top {{ display:flex; align-items:flex-start; justify-content:space-between; gap:8px; flex-wrap:wrap; }}
     .hero-actions {{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }}
     .meta {{ color:#c4d4ef; font-size:.8rem; margin-top:4px; }}
-    .toolbar {{ display:grid; gap:8px; grid-template-columns:minmax(180px,1fr) minmax(210px,1fr) minmax(210px,1fr) auto; margin-top:8px; }}
+    .toolbar {{ display:grid; gap:8px; grid-template-columns:minmax(180px,1fr) minmax(180px,1fr) minmax(210px,1fr) minmax(210px,1fr) auto; margin-top:8px; }}
+    .filter-dropdown-wrap {{ position:relative; min-width:0; }}
+    .filter-dropdown-wrap > .filter-dropdown-label {{ display:block; font-size:.66rem; color:#9db1d8; margin-bottom:4px; text-transform:uppercase; font-weight:800; letter-spacing:.04em; }}
+    .filter-trigger {{ display:flex; align-items:center; justify-content:space-between; gap:6px; width:100%; min-height:36px; padding:7px 12px; border:1px solid #3a5c91; border-radius:8px; background:#0d1830; color:#e2e8f0; font-size:.86rem; cursor:pointer; text-align:left; }}
+    .filter-trigger:hover {{ border-color:#5f88c0; background:#173158; }}
+    .filter-trigger .filter-trigger-text {{ flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-weight:600; }}
+    .filter-trigger .material-symbols-outlined {{ font-size:18px; color:#9db1d8; flex-shrink:0; transition:transform .15s ease; }}
+    .filter-trigger[aria-expanded="true"] .material-symbols-outlined {{ transform:rotate(180deg); }}
+    .filter-menu {{ position:absolute; top:100%; left:0; right:0; margin-top:4px; padding:0; border:1px solid #314d7a; border-radius:10px; background:#0f1b32; box-shadow:0 10px 24px rgba(2,8,23,.5); z-index:50; display:none; min-width:220px; flex-direction:column; isolation:isolate; }}
+    .filter-menu.open {{ display:flex; }}
+    .filter-menu-head {{ display:flex; justify-content:space-between; align-items:center; gap:6px; padding:10px 12px 0; }}
+    .filter-menu-head .filter-action-btn {{ padding:4px 10px; border:1px solid #36598a; border-radius:6px; background:#12284b; color:#93c5fd; font-size:.72rem; font-weight:700; cursor:pointer; white-space:nowrap; }}
+    .filter-menu-head .filter-action-btn:hover {{ background:#17325a; border-color:#5f88c0; }}
+    .filter-search-wrap {{ position:relative; padding:8px 12px 0; }}
+    .filter-search {{ width:100%; box-sizing:border-box; padding:8px 10px 8px 34px; border:1px solid #2b446e; border-radius:8px; background:#0d172b; color:#e2ecff; font-size:.84rem; }}
+    .filter-search:focus {{ outline:none; border-color:#5f88c0; box-shadow:0 0 0 2px rgba(96,165,250,.15); }}
+    .filter-search-wrap .search-icon {{ position:absolute; left:20px; top:50%; transform:translateY(-25%); font-size:18px; color:#6b87b3; pointer-events:none; }}
+    .filter-options {{ overflow-y:auto; max-height:220px; padding:4px 0; }}
+    .filter-option {{ display:flex !important; align-items:center !important; gap:10px; padding:7px 12px; cursor:pointer; font-size:.86rem; color:#e2e8f0; user-select:none; text-align:left; transition:background .1s ease; }}
+    .filter-option:hover {{ background:#17325a; }}
+    .filter-option input[type="checkbox"] {{ width:16px; height:16px; margin:0; accent-color:#60a5fa; flex-shrink:0; cursor:pointer; }}
+    .filter-option .filter-option-label {{ flex:1; cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; text-align:left !important; color:#e2e8f0 !important; font-size:.86rem !important; font-weight:500 !important; display:inline !important; text-transform:none !important; margin:0 !important; }}
+    .filter-option.hidden {{ display:none !important; }}
+    .filter-menu-empty {{ padding:12px; font-size:.84rem; color:#6b87b3; text-align:center; }}
     .shortcut-bar {{ display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }}
     .shortcut-btn {{ border:1px solid #3f5f93; background:#0f2342; color:#dce8ff; border-radius:999px; font-size:.74rem; padding:5px 10px; cursor:pointer; }}
     .shortcut-btn:hover {{ background:#17325a; }}
     .f label {{ display:block; font-size:.7rem; color:var(--muted); margin-bottom:3px; text-transform:uppercase; font-weight:700; }} .f input,.f select {{ width:100%; border:1px solid #3a5c91; border-radius:8px; background:#0d1830; color:var(--ink); padding:7px; }}
-    #projects option {{ color:#0f172a; background:#ffffff; }}
+    #projects option,#teams option {{ color:#0f172a; background:#ffffff; }}
     .btn {{ border:1px solid #4a6ea9; background:#1b325a; color:#eef4ff; border-radius:8px; font-weight:700; padding:7px 10px; cursor:pointer; text-decoration:none; display:inline-flex; align-items:center; }}
     .report-refresh-wrap {{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }}
     .report-refresh-status {{ font-size:.72rem; color:#9db1d8; min-height:18px; }}
@@ -1254,6 +1433,12 @@ def _build_html(payload: dict) -> str:
     .score-drawer-close {{ border:1px solid #4a6ea9; background:#1b325a; color:#eef4ff; border-radius:8px; font-weight:700; padding:7px 10px; cursor:pointer; }}
     .score-drawer-section {{ border:1px solid #223a61; border-radius:12px; background:#0f1b32; overflow:visible; display:flex; flex-direction:column; flex-shrink:0; }}
     .score-drawer-section-rules {{ }}
+    .score-drawer-accordion-toggle {{ width:100%; border:0; padding:10px 12px; border-bottom:1px solid #223a61; display:flex; justify-content:space-between; gap:8px; align-items:center; background:#10223f; color:inherit; cursor:pointer; text-align:left; }}
+    .score-drawer-accordion-toggle:hover {{ background:#11284b; }}
+    .score-drawer-accordion-toggle:focus-visible {{ outline:2px solid #7dd3fc; outline-offset:-2px; }}
+    .score-drawer-accordion-toggle-main {{ display:flex; flex-direction:column; gap:2px; min-width:0; }}
+    .score-drawer-accordion-icon {{ color:#93acd2; font-size:1.1rem; transition:transform .18s ease; }}
+    .score-drawer-accordion-toggle[aria-expanded="true"] .score-drawer-accordion-icon {{ transform:rotate(180deg); }}
     .score-drawer-section-calculation {{ }}
     .score-drawer-calculation {{ font-family:ui-monospace, "Cascadia Code","SF Mono",Consolas,monospace; font-size:.9rem; line-height:1.6; padding:10px 12px; }}
     .score-drawer-calculation-line {{ display:flex; align-items:baseline; gap:12px; }}
@@ -1277,13 +1462,23 @@ def _build_html(payload: dict) -> str:
     .rules-tbl td.rule-desc-cell {{ color:#c7d7f3; font-size:.71rem; line-height:1.3; }}
     .rules-tbl td.rule-meta-cell {{ color:#93acd2; font-size:.68rem; line-height:1.3; max-width:320px; word-break:break-word; }}
     .score-subtask-table-wrap {{ padding:12px; }}
+    .score-subtask-filter-bar {{ display:grid; grid-template-columns:repeat(2, minmax(180px, 1fr)); gap:10px; margin-bottom:10px; }}
+    .score-subtask-filter-field {{ display:flex; flex-direction:column; gap:4px; min-width:0; }}
+    .score-subtask-filter-field label {{ font-size:.68rem; color:#93acd2; text-transform:uppercase; font-weight:800; letter-spacing:.04em; }}
+    .score-subtask-filter-field select {{ width:100%; border:1px solid #3a5c91; border-radius:8px; background:#0d1830; color:#dce8ff; padding:7px 9px; }}
+    .score-subtask-filter-status {{ margin:-2px 0 10px; color:#93acd2; font-size:.72rem; }}
     .score-drawer-section-content .ss-tbl-all tbody tr {{ height:30px; max-height:30px; }}
     .score-drawer-section-content .ss-tbl-all td {{ height:30px; max-height:30px; padding-top:2px; padding-bottom:2px; vertical-align:middle; line-height:1.2; }}
     .ss-tbl-all td.penalty-cell {{ font-weight:800; font-size:.74rem; text-align:center; }}
     .ss-tbl-all td.penalty-yes {{ color:#fda4af; }}
     .ss-tbl-all td.penalty-no {{ color:#86efac; }}
+    .due-status-pill {{ display:inline-flex; align-items:center; justify-content:center; min-width:78px; padding:3px 8px; border-radius:999px; border:1px solid #35557f; background:#132949; color:#dce8ff; font-size:.7rem; font-weight:800; }}
+    .due-status-pill.neg {{ border-color:#7f1d1d; background:#3b1218; color:#fecdd3; }}
+    .due-status-pill.pos {{ border-color:#166534; background:#0f2f21; color:#bbf7d0; }}
+    .due-status-pill.neutral {{ border-color:#4b5563; background:#1f2937; color:#d1d5db; }}
     .ss-tbl-all td.penalty-reason-cell {{ min-width:550px; max-width:550px; font-size:.68rem; line-height:1.2; color:#93acd2; }}
     .score-drawer-empty {{ color:#9db1d8; font-size:.78rem; font-style:italic; padding:12px; }}
+    @media (max-width: 720px) {{ .score-subtask-filter-bar {{ grid-template-columns:1fr; }} }}
     body.score-drawer-open {{ overflow:hidden; }}
     .scoring-section-head {{ display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }}
     .scoring-section-title {{ font-size:.88rem; font-weight:800; color:#e6f0ff; }}
@@ -1414,14 +1609,52 @@ def _build_html(payload: dict) -> str:
         <button class="adv-filter-item" type="button" data-preset="last90" role="menuitem">Last 90 Days</button>
         <button class="adv-filter-item" type="button" data-preset="lastQuarter" role="menuitem">Last Quarter</button>
         <button class="adv-filter-item" type="button" data-preset="currentQuarter" role="menuitem">Current Quarter</button>
+        <div class="adv-filter-group-label">Simple Overrun Basis</div>
+        <div class="date-chip-control">
+          <select id="simple-overrun-mode" class="date-chip-select" aria-label="Simple overrun basis" style="width:100%;min-width:0;">
+            <option value="subtasks" selected>Overrun Subtask Hours</option>
+            <option value="total">Total Overrun Hours</option>
+          </select>
+        </div>
+        <div class="adv-filter-group-label">Project</div>
+        <div class="filter-dropdown-wrap">
+          <select id="projects" multiple size="1" aria-hidden="true" style="position:absolute;opacity:0;pointer-events:none;width:0;height:0;"></select>
+          <button type="button" id="projects-trigger" class="filter-trigger" aria-haspopup="true" aria-expanded="false" aria-controls="projects-menu">
+            <span class="filter-trigger-text" id="projects-trigger-text">All</span>
+            <span class="material-symbols-outlined" aria-hidden="true">expand_more</span>
+          </button>
+          <div id="projects-menu" class="filter-menu" role="dialog" aria-label="Project filter" hidden>
+            <div class="filter-search-wrap">
+              <span class="material-symbols-outlined search-icon" aria-hidden="true">search</span>
+              <input type="text" id="projects-search" class="filter-search" placeholder="Search projects..." aria-label="Search projects">
+            </div>
+            <div class="filter-menu-head">
+              <button type="button" id="projects-select-all" class="filter-action-btn">Select all</button>
+              <button type="button" id="projects-clear-all" class="filter-action-btn">Clear all</button>
+            </div>
+            <div id="projects-options" class="filter-options"></div>
+          </div>
+        </div>
+        <div class="adv-filter-group-label">Team</div>
+        <div class="filter-dropdown-wrap">
+          <select id="teams" multiple size="1" aria-hidden="true" style="position:absolute;opacity:0;pointer-events:none;width:0;height:0;"></select>
+          <button type="button" id="teams-trigger" class="filter-trigger" aria-haspopup="true" aria-expanded="false" aria-controls="teams-menu">
+            <span class="filter-trigger-text" id="teams-trigger-text">All</span>
+            <span class="material-symbols-outlined" aria-hidden="true">expand_more</span>
+          </button>
+          <div id="teams-menu" class="filter-menu" role="dialog" aria-label="Team filter" hidden>
+            <div class="filter-search-wrap">
+              <span class="material-symbols-outlined search-icon" aria-hidden="true">search</span>
+              <input type="text" id="teams-search" class="filter-search" placeholder="Search teams..." aria-label="Search teams">
+            </div>
+            <div class="filter-menu-head">
+              <button type="button" id="teams-select-all" class="filter-action-btn">Select all</button>
+              <button type="button" id="teams-clear-all" class="filter-action-btn">Clear all</button>
+            </div>
+            <div id="teams-options" class="filter-options"></div>
+          </div>
+        </div>
       </div>
-    </div>
-    <div class="date-chip-control">
-      <span class="date-chip-label">Simple Overrun Basis</span>
-      <select id="simple-overrun-mode" class="date-chip-select" aria-label="Simple overrun basis">
-        <option value="subtasks" selected>Overrun Subtask Hours</option>
-        <option value="total">Total Overrun Hours</option>
-      </select>
     </div>
     <span id="date-filter-status" class="date-chip-status" aria-live="polite"></span>
   </div>
@@ -1474,9 +1707,8 @@ def _build_html(payload: dict) -> str:
       </div>
     </section>
     <div class="toolbar">
-      <div class="f"><label for="projects">Project</label><select id="projects" multiple size="1"></select></div>
       <div class="f"><label for="capacity-profile">Capacity Profile</label><select id="capacity-profile"></select></div>
-      <div class="f"><label for="search">Search Assignee</label><input id="search" type="text"></div>
+      <div class="f"><label for="search">Search Assignee</label><input id="search" type="text" placeholder="Filter by name"></div>
       <a href="/settings/performance" class="btn">Performance Settings</a>
     </div>
     <div class="shortcut-bar">
@@ -1538,6 +1770,7 @@ const leaveRows = Array.isArray(payload.leave_rows) ? payload.leave_rows : [];
 const leaveIssueKeySet = new Set((Array.isArray(payload.leave_issue_keys) ? payload.leave_issue_keys : []).map((v) => String(v || "").toUpperCase()).filter(Boolean));
 const teams = Array.isArray(payload.teams) ? payload.teams : [];
 const projects = Array.isArray(payload.projects) ? payload.projects : [];
+const projectDisplayNames = payload.project_display_names && typeof payload.project_display_names === "object" ? payload.project_display_names : {{}};
 const entitiesCatalog = Array.isArray(payload.entities_catalog) ? payload.entities_catalog : [];
 const managedFields = Array.isArray(payload.managed_fields) ? payload.managed_fields : [];
 const capacityProfiles = Array.isArray(payload.capacity_profiles) ? payload.capacity_profiles : [];
@@ -1782,10 +2015,10 @@ function openScoreDrawerForAssignee(item) {{
         : "Disabled",
       tone: overloadedApplied ? "neg" : "",
       desc: planningRealismEnabled
-        ? "When overload applies, Overload Capping/ Planning Realism caps the final simple score to the overload score."
-        : "When overload applies, the overload gap is deducted from the base simple score like the other penalty terms.",
+        ? "When overload applies, Overload Capping/ Planning Realism caps the final simple score to the delivery ratio (actual/planned)."
+        : "When planned > availability and actual hours are below the safe threshold (planned − threshold%), the shortfall is deducted from the base simple score.",
       meta: overloadedPenaltyEnabled
-        ? `Overload Capping/ Planning Realism: ${{planningRealismEnabled ? "On" : "Off"}} | Threshold: ${{n(overloadedPenaltyThresholdPct).toFixed(1)}}% | Max planned before overload: ${{hoursText(n(item.employee_capacity_hours) * (1 + overloadedPenaltyThresholdPct / 100))}} | Capacity: ${{hoursText(item.employee_capacity_hours)}} | Capacity/Planned: ${{scorePctText(item.simple_score_overloaded)}} | Overload penalty: ${{scorePctText(n(item.simple_score_overloaded_penalty_pct))}}`
+        ? `Overload Capping/ Planning Realism: ${{planningRealismEnabled ? "On" : "Off"}} | Threshold: ${{n(overloadedPenaltyThresholdPct).toFixed(1)}}% | Availability: ${{hoursText(n(item.employee_capacity_hours))}} | Planned Hrs Assigned: ${{hoursText(n(item.planned_hours_assigned))}} | Actual Hrs Spent: ${{hoursText(n(item.total_hours))}} | Safe threshold (planned − ${{n(overloadedPenaltyThresholdPct).toFixed(0)}}%): ${{hoursText((n(item.planned_hours_assigned) * (1 - overloadedPenaltyThresholdPct / 100)).toFixed(1))}} | Penalty: ${{scorePctText(n(item.simple_score_overloaded_penalty_pct))}}`
         : "Overloaded penalty is turned off.",
     }},
   ];
@@ -1854,9 +2087,6 @@ function openScoreDrawerForAssignee(item) {{
     .map((d) => {{
       const row = d.row;
       const issueUrl = String(row.jira_url || jiraIssueUrl(d.issueKey) || "");
-      const linkCell = issueUrl
-        ? `<a class="jira-link-icon" href="${{e(issueUrl)}}" target="_blank" rel="noopener noreferrer" title="Open in Jira"><span class="material-symbols-outlined">open_in_new</span></a>`
-        : `<span class="jira-link-disabled">-</span>`;
       const estLabel = d.estStatus === "within_estimate" ? "Within"
         : d.estStatus === "over_estimate" ? "Over" : "No Est.";
       const dueLabel = d.dueStatus === "on_time" ? "On Time"
@@ -1867,12 +2097,34 @@ function openScoreDrawerForAssignee(item) {{
       const rowClass = d.isPenalized ? "status-over" : (d.estStatus === "within_estimate" ? "status-within" : "status-noest");
       const variance = d.est > 0 ? d.act - d.est : 0;
       const varianceText = d.est > 0 ? ((variance >= 0 ? "+" : "") + hoursText(variance)) : "-";
-      return `<tr class="${{rowClass}}"><td class="issue-id">${{e(d.issueKey || "-")}}</td><td class="issue-title">${{e(row.summary || "-")}}</td><td>${{e(row.epic_name || row.epic_key || "-")}}</td><td>${{e(row.project_name || "-")}}</td><td>${{hoursText(d.est)}}</td><td>${{hoursText(d.act)}}</td><td>${{varianceText}}</td><td>${{hoursText(d.over)}}</td><td>${{e(estLabel)}}</td><td>${{e(formatDate(row.planned_due_date) || "-")}}</td><td>${{e(dueLabel)}}</td><td class="penalty-cell${{d.isPenalized ? " penalty-yes" : " penalty-no"}}">${{e(penaltyLabel)}}</td><td class="penalty-reason-cell">${{e(row.penalty_reason || "-")}}</td><td>${{linkCell}}</td></tr>`;
-    }}).join("");
+      return {{
+        rowClass,
+        issueKey: d.issueKey || "-",
+        summary: row.summary || "-",
+        epicLabel: row.epic_name || row.epic_key || "-",
+        projectLabel: row.project_name || "-",
+        estimateText: hoursText(d.est),
+        actualText: hoursText(d.act),
+        varianceText,
+        overrunText: hoursText(d.over),
+        estLabel,
+        dueDateText: formatDate(row.planned_due_date) || "-",
+        actualCompletedDateText: formatDate(row.actual_complete_date || row.effective_completion_date) || "-",
+        actualCompletedSourceText: actualCompletionSourceText(row.actual_complete_source),
+        dueLabel,
+        dueStatusTone: (dueMode && row.is_penalized_for_due) ? "neg" : (d.dueStatus === "on_time" ? "pos" : "neutral"),
+        penaltyLabel,
+        penaltyReason: row.penalty_reason || "-",
+        isPenalized: d.isPenalized,
+        issueUrl,
+      }};
+    }});
   const penalizedCount = allSubtaskDetails.filter((d) => d.isPenalized).length;
   const notPenalizedCount = allSubtaskDetails.length - penalizedCount;
-  const allSubtasksSectionHtml = allSubtaskRows
-    ? `<div class="score-subtask-table-wrap"><table class="ss-tbl ss-tbl-all"><thead><tr><th>Subtask</th><th>Name</th><th>Epic</th><th>Project</th><th>Estimate</th><th>Actual</th><th>Variance</th><th>Overrun</th><th>Est. Status</th><th>Due Date</th><th>Due Status</th><th>Penalized?</th><th>Reason</th><th>Jira</th></tr></thead><tbody>${{allSubtaskRows}}</tbody></table></div>`
+  const allSubtaskEpicOptions = Array.from(new Set(allSubtaskRows.map((row) => String(row.epicLabel || "-")))).sort((a, b) => a.localeCompare(b));
+  const allSubtaskProjectOptions = Array.from(new Set(allSubtaskRows.map((row) => String(row.projectLabel || "-")))).sort((a, b) => a.localeCompare(b));
+  const allSubtasksSectionHtml = allSubtaskRows.length
+    ? `<div class="score-subtask-table-wrap"><div class="score-subtask-filter-bar"><div class="score-subtask-filter-field"><label for="score-subtask-epic-filter">Epic/RMI</label><select id="score-subtask-epic-filter"><option value="">All Epic/RMIs</option>${{allSubtaskEpicOptions.map((value) => `<option value="${{e(value)}}">${{e(value)}}</option>`).join("")}}</select></div><div class="score-subtask-filter-field"><label for="score-subtask-project-filter">Project</label><select id="score-subtask-project-filter"><option value="">All Projects</option>${{allSubtaskProjectOptions.map((value) => `<option value="${{e(value)}}">${{e(value)}}</option>`).join("")}}</select></div></div><div id="score-subtask-filter-status" class="score-subtask-filter-status"></div><table class="ss-tbl ss-tbl-all"><thead><tr><th>Subtask</th><th>Name</th><th>Epic</th><th>Project</th><th>Estimate</th><th>Actual</th><th>Variance</th><th>Overrun</th><th>Est. Status</th><th>Due Date</th><th>Actual Completed Date</th><th>Due Status</th><th>Penalized?</th><th>Reason</th><th>Jira</th></tr></thead><tbody id="score-subtask-table-body"></tbody></table></div>`
     : `<div class="score-drawer-empty">No scored subtasks for this assignee in the current scope.</div>`;
   if (scoreDrawerTitleEl) scoreDrawerTitleEl.textContent = `Simple Score Details${{item.assignee ? ` - ${{String(item.assignee)}}` : ""}}`;
   if (scoreDrawerSubtitleEl) {{
@@ -1892,7 +2144,44 @@ function openScoreDrawerForAssignee(item) {{
   const overCount = n(item.ss_over_count);
   const noEstCount = n(item.ss_no_estimate_count);
   const breakdownNote = `${{allSubtaskCount}} subtask(s): ${{Math.round(withinCount)}} within, ${{Math.round(overCount)}} over, ${{Math.round(noEstCount)}} no est. | ${{penalizedCount}} penalized, ${{notPenalizedCount}} not penalized`;
-  scoreDrawerBodyEl.innerHTML = `<section class="score-drawer-section score-drawer-section-calculation"><div class="score-drawer-section-head"><h3 class="score-drawer-section-title">Calculation</h3><div class="score-drawer-section-note">Add and subtract to get the simple score</div></div><div class="score-drawer-section-content">${{calculationSectionHtml}}</div></section><section class="score-drawer-section score-drawer-section-rules"><div class="score-drawer-section-head"><h3 class="score-drawer-section-title">Rules</h3><div class="score-drawer-section-note">Exact formula inputs for this assignee</div></div><div class="score-drawer-section-content"><div class="score-subtask-table-wrap">${{ruleHtml}}</div></div></section><section class="score-drawer-section score-drawer-section-all-subtasks"><div class="score-drawer-section-head"><h3 class="score-drawer-section-title">All Scored Subtasks</h3><div class="score-drawer-section-note">${{e(breakdownNote)}}</div></div><div class="score-drawer-section-content">${{allSubtasksSectionHtml}}</div></section>`;
+  scoreDrawerBodyEl.innerHTML = `<section class="score-drawer-section score-drawer-section-calculation"><div class="score-drawer-section-head"><h3 class="score-drawer-section-title">Calculation</h3><div class="score-drawer-section-note">Add and subtract to get the simple score</div></div><div class="score-drawer-section-content">${{calculationSectionHtml}}</div></section><section class="score-drawer-section score-drawer-section-rules"><button type="button" class="score-drawer-accordion-toggle" data-score-drawer-accordion="rules" aria-expanded="false" aria-controls="score-drawer-rules-content"><span class="score-drawer-accordion-toggle-main"><span class="score-drawer-section-title">Rules</span><span class="score-drawer-section-note">Exact formula inputs for this assignee</span></span><span class="material-symbols-outlined score-drawer-accordion-icon" aria-hidden="true">expand_more</span></button><div id="score-drawer-rules-content" class="score-drawer-section-content" hidden><div class="score-subtask-table-wrap">${{ruleHtml}}</div></div></section><section class="score-drawer-section score-drawer-section-all-subtasks"><div class="score-drawer-section-head"><h3 class="score-drawer-section-title">All Scored Subtasks</h3><div class="score-drawer-section-note">${{e(breakdownNote)}}</div></div><div class="score-drawer-section-content">${{allSubtasksSectionHtml}}</div></section>`;
+  const rulesAccordionToggle = scoreDrawerBodyEl.querySelector('[data-score-drawer-accordion="rules"]');
+  const rulesAccordionContent = document.getElementById("score-drawer-rules-content");
+  if (rulesAccordionToggle && rulesAccordionContent) {{
+    rulesAccordionToggle.addEventListener("click", () => {{
+      const expanded = rulesAccordionToggle.getAttribute("aria-expanded") === "true";
+      rulesAccordionToggle.setAttribute("aria-expanded", expanded ? "false" : "true");
+      rulesAccordionContent.hidden = expanded;
+    }});
+  }}
+  const subtaskEpicFilterEl = document.getElementById("score-subtask-epic-filter");
+  const subtaskProjectFilterEl = document.getElementById("score-subtask-project-filter");
+  const subtaskTableBodyEl = document.getElementById("score-subtask-table-body");
+  const subtaskFilterStatusEl = document.getElementById("score-subtask-filter-status");
+  function renderFilteredScoreSubtasks() {{
+    if (!subtaskTableBodyEl) return;
+    const epicFilter = String(subtaskEpicFilterEl?.value || "");
+    const projectFilter = String(subtaskProjectFilterEl?.value || "");
+    const rows = allSubtaskRows.filter((row) => {{
+      if (epicFilter && String(row.epicLabel || "") !== epicFilter) return false;
+      if (projectFilter && String(row.projectLabel || "") !== projectFilter) return false;
+      return true;
+    }});
+    subtaskTableBodyEl.innerHTML = rows.length
+      ? rows.map((row) => {{
+        const linkCell = row.issueUrl
+          ? `<a class="jira-link-icon" href="${{e(row.issueUrl)}}" target="_blank" rel="noopener noreferrer" title="Open in Jira"><span class="material-symbols-outlined">open_in_new</span></a>`
+          : `<span class="jira-link-disabled">-</span>`;
+        return `<tr class="${{row.rowClass}}"><td class="issue-id">${{e(row.issueKey)}}</td><td class="issue-title">${{e(row.summary)}}</td><td>${{e(row.epicLabel)}}</td><td>${{e(row.projectLabel)}}</td><td>${{row.estimateText}}</td><td>${{row.actualText}}</td><td>${{row.varianceText}}</td><td>${{row.overrunText}}</td><td>${{e(row.estLabel)}}</td><td>${{e(row.dueDateText)}}</td><td>${{e(row.actualCompletedDateText)}}<div class="sub">${{e(row.actualCompletedSourceText)}}</div></td><td><span class="due-status-pill ${{row.dueStatusTone}}">${{e(row.dueLabel)}}</span></td><td class="penalty-cell${{row.isPenalized ? " penalty-yes" : " penalty-no"}}">${{e(row.penaltyLabel)}}</td><td class="penalty-reason-cell">${{e(row.penaltyReason)}}</td><td>${{linkCell}}</td></tr>`;
+      }}).join("")
+      : `<tr><td colspan="15" class="score-drawer-empty">No scored subtasks match the selected Epic/RMI and Project filters.</td></tr>`;
+    if (subtaskFilterStatusEl) {{
+      subtaskFilterStatusEl.textContent = `${{rows.length}} of ${{allSubtaskRows.length}} scored subtask(s) shown`;
+    }}
+  }}
+  if (subtaskEpicFilterEl) subtaskEpicFilterEl.addEventListener("change", renderFilteredScoreSubtasks);
+  if (subtaskProjectFilterEl) subtaskProjectFilterEl.addEventListener("change", renderFilteredScoreSubtasks);
+  renderFilteredScoreSubtasks();
   scoreDrawerAssignee = String(item.assignee || "");
   scoreDrawerOverlayEl.classList.add("open");
   scoreDrawerEl.classList.add("open");
@@ -1997,6 +2286,7 @@ function getEmployeeRefreshInlineState(assigneeName) {{
   }};
 }}
 function selectedProjects() {{ return new Set(Array.from(document.getElementById("projects").selectedOptions).map(o => o.value)); }}
+function selectedTeams() {{ return new Set(Array.from(document.getElementById("teams").selectedOptions).map(o => o.value)); }}
 function addDayPenalty(rec, day, points) {{
   const d = String(day || "");
   const p = n(points);
@@ -2834,11 +3124,18 @@ function compute() {{
     const dueAdjustedPenaltyHours = adjOver + latePenaltyEstimate;
     it.simple_score_due = totalEst > 0 ? clamp(100 * (1 - dueAdjustedPenaltyHours / totalEst), 0, 100) : 0;
     const effectiveCapacity = Math.max(0, n(it.employee_capacity_hours));
-    it.simple_score_overloaded = totalEst > 0 ? clamp((effectiveCapacity / totalEst) * 100, 0, 100) : 0;
-    const maxPlannedBeforeCap = effectiveCapacity * (1 + overloadedPenaltyThresholdPct / 100);
-    const overloadedApplies = overloadedPenaltyEnabled && totalEst > 0 && effectiveCapacity > 0 && totalEst > maxPlannedBeforeCap;
+    const plannedHrs = Math.max(0, n(it.planned_hours_assigned));
+    const actualHrs = Math.max(0, n(it.total_hours));
+    const isOverloaded = plannedHrs > 0 && effectiveCapacity > 0 && plannedHrs > effectiveCapacity;
+    const safeThreshold = plannedHrs > 0 ? plannedHrs * (1 - overloadedPenaltyThresholdPct / 100) : 0;
+    const actualBelowSafe = isOverloaded && actualHrs < safeThreshold;
+    const overloadedApplies = overloadedPenaltyEnabled && isOverloaded && actualBelowSafe;
+    const shortfall = overloadedApplies ? Math.max(0, safeThreshold - actualHrs) : 0;
+    it.simple_score_overloaded = plannedHrs > 0
+      ? (overloadedApplies ? clamp((actualHrs / plannedHrs) * 100, 0, 100) : clamp((effectiveCapacity / plannedHrs) * 100, 0, 100))
+      : 0;
     it.simple_score_overloaded_applied = overloadedApplies ? 1 : 0;
-    it.simple_score_overloaded_penalty_pct = overloadedApplies ? clamp(100 - it.simple_score_overloaded, 0, 100) : 0;
+    it.simple_score_overloaded_penalty_pct = overloadedApplies && plannedHrs > 0 ? clamp((shortfall / plannedHrs) * 100, 0, 100) : 0;
     const baseSimpleScore = dueCompletionEnabled ? it.simple_score_due : it.simple_score_raw;
     it.simple_score = it.score_eligible
       ? (overloadedApplies
@@ -2848,8 +3145,19 @@ function compute() {{
           : baseSimpleScore)
       : NaN;
   }}
-  items.sort((a,b)=>n(b.final_score)-n(a.final_score) || a.assignee.localeCompare(b.assignee));
-  return items;
+  const tset = selectedTeams();
+  let filteredItems = items;
+  if (tset.size > 0 && Array.isArray(teams) && teams.length > 0) {{
+    const allowedAssignees = new Set();
+    for (const t of teams) {{
+      if (tset.has(String(t.team_name || ""))) {{
+        for (const a of (Array.isArray(t.assignees) ? t.assignees : [])) allowedAssignees.add(String(a || "").toLowerCase());
+      }}
+    }}
+    filteredItems = items.filter((it) => allowedAssignees.has(String(it.assignee || "").toLowerCase()));
+  }}
+  filteredItems.sort((a,b)=>n(b.final_score)-n(a.final_score) || a.assignee.localeCompare(b.assignee));
+  return filteredItems;
 }}
 function renderSeriesSvg(series) {{
   const data = Array.isArray(series) ? series : [];
@@ -3714,7 +4022,7 @@ function render(items) {{
       const plannedRows = (Array.isArray(item.assigned_hierarchy) ? item.assigned_hierarchy : [])
         .filter((row) => {{
           const t = String(row?.hierarchy_type || row?.issue_type || "").toLowerCase();
-          return t === "subtask" || t === "bug_subtask";
+          return t === "subtask";
         }});
       const plannedTotal = plannedRows.reduce((acc, row) => acc + n(row?.original_estimate_hours), 0);
       const plannedGroups = [
@@ -3785,7 +4093,7 @@ function render(items) {{
           : "")
         : '<tbody><tr><td colspan="7" class="empty">No subtasks in current scope.</td></tr></tbody>';
       const plannedBreakdownBlock = b.isPlannedAssigned && isPlannedOpen
-        ? `<div class="availability-breakdown"><div class="availability-note">Assigned subtasks in current filters (including bug subtasks), grouped by how their planned dates match the active date range.</div><div class="tbl-wrap" style="max-height:240px;overflow:auto;"><table class="ss-tbl"><thead><tr><th>Jira Subtask ID</th><th>Type</th><th>Start Date</th><th>End Date</th><th>Original Estimate</th><th>Logged Hours</th><th>Jira</th></tr></thead>${{plannedTableBody}}</table></div><div class="availability-line"><span class="availability-name"><strong>Total Original Estimates</strong></span><span class="availability-num"><strong>${{plannedTotal.toFixed(2)}}h</strong></span></div></div>`
+        ? `<div class="availability-breakdown"><div class="availability-note">Assigned non-bug subtasks in current filters, grouped by how their planned dates match the active date range.</div><div class="tbl-wrap" style="max-height:240px;overflow:auto;"><table class="ss-tbl"><thead><tr><th>Jira Subtask ID</th><th>Type</th><th>Start Date</th><th>End Date</th><th>Original Estimate</th><th>Logged Hours</th><th>Jira</th></tr></thead>${{plannedTableBody}}</table></div><div class="availability-line"><span class="availability-name"><strong>Total Original Estimates</strong></span><span class="availability-num"><strong>${{plannedTotal.toFixed(2)}}h</strong></span></div></div>`
         : "";
       const actualRows = Object.entries(item.issue_logged_hours_stats_by_issue || {{}})
         .map(([issueKeyRaw, loggedHoursRaw]) => {{
@@ -3907,7 +4215,7 @@ function render(items) {{
   const activeBigLabel = activeScoringTab === "simple" ? "Simple Score" : "Advanced Score";
   const activeBigSub = activeScoringTab === "simple"
     ? (eligibleForScore
-      ? `Simple efficiency${{dueCompletionEnabled ? " (due-adjusted)" : ""}}${{overloadedApplied ? " + overloaded penalty" : ""}}${{planningRealismEnabled && overloadedApplied ? " + overload capping/planning realism cap" : ""}} | ${{simpleOverrunLabel()}}: ${{n(item.simple_score_overrun_active).toFixed(1)}}h | Planned: ${{n(item.ss_total_estimate).toFixed(1)}}h${{dueCompletionEnabled && n(item.ss_due_penalty_estimate) > 0 ? ` | Late estimate penalty: ${{n(item.ss_due_penalty_estimate).toFixed(1)}}h` : ""}}${{overloadedApplied ? ` | Overload score: ${{n(item.simple_score_overloaded).toFixed(1)}}% | Overload penalty: ${{n(item.simple_score_overloaded_penalty_pct).toFixed(1)}}%` : ""}}`
+      ? `Simple efficiency${{dueCompletionEnabled ? " (due-adjusted)" : ""}}${{overloadedApplied ? " + overloaded penalty" : ""}}${{planningRealismEnabled && overloadedApplied ? " + overload capping/planning realism cap" : ""}} | ${{simpleOverrunLabel()}}: ${{n(item.simple_score_overrun_active).toFixed(1)}}h | Planned: ${{n(item.ss_total_estimate).toFixed(1)}}h${{dueCompletionEnabled && n(item.ss_due_penalty_estimate) > 0 ? ` | Late estimate penalty: ${{n(item.ss_due_penalty_estimate).toFixed(1)}}h` : ""}}${{overloadedApplied ? ` | Availability: ${{n(item.employee_capacity_hours).toFixed(1)}}h | Planned Assigned: ${{n(item.planned_hours_assigned).toFixed(1)}}h | Actual Spent: ${{n(item.total_hours).toFixed(1)}}h | Safe threshold: ${{(n(item.planned_hours_assigned) * (1 - overloadedPenaltyThresholdPct / 100)).toFixed(1)}}h | Overload penalty: ${{n(item.simple_score_overloaded_penalty_pct).toFixed(1)}}%` : ""}}`
       : `Simple scoring is N/A because Planned Hours Assigned is ${{n(item.planned_hours_assigned).toFixed(1)}}h.`)
     : (eligibleForScore
       ? `Penalty-based | Raw ${{n(item.raw_score).toFixed(2)}} | Penalty -${{n(item.total_penalty).toFixed(2)}} | Base ${{n(settings.base_score).toFixed(0)}}`
@@ -4022,7 +4330,7 @@ function render(items) {{
         if (bigEl) bigEl.textContent = Number.isFinite(activeSimpleScore) ? activeSimpleScore.toFixed(1) : "N/A";
         if (lblEl) lblEl.innerHTML = '<button type="button" class="summary-score-trigger" id="summary-simple-score-trigger" aria-label="Open simple score details"><span class="score-label-text">Simple Score</span><span class="material-symbols-outlined" aria-hidden="true">open_in_new</span></button>';
         if (subEl) subEl.textContent = isScoreEligible(item)
-          ? `Simple efficiency${{dueCompletionEnabled ? " (due-adjusted)" : ""}}${{overloadedApplied ? " + overloaded penalty" : ""}}${{planningRealismEnabled && overloadedApplied ? " + overload capping/planning realism cap" : ""}} | ${{simpleOverrunLabel()}}: ${{n(item.simple_score_overrun_active).toFixed(1)}}h | Planned: ${{n(item.ss_total_estimate).toFixed(1)}}h${{dueCompletionEnabled && n(item.ss_due_penalty_estimate) > 0 ? ` | Late estimate penalty: ${{n(item.ss_due_penalty_estimate).toFixed(1)}}h` : ""}}${{overloadedApplied ? ` | Overload score: ${{n(item.simple_score_overloaded).toFixed(1)}}% | Overload penalty: ${{n(item.simple_score_overloaded_penalty_pct).toFixed(1)}}%` : ""}}`
+          ? `Simple efficiency${{dueCompletionEnabled ? " (due-adjusted)" : ""}}${{overloadedApplied ? " + overloaded penalty" : ""}}${{planningRealismEnabled && overloadedApplied ? " + overload capping/planning realism cap" : ""}} | ${{simpleOverrunLabel()}}: ${{n(item.simple_score_overrun_active).toFixed(1)}}h | Planned: ${{n(item.ss_total_estimate).toFixed(1)}}h${{dueCompletionEnabled && n(item.ss_due_penalty_estimate) > 0 ? ` | Late estimate penalty: ${{n(item.ss_due_penalty_estimate).toFixed(1)}}h` : ""}}${{overloadedApplied ? ` | Availability: ${{n(item.employee_capacity_hours).toFixed(1)}}h | Planned Assigned: ${{n(item.planned_hours_assigned).toFixed(1)}}h | Actual Spent: ${{n(item.total_hours).toFixed(1)}}h | Safe threshold: ${{(n(item.planned_hours_assigned) * (1 - overloadedPenaltyThresholdPct / 100)).toFixed(1)}}h | Overload penalty: ${{n(item.simple_score_overloaded_penalty_pct).toFixed(1)}}%` : ""}}`
           : `Simple scoring is N/A because Planned Hours Assigned is ${{n(item.planned_hours_assigned).toFixed(1)}}h.`;
         if (kpiEl) kpiEl.textContent = Number.isFinite(activeSimpleScore) ? activeSimpleScore.toFixed(1) : "N/A";
       }} else {{
@@ -4175,6 +4483,77 @@ function setHeaderCollapsed(isCollapsed) {{
   localStorage.setItem(HEADER_COLLAPSED_STORAGE_KEY, collapsed ? "1" : "0");
 }}
 document.getElementById("projects").innerHTML = projects.map((p) => `<option value="${{e(p)}}" selected>${{e(p)}}</option>`).join("");
+const teamsEl = document.getElementById("teams");
+if (teamsEl) teamsEl.innerHTML = teams.map((t) => `<option value="${{e(t.team_name)}}" selected>${{e(t.team_name)}}</option>`).join("");
+
+function updateFilterTriggerText(selectId, triggerTextId) {{
+  const sel = document.getElementById(selectId);
+  const txt = document.getElementById(triggerTextId);
+  if (!sel || !txt) return;
+  const n = sel.selectedOptions.length;
+  const total = sel.options.length;
+  txt.textContent = total === 0 ? "None" : (n === total ? "All" : n + " selected");
+}}
+function setupFilterDropdown(config) {{
+  const {{ selectId, triggerId, menuId, searchId, selectAllId, clearAllId, optionsId, options }} = config;
+  const selectEl = document.getElementById(selectId);
+  const triggerEl = document.getElementById(triggerId);
+  const menuEl = document.getElementById(menuId);
+  const searchEl = document.getElementById(searchId);
+  const selectAllBtn = document.getElementById(selectAllId);
+  const clearAllBtn = document.getElementById(clearAllId);
+  const optionsContainer = document.getElementById(optionsId);
+  const triggerTextId = triggerId + "-text";
+  const triggerTextEl = document.getElementById(triggerTextId);
+  if (!selectEl || !triggerEl || !menuEl || !optionsContainer) return;
+  const opts = options.map((o) => (typeof o === "string" ? {{ value: o, label: o }} : {{ value: String(o.value ?? o.team_name ?? o), label: String(o.label ?? o.team_name ?? o) }}));
+  optionsContainer.innerHTML = opts.map((o) => {{
+    const val = e(o.value);
+    const lab = e(o.label);
+    const optEl = Array.from(selectEl.options).find((opt) => opt.value === o.value);
+    const isSelected = optEl ? optEl.selected : true;
+    return `<div class="filter-option" data-value="${{val}}"><input type="checkbox" ${{isSelected ? "checked" : ""}}><span class="filter-option-label">${{lab}}</span></div>`;
+  }}).join("");
+  optionsContainer.querySelectorAll(".filter-option").forEach((row) => {{
+    const val = row.getAttribute("data-value");
+    const cb = row.querySelector("input");
+    if (!cb) return;
+    function applySelection(checked) {{
+      const opt = Array.from(selectEl.options).find((o) => o.value === val);
+      if (opt) opt.selected = checked;
+      updateFilterTriggerText(selectId, triggerTextId);
+      render(compute());
+    }}
+    cb.addEventListener("change", () => applySelection(cb.checked));
+    row.addEventListener("click", (ev) => {{ if (ev.target === cb) return; cb.checked = !cb.checked; applySelection(cb.checked); }});
+  }});
+  if (searchEl) {{
+    searchEl.addEventListener("input", () => {{
+      const q = String(searchEl.value || "").trim().toLowerCase();
+      optionsContainer.querySelectorAll(".filter-option").forEach((row) => {{
+        const txt = row.querySelector(".filter-option-label");
+        const show = !q || (txt && txt.textContent.toLowerCase().includes(q));
+        row.classList.toggle("hidden", !show);
+      }});
+    }});
+  }}
+  if (selectAllBtn) selectAllBtn.addEventListener("click", () => {{ Array.from(selectEl.options).forEach((o) => {{ o.selected = true; }}); optionsContainer.querySelectorAll(".filter-option input").forEach((c) => {{ c.checked = true; }}); updateFilterTriggerText(selectId, triggerTextId); render(compute()); }});
+  if (clearAllBtn) clearAllBtn.addEventListener("click", () => {{ Array.from(selectEl.options).forEach((o) => {{ o.selected = false; }}); optionsContainer.querySelectorAll(".filter-option input").forEach((c) => {{ c.checked = false; }}); updateFilterTriggerText(selectId, triggerTextId); render(compute()); }});
+  triggerEl.addEventListener("click", (e) => {{
+    e.stopPropagation();
+    const open = menuEl.classList.toggle("open");
+    triggerEl.setAttribute("aria-expanded", open ? "true" : "false");
+    menuEl.hidden = !open;
+    if (open) searchEl && searchEl.focus();
+  }});
+  document.addEventListener("click", (e) => {{
+    if (!menuEl.contains(e.target) && e.target !== triggerEl) {{ menuEl.classList.remove("open"); triggerEl.setAttribute("aria-expanded", "false"); menuEl.hidden = true; }}
+  }});
+  updateFilterTriggerText(selectId, triggerTextId);
+}}
+setupFilterDropdown({{ selectId: "projects", triggerId: "projects-trigger", menuId: "projects-menu", searchId: "projects-search", selectAllId: "projects-select-all", clearAllId: "projects-clear-all", optionsId: "projects-options", options: projects.map((p) => ({{ value: p, label: projectDisplayNames[p] || p }})) }});
+setupFilterDropdown({{ selectId: "teams", triggerId: "teams-trigger", menuId: "teams-menu", searchId: "teams-search", selectAllId: "teams-select-all", clearAllId: "teams-clear-all", optionsId: "teams-options", options: teams.map((t) => ({{ value: t.team_name, label: t.team_name }})) }});
+
 refreshCapacityProfileOptions();
 document.getElementById("from").value = defaultFrom; document.getElementById("to").value = defaultTo;
 document.getElementById("meta").textContent = `Generated: ${{payload.generated_at || "-"}} | Data window: ${{formatDate(defaultFrom) || "-"}} to ${{formatDate(defaultTo) || "-"}}`;
@@ -4343,7 +4722,8 @@ document.getElementById("leader-sort-direction").addEventListener("change", rend
 document.getElementById("filter-risk").addEventListener("change", renderAll);
 document.getElementById("filter-missed").addEventListener("change", renderAll);
 document.getElementById("leader-search").addEventListener("input", renderAll);
-document.getElementById("reset").addEventListener("click", ()=>{{ document.getElementById("from").value=defaultFrom; document.getElementById("to").value=defaultTo; document.getElementById("search").value=\"\"; document.getElementById("leader-search").value=\"\"; document.getElementById("leader-sort").value=\"score\"; document.getElementById("leader-sort-direction").value=\"desc\"; document.getElementById("leader-scoring-mode").value=\"simple\"; document.getElementById("filter-risk").value=\"all\"; document.getElementById("filter-missed").value=\"all\"; syncSimpleOverrunMode(\"subtasks\"); if (assigneeExtendedActualsToggleEl) assigneeExtendedActualsToggleEl.checked = false; extendedActualsEnabled = false; applyPerformanceSettings(settings); syncCapacityProfileSelection(\"auto\", \"\"); selectedTeam = \"\"; setDateFilterStatus(""); Array.from(document.getElementById("projects").options).forEach(o => o.selected=true); renderAll(); }});
+document.getElementById("search").addEventListener("input", () => {{ render(compute()); }});
+document.getElementById("reset").addEventListener("click", ()=>{{ document.getElementById("from").value=defaultFrom; document.getElementById("to").value=defaultTo; document.getElementById("search").value=\"\"; document.getElementById("leader-search").value=\"\"; document.getElementById("leader-sort").value=\"score\"; document.getElementById("leader-sort-direction").value=\"desc\"; document.getElementById("leader-scoring-mode").value=\"simple\"; document.getElementById("filter-risk").value=\"all\"; document.getElementById("filter-missed").value=\"all\"; syncSimpleOverrunMode(\"subtasks\"); if (assigneeExtendedActualsToggleEl) assigneeExtendedActualsToggleEl.checked = false; extendedActualsEnabled = false; applyPerformanceSettings(settings); syncCapacityProfileSelection(\"auto\", \"\"); selectedTeam = \"\"; setDateFilterStatus(""); Array.from(document.getElementById("projects").options).forEach(o => o.selected=true); Array.from(document.getElementById("teams").options).forEach(o => o.selected=true); updateFilterTriggerText(\"projects\", \"projects-trigger-text\"); updateFilterTriggerText(\"teams\", \"teams-trigger-text\"); document.querySelectorAll(\"#projects-options .filter-option input\").forEach((c)=>{{ c.checked = true; }}); document.querySelectorAll(\"#teams-options .filter-option input\").forEach((c)=>{{ c.checked = true; }}); if (document.getElementById(\"projects-search\")) document.getElementById(\"projects-search\").value = \"\"; if (document.getElementById(\"teams-search\")) document.getElementById(\"teams-search\").value = \"\"; document.querySelectorAll(\"#projects-options .filter-option\").forEach((r)=>{{ r.classList.remove(\"hidden\"); }}); document.querySelectorAll(\"#teams-options .filter-option\").forEach((r)=>{{ r.classList.remove(\"hidden\"); }}); renderAll(); }});
 document.getElementById("shortcut-current-month").addEventListener("click", ()=>{{ applyDateShortcut("current_month"); renderAll(); }});
 document.getElementById("shortcut-previous-month").addEventListener("click", ()=>{{ applyDateShortcut("previous_month"); renderAll(); }});
 document.getElementById("shortcut-last-30-days").addEventListener("click", ()=>{{ applyDateShortcut("last_30_days"); renderAll(); }});
@@ -4609,6 +4989,7 @@ def _resolve_runtime_paths(base_dir: Path) -> dict[str, Path]:
     db_name = os.getenv("JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH", DEFAULT_CAPACITY_DB).strip() or DEFAULT_CAPACITY_DB
     source_mode = _to_text(os.getenv("JIRA_EMP_PERF_INPUT_SOURCE", "xlsx")).lower() or "xlsx"
     run_id = _to_text(os.getenv("JIRA_EMP_PERF_RUN_ID"))
+    canonical_run_id = _to_text(os.getenv("JIRA_EMP_PERF_CANONICAL_RUN_ID") or os.getenv("JIRA_CANONICAL_RUN_ID"))
     return {
         "worklog_path": _resolve_path(worklog_name, base_dir),
         "work_items_path": _resolve_path(work_items_name, base_dir),
@@ -4617,6 +4998,7 @@ def _resolve_runtime_paths(base_dir: Path) -> dict[str, Path]:
         "db_path": _resolve_path(db_name, base_dir),
         "source_mode": source_mode,
         "run_id": run_id,
+        "canonical_run_id": canonical_run_id,
     }
 
 
@@ -4624,6 +5006,7 @@ def main() -> None:
     base_dir = Path(__file__).resolve().parent
     paths = _resolve_runtime_paths(base_dir)
     _init_performance_settings_db(paths["db_path"])
+    managed_project_display_names = _load_managed_project_display_names(paths["db_path"])
     settings = _load_performance_settings(paths["db_path"])
     teams = _list_performance_teams(paths["db_path"])
     entities_catalog = load_report_entities(paths["db_path"])
@@ -4639,12 +5022,22 @@ def main() -> None:
         worklogs = _load_worklogs_from_epf_db(paths["db_path"], run_id, work_items)
         leave_rows = _load_unplanned_leave_rows_from_epf_db(paths["db_path"], run_id)
         leave_issue_keys = _load_leave_issue_keys_from_epf_db(paths["db_path"], run_id)
+    elif source_mode == "canonical_db":
+        requested_run = _to_text(paths.get("canonical_run_id"))
+        run_id = _resolve_canonical_run_id(paths["db_path"], requested_run)
+        if not run_id:
+            raise ValueError("Canonical DB source mode selected but no successful canonical run_id found.")
+        work_items = _load_work_items_from_canonical_db(paths["db_path"], run_id)
+        worklogs = _load_worklogs_from_canonical_db(paths["db_path"], run_id, work_items)
+        leave_rows = _load_unplanned_leave_rows(paths["leave_report_path"])
+        leave_issue_keys = _load_leave_issue_keys(paths["leave_report_path"])
     else:
         work_items = _load_work_items(paths["work_items_path"])
         worklogs = _load_worklogs(paths["worklog_path"], work_items)
         leave_rows = _load_unplanned_leave_rows(paths["leave_report_path"])
         leave_issue_keys = _load_leave_issue_keys(paths["leave_report_path"])
     simple_scoring = _precompute_simple_scoring(paths["db_path"], work_items, worklogs)
+    _apply_managed_project_display_names(work_items, simple_scoring, managed_project_display_names)
     payload = _build_payload(
         worklogs,
         list(work_items.values()),
@@ -4656,6 +5049,7 @@ def main() -> None:
         capacity_profiles=capacity_profiles,
         leave_issue_keys=leave_issue_keys,
         simple_scoring=simple_scoring,
+        managed_project_display_names=managed_project_display_names,
     )
     paths["html_path"].write_text(_build_html(payload), encoding="utf-8")
     print(f"Employee performance logs: {len(worklogs)}")

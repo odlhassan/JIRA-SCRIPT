@@ -10,11 +10,13 @@ from openpyxl import Workbook
 
 from generate_employee_performance_report import (
     DEFAULT_PERFORMANCE_SETTINGS,
+    _apply_managed_project_display_names,
     _derive_actual_completion,
     _build_html,
     _build_payload,
     _init_performance_settings_db,
     _load_leave_issue_keys,
+    _load_managed_project_display_names,
     _load_unplanned_leave_rows,
     _load_simple_scoring,
     _load_work_items,
@@ -26,6 +28,155 @@ from generate_employee_performance_report import (
 )
 import report_server
 from report_server import create_report_server_app
+
+
+def _seed_canonical_run(db_path: Path, run_id: str = "canonical-test-run") -> str:
+    with sqlite3.connect(db_path) as conn:
+        now = "2026-03-10T00:00:00+00:00"
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO canonical_refresh_runs(
+                run_id, scope_year, managed_project_keys_json, started_at_utc, ended_at_utc,
+                status, trigger_source, error_message, stats_json,
+                progress_step, progress_pct, cancel_requested, updated_at_utc
+            ) VALUES (?, 2026, '["O2","RLT"]', ?, ?, 'success', 'test', '', '{}', 'done', 100, 0, ?)
+            """,
+            (run_id, now, now, now),
+        )
+        conn.execute(
+            "UPDATE canonical_refresh_state SET active_run_id=?, last_success_run_id=?, updated_at_utc=? WHERE id=1",
+            (run_id, run_id, now),
+        )
+        issues = [
+            {
+                "issue_id": "1",
+                "issue_key": "O2-100",
+                "project_key": "O2",
+                "issue_type": "Story",
+                "fix_type": "",
+                "summary": "Story",
+                "status": "Open",
+                "assignee": "Alice",
+                "start_date": "2026-02-01",
+                "due_date": "2026-02-12",
+                "resolved_stable_since_date": "",
+                "original_estimate_hours": 8.0,
+                "total_hours_logged": 0.0,
+                "parent_issue_key": "",
+                "story_key": "O2-100",
+                "epic_key": "O2-100",
+                "raw_payload_json": "{}",
+            },
+            {
+                "issue_id": "2",
+                "issue_key": "O2-101",
+                "project_key": "O2",
+                "issue_type": "Sub-task",
+                "fix_type": "",
+                "summary": "Subtask",
+                "status": "Open",
+                "assignee": "Alice",
+                "start_date": "2026-02-02",
+                "due_date": "2026-02-10",
+                "resolved_stable_since_date": "",
+                "original_estimate_hours": 8.0,
+                "total_hours_logged": 2.0,
+                "parent_issue_key": "O2-100",
+                "story_key": "O2-100",
+                "epic_key": "O2-100",
+                "raw_payload_json": "{}",
+            },
+            {
+                "issue_id": "3",
+                "issue_key": "RLT-1",
+                "project_key": "RLT",
+                "issue_type": "Task",
+                "fix_type": "",
+                "summary": "Leave parent",
+                "status": "Open",
+                "assignee": "Alice",
+                "start_date": "2026-02-11",
+                "due_date": "2026-02-11",
+                "resolved_stable_since_date": "",
+                "original_estimate_hours": 8.0,
+                "total_hours_logged": 0.0,
+                "parent_issue_key": "",
+                "story_key": "",
+                "epic_key": "",
+                "raw_payload_json": "{}",
+            },
+            {
+                "issue_id": "4",
+                "issue_key": "RLT-2",
+                "project_key": "RLT",
+                "issue_type": "Sub-task",
+                "fix_type": "",
+                "summary": "Planned Leave",
+                "status": "Planned Leave",
+                "assignee": "Alice",
+                "start_date": "2026-02-11",
+                "due_date": "2026-02-11",
+                "resolved_stable_since_date": "",
+                "original_estimate_hours": 8.0,
+                "total_hours_logged": 0.0,
+                "parent_issue_key": "RLT-1",
+                "story_key": "",
+                "epic_key": "",
+                "raw_payload_json": '{"fields":{"customfield_10584":"Planned Leave"}}',
+            },
+        ]
+        for row in issues:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO canonical_issues(
+                    run_id, issue_id, issue_key, project_key, issue_type, fix_type, summary, status, assignee,
+                    start_date, due_date, resolved_stable_since_date, original_estimate_hours, total_hours_logged,
+                    created_utc, updated_utc, parent_issue_key, story_key, epic_key, raw_payload_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    run_id,
+                    row["issue_id"],
+                    row["issue_key"],
+                    row["project_key"],
+                    row["issue_type"],
+                    row["fix_type"],
+                    row["summary"],
+                    row["status"],
+                    row["assignee"],
+                    row["start_date"],
+                    row["due_date"],
+                    row["resolved_stable_since_date"],
+                    row["original_estimate_hours"],
+                    row["total_hours_logged"],
+                    now,
+                    now,
+                    row["parent_issue_key"],
+                    row["story_key"],
+                    row["epic_key"],
+                    row["raw_payload_json"],
+                ),
+            )
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO canonical_worklogs(
+                run_id, worklog_id, issue_key, project_key, worklog_author, issue_assignee,
+                started_utc, started_date, updated_utc, hours_logged
+            ) VALUES (?, 'wl-1', 'O2-101', 'O2', 'Alice', 'Alice', '2026-02-11T10:00:00+00:00', '2026-02-11', '2026-02-11T10:00:00+00:00', 2.0)
+            """,
+            (run_id,),
+        )
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO canonical_worklogs(
+                run_id, worklog_id, issue_key, project_key, worklog_author, issue_assignee,
+                started_utc, started_date, updated_utc, hours_logged
+            ) VALUES (?, 'wl-2', 'RLT-2', 'RLT', 'Alice', 'Alice', '2026-02-11T10:00:00+00:00', '2026-02-11', '2026-02-11T10:00:00+00:00', 8.0)
+            """,
+            (run_id,),
+        )
+        conn.commit()
+    return run_id
 
 
 class EmployeePerformanceReportTests(unittest.TestCase):
@@ -171,6 +322,13 @@ class EmployeePerformanceReportTests(unittest.TestCase):
         self.assertIn("not eligible for scoring", html)
         self.assertIn("Planned Hours Assigned is", html)
 
+    def test_html_planned_hours_breakdown_excludes_bug_subtasks(self):
+        payload = _build_payload([], [], [], dict(DEFAULT_PERFORMANCE_SETTINGS), [], [], [], [])
+        html = _build_html(payload)
+        self.assertIn('return t === "subtask";', html)
+        self.assertIn("Assigned non-bug subtasks in current filters", html)
+        self.assertNotIn("Assigned subtasks in current filters (including bug subtasks)", html)
+
     def test_html_contains_simple_score_drawer_controls(self):
         payload = _build_payload([], [], [], dict(DEFAULT_PERFORMANCE_SETTINGS), [], [], [], [])
         html = _build_html(payload)
@@ -178,7 +336,7 @@ class EmployeePerformanceReportTests(unittest.TestCase):
         self.assertIn('id="score-detail-drawer-overlay"', html)
         self.assertIn('id="summary-simple-score-trigger"', html)
         self.assertIn("openScoreDrawerForAssignee(item)", html)
-        self.assertIn("Penalized Subtasks", html)
+        self.assertIn("Simple Score Details", html)
         self.assertIn("Actual Complete Date", html)
         self.assertIn("Last Logged Date", html)
         self.assertIn("Planned Due Date", html)
@@ -186,10 +344,11 @@ class EmployeePerformanceReportTests(unittest.TestCase):
     def test_html_overloaded_penalty_uses_capacity_threshold_formula(self):
         payload = _build_payload([], [], [], dict(DEFAULT_PERFORMANCE_SETTINGS), [], [], [], [])
         html = _build_html(payload)
-        self.assertIn("if Planned > Capacity x (1 + N/100)", html)
         self.assertIn("const effectiveCapacity = Math.max(0, n(it.employee_capacity_hours));", html)
-        self.assertIn("const maxPlannedBeforeCap = effectiveCapacity * (1 + overloadedPenaltyThresholdPct / 100);", html)
-        self.assertIn("Capacity/Planned", html)
+        self.assertIn("plannedHrs > effectiveCapacity", html)
+        self.assertIn("safeThreshold", html)
+        self.assertIn("actualHrs < safeThreshold", html)
+        self.assertIn("shortfall", html)
         self.assertIn("planningRealismEnabled", html)
         self.assertIn("simple_score_overloaded_penalty_pct", html)
         self.assertIn("simple_score_overrun_active", html)
@@ -310,6 +469,65 @@ class EmployeePerformanceReportTests(unittest.TestCase):
         )
         self.assertEqual(payload["leave_issue_keys"], ["RLT-172"])
 
+    def test_apply_managed_project_display_names_updates_simple_score_project_labels(self):
+        work_items = {
+            "ABC-1": {"issue_key": "ABC-1", "project_key": "ABC", "project_name": "ABC"},
+            "XYZ-2": {"issue_key": "XYZ-2", "project_key": "XYZ", "project_name": "XYZ"},
+        }
+        simple_scoring_rows = [
+            {"issue_key": "ABC-11", "project_key": "ABC", "project_name": "ABC"},
+            {"issue_key": "XYZ-22", "project_key": "XYZ", "project_name": "XYZ"},
+        ]
+
+        _apply_managed_project_display_names(
+            work_items,
+            simple_scoring_rows,
+            {"ABC": "Alpha Display"},
+        )
+
+        self.assertEqual(work_items["ABC-1"]["project_name"], "Alpha Display")
+        self.assertEqual(simple_scoring_rows[0]["project_name"], "Alpha Display")
+        self.assertEqual(work_items["XYZ-2"]["project_name"], "XYZ")
+        self.assertEqual(simple_scoring_rows[1]["project_name"], "XYZ")
+
+    def test_load_managed_project_display_names_reads_active_display_names(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            db = Path(td) / "assignee_hours_capacity.db"
+            with sqlite3.connect(db) as conn:
+                conn.execute(
+                    """
+                    CREATE TABLE managed_projects (
+                        id INTEGER PRIMARY KEY,
+                        project_key TEXT NOT NULL UNIQUE,
+                        project_name TEXT NOT NULL,
+                        display_name TEXT NOT NULL,
+                        color_hex TEXT NOT NULL,
+                        is_active INTEGER NOT NULL,
+                        created_at_utc TEXT NOT NULL,
+                        updated_at_utc TEXT NOT NULL
+                    )
+                    """
+                )
+                conn.execute(
+                    """
+                    INSERT INTO managed_projects (
+                        project_key, project_name, display_name, color_hex, is_active, created_at_utc, updated_at_utc
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    ("ABC", "Alpha Raw", "Alpha Display", "#123456", 1, "2026-03-10T00:00:00Z", "2026-03-10T00:00:00Z"),
+                )
+                conn.execute(
+                    """
+                    INSERT INTO managed_projects (
+                        project_key, project_name, display_name, color_hex, is_active, created_at_utc, updated_at_utc
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    ("XYZ", "Xray Raw", "Xray Display", "#654321", 0, "2026-03-10T00:00:00Z", "2026-03-10T00:00:00Z"),
+                )
+                conn.commit()
+
+            self.assertEqual(_load_managed_project_display_names(db), {"ABC": "Alpha Display"})
+
     def test_load_unplanned_leave_rows_from_daily_assignee(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             path = Path(td) / "rlt_leave_report.xlsx"
@@ -403,7 +621,7 @@ class EmployeePerformanceReportTests(unittest.TestCase):
             self.assertIn("Overloaded Penalty", html)
             self.assertIn("Overload Capping/ Planning Realism", html)
             self.assertIn("Overloaded Threshold (%)", html)
-            self.assertIn("If Overload Capping/ Planning Realism is OFF, the overload penalty is deducted", html)
+            self.assertIn("shortfall penalty is deducted", html)
             self.assertIn("Overload Capping/ Planning Realism = ", html)
             self.assertIn("Default is OFF", html)
 
@@ -505,7 +723,7 @@ class EmployeePerformanceReportTests(unittest.TestCase):
             self.assertIsNotNone(row)
             self.assertIn(row[0], ("running", "canceled"))
 
-    def test_employee_refresh_passes_target_assignee_to_source_scripts(self):
+    def test_employee_refresh_uses_canonical_source_scripts(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             tdp = Path(td)
             (tdp / "report_html").mkdir(parents=True, exist_ok=True)
@@ -521,64 +739,28 @@ class EmployeePerformanceReportTests(unittest.TestCase):
             refresh_fn = app.view_functions["employee_performance_refresh"]
             refresh_globals = refresh_fn.__globals__
             db_path = tdp / "assignee_hours_capacity.db"
+            canonical_run_id = _seed_canonical_run(db_path)
 
             run_envs: list[tuple[str, dict[str, str]]] = []
 
             def fake_run_script_interruptible(script_name, _cwd, env_overrides=None, extra_args=None, cancel_check=None):
                 run_envs.append((script_name, dict(env_overrides or {})))
-                if script_name == "generate_employee_performance_report.py":
-                    return 0, "ok", ""
-
-                if script_name == "export_jira_subtask_worklogs.py":
-                    out_path = Path((env_overrides or {})["JIRA_WORKLOG_XLSX_PATH"])
-                    book = Workbook()
-                    sheet = book.active
-                    sheet.append(["issue_id", "issue_assignee", "worklog_started", "hours_logged", "issue_type", "parent_story_id"])
-                    sheet.append(["O2-101", "Alice", "2026-02-11T10:00:00+00:00", 2, "Sub-task", "O2-100"])
-                    book.save(out_path)
-                    return 0, "ok", ""
-
-                if script_name == "export_jira_work_items.py":
-                    out_path = Path((env_overrides or {})["JIRA_EXPORT_XLSX_PATH"])
-                    book = Workbook()
-                    sheet = book.active
-                    sheet.append([
-                        "project_key", "issue_key", "work_item_id", "work_item_type", "jira_issue_type", "fix_type",
-                        "summary", "status", "resolved_stable_since_date", "end_date", "original_estimate_hours",
-                        "parent_issue_key", "assignee"
-                    ])
-                    sheet.append(["O2", "O2-101", "O2-101", "Subtask", "Sub-task", "", "A", "Open", "", "2026-02-10", 8, "O2-100", "Alice"])
-                    book.save(out_path)
-                    return 0, "ok", ""
-
                 if script_name == "generate_rlt_leave_report.py":
-                    out_path = Path(extra_args[-1]) if extra_args else tdp / "epf_leave.xlsx"
                     book = Workbook()
                     daily = book.active
-                    daily.title = "Daily"
+                    daily.title = "Daily_Assignee"
                     daily.append(["assignee", "period_day", "unplanned_taken_hours", "planned_taken_hours"])
                     daily.append(["Alice", "2026-02-11", 0, 0])
                     raw_sub = book.create_sheet("Raw_Subtasks")
                     raw_sub.append(["issue_key"])
-                    book.save(out_path)
+                    book.save(tdp / "rlt_leave_report.xlsx")
+                    return 0, "ok", ""
+
+                if script_name == "generate_employee_performance_report.py":
+                    (tdp / "employee_performance_report.html").write_text("<html><body>ok</body></html>", encoding="utf-8")
                     return 0, "ok", ""
 
                 return 0, "ok", ""
-
-            with sqlite3.connect(db_path) as conn:
-                conn.execute(
-                    "UPDATE epf_refresh_state SET active_run_id = ?, last_success_run_id = ?, updated_at_utc = ? WHERE id = 1",
-                    ("seed-run", "seed-run", "2026-03-05T00:00:00+00:00"),
-                )
-                conn.execute(
-                    "INSERT INTO epf_work_items(run_id, issue_key, project_key, issue_type, fix_type, summary, status, assignee, start_date, due_date, resolved_stable_since_date, original_estimate_hours, parent_issue_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    ("seed-run", "O2-101", "O2", "Subtask", "", "A", "Open", "Alice", "", "2026-02-10", "", 8.0, "O2-100"),
-                )
-                conn.execute(
-                    "INSERT INTO epf_worklogs(run_id, issue_id, issue_assignee, worklog_date, hours_logged, project_key, is_bug, fix_type, item_summary, item_status, item_issue_type, item_assignee, item_parent_issue_key, item_start_date, item_due_date, item_resolved_stable_since_date, story_due_date, original_estimate_hours) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    ("seed-run", "O2-101", "Alice", "2026-02-11", 2.0, "O2", 0, "", "A", "Open", "Sub-task", "Alice", "O2-100", "", "2026-02-10", "", "", 8.0),
-                )
-                conn.commit()
 
             with patch.dict(refresh_globals, {"_run_script_interruptible": fake_run_script_interruptible, "sync_report_html": lambda *_args, **_kwargs: None}):
                 client = app.test_client()
@@ -596,9 +778,12 @@ class EmployeePerformanceReportTests(unittest.TestCase):
                     time.sleep(0.05)
 
             env_by_script = {name: env for name, env in run_envs}
-            self.assertEqual(env_by_script["export_jira_subtask_worklogs.py"].get("JIRA_TARGET_ASSIGNEE"), "Alice")
-            self.assertEqual(env_by_script["export_jira_work_items.py"].get("JIRA_TARGET_ASSIGNEE"), "Alice")
-            self.assertEqual(env_by_script["generate_rlt_leave_report.py"].get("JIRA_TARGET_ASSIGNEE"), "Alice")
+            self.assertEqual(env_by_script["generate_rlt_leave_report.py"].get("JIRA_LEAVE_REPORT_SOURCE"), "canonical_db")
+            self.assertEqual(env_by_script["generate_rlt_leave_report.py"].get("JIRA_CANONICAL_RUN_ID"), canonical_run_id)
+            self.assertEqual(env_by_script["generate_employee_performance_report.py"].get("JIRA_EMP_PERF_INPUT_SOURCE"), "canonical_db")
+            self.assertEqual(env_by_script["generate_employee_performance_report.py"].get("JIRA_EMP_PERF_CANONICAL_RUN_ID"), canonical_run_id)
+            self.assertNotIn("export_jira_subtask_worklogs.py", env_by_script)
+            self.assertNotIn("export_jira_work_items.py", env_by_script)
 
             with sqlite3.connect(db_path) as conn:
                 run_row = conn.execute(
@@ -609,34 +794,14 @@ class EmployeePerformanceReportTests(unittest.TestCase):
             self.assertTrue(run_id)
 
             with sqlite3.connect(db_path) as conn:
-                wi_count = conn.execute(
-                    "SELECT COUNT(*) FROM epf_work_items WHERE run_id = ?",
+                stats_row = conn.execute(
+                    "SELECT stats_json FROM epf_refresh_runs WHERE run_id = ?",
                     (run_id,),
                 ).fetchone()
-                wl_count = conn.execute(
-                    "SELECT COUNT(*) FROM epf_worklogs WHERE run_id = ?",
-                    (run_id,),
-                ).fetchone()
-                lr_count = conn.execute(
-                    "SELECT COUNT(*) FROM epf_leave_rows WHERE run_id = ?",
-                    (run_id,),
-                ).fetchone()
-                li_count = conn.execute(
-                    "SELECT COUNT(*) FROM epf_leave_issue_keys WHERE run_id = ?",
-                    (run_id,),
-                ).fetchone()
+            self.assertIsNotNone(stats_row)
+            self.assertIn("canonical_db", str(stats_row[0] or ""))
 
-            self.assertIsNotNone(wi_count)
-            self.assertIsNotNone(wl_count)
-            self.assertIsNotNone(lr_count)
-            self.assertIsNotNone(li_count)
-            self.assertGreater(int(wi_count[0] or 0), 0)
-            self.assertGreater(int(wl_count[0] or 0), 0)
-            self.assertGreater(int(lr_count[0] or 0), 0)
-            # leave_issue_keys can legitimately be 0 if there were no defective/no-entry rows
-            self.assertGreaterEqual(int(li_count[0] or 0), 0)
-
-    def test_employee_full_refresh_persists_epf_snapshot_via_generic_refresh(self):
+    def test_employee_full_refresh_via_generic_refresh_uses_canonical_scripts(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             tdp = Path(td)
             (tdp / "report_html").mkdir(parents=True, exist_ok=True)
@@ -645,125 +810,51 @@ class EmployeePerformanceReportTests(unittest.TestCase):
             app = create_report_server_app(base_dir=tdp, folder_raw="report_html")
             client = app.test_client()
             db_path = tdp / "assignee_hours_capacity.db"
+            canonical_run_id = _seed_canonical_run(db_path)
 
-            original_interruptible = report_server._run_script_interruptible
+            original_run_script = report_server._run_script
             original_sync_report_html = report_server.sync_report_html
+            calls: list[tuple[str, dict[str, str]]] = []
 
-            def _fake_interruptible(script_name, _cwd, env_overrides=None, extra_args=None, cancel_check=None):
+            def _fake_run_script(script_name, _cwd, extra_args=None, env_overrides=None):
+                calls.append((script_name, dict(env_overrides or {})))
                 env_overrides = env_overrides or {}
-                if script_name == "export_jira_subtask_worklogs.py":
-                    out_path = Path(env_overrides["JIRA_WORKLOG_XLSX_PATH"])
-                    book = Workbook()
-                    sheet = book.active
-                    sheet.append(
-                        ["issue_id", "issue_assignee", "worklog_started", "hours_logged", "issue_type", "parent_story_id"]
-                    )
-                    sheet.append(
-                        ["O2-101", "Alice", "2026-02-11T10:00:00+00:00", 2.0, "Sub-task", "O2-100"]
-                    )
-                    book.save(out_path)
-                    return 0, "ok", ""
-
-                if script_name == "export_jira_work_items.py":
-                    out_path = Path(env_overrides["JIRA_EXPORT_XLSX_PATH"])
-                    book = Workbook()
-                    sheet = book.active
-                    sheet.append(
-                        [
-                            "project_key",
-                            "issue_key",
-                            "work_item_id",
-                            "work_item_type",
-                            "jira_issue_type",
-                            "fix_type",
-                            "summary",
-                            "status",
-                            "resolved_stable_since_date",
-                            "end_date",
-                            "original_estimate_hours",
-                            "parent_issue_key",
-                            "assignee",
-                        ]
-                    )
-                    sheet.append(
-                        [
-                            "O2",
-                            "O2-101",
-                            "O2-101",
-                            "Subtask",
-                            "Sub-task",
-                            "",
-                            "A",
-                            "Open",
-                            "",
-                            "2026-02-10",
-                            8.0,
-                            "O2-100",
-                            "Alice",
-                        ]
-                    )
-                    book.save(out_path)
-                    return 0, "ok", ""
-
                 if script_name == "generate_rlt_leave_report.py":
-                    out_path = Path(extra_args[-1]) if extra_args else tdp / "epf_leave.xlsx"
                     book = Workbook()
                     daily = book.active
-                    daily.title = "Daily"
+                    daily.title = "Daily_Assignee"
                     daily.append(["assignee", "period_day", "unplanned_taken_hours", "planned_taken_hours"])
                     daily.append(["Alice", "2026-02-11", 0.0, 0.0])
                     raw_sub = book.create_sheet("Raw_Subtasks")
                     raw_sub.append(["issue_key"])
                     raw_sub.append(["O2-101"])
-                    book.save(out_path)
+                    book.save(tdp / "rlt_leave_report.xlsx")
                     return 0, "ok", ""
 
                 if script_name == "generate_employee_performance_report.py":
+                    (tdp / "employee_performance_report.html").write_text("<html><body>ok</body></html>", encoding="utf-8")
                     return 0, "ok", ""
 
                 return 0, "ok", ""
 
-            report_server._run_script_interruptible = _fake_interruptible
+            report_server._run_script = _fake_run_script
             report_server.sync_report_html = lambda *_args, **_kwargs: None
             try:
                 resp = client.post(
                     "/api/report/refresh",
-                    json={"report": "employee_performance", "isolated": True},
+                    json={"report": "employee_performance"},
                 )
                 self.assertEqual(resp.status_code, 200)
                 body = resp.get_json() or {}
                 self.assertTrue(body.get("ok"))
-                run_id = str(body.get("run_id") or "")
-                self.assertTrue(run_id)
-
-                with sqlite3.connect(db_path) as conn:
-                    wi_count = conn.execute(
-                        "SELECT COUNT(*) FROM epf_work_items WHERE run_id = ?",
-                        (run_id,),
-                    ).fetchone()
-                    wl_count = conn.execute(
-                        "SELECT COUNT(*) FROM epf_worklogs WHERE run_id = ?",
-                        (run_id,),
-                    ).fetchone()
-                    lr_count = conn.execute(
-                        "SELECT COUNT(*) FROM epf_leave_rows WHERE run_id = ?",
-                        (run_id,),
-                    ).fetchone()
-                    li_count = conn.execute(
-                        "SELECT COUNT(*) FROM epf_leave_issue_keys WHERE run_id = ?",
-                        (run_id,),
-                    ).fetchone()
-
-                self.assertIsNotNone(wi_count)
-                self.assertIsNotNone(wl_count)
-                self.assertIsNotNone(lr_count)
-                self.assertIsNotNone(li_count)
-                self.assertGreater(int(wi_count[0] or 0), 0)
-                self.assertGreater(int(wl_count[0] or 0), 0)
-                self.assertGreater(int(lr_count[0] or 0), 0)
-                self.assertGreater(int(li_count[0] or 0), 0)
+                self.assertEqual(body.get("canonical_run_id"), canonical_run_id)
+                env_by_script = {name: env for name, env in calls}
+                self.assertEqual(env_by_script["generate_rlt_leave_report.py"].get("JIRA_LEAVE_REPORT_SOURCE"), "canonical_db")
+                self.assertEqual(env_by_script["generate_rlt_leave_report.py"].get("JIRA_CANONICAL_RUN_ID"), canonical_run_id)
+                self.assertEqual(env_by_script["generate_employee_performance_report.py"].get("JIRA_EMP_PERF_INPUT_SOURCE"), "canonical_db")
+                self.assertEqual(env_by_script["generate_employee_performance_report.py"].get("JIRA_EMP_PERF_CANONICAL_RUN_ID"), canonical_run_id)
             finally:
-                report_server._run_script_interruptible = original_interruptible
+                report_server._run_script = original_run_script
                 report_server.sync_report_html = original_sync_report_html
 
     def test_fix_type_rework_flows_from_work_items_to_worklogs(self):

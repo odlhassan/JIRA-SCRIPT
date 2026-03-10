@@ -7,28 +7,27 @@
 
 ## Executive Summary
 - Planned Taken (hours): `582.50`
-- Unplanned Taken (hours): `96.50`
-- Planned Not Yet Taken (hours): `0.00`
-- Planned Not Yet Taken (No Entry count): `11`
-- Defective subtasks listed: `25`
-- Clubbed leave subtasks: `12`
+- Unplanned Taken (hours): `95.00`
+- Planned Not Yet Taken (hours): `8.00`
+- Planned Not Yet Taken (No Entry count): `9`
+- Defective subtasks listed: `24`
+- Clubbed leave subtasks: `10`
 
 ## Assignee-wise Summary
 | Assignee | Planned Taken (h) | Unplanned Taken (h) | Planned Not Yet Taken (h) | No Entry Count | Unknown Count |
 | --- | --- | --- | --- | --- | --- |
-| Ali Qumail | 0.00 | 0.00 | 0.00 | 0 | 1 |
 | awais akhter | 0.00 | 0.00 | 0.00 | 0 | 2 |
 | Faiza Nasir | 0.00 | 8.00 | 0.00 | 0 | 0 |
-| Hassan Malik | 0.00 | 22.50 | 0.00 | 0 | 0 |
+| Hassan Malik | 0.00 | 22.50 | 0.00 | 0 | 1 |
 | Hassan Saeed Wattoo | 0.00 | 0.00 | 0.00 | 1 | 0 |
 | Maria Sharafat | 512.00 | 0.00 | 0.00 | 1 | 0 |
 | Muhammad Abbas | 8.00 | 8.00 | 0.00 | 7 | 0 |
 | Muhammad Abdullah | 0.00 | 6.50 | 0.00 | 0 | 0 |
 | Muhammad Ahmad Saleem | 0.00 | 21.00 | 0.00 | 0 | 0 |
-| Muhammad Imran Aslam | 6.50 | 0.00 | 0.00 | 1 | 0 |
+| Muhammad Imran Aslam | 6.50 | 0.00 | 8.00 | 0 | 0 |
 | Muhammad Usman Javed | 0.00 | 8.00 | 0.00 | 0 | 0 |
-| Sarmad Sabir | 0.00 | 14.50 | 0.00 | 0 | 0 |
-| Taimur Zahid | 8.00 | 8.00 | 0.00 | 1 | 0 |
+| Sarmad Sabir | 0.00 | 13.00 | 0.00 | 0 | 1 |
+| Taimur Zahid | 8.00 | 8.00 | 0.00 | 0 | 0 |
 | Waqar Rasheed | 48.00 | 0.00 | 0.00 | 0 | 0 |
 | Zeeshan Sarwar | 0.00 | 0.00 | 0.00 | 0 | 11 |
 

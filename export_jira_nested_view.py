@@ -118,6 +118,32 @@ def _load_project_keys_from_managed_db(db_path: Path) -> list[str]:
     return [str(row[0]).strip().upper() for row in rows if str(row[0]).strip()]
 
 
+def _load_managed_project_display_names(db_path: Path) -> dict[str, str]:
+    if not db_path.exists():
+        return {}
+    try:
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            """
+            SELECT project_key, display_name, project_name
+            FROM managed_projects
+            WHERE is_active = 1
+            """
+        ).fetchall()
+        conn.close()
+    except sqlite3.Error:
+        return {}
+    out: dict[str, str] = {}
+    for row in rows:
+        key = str((row["project_key"] or "")).strip().upper()
+        if not key:
+            continue
+        display = str((row["display_name"] or "")).strip() or str((row["project_name"] or "")).strip() or key
+        out[key] = display
+    return out
+
+
 def _get_project_keys() -> tuple[list[str], str]:
     db_path = _resolve_capacity_settings_db_path()
     db_keys = _load_project_keys_from_managed_db(db_path)
@@ -646,6 +672,7 @@ def _write_nested_view(
     subtasks: dict[str, IssueNode],
     project_keys_preferred: list[str],
     output_path: Path,
+    project_display_names: dict[str, str] | None = None,
 ) -> int:
     wb = Workbook()
     ws = wb.active
@@ -706,8 +733,9 @@ def _write_nested_view(
 
     row_count = 0
 
+    display_names = project_display_names or {}
     for project_key in project_order:
-        project_name = PROJECT_NAME_BY_KEY.get(project_key, project_key)
+        project_name = display_names.get(project_key.upper()) or PROJECT_NAME_BY_KEY.get(project_key, project_key)
         product_values = sorted(products_by_project.get(project_key, {"Uncategorized"}))
         product_blocks: list[dict[str, object]] = []
 
@@ -1074,19 +1102,23 @@ def main() -> None:
     output_name = os.getenv("JIRA_NESTED_VIEW_XLSX_PATH", DEFAULT_OUTPUT).strip() or DEFAULT_OUTPUT
     output_path = _resolve_output_path(output_name, script_dir)
 
+    capacity_db_path = _resolve_capacity_settings_db_path()
+    managed_display_names = _load_managed_project_display_names(capacity_db_path)
+
     # Primary: write nodes to exports DB
     node_count = len(epics) + len(stories) + len(subtasks)
     write_nested_view_nodes_db(export_conn, epics, stories, subtasks)
     record_export_run(export_conn, "nested_view", node_count)
     export_conn.close()
 
-    # Secondary: write xlsx
+    # Secondary: write xlsx (Aspect column uses project display names when available)
     data_rows = _write_nested_view(
         epics=epics,
         stories=stories,
         subtasks=subtasks,
         project_keys_preferred=project_keys,
         output_path=output_path,
+        project_display_names=managed_display_names,
     )
 
     generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")

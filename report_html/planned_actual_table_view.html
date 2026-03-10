@@ -3128,6 +3128,450 @@ Capacity available for more work = 0h</span>
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 <!-- codex-info-drawer-start -->
 <!-- codex-info-drawer-v1 -->
 <style>
@@ -3363,6 +3807,7 @@ body.report-info-drawer-open { overflow: hidden; }
   gap: 6px;
   margin-top: 8px;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  align-items: stretch;
 }
 #codex-refresh-btn {
   width: 100%;
@@ -3432,6 +3877,206 @@ body.report-info-drawer-open { overflow: hidden; }
   color: rgba(219, 246, 255, 0.9);
   text-align: left;
 }
+#codex-refresh-progress {
+  display: none;
+  margin-top: 8px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  background:
+    radial-gradient(circle at top right, rgba(34, 197, 94, 0.14), transparent 36%),
+    linear-gradient(145deg, rgba(15, 23, 42, 0.96), rgba(30, 41, 59, 0.94));
+  color: #e2e8f0;
+  box-shadow: 0 16px 30px rgba(15, 23, 42, 0.22);
+}
+#codex-refresh-progress.codex-visible {
+  display: block;
+}
+.codex-progress-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.codex-progress-title {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.codex-progress-title strong {
+  font-size: 14px;
+  color: #f8fafc;
+}
+.codex-progress-title span {
+  font-size: 11px;
+  color: rgba(226, 232, 240, 0.8);
+}
+#codex-refresh-progress-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(14, 165, 233, 0.16);
+  border: 1px solid rgba(125, 211, 252, 0.3);
+  color: #dbeafe;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+#codex-refresh-progress-bar {
+  position: relative;
+  width: 100%;
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.18);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+}
+#codex-refresh-progress-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #06b6d4 0%, #22c55e 100%);
+  box-shadow: 0 0 14px rgba(34, 197, 94, 0.35);
+  transition: width 0.35s ease;
+}
+.codex-progress-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+.codex-progress-stat {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.48);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+}
+.codex-progress-stat-label {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(191, 219, 254, 0.74);
+}
+.codex-progress-stat-value {
+  display: block;
+  margin-top: 4px;
+  font-size: 19px;
+  font-weight: 800;
+  color: #f8fafc;
+}
+.codex-progress-current {
+  margin-top: 12px;
+  display: grid;
+  gap: 6px;
+}
+.codex-progress-current strong {
+  color: #f8fafc;
+  font-size: 13px;
+}
+.codex-progress-current span {
+  color: rgba(226, 232, 240, 0.82);
+  font-size: 12px;
+}
+#codex-refresh-progress-items {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+.codex-progress-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.4);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+}
+.codex-progress-item-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.codex-progress-item-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #f8fafc;
+}
+.codex-progress-item-detail {
+  font-size: 11px;
+  color: rgba(203, 213, 225, 0.72);
+}
+.codex-progress-item-state {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 88px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.codex-progress-item[data-state="done"] .codex-progress-item-state {
+  background: rgba(34, 197, 94, 0.18);
+  color: #bbf7d0;
+}
+.codex-progress-item[data-state="running"] .codex-progress-item-state {
+  background: rgba(6, 182, 212, 0.2);
+  color: #a5f3fc;
+}
+.codex-progress-item[data-state="failed"] .codex-progress-item-state {
+  background: rgba(248, 113, 113, 0.18);
+  color: #fecaca;
+}
+.codex-progress-item[data-state="pending"] .codex-progress-item-state {
+  background: rgba(148, 163, 184, 0.18);
+  color: #cbd5e1;
+}
+.codex-progress-item[data-state="cancel_requested"] .codex-progress-item-state,
+.codex-progress-item[data-state="canceled"] .codex-progress-item-state {
+  background: rgba(251, 191, 36, 0.16);
+  color: #fde68a;
+}
+.codex-refresh-inline-host #codex-refresh-wrap,
+#codex-refresh-wrap.codex-refresh-inline {
+  margin-top: 0;
+  margin-left: 8px;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.codex-refresh-inline-host #codex-refresh-btn,
+#codex-refresh-wrap.codex-refresh-inline #codex-refresh-btn {
+  width: auto;
+  min-width: 120px;
+  white-space: nowrap;
+}
+.codex-refresh-inline-host #codex-refresh-cancel-btn,
+#codex-refresh-wrap.codex-refresh-inline #codex-refresh-cancel-btn {
+  width: auto;
+  white-space: nowrap;
+}
+.codex-refresh-inline-host #codex-refresh-status,
+#codex-refresh-wrap.codex-refresh-inline #codex-refresh-status {
+  min-height: 0;
+  color: #475569;
+  white-space: nowrap;
+}
+@media (max-width: 980px) {
+  .codex-progress-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
 </style>
 <div id="codex-refresh-wrap" aria-live="polite">
   <button id="codex-refresh-btn" type="button">
@@ -3446,6 +4091,8 @@ body.report-info-drawer-open { overflow: hidden; }
   const reportId = 'planned_actual_table_view';
   const endpointPath = "/api/report/refresh";
   const isMissedEntries = reportId === "missed_entries";
+  const isNestedView = reportId === "nested_view";
+  const usesAsyncProgress = isMissedEntries || isNestedView;
   const wrap = document.getElementById("codex-refresh-wrap");
   const btn = document.getElementById("codex-refresh-btn");
   const cancelBtn = document.getElementById("codex-refresh-cancel-btn");
@@ -3455,14 +4102,90 @@ body.report-info-drawer-open { overflow: hidden; }
   let activeRunId = "";
   let pollTimer = 0;
 
-  if (!isMissedEntries && cancelBtn) {
+  if (!usesAsyncProgress && cancelBtn) {
     cancelBtn.style.display = "none";
   } else if (cancelBtn) {
     cancelBtn.style.display = "";
     cancelBtn.disabled = true;
   }
 
-  function mountRefreshInNav() {
+  function createProgressPanel() {
+    let panel = document.getElementById("codex-refresh-progress");
+    if (panel) return panel;
+    panel = document.createElement("div");
+    panel.id = "codex-refresh-progress";
+    panel.innerHTML = `
+      <div class="codex-progress-header">
+        <div class="codex-progress-title">
+          <strong>Live Refresh Progress</strong>
+          <span id="codex-refresh-progress-subtitle">Waiting to start.</span>
+        </div>
+        <div id="codex-refresh-progress-pill">Idle</div>
+      </div>
+      <div id="codex-refresh-progress-bar" aria-hidden="true">
+        <div id="codex-refresh-progress-fill"></div>
+      </div>
+      <div class="codex-progress-stats">
+        <div class="codex-progress-stat">
+          <span class="codex-progress-stat-label">Total Items</span>
+          <span class="codex-progress-stat-value" id="codex-progress-total">0</span>
+        </div>
+        <div class="codex-progress-stat">
+          <span class="codex-progress-stat-label">Processed</span>
+          <span class="codex-progress-stat-value" id="codex-progress-processed">0</span>
+        </div>
+        <div class="codex-progress-stat">
+          <span class="codex-progress-stat-label">Remaining</span>
+          <span class="codex-progress-stat-value" id="codex-progress-remaining">0</span>
+        </div>
+        <div class="codex-progress-stat">
+          <span class="codex-progress-stat-label">Progress</span>
+          <span class="codex-progress-stat-value" id="codex-progress-percent">0%</span>
+        </div>
+      </div>
+      <div class="codex-progress-current">
+        <strong id="codex-progress-current-item">No active item</strong>
+        <span id="codex-progress-current-detail">Progress details will appear here.</span>
+      </div>
+      <div id="codex-refresh-progress-items"></div>
+    `;
+    wrap.insertAdjacentElement("afterend", panel);
+    return panel;
+  }
+
+  const progressPanel = createProgressPanel();
+  const progressSubtitle = progressPanel.querySelector("#codex-refresh-progress-subtitle");
+  const progressPill = progressPanel.querySelector("#codex-refresh-progress-pill");
+  const progressFill = progressPanel.querySelector("#codex-refresh-progress-fill");
+  const progressTotal = progressPanel.querySelector("#codex-progress-total");
+  const progressProcessed = progressPanel.querySelector("#codex-progress-processed");
+  const progressRemaining = progressPanel.querySelector("#codex-progress-remaining");
+  const progressPercent = progressPanel.querySelector("#codex-progress-percent");
+  const progressCurrentItem = progressPanel.querySelector("#codex-progress-current-item");
+  const progressCurrentDetail = progressPanel.querySelector("#codex-progress-current-detail");
+  const progressItems = progressPanel.querySelector("#codex-refresh-progress-items");
+
+  function mountRefreshWidget() {
+    const primaryTargets = [
+      ".header-actions",
+      ".report-header .header-actions",
+      ".report-header-actions",
+      ".page-actions",
+      ".toolbar",
+      ".report-toolbar",
+      ".filters-and-actions",
+      ".actions-bar",
+    ];
+    for (const selector of primaryTargets) {
+      const target = document.querySelector(selector);
+      if (target) {
+        target.classList.add("codex-refresh-inline-host");
+        wrap.classList.add("codex-refresh-inline");
+        target.appendChild(wrap);
+        return true;
+      }
+    }
+    wrap.classList.remove("codex-refresh-inline");
     const navTargets = [
       ".app-sidebar .sidebar-nav",
       ".unified-nav .unified-nav-list",
@@ -3479,9 +4202,9 @@ body.report-info-drawer-open { overflow: hidden; }
     return false;
   }
 
-  if (!mountRefreshInNav()) {
+  if (!mountRefreshWidget()) {
     const observer = new MutationObserver(function () {
-      if (mountRefreshInNav()) {
+      if (mountRefreshWidget()) {
         observer.disconnect();
       }
     });
@@ -3492,7 +4215,7 @@ body.report-info-drawer-open { overflow: hidden; }
   function setBusy(isBusy) {
     btn.disabled = !!isBusy;
     btnLabel.textContent = isBusy ? "Refreshing..." : "Refresh";
-    if (isMissedEntries && cancelBtn) {
+    if (usesAsyncProgress && cancelBtn) {
       cancelBtn.disabled = !isBusy || !activeRunId;
     }
   }
@@ -3562,6 +4285,69 @@ body.report-info-drawer-open { overflow: hidden; }
     return "";
   }
 
+  function labelForState(state) {
+    const normalized = String(state || "").toLowerCase();
+    if (normalized === "done") return "Done";
+    if (normalized === "running") return "Running";
+    if (normalized === "failed") return "Failed";
+    if (normalized === "cancel_requested") return "Cancel Requested";
+    if (normalized === "canceled") return "Canceled";
+    return "Pending";
+  }
+
+  function showProgressPanel(visible) {
+    if (!progressPanel) return;
+    progressPanel.classList.toggle("codex-visible", !!visible);
+  }
+
+  function renderProgress(run) {
+    if (!progressPanel) return;
+    const item = run || {};
+    const stats = item.stats || {};
+    const total = Math.max(0, Number(stats.total_items || 0));
+    const processed = Math.max(0, Number(stats.processed_items || 0));
+    const remaining = Math.max(0, Number(stats.remaining_items || Math.max(0, total - processed)));
+    const pct = Math.max(0, Math.min(100, Number(item.progress_pct || (total ? Math.round((processed / total) * 100) : 0))));
+    const state = String(item.status || "").toLowerCase() || "pending";
+    const currentItem = String(stats.current_item || item.progress_step || "Waiting to start");
+    const currentDetail = String(stats.current_detail || runStatusText(item) || "Progress details will appear here.");
+    const subtitle = runStatusText(item) || "Waiting to start.";
+    const items = Array.isArray(stats.items) ? stats.items : [];
+
+    showProgressPanel(usesAsyncProgress || total > 0 || processed > 0);
+    progressSubtitle.textContent = subtitle;
+    progressPill.textContent = labelForState(state);
+    progressFill.style.width = `${pct}%`;
+    progressTotal.textContent = String(total);
+    progressProcessed.textContent = String(processed);
+    progressRemaining.textContent = String(remaining);
+    progressPercent.textContent = `${pct}%`;
+    progressCurrentItem.textContent = currentItem || "Waiting to start";
+    progressCurrentDetail.textContent = currentDetail;
+    progressItems.innerHTML = "";
+    items.forEach((entry) => {
+      const row = document.createElement("div");
+      const entryState = String(entry && entry.status || "pending").toLowerCase();
+      row.className = "codex-progress-item";
+      row.dataset.state = entryState;
+      const entryLabel = String(entry && entry.label || entry && entry.key || "Step");
+      const entryDetail = entryState === "running"
+        ? (currentDetail || "Currently processing...")
+        : (entryState === "done" ? "Completed successfully." : (entryState === "failed" ? "Stopped with an error." : "Waiting in queue."));
+      row.innerHTML = `
+        <div class="codex-progress-item-main">
+          <span class="codex-progress-item-label"></span>
+          <span class="codex-progress-item-detail"></span>
+        </div>
+        <span class="codex-progress-item-state"></span>
+      `;
+      row.querySelector(".codex-progress-item-label").textContent = entryLabel;
+      row.querySelector(".codex-progress-item-detail").textContent = entryDetail;
+      row.querySelector(".codex-progress-item-state").textContent = labelForState(entryState);
+      progressItems.appendChild(row);
+    });
+  }
+
   function clearPolling() {
     if (pollTimer) {
       window.clearTimeout(pollTimer);
@@ -3607,10 +4393,109 @@ body.report-info-drawer-open { overflow: hidden; }
     tick();
   }
 
+  async function pollAsyncReportRun(runId) {
+    const runIdText = String(runId || "").trim();
+    if (!runIdText) return;
+    activeRunId = runIdText;
+    setBusy(true);
+    showProgressPanel(true);
+    clearPolling();
+    const tick = async function () {
+      try {
+        const result = await requestJson(`/api/report-refresh/${encodeURIComponent(runIdText)}`, {
+          method: "GET",
+          headers: { "Accept": "application/json" },
+        });
+        const payload = result.payload || {};
+        const run = payload.run || {};
+        const state = String(run.status || "").toLowerCase();
+        setStatus(runStatusText(run));
+        renderProgress(run);
+        if (state === "running" || state === "cancel_requested") {
+          setBusy(true);
+          pollTimer = window.setTimeout(tick, 1000);
+          return;
+        }
+        clearPolling();
+        activeRunId = "";
+        setBusy(false);
+        if (state === "success") {
+          window.setTimeout(function () {
+            window.location.reload();
+          }, 500);
+        }
+      } catch (err) {
+        clearPolling();
+        activeRunId = "";
+        setBusy(false);
+        const msg = (err && err.message) ? err.message : String(err);
+        setStatus(msg || "Failed to poll refresh status.");
+      }
+    };
+    tick();
+  }
+
   btn.addEventListener("click", async function () {
     setBusy(true);
-    setStatus("Running scripts...");
+    setStatus(isNestedView ? "Starting live refresh..." : "Running scripts...");
+    if (isNestedView) {
+      renderProgress({
+        status: "running",
+        progress_pct: 1,
+        progress_step: "queued",
+        stats: {
+          total_items: 3,
+          processed_items: 0,
+          remaining_items: 3,
+          current_item: "Queueing refresh run",
+          current_detail: "Preparing live progress tracker.",
+          items: [
+            { key: "validate_canonical", label: "Validate canonical dataset", status: "running" },
+            { key: "generate_nested_view_html", label: "Generate nested view report", status: "pending" },
+            { key: "sync_report_html", label: "Sync report output", status: "pending" },
+          ],
+        },
+      });
+    }
     try {
+      if (isNestedView) {
+        const result = await requestJson("/api/report-refresh/start", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ report: reportId }),
+        });
+        const response = result.response;
+        const payload = result.payload || {};
+        if (!response.ok || !payload.ok) {
+          const msg = payload.error || "Refresh failed.";
+          setStatus(msg);
+          alert(msg);
+          renderProgress((payload && payload.run) || {
+            status: "failed",
+            progress_pct: 0,
+            stats: {
+              total_items: 3,
+              processed_items: 0,
+              remaining_items: 3,
+              current_item: "Refresh failed to start",
+              current_detail: msg,
+              items: [],
+            },
+          });
+          return;
+        }
+        const run = payload.run || {};
+        const runId = String(payload.run_id || run.run_id || "").trim();
+        if (!runId) {
+          setBusy(false);
+          setStatus("Refresh started but no run ID was returned.");
+          return;
+        }
+        renderProgress(run);
+        await pollAsyncReportRun(runId);
+        return;
+      }
+
       if (!isMissedEntries) {
         const result = await requestJson(endpointPath, {
           method: "POST",
@@ -3660,21 +4545,23 @@ body.report-info-drawer-open { overflow: hidden; }
       setStatus(msg);
       alert(msg);
     } finally {
-      if (!isMissedEntries) {
+      if (!usesAsyncProgress) {
         setBusy(false);
       }
     }
   });
 
-  if (isMissedEntries && cancelBtn) {
+  if (usesAsyncProgress && cancelBtn) {
     cancelBtn.addEventListener("click", async function () {
       if (!activeRunId) return;
       cancelBtn.disabled = true;
       try {
-        const result = await requestJson("/api/missed-entries/cancel", {
+        const cancelPath = isNestedView ? "/api/report-refresh/cancel" : "/api/missed-entries/cancel";
+        const body = isNestedView ? { run_id: activeRunId, report: reportId } : { run_id: activeRunId };
+        const result = await requestJson(cancelPath, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ run_id: activeRunId }),
+          body: JSON.stringify(body),
         });
         const response = result.response;
         const payload = result.payload || {};
@@ -3695,7 +4582,10 @@ body.report-info-drawer-open { overflow: hidden; }
 
     (async function attachCurrentRun() {
       try {
-        const result = await requestJson("/api/missed-entries/refresh/current", {
+        const currentPath = isNestedView
+          ? `/api/report-refresh/current?report=${encodeURIComponent(reportId)}`
+          : "/api/missed-entries/refresh/current";
+        const result = await requestJson(currentPath, {
           method: "GET",
           headers: { "Accept": "application/json" },
         });
@@ -3703,9 +4593,14 @@ body.report-info-drawer-open { overflow: hidden; }
         const run = payload.run || null;
         if (!run) return;
         const state = String(run.status || "").toLowerCase();
+        renderProgress(run);
         if (state === "running" || state === "cancel_requested") {
           setStatus(runStatusText(run));
-          await pollMissedEntriesRun(String(run.run_id || ""));
+          if (isNestedView) {
+            await pollAsyncReportRun(String(run.run_id || ""));
+          } else {
+            await pollMissedEntriesRun(String(run.run_id || ""));
+          }
         } else if (state) {
           setStatus(runStatusText(run));
         }
