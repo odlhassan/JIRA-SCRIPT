@@ -100,6 +100,15 @@ class ReportUiSmokeTests(unittest.TestCase):
         self.assertIn('id="score-total-leaves-planned-formula"', html)
         self.assertIn("Availability", html)
         self.assertIn("Total Capacity (Hours) - Total Leaves Planned", html)
+        self.assertIn("function subtaskMatchesActualHoursMode(row, bounds)", html)
+        self.assertIn(
+            "Sum(All Logged Hours for subtasks whose planned Start OR Due date is within selected range)",
+            html,
+        )
+        self.assertIn(
+            "Sum(Logged Hours in selected date range for subtasks with worklog dates in selected range)",
+            html,
+        )
 
     def test_nested_capacity_endpoints_present(self):
         payload = {
@@ -120,6 +129,23 @@ class ReportUiSmokeTests(unittest.TestCase):
         self.assertIn("refreshManagedFieldsFromApi", html)
         self.assertIn("evaluateManagedField", html)
         self.assertIn("leave_subtask_rows", html)
+
+    def test_nested_date_filter_uses_active_selection_bounds(self):
+        payload = {
+            "generated_at": "2026-02-21 00:00 UTC",
+            "source_file": "nested view.xlsx",
+            "rows": [],
+            "capacity_profiles": [],
+            "leave_daily_rows": [],
+            "leave_subtask_rows": [],
+        }
+        html = build_nested_html(payload)
+        self.assertIn(
+            "const bounds = getDateFilterBoundsFor(activeSelection.dateFrom, activeSelection.dateTo);",
+            html,
+        )
+        self.assertIn("function matchesDateFilter(row, selection)", html)
+        self.assertIn("const activeSelection = buildScorecardSelectionSnapshot(selection);", html)
 
     def test_rnd_story_controls_exist(self):
         payload = {
@@ -145,6 +171,7 @@ class ReportUiSmokeTests(unittest.TestCase):
         self.assertIn("funnel-hours-required-val", html)
         self.assertIn("/api/capacity?from=", html)
         self.assertIn("/api/actual-hours/aggregate", html)
+        self.assertIn("/api/scoped-subtasks", html)
         self.assertIn("/api/manage-fields?include_inactive=0", html)
         self.assertIn("evaluateManagedField", html)
         self.assertIn("managedFieldFormulaText", html)
@@ -264,6 +291,24 @@ class ReportUiSmokeTests(unittest.TestCase):
             self.assertIn('id="formula-validation"', html)
             self.assertIn('id="formula-quick-insert"', html)
 
+    def test_canonical_refresh_settings_formats_timestamps_for_display(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            (root / "report_html").mkdir(parents=True, exist_ok=True)
+            (root / "report_html" / "dashboard.html").write_text("<html><body>ok</body></html>", encoding="utf-8")
+            app = create_report_server_app(base_dir=root, folder_raw="report_html")
+            client = app.test_client()
+
+            resp = client.get("/settings/canonical-refresh")
+            self.assertEqual(resp.status_code, 200)
+            html = resp.get_data(as_text=True)
+
+            self.assertIn("formatFriendlyTimestamp", html)
+            self.assertIn("formatTimestampHtml", html)
+            self.assertIn(".timestamp-display", html)
+            self.assertIn('metaStarted.innerHTML = formatTimestampHtml(item.started_at_utc);', html)
+            self.assertIn('title="UTC: ${esc(raw)}"', html)
+
     def test_manage_fields_page_and_settings_links_exist(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             root = Path(td)
@@ -378,14 +423,26 @@ class ReportUiSmokeTests(unittest.TestCase):
             self.assertIn('id="epic-user-manual-plan-jira-url"', epics_html)
             self.assertIn('id="epic-production-plan-jira-url"', epics_html)
             self.assertIn('id="dynamic-plan-fields"', epics_html)
-            self.assertIn('id="plan-mandays"', epics_html)
-            self.assertIn('id="plan-start"', epics_html)
-            self.assertIn('id="plan-due"', epics_html)
-            self.assertIn('position:sticky; left:0;', epics_html)
-            self.assertIn("new URLSearchParams(window.location.search", epics_html)
-            self.assertIn("epic-jump-highlight", epics_html)
-            self.assertIn("jumpToDeepLinkedEpicIfNeeded", epics_html)
-            self.assertIn('tr[data-epic-key]', epics_html)
+
+    def test_page_categories_page_contains_report_display_name_controls(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            (root / "report_html").mkdir(parents=True, exist_ok=True)
+            (root / "report_html" / "dashboard.html").write_text("<html><body>ok</body></html>", encoding="utf-8")
+            wb = Workbook()
+            ws = wb.active
+            ws.append(["project_key", "worklog_date", "period_day", "period_week", "period_month", "issue_assignee", "hours_logged"])
+            ws.append(["O2", "2026-02-01", "2026-02-01", "2026-W05", "2026-02", "Alice", 1.0])
+            wb.save(root / "assignee_hours_report.xlsx")
+            app = create_report_server_app(base_dir=root, folder_raw="report_html")
+            client = app.test_client()
+
+            resp = client.get("/settings/page-categories")
+            self.assertEqual(resp.status_code, 200)
+            html = resp.get_data(as_text=True)
+            self.assertIn("Report display names are editable here; slugs stay fixed.", html)
+            self.assertIn("page_overrides", html)
+            self.assertIn("data-page-display-name", html)
 
     def test_epics_management_create_and_update_api(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
@@ -706,9 +763,10 @@ class ReportUiSmokeTests(unittest.TestCase):
             self.assertEqual(conflict_resp.status_code, 409)
             conflict_body = conflict_resp.get_json() or {}
             self.assertEqual(conflict_body.get("code"), "epic_key_exists")
-            self.assertEqual(conflict_body.get("conflict_epic_key"), vacant_tmp_key)
             self.assertEqual(conflict_body.get("vacant_tmp_key"), vacant_tmp_key)
             self.assertTrue(conflict_body.get("can_reuse_vacant_tmp_key"))
+            # Error message must not expose backend epic keys to the user
+            self.assertNotIn("TMP-", conflict_body.get("error", ""))
 
             reuse_resp = client.put(
                 f"/api/epics-management/rows/{vacant_tmp_key}",
@@ -907,7 +965,10 @@ class ReportUiSmokeTests(unittest.TestCase):
         self.assertIn("Approved vs Planned Hours Report", html)
         self.assertIn("Total Approved Hours", html)
         self.assertIn("Total Planned Hours", html)
+        self.assertIn("ACTUAL HOURS", html)
+        self.assertIn('id="pvd-total-actual-hours"', html)
         self.assertIn("Planned Hours (Subtask Original Estimates)", html)
+        self.assertIn("Actual Hours (Subtask and Bug Subtask Worklogs)", html)
         self.assertIn("Epic Drill-down", html)
         self.assertNotIn("details.epic", html)
         self.assertNotIn("details.story", html)

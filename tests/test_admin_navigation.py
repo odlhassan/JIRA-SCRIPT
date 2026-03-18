@@ -16,6 +16,7 @@ from report_server import (
     PERFORMANCE_SETTINGS_ROUTE,
     PROJECTS_SETTINGS_ROUTE,
     REPORT_ENTITIES_SETTINGS_ROUTE,
+    SQL_CONSOLE_SETTINGS_ROUTE,
     create_report_server_app,
 )
 
@@ -46,6 +47,7 @@ class AdminNavigationTests(unittest.TestCase):
                 EPICS_DROPDOWN_OPTIONS_SETTINGS_ROUTE,
                 EPIC_PHASES_SETTINGS_ROUTE,
                 EPICS_MANAGEMENT_SETTINGS_ROUTE,
+                SQL_CONSOLE_SETTINGS_ROUTE,
             ]
             for route in routes:
                 with self.subTest(route=route):
@@ -76,7 +78,30 @@ class AdminNavigationTests(unittest.TestCase):
             self.assertIn(f'href="{EPICS_DROPDOWN_OPTIONS_SETTINGS_ROUTE}"', html)
             self.assertIn(f'href="{EPIC_PHASES_SETTINGS_ROUTE}"', html)
             self.assertIn(f'href="{EPICS_MANAGEMENT_SETTINGS_ROUTE}"', html)
+            self.assertIn(f'href="{SQL_CONSOLE_SETTINGS_ROUTE}"', html)
             self.assertIn('href="/dashboard.html"', html)
+
+    def test_report_html_uses_effective_report_display_names(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            app = self._build_app(root)
+            client = app.test_client()
+
+            save_resp = client.put(
+                "/api/page-categories",
+                json={
+                    "categories": [],
+                    "assignments": [],
+                    "page_overrides": [{"page_key": "dashboard", "display_name": "Executive Dashboard"}],
+                },
+            )
+            self.assertEqual(save_resp.status_code, 200)
+
+            resp = client.get("/report_html/")
+            self.assertEqual(resp.status_code, 200)
+            html = resp.get_data(as_text=True)
+            self.assertIn('href="/dashboard.html">Executive Dashboard</a>', html)
+            self.assertNotIn('href="/dashboard.html">dashboard.html</a>', html)
 
     def test_shared_nav_contract_contains_admin_section(self):
         nav_js = (Path(__file__).resolve().parents[1] / "shared-nav.js").read_text(encoding="utf-8")
@@ -84,6 +109,7 @@ class AdminNavigationTests(unittest.TestCase):
         self.assertIn("approved_vs_planned_hours_report.html", nav_js)
         self.assertIn("original_estimates_hierarchy_report.html", nav_js)
         self.assertIn('title: "Admin Settings"', nav_js)
+        self.assertIn("applyCatalogTitles", nav_js)
         self.assertIn(CAPACITY_SETTINGS_ROUTE, nav_js)
         self.assertIn(PERFORMANCE_SETTINGS_ROUTE, nav_js)
         self.assertIn(REPORT_ENTITIES_SETTINGS_ROUTE, nav_js)
@@ -93,6 +119,7 @@ class AdminNavigationTests(unittest.TestCase):
         self.assertIn(EPICS_DROPDOWN_OPTIONS_SETTINGS_ROUTE, nav_js)
         self.assertIn(EPIC_PHASES_SETTINGS_ROUTE, nav_js)
         self.assertIn(EPICS_MANAGEMENT_SETTINGS_ROUTE, nav_js)
+        self.assertIn(SQL_CONSOLE_SETTINGS_ROUTE, nav_js)
 
 
 if __name__ == "__main__":

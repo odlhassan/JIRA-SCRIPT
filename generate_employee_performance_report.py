@@ -76,24 +76,12 @@ def _parse_iso_date(value: Any) -> str:
 def _derive_actual_completion(
     planned_due_date: Any,
     last_logged_date: Any,
-    resolved_stable_since_date: Any,
 ) -> dict[str, str]:
     due_date = _parse_iso_date(planned_due_date)
     last_log = _parse_iso_date(last_logged_date)
-    resolved_date = _parse_iso_date(resolved_stable_since_date)
-    if last_log and resolved_date:
-        if last_log >= resolved_date:
-            actual_complete_date = last_log
-            actual_complete_source = "last_logged_date"
-        else:
-            actual_complete_date = resolved_date
-            actual_complete_source = "resolved_stable_since_date"
-    elif last_log:
+    if last_log:
         actual_complete_date = last_log
         actual_complete_source = "last_logged_date"
-    elif resolved_date:
-        actual_complete_date = resolved_date
-        actual_complete_source = "resolved_stable_since_date"
     else:
         actual_complete_date = ""
         actual_complete_source = "none"
@@ -112,7 +100,6 @@ def _derive_actual_completion(
     return {
         "planned_due_date": due_date,
         "last_logged_date": last_log,
-        "resolved_stable_since_date": resolved_date,
         "actual_complete_date": actual_complete_date,
         "actual_complete_source": actual_complete_source,
         "completion_bucket": completion_bucket,
@@ -554,7 +541,6 @@ def _load_work_items(path: Path) -> dict[str, dict]:
                 "assignee": _to_text(row[idx["assignee"]]) if "assignee" in idx else "",
                 "start_date": _parse_iso_date(row[idx["start_date"]]) if "start_date" in idx else "",
                 "due_date": _parse_iso_date(row[idx["end_date"]]) if "end_date" in idx else "",
-                "resolved_stable_since_date": _parse_iso_date(row[idx["resolved_stable_since_date"]]) if "resolved_stable_since_date" in idx else "",
                 "original_estimate_hours": round(_to_float(row[idx["original_estimate_hours"]]), 2) if "original_estimate_hours" in idx else 0.0,
                 "parent_issue_key": _to_text(row[idx["parent_issue_key"]]).upper() if "parent_issue_key" in idx else "",
             }
@@ -609,7 +595,6 @@ def _load_worklogs(path: Path, work_items: dict[str, dict]) -> list[dict]:
                     "item_parent_issue_key": _to_text(item.get("parent_issue_key")).upper(),
                     "item_start_date": _to_text(item.get("start_date")),
                     "item_due_date": _to_text(item.get("due_date")),
-                    "item_resolved_stable_since_date": _to_text(item.get("resolved_stable_since_date")),
                     "story_due_date": _to_text(story_item.get("due_date")),
                     "original_estimate_hours": round(_to_float(item.get("original_estimate_hours")), 2),
                 }
@@ -727,10 +712,13 @@ def _resolve_epf_run_id(db_path: Path, requested_run_id: str) -> str:
         return run_id
     if not db_path.exists():
         return ""
-    with sqlite3.connect(db_path) as conn:
-        row = conn.execute(
-            "SELECT active_run_id FROM epf_refresh_state WHERE id = 1"
-        ).fetchone()
+    try:
+        with sqlite3.connect(db_path) as conn:
+            row = conn.execute(
+                "SELECT active_run_id FROM epf_refresh_state WHERE id = 1"
+            ).fetchone()
+    except sqlite3.OperationalError:
+        return ""
     return _to_text(row[0] if row else "")
 
 
@@ -740,10 +728,13 @@ def _resolve_canonical_run_id(db_path: Path, requested_run_id: str) -> str:
         return run_id
     if not db_path.exists():
         return ""
-    with sqlite3.connect(db_path) as conn:
-        row = conn.execute(
-            "SELECT last_success_run_id FROM canonical_refresh_state WHERE id = 1"
-        ).fetchone()
+    try:
+        with sqlite3.connect(db_path) as conn:
+            row = conn.execute(
+                "SELECT last_success_run_id FROM canonical_refresh_state WHERE id = 1"
+            ).fetchone()
+    except sqlite3.OperationalError:
+        return ""
     return _to_text(row[0] if row else "")
 
 
@@ -755,7 +746,7 @@ def _load_work_items_from_epf_db(db_path: Path, run_id: str) -> dict[str, dict]:
         rows = conn.execute(
             """
             SELECT issue_key, project_key, issue_type, fix_type, summary, status, assignee,
-                   start_date, due_date, resolved_stable_since_date, original_estimate_hours, parent_issue_key
+                   start_date, due_date, original_estimate_hours, parent_issue_key
             FROM epf_work_items
             WHERE run_id = ?
             """,
@@ -776,7 +767,6 @@ def _load_work_items_from_epf_db(db_path: Path, run_id: str) -> dict[str, dict]:
             "assignee": _to_text(row["assignee"]),
             "start_date": _parse_iso_date(row["start_date"]),
             "due_date": _parse_iso_date(row["due_date"]),
-            "resolved_stable_since_date": _parse_iso_date(row["resolved_stable_since_date"]),
             "original_estimate_hours": round(_to_float(row["original_estimate_hours"]), 2),
             "parent_issue_key": _to_text(row["parent_issue_key"]).upper(),
         }
@@ -792,7 +782,7 @@ def _load_worklogs_from_epf_db(db_path: Path, run_id: str, work_items: dict[str,
             """
             SELECT issue_id, issue_assignee, worklog_date, hours_logged, project_key, is_bug, fix_type,
                    item_summary, item_status, item_issue_type, item_assignee, item_parent_issue_key,
-                   item_start_date, item_due_date, item_resolved_stable_since_date, story_due_date,
+                   item_start_date, item_due_date, story_due_date,
                    original_estimate_hours
             FROM epf_worklogs
             WHERE run_id = ?
@@ -829,7 +819,6 @@ def _load_worklogs_from_epf_db(db_path: Path, run_id: str, work_items: dict[str,
                 "item_parent_issue_key": _to_text(row["item_parent_issue_key"]).upper() or _to_text(item.get("parent_issue_key")).upper(),
                 "item_start_date": _parse_iso_date(row["item_start_date"]) or _to_text(item.get("start_date")),
                 "item_due_date": _parse_iso_date(row["item_due_date"]) or _to_text(item.get("due_date")),
-                "item_resolved_stable_since_date": _parse_iso_date(row["item_resolved_stable_since_date"]) or _to_text(item.get("resolved_stable_since_date")),
                 "story_due_date": _parse_iso_date(row["story_due_date"]),
                 "original_estimate_hours": round(_to_float(row["original_estimate_hours"]), 2),
             }
@@ -885,7 +874,7 @@ def _load_work_items_from_canonical_db(db_path: Path, run_id: str) -> dict[str, 
         rows = conn.execute(
             """
             SELECT issue_key, project_key, issue_type, fix_type, summary, status, assignee,
-                   start_date, due_date, resolved_stable_since_date, original_estimate_hours, parent_issue_key
+                   start_date, due_date, original_estimate_hours, parent_issue_key
             FROM canonical_issues
             WHERE run_id = ?
             """,
@@ -906,7 +895,6 @@ def _load_work_items_from_canonical_db(db_path: Path, run_id: str) -> dict[str, 
             "assignee": _to_text(row["assignee"]),
             "start_date": _parse_iso_date(row["start_date"]),
             "due_date": _parse_iso_date(row["due_date"]),
-            "resolved_stable_since_date": _parse_iso_date(row["resolved_stable_since_date"]),
             "original_estimate_hours": round(_to_float(row["original_estimate_hours"]), 2),
             "parent_issue_key": _to_text(row["parent_issue_key"]).upper(),
         }
@@ -957,7 +945,6 @@ def _load_worklogs_from_canonical_db(db_path: Path, run_id: str, work_items: dic
                 "item_parent_issue_key": parent_story_id,
                 "item_start_date": _to_text(item.get("start_date")),
                 "item_due_date": _to_text(item.get("due_date")),
-                "item_resolved_stable_since_date": _to_text(item.get("resolved_stable_since_date")),
                 "story_due_date": _to_text(story_item.get("due_date")),
                 "original_estimate_hours": round(_to_float(item.get("original_estimate_hours")), 2),
             }
@@ -1020,7 +1007,6 @@ def _precompute_simple_scoring(
         completion_info = _derive_actual_completion(
             wi.get("due_date"),
             last_log_by_issue.get(key, ""),
-            wi.get("resolved_stable_since_date"),
         )
         due_date = completion_info["planned_due_date"]
         actual_complete_date = completion_info["actual_complete_date"]
@@ -1148,8 +1134,17 @@ def _build_html(payload: dict) -> str:
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Employee Performance Dashboard</title>
+  <script>
+    (() => {{
+      const key = "employee-performance-theme";
+      const stored = localStorage.getItem(key);
+      const theme = stored === "light" || stored === "dark" ? stored : "dark";
+      document.documentElement.setAttribute("data-theme", theme);
+    }})();
+  </script>
   <style>
-    :root {{ --bg:#0a1325; --panel:#121f39; --line:#2a3f65; --ink:#dce8ff; --muted:#9db1d8; --bad:#fb7185; --good:#34d399; }}
+    :root {{ --bg:#0a1325; --panel:#121f39; --line:#2a3f65; --ink:#dce8ff; --muted:#9db1d8; --bad:#fb7185; --good:#34d399; color-scheme:dark; }}
+    html[data-theme="light"] {{ color-scheme:light; }}
     * {{ box-sizing:border-box; }} body {{ margin:0; font-family:"Trebuchet MS","Segoe UI",sans-serif; color:var(--ink); background:radial-gradient(circle at 5% 0%,#1a3356 0%,#0a1325 60%); }}
     .top-date-range-wrap {{ position:sticky; top:0; z-index:25; display:flex; justify-content:center; padding:10px 12px 0; }}
     .top-date-range-chip {{ display:inline-flex; align-items:center; gap:8px; flex-wrap:wrap; padding:7px 12px; border:1px solid #3f5f93; border-radius:999px; background:#0f2342; box-shadow:0 8px 18px rgba(2, 8, 23, .35); }}
@@ -1161,6 +1156,7 @@ def _build_html(payload: dict) -> str:
     .date-chip-control {{ display:inline-flex; align-items:center; gap:6px; }}
     .date-chip-label {{ color:#cfe0ff; font-size:.72rem; font-weight:800; text-transform:uppercase; letter-spacing:.03em; white-space:nowrap; }}
     .date-chip-control .date-chip-select {{ min-width:200px; }}
+    .date-chip-control.compact .date-chip-select {{ min-width:180px; max-width:220px; }}
     .adv-filter-wrap {{ position:relative; display:inline-flex; }}
     .adv-filter-btn {{ border:1px solid #4f46e5; border-radius:999px; background:#4338ca; color:#eef2ff; font-size:.74rem; font-weight:700; padding:6px 12px; cursor:pointer; }}
     .adv-filter-btn:hover {{ background:#3730a3; }}
@@ -1169,7 +1165,6 @@ def _build_html(payload: dict) -> str:
     .adv-filter-menu .adv-filter-group-label {{ margin-top:10px; margin-bottom:4px; }}
     .adv-filter-menu .adv-filter-group-label:first-child {{ margin-top:0; }}
     .adv-filter-menu .filter-dropdown-wrap {{ margin-top:6px; margin-bottom:4px; }}
-    .adv-filter-menu .date-chip-control {{ margin-top:6px; margin-bottom:4px; }}
     .adv-filter-group-label {{ padding:4px 8px; color:#9db1d8; font-size:.66rem; text-transform:uppercase; font-weight:800; letter-spacing:.04em; }}
     .adv-filter-item {{ width:100%; border:0; background:transparent; color:#dce8ff; text-align:left; padding:7px 8px; border-radius:8px; font-size:.76rem; cursor:pointer; }}
     .adv-filter-item:hover {{ background:#17325a; }}
@@ -1182,8 +1177,13 @@ def _build_html(payload: dict) -> str:
     .hero.is-collapsed > :not(.hero-top) {{ display:none; }}
     .hero-top {{ display:flex; align-items:flex-start; justify-content:space-between; gap:8px; flex-wrap:wrap; }}
     .hero-actions {{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }}
+    .theme-switch {{ display:inline-flex; align-items:center; gap:4px; padding:4px; border:1px solid #36598a; border-radius:999px; background:#0f2342; box-shadow:0 6px 14px rgba(2,8,23,.22); }}
+    .theme-switch-btn {{ min-width:88px; border:0; border-radius:999px; background:transparent; color:#cfe0ff; font-size:.74rem; font-weight:800; padding:7px 12px; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; gap:6px; }}
+    .theme-switch-btn .material-symbols-outlined {{ font-size:16px; }}
+    .theme-switch-btn:hover {{ background:rgba(96,165,250,.14); }}
+    .theme-switch-btn.active {{ background:#dbeafe; color:#15356b; box-shadow:0 1px 2px rgba(2,8,23,.18); }}
     .meta {{ color:#c4d4ef; font-size:.8rem; margin-top:4px; }}
-    .toolbar {{ display:grid; gap:8px; grid-template-columns:minmax(180px,1fr) minmax(180px,1fr) minmax(210px,1fr) minmax(210px,1fr) auto; margin-top:8px; }}
+    .toolbar {{ display:grid; gap:8px; grid-template-columns:minmax(180px,1fr) minmax(180px,1fr); margin-top:8px; }}
     .filter-dropdown-wrap {{ position:relative; min-width:0; }}
     .filter-dropdown-wrap > .filter-dropdown-label {{ display:block; font-size:.66rem; color:#9db1d8; margin-bottom:4px; text-transform:uppercase; font-weight:800; letter-spacing:.04em; }}
     .filter-trigger {{ display:flex; align-items:center; justify-content:space-between; gap:6px; width:100%; min-height:36px; padding:7px 12px; border:1px solid #3a5c91; border-radius:8px; background:#0d1830; color:#e2e8f0; font-size:.86rem; cursor:pointer; text-align:left; }}
@@ -1216,19 +1216,50 @@ def _build_html(payload: dict) -> str:
     .report-refresh-wrap {{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }}
     .report-refresh-status {{ font-size:.72rem; color:#9db1d8; min-height:18px; }}
     .report-refresh-details {{ width:100%; font-size:.68rem; color:#c7d7f3; min-height:16px; }}
-    .guide {{ margin-top:8px; border:1px solid #2f517e; border-radius:10px; background:#0f2140; padding:8px; }}
-    .guide h2 {{ margin:0; font-size:.86rem; }}
-    .guide p {{ margin:5px 0 0; font-size:.77rem; color:#c7d7f3; line-height:1.35; }}
-    .hero-scorecard {{ margin-top:10px; border:1px solid #5b8bd1; border-radius:16px; background:linear-gradient(135deg,#15345f 0%, #102546 52%, #0d1b32 100%); padding:14px 16px; display:flex; justify-content:space-between; align-items:flex-end; gap:14px; box-shadow:0 14px 30px rgba(2,8,23,.28); }}
-    .hero-scorecard-copy {{ min-width:0; }}
-    .hero-scorecard-kicker {{ font-size:.7rem; font-weight:900; text-transform:uppercase; letter-spacing:.08em; color:#93c5fd; }}
-    .hero-scorecard-title {{ margin-top:4px; font-size:1rem; font-weight:900; color:#eff6ff; }}
-    .hero-scorecard-sub {{ margin-top:4px; font-size:.76rem; color:#c7d7f3; line-height:1.35; }}
-    .hero-scorecard-metric {{ text-align:right; flex:0 0 auto; }}
-    .hero-scorecard-value {{ font-size:clamp(2rem,3.6vw,3rem); font-weight:900; line-height:.95; color:#f8fbff; }}
-    .hero-scorecard-mode {{ margin-top:6px; display:inline-flex; align-items:center; gap:6px; border:1px solid #4f77b3; border-radius:999px; padding:4px 10px; background:rgba(15,35,66,.55); color:#dbeafe; font-size:.72rem; font-weight:800; }}
-    .hero-scorecard-mode .material-symbols-outlined {{ font-size:15px; }}
-    .hero-scorecard-meta {{ margin-top:6px; font-size:.72rem; color:#9db1d8; }}
+    .exec-scorecards {{ margin-top:10px; border:1px solid rgba(91,139,209,.18); border-radius:16px; background:linear-gradient(180deg,#0d1e38 0%,#0b1830 100%); padding:20px; }}
+    .exec-header {{ display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:16px; flex-wrap:wrap; }}
+    .exec-title {{ margin:0; font-size:1.1rem; font-weight:800; color:#f0f6ff; }}
+    .exec-desc {{ margin:4px 0 0; font-size:.74rem; color:#8ba5cc; line-height:1.4; max-width:60ch; }}
+    .exec-controls {{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }}
+    .exec-icon-btn {{ width:36px; height:36px; border:1px solid #3f5f93; border-radius:10px; background:#0f2342; color:#dce8ff; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; transition:background .15s,border-color .15s; text-decoration:none; }}
+    .exec-icon-btn:hover {{ background:#17325a; border-color:#5f88c0; }}
+    .exec-icon-btn .material-symbols-outlined {{ font-size:20px; }}
+    .exec-popover-wrap {{ position:relative; }}
+    .exec-scorecard-grid {{ display:grid; gap:12px; grid-template-columns:repeat(4,minmax(180px,1fr)); }}
+    .exec-card {{ position:relative; border:1px solid rgba(91,139,209,.25); border-radius:14px; background:linear-gradient(145deg,#152e54 0%,#0f2240 60%,#0b1a33 100%); padding:16px; display:flex; flex-direction:column; gap:6px; min-width:0; transition:border-color .2s,box-shadow .2s; }}
+    .exec-card:hover {{ border-color:rgba(96,165,250,.4); box-shadow:0 4px 16px rgba(2,8,23,.3); }}
+    .exec-card::before {{ content:''; position:absolute; top:0; left:16px; right:16px; height:2px; background:linear-gradient(90deg,transparent,rgba(96,165,250,.4),transparent); border-radius:0 0 2px 2px; }}
+    .exec-card-kicker {{ font-size:.66rem; font-weight:900; text-transform:uppercase; letter-spacing:.1em; color:#60a5fa; }}
+    .exec-card-value {{ font-size:clamp(1.6rem,2.8vw,2.2rem); font-weight:900; line-height:1; color:#f8fbff; letter-spacing:-.02em; margin-top:auto; }}
+    .exec-card-meta {{ font-size:.68rem; color:#7e9bc4; line-height:1.35; }}
+    .exec-card-mode {{ display:inline-flex; align-items:center; gap:5px; border:1px solid rgba(79,119,179,.35); border-radius:999px; padding:3px 8px; background:rgba(15,35,66,.45); color:#bdd4f5; font-size:.66rem; font-weight:700; width:fit-content; }}
+    .exec-card-mode .material-symbols-outlined {{ font-size:13px; }}
+    .exec-card.stacked {{ padding:0; gap:0; }}
+    .exec-card.stacked > .exec-card-kicker {{ padding:12px 16px 0; display:flex; align-items:center; justify-content:space-between; gap:8px; }}
+    .exec-sub-card {{ padding:10px 16px; }}
+    .exec-sub-card + .exec-sub-card {{ border-top:1px solid rgba(91,139,209,.12); }}
+    .exec-sub-label {{ font-size:.62rem; font-weight:800; text-transform:uppercase; letter-spacing:.08em; color:#7e9bc4; }}
+    .exec-sub-value {{ font-size:1.05rem; font-weight:900; color:#f8fbff; margin-top:2px; }}
+    .exec-sub-detail {{ font-size:.62rem; color:#6889b3; margin-top:1px; }}
+    .exec-plan-actual-toggle-btn {{ border:none; background:rgba(15,35,66,.6); color:#cfe0ff; border-radius:999px; width:28px; height:28px; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; padding:0; }}
+    .exec-plan-actual-toggle-btn:hover {{ background:rgba(37,99,235,.8); color:#ffffff; }}
+    .exec-plan-actual-toggle-btn .material-symbols-outlined {{ font-size:18px; }}
+    .exec-card.actionable {{ cursor:pointer; }}
+    .exec-card.actionable:focus-visible {{ outline:2px solid #60a5fa; outline-offset:2px; }}
+    .exec-plan-actual-breakdown {{ border-top:1px dashed rgba(91,139,209,.22); margin-top:2px; padding:10px 12px 12px; display:grid; gap:8px; }}
+    .exec-plan-actual-breakdown .section-title {{ margin:0; font-size:.72rem; font-weight:800; color:#cfe0ff; }}
+    .exec-plan-actual-breakdown .section-meta {{ margin:0; font-size:.66rem; color:#8ba5cc; }}
+    .exec-plan-actual-breakdown .tbl-wrap {{ max-height:220px; overflow:auto; border:1px solid rgba(91,139,209,.2); border-radius:8px; }}
+    .exec-insights {{ display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }}
+    .exec-insights .pill {{ border:1px solid #365c8d; border-radius:999px; padding:4px 10px; font-size:.72rem; color:#dce8ff; background:#132949; }}
+    .hero-settings-popover {{ position:absolute; top:calc(100% + 8px); right:0; width:min(360px, calc(100vw - 32px)); padding:12px; border:1px solid #314d7a; border-radius:14px; background:#0f1b32; box-shadow:0 18px 32px rgba(2,8,23,.45); z-index:55; }}
+    .hero-settings-group + .hero-settings-group {{ margin-top:12px; }}
+    .hero-settings-label {{ font-size:.68rem; font-weight:900; color:#93c5fd; text-transform:uppercase; letter-spacing:.06em; margin-bottom:6px; }}
+    .hero-settings-help {{ font-size:.72rem; color:#9db1d8; line-height:1.35; margin-top:6px; }}
+    .hero-segmented {{ display:grid; grid-template-columns:1fr 1fr; gap:6px; }}
+    .hero-segment-btn {{ border:1px solid #36598a; border-radius:10px; background:#12284b; color:#dce8ff; min-height:42px; padding:8px 10px; font-size:.77rem; font-weight:800; text-align:center; cursor:pointer; }}
+    .hero-segment-btn:hover {{ background:#17325a; border-color:#5f88c0; }}
+    .hero-segment-btn.active {{ border-color:#7cb2ff; background:#1b3b67; color:#ffffff; box-shadow:inset 0 0 0 1px rgba(124,178,255,.28); }}
     .discover {{ display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }}
     .discover .pill {{ border:1px solid #365c8d; border-radius:999px; padding:4px 10px; font-size:.74rem; color:#dce8ff; background:#132949; }}
     .leader-controls {{ display:flex; gap:8px; flex-wrap:wrap; align-items:end; padding:8px 10px 0; }}
@@ -1289,21 +1320,6 @@ def _build_html(payload: dict) -> str:
     .metric-chip .metric-value {{ color:#e2ecff; font-weight:900; font-size:.74rem; }}
     .metric-chip .metric-value.warn {{ color:#f59e0b; }}
     .metric-chip .material-symbols-outlined {{ font-size:15px; color:#93c5fd; font-variation-settings:"FILL" 1, "wght" 500, "GRAD" 0, "opsz" 20; }}
-    .assignee-refresh-btn {{ width:26px; height:26px; border:1px solid #36598a; border-radius:999px; background:#112546; color:#93c5fd; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; }}
-    .assignee-refresh-btn:hover {{ border-color:#7cb2ff; color:#dbeafe; background:#17325a; }}
-    .assignee-refresh-btn:disabled {{ opacity:.55; cursor:progress; border-color:#476b9f; color:#a8c8ff; background:#17325a; }}
-    .assignee-refresh-btn .material-symbols-outlined {{ font-size:16px; }}
-    .row-refresh {{ grid-column:1 / -1; margin-top:2px; padding:6px 8px; border-radius:10px; border:1px solid #29476f; background:#0f1f3a; }}
-    .row-refresh-head {{ display:flex; justify-content:space-between; gap:8px; align-items:center; font-size:.7rem; color:#dbeafe; }}
-    .row-refresh-status {{ font-weight:800; }}
-    .row-refresh-pct {{ color:#93c5fd; font-weight:800; }}
-    .row-refresh-track {{ margin-top:6px; width:100%; height:7px; border-radius:999px; background:#09162c; border:1px solid #223a61; overflow:hidden; }}
-    .row-refresh-fill {{ height:100%; background:linear-gradient(90deg,#38bdf8,#60a5fa); transition:width .25s ease; }}
-    .row-refresh-sub {{ margin-top:4px; font-size:.67rem; color:#9db1d8; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
-    .row-refresh.row-refresh-err {{ border-color:#7f1d1d; background:#2c1016; }}
-    .row-refresh.row-refresh-err .row-refresh-fill {{ background:linear-gradient(90deg,#f97316,#ef4444); }}
-    .row-refresh.row-refresh-ok {{ border-color:#166534; background:#0f2418; }}
-    .row-refresh.row-refresh-ok .row-refresh-fill {{ background:linear-gradient(90deg,#22c55e,#86efac); }}
     .detail {{ padding:10px; overflow-y:auto; flex:1; min-height:0; }} .score-arena {{ margin-top:10px; }} .score-drill {{ padding:10px; }} .card {{ border:1px solid #314e7f; border-radius:10px; background:#12213d; padding:10px; }} .big {{ font-size:2rem; font-weight:900; line-height:1; }}
     .tabs {{ display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }}
     .tab-btn {{ border:1px solid #3b5f91; background:#12284b; color:#e6efff; border-radius:999px; padding:4px 10px; font-size:.74rem; cursor:pointer; }}
@@ -1581,9 +1597,246 @@ def _build_html(payload: dict) -> str:
     .capacity-day-tag.l {{ border-color:#64748b; background:#334155; }}
     .capacity-day-tag.rl {{ border-color:#0ea5e9; background:#0c3a58; }}
     .capacity-empty {{ font-size:.76rem; color:#9fb7db; }}
+    html[data-theme="light"] body {{ --bg:#f4f8ff; --panel:#ffffff; --line:#d6e1f2; --ink:#132238; --muted:#5e728d; background:radial-gradient(circle at 5% 0%, #eef4ff 0%, #dfeaf9 34%, #f7faff 100%); }}
+    html[data-theme="light"] .top-date-range-chip,
+    html[data-theme="light"] .hero,
+    html[data-theme="light"] .team-card,
+    html[data-theme="light"] .team-chart-shell,
+    html[data-theme="light"] .team-detail-shell,
+    html[data-theme="light"] .card,
+    html[data-theme="light"] .mini,
+    html[data-theme="light"] .ts-card,
+    html[data-theme="light"] .mini-chart,
+    html[data-theme="light"] .tbl-wrap,
+    html[data-theme="light"] .tree-wrap,
+    html[data-theme="light"] .tree-node details,
+    html[data-theme="light"] .feed,
+    html[data-theme="light"] .scoring-section,
+    html[data-theme="light"] .score-drawer,
+    html[data-theme="light"] .score-drawer-section,
+    html[data-theme="light"] .formula-steps,
+    html[data-theme="light"] .formula-metrics,
+    html[data-theme="light"] .formula-safeguards,
+    html[data-theme="light"] .capacity-expanded,
+    html[data-theme="light"] .capacity-chip,
+    html[data-theme="light"] .capacity-month,
+    html[data-theme="light"] .exec-epic,
+    html[data-theme="light"] .exec-story-block,
+    html[data-theme="light"] .exec-metric,
+    html[data-theme="light"] .score-subtask-filter-field select,
+    html[data-theme="light"] .score-drawer-section-head,
+    html[data-theme="light"] .score-drawer-head,
+    html[data-theme="light"] .score-drawer-accordion-toggle,
+    html[data-theme="light"] .leader-actions-menu,
+    html[data-theme="light"] .filter-menu,
+    html[data-theme="light"] .adv-filter-menu,
+    html[data-theme="light"] .hero-settings-popover {{ background:#ffffff; border-color:#d6e1f2; color:#132238; box-shadow:0 14px 32px rgba(15,23,42,.12); }}
+    html[data-theme="light"] .date-chip-input,
+    html[data-theme="light"] .date-chip-select,
+    html[data-theme="light"] .filter-trigger,
+    html[data-theme="light"] .filter-search,
+    html[data-theme="light"] .f input,
+    html[data-theme="light"] .f select,
+    html[data-theme="light"] .btn,
+    html[data-theme="light"] .exec-icon-btn,
+    html[data-theme="light"] .leader-icon-btn,
+    html[data-theme="light"] .shortcut-btn,
+    html[data-theme="light"] .metric-link-btn,
+    html[data-theme="light"] .jira-link-icon,
+    html[data-theme="light"] .header-expand-fab,
+    html[data-theme="light"] .score-drawer-close,
+    html[data-theme="light"] .formula-toggle-btn,
+    html[data-theme="light"] .hero-segment-btn,
+    html[data-theme="light"] .tab-btn,
+    html[data-theme="light"] .ss-chip,
+    html[data-theme="light"] .due-status-pill,
+    html[data-theme="light"] .metric-pill,
+    html[data-theme="light"] .exec-insights .pill,
+    html[data-theme="light"] .discover .pill,
+    html[data-theme="light"] .capacity-legend .pill,
+    html[data-theme="light"] .theme-switch {{ background:#f8fbff; border-color:#c6d7ee; color:#17345f; }}
+    html[data-theme="light"] .date-chip-input,
+    html[data-theme="light"] .date-chip-select,
+    html[data-theme="light"] .filter-trigger,
+    html[data-theme="light"] .filter-search,
+    html[data-theme="light"] .f input,
+    html[data-theme="light"] .f select,
+    html[data-theme="light"] .score-subtask-filter-field select {{ background:#ffffff; border-color:#c9d8ee; color:#132238; }}
+    html[data-theme="light"] .btn,
+    html[data-theme="light"] .exec-icon-btn,
+    html[data-theme="light"] .leader-icon-btn,
+    html[data-theme="light"] .shortcut-btn,
+    html[data-theme="light"] .metric-link-btn,
+    html[data-theme="light"] .jira-link-icon,
+    html[data-theme="light"] .header-expand-fab,
+    html[data-theme="light"] .score-drawer-close,
+    html[data-theme="light"] .formula-toggle-btn,
+    html[data-theme="light"] .hero-segment-btn,
+    html[data-theme="light"] .tab-btn,
+    html[data-theme="light"] .ss-chip,
+    html[data-theme="light"] .due-status-pill,
+    html[data-theme="light"] .metric-pill,
+    html[data-theme="light"] .exec-insights .pill,
+    html[data-theme="light"] .discover .pill,
+    html[data-theme="light"] .capacity-legend .pill {{ border-color:#c6d7ee; background:#edf4ff; color:#17345f; }}
+    html[data-theme="light"] .btn:hover,
+    html[data-theme="light"] .exec-icon-btn:hover,
+    html[data-theme="light"] .leader-icon-btn:hover,
+    html[data-theme="light"] .shortcut-btn:hover,
+    html[data-theme="light"] .metric-link-btn:hover,
+    html[data-theme="light"] .jira-link-icon:hover,
+    html[data-theme="light"] .header-expand-fab:hover,
+    html[data-theme="light"] .score-drawer-close:hover,
+    html[data-theme="light"] .formula-toggle-btn:hover,
+    html[data-theme="light"] .hero-segment-btn:hover,
+    html[data-theme="light"] .tab-btn:hover,
+    html[data-theme="light"] .filter-trigger:hover,
+    html[data-theme="light"] .filter-option:hover,
+    html[data-theme="light"] .adv-filter-item:hover,
+    html[data-theme="light"] .leader-actions-item:hover,
+    html[data-theme="light"] .score-drawer-accordion-toggle:hover,
+    html[data-theme="light"] .kpi.actionable:hover,
+    html[data-theme="light"] .mini .l.actionable:hover,
+    html[data-theme="light"] .exec-metric.actionable:hover {{ background:#dfeefe; border-color:#8eb7eb; color:#132238; }}
+    html[data-theme="light"] .exec-scorecards {{ background:linear-gradient(180deg,#f7fbff 0%,#edf5ff 100%); border-color:#d6e1f2; }}
+    html[data-theme="light"] .exec-card {{ background:linear-gradient(145deg,#ffffff 0%,#f6faff 62%,#eef5ff 100%); border-color:#d2dff2; }}
+    html[data-theme="light"] .exec-card-mode {{ background:#edf4ff; border-color:#c6d7ee; color:#305785; }}
+    html[data-theme="light"] .exec-plan-actual-breakdown .section-title {{ color:#1f3f69; }}
+    html[data-theme="light"] .exec-card-kicker,
+    html[data-theme="light"] .hero-settings-label,
+    html[data-theme="light"] .formula-kicker,
+    html[data-theme="light"] .formula-safeguards-title,
+    html[data-theme="light"] .score-drawer-section-title,
+    html[data-theme="light"] .date-chip-segment,
+    html[data-theme="light"] .date-chip-label {{ color:#34649b; }}
+    html[data-theme="light"] .exec-title,
+    html[data-theme="light"] .exec-card-value,
+    html[data-theme="light"] .exec-sub-value,
+    html[data-theme="light"] .panel h2,
+    html[data-theme="light"] .panel-head-title,
+    html[data-theme="light"] .tab-title,
+    html[data-theme="light"] .issue-title,
+    html[data-theme="light"] .score-drawer-title,
+    html[data-theme="light"] .capacity-expanded-title,
+    html[data-theme="light"] .formula-title,
+    html[data-theme="light"] .formula-eq,
+    html[data-theme="light"] .formula-row span:last-child,
+    html[data-theme="light"] .availability-num,
+    html[data-theme="light"] .exec-m-name,
+    html[data-theme="light"] .rules-tbl td.rule-name-cell,
+    html[data-theme="light"] .top3-item .nm,
+    html[data-theme="light"] .team-name {{ color:#132238; }}
+    html[data-theme="light"] .meta,
+    html[data-theme="light"] .exec-desc,
+    html[data-theme="light"] .exec-card-meta,
+    html[data-theme="light"] .exec-sub-label,
+    html[data-theme="light"] .exec-plan-actual-breakdown .section-meta,
+    html[data-theme="light"] .exec-sub-detail,
+    html[data-theme="light"] .report-refresh-status,
+    html[data-theme="light"] .report-refresh-details,
+    html[data-theme="light"] .filter-dropdown-wrap > .filter-dropdown-label,
+    html[data-theme="light"] .adv-filter-group-label,
+    html[data-theme="light"] .filter-menu-empty,
+    html[data-theme="light"] .date-chip-status,
+    html[data-theme="light"] .panel-inline-toggle,
+    html[data-theme="light"] .tab-kicker,
+    html[data-theme="light"] .sub,
+    html[data-theme="light"] .score-label,
+    html[data-theme="light"] .issue-id,
+    html[data-theme="light"] .score-drawer-subtitle,
+    html[data-theme="light"] .score-drawer-calculation-label,
+    html[data-theme="light"] .score-drawer-section-note,
+    html[data-theme="light"] .hero-settings-help,
+    html[data-theme="light"] .formula-applied,
+    html[data-theme="light"] .formula-note,
+    html[data-theme="light"] .formula-mini-help,
+    html[data-theme="light"] .capacity-expanded-sub,
+    html[data-theme="light"] .capacity-chip .k,
+    html[data-theme="light"] .capacity-dow,
+    html[data-theme="light"] .capacity-empty,
+    html[data-theme="light"] .exec-m-meaning,
+    html[data-theme="light"] .exec-scale-note,
+    html[data-theme="light"] .availability-note,
+    html[data-theme="light"] .rules-tbl td.rule-desc-cell,
+    html[data-theme="light"] .rules-tbl td.rule-meta-cell,
+    html[data-theme="light"] .score-subtask-filter-field label,
+    html[data-theme="light"] .score-subtask-filter-status,
+    html[data-theme="light"] .ss-tbl-all td.penalty-reason-cell,
+    html[data-theme="light"] .team-sub,
+    html[data-theme="light"] .section-head.collapse-toggle .hint {{ color:#5e728d; }}
+    html[data-theme="light"] .panel,
+    html[data-theme="light"] .kpi,
+    html[data-theme="light"] .top3-card,
+    html[data-theme="light"] .teams-wrap {{ background:#ffffff; border-color:#d6e1f2; }}
+    html[data-theme="light"] .planning-kpis .kpi,
+    html[data-theme="light"] .exec-metric,
+    html[data-theme="light"] .score-drawer-head,
+    html[data-theme="light"] .score-drawer-accordion-toggle,
+    html[data-theme="light"] .score-drawer-section-head,
+    html[data-theme="light"] .tbl th,
+    html[data-theme="light"] .ss-tbl th {{ background:#eef5ff; border-color:#d6e1f2; }}
+    html[data-theme="light"] .row {{ border-bottom-color:#dde7f5; }}
+    html[data-theme="light"] .row.sel {{ background:#e9f2ff; box-shadow:inset 0 0 0 1px #8ab3ea; }}
+    html[data-theme="light"] .score,
+    html[data-theme="light"] .metric-chip {{ border-color:#c6d7ee; background:#f4f8ff; color:#17345f; }}
+    html[data-theme="light"] .metric-chip .metric-value {{ color:#153257; }}
+    html[data-theme="light"] .metric-chip .material-symbols-outlined,
+    html[data-theme="light"] .summary-score-trigger .material-symbols-outlined {{ color:#34649b; }}
+    html[data-theme="light"] .table-title,
+    html[data-theme="light"] .capacity-chip .v,
+    html[data-theme="light"] .score-drawer-calculation-num.final,
+    html[data-theme="light"] .rules-tbl td.rule-impact-cell,
+    html[data-theme="light"] .exec-m-value {{ color:#1d5fa2; }}
+    html[data-theme="light"] .team-chart-svg,
+    html[data-theme="light"] .ts-svg,
+    html[data-theme="light"] .mini-svg {{ background:#fbfdff; border-color:#d6e1f2; }}
+    html[data-theme="light"] .exec-bar-track {{ background:#edf4ff; border-color:#d2dff2; }}
+    html[data-theme="light"] .feed .i,
+    html[data-theme="light"] .score-drawer-calculation-rule,
+    html[data-theme="light"] .score-drawer-section,
+    html[data-theme="light"] .score-drawer-accordion-toggle,
+    html[data-theme="light"] .score-drawer-head,
+    html[data-theme="light"] .score-drawer-section-head,
+    html[data-theme="light"] .score-drawer-section-title,
+    html[data-theme="light"] .exec-story-head,
+    html[data-theme="light"] .exec-epic-body,
+    html[data-theme="light"] .tbl th,
+    html[data-theme="light"] .tbl td,
+    html[data-theme="light"] .ss-tbl th,
+    html[data-theme="light"] .ss-tbl td,
+    html[data-theme="light"] .ss-tbl-all th,
+    html[data-theme="light"] .ss-tbl-all td {{ border-color:#dbe5f3; }}
+    html[data-theme="light"] .tree-children {{ border-left-color:#c8d8ee; }}
+    html[data-theme="light"] .score-drawer-overlay {{ background:rgba(15,23,42,.24); }}
+    html[data-theme="light"] .score-drawer {{ border-left-color:#d6e1f2; box-shadow:-20px 0 40px rgba(15,23,42,.12); }}
+    html[data-theme="light"] .score-drawer-body,
+    html[data-theme="light"] .capacity-calendar-wrap {{ scrollbar-color:#a9c6ea #eaf2fd; }}
+    html[data-theme="light"] .score-drawer-body::-webkit-scrollbar-track,
+    html[data-theme="light"] .capacity-calendar-wrap::-webkit-scrollbar-track {{ background:#eaf2fd; }}
+    html[data-theme="light"] .score-drawer-body::-webkit-scrollbar-thumb,
+    html[data-theme="light"] .capacity-calendar-wrap::-webkit-scrollbar-thumb {{ background:#a9c6ea; border-color:#eaf2fd; }}
+    html[data-theme="light"] .score-drawer-body::-webkit-scrollbar-thumb:hover,
+    html[data-theme="light"] .capacity-calendar-wrap::-webkit-scrollbar-thumb:hover {{ background:#84afdf; }}
+    html[data-theme="light"] .capacity-month {{ background:#f8fbff; }}
+    html[data-theme="light"] .capacity-day {{ background:#ffffff; border-color:#d3e0f2; }}
+    html[data-theme="light"] .capacity-day.is-weekend {{ background:#eef1f5; border-color:#c8d0dc; }}
+    html[data-theme="light"] .capacity-day-num {{ color:#17345f; }}
+    html[data-theme="light"] .capacity-day-tag {{ background:#edf4ff; border-color:#c6d7ee; color:#17345f; }}
+    html[data-theme="light"] .capacity-day-tag.h {{ background:#fff2db; }}
+    html[data-theme="light"] .capacity-day-tag.l {{ background:#eef2f7; }}
+    html[data-theme="light"] .formula-guide {{ background:linear-gradient(180deg,#fbfdff 0%, #eef5ff 100%); border-color:#d6e1f2; color:#132238; }}
+    html[data-theme="light"] .formula-score-pill {{ background:#e7f0ff; border-color:#9fc0ea; color:#15356b; }}
+    html[data-theme="light"] .formula-steps,
+    html[data-theme="light"] .formula-metrics,
+    html[data-theme="light"] .formula-safeguards {{ background:#ffffff; border-color:#d6e1f2; }}
+    html[data-theme="light"] .theme-switch-btn {{ color:#40648e; }}
+    html[data-theme="light"] .theme-switch-btn.active {{ background:#183b6b; color:#f8fbff; box-shadow:none; }}
+    html[data-theme="light"] .theme-switch-btn:hover {{ background:#e1ecfb; }}
+    html[data-theme="light"] .theme-switch-btn.active:hover {{ background:#183b6b; }}
     @media (max-width:1200px) {{ .capacity-month{{ flex-basis:calc((100% - 8px)/2); }} }}
     @media (max-width:760px) {{ .capacity-month{{ flex-basis:100%; }} }}
-    @media (max-width:1200px) {{ .toolbar{{grid-template-columns:1fr 1fr;}} .kpis{{grid-template-columns:1fr 1fr;}} .top3-wrap{{grid-template-columns:1fr;}} .team-score-layout{{grid-template-columns:1fr;}} .arena{{grid-template-columns:1fr;}} .arena > .panel {{ min-height:auto; max-height:none; }} .leaderboard {{ max-height:56vh; }} .detail {{ max-height:56vh; }} }}
+    @media (max-width:1200px) {{ .toolbar{{grid-template-columns:1fr 1fr;}} .kpis{{grid-template-columns:1fr 1fr;}} .top3-wrap{{grid-template-columns:1fr;}} .team-score-layout{{grid-template-columns:1fr;}} .arena{{grid-template-columns:1fr;}} .arena > .panel {{ min-height:auto; max-height:none; }} .leaderboard {{ max-height:56vh; }} .detail {{ max-height:56vh; }} .exec-scorecard-grid{{ grid-template-columns:repeat(2,minmax(0,1fr)); }} .exec-header{{ flex-direction:column; }} }}
+    @media (max-width:760px) {{ .exec-scorecard-grid{{ grid-template-columns:1fr; }} .hero-segmented{{ grid-template-columns:1fr; }} }}
   </style>
   <link rel="stylesheet" href="shared-nav.css">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:FILL,wght,GRAD,opsz@1,500,0,20">
@@ -1597,6 +1850,20 @@ def _build_html(payload: dict) -> str:
     <input id="to" class="date-chip-input" type="date" aria-label="To date">
     <span class="date-chip-segment">Capacity Profile</span>
     <select id="capacity-profile-top" class="date-chip-select" aria-label="Capacity profile (top)"></select>
+    <div class="date-chip-control compact">
+      <span class="date-chip-label">Overburn</span>
+      <select id="top-overburn-mode" class="date-chip-select" aria-label="Overburn mode">
+        <option value="subtasks" selected>Overburn Per Task</option>
+        <option value="total">Overburn Total</option>
+      </select>
+    </div>
+    <div class="date-chip-control compact">
+      <span class="date-chip-label">Efficiency</span>
+      <select id="top-efficiency-mode" class="date-chip-select" aria-label="Efficiency mode">
+        <option value="penalty_inclusive" selected>Penalty Inclusive Efficiency</option>
+        <option value="simple">Simple Efficiency</option>
+      </select>
+    </div>
     <button id="apply" class="btn" type="button">Apply Filters</button>
     <button id="reset" class="btn" type="button">Reset</button>
     <div class="adv-filter-wrap">
@@ -1609,13 +1876,6 @@ def _build_html(payload: dict) -> str:
         <button class="adv-filter-item" type="button" data-preset="last90" role="menuitem">Last 90 Days</button>
         <button class="adv-filter-item" type="button" data-preset="lastQuarter" role="menuitem">Last Quarter</button>
         <button class="adv-filter-item" type="button" data-preset="currentQuarter" role="menuitem">Current Quarter</button>
-        <div class="adv-filter-group-label">Simple Overrun Basis</div>
-        <div class="date-chip-control">
-          <select id="simple-overrun-mode" class="date-chip-select" aria-label="Simple overrun basis" style="width:100%;min-width:0;">
-            <option value="subtasks" selected>Overrun Subtask Hours</option>
-            <option value="total">Total Overrun Hours</option>
-          </select>
-        </div>
         <div class="adv-filter-group-label">Project</div>
         <div class="filter-dropdown-wrap">
           <select id="projects" multiple size="1" aria-hidden="true" style="position:absolute;opacity:0;pointer-events:none;width:0;height:0;"></select>
@@ -1680,43 +1940,93 @@ def _build_html(payload: dict) -> str:
         <div class="meta" id="meta"></div>
       </div>
       <div class="hero-actions">
-        <div class="report-refresh-wrap">
-          <button id="employee-refresh-btn" class="btn" type="button">Refresh Report</button>
-          <button id="employee-refresh-cancel-btn" class="btn" type="button">Cancel Run</button>
-          <span id="employee-refresh-status" class="report-refresh-status" aria-live="polite"></span>
-          <div id="employee-refresh-details" class="report-refresh-details" aria-live="polite"></div>
+        <div class="theme-switch" role="group" aria-label="Dashboard theme">
+          <button id="theme-light" class="theme-switch-btn" type="button" data-theme-option="light" aria-pressed="false"><span class="material-symbols-outlined" aria-hidden="true">light_mode</span><span>Light</span></button>
+          <button id="theme-dark" class="theme-switch-btn" type="button" data-theme-option="dark" aria-pressed="false"><span class="material-symbols-outlined" aria-hidden="true">dark_mode</span><span>Dark</span></button>
         </div>
         <button id="header-toggle" class="btn" type="button" aria-expanded="true" aria-controls="performance-header">Collapse Header</button>
       </div>
     </div>
-    <section class="guide">
-      <h2>Executive View Guide</h2>
-      <p>Start with Planning & Start-Adherence KPIs to check workload realism, then use Performance Score KPIs for risk posture. In leaderboard, sort by the lens you want and click a person for full diagnostic detail.</p>
-      <div class="discover" id="discover-insights"></div>
-    </section>
-    <section class="hero-scorecard" aria-label="Average performance percentage">
-      <div class="hero-scorecard-copy">
-        <div class="hero-scorecard-kicker">Average Performance</div>
-        <div class="hero-scorecard-title">Current filtered team performance percentage</div>
-        <div class="hero-scorecard-sub">Updates from the active date range, project selection, assignee search, and scoring mode.</div>
+    <section class="exec-scorecards">
+      <div class="exec-header">
+        <div>
+          <h2 class="exec-title">Executive Scorecards</h2>
+          <p class="exec-desc">High-level delivery metrics for the filtered team. Adjust the reporting window with date shortcuts or fine-tune scoring via performance controls.</p>
+        </div>
+        <div class="exec-controls">
+          <div class="shortcut-bar" style="margin-top:0;">
+            <button id="shortcut-current-month" class="shortcut-btn" type="button">Current Month</button>
+            <button id="shortcut-previous-month" class="shortcut-btn" type="button">Previous Month</button>
+            <button id="shortcut-last-30-days" class="shortcut-btn" type="button">Last 30 Days</button>
+            <button id="shortcut-quarter-to-date" class="shortcut-btn" type="button">Quarter To Date</button>
+            <button id="shortcut-reset" class="shortcut-btn" type="button">Reset</button>
+          </div>
+          <a href="/settings/performance" class="exec-icon-btn" title="Performance Settings"><span class="material-symbols-outlined">settings</span></a>
+          <div class="exec-popover-wrap">
+            <button id="header-performance-controls-trigger" class="exec-icon-btn" type="button" title="Performance Controls" aria-expanded="false" aria-haspopup="dialog" aria-controls="header-performance-controls-popover"><span class="material-symbols-outlined">view_in_ar</span></button>
+            <div id="header-performance-controls-popover" class="hero-settings-popover" role="dialog" aria-label="Header performance controls" hidden>
+              <div class="hero-settings-group">
+                <div class="hero-settings-label">Overburn Basis</div>
+                <div class="hero-segmented">
+                  <button type="button" id="header-overburn-per-task" class="hero-segment-btn active" data-overburn-mode="subtasks">Overburn Per Task</button>
+                  <button type="button" id="header-overburn-total" class="hero-segment-btn" data-overburn-mode="total">Overburn Total</button>
+                </div>
+                <div class="hero-settings-help">Per task penalizes individual subtask overruns. Total penalizes only when actuals exceed planned in aggregate.</div>
+              </div>
+              <div class="hero-settings-group">
+                <div class="hero-settings-label">Efficiency Mode</div>
+                <div class="hero-segmented">
+                  <button type="button" id="header-efficiency-penalty-inclusive" class="hero-segment-btn active" data-efficiency-mode="penalty_inclusive">Penalty Inclusive Efficiency</button>
+                  <button type="button" id="header-efficiency-simple" class="hero-segment-btn" data-efficiency-mode="simple">Simple Efficiency</button>
+                </div>
+                <div class="hero-settings-help">Penalty inclusive averages employee-level results. Simple efficiency compares total planned hours vs total actual hours only.</div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
-      <div class="hero-scorecard-metric">
-        <div class="hero-scorecard-value" id="header-average-performance-value">N/A</div>
-        <div class="hero-scorecard-mode" id="header-average-performance-mode"><span class="material-symbols-outlined" aria-hidden="true">monitoring</span><span>Simple Scoring</span></div>
-        <div class="hero-scorecard-meta" id="header-average-performance-meta">Eligible assignees: 0</div>
+      <div class="exec-scorecard-grid">
+        <div class="exec-card" aria-label="Overall Delivery Efficiency">
+          <div class="exec-card-kicker">Overall Delivery Efficiency</div>
+          <div class="exec-card-value" id="header-efficiency-value">N/A</div>
+          <div class="exec-card-mode" id="header-efficiency-mode"><span class="material-symbols-outlined" aria-hidden="true">tune</span><span>Penalty Inclusive Efficiency</span></div>
+          <div class="exec-card-meta" id="header-efficiency-meta">Eligible assignees: 0</div>
+        </div>
+        <div class="exec-card stacked" id="header-plan-actual-card" aria-label="Plan vs Actual">
+          <div class="exec-card-kicker">
+            <span>Plan vs Actual</span>
+            <button type="button" id="header-plan-actual-toggle" class="exec-plan-actual-toggle-btn" title="Toggle Plan vs Actual subtasks tables" aria-label="Toggle Plan vs Actual subtasks tables">
+              <span class="material-symbols-outlined" aria-hidden="true">table</span>
+            </button>
+          </div>
+          <div class="exec-sub-card">
+            <div class="exec-sub-label">Planned</div>
+            <div class="exec-sub-value" id="header-total-planned-hours-value">0.0h</div>
+            <div class="exec-sub-detail" id="header-total-planned-hours-meta">0.0 man-days</div>
+          </div>
+          <div class="exec-sub-card">
+            <div class="exec-sub-label">Actual</div>
+            <div class="exec-sub-value" id="header-total-actual-hours-value">0.0h</div>
+            <div class="exec-sub-detail" id="header-total-actual-hours-meta">0.0 man-days</div>
+          </div>
+        </div>
+        <div class="exec-card" aria-label="Total Resources">
+          <div class="exec-card-kicker">Total Resources</div>
+          <div class="exec-card-value" id="header-total-resources-value">0</div>
+          <div class="exec-card-meta" id="header-total-resources-meta">Active assignees in range</div>
+        </div>
+        <div class="exec-card" aria-label="Average Resource Performance">
+          <div class="exec-card-kicker">Average Resource Performance</div>
+          <div class="exec-card-value" id="header-average-performance-value">N/A</div>
+          <div class="exec-card-mode" id="header-average-performance-mode"><span class="material-symbols-outlined" aria-hidden="true">monitoring</span><span>Simple Scoring</span></div>
+          <div class="exec-card-meta" id="header-average-performance-meta">Eligible assignees: 0</div>
+        </div>
       </div>
+      <div class="exec-insights" id="discover-insights"></div>
     </section>
     <div class="toolbar">
       <div class="f"><label for="capacity-profile">Capacity Profile</label><select id="capacity-profile"></select></div>
       <div class="f"><label for="search">Search Assignee</label><input id="search" type="text" placeholder="Filter by name"></div>
-      <a href="/settings/performance" class="btn">Performance Settings</a>
-    </div>
-    <div class="shortcut-bar">
-      <button id="shortcut-current-month" class="shortcut-btn" type="button">Current Month</button>
-      <button id="shortcut-previous-month" class="shortcut-btn" type="button">Previous Month</button>
-      <button id="shortcut-last-30-days" class="shortcut-btn" type="button">Last 30 Days</button>
-      <button id="shortcut-quarter-to-date" class="shortcut-btn" type="button">Quarter To Date</button>
-      <button id="shortcut-reset" class="shortcut-btn" type="button">Reset</button>
     </div>
     <div class="meta" id="capacity-profile-meta"></div>
     <div id="capacity-profile-expanded" class="capacity-expanded"></div>
@@ -1784,17 +2094,23 @@ const capacityProfileExpandedEl = document.getElementById("capacity-profile-expa
 const headerSectionEl = document.getElementById("performance-header");
 const headerToggleButton = document.getElementById("header-toggle");
 const headerExpandFabButton = document.getElementById("header-expand-fab");
+const themeLightButton = document.getElementById("theme-light");
+const themeDarkButton = document.getElementById("theme-dark");
 const advFilterToggleButton = document.getElementById("adv-filter-toggle");
 const advFilterMenu = document.getElementById("adv-filter-menu");
 const dateFilterStatusNode = document.getElementById("date-filter-status");
-const employeeRefreshBtn = document.getElementById("employee-refresh-btn");
-const employeeRefreshCancelBtn = document.getElementById("employee-refresh-cancel-btn");
-const employeeRefreshStatus = document.getElementById("employee-refresh-status");
-const employeeRefreshDetails = document.getElementById("employee-refresh-details");
 const leaderActionsToggle = document.getElementById("leader-actions-toggle");
 const leaderActionsMenu = document.getElementById("leader-actions-menu");
 const leaderboardActionStatusEl = document.getElementById("leaderboard-action-status");
-const simpleOverrunModeEl = document.getElementById("simple-overrun-mode");
+const topOverburnModeEl = document.getElementById("top-overburn-mode");
+const topEfficiencyModeEl = document.getElementById("top-efficiency-mode");
+const headerPerformanceControlsTriggerEl = document.getElementById("header-performance-controls-trigger");
+const headerPerformanceControlsPopoverEl = document.getElementById("header-performance-controls-popover");
+const headerPerformanceControlsSummaryEl = null;
+const headerOverburnPerTaskEl = document.getElementById("header-overburn-per-task");
+const headerOverburnTotalEl = document.getElementById("header-overburn-total");
+const headerEfficiencyPenaltyInclusiveEl = document.getElementById("header-efficiency-penalty-inclusive");
+const headerEfficiencySimpleEl = document.getElementById("header-efficiency-simple");
 const assigneeExtendedActualsToggleEl = document.getElementById("assignee-extended-actuals-toggle");
 const assigneeOverloadedPenaltyToggleEl = document.getElementById("assignee-overloaded-penalty-toggle");
 const assigneePlanningRealismToggleEl = document.getElementById("assignee-planning-realism-toggle");
@@ -1805,12 +2121,17 @@ const scoreDrawerTitleEl = document.getElementById("score-detail-drawer-title");
 const scoreDrawerSubtitleEl = document.getElementById("score-detail-drawer-subtitle");
 const scoreDrawerBodyEl = document.getElementById("score-detail-drawer-body");
 const scoreDrawerResizeHandleEl = document.getElementById("score-drawer-resize-handle");
+const headerPlanActualCardEl = document.getElementById("header-plan-actual-card");
+const headerPlanActualToggleEl = document.getElementById("header-plan-actual-toggle");
+const headerPlanActualBreakdownEl = document.getElementById("header-plan-actual-breakdown");
+const headerPlanActualPlannedMetaEl = document.getElementById("header-plan-actual-planned-meta");
+const headerPlanActualPlannedBodyEl = document.getElementById("header-plan-actual-planned-body");
+const headerPlanActualActualMetaEl = document.getElementById("header-plan-actual-actual-meta");
+const headerPlanActualActualBodyEl = document.getElementById("header-plan-actual-actual-body");
 const SCORE_DRAWER_WIDTH_STORAGE_KEY = "employee-performance-score-drawer-width-px";
 let scoreDrawerWidthPx = null;
-let employeeRefreshPollHandle = null;
-let employeeRefreshInlineRun = null;
-let employeeRefreshInlineAssignee = "";
 const HEADER_COLLAPSED_STORAGE_KEY = "employee-performance-header-collapsed";
+const THEME_STORAGE_KEY = "employee-performance-theme";
 const workItemsByKey = new Map(workItems.map((row) => [String(row && row.issue_key || "").toUpperCase(), row || {{}}]));
 const defaultFrom = payload.default_from || "";
 const defaultTo = payload.default_to || "";
@@ -1823,12 +2144,23 @@ let plannedHoursBreakdownForAssignee = "";
 let actualHoursBreakdownForAssignee = "";
 let hoursRequiredBreakdownForAssignee = "";
 let extendedActualsEnabled = false;
+const SCOPED_SUBTASKS_ENDPOINT = "/api/scoped-subtasks";
+let scopedSubtasksRows = [];
+let scopedSubtasksSummary = null;
+let scopedSubtasksIssueKeySet = null;
+let scopedSubtasksLoadedKey = "";
 let rmiListForAssignee = "";
 let dueCompletionEnabled = false;
 let overloadedPenaltyEnabled = n(settings.overloaded_penalty_enabled) > 0;
 let planningRealismEnabled = n(settings.planning_realism_enabled) > 0;
 let overloadedPenaltyThresholdPct = clamp(n(settings.overloaded_penalty_threshold_pct), 0, 100);
 let simpleOverrunMode = "subtasks";
+let efficiencyScorecardMode = "penalty_inclusive";
+let headerPlanActualBreakdownOpen = false;
+let headerPlanActualLastPlannedMeta = "Subtasks: 0 | Total Planned: 0.00h";
+let headerPlanActualLastActualMeta = "Subtasks: 0 | Total Actual: 0.00h";
+let headerPlanActualLastPlannedBodyHtml = '<tr><td colspan="2" class="empty">No subtasks in current scope.</td></tr>';
+let headerPlanActualLastActualBodyHtml = '<tr><td colspan="2" class="empty">No logged subtasks in current scope.</td></tr>';
 let activeScoringTab = "simple";
 let simpleFormulaGuideExpanded = true;
 let advancedFormulaGuideExpanded = true;
@@ -1856,38 +2188,108 @@ function scorePctText(v) {{ return `${{n(v).toFixed(1)}}%`; }}
 function hoursText(v) {{ return `${{n(v).toFixed(1)}}h`; }}
 function simpleOverrunLabel() {{ return simpleOverrunMode === "total" ? "Total Overrun Hours" : "Overrun Subtask Hours"; }}
 function simpleOverrunShortLabel() {{ return simpleOverrunMode === "total" ? "Total Overrun" : "Overrun Subtask Hours"; }}
+function overburnModeCaption() {{ return simpleOverrunMode === "total" ? "Overburn Total" : "Overburn Per Task"; }}
+function efficiencyModeCaption() {{ return efficiencyScorecardMode === "simple" ? "Simple Efficiency" : "Penalty Inclusive Efficiency"; }}
+function currentTheme() {{
+  const active = String(document.documentElement.getAttribute("data-theme") || "").toLowerCase();
+  return active === "light" ? "light" : "dark";
+}}
+function syncThemeButtons() {{
+  const active = currentTheme();
+  if (themeLightButton) {{
+    const isActive = active === "light";
+    themeLightButton.classList.toggle("active", isActive);
+    themeLightButton.setAttribute("aria-pressed", isActive ? "true" : "false");
+  }}
+  if (themeDarkButton) {{
+    const isActive = active === "dark";
+    themeDarkButton.classList.toggle("active", isActive);
+    themeDarkButton.setAttribute("aria-pressed", isActive ? "true" : "false");
+  }}
+}}
+function setTheme(theme) {{
+  const next = theme === "light" ? "light" : "dark";
+  document.documentElement.setAttribute("data-theme", next);
+  try {{ localStorage.setItem(THEME_STORAGE_KEY, next); }} catch (e) {{}}
+  syncThemeButtons();
+}}
+function setHeaderPerformanceControlsOpen(isOpen) {{
+  const open = Boolean(isOpen);
+  if (headerPerformanceControlsPopoverEl) headerPerformanceControlsPopoverEl.hidden = !open;
+  if (headerPerformanceControlsTriggerEl) headerPerformanceControlsTriggerEl.setAttribute("aria-expanded", open ? "true" : "false");
+}}
+function syncHeaderPerformanceControls() {{
+  if (topOverburnModeEl) topOverburnModeEl.value = simpleOverrunMode;
+  if (topEfficiencyModeEl) topEfficiencyModeEl.value = efficiencyScorecardMode;
+  if (headerOverburnPerTaskEl) headerOverburnPerTaskEl.classList.toggle("active", simpleOverrunMode !== "total");
+  if (headerOverburnTotalEl) headerOverburnTotalEl.classList.toggle("active", simpleOverrunMode === "total");
+  if (headerEfficiencyPenaltyInclusiveEl) headerEfficiencyPenaltyInclusiveEl.classList.toggle("active", efficiencyScorecardMode !== "simple");
+  if (headerEfficiencySimpleEl) headerEfficiencySimpleEl.classList.toggle("active", efficiencyScorecardMode === "simple");
+  if (headerPerformanceControlsSummaryEl) headerPerformanceControlsSummaryEl.textContent = `${{overburnModeCaption()}} | ${{efficiencyModeCaption()}}`;
+}}
+function setHeaderPlanActualBreakdownOpen(open) {{
+  headerPlanActualBreakdownOpen = !!open;
+  if (headerPlanActualBreakdownEl) headerPlanActualBreakdownEl.hidden = !headerPlanActualBreakdownOpen;
+  if (headerPlanActualToggleEl) headerPlanActualToggleEl.setAttribute("aria-expanded", headerPlanActualBreakdownOpen ? "true" : "false");
+}}
+function renderHeaderPlanActualBreakdown(plannedRows, actualRows) {{
+  const planned = Array.isArray(plannedRows) ? plannedRows : [];
+  const actual = Array.isArray(actualRows) ? actualRows : [];
+  const plannedTotal = planned.reduce((sum, row) => sum + n(row?.original_estimate_hours), 0);
+  const actualTotal = actual.reduce((sum, row) => sum + n(row?.logged_hours), 0);
+  const plannedMeta = `Subtasks: ${{planned.length}} | Total Planned: ${{plannedTotal.toFixed(2)}}h`;
+  const actualMeta = `Subtasks: ${{actual.length}} | Total Actual: ${{actualTotal.toFixed(2)}}h`;
+  const plannedBodyHtml = planned.length
+    ? planned.map((row) => {{
+        const issueKey = String(row?.issue_key || "-").toUpperCase();
+        const wi = workItemsByKey.get(issueKey) || {{}};
+        const typeLabel = issueTypeLabel(wi.issue_type || wi.work_item_type || wi.jira_issue_type) || "-";
+        return `<tr><td class="issue-id">${{e(issueKey)}}<\/td><td>${{e(typeLabel)}}<\/td><td>${{n(row?.original_estimate_hours).toFixed(2)}}h<\/td><\/tr>`;
+      }}).join("")
+    : '<tr><td colspan="3" class="empty">No subtasks in current scope.<\/td><\/tr>';
+  const actualBodyHtml = actual.length
+    ? actual.map((row) => {{
+        const issueKey = String(row?.issue_key || "-").toUpperCase();
+        const wi = workItemsByKey.get(issueKey) || {{}};
+        const typeLabel = issueTypeLabel(wi.issue_type || wi.work_item_type || wi.jira_issue_type) || "-";
+        return `<tr><td class="issue-id">${{e(issueKey)}}<\/td><td>${{e(typeLabel)}}<\/td><td>${{n(row?.logged_hours).toFixed(2)}}h<\/td><\/tr>`;
+      }}).join("")
+    : '<tr><td colspan="3" class="empty">No logged subtasks in current scope.<\/td><\/tr>';
+  headerPlanActualLastPlannedMeta = plannedMeta;
+  headerPlanActualLastActualMeta = actualMeta;
+  headerPlanActualLastPlannedBodyHtml = plannedBodyHtml;
+  headerPlanActualLastActualBodyHtml = actualBodyHtml;
+  if (headerPlanActualPlannedMetaEl) {{
+    headerPlanActualPlannedMetaEl.textContent = plannedMeta;
+  }}
+  if (headerPlanActualActualMetaEl) {{
+    headerPlanActualActualMetaEl.textContent = actualMeta;
+  }}
+  if (headerPlanActualPlannedBodyEl) {{
+    headerPlanActualPlannedBodyEl.innerHTML = plannedBodyHtml;
+  }}
+  if (headerPlanActualActualBodyEl) {{
+    headerPlanActualActualBodyEl.innerHTML = actualBodyHtml;
+  }}
+}}
 function actualCompletionSourceText(source) {{
   const src = String(source || "");
   if (src === "last_logged_date") return "Last Logged Date";
-  if (src === "resolved_stable_since_date") return "Status Resolved Date";
   return "Not completed";
 }}
 function actualCompletionReason(row) {{
   const source = String(row?.actual_complete_source || "");
-  if (source === "last_logged_date") return "Actual complete date came from last logged date after resolved date.";
-  if (source === "resolved_stable_since_date") return "Actual complete date came from resolved date.";
+  if (source === "last_logged_date") return "Actual complete date came from last logged date.";
   return "No completion date is available yet.";
 }}
-function deriveActualCompletion(plannedDueDate, lastLoggedDate, resolvedStableDate) {{
+function deriveActualCompletion(plannedDueDate, lastLoggedDate) {{
   const dueDate = String(plannedDueDate || "");
   const lastLog = String(lastLoggedDate || "");
-  const resolvedDate = String(resolvedStableDate || "");
   let actualCompleteDate = "";
   let actualCompleteSource = "none";
-  if (lastLog && resolvedDate) {{
-    if (lastLog >= resolvedDate) {{
-      actualCompleteDate = lastLog;
-      actualCompleteSource = "last_logged_date";
-    }} else {{
-      actualCompleteDate = resolvedDate;
-      actualCompleteSource = "resolved_stable_since_date";
-    }}
-  }} else if (lastLog) {{
+  if (lastLog) {{
     actualCompleteDate = lastLog;
     actualCompleteSource = "last_logged_date";
-  }} else if (resolvedDate) {{
-    actualCompleteDate = resolvedDate;
-    actualCompleteSource = "resolved_stable_since_date";
   }}
   let completionBucket = "Not completed";
   if (!dueDate) completionBucket = "No due date";
@@ -1898,7 +2300,6 @@ function deriveActualCompletion(plannedDueDate, lastLoggedDate, resolvedStableDa
   return {{
     planned_due_date: dueDate,
     last_logged_date: lastLog,
-    resolved_stable_since_date: resolvedDate,
     actual_complete_date: actualCompleteDate,
     actual_complete_source: actualCompleteSource,
     completion_bucket: completionBucket,
@@ -2077,7 +2478,9 @@ function openScoreDrawerForAssignee(item) {{
       const estStatus = String(row.estimate_status || "");
       const dueStatus = String(row.due_completion_status || "");
       const isPenalized = over > 0 && estStatus === "over_estimate" && !(n(row.is_commitment) && dueMode);
-      return {{ issueKey, est, act, over, estStatus, dueStatus, isPenalized, row }};
+      const rawIssueType = row.issue_type || row.work_item_type || row.jira_issue_type || "";
+      const isBug = isBugIssueType(rawIssueType);
+      return {{ issueKey, est, act, over, estStatus, dueStatus, isPenalized, isBug, row }};
     }})
     .sort((a, b) => {{
       if (a.isPenalized !== b.isPenalized) return a.isPenalized ? -1 : 1;
@@ -2098,6 +2501,7 @@ function openScoreDrawerForAssignee(item) {{
       const variance = d.est > 0 ? d.act - d.est : 0;
       const varianceText = d.est > 0 ? ((variance >= 0 ? "+" : "") + hoursText(variance)) : "-";
       return {{
+        isBug: !!d.isBug,
         rowClass,
         issueKey: d.issueKey || "-",
         summary: row.summary || "-",
@@ -2156,15 +2560,18 @@ function openScoreDrawerForAssignee(item) {{
   }}
   const subtaskEpicFilterEl = document.getElementById("score-subtask-epic-filter");
   const subtaskProjectFilterEl = document.getElementById("score-subtask-project-filter");
+  const subtaskIncludeBugsEl = document.getElementById("score-subtask-include-bugs");
   const subtaskTableBodyEl = document.getElementById("score-subtask-table-body");
   const subtaskFilterStatusEl = document.getElementById("score-subtask-filter-status");
   function renderFilteredScoreSubtasks() {{
     if (!subtaskTableBodyEl) return;
     const epicFilter = String(subtaskEpicFilterEl?.value || "");
     const projectFilter = String(subtaskProjectFilterEl?.value || "");
+    const includeBugs = !!subtaskIncludeBugsEl?.checked;
     const rows = allSubtaskRows.filter((row) => {{
       if (epicFilter && String(row.epicLabel || "") !== epicFilter) return false;
       if (projectFilter && String(row.projectLabel || "") !== projectFilter) return false;
+      if (!includeBugs && row.isBug) return false;
       return true;
     }});
     subtaskTableBodyEl.innerHTML = rows.length
@@ -2181,6 +2588,7 @@ function openScoreDrawerForAssignee(item) {{
   }}
   if (subtaskEpicFilterEl) subtaskEpicFilterEl.addEventListener("change", renderFilteredScoreSubtasks);
   if (subtaskProjectFilterEl) subtaskProjectFilterEl.addEventListener("change", renderFilteredScoreSubtasks);
+  if (subtaskIncludeBugsEl) subtaskIncludeBugsEl.addEventListener("change", renderFilteredScoreSubtasks);
   renderFilteredScoreSubtasks();
   scoreDrawerAssignee = String(item.assignee || "");
   scoreDrawerOverlayEl.classList.add("open");
@@ -2192,6 +2600,56 @@ function openScoreDrawerForAssignee(item) {{
   const minDrawerPx = 320;
   const maxDrawerPx = Math.floor(window.innerWidth * 0.96);
   let currentPx = scoreDrawerWidthPx;
+  if (currentPx == null && typeof localStorage !== "undefined") {{
+    const stored = localStorage.getItem(SCORE_DRAWER_WIDTH_STORAGE_KEY);
+    if (stored != null) {{ const n = parseInt(stored, 10); if (!isNaN(n)) currentPx = n; }}
+  }}
+  if (currentPx == null) currentPx = Math.floor(window.innerWidth * 0.4);
+  currentPx = Math.max(minDrawerPx, Math.min(maxDrawerPx, currentPx));
+  scoreDrawerWidthPx = currentPx;
+  scoreDrawerEl.style.width = currentPx + "px";
+}}
+function openPlanActualDrawer() {{
+  if (!scoreDrawerEl || !scoreDrawerOverlayEl || !scoreDrawerBodyEl || !scoreDrawerTitleEl || !scoreDrawerSubtitleEl) return;
+  render(compute());
+  const plannedMeta = headerPlanActualLastPlannedMeta;
+  const actualMeta = headerPlanActualLastActualMeta;
+  const plannedBody = headerPlanActualLastPlannedBodyHtml;
+  const actualBody = headerPlanActualLastActualBodyHtml;
+  scoreDrawerTitleEl.textContent = "Plan vs Actual Subtasks";
+  scoreDrawerSubtitleEl.textContent = "Planned vs actual hours for subtasks in the current filters.";
+  scoreDrawerBodyEl.innerHTML =
+    '<div class="exec-plan-actual-breakdown">' +
+      '<div>' +
+        '<h3 class="section-title">Planned Hours Subtasks</h3>' +
+        '<p class="section-meta">' + e(plannedMeta || "") + '</p>' +
+        '<div class="tbl-wrap">' +
+          '<table class="ss-tbl">' +
+            '<thead><tr><th>Subtask Jira ID</th><th>Task Type</th><th>Original Estimate (h)</th></tr></thead>' +
+            '<tbody>' + plannedBody + '</tbody>' +
+          '</table>' +
+        '</div>' +
+      '</div>' +
+      '<div>' +
+        '<h3 class="section-title">Actual Hours Subtasks</h3>' +
+        '<p class="section-meta">' + e(actualMeta || "") + '</p>' +
+        '<div class="tbl-wrap">' +
+          '<table class="ss-tbl">' +
+            '<thead><tr><th>Subtask Jira ID</th><th>Task Type</th><th>Logged Hours (h)</th></tr></thead>' +
+            '<tbody>' + actualBody + '</tbody>' +
+          '</table>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  scoreDrawerOverlayEl.classList.add("open");
+  scoreDrawerEl.classList.add("open");
+  scoreDrawerEl.setAttribute("aria-hidden", "false");
+  scoreDrawerOverlayEl.setAttribute("aria-hidden", "false");
+  document.body.classList.add("score-drawer-open");
+  if (scoreDrawerCloseEl) scoreDrawerCloseEl.focus();
+  let currentPx = scoreDrawerWidthPx;
+  const minDrawerPx = 320;
+  const maxDrawerPx = Math.floor(window.innerWidth * 0.96);
   if (currentPx == null && typeof localStorage !== "undefined") {{
     const stored = localStorage.getItem(SCORE_DRAWER_WIDTH_STORAGE_KEY);
     if (stored != null) {{ const n = parseInt(stored, 10); if (!isNaN(n)) currentPx = n; }}
@@ -2225,7 +2683,11 @@ function applyPerformanceSettings(nextSettings) {{
 }}
 function syncSimpleOverrunMode(nextMode) {{
   simpleOverrunMode = String(nextMode || "subtasks") === "total" ? "total" : "subtasks";
-  if (simpleOverrunModeEl) simpleOverrunModeEl.value = simpleOverrunMode;
+  syncHeaderPerformanceControls();
+}}
+function syncEfficiencyScorecardMode(nextMode) {{
+  efficiencyScorecardMode = String(nextMode || "penalty_inclusive") === "simple" ? "simple" : "penalty_inclusive";
+  syncHeaderPerformanceControls();
 }}
 async function hydratePerformanceSettings() {{
   if (typeof window === "undefined" || !window.location || window.location.protocol === "file:") return false;
@@ -2241,52 +2703,21 @@ async function hydratePerformanceSettings() {{
   }}
 }}
 function inRange(day, from, to) {{ if (!day) return false; if (from && day < from) return false; if (to && day > to) return false; return true; }}
-function setEmployeeRefreshStatus(text, tone) {{
-  if (!employeeRefreshStatus) return;
-  employeeRefreshStatus.textContent = String(text || "");
-  if (tone === "ok") employeeRefreshStatus.style.color = "#86efac";
-  else if (tone === "err") employeeRefreshStatus.style.color = "#fca5a5";
-  else employeeRefreshStatus.style.color = "#9db1d8";
-}}
-function setEmployeeRefreshDetails(text, tone) {{
-  if (!employeeRefreshDetails) return;
-  employeeRefreshDetails.textContent = String(text || "");
-  if (tone === "ok") employeeRefreshDetails.style.color = "#86efac";
-  else if (tone === "err") employeeRefreshDetails.style.color = "#fca5a5";
-  else employeeRefreshDetails.style.color = "#c7d7f3";
-}}
-function setEmployeeRefreshInlineState(run, fallbackAssignee, rerender = true) {{
-  const normalizedRun = run && typeof run === "object" ? {{ ...run }} : null;
-  const assignee = String((normalizedRun && normalizedRun.assignee) || fallbackAssignee || employeeRefreshInlineAssignee || "").trim();
-  if (normalizedRun && assignee) {{
-    employeeRefreshInlineRun = {{ ...normalizedRun, assignee }};
-    employeeRefreshInlineAssignee = assignee;
-  }} else {{
-    employeeRefreshInlineRun = null;
-    employeeRefreshInlineAssignee = "";
-  }}
-  if (rerender) render(compute());
-}}
-function getEmployeeRefreshInlineState(assigneeName) {{
-  const run = employeeRefreshInlineRun && typeof employeeRefreshInlineRun === "object" ? employeeRefreshInlineRun : null;
-  if (!run) return null;
-  const rowAssignee = String(assigneeName || "").trim().toLowerCase();
-  const targetAssignee = String((run.assignee || employeeRefreshInlineAssignee || "")).trim().toLowerCase();
-  if (!rowAssignee || !targetAssignee || rowAssignee !== targetAssignee) return null;
-  const status = String(run.status || "").toLowerCase();
-  const progress = Math.max(0, Math.min(100, Math.round(Number(run.progress) || 0)));
-  const tone = status === "success" ? "ok" : (status === "failed" || status === "canceled" ? "err" : "");
-  return {{
-    status,
-    tone,
-    progress,
-    statusText: refreshStatusText(run),
-    detailText: refreshDetailsText(run),
-    isBusy: status === "running" || status === "cancel_requested",
-  }};
-}}
 function selectedProjects() {{ return new Set(Array.from(document.getElementById("projects").selectedOptions).map(o => o.value)); }}
 function selectedTeams() {{ return new Set(Array.from(document.getElementById("teams").selectedOptions).map(o => o.value)); }}
+function selectedTeamAssignees() {{
+  const tset = selectedTeams();
+  const out = new Set();
+  if (!(tset.size > 0 && Array.isArray(teams) && teams.length > 0)) return out;
+  for (const t of teams) {{
+    if (!tset.has(String(t.team_name || ""))) continue;
+    for (const a of (Array.isArray(t.assignees) ? t.assignees : [])) {{
+      const key = String(a || "").trim().toLowerCase();
+      if (key) out.add(key);
+    }}
+  }}
+  return out;
+}}
 function addDayPenalty(rec, day, points) {{
   const d = String(day || "");
   const p = n(points);
@@ -2327,6 +2758,24 @@ function normalizeHierarchyType(t) {{
 function issueTypeLabel(t) {{
   return String(t || "").trim().toLowerCase();
 }}
+function assigneeSearchRank(name, query) {{
+  const candidate = String(name || "").trim().toLowerCase();
+  const rawQuery = String(query || "").trim().toLowerCase();
+  if (!candidate || !rawQuery) return 0;
+  const terms = rawQuery.split(/\\s+/).filter(Boolean);
+  if (!terms.length) return 0;
+  const parts = candidate.split(/[^a-z0-9]+/).filter(Boolean);
+  let score = 0;
+  for (const term of terms) {{
+    if (candidate === term) score += 50;
+    else if (parts.some((part) => part === term)) score += 40;
+    else if (parts.some((part) => part.startsWith(term))) score += 30;
+    else if (candidate.startsWith(term)) score += 20;
+    else if (candidate.includes(term)) score += 10;
+    else return 0;
+  }}
+  return score;
+}}
 function _isoDateLocal(dt) {{
   const y = dt.getFullYear();
   const m = String(dt.getMonth() + 1).padStart(2, "0");
@@ -2339,6 +2788,48 @@ function capacityProfileLabel(profile) {{
   const std = n(profile?.standard_hours_per_day) > 0 ? n(profile.standard_hours_per_day) : 8;
   const ramadan = n(profile?.ramadan_hours_per_day) > 0 ? n(profile.ramadan_hours_per_day) : std;
   return `${{formatDate(fromDate) || fromDate}} -> ${{formatDate(toDate) || toDate}} | Std ${{std.toFixed(1)}}h | Ramadan ${{ramadan.toFixed(1)}}h`;
+}}
+function scopedSubtasksCacheKey(from, to) {{
+  return [
+    String(from || ""),
+    String(to || ""),
+    extendedActualsEnabled ? "extended" : "log_date",
+    Array.from(selectedProjects()).sort().join(","),
+    Array.from(selectedTeamAssignees()).sort().join(",")
+  ].join("|");
+}}
+async function loadScopedSubtasksForCurrentFilters() {{
+  if (typeof window === "undefined" || !window.location || window.location.protocol === "file:") {{
+    scopedSubtasksRows = [];
+    scopedSubtasksSummary = null;
+    scopedSubtasksIssueKeySet = null;
+    scopedSubtasksLoadedKey = "";
+    return;
+  }}
+  const from = document.getElementById("from").value || defaultFrom;
+  const to = document.getElementById("to").value || defaultTo;
+  const cacheKey = scopedSubtasksCacheKey(from, to);
+  if (cacheKey === scopedSubtasksLoadedKey) return;
+  const params = new URLSearchParams();
+  params.set("from", String(from || ""));
+  params.set("to", String(to || ""));
+  params.set("mode", extendedActualsEnabled ? "extended" : "log_date");
+  const projects = Array.from(selectedProjects()).sort();
+  if (projects.length) params.set("projects", projects.join(","));
+  const assignees = Array.from(selectedTeamAssignees()).sort();
+  if (assignees.length) params.set("assignees", assignees.join(","));
+  const response = await fetch(SCOPED_SUBTASKS_ENDPOINT + "?" + params.toString(), {{ cache: "no-store" }});
+  const body = await response.json().catch(() => ({{}}));
+  if (!response.ok || !body || body.ok === false) throw new Error(String(body && body.error || "Failed to load scoped subtasks."));
+  scopedSubtasksRows = Array.isArray(body.rows) ? body.rows : [];
+  scopedSubtasksSummary = {{
+    total_planned_hours: n(body.total_planned_hours),
+    total_actual_hours: n(body.total_actual_hours),
+    total_subtasks: n(body.total_subtasks),
+    total_assignees: n(body.total_assignees)
+  }};
+  scopedSubtasksIssueKeySet = new Set(scopedSubtasksRows.map((row) => String(row && row.issue_key || "").trim().toUpperCase()).filter(Boolean));
+  scopedSubtasksLoadedKey = cacheKey;
 }}
 function getActiveCapacityProfileSelection() {{
   if (capacityProfileTopSelectEl) return String(capacityProfileTopSelectEl.value || "auto");
@@ -2700,7 +3191,11 @@ function compute() {{
   const s = String(document.getElementById("search").value || "").trim().toLowerCase();
   const pset = selectedProjects();
   const useP = pset.size > 0;
+  const scopedIssueSet = scopedSubtasksIssueKeySet instanceof Set ? scopedSubtasksIssueKeySet : null;
+  const scopedRowsByIssue = new Map((Array.isArray(scopedSubtasksRows) ? scopedSubtasksRows : []).map((row) => [String(row && row.issue_key || "").trim().toUpperCase(), row]));
   const scopedWorklogs = worklogs.filter((r) => {{
+    const issueKey = String(r.issue_id || "").toUpperCase();
+    if (scopedIssueSet && !scopedIssueSet.has(issueKey)) return false;
     if (useP && !pset.has(String(r.project_key || "UNKNOWN"))) return false;
     if (s && !String(r.issue_assignee || "").toLowerCase().includes(s)) return false;
     const issueType = String(r.item_issue_type || r.issue_type || "");
@@ -2716,6 +3211,8 @@ function compute() {{
     allLoggedHoursByAssigneeIssue.set(compound, n(allLoggedHoursByAssigneeIssue.get(compound)) + n(wl.hours_logged));
   }}
   const assignedItems = workItems.filter((r) => {{
+    const issueKey = String(r.issue_key || "").toUpperCase();
+    if (scopedIssueSet && !scopedIssueSet.has(issueKey)) return false;
     const assignee = String(r.assignee || "");
     if (!assignee) return false;
     const project = String(r.project_key || "UNKNOWN");
@@ -2836,7 +3333,7 @@ function compute() {{
     a.total_assigned_count += 1;
     if (dueDate) a.due_dated_assigned_count += 1;
     const lastLogDate = String(a.last_log_by_issue[issueKey] || "");
-    const completionMeta = deriveActualCompletion(dueDate, lastLogDate, String(wi.resolved_stable_since_date || ""));
+    const completionMeta = deriveActualCompletion(dueDate, lastLogDate);
     a.assigned_hierarchy.push({{
       issue_key: issueKey,
       summary: String(wi.summary || ""),
@@ -2854,7 +3351,6 @@ function compute() {{
       actual_complete_date: completionMeta.actual_complete_date,
       actual_complete_source: completionMeta.actual_complete_source,
       completion_date: lastLogDate,
-      resolved_stable_since_date: String(wi.resolved_stable_since_date || ""),
       is_penalized_for_due: completionMeta.is_penalized_for_due,
       status: String(wi.status || "")
     }});
@@ -2878,7 +3374,6 @@ function compute() {{
       actual_complete_date: completionMeta.actual_complete_date,
       actual_complete_source: completionMeta.actual_complete_source,
       completion_date: lastLogDate,
-      resolved_stable_since_date: String(wi.resolved_stable_since_date || ""),
       status_bucket: dueStatus,
       is_missed_due_date: missedDueDate
     }});
@@ -2967,9 +3462,12 @@ function compute() {{
       if (!issueKey || seenIssueKeys.has(issueKey)) continue;
       seenIssueKeys.add(issueKey);
       const compound = `${{String(it.assignee || "Unassigned")}}\\u0000${{issueKey}}`;
-      const hours = extendedActualsEnabled
-        ? n(allLoggedHoursByAssigneeIssue.get(compound))
-        : n(it.issue_logged_hours_by_issue[issueKey]);
+      const scopedRow = scopedRowsByIssue.get(issueKey) || null;
+      const hours = scopedRow
+        ? n(scopedRow.logged_hours)
+        : (extendedActualsEnabled
+          ? n(allLoggedHoursByAssigneeIssue.get(compound))
+          : n(it.issue_logged_hours_by_issue[issueKey]));
       if (hours > 0) {{
         statsByIssue[issueKey] = hours;
         statsTotal += hours;
@@ -3346,7 +3844,7 @@ function renderDueTable(rows) {{
     if (b === "After due") return "due-bucket due-after";
     return "due-bucket";
   }}
-  return `<table class="tbl"><thead><tr><th>Issue</th><th>Due</th><th>Last Logged Date</th><th>Actual Completed Date</th><th>Stable Resolved</th><th>Bucket</th></tr></thead><tbody>${{data.map((r)=>`<tr class="${{r.is_missed_due_date ? "due-missed penalized-row" : ""}}"><td><div class="issue-id">${{e(r.issue_key)}}</div><div class="issue-title">${{e(r.summary)}}</div></td><td>${{e(formatDate(r.planned_due_date || r.due_date) || "-")}}</td><td>${{e(formatDate(r.last_logged_date) || "-")}}</td><td>${{e(formatDate(r.actual_complete_date || r.completion_date) || "-")}}<div class="sub">${{e(actualCompletionSourceText(r.actual_complete_source))}}</div></td><td>${{e(formatDate(r.resolved_stable_since_date) || "-")}}</td><td><span class="${{dueBucketClass(r.status_bucket)}}">${{e(r.status_bucket)}}</span></td></tr>`).join("")}}</tbody></table>`;
+  return `<table class="tbl"><thead><tr><th>Issue</th><th>Due</th><th>Last Logged Date</th><th>Actual Completed Date</th><th>Bucket</th></tr></thead><tbody>${{data.map((r)=>`<tr class="${{r.is_missed_due_date ? "due-missed penalized-row" : ""}}"><td><div class="issue-id">${{e(r.issue_key)}}</div><div class="issue-title">${{e(r.summary)}}</div></td><td>${{e(formatDate(r.planned_due_date || r.due_date) || "-")}}</td><td>${{e(formatDate(r.last_logged_date) || "-")}}</td><td>${{e(formatDate(r.actual_complete_date || r.completion_date) || "-")}}<div class="sub">${{e(actualCompletionSourceText(r.actual_complete_source))}}</div></td><td><span class="${{dueBucketClass(r.status_bucket)}}">${{e(r.status_bucket)}}</span></td></tr>`).join("")}}</tbody></table>`;
 }}
 function renderMissedTable(rows) {{
   const data = Array.isArray(rows) ? rows : [];
@@ -3392,7 +3890,6 @@ function renderExecutionHierarchyTable(item) {{
         planned_hours: n(epicWi?.original_estimate_hours),
         actual_hours: 0,
         completion_dates: [],
-        resolved_stable: String(epicWi?.resolved_stable_since_date || ""),
         stories: new Map(),
       }});
     }}
@@ -3409,7 +3906,6 @@ function renderExecutionHierarchyTable(item) {{
         planned_hours: n(storyWi?.original_estimate_hours),
         actual_hours: 0,
         completion_dates: [],
-        resolved_stable: String(storyWi?.resolved_stable_since_date || ""),
         subtasks: new Map(),
       }});
     }}
@@ -3430,7 +3926,6 @@ function renderExecutionHierarchyTable(item) {{
         actual_complete_date: String(st.actual_complete_date || st.completion_date || ""),
         actual_complete_source: String(st.actual_complete_source || "none"),
         completion_date: storyCompletion,
-        resolved_stable: String(st.resolved_stable_since_date || ""),
         is_penalized_for_due: !!st.is_penalized_for_due,
         status: String(st.status || ""),
       }});
@@ -3454,11 +3949,11 @@ function renderExecutionHierarchyTable(item) {{
       const storyPlannedHours = story.planned_hours > 0 ? story.planned_hours : subRows.reduce((acc, st0) => acc + n(st0.planned_hours), 0);
       const storyStart = story.planned_start || minDate(subRows.map((st0) => st0.planned_start));
       const storyDue = story.planned_due || maxDate(subRows.map((st0) => st0.planned_due));
-      return `<section class="exec-story-block"><div class="exec-story-head"><div><span class="metric-pill">STORY</span><div class="issue-id">${{e(story.story_key || "-")}}</div><div class="issue-title">${{e(story.story_summary || "-")}}</div></div><div class="exec-story-metrics"><span class="metric-pill">Start: ${{e(formatDate(storyStart) || "-")}}</span><span class="metric-pill">Due: ${{e(formatDate(storyDue) || "-")}}</span><span class="metric-pill">Planned: ${{n(storyPlannedHours).toFixed(2)}}h</span><span class="metric-pill">Actual: ${{n(story.actual_hours).toFixed(2)}}h</span><span class="metric-pill">Done: ${{e(formatDate(maxDate(story.completion_dates)) || "-")}}</span></div></div><table class="tbl exec-subtask-table"><thead><tr><th>Subtask</th><th>Planned Start</th><th>Planned Due Date</th><th>Planned Hours</th><th>Actual Hours</th><th>Last Logged Date</th><th>Actual Complete Date</th><th>Status Resolved Date</th><th>Status</th></tr></thead><tbody>${{subRows.map((st) => {{
+      return `<section class="exec-story-block"><div class="exec-story-head"><div><span class="metric-pill">STORY</span><div class="issue-id">${{e(story.story_key || "-")}}</div><div class="issue-title">${{e(story.story_summary || "-")}}</div></div><div class="exec-story-metrics"><span class="metric-pill">Start: ${{e(formatDate(storyStart) || "-")}}</span><span class="metric-pill">Due: ${{e(formatDate(storyDue) || "-")}}</span><span class="metric-pill">Planned: ${{n(storyPlannedHours).toFixed(2)}}h</span><span class="metric-pill">Actual: ${{n(story.actual_hours).toFixed(2)}}h</span><span class="metric-pill">Done: ${{e(formatDate(maxDate(story.completion_dates)) || "-")}}</span></div></div><table class="tbl exec-subtask-table"><thead><tr><th>Subtask</th><th>Planned Start</th><th>Planned Due Date</th><th>Planned Hours</th><th>Actual Hours</th><th>Last Logged Date</th><th>Actual Complete Date</th><th>Status</th></tr></thead><tbody>${{subRows.map((st) => {{
         const negHrs = n(st.negative_hours);
         const status = negHrs > 0 ? `Penalty hit: late by ${{negHrs.toFixed(2)}}h` : (st.status || "");
         const rowCls = (negHrs > 0 || st.is_penalized_for_due) ? "exec-negative-subtask penalized-row" : "";
-        return `<tr class="${{rowCls}}"><td><div><span class="metric-pill">SUBTASK</span><div class="issue-id">${{e(st.issue_key || "-")}}</div><div class="issue-title">${{e(st.summary || "-")}}</div></div></td><td>${{e(formatDate(st.planned_start) || "-")}}</td><td>${{e(formatDate(st.planned_due) || "-")}}</td><td>${{n(st.planned_hours).toFixed(2)}}h</td><td>${{n(st.actual_hours).toFixed(2)}}h</td><td>${{e(formatDate(st.last_logged_date) || "-")}}</td><td>${{e(formatDate(st.actual_complete_date || st.completion_date) || "-")}}<div class="sub">${{e(actualCompletionSourceText(st.actual_complete_source))}}</div></td><td>${{e(formatDate(st.resolved_stable) || "-")}}</td><td>${{e(status)}}</td></tr>`;
+        return `<tr class="${{rowCls}}"><td><div><span class="metric-pill">SUBTASK</span><div class="issue-id">${{e(st.issue_key || "-")}}</div><div class="issue-title">${{e(st.summary || "-")}}</div></div></td><td>${{e(formatDate(st.planned_start) || "-")}}</td><td>${{e(formatDate(st.planned_due) || "-")}}</td><td>${{n(st.planned_hours).toFixed(2)}}h</td><td>${{n(st.actual_hours).toFixed(2)}}h</td><td>${{e(formatDate(st.last_logged_date) || "-")}}</td><td>${{e(formatDate(st.actual_complete_date || st.completion_date) || "-")}}<div class="sub">${{e(actualCompletionSourceText(st.actual_complete_source))}}</div></td><td>${{e(status)}}</td></tr>`;
       }}).join("")}}</tbody></table></section>`;
     }}).join("");
     return `<details class="exec-epic"${{epicIndex === 0 ? " open" : ""}}><summary><div class="exec-epic-left"><span class="metric-pill">EPIC</span><div class="issue-id">${{e(epic.epic_key || "-")}}</div><div class="issue-title">${{e(epic.epic_summary || "-")}}</div></div><div class="exec-epic-metrics"><span class="metric-pill">Stories: ${{storyNodes.length}}</span><span class="metric-pill">Subtasks: ${{storyNodes.reduce((acc, s0) => acc + s0.subtasks.size, 0)}}</span><span class="metric-pill">Start: ${{e(formatDate(epicStart) || "-")}}</span><span class="metric-pill">Due: ${{e(formatDate(epicDue) || "-")}}</span><span class="metric-pill">Planned: ${{n(epicPlannedHours).toFixed(2)}}h</span><span class="metric-pill">Actual: ${{n(epic.actual_hours).toFixed(2)}}h</span><span class="metric-pill">Done: ${{e(formatDate(epicDone) || "-")}}</span>${{epicNegativeCount > 0 ? `<span class="metric-pill exec-neg-pill">Penalty Subtasks: ${{epicNegativeCount}}</span>` : ""}}</div></summary><div class="exec-epic-body">${{storyHtml}}</div></details>`;
@@ -3582,9 +4077,20 @@ function renderSettingsLoadingState() {{
   if (document.getElementById("kpi-risk")) document.getElementById("kpi-risk").textContent = "-";
   if (document.getElementById("kpi-pen")) document.getElementById("kpi-pen").textContent = "-";
   if (document.getElementById("kpi-rework")) document.getElementById("kpi-rework").textContent = "-";
+  if (document.getElementById("header-efficiency-value")) document.getElementById("header-efficiency-value").textContent = "Loading...";
+  if (document.getElementById("header-efficiency-mode")) document.getElementById("header-efficiency-mode").innerHTML = `<span class="material-symbols-outlined" aria-hidden="true">tune</span><span>Loading Settings</span>`;
+  if (document.getElementById("header-efficiency-meta")) document.getElementById("header-efficiency-meta").textContent = "Waiting for settings.";
+  if (document.getElementById("header-total-planned-hours-value")) document.getElementById("header-total-planned-hours-value").textContent = "0.0h";
+  if (document.getElementById("header-total-planned-hours-meta")) document.getElementById("header-total-planned-hours-meta").textContent = "0.0 man-days";
+  if (document.getElementById("header-total-actual-hours-value")) document.getElementById("header-total-actual-hours-value").textContent = "0.0h";
+  if (document.getElementById("header-total-actual-hours-meta")) document.getElementById("header-total-actual-hours-meta").textContent = "0.0 man-days";
+  if (document.getElementById("header-total-resources-value")) document.getElementById("header-total-resources-value").textContent = "0";
+  if (document.getElementById("header-total-resources-meta")) document.getElementById("header-total-resources-meta").textContent = "Loading...";
   if (document.getElementById("header-average-performance-value")) document.getElementById("header-average-performance-value").textContent = "Loading...";
   if (document.getElementById("header-average-performance-mode")) document.getElementById("header-average-performance-mode").innerHTML = `<span class="material-symbols-outlined" aria-hidden="true">monitoring</span><span>Loading Settings</span>`;
-  if (document.getElementById("header-average-performance-meta")) document.getElementById("header-average-performance-meta").textContent = "Waiting for performance settings.";
+  if (document.getElementById("header-average-performance-meta")) document.getElementById("header-average-performance-meta").textContent = "Waiting for settings.";
+  renderHeaderPlanActualBreakdown([], []);
+  setHeaderPlanActualBreakdownOpen(false);
   if (document.getElementById("discover-insights")) document.getElementById("discover-insights").innerHTML = '<span class="pill">Loading settings...</span>';
   if (document.getElementById("top3-high")) document.getElementById("top3-high").innerHTML = loadingHtml;
   if (document.getElementById("top3-low")) document.getElementById("top3-low").innerHTML = loadingHtml;
@@ -3615,9 +4121,87 @@ function render(items) {{
   const headerAverageValueEl = document.getElementById("header-average-performance-value");
   const headerAverageModeEl = document.getElementById("header-average-performance-mode");
   const headerAverageMetaEl = document.getElementById("header-average-performance-meta");
+  const headerEfficiencyValueEl = document.getElementById("header-efficiency-value");
+  const headerEfficiencyModeEl = document.getElementById("header-efficiency-mode");
+  const headerEfficiencyMetaEl = document.getElementById("header-efficiency-meta");
+  const headerPlannedValueEl = document.getElementById("header-total-planned-hours-value");
+  const headerPlannedMetaEl = document.getElementById("header-total-planned-hours-meta");
+  const headerActualValueEl = document.getElementById("header-total-actual-hours-value");
+  const headerActualMetaEl = document.getElementById("header-total-actual-hours-meta");
+  const headerTotalResourcesValueEl = document.getElementById("header-total-resources-value");
+  const headerTotalResourcesMetaEl = document.getElementById("header-total-resources-meta");
+  const hasScopedRows = String(scopedSubtasksLoadedKey || "").trim().length > 0;
+  const scopedRowsForHeader = Array.isArray(scopedSubtasksRows) ? scopedSubtasksRows : [];
+  const plannedRowsScoped = scopedRowsForHeader
+    .filter((row) => !isBugIssueType(row?.issue_type))
+    .map((row) => ({{
+      issue_key: String(row?.issue_key || "").toUpperCase(),
+      original_estimate_hours: n(row?.original_estimate_hours),
+    }}))
+    .sort((a, b) => String(a.issue_key || "").localeCompare(String(b.issue_key || "")));
+  const actualRowsScoped = scopedRowsForHeader
+    .filter((row) => n(row?.logged_hours) > 0)
+    .map((row) => ({{
+      issue_key: String(row?.issue_key || "").toUpperCase(),
+      logged_hours: n(row?.logged_hours),
+    }}))
+    .sort((a, b) => String(a.issue_key || "").localeCompare(String(b.issue_key || "")));
+  const plannedRowsFallbackMap = new Map();
+  const actualRowsFallbackMap = new Map();
+  for (const assigneeItem of eligibleScoredItems) {{
+    for (const row of (Array.isArray(assigneeItem.assigned_hierarchy) ? assigneeItem.assigned_hierarchy : [])) {{
+      const t = String(row?.hierarchy_type || row?.issue_type || "").toLowerCase();
+      if (t !== "subtask") continue;
+      const issueKey = String(row?.issue_key || "").toUpperCase();
+      if (!issueKey) continue;
+      if (!plannedRowsFallbackMap.has(issueKey)) plannedRowsFallbackMap.set(issueKey, 0);
+      plannedRowsFallbackMap.set(issueKey, n(plannedRowsFallbackMap.get(issueKey)) + n(row?.original_estimate_hours));
+    }}
+    for (const [issueKeyRaw, hoursRaw] of Object.entries(assigneeItem.issue_logged_hours_stats_by_issue || {{}})) {{
+      const issueKey = String(issueKeyRaw || "").toUpperCase();
+      if (!issueKey) continue;
+      const wi = workItemsByKey.get(issueKey) || {{}};
+      if (!isSubtaskPerformanceType(wi.issue_type || wi.work_item_type || wi.jira_issue_type || "")) continue;
+      if (!actualRowsFallbackMap.has(issueKey)) actualRowsFallbackMap.set(issueKey, 0);
+      actualRowsFallbackMap.set(issueKey, n(actualRowsFallbackMap.get(issueKey)) + n(hoursRaw));
+    }}
+  }}
+  const plannedRowsFallback = Array.from(plannedRowsFallbackMap.entries())
+    .map(([issue_key, original_estimate_hours]) => ({{ issue_key, original_estimate_hours: n(original_estimate_hours) }}))
+    .sort((a, b) => String(a.issue_key || "").localeCompare(String(b.issue_key || "")));
+  const actualRowsFallback = Array.from(actualRowsFallbackMap.entries())
+    .map(([issue_key, logged_hours]) => ({{ issue_key, logged_hours: n(logged_hours) }}))
+    .filter((row) => n(row.logged_hours) > 0)
+    .sort((a, b) => String(a.issue_key || "").localeCompare(String(b.issue_key || "")));
+  const headerPlannedRows = hasScopedRows ? plannedRowsScoped : plannedRowsFallback;
+  const headerActualRows = hasScopedRows ? actualRowsScoped : actualRowsFallback;
+  const eligiblePlannedTotal = headerPlannedRows.reduce((sum, row) => sum + n(row?.original_estimate_hours), 0);
+  const eligibleActualTotal = headerActualRows.reduce((sum, row) => sum + n(row?.logged_hours), 0);
+  renderHeaderPlanActualBreakdown(headerPlannedRows, headerActualRows);
+  const penaltyInclusiveEfficiency = eligibleScoredItems.length
+    ? (eligibleScoredItems.reduce((sum, item) => sum + n(item.simple_score), 0) / eligibleScoredItems.length)
+    : NaN;
+  const simpleEfficiency = eligiblePlannedTotal > 0
+    ? clamp(100 * (1 - Math.max(0, eligibleActualTotal - eligiblePlannedTotal) / eligiblePlannedTotal), 0, 100)
+    : NaN;
+  const activeEfficiencyValue = efficiencyScorecardMode === "simple" ? simpleEfficiency : penaltyInclusiveEfficiency;
+  const hoursPerDay = 8;
+  const plannedDays = (eligiblePlannedTotal / hoursPerDay).toFixed(1);
+  const actualDays = (eligibleActualTotal / hoursPerDay).toFixed(1);
+  if (headerEfficiencyValueEl) headerEfficiencyValueEl.textContent = Number.isFinite(activeEfficiencyValue) ? `${{activeEfficiencyValue.toFixed(1)}}%` : "N/A";
+  if (headerEfficiencyModeEl) headerEfficiencyModeEl.innerHTML = `<span class="material-symbols-outlined" aria-hidden="true">tune</span><span>${{e(efficiencyModeCaption())}}</span>`;
+  if (headerEfficiencyMetaEl) headerEfficiencyMetaEl.textContent = efficiencyScorecardMode === "simple"
+    ? `Planned: ${{eligiblePlannedTotal.toFixed(1)}}h vs Actual: ${{eligibleActualTotal.toFixed(1)}}h`
+    : `${{eligibleScoredItems.length}} of ${{items.length}} assignees | Averaged employee scores`;
+  if (headerPlannedValueEl) headerPlannedValueEl.textContent = `${{eligiblePlannedTotal.toFixed(1)}}h`;
+  if (headerPlannedMetaEl) headerPlannedMetaEl.textContent = `${{plannedDays}} man-days`;
+  if (headerActualValueEl) headerActualValueEl.textContent = `${{eligibleActualTotal.toFixed(1)}}h`;
+  if (headerActualMetaEl) headerActualMetaEl.textContent = `${{actualDays}} man-days`;
+  if (headerTotalResourcesValueEl) headerTotalResourcesValueEl.textContent = String(items.length);
+  if (headerTotalResourcesMetaEl) headerTotalResourcesMetaEl.textContent = `${{eligibleScoredItems.length}} eligible for scoring`;
   if (headerAverageValueEl) headerAverageValueEl.textContent = Number.isFinite(avgActiveScore) ? `${{avgActiveScore.toFixed(1)}}%` : "N/A";
   if (headerAverageModeEl) headerAverageModeEl.innerHTML = `<span class="material-symbols-outlined" aria-hidden="true">monitoring</span><span>${{e(activeMode === "simple" ? "Simple Scoring" : "Advanced Scoring")}}</span>`;
-  if (headerAverageMetaEl) headerAverageMetaEl.textContent = `Eligible assignees: ${{eligibleScoredItems.length}} of ${{items.length}}`;
+  if (headerAverageMetaEl) headerAverageMetaEl.textContent = `${{eligibleScoredItems.length}} of ${{items.length}} assignees | ${{overburnModeCaption()}}`;
   const totalAssignees = items.length;
   const atRiskCount = eligibleScoredItems.filter((i) => n(i.final_score) < 60).length;
   const ineligibleAssignees = items.filter((i) => !isScoreEligible(i)).length;
@@ -3719,6 +4303,10 @@ function render(items) {{
   activeScoringTab = leaderScoringMode;
   function lbScore(it) {{ return scoreNumber(it, leaderScoringMode); }}
   function compareLeaderboardRows(a, b, primaryValue, secondaryValue) {{
+    if (leaderSearchText) {{
+      const searchDiff = assigneeSearchRank(String(b.assignee || ""), leaderSearchText) - assigneeSearchRank(String(a.assignee || ""), leaderSearchText);
+      if (searchDiff !== 0) return searchDiff;
+    }}
     const primaryDiff = n(primaryValue(a)) - n(primaryValue(b));
     if (primaryDiff !== 0) return sortDirection === "asc" ? primaryDiff : -primaryDiff;
     const secondaryDiff = n(secondaryValue(a)) - n(secondaryValue(b));
@@ -3730,7 +4318,12 @@ function render(items) {{
     viewItems = viewItems.filter((it) => allowed.has(String(it.assignee || "").toLowerCase()));
   }}
   if (leaderSearchText) {{
-    viewItems = viewItems.filter((it) => String(it.assignee || "").toLowerCase().includes(leaderSearchText));
+    const strongSearchMatchExists = viewItems.some((it) => assigneeSearchRank(String(it.assignee || ""), leaderSearchText) >= 20);
+    viewItems = viewItems.filter((it) => {{
+      const searchRank = assigneeSearchRank(String(it.assignee || ""), leaderSearchText);
+      if (searchRank <= 0) return false;
+      return !strongSearchMatchExists || searchRank >= 20;
+    }});
   }}
   if (riskMode === "risk") viewItems = viewItems.filter((it) => Number.isFinite(lbScore(it)) && lbScore(it) < 60);
   if (missedMode === "missed") viewItems = viewItems.filter((it) => n(it.missed_start_count) > 0);
@@ -3758,22 +4351,9 @@ function render(items) {{
       : `Simple: N/A | Planned Hours Assigned: ${{n(it.planned_hours_assigned).toFixed(1)}}h | Not eligible for scoring`;
     const advancedSub = `${{n(it.total_hours).toFixed(1)}}h logged | Missed: ${{n(it.missed_start_ratio).toFixed(1)}}% | Cap Gap: ${{n(it.capacity_gap_hours).toFixed(1)}}h`;
     const rowSub = leaderScoringMode === "simple" ? simpleFormulaSub : advancedSub;
-    const refreshState = getEmployeeRefreshInlineState(it.assignee);
-    const refreshHtml = refreshState ? `<div class="row-refresh${{refreshState.tone ? ` row-refresh-${{refreshState.tone}}` : ""}}"><div class="row-refresh-head"><span class="row-refresh-status">${{e(refreshState.statusText)}}</span><span class="row-refresh-pct">${{refreshState.progress}}%</span></div><div class="row-refresh-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${{refreshState.progress}}" aria-label="Refresh progress for ${{e(it.assignee)}}"><div class="row-refresh-fill" style="width:${{refreshState.progress}}%;"></div></div><div class="row-refresh-sub">${{e(refreshState.detailText)}}</div></div>` : "";
-    const refreshDisabled = refreshState && refreshState.isBusy ? " disabled" : "";
-    return `<div class="row${{it.assignee===selectedName?' sel':''}}" data-name="${{e(it.assignee)}}"><div class="rank">#${{i+1}}</div><div><div>${{e(it.assignee)}}</div><div class="leader-metrics"><button type="button" class="assignee-refresh-btn" data-assignee="${{e(it.assignee)}}" title="Refresh this assignee" aria-label="Refresh ${{e(it.assignee)}}"${{refreshDisabled}}><span class="material-symbols-outlined">refresh</span></button><span class="metric-chip"><span class="material-symbols-outlined">deployed_code</span><span class="metric-value">${{n(it.active_rmi_count).toFixed(0)}}</span></span><span class="metric-chip"><span class="material-symbols-outlined">sliders</span><span class="metric-value${{capMore < 0 ? " warn" : ""}}">${{capMore.toFixed(1)}}h</span></span><span class="metric-chip"><span class="material-symbols-outlined">award_star</span><span class="metric-value">${{rowScoreText}}</span></span></div><div class="sub">${{rowSub}}</div></div><div class="score"><span class="material-symbols-outlined">award_star</span>${{rowScoreText}}</div>${{refreshHtml}}</div>`;
+    return `<div class="row${{it.assignee===selectedName?' sel':''}}" data-name="${{e(it.assignee)}}"><div class="rank">#${{i+1}}</div><div><div>${{e(it.assignee)}}</div><div class="leader-metrics"><span class="metric-chip"><span class="material-symbols-outlined">deployed_code</span><span class="metric-value">${{n(it.active_rmi_count).toFixed(0)}}</span></span><span class="metric-chip"><span class="material-symbols-outlined">sliders</span><span class="metric-value${{capMore < 0 ? " warn" : ""}}">${{capMore.toFixed(1)}}h</span></span><span class="metric-chip"><span class="material-symbols-outlined">award_star</span><span class="metric-value">${{rowScoreText}}</span></span></div><div class="sub">${{rowSub}}</div></div><div class="score"><span class="material-symbols-outlined">award_star</span>${{rowScoreText}}</div></div>`;
   }}).join("");
   Array.from(lb.querySelectorAll(".row")).forEach((el)=>el.addEventListener("click", ()=>{{ selectedName = String(el.getAttribute("data-name") || ""); availabilityBreakdownForAssignee = ""; plannedHoursBreakdownForAssignee = ""; actualHoursBreakdownForAssignee = ""; hoursRequiredBreakdownForAssignee = ""; rmiListForAssignee = ""; render(compute()); }}));
-  Array.from(lb.querySelectorAll(".assignee-refresh-btn")).forEach((btn)=>btn.addEventListener("click", async (event)=>{{
-    event.stopPropagation();
-    const assignee = String(btn.getAttribute("data-assignee") || "");
-    if (!assignee) return;
-    if (typeof window !== "undefined" && typeof window.__startEmployeeRefreshRun === "function") {{
-      await window.__startEmployeeRefreshRun(assignee, btn);
-      return;
-    }}
-    setEmployeeRefreshStatus("Refresh monitor is unavailable on this page build.", "err");
-  }}));
   let item = viewItems.find(x => x.assignee === selectedName); if (!item) {{ item = viewItems[0]; selectedName = item.assignee; }}
   const feed = (item.feed || []).map((v) => `<div class="i"><strong>${{e(v.label)}}</strong><br>${{n(v.hours).toFixed(2)}}h | <span class="neg">-${{n(v.points).toFixed(2)}}</span></div>`).join("") || '<div class="i empty">No violations.</div>';
   const hierarchyTable = renderHierarchyTable(item.assigned_hierarchy, item.due_compliance_items, item.missed_start_items);
@@ -4239,10 +4819,12 @@ function render(items) {{
   }}
   function ssPillHtml(row) {{
     const est = String(row.estimate_status || "");
+    const due = String(row.due_completion_status || "");
     if (est === "no_estimate") return `<span class="ss-status-pill ss-pill-noest">No Estimate</span>`;
     if (n(row.is_commitment)) return `<span class="ss-status-pill ss-pill-commitment">Commitment</span>`;
+    if (est === "within_estimate" && due === "late") return `<span class="ss-status-pill ss-pill-late">Late Completed</span>`;
     if (est === "within_estimate") return `<span class="ss-status-pill ss-pill-within">Within Estimate</span>`;
-    if (est === "over_estimate" && String(row.due_completion_status || "") === "late") return `<span class="ss-status-pill ss-pill-late">Over + Late</span>`;
+    if (est === "over_estimate" && due === "late") return `<span class="ss-status-pill ss-pill-late">Over + Late Completed</span>`;
     if (est === "over_estimate") return `<span class="ss-status-pill ss-pill-over">Over Estimate</span>`;
     return "";
   }}
@@ -4466,7 +5048,24 @@ function render(items) {{
     }});
   }}
 }}
-function renderAll() {{ availabilityBreakdownForAssignee = ""; plannedHoursBreakdownForAssignee = ""; actualHoursBreakdownForAssignee = ""; hoursRequiredBreakdownForAssignee = ""; rmiListForAssignee = ""; render(compute()); }}
+async function renderAll() {{
+  availabilityBreakdownForAssignee = "";
+  plannedHoursBreakdownForAssignee = "";
+  actualHoursBreakdownForAssignee = "";
+  hoursRequiredBreakdownForAssignee = "";
+  rmiListForAssignee = "";
+  try {{
+    await loadScopedSubtasksForCurrentFilters();
+    setDateFilterStatus("");
+  }} catch (error) {{
+    setDateFilterStatus(String(error && error.message || error || "Failed to load scoped subtasks."));
+    scopedSubtasksRows = [];
+    scopedSubtasksSummary = null;
+    scopedSubtasksIssueKeySet = null;
+    scopedSubtasksLoadedKey = "";
+  }}
+  render(compute());
+}}
 function setHeaderCollapsed(isCollapsed) {{
   const collapsed = Boolean(isCollapsed);
   if (headerSectionEl) {{
@@ -4522,7 +5121,7 @@ function setupFilterDropdown(config) {{
       const opt = Array.from(selectEl.options).find((o) => o.value === val);
       if (opt) opt.selected = checked;
       updateFilterTriggerText(selectId, triggerTextId);
-      render(compute());
+      renderAll();
     }}
     cb.addEventListener("change", () => applySelection(cb.checked));
     row.addEventListener("click", (ev) => {{ if (ev.target === cb) return; cb.checked = !cb.checked; applySelection(cb.checked); }});
@@ -4537,8 +5136,8 @@ function setupFilterDropdown(config) {{
       }});
     }});
   }}
-  if (selectAllBtn) selectAllBtn.addEventListener("click", () => {{ Array.from(selectEl.options).forEach((o) => {{ o.selected = true; }}); optionsContainer.querySelectorAll(".filter-option input").forEach((c) => {{ c.checked = true; }}); updateFilterTriggerText(selectId, triggerTextId); render(compute()); }});
-  if (clearAllBtn) clearAllBtn.addEventListener("click", () => {{ Array.from(selectEl.options).forEach((o) => {{ o.selected = false; }}); optionsContainer.querySelectorAll(".filter-option input").forEach((c) => {{ c.checked = false; }}); updateFilterTriggerText(selectId, triggerTextId); render(compute()); }});
+  if (selectAllBtn) selectAllBtn.addEventListener("click", () => {{ Array.from(selectEl.options).forEach((o) => {{ o.selected = true; }}); optionsContainer.querySelectorAll(".filter-option input").forEach((c) => {{ c.checked = true; }}); updateFilterTriggerText(selectId, triggerTextId); renderAll(); }});
+  if (clearAllBtn) clearAllBtn.addEventListener("click", () => {{ Array.from(selectEl.options).forEach((o) => {{ o.selected = false; }}); optionsContainer.querySelectorAll(".filter-option input").forEach((c) => {{ c.checked = false; }}); updateFilterTriggerText(selectId, triggerTextId); renderAll(); }});
   triggerEl.addEventListener("click", (e) => {{
     e.stopPropagation();
     const open = menuEl.classList.toggle("open");
@@ -4557,7 +5156,15 @@ setupFilterDropdown({{ selectId: "teams", triggerId: "teams-trigger", menuId: "t
 refreshCapacityProfileOptions();
 document.getElementById("from").value = defaultFrom; document.getElementById("to").value = defaultTo;
 document.getElementById("meta").textContent = `Generated: ${{payload.generated_at || "-"}} | Data window: ${{formatDate(defaultFrom) || "-"}} to ${{formatDate(defaultTo) || "-"}}`;
+syncThemeButtons();
+syncHeaderPerformanceControls();
 setHeaderCollapsed(localStorage.getItem(HEADER_COLLAPSED_STORAGE_KEY) === "1");
+if (themeLightButton) {{
+  themeLightButton.addEventListener("click", () => setTheme("light"));
+}}
+if (themeDarkButton) {{
+  themeDarkButton.addEventListener("click", () => setTheme("dark"));
+}}
 if (headerToggleButton) {{
   headerToggleButton.addEventListener("click", () => {{
     const currentlyCollapsed = headerSectionEl ? headerSectionEl.classList.contains("is-collapsed") : false;
@@ -4567,6 +5174,65 @@ if (headerToggleButton) {{
 if (headerExpandFabButton) {{
   headerExpandFabButton.addEventListener("click", () => {{
     setHeaderCollapsed(false);
+  }});
+}}
+if (headerPerformanceControlsTriggerEl && headerPerformanceControlsPopoverEl) {{
+  headerPerformanceControlsTriggerEl.addEventListener("click", (event) => {{
+    event.stopPropagation();
+    setHeaderPerformanceControlsOpen(headerPerformanceControlsPopoverEl.hidden);
+  }});
+  headerPerformanceControlsPopoverEl.addEventListener("click", (event) => {{
+    event.stopPropagation();
+  }});
+  document.addEventListener("click", (event) => {{
+    if (!headerPerformanceControlsPopoverEl.hidden && !headerPerformanceControlsPopoverEl.contains(event.target) && event.target !== headerPerformanceControlsTriggerEl && !headerPerformanceControlsTriggerEl.contains(event.target)) {{
+      setHeaderPerformanceControlsOpen(false);
+    }}
+  }});
+}}
+if (headerOverburnPerTaskEl) {{
+  headerOverburnPerTaskEl.addEventListener("click", () => {{
+    syncSimpleOverrunMode("subtasks");
+    renderAll();
+  }});
+}}
+if (headerOverburnTotalEl) {{
+  headerOverburnTotalEl.addEventListener("click", () => {{
+    syncSimpleOverrunMode("total");
+    renderAll();
+  }});
+}}
+if (headerEfficiencyPenaltyInclusiveEl) {{
+  headerEfficiencyPenaltyInclusiveEl.addEventListener("click", () => {{
+    syncEfficiencyScorecardMode("penalty_inclusive");
+    renderAll();
+  }});
+}}
+if (headerEfficiencySimpleEl) {{
+  headerEfficiencySimpleEl.addEventListener("click", () => {{
+    syncEfficiencyScorecardMode("simple");
+    renderAll();
+  }});
+}}
+if (headerPlanActualToggleEl) {{
+  headerPlanActualToggleEl.setAttribute("aria-controls", "score-detail-drawer");
+  headerPlanActualToggleEl.setAttribute("aria-expanded", "false");
+  headerPlanActualToggleEl.addEventListener("click", (event) => {{
+    event.preventDefault();
+    event.stopPropagation();
+    openPlanActualDrawer();
+  }});
+}}
+if (topOverburnModeEl) {{
+  topOverburnModeEl.addEventListener("change", () => {{
+    syncSimpleOverrunMode(topOverburnModeEl.value);
+    renderAll();
+  }});
+}}
+if (topEfficiencyModeEl) {{
+  topEfficiencyModeEl.addEventListener("change", () => {{
+    syncEfficiencyScorecardMode(topEfficiencyModeEl.value);
+    renderAll();
   }});
 }}
 if (scoreDrawerCloseEl) {{
@@ -4609,6 +5275,7 @@ document.addEventListener("keydown", (event) => {{
   if (event.key === "Escape" && document.body.classList.contains("score-drawer-open")) {{
     closeScoreDrawer();
   }}
+  if (event.key === "Escape") setHeaderPerformanceControlsOpen(false);
 }});
 if (advFilterToggleButton && advFilterMenu) {{
   advFilterToggleButton.addEventListener("click", () => {{
@@ -4650,12 +5317,6 @@ document.getElementById("toggle-team-performance").addEventListener("click", () 
   document.querySelector("#toggle-team-performance .hint").textContent = collapsed ? "click to expand" : "click to collapse";
 }});
 document.getElementById("apply").addEventListener("click", ()=>{{ setDateFilterStatus(""); renderAll(); }});
-if (simpleOverrunModeEl) {{
-  simpleOverrunModeEl.addEventListener("change", () => {{
-    syncSimpleOverrunMode(simpleOverrunModeEl.value);
-    renderAll();
-  }});
-}}
 if (capacityProfileSelectEl) {{
   capacityProfileSelectEl.addEventListener("change", () => {{
     syncCapacityProfileSelection(capacityProfileSelectEl.value, "header");
@@ -4723,248 +5384,12 @@ document.getElementById("filter-risk").addEventListener("change", renderAll);
 document.getElementById("filter-missed").addEventListener("change", renderAll);
 document.getElementById("leader-search").addEventListener("input", renderAll);
 document.getElementById("search").addEventListener("input", () => {{ render(compute()); }});
-document.getElementById("reset").addEventListener("click", ()=>{{ document.getElementById("from").value=defaultFrom; document.getElementById("to").value=defaultTo; document.getElementById("search").value=\"\"; document.getElementById("leader-search").value=\"\"; document.getElementById("leader-sort").value=\"score\"; document.getElementById("leader-sort-direction").value=\"desc\"; document.getElementById("leader-scoring-mode").value=\"simple\"; document.getElementById("filter-risk").value=\"all\"; document.getElementById("filter-missed").value=\"all\"; syncSimpleOverrunMode(\"subtasks\"); if (assigneeExtendedActualsToggleEl) assigneeExtendedActualsToggleEl.checked = false; extendedActualsEnabled = false; applyPerformanceSettings(settings); syncCapacityProfileSelection(\"auto\", \"\"); selectedTeam = \"\"; setDateFilterStatus(""); Array.from(document.getElementById("projects").options).forEach(o => o.selected=true); Array.from(document.getElementById("teams").options).forEach(o => o.selected=true); updateFilterTriggerText(\"projects\", \"projects-trigger-text\"); updateFilterTriggerText(\"teams\", \"teams-trigger-text\"); document.querySelectorAll(\"#projects-options .filter-option input\").forEach((c)=>{{ c.checked = true; }}); document.querySelectorAll(\"#teams-options .filter-option input\").forEach((c)=>{{ c.checked = true; }}); if (document.getElementById(\"projects-search\")) document.getElementById(\"projects-search\").value = \"\"; if (document.getElementById(\"teams-search\")) document.getElementById(\"teams-search\").value = \"\"; document.querySelectorAll(\"#projects-options .filter-option\").forEach((r)=>{{ r.classList.remove(\"hidden\"); }}); document.querySelectorAll(\"#teams-options .filter-option\").forEach((r)=>{{ r.classList.remove(\"hidden\"); }}); renderAll(); }});
+document.getElementById("reset").addEventListener("click", ()=>{{ document.getElementById("from").value=defaultFrom; document.getElementById("to").value=defaultTo; document.getElementById("search").value=\"\"; document.getElementById("leader-search").value=\"\"; document.getElementById("leader-sort").value=\"score\"; document.getElementById("leader-sort-direction").value=\"desc\"; document.getElementById("leader-scoring-mode").value=\"simple\"; document.getElementById("filter-risk").value=\"all\"; document.getElementById("filter-missed").value=\"all\"; syncSimpleOverrunMode(\"subtasks\"); syncEfficiencyScorecardMode(\"penalty_inclusive\"); setHeaderPerformanceControlsOpen(false); if (assigneeExtendedActualsToggleEl) assigneeExtendedActualsToggleEl.checked = false; extendedActualsEnabled = false; applyPerformanceSettings(settings); syncCapacityProfileSelection(\"auto\", \"\"); selectedTeam = \"\"; setDateFilterStatus(""); Array.from(document.getElementById("projects").options).forEach(o => o.selected=true); Array.from(document.getElementById("teams").options).forEach(o => o.selected=true); updateFilterTriggerText(\"projects\", \"projects-trigger-text\"); updateFilterTriggerText(\"teams\", \"teams-trigger-text\"); document.querySelectorAll(\"#projects-options .filter-option input\").forEach((c)=>{{ c.checked = true; }}); document.querySelectorAll(\"#teams-options .filter-option input\").forEach((c)=>{{ c.checked = true; }}); if (document.getElementById(\"projects-search\")) document.getElementById(\"projects-search\").value = \"\"; if (document.getElementById(\"teams-search\")) document.getElementById(\"teams-search\").value = \"\"; document.querySelectorAll(\"#projects-options .filter-option\").forEach((r)=>{{ r.classList.remove(\"hidden\"); }}); document.querySelectorAll(\"#teams-options .filter-option\").forEach((r)=>{{ r.classList.remove(\"hidden\"); }}); renderAll(); }});
 document.getElementById("shortcut-current-month").addEventListener("click", ()=>{{ applyDateShortcut("current_month"); renderAll(); }});
 document.getElementById("shortcut-previous-month").addEventListener("click", ()=>{{ applyDateShortcut("previous_month"); renderAll(); }});
 document.getElementById("shortcut-last-30-days").addEventListener("click", ()=>{{ applyDateShortcut("last_30_days"); renderAll(); }});
 document.getElementById("shortcut-quarter-to-date").addEventListener("click", ()=>{{ applyDateShortcut("quarter_to_date"); renderAll(); }});
 document.getElementById("shortcut-reset").addEventListener("click", ()=>{{ applyDateShortcut("reset"); renderAll(); }});
-if (employeeRefreshBtn) {{
-  function clearEmployeeRefreshPoll() {{
-    if (employeeRefreshPollHandle) {{
-      clearTimeout(employeeRefreshPollHandle);
-      employeeRefreshPollHandle = null;
-    }}
-  }}
-
-  function setEmployeeRefreshUiState(isRunning) {{
-    employeeRefreshBtn.disabled = Boolean(isRunning);
-    if (employeeRefreshCancelBtn) {{
-      employeeRefreshCancelBtn.style.display = "";
-      employeeRefreshCancelBtn.disabled = !isRunning;
-    }}
-  }}
-
-  function refreshDetailsText(run) {{
-    const row = run && typeof run === "object" ? run : {{}};
-    const stats = row.stats && typeof row.stats === "object" ? row.stats : {{}};
-    const sources = stats.sources && typeof stats.sources === "object" ? stats.sources : {{}};
-    const wi = sources.work_items || {{}};
-    const wl = sources.worklogs || {{}};
-    const lv = sources.leaves || {{}};
-    const ep = stats.employee_progress && typeof stats.employee_progress === "object" ? stats.employee_progress : {{}};
-    const out = [];
-    out.push(`Run ID: ${{String(row.run_id || "-")}}`);
-    if (Number.isFinite(Number(row.progress))) out.push(`Progress: ${{Math.max(0, Math.min(100, Math.round(Number(row.progress))))}}%`);
-    if (Number.isFinite(Number(ep.total_employees)) && Number(ep.total_employees) > 0) {{
-      const fetched = Number.isFinite(Number(ep.fetched_employees)) ? n(ep.fetched_employees).toFixed(0) : "0";
-      const remaining = Number.isFinite(Number(ep.remaining_employees)) ? n(ep.remaining_employees).toFixed(0) : "?";
-      out.push(`Employees -> Total: ${{n(ep.total_employees).toFixed(0)}}, Fetched: ${{fetched}}, Remaining: ${{remaining}}`);
-      if (String(ep.current_assignee || "").trim()) out.push(`Current: ${{String(ep.current_assignee)}}`);
-    }}
-    if (Number.isFinite(Number(stats.duration_sec))) out.push(`Duration: ${{Number(stats.duration_sec).toFixed(2)}}s`);
-    if (row.started_at_utc) out.push(`Started: ${{String(row.started_at_utc)}}`);
-    if (row.ended_at_utc) out.push(`Ended: ${{String(row.ended_at_utc)}}`);
-    out.push(`Rows -> WI: ${{n(wi.rows).toFixed(0)}}, WL: ${{n(wl.rows).toFixed(0)}}, Leaves: ${{n(lv.rows).toFixed(0)}}`);
-    if (String(row.error || "").trim()) out.push(`Error: ${{String(row.error).trim()}}`);
-    return out.join(" | ");
-  }}
-
-  function refreshToneByStatus(status) {{
-    const key = String(status || "").toLowerCase();
-    if (key === "success") return "ok";
-    if (key === "failed" || key === "canceled") return "err";
-    return "";
-  }}
-
-  function refreshStatusText(run) {{
-    const status = String((run && run.status) || "").toLowerCase();
-    const step = String((run && run.step) || "").replace(/_/g, " ").trim();
-    const progress = Number(run && run.progress);
-    const stats = (run && run.stats && typeof run.stats === "object") ? run.stats : {{}};
-    const ep = (stats.employee_progress && typeof stats.employee_progress === "object") ? stats.employee_progress : {{}};
-    if (status === "running") {{
-      const pct = Number.isFinite(progress) ? `${{Math.max(0, Math.min(100, Math.round(progress)))}}%` : "";
-      let empText = "";
-      if (Number.isFinite(Number(ep.total_employees)) && Number(ep.total_employees) > 0) {{
-        const fetched = Number.isFinite(Number(ep.fetched_employees)) ? Number(ep.fetched_employees) : 0;
-        empText = ` | Employee ${{fetched}}/${{Number(ep.total_employees)}}`;
-        if (String(ep.current_assignee || "").trim()) empText += ` (${{String(ep.current_assignee)}})`;
-      }}
-      const stepText = step ? ` (${{step}})` : "";
-      return `Refresh running${{stepText}}${{empText}}${{pct ? ` - ${{pct}}` : ""}}`;
-    }}
-    if (status === "canceled") return String((run && run.error) || "Refresh canceled. Previous snapshot retained.");
-    if (status === "failed") return String((run && run.error) || "Refresh failed.");
-    if (status === "success") {{
-      let msg = "Refresh complete. Reloading...";
-      if (Number.isFinite(Number(ep.total_employees)) && Number(ep.total_employees) > 0) {{
-        const fetched = Number.isFinite(Number(ep.fetched_employees)) ? Number(ep.fetched_employees) : 0;
-        msg = `Refresh complete (${{fetched}}/${{Number(ep.total_employees)}} employees). Reloading...`;
-      }}
-      return msg;
-    }}
-    if (status === "cancel_requested") return "Cancel requested. Waiting for safe stop...";
-    return String((run && run.error) || "Refresh status unavailable.");
-  }}
-
-  async function pollEmployeeRefresh(runId) {{
-    if (!runId) return;
-    try {{
-      const response = await fetch(`/api/employee-performance/refresh/${{encodeURIComponent(runId)}}`);
-      const body = await response.json().catch(() => ({{ ok: false, error: "Invalid refresh status response." }}));
-      if (!response.ok || !body.ok || !body.run) {{
-        const msg = body && body.error ? String(body.error) : `Failed to check refresh status (${{response.status}})`;
-        setEmployeeRefreshStatus(msg, "err");
-        setEmployeeRefreshUiState(false);
-        setEmployeeRefreshInlineState(employeeRefreshInlineRun ? {{ ...employeeRefreshInlineRun, status: "failed", error: msg }} : null, employeeRefreshInlineAssignee || "", true);
-        clearEmployeeRefreshPoll();
-        return;
-      }}
-      const run = body.run || {{}};
-      const status = String(run.status || "").toLowerCase();
-      setEmployeeRefreshStatus(refreshStatusText(run), refreshToneByStatus(status));
-      setEmployeeRefreshDetails(refreshDetailsText(run), refreshToneByStatus(status));
-      setEmployeeRefreshInlineState(run, employeeRefreshInlineAssignee || "", true);
-      if (status === "running" || status === "cancel_requested") {{
-        setEmployeeRefreshUiState(true);
-        clearEmployeeRefreshPoll();
-        employeeRefreshPollHandle = setTimeout(() => pollEmployeeRefresh(runId), 1500);
-        return;
-      }}
-      setEmployeeRefreshUiState(false);
-      clearEmployeeRefreshPoll();
-      if (status === "success") {{
-        setTimeout(() => window.location.reload(), 800);
-      }}
-    }} catch (error) {{
-      setEmployeeRefreshStatus(error && error.message ? error.message : String(error), "err");
-      setEmployeeRefreshUiState(false);
-      setEmployeeRefreshInlineState(employeeRefreshInlineRun ? {{ ...employeeRefreshInlineRun, status: "failed", error: (error && error.message ? error.message : String(error)) }} : null, employeeRefreshInlineAssignee || "", true);
-      clearEmployeeRefreshPoll();
-    }}
-  }}
-
-  async function resumeEmployeeRefreshIfRunning() {{
-    if (typeof window === "undefined" || !window.location || window.location.protocol === "file:") return;
-    try {{
-      const response = await fetch("/api/employee-performance/refresh/current");
-      const body = await response.json().catch(() => ({{ ok: false }}));
-      const run = body && body.ok ? body.run : null;
-      if (!run) {{
-        setEmployeeRefreshUiState(false);
-        setEmployeeRefreshDetails("", "");
-        setEmployeeRefreshInlineState(null, "", true);
-        return;
-      }}
-      const status = String(run.status || "").toLowerCase();
-      setEmployeeRefreshStatus(refreshStatusText(run), refreshToneByStatus(status));
-      setEmployeeRefreshDetails(refreshDetailsText(run), refreshToneByStatus(status));
-      setEmployeeRefreshInlineState(run, String(run.assignee || ""), true);
-      if (status === "running" || status === "cancel_requested") {{
-        setEmployeeRefreshUiState(true);
-        clearEmployeeRefreshPoll();
-        employeeRefreshPollHandle = setTimeout(() => pollEmployeeRefresh(String(run.run_id || "")), 1200);
-      }} else {{
-        setEmployeeRefreshUiState(false);
-      }}
-    }} catch (_err) {{
-      setEmployeeRefreshUiState(false);
-    }}
-  }}
-
-  window.__startEmployeeRefreshRun = async (assigneeName, triggerButton) => {{
-    if (typeof window !== "undefined" && window.location && window.location.protocol === "file:") {{
-      setEmployeeRefreshStatus("Offline mode: refresh API unavailable.", "err");
-      return;
-    }}
-    const targetAssignee = String(assigneeName || "").trim();
-    if (triggerButton) triggerButton.disabled = true;
-    setEmployeeRefreshUiState(true);
-    setEmployeeRefreshStatus(targetAssignee ? `Starting refresh for ${{targetAssignee}}...` : "Starting refresh...", "");
-    setEmployeeRefreshDetails("", "");
-    setEmployeeRefreshInlineState(targetAssignee ? {{ run_id: "", status: "running", step: "initializing", progress: 0, assignee: targetAssignee, stats: {{}} }} : null, targetAssignee, true);
-    try {{
-      const response = await fetch("/api/employee-performance/refresh", {{
-        method: "POST",
-        headers: {{"Content-Type":"application/json"}},
-        body: JSON.stringify(targetAssignee ? {{ assignee: targetAssignee, replace_running: true }} : {{ replace_running: true }}),
-      }});
-      const payload = await response.json().catch(() => null);
-      if (!response.ok || !payload || !payload.ok) {{
-        const legacyResp = await fetch("/api/report/refresh", {{
-          method: "POST",
-          headers: {{"Content-Type":"application/json"}},
-          body: JSON.stringify(
-            targetAssignee
-              ? {{ report: "employee_performance", assignee: targetAssignee, isolated: true }}
-              : {{ report: "employee_performance", isolated: true }}
-          ),
-        }});
-        const legacyPayload = await legacyResp.json().catch(() => null);
-        if (!legacyResp.ok || !legacyPayload || !legacyPayload.ok) {{
-          const errMsg = (legacyPayload && legacyPayload.error)
-            ? String(legacyPayload.error)
-            : (payload && payload.error)
-              ? String(payload.error)
-              : `Refresh failed (${{response.status}})`;
-          throw new Error(errMsg);
-        }}
-        setEmployeeRefreshStatus("Refresh complete. Reloading...", "ok");
-        setEmployeeRefreshDetails("", "");
-        setEmployeeRefreshInlineState(targetAssignee ? {{ run_id: "", status: "success", step: "done", progress: 100, assignee: targetAssignee, stats: {{}} }} : null, targetAssignee, true);
-        setTimeout(() => window.location.reload(), 800);
-        return;
-      }}
-      const runId = String(payload.run_id || (payload.run && payload.run.run_id) || "");
-      if (!runId) throw new Error("Refresh started without run_id.");
-      const run = payload.run && typeof payload.run === "object" ? payload.run : {{}};
-      setEmployeeRefreshStatus(targetAssignee ? `Refresh started for ${{targetAssignee}}. Monitoring run...` : "Refresh started. Monitoring run...", "");
-      setEmployeeRefreshDetails(refreshDetailsText(run), "");
-      setEmployeeRefreshInlineState(run, targetAssignee, true);
-      clearEmployeeRefreshPoll();
-      employeeRefreshPollHandle = setTimeout(() => pollEmployeeRefresh(runId), 700);
-    }} catch (error) {{
-      setEmployeeRefreshStatus(error && error.message ? error.message : String(error), "err");
-      setEmployeeRefreshUiState(false);
-      setEmployeeRefreshInlineState(targetAssignee ? {{ run_id: "", status: "failed", step: "failed", progress: 100, assignee: targetAssignee, error: (error && error.message ? error.message : String(error)), stats: {{}} }} : null, targetAssignee, true);
-      clearEmployeeRefreshPoll();
-    }} finally {{
-      if (triggerButton) triggerButton.disabled = false;
-    }}
-  }};
-
-  employeeRefreshBtn.addEventListener("click", async () => {{
-    await window.__startEmployeeRefreshRun("", employeeRefreshBtn);
-  }});
-
-  if (employeeRefreshCancelBtn) {{
-    employeeRefreshCancelBtn.addEventListener("click", async () => {{
-      employeeRefreshCancelBtn.disabled = true;
-      try {{
-        const response = await fetch("/api/employee-performance/cancel", {{
-          method: "POST",
-          headers: {{"Content-Type":"application/json"}},
-          body: JSON.stringify({{}}),
-        }});
-        const payload = await response.json().catch(() => ({{ ok: false, error: "Invalid cancel response." }}));
-        if (!response.ok || !payload.ok) {{
-          const msg = payload && payload.error ? String(payload.error) : `Cancel failed (${{response.status}})`;
-          throw new Error(msg);
-        }}
-        setEmployeeRefreshStatus(String(payload.message || "Cancel requested. Waiting for safe stop..."), "");
-        setEmployeeRefreshDetails(String(payload.message || ""), "");
-      }} catch (error) {{
-        setEmployeeRefreshStatus(error && error.message ? error.message : String(error), "err");
-      }} finally {{
-        employeeRefreshCancelBtn.disabled = false;
-      }}
-    }});
-  }}
-
-  setEmployeeRefreshUiState(false);
-  resumeEmployeeRefreshIfRunning();
-}}
 hydratePerformanceSettings().finally(() => {{
   performanceSettingsReady = true;
   renderAll();
@@ -4987,7 +5412,7 @@ def _resolve_runtime_paths(base_dir: Path) -> dict[str, Path]:
     leave_name = os.getenv("JIRA_LEAVE_REPORT_XLSX_PATH", DEFAULT_LEAVE_REPORT_INPUT_XLSX).strip() or DEFAULT_LEAVE_REPORT_INPUT_XLSX
     html_name = os.getenv("JIRA_EMPLOYEE_PERFORMANCE_HTML_PATH", DEFAULT_HTML_OUTPUT).strip() or DEFAULT_HTML_OUTPUT
     db_name = os.getenv("JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH", DEFAULT_CAPACITY_DB).strip() or DEFAULT_CAPACITY_DB
-    source_mode = _to_text(os.getenv("JIRA_EMP_PERF_INPUT_SOURCE", "xlsx")).lower() or "xlsx"
+    source_mode = _to_text(os.getenv("JIRA_EMP_PERF_INPUT_SOURCE", "db")).lower() or "db"
     run_id = _to_text(os.getenv("JIRA_EMP_PERF_RUN_ID"))
     canonical_run_id = _to_text(os.getenv("JIRA_EMP_PERF_CANONICAL_RUN_ID") or os.getenv("JIRA_CANONICAL_RUN_ID"))
     return {
@@ -5002,6 +5427,25 @@ def _resolve_runtime_paths(base_dir: Path) -> dict[str, Path]:
     }
 
 
+def _resolve_employee_performance_source_mode(paths: dict[str, Path | str]) -> tuple[str, str]:
+    source_mode = _to_text(paths.get("source_mode")).lower() or "db"
+    db_path_raw = paths.get("db_path")
+    db_path = db_path_raw if isinstance(db_path_raw, Path) else Path(_to_text(db_path_raw))
+    if source_mode == "db":
+        requested_run = _to_text(paths.get("run_id"))
+        run_id = _resolve_epf_run_id(db_path, requested_run)
+        if run_id:
+            return "db", run_id
+        return "xlsx", ""
+    if source_mode == "canonical_db":
+        requested_run = _to_text(paths.get("canonical_run_id"))
+        run_id = _resolve_canonical_run_id(db_path, requested_run)
+        if not run_id:
+            raise ValueError("Canonical DB source mode selected but no successful canonical run_id found.")
+        return "canonical_db", run_id
+    return "xlsx", ""
+
+
 def main() -> None:
     base_dir = Path(__file__).resolve().parent
     paths = _resolve_runtime_paths(base_dir)
@@ -5012,21 +5456,15 @@ def main() -> None:
     entities_catalog = load_report_entities(paths["db_path"])
     managed_fields = load_manage_fields(paths["db_path"], include_inactive=False)
     capacity_profiles = _list_capacity_profiles(paths["db_path"])
-    source_mode = _to_text(paths.get("source_mode")).lower() or "xlsx"
+    source_mode, resolved_run_id = _resolve_employee_performance_source_mode(paths)
     if source_mode == "db":
-        requested_run = _to_text(paths.get("run_id"))
-        run_id = _resolve_epf_run_id(paths["db_path"], requested_run)
-        if not run_id:
-            raise ValueError("DB source mode selected but no active epf run_id found.")
+        run_id = resolved_run_id
         work_items = _load_work_items_from_epf_db(paths["db_path"], run_id)
         worklogs = _load_worklogs_from_epf_db(paths["db_path"], run_id, work_items)
         leave_rows = _load_unplanned_leave_rows_from_epf_db(paths["db_path"], run_id)
         leave_issue_keys = _load_leave_issue_keys_from_epf_db(paths["db_path"], run_id)
     elif source_mode == "canonical_db":
-        requested_run = _to_text(paths.get("canonical_run_id"))
-        run_id = _resolve_canonical_run_id(paths["db_path"], requested_run)
-        if not run_id:
-            raise ValueError("Canonical DB source mode selected but no successful canonical run_id found.")
+        run_id = resolved_run_id
         work_items = _load_work_items_from_canonical_db(paths["db_path"], run_id)
         worklogs = _load_worklogs_from_canonical_db(paths["db_path"], run_id, work_items)
         leave_rows = _load_unplanned_leave_rows(paths["leave_report_path"])

@@ -1,4 +1,4 @@
-﻿"""
+"""
 Transform IPP Meeting workbook phase planned-range fields into normalized columns.
 """
 from __future__ import annotations
@@ -190,7 +190,7 @@ def _to_number(value) -> float | None:
 def _display_date(value: date | None) -> str:
     if value is None:
         return "-"
-    return value.strftime("%d-%b-%Y")
+    return value.strftime("%d-%b-%y")
 
 
 def _clamp_percent(value: float) -> float:

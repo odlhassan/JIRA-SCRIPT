@@ -698,8 +698,6 @@ def _build_rows(
         updated = fields.get("updated", "")
         priority = (fields.get("priority") or {}).get("name", "")
         fix_type = _extract_fix_type_value(fields.get(fix_type_field_id)) if fix_type_field_id else ""
-        resolved_stable_since_date = _stable_resolved_since(issue)
-
         rows.append(
             [
                 project_key,
@@ -710,7 +708,6 @@ def _build_rows(
                 fix_type,
                 summary,
                 status,
-                resolved_stable_since_date,
                 start_date,
                 end_date,
                 actual_start_date,
@@ -750,7 +747,6 @@ def _write_excel(rows: list[list[str]], output_path: Path) -> None:
         "fix_type",
         "summary",
         "status",
-        "resolved_stable_since_date",
         "start_date",
         "end_date",
         "actual_start_date",

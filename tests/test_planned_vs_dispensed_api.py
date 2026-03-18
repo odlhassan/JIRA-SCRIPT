@@ -100,6 +100,7 @@ class PlannedVsDispensedApiTests(unittest.TestCase):
                     "issue_key": "O2-SUB1",
                     "story_key": "O2-ST1",
                     "epic_key": "O2-EP1",
+                    "issue_type_name": "Sub-task",
                     "summary": "Subtask One",
                     "status": "In Progress",
                     "assignee": "Alice",
@@ -111,6 +112,7 @@ class PlannedVsDispensedApiTests(unittest.TestCase):
                     "issue_key": "O2-SUB2",
                     "story_key": "O2-ST1",
                     "epic_key": "O2-EP1",
+                    "issue_type_name": "Bug Subtask",
                     "summary": "Subtask Two",
                     "status": "In Progress",
                     "assignee": "Alice",
@@ -127,7 +129,23 @@ class PlannedVsDispensedApiTests(unittest.TestCase):
             client = app.test_client()
             with (
                 patch("report_server.get_session", return_value=object()),
-                patch("report_server._load_planned_vs_dispensed_hierarchy", return_value=hierarchy),
+                patch("report_server._get_planned_vs_dispensed_hierarchy_cached", return_value=(hierarchy, "canonical_db")),
+                patch(
+                    "report_server._load_canonical_worklogs_by_issue",
+                    return_value={
+                        "O2-SUB1": [
+                            {"issue_key": "O2-SUB1", "started_date": "2026-02-03", "hours_logged": 3.0},
+                            {"issue_key": "O2-SUB1", "started_date": "2026-02-05", "hours_logged": 2.0},
+                        ],
+                        "O2-SUB2": [
+                            {"issue_key": "O2-SUB2", "started_date": "2026-02-07", "hours_logged": 4.0},
+                            {"issue_key": "O2-SUB2", "started_date": "2026-03-03", "hours_logged": 6.0},
+                        ],
+                        "O2-ST1": [
+                            {"issue_key": "O2-ST1", "started_date": "2026-02-04", "hours_logged": 99.0},
+                        ],
+                    },
+                ),
             ):
                 summary_resp = client.get(
                     "/api/planned-vs-dispensed/summary?from=2026-02-01&to=2026-02-28&mode=log_date"
@@ -154,6 +172,16 @@ class PlannedVsDispensedApiTests(unittest.TestCase):
                 )
                 self.assertEqual(row.get("dispensed_stack_hours"), 100.0)
                 self.assertEqual(row.get("remaining_hours_outside_range"), 55.0)
+                self.assertEqual(float(row.get("actual_hours") or 0.0), 15.0)
+                self.assertEqual(float(row.get("actual_in_range_hours") or 0.0), 9.0)
+                self.assertEqual(row.get("actual_bucket_mode"), "week")
+                self.assertEqual(
+                    row.get("actual_buckets"),
+                    [
+                        {"bucket_key": "2026-W06", "bucket_label": "2026-W06", "hours": 9.0},
+                        {"bucket_key": "remaining_hours", "bucket_label": "Remaining Hours", "hours": 6.0},
+                    ],
+                )
 
                 details_resp = client.get(
                     "/api/planned-vs-dispensed/details?from=2026-02-01&to=2026-02-28&mode=log_date&project_key=O2"
@@ -163,10 +191,28 @@ class PlannedVsDispensedApiTests(unittest.TestCase):
                 self.assertTrue(details.get("ok"))
                 self.assertEqual(details["totals"]["planned_epic_hours"], 100.0)
                 self.assertEqual(details["totals"]["dispensed_subtask_hours"], 45.0)
+                self.assertEqual(details["totals"]["actual_hours"], 15.0)
                 self.assertEqual(details["totals"]["remaining_hours"], 55.0)
                 self.assertEqual(len(details.get("epics", [])), 1)
                 self.assertEqual(details["epics"][0]["stories"][0]["subtasks"][0]["planned_start"], "2026-02-03")
                 self.assertEqual(details["epics"][0]["stories"][0]["subtasks"][0]["planned_due"], "2026-02-05")
+                self.assertEqual(
+                    details["epics"][0]["dispensed_buckets"],
+                    [
+                        {"bucket_key": "2026-W06", "bucket_label": "2026-W06", "hours": 45.0},
+                        {"bucket_key": "remaining_hours", "bucket_label": "Remaining Hours", "hours": 55.0},
+                    ],
+                )
+                self.assertEqual(float(details["epics"][0]["dispensed_stack_hours"]), 100.0)
+                self.assertEqual(float(details["epics"][0]["actual_hours"]), 15.0)
+                self.assertEqual(float(details["epics"][0]["actual_in_range_hours"]), 9.0)
+                self.assertEqual(
+                    details["epics"][0]["actual_buckets"],
+                    [
+                        {"bucket_key": "2026-W06", "bucket_label": "2026-W06", "hours": 9.0},
+                        {"bucket_key": "remaining_hours", "bucket_label": "Remaining Hours", "hours": 6.0},
+                    ],
+                )
 
     def test_summary_uses_monthly_dispensed_buckets_for_multi_month_range(self):
         hierarchy = {
@@ -225,7 +271,7 @@ class PlannedVsDispensedApiTests(unittest.TestCase):
             client = app.test_client()
             with (
                 patch("report_server.get_session", return_value=object()),
-                patch("report_server._load_planned_vs_dispensed_hierarchy", return_value=hierarchy),
+                patch("report_server._get_planned_vs_dispensed_hierarchy_cached", return_value=(hierarchy, "canonical_db")),
             ):
                 summary_resp = client.get(
                     "/api/planned-vs-dispensed/summary?from=2026-02-28&to=2026-03-01&mode=log_date"
@@ -295,7 +341,7 @@ class PlannedVsDispensedApiTests(unittest.TestCase):
             client = app.test_client()
             with (
                 patch("report_server.get_session", return_value=object()),
-                patch("report_server._load_planned_vs_dispensed_hierarchy", return_value=hierarchy),
+                patch("report_server._get_planned_vs_dispensed_hierarchy_cached", return_value=(hierarchy, "canonical_db")),
             ):
                 summary_resp = client.get(
                     "/api/planned-vs-dispensed/summary?from=2026-02-01&to=2026-02-28&mode=log_date"
@@ -373,7 +419,7 @@ class PlannedVsDispensedApiTests(unittest.TestCase):
             client = app.test_client()
             with (
                 patch("report_server.get_session", return_value=object()),
-                patch("report_server._load_planned_vs_dispensed_hierarchy", return_value=hierarchy),
+                patch("report_server._get_planned_vs_dispensed_hierarchy_cached", return_value=(hierarchy, "canonical_db")),
             ):
                 summary_resp = client.get(
                     "/api/planned-vs-dispensed/summary?from=2026-02-01&to=2026-02-28&mode=log_date"
@@ -437,7 +483,7 @@ class PlannedVsDispensedApiTests(unittest.TestCase):
             client = app.test_client()
             with (
                 patch("report_server.get_session", return_value=object()),
-                patch("report_server._load_planned_vs_dispensed_hierarchy", return_value=hierarchy),
+                patch("report_server._get_planned_vs_dispensed_hierarchy_cached", return_value=(hierarchy, "canonical_db")),
             ):
                 summary_resp = client.get(
                     "/api/planned-vs-dispensed/summary?from=2026-02-01&to=2026-02-28&mode=log_date"
@@ -509,7 +555,7 @@ class PlannedVsDispensedApiTests(unittest.TestCase):
             client = app.test_client()
             with (
                 patch("report_server.get_session", return_value=object()),
-                patch("report_server._load_planned_vs_dispensed_hierarchy", return_value=hierarchy),
+                patch("report_server._get_planned_vs_dispensed_hierarchy_cached", return_value=(hierarchy, "canonical_db")),
             ):
                 summary_resp = client.get(
                     "/api/planned-vs-dispensed/summary?from=2026-02-01&to=2026-02-28&mode=log_date"
@@ -557,7 +603,7 @@ class PlannedVsDispensedApiTests(unittest.TestCase):
             client = app.test_client()
             with (
                 patch("report_server.get_session", return_value=object()),
-                patch("report_server._load_planned_vs_dispensed_hierarchy", return_value=hierarchy),
+                patch("report_server._get_planned_vs_dispensed_hierarchy_cached", return_value=(hierarchy, "canonical_db")),
             ):
                 resp = client.get(
                     "/api/planned-vs-dispensed/summary?from=2026-02-01&to=2026-02-28&mode=log_date&projects=O2,OC"
@@ -596,22 +642,22 @@ class PlannedVsDispensedApiTests(unittest.TestCase):
             root = Path(td)
             app_first = _build_app(root)
             client_first = app_first.test_client()
-            with patch("report_server._load_planned_vs_dispensed_hierarchy", return_value=hierarchy) as mock_loader:
+            with patch("report_server._get_planned_vs_dispensed_hierarchy_cached", return_value=(hierarchy, "canonical_db")) as mock_loader:
                 first_resp = client_first.get(query)
                 self.assertEqual(first_resp.status_code, 200)
                 first_payload = first_resp.get_json()
                 self.assertTrue(first_payload.get("ok"))
-                self.assertEqual(first_payload.get("source"), "jira")
+                self.assertEqual(first_payload.get("source"), "canonical_db")
                 self.assertEqual(mock_loader.call_count, 1)
 
             app_second = _build_app(root)
             client_second = app_second.test_client()
-            with patch("report_server._load_planned_vs_dispensed_hierarchy", side_effect=AssertionError("should use cache")):
+            with patch("report_server._get_planned_vs_dispensed_hierarchy_cached", side_effect=AssertionError("should use cache")):
                 second_resp = client_second.get(query)
                 self.assertEqual(second_resp.status_code, 200)
                 second_payload = second_resp.get_json()
                 self.assertTrue(second_payload.get("ok"))
-                self.assertEqual(second_payload.get("source"), "jira")
+                self.assertEqual(second_payload.get("source"), "canonical_db")
 
     def test_refresh_flag_bypasses_cached_summary_response(self):
         hierarchy_first = {
@@ -651,7 +697,7 @@ class PlannedVsDispensedApiTests(unittest.TestCase):
             root = Path(td)
             app = _build_app(root)
             client = app.test_client()
-            with patch("report_server._load_planned_vs_dispensed_hierarchy", return_value=hierarchy_first):
+            with patch("report_server._get_planned_vs_dispensed_hierarchy_cached", return_value=(hierarchy_first, "canonical_db")):
                 first_resp = client.get(base_q)
                 self.assertEqual(first_resp.status_code, 200)
                 first_payload = first_resp.get_json()
@@ -659,7 +705,7 @@ class PlannedVsDispensedApiTests(unittest.TestCase):
                 self.assertIsNotNone(o2_first)
                 self.assertEqual(float(o2_first.get("planned_epic_hours", 0.0)), 10.0)
 
-            with patch("report_server._load_planned_vs_dispensed_hierarchy", return_value=hierarchy_second):
+            with patch("report_server._get_planned_vs_dispensed_hierarchy_cached", return_value=(hierarchy_second, "canonical_db")):
                 second_resp = client.get(base_q + "&refresh=1")
                 self.assertEqual(second_resp.status_code, 200)
                 second_payload = second_resp.get_json()
@@ -724,7 +770,7 @@ class PlannedVsDispensedApiTests(unittest.TestCase):
             client = app.test_client()
             with (
                 patch("report_server.get_session", return_value=object()),
-                patch("report_server._load_planned_vs_dispensed_hierarchy", return_value=hierarchy),
+                patch("report_server._get_planned_vs_dispensed_hierarchy_cached", return_value=(hierarchy, "canonical_db")),
             ):
                 resp = client.get(
                     "/api/planned-vs-dispensed/details?from=2026-02-01&to=2026-02-28&mode=log_date&project_key=O2"
@@ -799,7 +845,7 @@ class PlannedVsDispensedApiTests(unittest.TestCase):
             client = app.test_client()
             with (
                 patch("report_server.get_session", return_value=object()),
-                patch("report_server._load_planned_vs_dispensed_hierarchy", return_value=hierarchy),
+                patch("report_server._get_planned_vs_dispensed_hierarchy_cached", return_value=(hierarchy, "canonical_db")),
             ):
                 summary_resp = client.get(
                     "/api/planned-vs-dispensed/summary?from=2026-02-01&to=2026-02-28&mode=log_date&plan_source=epic_planner&projects=O2"
@@ -850,12 +896,12 @@ class PlannedVsDispensedApiTests(unittest.TestCase):
             client = app.test_client()
             q_jira = "/api/planned-vs-dispensed/summary?from=2026-02-01&to=2026-02-28&mode=log_date&projects=O2&plan_source=jira_estimates"
             q_planner = "/api/planned-vs-dispensed/summary?from=2026-02-01&to=2026-02-28&mode=log_date&projects=O2&plan_source=epic_planner"
-            with patch("report_server._load_planned_vs_dispensed_hierarchy", return_value=hierarchy) as mock_loader:
+            with patch("report_server._get_planned_vs_dispensed_hierarchy_cached", return_value=(hierarchy, "canonical_db")) as mock_loader:
                 resp_jira = client.get(q_jira)
                 resp_planner = client.get(q_planner)
                 self.assertEqual(resp_jira.status_code, 200)
                 self.assertEqual(resp_planner.status_code, 200)
-                self.assertEqual(mock_loader.call_count, 1)
+                self.assertEqual(mock_loader.call_count, 2)
                 payload_jira = resp_jira.get_json()
                 payload_planner = resp_planner.get_json()
                 self.assertEqual(float(payload_jira["rows"][0]["planned_epic_hours"]), 10.0)

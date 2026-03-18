@@ -432,3 +432,6 @@
 {"timestamp_utc": "2026-03-10T10:21:30.843610+00:00", "level": "INFO", "run_id": "10624425695446ecb4dffb0dd76c7c2d", "step": "report-html-sync", "message": "Step started."}
 {"timestamp_utc": "2026-03-10T10:21:33.440086+00:00", "level": "INFO", "run_id": "10624425695446ecb4dffb0dd76c7c2d", "step": "report-html-sync", "message": "Step completed."}
 {"timestamp_utc": "2026-03-10T10:21:33.441080+00:00", "level": "INFO", "run_id": "10624425695446ecb4dffb0dd76c7c2d", "step": "", "message": "Pipeline run completed successfully."}
+{"timestamp_utc": "2026-03-12T00:34:40.422781+00:00", "level": "INFO", "run_id": "9f9fbc0c28824e129968f8e71aaf977e", "step": "", "message": "Pipeline run started."}
+{"timestamp_utc": "2026-03-12T00:34:40.423782+00:00", "level": "INFO", "run_id": "9f9fbc0c28824e129968f8e71aaf977e", "step": "exports", "message": "Step started."}
+{"timestamp_utc": "2026-03-12T00:37:55.207963+00:00", "level": "ERROR", "run_id": "9f9fbc0c28824e129968f8e71aaf977e", "step": "exports", "message": "Pipeline interrupted by user."}

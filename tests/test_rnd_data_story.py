@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 
 from generate_rnd_data_story import (
+    _build_html,
     aggregate_epic_logged_hours,
     classify_status,
     epic_in_range,
@@ -64,6 +65,28 @@ class RndDataStoryTests(unittest.TestCase):
         ]
         total = planned_committed_hours(epics, "2026-02-01", "2026-02-28")
         self.assertEqual(total, 300.0)
+
+    def test_html_uses_scoped_subtasks_endpoint_for_shared_scope(self):
+        html = _build_html(
+            {
+                "department_name": "Research and Development (RnD)",
+                "generated_at": "2026-03-12 00:00 UTC",
+                "source_files": {},
+                "defaults": {"from_date": "2026-02-01", "to_date": "2026-02-28"},
+                "default_employee_count": 0,
+                "epics": [],
+                "epic_logged_hours_by_key": {},
+                "worklog_rows": [],
+                "planned_epic_rows": [],
+                "project_actual_rows": [],
+                "page1_dataset": {},
+                "capacity_profiles": [],
+                "leave_daily_rows": [],
+            }
+        )
+        self.assertIn('const SCOPED_SUBTASKS_ENDPOINT="/api/scoped-subtasks";', html)
+        self.assertIn("async function loadScopedSubtasks(fromIso,toIso,mode)", html)
+        self.assertIn("function buildEpicRowsFromScopedPayload(scopedPayload)", html)
 
 
 if __name__ == "__main__":

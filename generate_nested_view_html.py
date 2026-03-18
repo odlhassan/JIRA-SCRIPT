@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import sqlite3
 from collections import defaultdict, deque
 from datetime import date, datetime, timedelta, timezone
@@ -31,6 +32,8 @@ DEFAULT_INPUT_XLSX = "nested view.xlsx"
 DEFAULT_OUTPUT_HTML = "nested_view_report.html"
 DEFAULT_WORK_ITEMS_XLSX = "1_jira_work_items_export.xlsx"
 DEFAULT_CAPACITY_DB = "assignee_hours_capacity.db"
+DEFAULT_EXPORTS_DB = "jira_exports.db"
+REPORT_HTML_DIRNAME = "report_html"
 
 
 def _resolve_path(value: str, base_dir: Path) -> Path:
@@ -62,6 +65,13 @@ def _subtract_numbers_or_blank(left, right):
         return round(float(left) - float(right), 2)
     except (TypeError, ValueError):
         return ""
+
+
+def _hours_to_days(hours: float | int | str) -> float:
+    try:
+        return round(float(hours or 0) / 8.0, 2)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def _to_key_text(value) -> str:
@@ -333,66 +343,15 @@ def _attach_jira_links(rows: list[dict], work_items_path: Path) -> None:
                 row["jira_url"] = hit["url"]
 
 
-def _row_type_from_level(level: int) -> str:
-    mapping = {
-        1: "project",
-        2: "product",
-        3: "rmi",
-        4: "story",
-        5: "subtask",
-        6: "assignee",
-    }
-    return mapping.get(level, "unknown")
-
-
-def _detect_bug_label(row_type: str, aspect: str) -> bool:
-    if row_type not in ("story", "subtask"):
-        return False
-    text = _to_text(aspect).lower()
-    return "bug" in text
-
-
-def _is_defined_product_category(value: str) -> bool:
-    text = _to_text(value).strip().lower()
-    if not text:
-        return False
-    return text not in {"uncategorized", "no product", "n/a", "na", "none"}
-
-
-def _load_nested_rows(input_path: Path) -> list[dict]:
-    if not input_path.exists():
-        raise FileNotFoundError(f"Nested view workbook not found: {input_path}")
-
-    wb = load_workbook(input_path, read_only=False, data_only=True)
-    ws = wb["NestedView"] if "NestedView" in wb.sheetnames else wb.active
-
-    header = next(ws.iter_rows(min_row=1, max_row=1, values_only=True), None)
-    if not header:
-        wb.close()
-        raise ValueError("Nested view workbook has no header row.")
-
-    found_headers = [_to_text(cell) for cell in header]
-    expected = [h.lower() for h in EXPECTED_HEADERS]
-    got = [h.lower() for h in found_headers[: len(EXPECTED_HEADERS)]]
-    if got != expected:
-        wb.close()
-        raise ValueError(
-            "Nested view workbook headers do not match expected layout. "
-            f"Expected first columns: {EXPECTED_HEADERS}, got: {found_headers[:len(EXPECTED_HEADERS)]}"
-        )
-
-    rows: list[dict] = []
+def _assign_row_metadata(rows: list[dict], *, attach_links_from_workbook: bool, work_items_path: Path | None = None) -> list[dict]:
     stack: dict[int, int] = {}
     row_by_id: dict[int, dict] = {}
     next_id = 1
     current_project_key = ""
     current_project_name = ""
 
-    for row_idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
-        level = int(getattr(ws.row_dimensions[row_idx], "outlineLevel", 0) or 0)
-        if level <= 0:
-            level = 1
-
+    for row_data in rows:
+        level = int(row_data.get("level", 0) or 0)
         for key in list(stack):
             if key >= level:
                 del stack[key]
@@ -403,28 +362,20 @@ def _load_nested_rows(input_path: Path) -> list[dict]:
         stack[level] = row_id
 
         row_type = _row_type_from_level(level)
-        row_data = {
-            "id": row_id,
-            "parent_id": parent_id,
-            "level": level,
-            "row_type": row_type,
-            "type_label": "",
-            "aspect": _to_text(row[0] if len(row) > 0 else ""),
-            "man_days": _to_number_or_blank(row[1] if len(row) > 1 else ""),
-            "man_hours": _to_number_or_blank(row[2] if len(row) > 2 else ""),
-            "actual_hours": _to_number_or_blank(row[3] if len(row) > 3 else ""),
-            "actual_days": _to_number_or_blank(row[4] if len(row) > 4 else ""),
-            "planned_start": _to_text(row[5] if len(row) > 5 else ""),
-            "planned_end": _to_text(row[6] if len(row) > 6 else ""),
-            "is_missing_parent": False,
-            "missing_parent_reason": "",
-            "has_defined_product_category": False,
-        }
+        row_data["id"] = row_id
+        row_data["parent_id"] = parent_id
+        row_data["row_type"] = row_type
+        row_data["type_label"] = ""
+        row_data["is_missing_parent"] = False
+        row_data["missing_parent_reason"] = ""
+        row_data["has_defined_product_category"] = False
+        row_data.setdefault("jira_key", "")
+        row_data.setdefault("jira_url", "")
+
         if row_type == "project":
             current_project_key, current_project_name = _project_key_and_name_from_aspect(row_data["aspect"])
         row_data["project_key"] = current_project_key
         row_data["project_name"] = current_project_name
-        # Delta semantics are planned minus logged across all rendered levels.
         row_data["delta_hours"] = _subtract_numbers_or_blank(row_data["man_hours"], row_data["actual_hours"])
         row_data["delta_days"] = _subtract_numbers_or_blank(row_data["man_days"], row_data["actual_days"])
 
@@ -468,13 +419,533 @@ def _load_nested_rows(input_path: Path) -> list[dict]:
         else:
             row_data["type_label"] = row_data["row_type"].capitalize()
 
-        rows.append(row_data)
         row_by_id[row_id] = row_data
+
+    if attach_links_from_workbook and work_items_path is not None:
+        _attach_jira_links(rows, work_items_path)
+    return rows
+
+
+def _row_type_from_level(level: int) -> str:
+    mapping = {
+        1: "project",
+        2: "product",
+        3: "rmi",
+        4: "story",
+        5: "subtask",
+        6: "assignee",
+    }
+    return mapping.get(level, "unknown")
+
+
+def _detect_bug_label(row_type: str, aspect: str) -> bool:
+    if row_type not in ("story", "subtask"):
+        return False
+    text = _to_text(aspect).lower()
+    return "bug" in text
+
+
+def _is_defined_product_category(value: str) -> bool:
+    text = _to_text(value).strip().lower()
+    if not text:
+        return False
+    return text not in {"uncategorized", "no product", "n/a", "na", "none"}
+
+
+def _canonical_last_success_run_id(db_path: Path) -> str:
+    if not db_path.exists():
+        return ""
+    conn = sqlite3.connect(db_path)
+    try:
+        row = conn.execute(
+            "SELECT last_success_run_id FROM canonical_refresh_state WHERE id = 1"
+        ).fetchone()
+    except sqlite3.Error:
+        return ""
+    finally:
+        conn.close()
+    return _to_text(row[0] if row else "")
+
+
+def _load_project_display_names(db_path: Path) -> dict[str, str]:
+    if not db_path.exists():
+        return {}
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute(
+            """
+            SELECT project_key, display_name, project_name
+            FROM managed_projects
+            WHERE is_active = 1
+            """
+        ).fetchall()
+    except sqlite3.Error:
+        return {}
+    finally:
+        conn.close()
+    result: dict[str, str] = {}
+    for row in rows:
+        key = _to_text(row["project_key"]).upper()
+        if not key:
+            continue
+        result[key] = _to_text(row["display_name"]) or _to_text(row["project_name"]) or key
+    return result
+
+
+def _load_epic_categories(db_path: Path) -> tuple[dict[str, str], dict[str, str]]:
+    if not db_path.exists():
+        return {}, {}
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute(
+            """
+            SELECT epic_key, product_category, project_name
+            FROM epics_management
+            """
+        ).fetchall()
+    except sqlite3.Error:
+        return {}, {}
+    finally:
+        conn.close()
+    categories: dict[str, str] = {}
+    project_names: dict[str, str] = {}
+    for row in rows:
+        epic_key = _to_text(row["epic_key"]).upper()
+        if epic_key:
+            categories[epic_key] = _to_text(row["product_category"])
+        project_name = _to_text(row["project_name"])
+        project_key = epic_key.split("-", 1)[0] if "-" in epic_key else ""
+        if project_key and project_name and project_key not in project_names:
+            project_names[project_key] = project_name
+    return categories, project_names
+
+
+def _load_nested_node_categories(exports_db_path: Path) -> dict[str, str]:
+    if not exports_db_path.exists() or not exports_db_path.is_file():
+        return {}
+    try:
+        conn = sqlite3.connect(exports_db_path)
+        rows = conn.execute(
+            "SELECT key, product_category FROM nested_view_nodes"
+        ).fetchall()
+    except sqlite3.Error:
+        return {}
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+    result: dict[str, str] = {}
+    for key, product_category in rows:
+        normalized_key = _to_text(key).upper()
+        if normalized_key and normalized_key not in result:
+            result[normalized_key] = _to_text(product_category)
+    return result
+
+
+def _canonical_kind(issue_type: str) -> str:
+    value = _to_text(issue_type).lower()
+    if "epic" in value:
+        return "epic"
+    if "sub-task" in value or "subtask" in value or ("bug" in value and "sub" in value):
+        return "subtask"
+    if "story" in value or "task" in value:
+        return "story"
+    return "other"
+
+
+def _load_nested_rows_from_canonical_db(db_path: Path, exports_db_path: Path | None = None, run_id: str = "") -> list[dict]:
+    effective_run_id = _to_text(run_id) or _canonical_last_success_run_id(db_path)
+    if not effective_run_id:
+        raise ValueError("No successful canonical refresh found.")
+
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        issue_rows = conn.execute(
+            """
+            SELECT issue_key, project_key, issue_type, summary, assignee,
+                   start_date, due_date, original_estimate_hours, total_hours_logged,
+                   parent_issue_key, story_key, epic_key
+            FROM canonical_issues
+            WHERE run_id = ?
+            ORDER BY project_key ASC, issue_key ASC
+            """,
+            (effective_run_id,),
+        ).fetchall()
+        actual_rows = conn.execute(
+            """
+            SELECT issue_key, total_worklog_hours
+            FROM canonical_issue_actuals
+            WHERE run_id = ?
+            """,
+            (effective_run_id,),
+        ).fetchall()
+    finally:
+        conn.close()
+
+    if not issue_rows:
+        raise ValueError(f"No canonical issues found for run_id={effective_run_id}.")
+
+    project_display_names = _load_project_display_names(db_path)
+    epic_categories, epic_project_names = _load_epic_categories(db_path)
+    nested_node_categories = _load_nested_node_categories(exports_db_path or Path(""))
+
+    actual_hours_by_key = {
+        _to_text(row["issue_key"]).upper(): round(float(row["total_worklog_hours"] or 0), 2)
+        for row in actual_rows
+        if _to_text(row["issue_key"])
+    }
+
+    epics: dict[str, dict] = {}
+    stories: dict[str, dict] = {}
+    subtasks: dict[str, dict] = {}
+
+    for row in issue_rows:
+        issue_key = _to_text(row["issue_key"]).upper()
+        if not issue_key:
+            continue
+        kind = _canonical_kind(row["issue_type"])
+        if kind == "other":
+            continue
+        project_key = _to_text(row["project_key"]).upper() or "UNKNOWN"
+        epic_key = _to_text(row["epic_key"]).upper()
+        story_key = _to_text(row["story_key"]).upper()
+        parent_key = _to_text(row["parent_issue_key"]).upper()
+        issue_payload = {
+            "key": issue_key,
+            "project_key": project_key,
+            "summary": _to_text(row["summary"]) or issue_key,
+            "assignee": _to_text(row["assignee"]) or "Unassigned",
+            "planned_start": _to_text(row["start_date"]),
+            "planned_end": _to_text(row["due_date"]),
+            "man_hours": round(float(row["original_estimate_hours"] or 0), 2),
+            "man_days": _hours_to_days(row["original_estimate_hours"] or 0),
+            "actual_hours": round(float(row["total_hours_logged"] or 0), 2),
+            "actual_days": _hours_to_days(row["total_hours_logged"] or 0),
+            "parent_key": parent_key,
+            "epic_key": epic_key,
+            "story_key": story_key,
+        }
+        if kind == "epic":
+            issue_payload["product_category"] = (
+                _to_text(epic_categories.get(issue_key))
+                or _to_text(nested_node_categories.get(issue_key))
+                or "Uncategorized"
+            )
+            epics[issue_key] = issue_payload
+        elif kind == "story":
+            issue_payload["epic_key"] = epic_key or parent_key
+            stories[issue_key] = issue_payload
+        elif kind == "subtask":
+            issue_payload["story_key"] = story_key or parent_key
+            issue_payload["actual_hours"] = actual_hours_by_key.get(issue_key, issue_payload["actual_hours"])
+            issue_payload["actual_days"] = _hours_to_days(issue_payload["actual_hours"])
+            subtasks[issue_key] = issue_payload
+
+    for story in stories.values():
+        epic = epics.get(_to_text(story.get("epic_key")).upper())
+        story["product_category"] = (
+            _to_text(nested_node_categories.get(_to_text(story.get("key")).upper()))
+            or _to_text(epic_categories.get(_to_text(story.get("epic_key")).upper()))
+            or _to_text(epic.get("product_category") if epic else "")
+            or "Uncategorized"
+        )
+    for subtask in subtasks.values():
+        story = stories.get(_to_text(subtask.get("story_key")).upper())
+        epic = epics.get(_to_text(story.get("epic_key")).upper()) if story else None
+        subtask["product_category"] = (
+            _to_text(nested_node_categories.get(_to_text(subtask.get("key")).upper()))
+            or _to_text(story.get("product_category") if story else "")
+            or _to_text(epic.get("product_category") if epic else "")
+            or "Uncategorized"
+        )
+        if subtask.get("project_key") == "UNKNOWN" and story:
+            subtask["project_key"] = story.get("project_key", "UNKNOWN")
+
+    stories_by_epic: dict[str, list[dict]] = defaultdict(list)
+    for story in stories.values():
+        grouped_epic_key = _to_text(story.get("epic_key")).upper() or f"__NO_RMI__::{story['project_key']}::{story['product_category']}"
+        stories_by_epic[grouped_epic_key].append(story)
+
+    subtasks_by_story: dict[str, list[dict]] = defaultdict(list)
+    for subtask in subtasks.values():
+        subtasks_by_story[_to_text(subtask.get("story_key")).upper()].append(subtask)
+
+    projects_found: set[str] = set()
+    products_by_project: dict[str, set[str]] = defaultdict(set)
+    for collection in (epics.values(), stories.values(), subtasks.values()):
+        for item in collection:
+            project_key = _to_text(item.get("project_key")).upper()
+            if not project_key:
+                continue
+            projects_found.add(project_key)
+            products_by_project[project_key].add(_to_text(item.get("product_category")) or "Uncategorized")
+
+    def _merge_date_bounds(values: list[str]) -> tuple[str, str]:
+        clean = [value for value in (_to_text(item) for item in values) if value]
+        if not clean:
+            return "", ""
+        return min(clean), max(clean)
+
+    story_metrics: dict[str, dict[str, object]] = {}
+    for story in stories.values():
+        related_subtasks = subtasks_by_story.get(story["key"], [])
+        fallback_start, _ = _merge_date_bounds([_to_text(subtask.get("planned_start")) for subtask in related_subtasks])
+        _, fallback_end = _merge_date_bounds([_to_text(subtask.get("planned_end")) for subtask in related_subtasks])
+        planned_start = _to_text(story.get("planned_start")) or fallback_start
+        planned_end = _to_text(story.get("planned_end")) or fallback_end
+        story_metrics[story["key"]] = {
+            "man_days": round(float(story.get("man_days") or 0), 2),
+            "man_hours": round(float(story.get("man_hours") or 0), 2),
+            "actual_hours": round(float(story.get("actual_hours") or 0), 2),
+            "planned_start": planned_start,
+            "planned_end": planned_end,
+        }
+
+    def _aggregate_metrics(items: list[dict[str, object]]) -> dict[str, object]:
+        man_days = round(sum(float(item.get("man_days", 0) or 0) for item in items), 2)
+        man_hours = round(sum(float(item.get("man_hours", 0) or 0) for item in items), 2)
+        actual_hours = round(sum(float(item.get("actual_hours", 0) or 0) for item in items), 2)
+        planned_start, _ = _merge_date_bounds([_to_text(item.get("planned_start")) for item in items])
+        _, planned_end = _merge_date_bounds([_to_text(item.get("planned_end")) for item in items])
+        return {
+            "man_days": man_days,
+            "man_hours": man_hours,
+            "actual_hours": actual_hours,
+            "planned_start": planned_start,
+            "planned_end": planned_end,
+        }
+
+    flat_rows: list[dict] = []
+    for project_key in sorted(projects_found):
+        product_values = sorted(products_by_project.get(project_key, {"Uncategorized"}))
+        product_blocks: list[dict[str, object]] = []
+        for product_category in product_values:
+            product_label = _to_text(product_category) or "Uncategorized"
+            epics_in_group = [
+                epic for epic in epics.values()
+                if epic["project_key"] == project_key and _to_text(epic.get("product_category")) == product_label
+            ]
+            orphan_epic_placeholder_key = f"__NO_RMI__::{project_key}::{product_label}"
+            orphan_stories = stories_by_epic.get(orphan_epic_placeholder_key, [])
+            if orphan_stories:
+                epics_in_group.append(
+                    {
+                        "key": "",
+                        "summary": "No RMI",
+                        "project_key": project_key,
+                        "product_category": product_label,
+                        "man_hours": 0.0,
+                        "man_days": 0.0,
+                        "actual_hours": 0.0,
+                        "planned_start": "",
+                        "planned_end": "",
+                    }
+                )
+            epics_in_group = sorted(epics_in_group, key=lambda item: (_to_text(item.get("summary")).lower(), _to_text(item.get("key"))))
+            epic_metrics: dict[str, dict[str, object]] = {}
+            for epic in epics_in_group:
+                epic_story_key = _to_text(epic.get("key")) or orphan_epic_placeholder_key
+                related_stories = stories_by_epic.get(epic_story_key, [])
+                related_story_metrics = [story_metrics[story["key"]] for story in related_stories if story["key"] in story_metrics]
+                fallback_start, _ = _merge_date_bounds([_to_text(metric.get("planned_start")) for metric in related_story_metrics])
+                _, fallback_end = _merge_date_bounds([_to_text(metric.get("planned_end")) for metric in related_story_metrics])
+                epic_metrics[_to_text(epic.get("key"))] = {
+                    "man_days": round(float(epic.get("man_days") or 0), 2),
+                    "man_hours": round(float(epic.get("man_hours") or 0), 2),
+                    "actual_hours": round(float(epic.get("actual_hours") or 0), 2),
+                    "planned_start": _to_text(epic.get("planned_start")) or fallback_start,
+                    "planned_end": _to_text(epic.get("planned_end")) or fallback_end,
+                }
+            product_blocks.append(
+                {
+                    "label": product_label,
+                    "epics": epics_in_group,
+                    "epic_metrics": epic_metrics,
+                    "metric": _aggregate_metrics(list(epic_metrics.values())),
+                }
+            )
+
+        project_metric = _aggregate_metrics([block["metric"] for block in product_blocks])
+        project_name = (
+            project_display_names.get(project_key)
+            or epic_project_names.get(project_key)
+            or project_key
+        )
+        flat_rows.append(
+            {
+                "level": 1,
+                "aspect": f"{project_key} - {project_name}",
+                "man_days": project_metric["man_days"],
+                "man_hours": project_metric["man_hours"],
+                "actual_hours": project_metric["actual_hours"],
+                "actual_days": _hours_to_days(project_metric["actual_hours"]),
+                "planned_start": _to_text(project_metric["planned_start"]),
+                "planned_end": _to_text(project_metric["planned_end"]),
+            }
+        )
+        for block in product_blocks:
+            flat_rows.append(
+                {
+                    "level": 2,
+                    "aspect": _to_text(block["label"]),
+                    "man_days": block["metric"]["man_days"],
+                    "man_hours": block["metric"]["man_hours"],
+                    "actual_hours": block["metric"]["actual_hours"],
+                    "actual_days": _hours_to_days(block["metric"]["actual_hours"]),
+                    "planned_start": _to_text(block["metric"]["planned_start"]),
+                    "planned_end": _to_text(block["metric"]["planned_end"]),
+                }
+            )
+            for epic in block["epics"]:
+                epic_key = _to_text(epic.get("key")).upper()
+                metrics = block["epic_metrics"].get(epic_key if epic_key else "", {})
+                flat_rows.append(
+                    {
+                        "level": 3,
+                        "aspect": _to_text(epic.get("summary")),
+                        "man_days": metrics.get("man_days", 0.0),
+                        "man_hours": metrics.get("man_hours", 0.0),
+                        "actual_hours": metrics.get("actual_hours", 0.0),
+                        "actual_days": _hours_to_days(metrics.get("actual_hours", 0.0)),
+                        "planned_start": _to_text(metrics.get("planned_start")),
+                        "planned_end": _to_text(metrics.get("planned_end")),
+                        "jira_key": epic_key,
+                        "jira_url": f"{_jira_base_url()}/browse/{epic_key}" if epic_key else "",
+                    }
+                )
+                orphan_epic_placeholder_key = f"__NO_RMI__::{project_key}::{block['label']}"
+                epic_story_key = epic_key or orphan_epic_placeholder_key
+                related_stories = sorted(
+                    stories_by_epic.get(epic_story_key, []),
+                    key=lambda item: (_to_text(item.get("summary")).lower(), _to_text(item.get("key"))),
+                )
+                for story in related_stories:
+                    story_key = _to_text(story.get("key")).upper()
+                    story_metric = story_metrics.get(story_key, {})
+                    flat_rows.append(
+                        {
+                            "level": 4,
+                            "aspect": _to_text(story.get("summary")),
+                            "man_days": story_metric.get("man_days", round(float(story.get("man_days") or 0), 2)),
+                            "man_hours": story_metric.get("man_hours", round(float(story.get("man_hours") or 0), 2)),
+                            "actual_hours": story_metric.get("actual_hours", round(float(story.get("actual_hours") or 0), 2)),
+                            "actual_days": _hours_to_days(story_metric.get("actual_hours", story.get("actual_hours", 0))),
+                            "planned_start": _to_text(story_metric.get("planned_start")) or _to_text(story.get("planned_start")),
+                            "planned_end": _to_text(story_metric.get("planned_end")) or _to_text(story.get("planned_end")),
+                            "jira_key": story_key,
+                            "jira_url": f"{_jira_base_url()}/browse/{story_key}" if story_key else "",
+                        }
+                    )
+                    related_subtasks = sorted(
+                        subtasks_by_story.get(story_key, []),
+                        key=lambda item: (_to_text(item.get("summary")).lower(), _to_text(item.get("key"))),
+                    )
+                    for subtask in related_subtasks:
+                        subtask_key = _to_text(subtask.get("key")).upper()
+                        assignee_text = _to_text(subtask.get("assignee")) or "Unassigned"
+                        flat_rows.append(
+                            {
+                                "level": 5,
+                                "aspect": _to_text(subtask.get("summary")),
+                                "man_days": round(float(subtask.get("man_days") or 0), 2),
+                                "man_hours": round(float(subtask.get("man_hours") or 0), 2),
+                                "actual_hours": round(float(subtask.get("actual_hours") or 0), 2),
+                                "actual_days": _hours_to_days(subtask.get("actual_hours", 0)),
+                                "planned_start": _to_text(subtask.get("planned_start")),
+                                "planned_end": _to_text(subtask.get("planned_end")),
+                                "jira_key": subtask_key,
+                                "jira_url": f"{_jira_base_url()}/browse/{subtask_key}" if subtask_key else "",
+                                "assignee": assignee_text,
+                            }
+                        )
+                        flat_rows.append(
+                            {
+                                "level": 6,
+                                "aspect": assignee_text,
+                                "man_days": round(float(subtask.get("man_days") or 0), 2),
+                                "man_hours": round(float(subtask.get("man_hours") or 0), 2),
+                                "actual_hours": round(float(subtask.get("actual_hours") or 0), 2),
+                                "actual_days": _hours_to_days(subtask.get("actual_hours", 0)),
+                                "planned_start": _to_text(subtask.get("planned_start")),
+                                "planned_end": _to_text(subtask.get("planned_end")),
+                                "assignee": assignee_text,
+                            }
+                        )
+
+    return _assign_row_metadata(flat_rows, attach_links_from_workbook=False)
+
+
+def load_nested_view_tree_for_api(
+    db_path: Path,
+    exports_db_path: Path | None = None,
+    run_id: str = "",
+) -> list[dict]:
+    """
+    Load the full nested view tree from the canonical DB for API consumption.
+    Returns the same row structure as used in the HTML report (with id, parent_id,
+    row_type, type_label, etc.) so the table reflects database data.
+    """
+    return _load_nested_rows_from_canonical_db(
+        db_path,
+        exports_db_path=exports_db_path or db_path.parent / "jira_exports.db",
+        run_id=run_id,
+    )
+
+
+def _load_nested_rows(input_path: Path) -> list[dict]:
+    if not input_path.exists():
+        raise FileNotFoundError(f"Nested view workbook not found: {input_path}")
+
+    wb = load_workbook(input_path, read_only=False, data_only=True)
+    ws = wb["NestedView"] if "NestedView" in wb.sheetnames else wb.active
+
+    header = next(ws.iter_rows(min_row=1, max_row=1, values_only=True), None)
+    if not header:
+        wb.close()
+        raise ValueError("Nested view workbook has no header row.")
+
+    found_headers = [_to_text(cell) for cell in header]
+    expected = [h.lower() for h in EXPECTED_HEADERS]
+    got = [h.lower() for h in found_headers[: len(EXPECTED_HEADERS)]]
+    if got != expected:
+        wb.close()
+        raise ValueError(
+            "Nested view workbook headers do not match expected layout. "
+            f"Expected first columns: {EXPECTED_HEADERS}, got: {found_headers[:len(EXPECTED_HEADERS)]}"
+        )
+
+    rows: list[dict] = []
+
+    for row_idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+        cell_value = row[0] if len(row) > 0 else ""
+        raw_aspect = "" if cell_value is None else str(cell_value)
+        level = int(getattr(ws.row_dimensions[row_idx], "outlineLevel", 0) or 0)
+        if level <= 0:
+            leading_spaces = len(raw_aspect) - len(raw_aspect.lstrip(" "))
+            # Some generated workbooks flatten Excel outline metadata and keep only
+            # two-space indentation in the Aspect text. Recover the hierarchy from it.
+            level = max(1, (leading_spaces // 2) + 1)
+        aspect = _to_text(raw_aspect.lstrip(" "))
+
+        row_data = {
+            "level": level,
+            "aspect": aspect,
+            "man_days": _to_number_or_blank(row[1] if len(row) > 1 else ""),
+            "man_hours": _to_number_or_blank(row[2] if len(row) > 2 else ""),
+            "actual_hours": _to_number_or_blank(row[3] if len(row) > 3 else ""),
+            "actual_days": _to_number_or_blank(row[4] if len(row) > 4 else ""),
+            "planned_start": _to_text(row[5] if len(row) > 5 else ""),
+            "planned_end": _to_text(row[6] if len(row) > 6 else ""),
+        }
+        rows.append(row_data)
 
     wb.close()
     work_items_path = _resolve_path(os.getenv("JIRA_WORK_ITEMS_XLSX_PATH", DEFAULT_WORK_ITEMS_XLSX), input_path.parent)
-    _attach_jira_links(rows, work_items_path)
-    return rows
+    return _assign_row_metadata(rows, attach_links_from_workbook=True, work_items_path=work_items_path)
 
 
 def _build_html(data: dict) -> str:
@@ -988,7 +1459,7 @@ def _build_html(data: dict) -> str:
     .efficiency-inline-wrap {{
       margin-top: 0;
       display: grid;
-      grid-template-columns: repeat(2, minmax(120px, 1fr));
+      grid-template-columns: 1fr;
       gap: 8px;
     }}
     #efficiency-under-actual {{
@@ -996,10 +1467,11 @@ def _build_html(data: dict) -> str:
       align-self: start;
     }}
     .efficiency-inline-item {{
-      border: 1px dashed #93c5fd;
-      border-radius: 8px;
-      background: rgba(255, 255, 255, 0.72);
-      padding: 6px 8px;
+      border-radius: 10px;
+      border: 1px solid #93c5fd;
+      background: #eff6ff;
+      padding: 8px 10px;
+      min-height: 66px;
     }}
     .efficiency-inline-label {{
       color: #355564;
@@ -1015,10 +1487,9 @@ def _build_html(data: dict) -> str:
     .efficiency-inline-value {{
       margin: 0;
       color: #1d4ed8;
-      font-size: 0.95rem;
+      font-size: 1.15rem;
       font-weight: 800;
       line-height: 1.15;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
     }}
     .efficiency-inline-formula {{
       margin: 4px 0 0;
@@ -1637,6 +2108,13 @@ def _build_html(data: dict) -> str:
       overflow: auto;
       width: 100%;
     }}
+    .table-section-title {{
+      margin: 0 0 10px 0;
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: var(--head);
+      letter-spacing: 0.02em;
+    }}
     table {{
       width: max-content;
       border-collapse: separate;
@@ -1984,6 +2462,7 @@ def _build_html(data: dict) -> str:
       background: #111827;
       border-color: #1f2937;
     }}
+    html[data-theme="dark"] .table-section-title {{ color: #e5e7eb; }}
     html[data-theme="dark"] .title {{ color: #f3f4f6; }}
     html[data-theme="dark"] .meta,
     html[data-theme="dark"] .search-meta,
@@ -2555,17 +3034,18 @@ Total Planned Hours = 0h</span>
           </p>
           <p class="score-value" id="score-total-planned">0h</p>
           <section class="score-details-panel" id="score-total-planned-details" hidden>
-            <h3 class="score-details-title">Total Planned Hours - Epic Breakdown</h3>
+            <h3 class="score-details-title">Total Planned Hours - Subtask Breakdown</h3>
             <p class="score-details-meta" id="score-total-planned-details-meta">No rows.</p>
             <div class="score-details-table-wrap">
               <table class="score-details-table" aria-label="Total Planned Hours details table">
                 <thead>
                   <tr>
                     <th>Project Name</th>
-                    <th>Epic Jira ID</th>
-                    <th>Epic Jira Name</th>
-                    <th>Epic Start Date</th>
-                    <th>Epic Due Date</th>
+                    <th>Subtask Jira ID</th>
+                    <th>Task Type</th>
+                    <th>Subtask Jira Name</th>
+                    <th>Subtask Start Date</th>
+                    <th>Subtask Due Date</th>
                     <th>Planned Hours</th>
                   </tr>
                 </thead>
@@ -2633,6 +3113,29 @@ Total Actual Hours = 0h</span>
             </span>
           </p>
           <p class="score-value" id="score-total-logged">0h</p>
+          <section class="score-details-panel" id="score-total-logged-details" hidden>
+            <h3 class="score-details-title">Total Actual Hours - Subtask Breakdown</h3>
+            <p class="score-details-meta">
+              <label><input type="checkbox" id="score-total-logged-include-bugs"> Include Bugs</label>
+            </p>
+            <p class="score-details-meta" id="score-total-logged-details-meta">No rows.</p>
+            <div class="score-details-table-wrap">
+              <table class="score-details-table" aria-label="Total Actual Hours details table">
+                <thead>
+                  <tr>
+                    <th>Project Name</th>
+                    <th>Subtask Jira ID</th>
+                    <th>Task Type</th>
+                    <th>Subtask Jira Name</th>
+                    <th>Subtask Start Date</th>
+                    <th>Subtask Due Date</th>
+                    <th>Actual Hours</th>
+                  </tr>
+                </thead>
+                <tbody id="score-total-logged-details-body"></tbody>
+              </table>
+            </div>
+          </section>
         </article>
         <article class="score-card" id="score-total-capacity-planned-leaves-adjusted-card">
           <span class="score-formula-chip" id="score-availability-formula">Total Capacity - Total Leaves Planned</span>
@@ -2665,6 +3168,7 @@ Planning Efficiency = 0%</span>
             <p class="efficiency-inline-value" id="score-loading-efficiency">0%</p>
             <p class="efficiency-inline-formula">Formula: Total Planned Hours / Availability x 100</p>
           </div>
+          <!-- Delivery Efficiency scorecard commented out
           <div class="efficiency-inline-item">
             <p class="efficiency-inline-label">
               Delivery Efficiency
@@ -2680,6 +3184,7 @@ Delivery Efficiency = 0%</span>
             <p class="efficiency-inline-value" id="score-delivery-efficiency">0%</p>
             <p class="efficiency-inline-formula">Formula: Total Planned Hours / Total Actual Hours x 100</p>
           </div>
+          -->
         </div>
         <!--
         <article class="score-card" id="score-total-leaves-card">
@@ -2720,6 +3225,7 @@ Total Leaves Taken = 0h</span>
       </div>
     </section>
     <section class="table-wrap">
+      <h2 class="table-section-title">Timeless Breakdown of Work</h2>
       <div class="legend">
         <span class="legend-title">Legend</span>
         <span class="legend-item"><span class="legend-swatch" style="background:#dbeeff;border-color:#91bde7"></span>Project</span>
@@ -2759,7 +3265,7 @@ Total Leaves Taken = 0h</span>
     document.getElementById("generated-at").textContent = reportData.generated_at || "-";
     const rowCountNode = document.getElementById("row-count");
 
-    const allRows = reportData.rows || [];
+    let allRows = reportData.rows || [];
     const leaveDailyRows = Array.isArray(reportData.leave_daily_rows) ? reportData.leave_daily_rows : [];
     const leaveSubtaskRows = Array.isArray(reportData.leave_subtask_rows) ? reportData.leave_subtask_rows : [];
     const jiraBaseUrl = String(reportData.jira_base_url || "").trim().replace(/[/]+$/, "");
@@ -2813,6 +3319,11 @@ Total Leaves Taken = 0h</span>
     const totalPlannedDetailsMetaEl = document.getElementById("score-total-planned-details-meta");
     const totalPlannedDetailsBodyEl = document.getElementById("score-total-planned-details-body");
     const totalLoggedScoreNode = document.getElementById("score-total-logged");
+    const totalLoggedCardEl = document.getElementById("score-total-logged-card");
+    const totalLoggedDetailsEl = document.getElementById("score-total-logged-details");
+    const totalLoggedDetailsMetaEl = document.getElementById("score-total-logged-details-meta");
+    const totalLoggedDetailsBodyEl = document.getElementById("score-total-logged-details-body");
+    const totalLoggedIncludeBugsEl = document.getElementById("score-total-logged-include-bugs");
     const deltaScoreNode = document.getElementById("score-delta");
     const totalLeavesScoreNode = document.getElementById("score-total-leaves");
     const totalLeavesPlannedScoreNode = document.getElementById("score-total-leaves-planned");
@@ -2852,6 +3363,7 @@ Total Leaves Taken = 0h</span>
     const capacityProfileStatusEl = document.getElementById("capacity-profile-status");
     const capacityProfileDetailsEl = document.getElementById("capacity-profile-details");
     const DATE_FILTER_WORK_TYPES = new Set(["rmi"]);
+    const WORK_ROW_TYPES = new Set(["subtask", "story"]);
     const ACTUAL_HOURS_MODE_STORAGE_KEY = "actual-hours-mode:nested-view";
     const PLANNED_HOURS_SOURCE_STORAGE_KEY = "planned-hours-source:nested-view";
     const DEFAULT_ACTUAL_HOURS_MODE = "log_date";
@@ -2889,9 +3401,12 @@ Total Leaves Taken = 0h</span>
     const hasManagedFieldsApi = window.location.protocol !== "file:";
     const ACTUAL_HOURS_AGGREGATE_ENDPOINT = "/api/actual-hours/aggregate";
     const NESTED_ACTUALS_ENDPOINT = "/api/nested-view/actual-hours";
+    const SCOPED_SUBTASKS_ENDPOINT = "/api/scoped-subtasks";
     const APPROVED_PLANNED_SUMMARY_ENDPOINT = "/api/approved-vs-planned-hours/summary";
+    const APPROVED_PLANNED_DETAILS_ENDPOINT = "/api/approved-vs-planned-hours/details";
     const PERFORMANCE_TEAMS_ENDPOINT = "/api/performance/teams";
     const hasNestedActualsApi = window.location.protocol !== "file:";
+    const hasNestedTreeApi = window.location.protocol !== "file:";
     const hasPlannedParityApi = window.location.protocol !== "file:";
     const hasTeamsApi = window.location.protocol !== "file:";
     const originalMetricsById = new Map();
@@ -2902,10 +3417,15 @@ Total Leaves Taken = 0h</span>
     let totalPlannedDetailsOpen = false;
     let totalPlannedDetailsGroups = [];
     const collapsedTotalPlannedProjectKeys = new Set();
+    let totalActualDetailsOpen = false;
+    let totalActualDetailsGroups = [];
+    const collapsedTotalActualProjectKeys = new Set();
+    let totalActualIncludeBugs = false;
     let totalLeavesPlannedDetailsOpen = false;
     let totalLeavesPlannedDetailsRows = [];
     let subtaskLogHoursByIssue = {{}};
     const plannedHoursInRangeParityCache = new Map();
+    const plannedHoursDetailsParityCache = new Map();
     let scorecardUpdateVersion = 0;
     let projectFilterLoadingVersion = 0;
     let teamFilterLoadingVersion = 0;
@@ -2927,24 +3447,39 @@ Total Leaves Taken = 0h</span>
     }}
 
     function buildPlannedHoursInRangeParityKey() {{
+      return buildPlannedHoursInRangeParityKeyFor({{
+        dateFrom: selectedDateFrom,
+        dateTo: selectedDateTo,
+        plannedHoursSource: selectedPlannedHoursSource,
+      }});
+    }}
+
+    function buildPlannedHoursInRangeParityKeyFor(selection) {{
+      const snapshot = selection && typeof selection === "object" ? selection : {{}};
       const projectScope = Array.from(selectedProjectKeys).sort().join(",");
       const assigneeScope = (!isAllTeamsSelected() && selectedTeamAssignees.size)
         ? Array.from(selectedTeamAssignees).sort().join(",")
         : "";
       return [
-        selectedDateFrom,
-        selectedDateTo,
-        selectedPlannedHoursSource,
+        String(snapshot.dateFrom || selectedDateFrom || ""),
+        String(snapshot.dateTo || selectedDateTo || ""),
+        String(snapshot.plannedHoursSource || selectedPlannedHoursSource || ""),
         projectScope,
         assigneeScope,
       ].join("|");
     }}
 
-    async function fetchPlannedHoursInRangeParityTotal() {{
+    async function fetchPlannedHoursInRangeParityTotal(selection) {{
+      const snapshot = selection && typeof selection === "object" ? selection : {{}};
+      const scorecardDateFrom = String(snapshot.dateFrom || selectedDateFrom || "");
+      const scorecardDateTo = String(snapshot.dateTo || selectedDateTo || "");
+      const scorecardPlannedHoursSource = normalizePlannedHoursSource(
+        snapshot.plannedHoursSource || selectedPlannedHoursSource
+      );
       if (!hasPlannedParityApi) {{
         return null;
       }}
-      if (normalizePlannedHoursSource(selectedPlannedHoursSource) !== "subtask_estimates") {{
+      if (scorecardPlannedHoursSource !== "subtask_estimates") {{
         return null;
       }}
       if (selectedProjectKeys.size === 0) {{
@@ -2953,13 +3488,17 @@ Total Leaves Taken = 0h</span>
       if (!isAllTeamsSelected() && selectedTeamAssignees.size === 0) {{
         return 0;
       }}
-      const parityKey = buildPlannedHoursInRangeParityKey();
+      const parityKey = buildPlannedHoursInRangeParityKeyFor({{
+        dateFrom: scorecardDateFrom,
+        dateTo: scorecardDateTo,
+        plannedHoursSource: scorecardPlannedHoursSource,
+      }});
       if (plannedHoursInRangeParityCache.has(parityKey)) {{
         return plannedHoursInRangeParityCache.get(parityKey);
       }}
       const params = new URLSearchParams();
-      params.set("from", selectedDateFrom);
-      params.set("to", selectedDateTo);
+      params.set("from", scorecardDateFrom);
+      params.set("to", scorecardDateTo);
       params.set("mode", "planned_dates");
       params.set("plan_source", "jira_estimates");
       params.set("projects", Array.from(selectedProjectKeys).sort().join(","));
@@ -2982,6 +3521,75 @@ Total Leaves Taken = 0h</span>
       ), 0));
       plannedHoursInRangeParityCache.set(parityKey, total);
       return total;
+    }}
+
+    async function fetchPlannedHoursParityDetailsGroups(selection) {{
+      const snapshot = selection && typeof selection === "object" ? selection : {{}};
+      const scorecardDateFrom = String(snapshot.dateFrom || selectedDateFrom || "");
+      const scorecardDateTo = String(snapshot.dateTo || selectedDateTo || "");
+      const scorecardPlannedHoursSource = normalizePlannedHoursSource(
+        snapshot.plannedHoursSource || selectedPlannedHoursSource
+      );
+      if (!hasPlannedParityApi) {{
+        return null;
+      }}
+      if (scorecardPlannedHoursSource !== "subtask_estimates") {{
+        return null;
+      }}
+      if (selectedProjectKeys.size === 0) {{
+        return [];
+      }}
+      if (!isAllTeamsSelected() && selectedTeamAssignees.size === 0) {{
+        return [];
+      }}
+      const parityKey = buildPlannedHoursInRangeParityKeyFor({{
+        dateFrom: scorecardDateFrom,
+        dateTo: scorecardDateTo,
+        plannedHoursSource: scorecardPlannedHoursSource,
+      }});
+      if (plannedHoursDetailsParityCache.has(parityKey)) {{
+        return plannedHoursDetailsParityCache.get(parityKey);
+      }}
+      const projectKeys = Array.from(selectedProjectKeys).sort();
+      const projectScope = projectKeys.join(",");
+      const groups = await Promise.all(projectKeys.map(async (projectKey) => {{
+        const params = new URLSearchParams();
+        params.set("from", scorecardDateFrom);
+        params.set("to", scorecardDateTo);
+        params.set("mode", "planned_dates");
+        params.set("plan_source", "jira_estimates");
+        params.set("projects", projectScope);
+        params.set("project_key", projectKey);
+        if (!isAllTeamsSelected() && selectedTeamAssignees.size) {{
+          params.set("assignees", Array.from(selectedTeamAssignees).sort().join(","));
+        }}
+        const response = await fetch(
+          APPROVED_PLANNED_DETAILS_ENDPOINT + "?" + params.toString(),
+          {{
+            method: "GET",
+          }}
+        );
+        const payload = await response.json().catch(() => ({{}}));
+        if (!response.ok || !payload || payload.ok === false) {{
+          throw new Error(String(payload && payload.error || ("Failed to fetch planned-hours details for " + projectKey + ".")));
+        }}
+        const epics = Array.isArray(payload && payload.epics) ? payload.epics : [];
+        return {{
+          project_key: String(payload && payload.project_key || projectKey || "").trim().toUpperCase(),
+          project_name: String(payload && payload.project_name || projectKey || "").trim(),
+          epics: epics.map((epic) => ({{
+            epic_jira_id: String(epic && epic.issue_key || "").trim().toUpperCase(),
+            epic_jira_name: String(epic && epic.summary || "").trim(),
+            epic_start_date: String(epic && epic.planned_start || "").trim(),
+            epic_due_date: String(epic && epic.planned_due || "").trim(),
+            planned_hours: roundHours(epic && epic.dispensed_in_range_hours),
+          }})).filter((epic) => (
+            epic.epic_jira_id || epic.epic_jira_name || toFiniteNumber(epic.planned_hours, 0) > 0
+          )),
+        }};
+      }}));
+      plannedHoursDetailsParityCache.set(parityKey, groups);
+      return groups;
     }}
 
     function extractSubtaskHoursMap(payload) {{
@@ -3061,23 +3669,23 @@ Total Leaves Taken = 0h</span>
       }}
       totalPlannedDetailsBodyEl.innerHTML = "";
       const groups = Array.isArray(totalPlannedDetailsGroups) ? totalPlannedDetailsGroups : [];
-      let totalEpics = 0;
+      let totalSubtasks = 0;
       let totalHours = 0;
       for (const group of groups) {{
-        const epics = Array.isArray(group && group.epics) ? group.epics : [];
-        totalEpics += epics.length;
-        for (const epic of epics) {{
-          totalHours += toFiniteNumber(epic && epic.planned_hours, 0);
+        const subtasks = Array.isArray(group && group.subtasks) ? group.subtasks : [];
+        totalSubtasks += subtasks.length;
+        for (const subtask of subtasks) {{
+          totalHours += toFiniteNumber(subtask && subtask.planned_hours, 0);
         }}
       }}
       totalPlannedDetailsMetaEl.textContent =
-        "Projects: " + String(groups.length) + " | Epics: " + String(totalEpics) + " | Planned Hours: " + formatHours(totalHours);
+        "Projects: " + String(groups.length) + " | Subtasks: " + String(totalSubtasks) + " | Planned Hours: " + formatHours(totalHours);
       if (!groups.length) {{
         const tr = document.createElement("tr");
         const td = document.createElement("td");
-        td.colSpan = 6;
+        td.colSpan = 7;
         td.className = "score-details-empty";
-        td.textContent = "No planned epic rows found for current date/team filters.";
+        td.textContent = "No planned subtask rows found for current date/team filters.";
         tr.appendChild(td);
         totalPlannedDetailsBodyEl.appendChild(tr);
         return;
@@ -3085,12 +3693,12 @@ Total Leaves Taken = 0h</span>
       for (const group of groups) {{
         const projectKey = String(group && group.project_key || "");
         const projectName = String(group && group.project_name || projectKey || "Unknown Project");
-        const epics = Array.isArray(group && group.epics) ? group.epics : [];
-        const groupHours = epics.reduce((sum, epic) => sum + toFiniteNumber(epic && epic.planned_hours, 0), 0);
+        const subtasks = Array.isArray(group && group.subtasks) ? group.subtasks : [];
+        const groupHours = subtasks.reduce((sum, subtask) => sum + toFiniteNumber(subtask && subtask.planned_hours, 0), 0);
         const projectTr = document.createElement("tr");
         projectTr.className = "planned-project-row";
         const projectTd = document.createElement("td");
-        projectTd.colSpan = 6;
+        projectTd.colSpan = 7;
         const projectBtn = document.createElement("button");
         projectBtn.type = "button";
         projectBtn.className = "planned-project-toggle";
@@ -3099,31 +3707,34 @@ Total Leaves Taken = 0h</span>
         projectBtn.innerHTML =
           '<span class="caret">' + (collapsed ? "+" : "-") + '</span>'
           + '<span>' + projectName + "</span>"
-          + '<span>(' + String(epics.length) + " epics, " + formatHours(groupHours) + ")</span>";
+          + '<span>(' + String(subtasks.length) + " subtasks, " + formatHours(groupHours) + ")</span>";
         projectTd.appendChild(projectBtn);
         projectTr.appendChild(projectTd);
         totalPlannedDetailsBodyEl.appendChild(projectTr);
 
         if (!collapsed) {{
-          for (const epic of epics) {{
+          for (const subtask of subtasks) {{
             const tr = document.createElement("tr");
             tr.className = "planned-epic-row";
             const tdProject = document.createElement("td");
             tdProject.textContent = "";
-            const tdEpicKey = document.createElement("td");
-            tdEpicKey.textContent = String(epic && epic.epic_jira_id || "");
-            const tdEpicName = document.createElement("td");
-            tdEpicName.textContent = String(epic && epic.epic_jira_name || "");
+            const tdSubtaskKey = document.createElement("td");
+            tdSubtaskKey.textContent = String(subtask && subtask.subtask_jira_id || "");
+            const tdTaskType = document.createElement("td");
+            tdTaskType.textContent = String(subtask && subtask.task_type || "Subtask");
+            const tdSubtaskName = document.createElement("td");
+            tdSubtaskName.textContent = String(subtask && subtask.subtask_name || "");
             const tdStart = document.createElement("td");
-            tdStart.textContent = String(epic && epic.epic_start_date || "");
+            tdStart.textContent = String(subtask && subtask.subtask_start_date || "");
             const tdDue = document.createElement("td");
-            tdDue.textContent = String(epic && epic.epic_due_date || "");
+            tdDue.textContent = String(subtask && subtask.subtask_due_date || "");
             const tdHours = document.createElement("td");
             tdHours.className = "hours";
-            tdHours.textContent = formatHoursPlain(epic && epic.planned_hours);
+            tdHours.textContent = formatHoursPlain(subtask && subtask.planned_hours);
             tr.appendChild(tdProject);
-            tr.appendChild(tdEpicKey);
-            tr.appendChild(tdEpicName);
+            tr.appendChild(tdSubtaskKey);
+            tr.appendChild(tdTaskType);
+            tr.appendChild(tdSubtaskName);
             tr.appendChild(tdStart);
             tr.appendChild(tdDue);
             tr.appendChild(tdHours);
@@ -3157,6 +3768,114 @@ Total Leaves Taken = 0h</span>
       if (totalLeavesPlannedCardEl) {{
         totalLeavesPlannedCardEl.classList.toggle("is-expanded", totalLeavesPlannedDetailsOpen);
         totalLeavesPlannedCardEl.setAttribute("aria-expanded", totalLeavesPlannedDetailsOpen ? "true" : "false");
+      }}
+    }}
+
+    function setTotalActualDetailsOpen(open) {{
+      totalActualDetailsOpen = !!open;
+      if (totalLoggedDetailsEl) {{
+        totalLoggedDetailsEl.hidden = !totalActualDetailsOpen;
+      }}
+      if (totalLoggedCardEl) {{
+        totalLoggedCardEl.classList.toggle("is-expanded", totalActualDetailsOpen);
+        totalLoggedCardEl.setAttribute("aria-expanded", totalActualDetailsOpen ? "true" : "false");
+      }}
+    }}
+
+    function renderTotalActualDetails() {{
+      if (!totalLoggedDetailsBodyEl || !totalLoggedDetailsMetaEl) {{
+        return;
+      }}
+      totalLoggedDetailsBodyEl.innerHTML = "";
+      const groups = Array.isArray(totalActualDetailsGroups) ? totalActualDetailsGroups : [];
+      let totalSubtasks = 0;
+      let totalHours = 0;
+      for (const group of groups) {{
+        const subtasks = Array.isArray(group && group.subtasks) ? group.subtasks : [];
+        totalSubtasks += subtasks.length;
+        for (const subtask of subtasks) {{
+          totalHours += toFiniteNumber(subtask && subtask.actual_hours, 0);
+        }}
+      }}
+      totalLoggedDetailsMetaEl.textContent =
+        "Projects: " + String(groups.length) + " | Subtasks: " + String(totalSubtasks) + " | Actual Hours: " + formatHours(totalHours);
+      if (!groups.length) {{
+        const tr = document.createElement("tr");
+        const td = document.createElement("td");
+        td.colSpan = 7;
+        td.className = "score-details-empty";
+        td.textContent = "No actual subtask rows found for current date/team filters.";
+        tr.appendChild(td);
+        totalLoggedDetailsBodyEl.appendChild(tr);
+        return;
+      }}
+      for (const group of groups) {{
+        const projectKey = String(group && group.project_key || "");
+        const projectName = String(group && group.project_name || projectKey || "Unknown Project");
+        const subtasks = Array.isArray(group && group.subtasks) ? group.subtasks : [];
+        const groupHours = subtasks.reduce((sum, subtask) => sum + toFiniteNumber(subtask && subtask.actual_hours, 0), 0);
+        const projectTr = document.createElement("tr");
+        projectTr.className = "planned-project-row";
+        const projectTd = document.createElement("td");
+        projectTd.colSpan = 7;
+        const projectBtn = document.createElement("button");
+        projectBtn.type = "button";
+        projectBtn.className = "planned-project-toggle";
+        projectBtn.setAttribute("data-project-key", projectKey);
+        const collapsed = collapsedTotalActualProjectKeys.has(projectKey);
+        projectBtn.innerHTML =
+          '<span class="caret">' + (collapsed ? "+" : "-") + '</span>'
+          + '<span>' + projectName + "</span>"
+          + '<span>(' + String(subtasks.length) + " subtasks, " + formatHours(groupHours) + ")</span>";
+        projectTd.appendChild(projectBtn);
+        projectTr.appendChild(projectTd);
+        totalLoggedDetailsBodyEl.appendChild(projectTr);
+
+        if (!collapsed) {{
+          for (const subtask of subtasks) {{
+            const tr = document.createElement("tr");
+            tr.className = "planned-epic-row";
+            const tdProject = document.createElement("td");
+            tdProject.textContent = "";
+            const tdSubtaskKey = document.createElement("td");
+            tdSubtaskKey.textContent = String(subtask && subtask.subtask_jira_id || "");
+            const tdTaskType = document.createElement("td");
+            tdTaskType.textContent = String(subtask && subtask.task_type || "Subtask");
+            const tdSubtaskName = document.createElement("td");
+            tdSubtaskName.textContent = String(subtask && subtask.subtask_name || "");
+            const tdStart = document.createElement("td");
+            tdStart.textContent = String(subtask && subtask.subtask_start_date || "");
+            const tdDue = document.createElement("td");
+            tdDue.textContent = String(subtask && subtask.subtask_due_date || "");
+            const tdHours = document.createElement("td");
+            tdHours.className = "hours";
+            tdHours.textContent = formatHoursPlain(subtask && subtask.actual_hours);
+            tr.appendChild(tdProject);
+            tr.appendChild(tdSubtaskKey);
+            tr.appendChild(tdTaskType);
+            tr.appendChild(tdSubtaskName);
+            tr.appendChild(tdStart);
+            tr.appendChild(tdDue);
+            tr.appendChild(tdHours);
+            totalLoggedDetailsBodyEl.appendChild(tr);
+          }}
+        }}
+      }}
+      for (const btn of Array.from(totalLoggedDetailsBodyEl.querySelectorAll(".planned-project-toggle"))) {{
+        btn.addEventListener("click", (event) => {{
+          event.preventDefault();
+          event.stopPropagation();
+          const key = String(btn.getAttribute("data-project-key") || "");
+          if (!key) {{
+            return;
+          }}
+          if (collapsedTotalActualProjectKeys.has(key)) {{
+            collapsedTotalActualProjectKeys.delete(key);
+          }} else {{
+            collapsedTotalActualProjectKeys.add(key);
+          }}
+          renderTotalActualDetails();
+        }});
       }}
     }}
 
@@ -3404,7 +4123,7 @@ Total Leaves Taken = 0h</span>
       if (teamFilterProgress && !teamFilterProgress.hidden) {{
         setTeamFilterLoading(true, requestVersion);
       }}
-      void updateScoreCards(scorecardSourceRows, requestVersion);
+      void updateScoreCards(scorecardSourceRows, requestVersion, buildScorecardSelectionSnapshot());
     }}
 
     async function refreshCapacityProfilesFromApi() {{
@@ -3439,7 +4158,7 @@ Total Leaves Taken = 0h</span>
       if (teamFilterProgress && !teamFilterProgress.hidden) {{
         setTeamFilterLoading(true, requestVersion);
       }}
-      void updateScoreCards(scorecardSourceRows, requestVersion);
+      void updateScoreCards(scorecardSourceRows, requestVersion, buildScorecardSelectionSnapshot());
     }}
 
     async function refreshManagedFieldsFromApi() {{
@@ -3668,11 +4387,11 @@ Total Leaves Taken = 0h</span>
       while (cursor <= end) {{
         const day = cursor.getDay();
         if (day >= 1 && day <= 5) {{
-          weekdayCount += 1;
           const iso = toIsoDate(cursor);
           if (holidaySet.has(iso)) {{
             holidayWeekdayCount += 1;
           }} else {{
+            weekdayCount += 1;
             const inRamadan = ramadanStart && ramadanEnd && cursor >= ramadanStart && cursor <= ramadanEnd;
             const perDay = inRamadan ? ramadanHours : standardHours;
             capacity += (employees * perDay);
@@ -3702,10 +4421,21 @@ Total Leaves Taken = 0h</span>
       return toFiniteNumber(breakdown.profileCapacityHours, 0);
     }}
 
-    async function updateScoreCards(sourceRows, requestVersion) {{
+    async function updateScoreCards(sourceRows, requestVersion, selection) {{
       const activeRequestVersion = Number.isFinite(Number(requestVersion))
         ? Number(requestVersion)
         : ++scorecardUpdateVersion;
+      const scorecardSelection = selection && typeof selection === "object"
+        ? selection
+        : buildScorecardSelectionSnapshot();
+      const scorecardDateFrom = String(scorecardSelection.dateFrom || selectedDateFrom || DEFAULT_DATE_FROM);
+      const scorecardDateTo = String(scorecardSelection.dateTo || selectedDateTo || DEFAULT_DATE_TO);
+      const scorecardActualHoursMode = String(
+        scorecardSelection.actualHoursMode || selectedActualHoursMode || DEFAULT_ACTUAL_HOURS_MODE
+      );
+      const scorecardPlannedHoursSource = normalizePlannedHoursSource(
+        scorecardSelection.plannedHoursSource || selectedPlannedHoursSource || DEFAULT_PLANNED_HOURS_SOURCE
+      );
       function isStaleScorecardUpdate() {{
         return activeRequestVersion !== scorecardUpdateVersion;
       }}
@@ -3784,10 +4514,19 @@ Total Leaves Taken = 0h</span>
         if (Object.prototype.hasOwnProperty.call(subtaskLogHoursByIssue, jiraKey)) {{
           return toFiniteNumber(subtaskLogHoursByIssue[jiraKey], 0) > 0;
         }}
-        if (selectedActualHoursMode === "log_date") {{
+        if (scorecardActualHoursMode === "log_date") {{
           return toFiniteNumber(row && row.actual_hours, 0) > 0;
         }}
         return false;
+      }}
+      function isBugSubtaskRow(row) {{
+        const rowType = String(row && row.row_type || "");
+        const typeLabel = String(row && row.type_label || "").toLowerCase();
+        return rowType === "subtask" && typeLabel === "bug";
+      }}
+      function isBugSubtaskIssueType(issueType) {{
+        const low = String(issueType || "").toLowerCase();
+        return low.includes("bug") && (low.includes("subtask") || low.includes("sub-task") || low.includes("task"));
       }}
       function epicPlannedInRangeFromSubtask(row, bounds) {{
         const epicCtx = resolveEpicContext(row);
@@ -3800,14 +4539,31 @@ Total Leaves Taken = 0h</span>
         return isDateWithinBounds(epicStart, bounds) || isDateWithinBounds(epicDue, bounds);
       }}
       function subtaskMatchesPlannedHoursSource(row, bounds) {{
-        const source = normalizePlannedHoursSource(selectedPlannedHoursSource);
+        const source = scorecardPlannedHoursSource;
+        let match = false;
         if (source === "epic_estimates") {{
-          return epicPlannedInRangeFromSubtask(row, bounds);
+          match = epicPlannedInRangeFromSubtask(row, bounds);
+        }} else if (source === "subtask_logs") {{
+          match = subtaskLoggedInRange(row);
+        }} else {{
+          match = subtaskPlannedInRange(row, bounds);
         }}
-        if (source === "subtask_logs") {{
-          return subtaskLoggedInRange(row);
+        if (!match) {{
+          return false;
         }}
-        return subtaskPlannedInRange(row, bounds);
+        if (isBugSubtaskRow(row)) {{
+          return false;
+        }}
+        return true;
+      }}
+      function subtaskMatchesActualHoursMode(row, bounds) {{
+        if (String(row && row.row_type || "") !== "subtask") {{
+          return false;
+        }}
+        if (scorecardActualHoursMode === "planned_dates") {{
+          return subtaskPlannedInRange(row, bounds);
+        }}
+        return subtaskLoggedInRange(row);
       }}
       function subtaskPlannedHours(row) {{
         const manHours = Number(row && row.man_hours);
@@ -3876,7 +4632,7 @@ Total Leaves Taken = 0h</span>
       let excludedPlannedHours = 0;
       let includedSubtaskCount = 0;
       let excludedSubtaskCount = 0;
-      const epicSummariesById = new Map();
+      const plannedSubtasksByProject = new Map();
       const fallbackLeavesDetailsRowsNext = [];
       let totalActualProjectHoursFromProjects = 0;
       let totalActualProjectHoursFromFilteredSubtasks = 0;
@@ -3885,7 +4641,11 @@ Total Leaves Taken = 0h</span>
       let plannedLeavesTaken = 0;
       let plannedLeavesNotTakenYet = 0;
       let unplannedLeavesTaken = 0;
-      const dateBounds = getDateFilterBounds();
+      let totalPlannedDetailsGroupsNext = [];
+      let totalActualDetailsGroupsNext = [];
+      let scopedSummaryPayload = null;
+      const dateBounds = getDateFilterBoundsFor(scorecardDateFrom, scorecardDateTo);
+      const actualSubtasksByProject = new Map();
       for (const row of rows) {{
         if (String(row && row.row_type || "") !== "project") {{
           continue;
@@ -3920,6 +4680,9 @@ Total Leaves Taken = 0h</span>
         if (!rowMatchesSelectedTeams(row)) {{
           continue;
         }}
+        if (isBugSubtaskRow(row)) {{
+          continue;
+        }}
         const plannedHours = subtaskPlannedHours(row);
         if (isExcludedPlannedProject(row)) {{
           excludedPlannedHours += plannedHours;
@@ -3935,92 +4698,197 @@ Total Leaves Taken = 0h</span>
         }} else {{
           totalPlannedHours += plannedHours;
           includedSubtaskCount += 1;
-          const epicCtx = resolveEpicContext(row);
           const projectCtx = resolveProjectContext(row);
-          const epicId = String(epicCtx && epicCtx.id || "") || String(row && row.parent_id || "") || String(row && row.id || "");
-          if (!epicSummariesById.has(epicId)) {{
-            epicSummariesById.set(epicId, {{
-              project_key: String(projectCtx && projectCtx.key || "").trim().toUpperCase(),
-              project_name: String(projectCtx && projectCtx.name || "").trim(),
-              epic_jira_id: String(epicCtx && epicCtx.jira_key || "").trim().toUpperCase(),
-              epic_jira_name: String(epicCtx && epicCtx.name || "").trim(),
-              epic_start_date_obj: null,
-              epic_due_date_obj: null,
-              planned_hours: 0,
+          const projectKey = String(projectCtx && projectCtx.key || "").trim().toUpperCase();
+          const projectName = String(projectCtx && projectCtx.name || "").trim() || projectKey || "Unknown Project";
+          if (!plannedSubtasksByProject.has(projectKey)) {{
+            plannedSubtasksByProject.set(projectKey, {{
+              project_key: projectKey,
+              project_name: projectName,
+              subtasks: [],
             }});
           }}
-          const epicSummary = epicSummariesById.get(epicId);
           const plannedStart = parseDateValue(row && (row.planned_start || row.start_date));
           const plannedDue = parseDateValue(row && (row.planned_end || row.planned_due || row.due_date));
-          if (plannedStart && (!epicSummary.epic_start_date_obj || plannedStart.getTime() < epicSummary.epic_start_date_obj.getTime())) {{
-            epicSummary.epic_start_date_obj = plannedStart;
-          }}
-          if (plannedDue && (!epicSummary.epic_due_date_obj || plannedDue.getTime() > epicSummary.epic_due_date_obj.getTime())) {{
-            epicSummary.epic_due_date_obj = plannedDue;
-          }}
-          epicSummary.planned_hours += plannedHours;
-          const subtaskActualHours = Number(row && row.actual_hours);
-          if (Number.isFinite(subtaskActualHours)) {{
-            totalActualProjectHoursFromFilteredSubtasks += subtaskActualHours;
-            filteredSubtaskActualCount += 1;
-          }}
+          plannedSubtasksByProject.get(projectKey).subtasks.push({{
+            subtask_jira_id: String(row && row.jira_key || "").trim().toUpperCase(),
+            subtask_name: String(row && row.aspect || "").trim(),
+            task_type: "Subtask",
+            subtask_start_date: plannedStart ? toIsoDate(plannedStart) : "",
+            subtask_due_date: plannedDue ? toIsoDate(plannedDue) : "",
+            planned_hours: roundHours(plannedHours),
+          }});
         }}
       }}
-      if (normalizePlannedHoursSource(selectedPlannedHoursSource) === "subtask_estimates") {{
+      for (const row of rows) {{
+        if (!subtaskMatchesActualHoursMode(row, dateBounds)) {{
+          continue;
+        }}
+        if (!rowMatchesSelectedTeams(row)) {{
+          continue;
+        }}
+        if (isExcludedPlannedProject(row)) {{
+          continue;
+        }}
+        if (!totalActualIncludeBugs && isBugSubtaskRow(row)) {{
+          continue;
+        }}
+        const subtaskActualHours = Number(row && row.actual_hours);
+        if (Number.isFinite(subtaskActualHours)) {{
+          totalActualProjectHoursFromFilteredSubtasks += subtaskActualHours;
+          filteredSubtaskActualCount += 1;
+          const projectCtx = resolveProjectContext(row);
+          const projectKey = String(projectCtx && projectCtx.key || "").trim().toUpperCase();
+          const projectName = String(projectCtx && projectCtx.name || "").trim() || projectKey || "Unknown Project";
+          if (!actualSubtasksByProject.has(projectKey)) {{
+            actualSubtasksByProject.set(projectKey, {{
+              project_key: projectKey,
+              project_name: projectName,
+              subtasks: [],
+            }});
+          }}
+          const plannedStart = parseDateValue(row && (row.planned_start || row.start_date));
+          const plannedDue = parseDateValue(row && (row.planned_end || row.planned_due || row.due_date));
+          actualSubtasksByProject.get(projectKey).subtasks.push({{
+            subtask_jira_id: String(row && row.jira_key || "").trim().toUpperCase(),
+            subtask_name: String(row && row.aspect || "").trim(),
+            task_type: isBugSubtaskRow(row) ? "Bug Subtask" : "Subtask",
+            subtask_start_date: plannedStart ? toIsoDate(plannedStart) : "",
+            subtask_due_date: plannedDue ? toIsoDate(plannedDue) : "",
+            actual_hours: roundHours(subtaskActualHours),
+          }});
+        }}
+      }}
+      if (scorecardPlannedHoursSource === "subtask_estimates") {{
         try {{
-          const parityPlannedInRangeHours = await fetchPlannedHoursInRangeParityTotal();
+          scopedSummaryPayload = await fetchScopedSubtasksSummary(scorecardSelection);
           if (isStaleScorecardUpdate()) {{
             return;
           }}
-          if (Number.isFinite(parityPlannedInRangeHours)) {{
-            totalPlannedHours = toFiniteNumber(parityPlannedInRangeHours, totalPlannedHours);
+          const scopedRows = Array.isArray(scopedSummaryPayload && scopedSummaryPayload.rows) ? scopedSummaryPayload.rows : [];
+          if (scopedSummaryPayload && typeof scopedSummaryPayload === "object") {{
+            const scopedPlannedSubtasks = scopedRows.filter((row) => !isBugSubtaskIssueType(row && row.issue_type));
+            totalPlannedHours = roundHours(scopedPlannedSubtasks.reduce((sum, row) => (
+              sum + toFiniteNumber(row && row.original_estimate_hours, 0)
+            ), 0));
+            const scopedActualSubtasks = scopedRows.filter((row) => (
+              toFiniteNumber(row && row.logged_hours, 0) > 0
+              && (totalActualIncludeBugs || !isBugSubtaskIssueType(row && row.issue_type))
+            ));
+            totalActualProjectHoursFromFilteredSubtasks = roundHours(scopedActualSubtasks.reduce((sum, row) => (
+              sum + toFiniteNumber(row && row.logged_hours, 0)
+            ), 0));
+            filteredSubtaskActualCount = scopedActualSubtasks.length;
+          }}
+          if (Array.isArray(scopedRows) && scopedRows.length) {{
+            const scopedSubtasksByProject = new Map();
+            const scopedActualSubtasksByProject = new Map();
+            for (const row of scopedRows) {{
+              const issueKey = String(row && row.issue_key || "").trim().toUpperCase();
+              const projectKey = String(row && row.project_key || "").trim().toUpperCase();
+              const projectName = projectKey;
+              const issueMeta = allRows.find((item) => String(item && item.jira_key || "").trim().toUpperCase() === issueKey) || null;
+              const projectCtx = issueMeta ? resolveProjectContext(issueMeta) : null;
+              const resolvedProjectName = String(projectCtx && projectCtx.name || "").trim() || projectName || projectKey || "Unknown Project";
+              const plannedStart = parseDateValue(row && row.start_date);
+              const plannedDue = parseDateValue(row && row.due_date);
+              const loggedHours = roundHours(toFiniteNumber(row && row.logged_hours, 0));
+              const isBugRow = isBugSubtaskIssueType(row && row.issue_type);
+              if (loggedHours > 0) {{
+                if (!totalActualIncludeBugs && isBugRow) {{
+                  // Skip bug subtasks from Actual Hours scorecard when Include Bugs is OFF.
+                }} else {{
+                if (!scopedActualSubtasksByProject.has(projectKey)) {{
+                  scopedActualSubtasksByProject.set(projectKey, {{
+                    project_key: projectKey,
+                    project_name: resolvedProjectName,
+                    subtasks: [],
+                  }});
+                }}
+                scopedActualSubtasksByProject.get(projectKey).subtasks.push({{
+                  subtask_jira_id: issueKey,
+                  subtask_name: String(issueMeta && issueMeta.aspect || "").trim(),
+                  task_type: isBugRow ? "Bug Subtask" : "Subtask",
+                  subtask_start_date: plannedStart ? toIsoDate(plannedStart) : "",
+                  subtask_due_date: plannedDue ? toIsoDate(plannedDue) : "",
+                  actual_hours: loggedHours,
+                }});
+                }}
+              }}
+              if (isBugSubtaskIssueType(row && row.issue_type)) {{
+                continue;
+              }}
+              if (!scopedSubtasksByProject.has(projectKey)) {{
+                scopedSubtasksByProject.set(projectKey, {{
+                  project_key: projectKey,
+                  project_name: resolvedProjectName,
+                  subtasks: [],
+                }});
+              }}
+              scopedSubtasksByProject.get(projectKey).subtasks.push({{
+                subtask_jira_id: issueKey,
+                subtask_name: String(issueMeta && issueMeta.aspect || "").trim(),
+                task_type: "Subtask",
+                subtask_start_date: plannedStart ? toIsoDate(plannedStart) : "",
+                subtask_due_date: plannedDue ? toIsoDate(plannedDue) : "",
+                planned_hours: roundHours(toFiniteNumber(row && row.original_estimate_hours, 0)),
+              }});
+            }}
+            totalPlannedDetailsGroupsNext.length = 0;
+            for (const group of Array.from(scopedSubtasksByProject.values())) {{
+              totalPlannedDetailsGroupsNext.push(group);
+            }}
+            totalActualDetailsGroupsNext.length = 0;
+            for (const group of Array.from(scopedActualSubtasksByProject.values())) {{
+              totalActualDetailsGroupsNext.push(group);
+            }}
           }}
         }} catch (error) {{
           if (isStaleScorecardUpdate()) {{
             return;
           }}
-          console.warn("Failed to align planned-hours total with Approved vs Planned summary:", error);
+          console.warn("Failed to align Nested View scorecards with shared scoped subtasks:", error);
         }}
       }}
       if (isStaleScorecardUpdate()) {{
         return;
       }}
-      const extendedActualsEnabled = selectedActualHoursMode === "planned_dates";
+      const extendedActualsEnabled = scorecardActualHoursMode === "planned_dates";
       const totalActualProjectHours = (filteredSubtaskActualCount > 0 || hasNestedActualsApi)
         ? totalActualProjectHoursFromFilteredSubtasks
         : totalActualProjectHoursFromProjects;
-      const groupedEpicSummaries = new Map();
-      for (const summary of epicSummariesById.values()) {{
-        const projectKey = String(summary && summary.project_key || "").trim().toUpperCase();
-        const projectName = String(summary && summary.project_name || "").trim() || projectKey || "Unknown Project";
-        const groupKey = projectKey || projectName;
-        if (!groupedEpicSummaries.has(groupKey)) {{
-          groupedEpicSummaries.set(groupKey, {{
-            project_key: projectKey,
-            project_name: projectName,
-            epics: [],
-          }});
-        }}
-        groupedEpicSummaries.get(groupKey).epics.push({{
-          epic_jira_id: String(summary && summary.epic_jira_id || "").trim(),
-          epic_jira_name: String(summary && summary.epic_jira_name || "").trim(),
-          epic_start_date: summary && summary.epic_start_date_obj ? toIsoDate(summary.epic_start_date_obj) : "",
-          epic_due_date: summary && summary.epic_due_date_obj ? toIsoDate(summary.epic_due_date_obj) : "",
-          planned_hours: roundHours(summary && summary.planned_hours),
-        }});
-      }}
-      const totalPlannedDetailsGroupsNext = Array.from(groupedEpicSummaries.values());
+      const groupedPlannedSubtasks = new Map(plannedSubtasksByProject);
+      const groupedActualSubtasks = new Map(actualSubtasksByProject);
+      totalPlannedDetailsGroupsNext = totalPlannedDetailsGroupsNext.length
+        ? totalPlannedDetailsGroupsNext
+        : Array.from(groupedPlannedSubtasks.values());
+      totalActualDetailsGroupsNext = totalActualDetailsGroupsNext.length
+        ? totalActualDetailsGroupsNext
+        : Array.from(groupedActualSubtasks.values());
       totalPlannedDetailsGroupsNext.sort((left, right) =>
         String(left && left.project_name || "").localeCompare(String(right && right.project_name || ""))
       );
+      totalActualDetailsGroupsNext.sort((left, right) =>
+        String(left && left.project_name || "").localeCompare(String(right && right.project_name || ""))
+      );
       for (const group of totalPlannedDetailsGroupsNext) {{
-        const epics = Array.isArray(group && group.epics) ? group.epics : [];
-        epics.sort((left, right) => {{
+        const subtasks = Array.isArray(group && group.subtasks) ? group.subtasks : [];
+        subtasks.sort((left, right) => {{
           const diff = toFiniteNumber(right && right.planned_hours, 0) - toFiniteNumber(left && left.planned_hours, 0);
           if (Math.abs(diff) > 1e-9) {{
             return diff;
           }}
-          return String(left && left.epic_jira_id || "").localeCompare(String(right && right.epic_jira_id || ""));
+          return String(left && left.subtask_jira_id || "").localeCompare(String(right && right.subtask_jira_id || ""));
+        }});
+      }}
+      for (const group of totalActualDetailsGroupsNext) {{
+        const subtasks = Array.isArray(group && group.subtasks) ? group.subtasks : [];
+        subtasks.sort((left, right) => {{
+          const diff = toFiniteNumber(right && right.actual_hours, 0) - toFiniteNumber(left && left.actual_hours, 0);
+          if (Math.abs(diff) > 1e-9) {{
+            return diff;
+          }}
+          return String(left && left.subtask_jira_id || "").localeCompare(String(right && right.subtask_jira_id || ""));
         }});
       }}
       const validProjectKeys = new Set(totalPlannedDetailsGroupsNext.map((group) => String(group && group.project_key || "")));
@@ -4032,8 +4900,19 @@ Total Leaves Taken = 0h</span>
       for (const key of validProjectKeys) {{
         collapsedTotalPlannedProjectKeys.add(key);
       }}
+      const validActualProjectKeys = new Set(totalActualDetailsGroupsNext.map((group) => String(group && group.project_key || "")));
+      for (const key of Array.from(collapsedTotalActualProjectKeys)) {{
+        if (!validActualProjectKeys.has(key)) {{
+          collapsedTotalActualProjectKeys.delete(key);
+        }}
+      }}
+      for (const key of validActualProjectKeys) {{
+        collapsedTotalActualProjectKeys.add(key);
+      }}
       totalPlannedDetailsGroups = totalPlannedDetailsGroupsNext;
+      totalActualDetailsGroups = totalActualDetailsGroupsNext;
       renderTotalPlannedDetails();
+      renderTotalActualDetails();
       function computeEmbeddedLeaveMetricsForRange(bounds) {{
         const empty = {{
           hasData: false,
@@ -4250,8 +5129,8 @@ Total Leaves Taken = 0h</span>
         const selectedProfileLabel = appliedCapacityProfile
           ? (String(appliedCapacityProfile.name || "").trim() || (String(appliedCapacityProfile.from_date || "") + " to " + String(appliedCapacityProfile.to_date || "")))
           : "None";
-        const fromDate = dateBounds && dateBounds.start ? toIsoDate(dateBounds.start) : "-";
-        const toDate = dateBounds && dateBounds.end ? toIsoDate(dateBounds.end) : "-";
+        const fromDate = dateBounds && dateBounds.start ? toIsoDate(dateBounds.start) : scorecardDateFrom;
+        const toDate = dateBounds && dateBounds.end ? toIsoDate(dateBounds.end) : scorecardDateTo;
         const profileEmployees = toFiniteNumber(capacityBreakdown && capacityBreakdown.employees, 0);
         const profileWeekdays = toFiniteNumber(capacityBreakdown && capacityBreakdown.weekdayCount, 0);
         const perDayHours = Number.isFinite(profileCapacityHours) && profileEmployees > 0 && profileWeekdays > 0
@@ -4266,7 +5145,7 @@ Total Leaves Taken = 0h</span>
           + "Per Day Hours = " + formatHours(perDayHours) + "\\n"
           + "Standard Hours/Day = " + formatHours(toFiniteNumber(capacityBreakdown && capacityBreakdown.standardHours, 0)) + "\\n"
           + "Ramadan Hours/Day = " + formatHours(toFiniteNumber(capacityBreakdown && capacityBreakdown.ramadanHours, 0)) + "\\n"
-          + "Working Weekdays (Mon-Fri) = " + String(profileWeekdays) + "\\n"
+          + "Available Business Days (Mon-Fri, non-holiday) = " + String(profileWeekdays) + "\\n"
           + "Ramadan Weekdays (Mon-Fri, non-holiday) = " + String(toFiniteNumber(capacityBreakdown && capacityBreakdown.ramadanWeekdayCount, 0)) + "\\n"
           + "Non-Ramadan Weekdays (Mon-Fri, non-holiday) = " + String(toFiniteNumber(capacityBreakdown && capacityBreakdown.regularWeekdayCount, 0)) + "\\n"
           + "Holiday Weekdays in Range = " + String(toFiniteNumber(capacityBreakdown && capacityBreakdown.holidayWeekdayCount, 0)) + "\\n"
@@ -4281,12 +5160,55 @@ Total Leaves Taken = 0h</span>
           + "Included Subtasks Count = " + String(includedSubtaskCount) + "\\n"
           + "Excluded (RLT) Subtasks Count = " + String(excludedSubtaskCount) + "\\n"
           + "Excluded (RLT) Subtasks Planned Sum = " + formatHours(excludedPlannedHours) + "\\n"
-          + "Total Planned Hours = " + formatHours(totalPlannedHours);
+          + "Total Planned Hours = " + formatHours(totalPlannedHours) + "\\n"
+          + "\\nSQL example (subtasks only; adjust dates to match this report):\\n"
+          + "WITH latest_run AS (\\n"
+          + "  SELECT run_id\\n"
+          + "  FROM canonical_refresh_runs\\n"
+          + "  WHERE status = 'success'\\n"
+          + "  ORDER BY updated_at_utc DESC\\n"
+          + "  LIMIT 1\\n"
+          + "), scoped_subtasks AS (\\n"
+          + "  SELECT\\n"
+          + "    ci.issue_key,\\n"
+          + "    ci.issue_type,\\n"
+          + "    COALESCE(ci.original_estimate_hours, 0) AS planned_hours\\n"
+          + "  FROM canonical_issues ci\\n"
+          + "  WHERE ci.run_id = (SELECT run_id FROM latest_run)\\n"
+          + "    AND ci.project_key <> 'RLT'\\n"
+          + "    AND (\\n"
+          + "      LOWER(ci.issue_type) LIKE '%sub-task%'\\n"
+          + "      OR LOWER(ci.issue_type) LIKE '%subtask%'\\n"
+          + "    )\\n"
+          + "    AND (\\n"
+          + "      (ci.start_date >= '2026-02-01' AND ci.start_date <= '2026-02-28')\\n"
+          + "      OR\\n"
+          + "      (ci.due_date   >= '2026-02-01' AND ci.due_date   <= '2026-02-28')\\n"
+          + "    )\\n"
+          + "), worklog_totals AS (\\n"
+          + "  SELECT\\n"
+          + "    cw.issue_key,\\n"
+          + "    ROUND(SUM(COALESCE(cw.hours_logged, 0)), 2) AS logged_hours\\n"
+          + "  FROM canonical_worklogs cw\\n"
+          + "  WHERE cw.run_id = (SELECT run_id FROM latest_run)\\n"
+          + "    AND cw.started_date >= '2026-02-01'\\n"
+          + "    AND cw.started_date <= '2026-02-28'\\n"
+          + "  GROUP BY cw.issue_key\\n"
+          + ")\\n"
+          + "SELECT\\n"
+          + "  ss.issue_key                          AS subtask_id,\\n"
+          + "  ss.issue_type                         AS work_item_type,\\n"
+          + "  ROUND(ss.planned_hours, 2)            AS original_estimate_hours,\\n"
+          + "  COALESCE(wt.logged_hours, 0)          AS logged_hours\\n"
+          + "FROM scoped_subtasks ss\\n"
+          + "LEFT JOIN worklog_totals wt\\n"
+          + "  ON wt.issue_key = ss.issue_key\\n"
+          + "ORDER BY ss.issue_key;\\n";
       }}
       if (totalLoggedTipNode) {{
         if (extendedActualsEnabled) {{
           totalLoggedTipNode.textContent =
-            "Formula: Total Actual Hours = Sum(All Logged Hours for subtasks included in Planned Hours set), excluding RLT (RnD Leave Tracker).\\n"
+            "Formula: Total Actual Hours = Sum(All Logged Hours for subtasks whose planned Start OR Due date is within selected range), excluding RLT (RnD Leave Tracker).\\n"
             + "Values:\\n"
             + "Included Subtasks Actual Sum = " + formatHours(totalActualProjectHoursFromFilteredSubtasks) + "\\n"
             + "Included Subtasks Count = " + String(filteredSubtaskActualCount) + "\\n"
@@ -4294,7 +5216,7 @@ Total Leaves Taken = 0h</span>
             + "Total Actual Hours = " + formatHours(totalActualProjectHours);
         }} else {{
           totalLoggedTipNode.textContent =
-            "Formula: Total Actual Hours = Sum(Logged Hours in selected date range for subtasks included in Planned Hours set), excluding RLT (RnD Leave Tracker).\\n"
+            "Formula: Total Actual Hours = Sum(Logged Hours in selected date range for subtasks with worklog dates in selected range), excluding RLT (RnD Leave Tracker).\\n"
             + "Values:\\n"
             + "Included Subtasks Actual Sum = " + formatHours(totalActualProjectHoursFromFilteredSubtasks) + "\\n"
             + "Included Subtasks Count = " + String(filteredSubtaskActualCount) + "\\n"
@@ -4405,7 +5327,7 @@ Total Leaves Taken = 0h</span>
       if (teamFilterProgress && !teamFilterProgress.hidden) {{
         setTeamFilterLoading(true, requestVersion);
       }}
-      void updateScoreCards(scorecardSourceRows, requestVersion);
+      void updateScoreCards(scorecardSourceRows, requestVersion, buildScorecardSelectionSnapshot());
       renderCapacityProfileDetails();
     }}
 
@@ -4419,7 +5341,7 @@ Total Leaves Taken = 0h</span>
       if (teamFilterProgress && !teamFilterProgress.hidden) {{
         setTeamFilterLoading(true, requestVersion);
       }}
-      void updateScoreCards(scorecardSourceRows, requestVersion);
+      void updateScoreCards(scorecardSourceRows, requestVersion, buildScorecardSelectionSnapshot());
       renderCapacityProfileDetails();
       if (capacityProfileDetailsEl) {{
         capacityProfileDetailsEl.textContent += " | Using project totals.";
@@ -5192,8 +6114,6 @@ Total Leaves Taken = 0h</span>
         setDateFilterStatus("Select a valid date range.");
       }} else if (dirty) {{
         setDateFilterStatus("Date range, mode, or planned hours source changed. Click apply.");
-      }} else if (hasNestedActualsApi) {{
-        setDateFilterStatus("Apply recomputes the report even for the current date range.");
       }} else {{
         setDateFilterStatus("");
       }}
@@ -5205,9 +6125,38 @@ Total Leaves Taken = 0h</span>
         selectedDateFrom = selectedDateTo;
         selectedDateTo = tmp;
       }}
+      return getDateFilterBoundsFor(selectedDateFrom, selectedDateTo);
+    }}
+
+    function getDateFilterBoundsFor(fromValue, toValue) {{
+      let normalizedFrom = String(fromValue || DEFAULT_DATE_FROM);
+      let normalizedTo = String(toValue || DEFAULT_DATE_TO);
+      if (normalizedFrom > normalizedTo) {{
+        const tmp = normalizedFrom;
+        normalizedFrom = normalizedTo;
+        normalizedTo = tmp;
+      }}
       return {{
-        start: parseFilterDate(selectedDateFrom) || parseFilterDate(DEFAULT_DATE_FROM),
-        end: parseFilterDate(selectedDateTo) || parseFilterDate(DEFAULT_DATE_TO),
+        start: parseFilterDate(normalizedFrom) || parseFilterDate(DEFAULT_DATE_FROM),
+        end: parseFilterDate(normalizedTo) || parseFilterDate(DEFAULT_DATE_TO),
+      }};
+    }}
+
+    function normalizeActualHoursMode(value) {{
+      return String(value || "").trim().toLowerCase() === "planned_dates"
+        ? "planned_dates"
+        : "log_date";
+    }}
+
+    function buildScorecardSelectionSnapshot(overrides) {{
+      const snapshot = overrides && typeof overrides === "object" ? overrides : {{}};
+      return {{
+        dateFrom: String(snapshot.dateFrom || selectedDateFrom || DEFAULT_DATE_FROM),
+        dateTo: String(snapshot.dateTo || selectedDateTo || DEFAULT_DATE_TO),
+        actualHoursMode: normalizeActualHoursMode(snapshot.actualHoursMode || selectedActualHoursMode || DEFAULT_ACTUAL_HOURS_MODE),
+        plannedHoursSource: normalizePlannedHoursSource(
+          snapshot.plannedHoursSource || selectedPlannedHoursSource || DEFAULT_PLANNED_HOURS_SOURCE
+        ),
       }};
     }}
 
@@ -5246,6 +6195,16 @@ Total Leaves Taken = 0h</span>
       }}
     }}
 
+    function resolveRowIssueKey(row) {{
+      const explicit = String(row && row.jira_key || "").trim().toUpperCase();
+      if (explicit) {{
+        return explicit;
+      }}
+      const aspect = String(row && row.aspect || "").trim().toUpperCase();
+      const match = aspect.match(/([A-Z][A-Z0-9]+-\\d+)/);
+      return match ? String(match[1] || "").trim().toUpperCase() : "";
+    }}
+
     function applyFetchedActualHours(payload) {{
       const subtaskHours = payload && payload.subtask_hours_by_issue && typeof payload.subtask_hours_by_issue === "object"
         ? payload.subtask_hours_by_issue
@@ -5263,16 +6222,32 @@ Total Leaves Taken = 0h</span>
         childrenByParentId.get(row.parent_id).push(row.id);
       }}
 
+      function getChildRows(parentId) {{
+        const childIds = childrenByParentId.get(parentId) || [];
+        return childIds
+          .map((childId) => byId.get(childId))
+          .filter(Boolean);
+      }}
+
+      function hasWorkChildren(row) {{
+        const childRows = getChildRows(row && row.id);
+        return childRows.some((child) => WORK_ROW_TYPES.has(String(child && child.row_type || "")));
+      }}
+
       for (const row of allRows) {{
-        if (row.row_type !== "subtask") {{
+        const rowType = String(row && row.row_type || "");
+        if (!WORK_ROW_TYPES.has(rowType)) {{
           continue;
         }}
-        const jiraKey = String(row.jira_key || "").trim().toUpperCase();
+        if (hasWorkChildren(row)) {{
+          continue;
+        }}
+        const jiraKey = resolveRowIssueKey(row);
         const nextHours = jiraKey ? toFiniteNumber(subtaskHours[jiraKey], 0) : 0;
         assignComputedMetrics(row, nextHours);
       }}
 
-      function sumSubtaskHoursDescendants(parentId) {{
+      function sumWorkHoursDescendants(parentId) {{
         const childIds = childrenByParentId.get(parentId) || [];
         let total = 0;
         for (const childId of childIds) {{
@@ -5280,20 +6255,20 @@ Total Leaves Taken = 0h</span>
           if (!child) {{
             continue;
           }}
-          if (child.row_type === "subtask") {{
-            total += toFiniteNumber(child.actual_hours, 0);
-          }}
-          total += sumSubtaskHoursDescendants(childId);
+          total += toFiniteNumber(child.actual_hours, 0);
         }}
         return total;
       }}
 
-      for (const rowType of ["story", "rmi", "project"]) {{
+      for (const rowType of ["story", "rmi", "product", "project"]) {{
         for (const row of allRows) {{
           if (row.row_type !== rowType) {{
             continue;
           }}
-          const rolledHours = sumSubtaskHoursDescendants(row.id);
+          if (!hasWorkChildren(row)) {{
+            continue;
+          }}
+          const rolledHours = sumWorkHoursDescendants(row.id);
           assignComputedMetrics(row, rolledHours);
         }}
       }}
@@ -5303,6 +6278,9 @@ Total Leaves Taken = 0h</span>
       const fromParam = encodeURIComponent(String(fromDate || ""));
       const toParam = encodeURIComponent(String(toDate || ""));
       const modeParam = encodeURIComponent(String(mode || DEFAULT_ACTUAL_HOURS_MODE));
+      const projectsParam = selectedProjectKeys.size
+        ? ("&projects=" + encodeURIComponent(Array.from(selectedProjectKeys).sort().join(",")))
+        : "";
       const assignees = Array.isArray(selectedAssigneesSet)
         ? selectedAssigneesSet
         : Array.from(selectedAssigneesSet || []);
@@ -5314,6 +6292,7 @@ Total Leaves Taken = 0h</span>
         + "?from=" + fromParam
         + "&to=" + toParam
         + "&mode=" + modeParam
+        + projectsParam
         + assigneesParam
         + "&report=nested_view",
         {{
@@ -5326,12 +6305,53 @@ Total Leaves Taken = 0h</span>
       return payload;
     }}
 
+    async function fetchScopedSubtasksSummary(selection) {{
+      const snapshot = selection && typeof selection === "object" ? selection : buildScorecardSelectionSnapshot();
+      const scorecardDateFrom = String(snapshot.dateFrom || selectedDateFrom || DEFAULT_DATE_FROM);
+      const scorecardDateTo = String(snapshot.dateTo || selectedDateTo || DEFAULT_DATE_TO);
+      const scorecardActualHoursMode = String(
+        snapshot.actualHoursMode || selectedActualHoursMode || DEFAULT_ACTUAL_HOURS_MODE
+      );
+      const params = new URLSearchParams();
+      params.set("from", scorecardDateFrom);
+      params.set("to", scorecardDateTo);
+      params.set("mode", scorecardActualHoursMode === "planned_dates" ? "extended" : "log_date");
+      params.set("projects", Array.from(selectedProjectKeys).sort().join(","));
+      if (!isAllTeamsSelected() && selectedTeamAssignees.size) {{
+        params.set("assignees", Array.from(selectedTeamAssignees).sort().join(","));
+      }}
+      const response = await fetch(SCOPED_SUBTASKS_ENDPOINT + "?" + params.toString(), {{ method: "GET" }});
+      const payload = await response.json().catch(() => ({{}}));
+      if (!response.ok || !payload || payload.ok === false) {{
+        throw new Error(String(payload && payload.error || "Failed to fetch scoped subtasks."));
+      }}
+      return payload;
+    }}
+
     async function applyPendingDateRange() {{
+      pendingDateFrom = dateFilterFromInput
+        ? (dateFilterFromInput.value || DEFAULT_DATE_FROM)
+        : pendingDateFrom;
+      pendingDateTo = dateFilterToInput
+        ? (dateFilterToInput.value || DEFAULT_DATE_TO)
+        : pendingDateTo;
+      pendingActualHoursMode = actualHoursModeSelect
+        ? String(actualHoursModeSelect.value || DEFAULT_ACTUAL_HOURS_MODE)
+        : pendingActualHoursMode;
+      pendingPlannedHoursSource = plannedHoursSourceSelect
+        ? normalizePlannedHoursSource(plannedHoursSourceSelect.value || DEFAULT_PLANNED_HOURS_SOURCE)
+        : pendingPlannedHoursSource;
+      if (extendedActualHoursToggle) {{
+        pendingActualHoursMode = extendedActualHoursToggle.checked ? "planned_dates" : "log_date";
+        if (actualHoursModeSelect) {{
+          actualHoursModeSelect.value = pendingActualHoursMode;
+        }}
+      }}
       normalizePendingDateRange();
       const nextFrom = pendingDateFrom;
       const nextTo = pendingDateTo;
-      const nextMode = pendingActualHoursMode;
-      const nextPlannedHoursSource = pendingPlannedHoursSource;
+      const nextMode = normalizeActualHoursMode(pendingActualHoursMode);
+      const nextPlannedHoursSource = normalizePlannedHoursSource(pendingPlannedHoursSource);
       if (!parseFilterDate(nextFrom) || !parseFilterDate(nextTo)) {{
         updateDateRangeApplyState();
         return;
@@ -5354,10 +6374,31 @@ Total Leaves Taken = 0h</span>
         selectedPlannedHoursSource = nextPlannedHoursSource;
         localStorage.setItem(ACTUAL_HOURS_MODE_STORAGE_KEY, selectedActualHoursMode);
         localStorage.setItem(PLANNED_HOURS_SOURCE_STORAGE_KEY, selectedPlannedHoursSource);
-        rerender(true);
+        rerender(true, {{
+          selection: {{
+            dateFrom: nextFrom,
+            dateTo: nextTo,
+            actualHoursMode: nextMode,
+            plannedHoursSource: nextPlannedHoursSource,
+          }},
+        }});
       }} catch (error) {{
-        setDateFilterStatus(String(error && error.message || error || "Failed to apply date range."));
-        return;
+        if (hasNestedActualsApi) {{
+          applyOriginalMetricsToRows();
+        }}
+        selectedDateFrom = nextFrom;
+        selectedDateTo = nextTo;
+        selectedActualHoursMode = nextMode;
+        selectedPlannedHoursSource = nextPlannedHoursSource;
+        rerender(true, {{
+          selection: {{
+            dateFrom: nextFrom,
+            dateTo: nextTo,
+            actualHoursMode: nextMode,
+            plannedHoursSource: nextPlannedHoursSource,
+          }},
+        }});
+        setDateFilterStatus(String(error && error.message || error || "Actual hours API unavailable; showing client-side filtered view."));
       }} finally {{
         setDateApplyBusy(false);
       }}
@@ -5372,9 +6413,11 @@ Total Leaves Taken = 0h</span>
       return value >= bounds.start.getTime() && value <= bounds.end.getTime();
     }}
 
-    function matchesDateFilter(row) {{
+    function matchesDateFilter(row, selection) {{
+      const activeSelection = buildScorecardSelectionSnapshot(selection);
       const rowType = String(row && row.row_type || "");
-      const source = normalizePlannedHoursSource(selectedPlannedHoursSource);
+      const source = activeSelection.plannedHoursSource;
+      const bounds = getDateFilterBoundsFor(activeSelection.dateFrom, activeSelection.dateTo);
       if (source === "epic_estimates") {{
         if (!DATE_FILTER_WORK_TYPES.has(rowType)) {{
           return false;
@@ -5384,7 +6427,6 @@ Total Leaves Taken = 0h</span>
         if (!plannedStart && !plannedEnd) {{
           return false;
         }}
-        const bounds = getDateFilterBounds();
         return isDateWithinBounds(plannedStart, bounds) || isDateWithinBounds(plannedEnd, bounds);
       }}
       if (rowType !== "subtask") {{
@@ -5398,7 +6440,7 @@ Total Leaves Taken = 0h</span>
         if (Object.prototype.hasOwnProperty.call(subtaskLogHoursByIssue, jiraKey)) {{
           return toFiniteNumber(subtaskLogHoursByIssue[jiraKey], 0) > 0;
         }}
-        if (selectedActualHoursMode === "log_date") {{
+        if (activeSelection.actualHoursMode === "log_date") {{
           return toFiniteNumber(row && row.actual_hours, 0) > 0;
         }}
         return false;
@@ -5408,14 +6450,14 @@ Total Leaves Taken = 0h</span>
       if (!plannedStart && !plannedEnd) {{
         return false;
       }}
-      const bounds = getDateFilterBounds();
       return isDateWithinBounds(plannedStart, bounds) || isDateWithinBounds(plannedEnd, bounds);
     }}
 
-    function applyDateFilterWithAncestors(rows) {{
+    function applyDateFilterWithAncestors(rows, includeDescendants, selection) {{
       if (!rows.length) {{
         return rows;
       }}
+      const keepDescendants = includeDescendants !== false;
       const byId = new Map();
       const childrenByParent = new Map();
       for (const row of rows) {{
@@ -5440,7 +6482,7 @@ Total Leaves Taken = 0h</span>
         }}
       }}
       for (const row of rows) {{
-        if (!matchesDateFilter(row)) {{
+        if (!matchesDateFilter(row, selection)) {{
           continue;
         }}
         visibleIds.add(row.id);
@@ -5449,7 +6491,9 @@ Total Leaves Taken = 0h</span>
           visibleIds.add(current.parent_id);
           current = byId.get(current.parent_id) || null;
         }}
-        addDescendants(row.id);
+        if (keepDescendants) {{
+          addDescendants(row.id);
+        }}
       }}
       return rows.filter((row) => visibleIds.has(row.id));
     }}
@@ -5499,7 +6543,8 @@ Total Leaves Taken = 0h</span>
       }}
     }}
 
-    function buildDisplayRows() {{
+    function buildDisplayRows(selection) {{
+      const activeSelection = buildScorecardSelectionSnapshot(selection);
       const byId = new Map();
       for (const row of allRows) {{
         byId.set(row.id, row);
@@ -5618,9 +6663,15 @@ Total Leaves Taken = 0h</span>
         }}
         filtered.push(item);
       }}
-      const filteredByDate = applyDateFilterWithAncestors(filtered);
+      const filteredByDate = applyDateFilterWithAncestors(filtered, true, activeSelection);
+      const scorecardFilteredByDate = applyDateFilterWithAncestors(
+        filtered.map((row) => Object.assign({{}}, row)),
+        false,
+        activeSelection
+      );
       applyEpicPlannedTotalsToAncestors(filteredByDate);
-      scorecardSourceRows = filteredByDate;
+      applyEpicPlannedTotalsToAncestors(scorecardFilteredByDate);
+      scorecardSourceRows = scorecardFilteredByDate;
       if (!onlyNoEntry) {{
         return filteredByDate;
       }}
@@ -6227,7 +7278,8 @@ Total Leaves Taken = 0h</span>
       if (resetCollapsed) {{
         collapsed.clear();
       }}
-      const displayRows = buildDisplayRows();
+      const renderSelection = buildScorecardSelectionSnapshot(nextOptions.selection);
+      const displayRows = buildDisplayRows(renderSelection);
       rowCountNode.textContent = String(displayRows.length);
       updateNoEntryToggle(displayRows);
       const requestVersion = ++scorecardUpdateVersion;
@@ -6237,7 +7289,7 @@ Total Leaves Taken = 0h</span>
       if (nextOptions.teamFilterLoading || (teamFilterProgress && !teamFilterProgress.hidden)) {{
         setTeamFilterLoading(true, requestVersion);
       }}
-      void updateScoreCards(scorecardSourceRows, requestVersion);
+      void updateScoreCards(scorecardSourceRows, requestVersion, renderSelection);
       renderRows(displayRows);
       applyVisibility();
     }}
@@ -6277,6 +7329,23 @@ Total Leaves Taken = 0h</span>
     }}
     updateDateRangeApplyState();
     rerender(true);
+    if (hasNestedTreeApi) {{
+      fetch("/api/nested-view/tree", {{ method: "GET", headers: {{ Accept: "application/json" }} }})
+        .then((r) => r.json())
+        .then((data) => {{
+          if (data && data.ok === true && Array.isArray(data.rows)) {{
+            reportData.rows = data.rows;
+            reportData.generated_at = data.generated_at || reportData.generated_at;
+            reportData.source_file = data.source_file || reportData.source_file;
+            allRows = data.rows;
+            if (document.getElementById("generated-at")) {{
+              document.getElementById("generated-at").textContent = reportData.generated_at || "-";
+            }}
+            rerender(true);
+          }}
+        }})
+        .catch((err) => {{ console.warn("Nested view tree from API:", err && err.message || err); }});
+    }}
     if (tableWrapEl) {{
       tableWrapEl.addEventListener("scroll", () => {{
         updateStickyParentRows();
@@ -6339,6 +7408,40 @@ Total Leaves Taken = 0h</span>
           event.preventDefault();
           setTotalPlannedDetailsOpen(!totalPlannedDetailsOpen);
         }}
+      }});
+    }}
+    if (totalLoggedCardEl) {{
+      totalLoggedCardEl.classList.add("is-expandable");
+      totalLoggedCardEl.setAttribute("role", "button");
+      totalLoggedCardEl.setAttribute("tabindex", "0");
+      totalLoggedCardEl.setAttribute("aria-controls", "score-total-logged-details");
+      totalLoggedCardEl.setAttribute("aria-expanded", "false");
+      totalLoggedCardEl.addEventListener("click", (event) => {{
+        const target = event.target instanceof Element ? event.target : null;
+        if (target && (target.closest(".score-info") || target.closest(".score-action-btn") || target.closest("a") || target.closest(".score-details-panel") || target.closest("#score-total-logged-include-bugs"))) {{
+          return;
+        }}
+        setTotalActualDetailsOpen(!totalActualDetailsOpen);
+      }});
+      totalLoggedCardEl.addEventListener("keydown", (event) => {{
+        if (event.key === "Enter" || event.key === " ") {{
+          event.preventDefault();
+          setTotalActualDetailsOpen(!totalActualDetailsOpen);
+        }}
+      }});
+    }}
+    if (totalLoggedIncludeBugsEl) {{
+      totalLoggedIncludeBugsEl.checked = !!totalActualIncludeBugs;
+      totalLoggedIncludeBugsEl.addEventListener("change", () => {{
+        totalActualIncludeBugs = !!totalLoggedIncludeBugsEl.checked;
+        const requestVersion = ++scorecardUpdateVersion;
+        if (projectFilterProgress && !projectFilterProgress.hidden) {{
+          setProjectFilterLoading(true, requestVersion);
+        }}
+        if (teamFilterProgress && !teamFilterProgress.hidden) {{
+          setTeamFilterLoading(true, requestVersion);
+        }}
+        void updateScoreCards(scorecardSourceRows, requestVersion, buildScorecardSelectionSnapshot());
       }});
     }}
     if (totalLeavesPlannedCardEl) {{
@@ -6460,8 +7563,12 @@ Total Leaves Taken = 0h</span>
       extendedActualHoursToggle.checked = pendingActualHoursMode === "planned_dates";
       extendedActualHoursToggle.addEventListener("change", () => {{
         pendingActualHoursMode = extendedActualHoursToggle.checked ? "planned_dates" : "log_date";
+        if (actualHoursModeSelect) {{
+          actualHoursModeSelect.value = pendingActualHoursMode;
+        }}
         normalizePendingDateRange();
         updateDateRangeApplyState();
+        applyPendingDateRange();
       }});
     }}
     if (plannedHoursSourceSelect) {{
@@ -6573,20 +7680,32 @@ def main() -> None:
     input_name = os.getenv("JIRA_NESTED_VIEW_XLSX_PATH", DEFAULT_INPUT_XLSX).strip() or DEFAULT_INPUT_XLSX
     output_name = os.getenv("JIRA_NESTED_VIEW_HTML_PATH", DEFAULT_OUTPUT_HTML).strip() or DEFAULT_OUTPUT_HTML
     capacity_db_name = os.getenv("JIRA_ASSIGNEE_CAPACITY_DB_PATH", DEFAULT_CAPACITY_DB).strip() or DEFAULT_CAPACITY_DB
+    exports_db_name = os.getenv("JIRA_EXPORTS_DB_PATH", DEFAULT_EXPORTS_DB).strip() or DEFAULT_EXPORTS_DB
     leave_name = os.getenv("JIRA_LEAVE_REPORT_XLSX_PATH", DEFAULT_LEAVE_REPORT_INPUT_XLSX).strip() or DEFAULT_LEAVE_REPORT_INPUT_XLSX
 
     input_path = _resolve_path(input_name, base_dir)
     output_path = _resolve_path(output_name, base_dir)
     capacity_db_path = _resolve_path(capacity_db_name, base_dir)
+    exports_db_path = _resolve_path(exports_db_name, base_dir)
     leave_path = _resolve_path(leave_name, base_dir)
+    canonical_run_id = _to_text(os.getenv("JIRA_CANONICAL_RUN_ID"))
 
-    rows = _load_nested_rows(input_path)
+    source_file = str(input_path)
+    try:
+        rows = _load_nested_rows_from_canonical_db(
+            capacity_db_path,
+            exports_db_path=exports_db_path,
+            run_id=canonical_run_id,
+        )
+        source_file = "canonical_db"
+    except Exception:
+        rows = _load_nested_rows(input_path)
     capacity_profiles = _load_capacity_profiles(capacity_db_path)
     leave_daily_rows = _load_leave_daily_rows(leave_path)
     leave_subtask_rows = _load_leave_subtask_rows(leave_path)
     data = {
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
-        "source_file": str(input_path),
+        "source_file": source_file,
         "rows": rows,
         "capacity_profiles": capacity_profiles,
         "leave_daily_rows": leave_daily_rows,
@@ -6595,13 +7714,19 @@ def main() -> None:
     }
     html = _build_html(data)
     output_path.write_text(html, encoding="utf-8")
+    served_output_path = base_dir / REPORT_HTML_DIRNAME / output_path.name
+    if served_output_path.resolve() != output_path.resolve():
+        served_output_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(output_path, served_output_path)
 
-    print(f"Source workbook: {input_path}")
+    print(f"Source data: {source_file}")
     print(f"Rows loaded: {len(rows)}")
     print(f"Capacity profiles loaded: {len(capacity_profiles)}")
     print(f"Leave daily rows loaded: {len(leave_daily_rows)}")
     print(f"Leave subtask rows loaded: {len(leave_subtask_rows)}")
     print(f"HTML report written: {output_path}")
+    if served_output_path.resolve() != output_path.resolve():
+        print(f"Served HTML synced: {served_output_path}")
 
 
 if __name__ == "__main__":

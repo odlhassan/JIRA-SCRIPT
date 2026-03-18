@@ -1,6 +1,44 @@
 AT RISK
 as of now, 40 hours should have been invest, but today only 10 hours invested.
+====
 
+EXPERIENCE LATEST FEATURES ON LOCALHOST (Epics Planner SEAL, IPP Dashboard, etc.)
+---
+# 1. Go to project root
+cd "E:\JIRA SCRIPT"
+
+# 2. (Optional) Ensure Epics Management DB exists and has latest schema (is_sealed, approved_dates)
+#    Use if you run generate_ipp_meeting_dashboard.py before starting the server, or for a clean first run.
+python init_epics_management_db.py
+#    With custom DB path:
+#    python init_epics_management_db.py --db path/to/assignee_hours_capacity.db
+#    Env: JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH
+
+# 3. (Optional) Regenerate IPP Meeting Dashboard HTML so static file has sealed_dates in RMI drawer
+python generate_ipp_meeting_dashboard.py
+
+# 4. Start the report server (default port 3000; runs planned_vs_dispensed + syncs report_html)
+python run_server.py --port 3000
+
+# 5. Open in browser
+#    Epics Planner (SEAL EPICS, checkboxes, RE-BUDGET, lock icon):
+#      http://127.0.0.1:3000/settings/epics-management
+#    IPP Meeting Dashboard (Approved dates in RMI Details drawer):
+#      http://127.0.0.1:3000/ipp_meeting_dashboard.html
+#    Home / reports list:
+#      http://127.0.0.1:3000/
+
+# Shortcut: server only, no sync (faster start; use if you only changed server code)
+python run_server.py --port 3000 --no-sync
+
+# Fresh start (clear cache/state then start)
+python run_server.py --port 3000 --fresh
+
+---
+LATEST files transfer to folder
+cd "E:\JIRA SCRIPT"
+python -c "from pathlib import Path; from report_server import sync_report_html; n = sync_report_html(Path('.'), 'report_html'); print(f'Synced {n} file(s).')"
+python run_html_only.py --no-server
 ---
 CLEANUP PROCESS
 # Stop only run_server.py python processes

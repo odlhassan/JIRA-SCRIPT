@@ -1,12 +1,17 @@
 ﻿from __future__ import annotations
 
+import os
+import sys
 import unittest
 from datetime import date
+from unittest.mock import patch
 
 from generate_rlt_leave_report import (
+    DEFAULT_SOURCE,
     SubtaskRow,
     WorklogRow,
     _compute_aggregates,
+    _parse_args,
     _redistribute_continuous_leave_subtasks,
     _redistribute_continuous_leave_worklogs,
     classify_leave,
@@ -81,6 +86,16 @@ class RltLeaveReportTests(unittest.TestCase):
         f, t = resolve_window_range(today=date(2026, 2, 20))
         self.assertEqual(f, "2026-01-01")
         self.assertEqual(t, "2026-03-31")
+
+    def test_parse_args_defaults_to_canonical_source(self):
+        with patch.object(sys, "argv", ["generate_rlt_leave_report.py"]), patch.dict(os.environ, {}, clear=False):
+            args = _parse_args()
+        self.assertEqual(args.source, DEFAULT_SOURCE)
+
+    def test_parse_args_allows_explicit_legacy_jira_source(self):
+        with patch.object(sys, "argv", ["generate_rlt_leave_report.py", "--source", "jira"]):
+            args = _parse_args()
+        self.assertEqual(args.source, "jira")
 
     def test_infer_date_range_from_summary(self):
         self.assertEqual(

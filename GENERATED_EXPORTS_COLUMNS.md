@@ -23,7 +23,8 @@ This document describes:
 
 Inside `run_all_exports.py`:
 
-1. `export_jira_subtask_worklogs.py` -> `2_jira_subtask_worklogs.xlsx`
+1. `export_jira_subtask_worklogs.py` -> `2_jira_subtask_worklogs.xlsx`  
+   **Note:** In the canonical/colossal-fetch setup, worklogs are produced by the compatibility bridge from `canonical_worklogs`; this script is not used.
 1. `export_jira_work_items.py` -> `1_jira_work_items_export.xlsx`
 1. `export_jira_subtask_worklog_rollup.py` -> `3_jira_subtask_worklog_rollup.xlsx`
 1. `export_jira_nested_view.py` -> `nested view.xlsx`
@@ -72,7 +73,6 @@ One row per Jira issue in configured projects.
 | `jira_issue_type` | Raw Jira issue type. | `fetch_jira_dashboard.py` uses this to route rows into `epics`, `stories`, `subtasks`, `bug_subtasks`. |
 | `summary` | Jira summary. | Displayed in `dashboard.html`; used in gantt row matching keys. |
 | `status` | Jira status name. | Displayed and color-coded in `dashboard.html`. |
-| `resolved_stable_since_date` | Last date issue entered a resolved-like status and never transitioned away afterwards (from changelog status history). | Used by employee performance report to show stable resolved-date alongside completion-vs-due analysis. |
 | `start_date` | Dynamic Jira start-date field value (shared resolver selected field). | Becomes `jira_start_date` in dashboard data; influences date filtering and cards in `dashboard.html`. |
 | `end_date` | Jira `duedate`. | Becomes `jira_end_date` in dashboard; date filtering and display. |
 | `actual_start_date` | Earliest worklog timestamp rolled up by issue scope. | Used by dashboard card Actual timeline and by `generate_gantt_chart_html.py` for actual bars. |

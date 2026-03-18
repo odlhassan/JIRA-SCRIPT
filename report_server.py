@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 import io
+import html
 import json
 import os
 import random
@@ -98,6 +99,7 @@ from ipp_meeting_utils import (
 )
 from jira_client import BASE_URL, extract_jira_key_from_url, get_session
 from jira_export_db import (
+    DEFAULT_EXPORTS_DB,
     SUBTASK_ROLLUP_COLS,
     SUBTASK_WORKLOGS_COLS,
     WORK_ITEMS_COLS,
@@ -175,6 +177,12 @@ from jira_incremental_cache import (
     upsert_issue_payloads as incremental_upsert_issue_payloads,
     upsert_worklog_payload as incremental_upsert_worklog_payload,
 )
+from offline_html_prepare import (
+    create_zip_of_folder,
+    get_default_reports_for_ui,
+    run_prepare_job,
+)
+from generate_nested_view_html import load_nested_view_tree_for_api
 
 
 REPORT_FILENAME_TO_ID: dict[str, str] = {
@@ -276,11 +284,13 @@ REPORT_ENTITIES_SETTINGS_ROUTE = "/settings/report-entities"
 MANAGE_FIELDS_SETTINGS_ROUTE = "/settings/manage-fields"
 PROJECTS_SETTINGS_ROUTE = "/settings/projects"
 EPICS_MANAGEMENT_SETTINGS_ROUTE = "/settings/epics-management"
+IPP_MEETING_PLANNER_SETTINGS_ROUTE = "/settings/ipp-meeting-planner"
 EPICS_DROPDOWN_OPTIONS_SETTINGS_ROUTE = "/settings/epics-dropdown-options"
 EPIC_PHASES_SETTINGS_ROUTE = "/settings/epic-phases"
 DASHBOARD_RISK_SETTINGS_ROUTE = "/settings/dashboard-risk"
 PAGE_CATEGORIES_SETTINGS_ROUTE = "/settings/page-categories"
 CANONICAL_REFRESH_SETTINGS_ROUTE = "/settings/canonical-refresh"
+SQL_CONSOLE_SETTINGS_ROUTE = "/settings/sql-console"
 LEGACY_PVD_PAGE_KEY = "planned_vs_dispensed_report"
 CANONICAL_PVD_PAGE_KEY = "approved_vs_planned_hours_report"
 LEGACY_PVD_HTML_FILE = "planned_vs_dispensed_report.html"
@@ -314,8 +324,10 @@ STATIC_ADMIN_NAV_ITEMS: list[dict[str, object]] = [
     {"page_key": "epic_dropdowns", "title": "Epic Dropdowns", "href": EPICS_DROPDOWN_OPTIONS_SETTINGS_ROUTE, "icon": "arrow_drop_down_circle", "path": EPICS_DROPDOWN_OPTIONS_SETTINGS_ROUTE, "default_nav_order": 60, "page_type": "configuration"},
     {"page_key": "epic_phases", "title": "Epic Phases", "href": EPIC_PHASES_SETTINGS_ROUTE, "icon": "alt_route", "path": EPIC_PHASES_SETTINGS_ROUTE, "default_nav_order": 70, "page_type": "configuration"},
     {"page_key": "epics_planner", "title": "Epics Planner", "href": EPICS_MANAGEMENT_SETTINGS_ROUTE, "icon": "event_note", "path": EPICS_MANAGEMENT_SETTINGS_ROUTE, "default_nav_order": 80, "page_type": "configuration"},
+    {"page_key": "ipp_meeting_planner", "title": "IPP Meeting Planner", "href": IPP_MEETING_PLANNER_SETTINGS_ROUTE, "icon": "groups", "path": IPP_MEETING_PLANNER_SETTINGS_ROUTE, "default_nav_order": 85, "page_type": "configuration"},
     {"page_key": "page_categories", "title": "Page Categories", "href": PAGE_CATEGORIES_SETTINGS_ROUTE, "icon": "category", "path": PAGE_CATEGORIES_SETTINGS_ROUTE, "default_nav_order": 90, "page_type": "configuration"},
     {"page_key": "canonical_refresh_settings", "title": "Colossal Refresh", "href": CANONICAL_REFRESH_SETTINGS_ROUTE, "icon": "sync", "path": CANONICAL_REFRESH_SETTINGS_ROUTE, "default_nav_order": 100, "page_type": "configuration"},
+    {"page_key": "sql_console", "title": "SQL Console", "href": SQL_CONSOLE_SETTINGS_ROUTE, "icon": "query_stats", "path": SQL_CONSOLE_SETTINGS_ROUTE, "default_nav_order": 110, "page_type": "configuration"},
 ]
 
 
@@ -329,6 +341,7 @@ def _settings_nav_items() -> list[tuple[str, str]]:
         ("Projects", PROJECTS_SETTINGS_ROUTE),
         ("Page Categories", PAGE_CATEGORIES_SETTINGS_ROUTE),
         ("Colossal Refresh", CANONICAL_REFRESH_SETTINGS_ROUTE),
+        ("SQL Console", SQL_CONSOLE_SETTINGS_ROUTE),
         ("Epic Dropdowns", EPICS_DROPDOWN_OPTIONS_SETTINGS_ROUTE),
         ("Epic Phases", EPIC_PHASES_SETTINGS_ROUTE),
         ("Epics Planner", EPICS_MANAGEMENT_SETTINGS_ROUTE),
@@ -511,7 +524,7 @@ def _dashboard_refresh_epic_work_item_row(
     total_hours: float = 0.0,
     ipp_row: dict | None = None,
 ) -> list:
-    """Build a work_items row (29 elements in WORK_ITEMS_COLS order) from normalized PVD issue."""
+    """Build a work_items row (28 elements in WORK_ITEMS_COLS order) from normalized PVD issue."""
     ipp = ipp_row or {}
     est_hours = norm.get("estimate_hours")
     try:
@@ -530,7 +543,6 @@ def _dashboard_refresh_epic_work_item_row(
         None,
         _to_text(norm.get("summary")) or "",
         _to_text(norm.get("status")) or "",
-        None,
         _to_text(norm.get("planned_start")) or None,
         _to_text(norm.get("planned_due")) or None,
         None,
@@ -816,7 +828,7 @@ def _settings_top_nav_html(active_route: str) -> str:
     return ""
 
 
-def _page_catalog() -> list[dict[str, object]]:
+def _base_page_catalog() -> list[dict[str, object]]:
     items = STATIC_REPORT_NAV_ITEMS + STATIC_ADMIN_NAV_ITEMS
     out: list[dict[str, object]] = []
     for item in items:
@@ -824,13 +836,29 @@ def _page_catalog() -> list[dict[str, object]]:
             {
                 "page_key": _to_text(item.get("page_key")),
                 "title": _to_text(item.get("title")),
+                "default_title": _to_text(item.get("title")),
+                "display_name": "",
                 "route_or_file": _to_text(item.get("path") or item.get("file") or item.get("href")),
                 "href": _to_text(item.get("href")),
                 "icon": _to_text(item.get("icon")),
                 "page_type": _to_text(item.get("page_type")),
                 "default_nav_order": int(item.get("default_nav_order") or 0),
+                "title_editable": _to_text(item.get("page_type")) == "report",
             }
         )
+    return out
+
+
+def _page_catalog(db_path: Path | None = None) -> list[dict[str, object]]:
+    out = _base_page_catalog()
+    if not db_path:
+        return out
+    overrides = _load_page_display_name_overrides(db_path)
+    for item in out:
+        page_key = _to_text(item.get("page_key"))
+        override = overrides.get(page_key, "")
+        item["display_name"] = override
+        item["title"] = override or _to_text(item.get("default_title"))
     return out
 
 
@@ -907,6 +935,23 @@ def _normalize_page_assignment_payload(payload: object, valid_page_keys: set[str
     }
 
 
+def _normalize_page_display_name_payload(payload: object, valid_pages_by_key: dict[str, dict[str, object]]) -> dict[str, str]:
+    raw = payload if isinstance(payload, dict) else {}
+    page_key_raw = _to_text(raw.get("page_key"))
+    page_key = _canonical_page_key(page_key_raw)
+    if not page_key:
+        raise ValueError("page_key is required for page display names.")
+    page = valid_pages_by_key.get(page_key)
+    if not page:
+        raise ValueError(f"Unknown page_key for display name override: {page_key}")
+    if _to_text(page.get("page_type")) != "report":
+        raise ValueError(f"Display name overrides are only supported for report pages: {page_key}")
+    return {
+        "page_key": page_key,
+        "display_name": _to_text(raw.get("display_name")),
+    }
+
+
 def _init_page_categories_db(db_path: Path) -> None:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(db_path)
@@ -939,6 +984,15 @@ def _init_page_categories_db(db_path: Path) -> None:
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS page_display_name_overrides (
+                page_key TEXT PRIMARY KEY,
+                display_name TEXT NOT NULL,
+                updated_at_utc TEXT NOT NULL
+            )
+            """
+        )
         columns = conn.execute("PRAGMA table_info(page_categories)").fetchall()
         column_names = {str(row[1]) for row in columns}
         if "icon_name" not in column_names:
@@ -948,6 +1002,31 @@ def _init_page_categories_db(db_path: Path) -> None:
         conn.commit()
     finally:
         conn.close()
+
+
+def _load_page_display_name_overrides(db_path: Path) -> dict[str, str]:
+    _init_page_categories_db(db_path)
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute(
+            """
+            SELECT page_key, display_name
+            FROM page_display_name_overrides
+            ORDER BY page_key ASC
+            """
+        ).fetchall()
+    finally:
+        conn.close()
+    overrides: dict[str, str] = {}
+    for row in rows:
+        page_key = _canonical_page_key(row["page_key"])
+        if not page_key:
+            continue
+        display_name = _to_text(row["display_name"])
+        if display_name:
+            overrides[page_key] = display_name
+    return overrides
 
 
 def _row_to_page_category(row: sqlite3.Row) -> dict[str, object]:
@@ -983,6 +1062,13 @@ def _load_page_categories(db_path: Path) -> dict[str, object]:
             ORDER BY page_type ASC, page_key ASC, category_id ASC
             """
         ).fetchall()
+        page_override_rows = conn.execute(
+            """
+            SELECT page_key, display_name, updated_at_utc
+            FROM page_display_name_overrides
+            ORDER BY page_key ASC
+            """
+        ).fetchall()
     finally:
         conn.close()
     categories = [_row_to_page_category(row) for row in category_rows]
@@ -1002,10 +1088,28 @@ def _load_page_categories(db_path: Path) -> dict[str, object]:
                 "updated_at_utc": _to_text(row["updated_at_utc"]),
             }
         )
+    page_overrides: list[dict[str, object]] = []
+    valid_pages_by_key = {item["page_key"]: item for item in _base_page_catalog()}
+    for row in page_override_rows:
+        page_key = _canonical_page_key(row["page_key"])
+        page = valid_pages_by_key.get(page_key)
+        if not page or _to_text(page.get("page_type")) != "report":
+            continue
+        display_name = _to_text(row["display_name"])
+        if not display_name:
+            continue
+        page_overrides.append(
+            {
+                "page_key": page_key,
+                "display_name": display_name,
+                "updated_at_utc": _to_text(row["updated_at_utc"]),
+            }
+        )
     return {
         "categories": categories,
         "assignments": assignments,
-        "page_catalog": _page_catalog(),
+        "page_overrides": page_overrides,
+        "page_catalog": _page_catalog(db_path),
         "has_categories": len(categories) > 0,
     }
 
@@ -1116,11 +1220,16 @@ def _save_page_categories_payload(db_path: Path, payload: object) -> dict[str, o
     raw = payload if isinstance(payload, dict) else {}
     incoming_categories_raw = raw.get("categories")
     incoming_assignments_raw = raw.get("assignments")
+    incoming_page_overrides_raw = raw.get("page_overrides")
     incoming_categories = incoming_categories_raw if isinstance(incoming_categories_raw, list) else []
     incoming_assignments = incoming_assignments_raw if isinstance(incoming_assignments_raw, list) else []
+    incoming_page_overrides = incoming_page_overrides_raw if isinstance(incoming_page_overrides_raw, list) else []
+    replace_page_overrides = isinstance(incoming_page_overrides_raw, list)
 
     now = _utc_now_iso()
-    valid_page_keys = {item["page_key"] for item in _page_catalog()}
+    valid_pages = _base_page_catalog()
+    valid_page_keys = {item["page_key"] for item in valid_pages}
+    valid_pages_by_key = {item["page_key"]: item for item in valid_pages}
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     try:
@@ -1202,6 +1311,29 @@ def _save_page_categories_payload(db_path: Path, payload: object) -> dict[str, o
                     now,
                 ),
             )
+        if replace_page_overrides:
+            conn.execute("DELETE FROM page_display_name_overrides")
+            seen_override_keys: set[str] = set()
+            for item in incoming_page_overrides:
+                normalized_override = _normalize_page_display_name_payload(item, valid_pages_by_key)
+                page_key = normalized_override["page_key"]
+                if page_key in seen_override_keys:
+                    continue
+                seen_override_keys.add(page_key)
+                display_name = normalized_override["display_name"]
+                if not display_name:
+                    continue
+                conn.execute(
+                    """
+                    INSERT INTO page_display_name_overrides(page_key, display_name, updated_at_utc)
+                    VALUES(?, ?, ?)
+                    """,
+                    (
+                        page_key,
+                        display_name,
+                        now,
+                    ),
+                )
         conn.commit()
     except sqlite3.IntegrityError as exc:
         raise ValueError(f"Failed to save page categories payload: {exc}")
@@ -1230,8 +1362,9 @@ def _build_navigation_from_page_categories(db_path: Path) -> dict[str, object]:
     )
     visible_ids = {int(item.get("id") or 0) for item in visible_categories}
 
-    report_by_key = {str(item["page_key"]): dict(item) for item in STATIC_REPORT_NAV_ITEMS}
-    admin_by_key = {str(item["page_key"]): dict(item) for item in STATIC_ADMIN_NAV_ITEMS}
+    effective_catalog = state.get("page_catalog") if isinstance(state.get("page_catalog"), list) else _page_catalog(db_path)
+    report_by_key = {str(item["page_key"]): dict(item) for item in effective_catalog if _to_text(item.get("page_type")) == "report"}
+    admin_by_key = {str(item["page_key"]): dict(item) for item in effective_catalog if _to_text(item.get("page_type")) == "configuration"}
     assignment_map: dict[str, set[int]] = defaultdict(set)
     for row in state["assignments"]:
         category_id = int(row.get("category_id") or 0)
@@ -1317,6 +1450,161 @@ def _resolve_capacity_runtime_paths(base_dir: Path) -> dict[str, Path]:
     }
 
 
+def _resolve_exports_db_path(base_dir: Path) -> Path:
+    db_name = os.getenv("JIRA_EXPORTS_DB_PATH", DEFAULT_EXPORTS_DB).strip() or DEFAULT_EXPORTS_DB
+    db_path = Path(db_name)
+    if not db_path.is_absolute():
+        db_path = base_dir / db_path
+    return db_path
+
+
+SQL_CONSOLE_ALLOWED_START_KEYWORDS = ("SELECT", "WITH", "EXPLAIN", "PRAGMA")
+SQL_CONSOLE_ALLOWED_PRAGMAS = {
+    "collation_list",
+    "compile_options",
+    "database_list",
+    "foreign_key_list",
+    "function_list",
+    "index_info",
+    "index_list",
+    "index_xinfo",
+    "module_list",
+    "pragma_list",
+    "table_info",
+    "table_list",
+    "table_xinfo",
+}
+SQL_CONSOLE_MAX_ROWS = 500
+SQL_CONSOLE_EXPORT_MAX_ROWS = 20000
+
+
+def _sql_console_split_statements(sql: str) -> list[str]:
+    statements: list[str] = []
+    current: list[str] = []
+    i = 0
+    in_single = False
+    in_double = False
+    in_line_comment = False
+    in_block_comment = False
+    while i < len(sql):
+        ch = sql[i]
+        nxt = sql[i + 1] if i + 1 < len(sql) else ""
+        if in_line_comment:
+            if ch == "\n":
+                in_line_comment = False
+                current.append(ch)
+            i += 1
+            continue
+        if in_block_comment:
+            if ch == "*" and nxt == "/":
+                in_block_comment = False
+                i += 2
+                continue
+            i += 1
+            continue
+        if not in_single and not in_double:
+            if ch == "-" and nxt == "-":
+                in_line_comment = True
+                i += 2
+                continue
+            if ch == "/" and nxt == "*":
+                in_block_comment = True
+                i += 2
+                continue
+        if ch == "'" and not in_double:
+            if in_single and nxt == "'":
+                current.extend([ch, nxt])
+                i += 2
+                continue
+            in_single = not in_single
+            current.append(ch)
+            i += 1
+            continue
+        if ch == '"' and not in_single:
+            if in_double and nxt == '"':
+                current.extend([ch, nxt])
+                i += 2
+                continue
+            in_double = not in_double
+            current.append(ch)
+            i += 1
+            continue
+        if ch == ";" and not in_single and not in_double:
+            statement = "".join(current).strip()
+            if statement:
+                statements.append(statement)
+            current = []
+            i += 1
+            continue
+        current.append(ch)
+        i += 1
+    statement = "".join(current).strip()
+    if statement:
+        statements.append(statement)
+    return statements
+
+
+def _sql_console_principal_keyword(sql: str) -> str:
+    match = re.match(r"^\s*([A-Za-z]+)", sql)
+    return match.group(1).upper() if match else ""
+
+
+def _normalize_sql_console_query(sql: object) -> str:
+    query = _to_text(sql).strip()
+    if not query:
+        raise ValueError("SQL is required.")
+    statements = _sql_console_split_statements(query)
+    if len(statements) != 1:
+        raise ValueError("Exactly one SQL statement is allowed.")
+    normalized = statements[0].strip()
+    keyword = _sql_console_principal_keyword(normalized)
+    if keyword not in SQL_CONSOLE_ALLOWED_START_KEYWORDS:
+        raise ValueError("Only read-only SELECT, WITH, EXPLAIN, and PRAGMA statements are allowed.")
+    upper_sql = normalized.upper()
+    forbidden_tokens = (
+        "ATTACH ",
+        "DETACH ",
+        "INSERT ",
+        "UPDATE ",
+        "DELETE ",
+        "DROP ",
+        "ALTER ",
+        "CREATE ",
+        "REPLACE ",
+        "VACUUM ",
+        "REINDEX ",
+        "ANALYZE ",
+        "BEGIN ",
+        "COMMIT ",
+        "ROLLBACK ",
+        "SAVEPOINT ",
+        "RELEASE ",
+    )
+    if any(token in upper_sql for token in forbidden_tokens):
+        raise ValueError("Only read-only SQL is allowed.")
+    if keyword == "PRAGMA":
+        remainder = re.sub(r"^\s*PRAGMA\s+", "", normalized, flags=re.IGNORECASE).strip()
+        pragma_name = re.split(r"[\s(=]", remainder, maxsplit=1)[0].strip().lower()
+        if "." in pragma_name:
+            pragma_name = pragma_name.split(".", 1)[1]
+        if "=" in remainder or pragma_name not in SQL_CONSOLE_ALLOWED_PRAGMAS:
+            raise ValueError("Only read-only schema PRAGMA statements are allowed.")
+    return normalized
+
+
+def _sql_console_target_path(base_dir: Path, canonical_db_path: Path, database_key: object) -> tuple[str, Path]:
+    key = _to_text(database_key).strip().lower() or "canonical"
+    if key == "canonical":
+        return key, canonical_db_path
+    if key == "exports":
+        return key, _resolve_exports_db_path(base_dir)
+    raise ValueError("database must be 'canonical' or 'exports'.")
+
+
+def _sqlite_readonly_uri(db_path: Path) -> str:
+    return db_path.resolve().as_uri().replace("file:///", "file:/") + "?mode=ro"
+
+
 def _epf_retention_runs() -> int:
     raw = _to_text(os.getenv("EPF_REFRESH_RETAIN_RUNS", str(EPF_DEFAULT_RETENTION_RUNS)))
     try:
@@ -1395,7 +1683,6 @@ def _init_epf_refresh_db(db_path: Path) -> None:
                 assignee TEXT NOT NULL DEFAULT '',
                 start_date TEXT NOT NULL DEFAULT '',
                 due_date TEXT NOT NULL DEFAULT '',
-                resolved_stable_since_date TEXT NOT NULL DEFAULT '',
                 original_estimate_hours REAL NOT NULL DEFAULT 0,
                 parent_issue_key TEXT NOT NULL DEFAULT ''
             )
@@ -1428,7 +1715,6 @@ def _init_epf_refresh_db(db_path: Path) -> None:
                 item_parent_issue_key TEXT NOT NULL DEFAULT '',
                 item_start_date TEXT NOT NULL DEFAULT '',
                 item_due_date TEXT NOT NULL DEFAULT '',
-                item_resolved_stable_since_date TEXT NOT NULL DEFAULT '',
                 story_due_date TEXT NOT NULL DEFAULT '',
                 original_estimate_hours REAL NOT NULL DEFAULT 0
             )
@@ -1507,7 +1793,6 @@ def _epf_insert_run_data(
                 _to_text(item.get("assignee")),
                 _to_text(item.get("start_date")),
                 _to_text(item.get("due_date")),
-                _to_text(item.get("resolved_stable_since_date")),
                 float(item.get("original_estimate_hours") or 0),
                 _to_text(item.get("parent_issue_key")).upper(),
             )
@@ -1532,7 +1817,6 @@ def _epf_insert_run_data(
                 _to_text(row.get("item_parent_issue_key")).upper(),
                 _to_text(row.get("item_start_date")),
                 _to_text(row.get("item_due_date")),
-                _to_text(row.get("item_resolved_stable_since_date")),
                 _to_text(row.get("story_due_date")),
                 float(row.get("original_estimate_hours") or 0),
             )
@@ -1563,8 +1847,8 @@ def _epf_insert_run_data(
                 """
                 INSERT INTO epf_work_items(
                     run_id, issue_key, project_key, issue_type, fix_type, summary, status, assignee,
-                    start_date, due_date, resolved_stable_since_date, original_estimate_hours, parent_issue_key
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    start_date, due_date, original_estimate_hours, parent_issue_key
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 work_item_rows,
             )
@@ -1574,8 +1858,8 @@ def _epf_insert_run_data(
                 INSERT INTO epf_worklogs(
                     run_id, issue_id, issue_assignee, worklog_date, hours_logged, project_key, is_bug,
                     fix_type, item_summary, item_status, item_issue_type, item_assignee, item_parent_issue_key,
-                    item_start_date, item_due_date, item_resolved_stable_since_date, story_due_date, original_estimate_hours
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    item_start_date, item_due_date, story_due_date, original_estimate_hours
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 worklog_rows,
             )
@@ -1824,10 +2108,10 @@ def _epf_clone_run_snapshot(db_path: Path, source_run_id: str, target_run_id: st
             """
             INSERT INTO epf_work_items(
                 run_id, issue_key, project_key, issue_type, fix_type, summary, status, assignee,
-                start_date, due_date, resolved_stable_since_date, original_estimate_hours, parent_issue_key
+                start_date, due_date, original_estimate_hours, parent_issue_key
             )
             SELECT ?, issue_key, project_key, issue_type, fix_type, summary, status, assignee,
-                   start_date, due_date, resolved_stable_since_date, original_estimate_hours, parent_issue_key
+                   start_date, due_date, original_estimate_hours, parent_issue_key
             FROM epf_work_items
             WHERE run_id = ?
             """,
@@ -1838,11 +2122,11 @@ def _epf_clone_run_snapshot(db_path: Path, source_run_id: str, target_run_id: st
             INSERT INTO epf_worklogs(
                 run_id, issue_id, issue_assignee, worklog_date, hours_logged, project_key, is_bug, fix_type,
                 item_summary, item_status, item_issue_type, item_assignee, item_parent_issue_key, item_start_date,
-                item_due_date, item_resolved_stable_since_date, story_due_date, original_estimate_hours
+                item_due_date, story_due_date, original_estimate_hours
             )
             SELECT ?, issue_id, issue_assignee, worklog_date, hours_logged, project_key, is_bug, fix_type,
                    item_summary, item_status, item_issue_type, item_assignee, item_parent_issue_key, item_start_date,
-                   item_due_date, item_resolved_stable_since_date, story_due_date, original_estimate_hours
+                   item_due_date, story_due_date, original_estimate_hours
             FROM epf_worklogs
             WHERE run_id = ?
             """,
@@ -3498,26 +3782,14 @@ def _canonical_month_code(iso_date: str) -> str:
 def _canonical_derive_actual_completion(
     due_date_text: str,
     last_worklog_date_text: str,
-    resolved_date_text: str,
 ) -> tuple[str, str, str]:
     due_date_value = _parse_iso_date(due_date_text)
     last_worklog_date = _parse_iso_date(last_worklog_date_text)
-    resolved_date = _parse_iso_date(resolved_date_text)
     actual_complete_date = ""
     actual_complete_source = "none"
-    if last_worklog_date and resolved_date:
-        if last_worklog_date >= resolved_date:
-            actual_complete_date = last_worklog_date
-            actual_complete_source = "last_worklog_date"
-        else:
-            actual_complete_date = resolved_date
-            actual_complete_source = "resolved_stable_since_date"
-    elif last_worklog_date:
+    if last_worklog_date:
         actual_complete_date = last_worklog_date
         actual_complete_source = "last_worklog_date"
-    elif resolved_date:
-        actual_complete_date = resolved_date
-        actual_complete_source = "resolved_stable_since_date"
 
     if not due_date_value:
         bucket = "no_due_date"
@@ -3605,7 +3877,6 @@ def _canonical_rebuild_derived_data(db_path: Path, run_id: str) -> dict[str, int
             due_date = _to_text(issue.get("due_date"))
             start_date = _to_text(issue.get("start_date"))
             original_estimate_hours = float(issue.get("original_estimate_hours") or 0)
-            resolved_date = _to_text(issue.get("resolved_stable_since_date"))
             issue_worklogs = worklogs_by_issue.get(issue_key, [])
             total_worklog_hours = round(sum(float(row.get("hours_logged") or 0) for row in issue_worklogs), 2)
             worklog_dates = sorted({_to_text(row.get("started_date")) for row in issue_worklogs if _to_text(row.get("started_date"))})
@@ -3614,7 +3885,6 @@ def _canonical_rebuild_derived_data(db_path: Path, run_id: str) -> dict[str, int
             actual_complete_date, actual_complete_source, completion_bucket = _canonical_derive_actual_completion(
                 due_date,
                 last_worklog_date,
-                resolved_date,
             )
             actual_rows.append(
                 (
@@ -3842,7 +4112,6 @@ def _canonical_rebuild_compatibility_artifacts(db_path: Path, run_id: str, base_
         "fix_type",
         "summary",
         "status",
-        "resolved_stable_since_date",
         "start_date",
         "end_date",
         "actual_start_date",
@@ -3879,7 +4148,6 @@ def _canonical_rebuild_compatibility_artifacts(db_path: Path, run_id: str, base_
                 _to_text(issue.get("fix_type")),
                 _to_text(issue.get("summary")),
                 _to_text(issue.get("status")),
-                _to_text(issue.get("resolved_stable_since_date")),
                 _to_text(issue.get("start_date")),
                 _to_text(issue.get("due_date")),
                 _to_text(actual_row.get("first_worklog_date")),
@@ -4143,69 +4411,52 @@ def _canonical_compute_actual_hours_aggregate(
     selected_projects: set[str] | None = None,
     selected_assignees: set[str] | None = None,
 ) -> dict[str, object]:
+    scoped = _canonical_compute_scoped_subtasks(
+        db_path=db_path,
+        run_id=run_id,
+        from_date=from_date,
+        to_date=to_date,
+        actual_mode=("extended" if mode == "planned_dates" else "log_date"),
+        selected_projects=selected_projects,
+        selected_assignees=selected_assignees,
+        include_rows=True,
+    )
+    rows = list(scoped.get("rows") or [])
     result: dict[str, object] = {
         "subtask_hours_by_issue": {},
         "epic_hours_by_issue": {},
         "project_hours_by_key": {},
         "assignee_hours_by_period": {"day": {}, "week": {}, "month": {}},
     }
-    run_id_text = _to_text(run_id)
-    if not run_id_text:
-        return result
-    with sqlite3.connect(db_path) as conn:
-        conn.row_factory = sqlite3.Row
-        worklogs = [dict(row) for row in conn.execute("SELECT * FROM canonical_worklogs WHERE run_id = ?", (run_id_text,)).fetchall()]
-        links = {
-            _to_text(row["issue_key"]).upper(): dict(row)
-            for row in conn.execute("SELECT issue_key, epic_key FROM canonical_issue_links WHERE run_id = ?", (run_id_text,)).fetchall()
-        }
-        issues = {
-            _to_text(row["issue_key"]).upper(): dict(row)
-            for row in conn.execute("SELECT issue_key, project_key, start_date, due_date FROM canonical_issues WHERE run_id = ?", (run_id_text,)).fetchall()
-        }
-
-    qualifying_subtasks = set()
-    if mode == "planned_dates":
-        for issue_key, item in issues.items():
-            start_day = _parse_iso_date(_to_text(item.get("start_date")))
-            due_day = _parse_iso_date(_to_text(item.get("due_date")))
-            if (start_day and from_date <= start_day <= to_date) or (due_day and from_date <= due_day <= to_date):
-                qualifying_subtasks.add(issue_key)
-
     subtask_hours: dict[str, float] = defaultdict(float)
     epic_hours: dict[str, float] = defaultdict(float)
     project_hours: dict[str, float] = defaultdict(float)
     assignee_day: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
     assignee_week: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
     assignee_month: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
-    for row in worklogs:
+    for row in rows:
         issue_key = _to_text(row.get("issue_key")).upper()
-        started_day = _parse_iso_date(_to_text(row.get("started_date")))
-        hours = float(row.get("hours_logged") or 0)
-        if not issue_key or started_day is None or hours <= 0:
+        hours = float(row.get("logged_hours") or 0)
+        if not issue_key or hours <= 0:
             continue
-        project_key = _to_text(row.get("project_key")).upper() or _to_text((issues.get(issue_key) or {}).get("project_key")).upper()
-        if selected_projects and project_key not in selected_projects:
-            continue
-        assignee = _to_text(row.get("worklog_author")) or _to_text(row.get("issue_assignee")) or "Unassigned"
-        if selected_assignees and assignee.lower() not in selected_assignees:
-            continue
-        in_selected_range = from_date <= started_day <= to_date
-        include_hours = in_selected_range if mode == "log_date" else issue_key in qualifying_subtasks
-        if not include_hours:
-            continue
+        project_key = _to_text(row.get("project_key")).upper()
+        assignee = _to_text(row.get("assignee")) or "Unassigned"
         subtask_hours[issue_key] += hours
-        epic_key = _to_text((links.get(issue_key) or {}).get("epic_key")).upper()
+        epic_key = _to_text(row.get("epic_key")).upper()
         if epic_key:
             epic_hours[epic_key] += hours
         project_hours[project_key or "UNKNOWN"] += hours
-        if in_selected_range:
+        for bucket in (row.get("in_range_worklogs") or []):
+            started_day = _parse_iso_date(_to_text(bucket.get("started_date")))
+            bucket_hours = float(bucket.get("hours_logged") or 0)
+            if started_day is None or bucket_hours <= 0:
+                continue
             day_key = started_day.isoformat()
             week_key = _iso_week_code(started_day)
             month_key = f"{started_day.year:04d}-{started_day.month:02d}"
-            assignee_day[day_key][assignee] += hours
-            assignee_week[week_key][assignee] += hours
-            assignee_month[month_key][assignee] += hours
+            assignee_day[day_key][assignee] += bucket_hours
+            assignee_week[week_key][assignee] += bucket_hours
+            assignee_month[month_key][assignee] += bucket_hours
     result["subtask_hours_by_issue"] = _round_dict(dict(subtask_hours))
     result["epic_hours_by_issue"] = _round_dict(dict(epic_hours))
     result["project_hours_by_key"] = _round_dict(dict(project_hours))
@@ -4223,29 +4474,149 @@ def _canonical_compute_nested_actual_hours(
     from_date: date,
     to_date: date,
     mode: str = "log_date",
+    selected_projects: set[str] | None = None,
     selected_assignees: set[str] | None = None,
 ) -> dict[str, dict[str, float]]:
     result: dict[str, dict[str, float]] = {"subtask_hours_by_issue": {}}
+    scoped = _canonical_compute_scoped_subtasks(
+        db_path=db_path,
+        run_id=run_id,
+        from_date=from_date,
+        to_date=to_date,
+        actual_mode=("extended" if mode == "planned_dates" else "log_date"),
+        selected_projects=selected_projects,
+        selected_assignees=selected_assignees,
+        include_rows=True,
+    )
+    subtask_hours: dict[str, float] = defaultdict(float)
+    for row in list(scoped.get("rows") or []):
+        issue_key = _to_text(row.get("issue_key")).upper()
+        hours = float(row.get("logged_hours") or 0)
+        if issue_key and hours > 0:
+            subtask_hours[issue_key] += hours
+    result["subtask_hours_by_issue"] = _round_dict(dict(subtask_hours))
+    return result
+
+
+def _canonical_is_scoped_subtask_issue_type(issue_type: object) -> bool:
+    """True only for subtask issue types. Used for planned/actual hours; excludes Task and Bug (sub)task."""
+    value = _to_text(issue_type).lower()
+    return "sub-task" in value or "subtask" in value
+
+
+def _canonical_compute_scoped_subtasks(
+    db_path: Path,
+    run_id: str,
+    from_date: date,
+    to_date: date,
+    actual_mode: str,
+    selected_projects: set[str] | None = None,
+    selected_assignees: set[str] | None = None,
+    *,
+    include_rows: bool = True,
+) -> dict[str, object]:
+    result: dict[str, object] = {
+        "rows": [],
+        "summary": {
+            "total_planned_hours": 0.0,
+            "total_actual_hours": 0.0,
+            "total_subtasks": 0,
+            "total_assignees": 0,
+        },
+    }
     run_id_text = _to_text(run_id)
+    mode = "extended" if _to_text(actual_mode).lower() in {"extended", "planned_dates", "all"} else "log_date"
     if not run_id_text:
         return result
     with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
-        worklogs = [dict(row) for row in conn.execute("SELECT * FROM canonical_worklogs WHERE run_id = ?", (run_id_text,)).fetchall()]
-    subtask_hours: dict[str, float] = defaultdict(float)
-    for row in worklogs:
-        issue_key = _to_text(row.get("issue_key")).upper()
-        started_day = _parse_iso_date(_to_text(row.get("started_date")))
-        hours = float(row.get("hours_logged") or 0)
-        if not issue_key or started_day is None or hours <= 0:
+        issue_rows = [dict(row) for row in conn.execute(
+            """
+            SELECT issue_key, project_key, issue_type, assignee, start_date, due_date,
+                   original_estimate_hours, epic_key
+            FROM canonical_issues
+            WHERE run_id = ?
+            """,
+            (run_id_text,),
+        ).fetchall()]
+        worklog_rows = [dict(row) for row in conn.execute(
+            """
+            SELECT issue_key, project_key, worklog_author, issue_assignee, started_date, hours_logged
+            FROM canonical_worklogs
+            WHERE run_id = ?
+            """,
+            (run_id_text,),
+        ).fetchall()]
+
+    filtered_rows: list[dict[str, object]] = []
+    scoped_issue_keys: set[str] = set()
+    for issue in issue_rows:
+        issue_key = _to_text(issue.get("issue_key")).upper()
+        if not issue_key:
             continue
-        if mode == "log_date" and not (from_date <= started_day <= to_date):
+        project_key = _to_text(issue.get("project_key")).upper()
+        if project_key == "RLT":
             continue
-        assignee = _to_text(row.get("worklog_author")) or _to_text(row.get("issue_assignee")) or "Unassigned"
+        if selected_projects and project_key not in selected_projects:
+            continue
+        if not _canonical_is_scoped_subtask_issue_type(issue.get("issue_type")):
+            continue
+        assignee = _to_text(issue.get("assignee"))
         if selected_assignees and assignee.lower() not in selected_assignees:
             continue
-        subtask_hours[issue_key] += hours
-    result["subtask_hours_by_issue"] = _round_dict(dict(subtask_hours))
+        start_day = _parse_iso_date(_to_text(issue.get("start_date")))
+        due_day = _parse_iso_date(_to_text(issue.get("due_date")))
+        if not ((start_day and from_date <= start_day <= to_date) or (due_day and from_date <= due_day <= to_date)):
+            continue
+        filtered_rows.append(
+            {
+                "issue_key": issue_key,
+                "project_key": project_key,
+                "assignee": assignee,
+                "issue_type": _to_text(issue.get("issue_type")),
+                "start_date": _to_text(issue.get("start_date")),
+                "due_date": _to_text(issue.get("due_date")),
+                "original_estimate_hours": round(float(issue.get("original_estimate_hours") or 0), 2),
+                "epic_key": _to_text(issue.get("epic_key")).upper(),
+                "logged_hours": 0.0,
+                "in_range_worklogs": [],
+            }
+        )
+        scoped_issue_keys.add(issue_key)
+
+    by_issue_key = {str(row["issue_key"]): row for row in filtered_rows}
+    for worklog in worklog_rows:
+        issue_key = _to_text(worklog.get("issue_key")).upper()
+        if issue_key not in scoped_issue_keys:
+            continue
+        row = by_issue_key.get(issue_key)
+        if row is None:
+            continue
+        started_day = _parse_iso_date(_to_text(worklog.get("started_date")))
+        hours = float(worklog.get("hours_logged") or 0)
+        if started_day is None or hours <= 0:
+            continue
+        in_range = from_date <= started_day <= to_date
+        if in_range:
+            row["in_range_worklogs"].append(
+                {"started_date": started_day.isoformat(), "hours_logged": round(hours, 2)}
+            )
+        if mode == "extended":
+            row["logged_hours"] = round(float(row.get("logged_hours") or 0) + hours, 2)
+        elif in_range:
+            row["logged_hours"] = round(float(row.get("logged_hours") or 0) + hours, 2)
+
+    total_planned = round(sum(float(row.get("original_estimate_hours") or 0) for row in filtered_rows), 2)
+    total_actual = round(sum(float(row.get("logged_hours") or 0) for row in filtered_rows), 2)
+    total_assignees = len({str(row.get("assignee") or "").strip() for row in filtered_rows if str(row.get("assignee") or "").strip()})
+    result["summary"] = {
+        "total_planned_hours": total_planned,
+        "total_actual_hours": total_actual,
+        "total_subtasks": len(filtered_rows),
+        "total_assignees": total_assignees,
+    }
+    if include_rows:
+        result["rows"] = filtered_rows
     return result
 
 
@@ -8016,8 +8387,147 @@ def _canonical_refresh_settings_html() -> str:
     #status.ok {{ color:var(--ok); }}
     #status.err {{ color:var(--danger); }}
     .muted {{ color:var(--muted); }}
+    .timestamp-display {{
+      display:flex;
+      flex-direction:column;
+      gap:2px;
+      line-height:1.2;
+    }}
+    .timestamp-primary {{
+      font-weight:600;
+      color:var(--fg);
+    }}
+    .timestamp-raw {{
+      color:var(--muted);
+      font-family:Consolas, monospace;
+      font-size:.74rem;
+    }}
+    .prepare-offline-modal {{
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }}
+    .prepare-offline-modal[aria-hidden="false"] {{ display: flex; }}
+    .prepare-offline-backdrop {{
+      position: absolute;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.4);
+    }}
+    .prepare-offline-dialog {{
+      position: relative;
+      max-width: 520px;
+      width: 100%;
+      max-height: 90vh;
+      overflow: auto;
+    }}
+    .prepare-offline-fields {{ display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }}
+    .prepare-offline-date-row {{
+      display: flex;
+      align-items: flex-end;
+      gap: 8px;
+      grid-column: 1 / -1;
+    }}
+    .prepare-offline-date-row .prepare-offline-arrow-btn {{
+      flex-shrink: 0;
+      width: 40px;
+      height: 40px;
+      padding: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--card);
+      color: var(--ink);
+      cursor: pointer;
+    }}
+    .prepare-offline-date-row .prepare-offline-arrow-btn:hover {{
+      background: var(--soft);
+      border-color: var(--brand);
+      color: var(--brand);
+    }}
+    .prepare-offline-date-row .prepare-offline-field {{ flex: 1; min-width: 0; }}
+    .prepare-offline-reports {{
+      max-height: 280px;
+      overflow-x: hidden;
+      overflow-y: auto;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--soft);
+      min-width: 0;
+    }}
+    .prepare-offline-reports-toolbar {{
+      display: flex;
+      gap: 10px;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--line);
+      background: var(--card);
+      flex-shrink: 0;
+    }}
+    .prepare-offline-reports-toolbar button {{
+      font-size: .8rem;
+      padding: 4px 10px;
+      border: none;
+      background: transparent;
+      color: var(--brand);
+      cursor: pointer;
+      border-radius: 6px;
+    }}
+    .prepare-offline-reports-toolbar button:hover {{
+      background: var(--soft);
+    }}
+    .prepare-offline-reports-ul {{
+      list-style: none;
+      margin: 0;
+      padding: 8px 0;
+    }}
+    .prepare-offline-report-item {{
+      margin: 0;
+      border-bottom: 1px solid var(--line);
+    }}
+    .prepare-offline-report-item:last-child {{
+      border-bottom: none;
+    }}
+    .prepare-offline-report-item label {{
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      margin: 0;
+      font-size: .9rem;
+      font-weight: 500;
+      color: var(--ink);
+      cursor: pointer;
+      width: 100%;
+      box-sizing: border-box;
+    }}
+    .prepare-offline-report-item label:hover {{
+      background: rgba(0,0,0,.04);
+    }}
+    .prepare-offline-reports .offline-report-cb {{
+      flex-shrink: 0;
+      margin: 0;
+      width: 18px;
+      height: 18px;
+      accent-color: var(--brand);
+      cursor: pointer;
+    }}
+    .prepare-offline-report-title {{
+      flex: 1;
+      min-width: 0;
+      overflow-wrap: break-word;
+      word-break: break-word;
+      text-align: left;
+    }}
+    .prepare-offline-progress {{ margin: 12px 0; color: var(--muted); font-size: .9rem; }}
+    .prepare-offline-actions {{ display: flex; gap: 10px; margin-top: 14px; }}
     @media (max-width: 980px) {{
       .controls {{ grid-template-columns: 1fr; }}
+      .prepare-offline-fields {{ grid-template-columns: 1fr; }}
     }}
   </style>
 </head>
@@ -8053,6 +8563,10 @@ def _canonical_refresh_settings_html() -> str:
           <button id="reload-btn" class="btn ghost" type="button">
             <span class="material-symbols-outlined">refresh</span>
             Reload Status
+          </button>
+          <button id="prepare-offline-btn" class="btn ghost" type="button">
+            <span class="material-symbols-outlined">folder_off</span>
+            Prepare Offline HTML
           </button>
         </div>
       </div>
@@ -8116,6 +8630,41 @@ def _canonical_refresh_settings_html() -> str:
         </table>
       </div>
     </section>
+
+    <div id="prepare-offline-modal" class="prepare-offline-modal" aria-hidden="true">
+      <div class="prepare-offline-backdrop"></div>
+      <div class="prepare-offline-dialog card">
+        <h2 style="margin:0 0 12px;">Prepare Offline HTML</h2>
+        <p class="muted" style="margin:0 0 14px;">Select date range and reports. A timestamped folder will be created with HTML and JSON files.</p>
+        <div class="prepare-offline-fields">
+          <div class="prepare-offline-date-row">
+            <button type="button" id="offline-date-prev-month" class="prepare-offline-arrow-btn" title="Previous month" aria-label="Previous month">
+              <span class="material-symbols-outlined">chevron_left</span>
+            </button>
+            <div class="prepare-offline-field">
+              <label for="offline-from-date">From date</label>
+              <input id="offline-from-date" type="date" required>
+            </div>
+            <div class="prepare-offline-field">
+              <label for="offline-to-date">To date</label>
+              <input id="offline-to-date" type="date" required>
+            </div>
+            <button type="button" id="offline-date-next-month" class="prepare-offline-arrow-btn" title="Next month" aria-label="Next month">
+              <span class="material-symbols-outlined">chevron_right</span>
+            </button>
+          </div>
+        </div>
+        <div style="margin-top:12px;">
+          <label style="margin-bottom:8px;display:block;">Reports to include</label>
+          <div id="offline-reports-list" class="prepare-offline-reports"></div>
+        </div>
+        <div id="prepare-offline-progress" class="prepare-offline-progress" style="display:none;">Preparing...</div>
+        <div class="prepare-offline-actions">
+          <button id="offline-prepare-submit" class="btn" type="button">Prepare</button>
+          <button id="offline-prepare-cancel" class="btn ghost" type="button">Cancel</button>
+        </div>
+      </div>
+    </div>
   </main>
 
   <script>
@@ -8163,6 +8712,49 @@ def _canonical_refresh_settings_html() -> str:
       return String(value || "")
         .replace(/_/g, " ")
         .replace(/\\b\\w/g, (m) => m.toUpperCase());
+    }}
+
+    function parseUtcTimestamp(value) {{
+      const raw = String(value || "").trim();
+      if (!raw || raw === "-") return null;
+      const normalized = /[zZ]$|[+-]\\d{{2}}:\\d{{2}}$/.test(raw)
+        ? raw
+        : raw.includes("T")
+          ? raw + "Z"
+          : raw.replace(" ", "T") + "Z";
+      const parsed = new Date(normalized);
+      return Number.isNaN(parsed.getTime()) ? null : parsed;
+    }}
+
+    function formatFriendlyTimestamp(value) {{
+      const raw = String(value || "").trim();
+      if (!raw) return "-";
+      const parsed = parseUtcTimestamp(raw);
+      if (!parsed) return raw;
+      const primary = new Intl.DateTimeFormat(undefined, {{
+        weekday: "short",
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      }}).format(parsed);
+      const zoneParts = new Intl.DateTimeFormat(undefined, {{
+        timeZoneName: "short",
+      }}).formatToParts(parsed);
+      const zoneName = (zoneParts.find((part) => part.type === "timeZoneName") || {{}}).value || "";
+      return zoneName ? `${{primary}} (${{zoneName}})` : primary;
+    }}
+
+    function formatTimestampHtml(value) {{
+      const raw = String(value || "").trim();
+      if (!raw) return "-";
+      return `
+        <span class="timestamp-display" title="UTC: ${{esc(raw)}}">
+          <span class="timestamp-primary">${{esc(formatFriendlyTimestamp(raw))}}</span>
+          <span class="timestamp-raw">${{esc(raw)}}</span>
+        </span>
+      `;
     }}
 
     function runStatusText(run) {{
@@ -8239,9 +8831,9 @@ def _canonical_refresh_settings_html() -> str:
           <td>${{esc(row.issue_type)}}</td>
           <td>${{esc(row.status)}}</td>
           <td>${{esc(row.change_reason)}}</td>
-          <td class="mono">${{esc(row.cached_issue_updated_utc)}}</td>
-          <td class="mono">${{esc(row.cached_worklog_updated_utc)}}</td>
-          <td class="mono">${{esc(row.jira_issue_updated_utc)}}</td>
+          <td>${{formatTimestampHtml(row.cached_issue_updated_utc)}}</td>
+          <td>${{formatTimestampHtml(row.cached_worklog_updated_utc)}}</td>
+          <td>${{formatTimestampHtml(row.jira_issue_updated_utc)}}</td>
           <td>${{esc(row.computed_action)}}</td>
           <td>${{esc(row.current_stage)}}</td>
         </tr>
@@ -8266,9 +8858,9 @@ def _canonical_refresh_settings_html() -> str:
       metaRunId.textContent = String(item.run_id || "-");
       metaStep.textContent = labelize(item.step || "-");
       metaItem.textContent = String(stats.current_item || "-");
-      metaStarted.textContent = String(item.started_at_utc || "-");
-      metaUpdated.textContent = String(item.updated_at_utc || "-");
-      metaEnded.textContent = String(item.ended_at_utc || "-");
+      metaStarted.innerHTML = formatTimestampHtml(item.started_at_utc);
+      metaUpdated.innerHTML = formatTimestampHtml(item.updated_at_utc);
+      metaEnded.innerHTML = formatTimestampHtml(item.ended_at_utc);
       managedProjectPill.textContent = projectKeys.length
         ? `Managed Projects: ${{projectKeys.join(", ")}}`
         : "Managed Projects: none";
@@ -8374,6 +8966,142 @@ def _canonical_refresh_settings_html() -> str:
     cancelBtn.addEventListener("click", () => cancelRefresh().catch((err) => setStatus(err.message || String(err), "err")));
     reloadBtn.addEventListener("click", () => loadCurrentRun().catch((err) => setStatus(err.message || String(err), "err")));
 
+    const prepareOfflineModal = document.getElementById("prepare-offline-modal");
+    const prepareOfflineBtn = document.getElementById("prepare-offline-btn");
+    const offlineFromDate = document.getElementById("offline-from-date");
+    const offlineToDate = document.getElementById("offline-to-date");
+    const offlineReportsList = document.getElementById("offline-reports-list");
+    const offlinePrepareSubmit = document.getElementById("offline-prepare-submit");
+    const offlinePrepareCancel = document.getElementById("offline-prepare-cancel");
+    const prepareOfflineProgress = document.getElementById("prepare-offline-progress");
+
+    function setDefaultOfflineDates() {{
+      const today = new Date();
+      const y = today.getFullYear();
+      const m = String(today.getMonth() + 1).padStart(2, "0");
+      const d = String(today.getDate()).padStart(2, "0");
+      const firstDay = new Date(y, today.getMonth(), 1);
+      const fromStr = firstDay.getFullYear() + "-" + String(firstDay.getMonth() + 1).padStart(2, "0") + "-" + String(firstDay.getDate()).padStart(2, "0");
+      if (!offlineFromDate.value) offlineFromDate.value = fromStr;
+      if (!offlineToDate.value) offlineToDate.value = y + "-" + m + "-" + d;
+    }}
+
+    function parseOfflineDate(val) {{
+      if (!val || val.length < 10) return null;
+      const d = new Date(val.substring(0, 10) + "T12:00:00");
+      return isNaN(d.getTime()) ? null : d;
+    }}
+
+    function formatOfflineDateYYYYMMDD(d) {{
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      return y + "-" + m + "-" + day;
+    }}
+
+    function shiftOfflineDatesByMonth(delta) {{
+      const fromD = parseOfflineDate(offlineFromDate.value);
+      const toD = parseOfflineDate(offlineToDate.value);
+      if (!fromD || !toD) return;
+      fromD.setMonth(fromD.getMonth() + delta);
+      toD.setMonth(toD.getMonth() + delta);
+      offlineFromDate.value = formatOfflineDateYYYYMMDD(fromD);
+      offlineToDate.value = formatOfflineDateYYYYMMDD(toD);
+    }}
+
+    document.getElementById("offline-date-prev-month").addEventListener("click", () => shiftOfflineDatesByMonth(-1));
+    document.getElementById("offline-date-next-month").addEventListener("click", () => shiftOfflineDatesByMonth(1));
+
+    async function loadOfflineReportsList() {{
+      const res = await fetch("/api/prepare-offline-html/reports", {{ cache: "no-store" }});
+      const body = await res.json().catch(() => ({{}}));
+      const reports = Array.isArray(body.reports) ? body.reports : [];
+      const itemsHtml = reports.map((r) => {{
+        const key = esc(r.key || r.file || "");
+        const title = esc(r.title || r.key || r.file || "");
+        return `<li class="prepare-offline-report-item"><label><input type="checkbox" class="offline-report-cb" value="${{key}}" checked><span class="prepare-offline-report-title">${{title}}</span></label></li>`;
+      }}).join("");
+      offlineReportsList.innerHTML = `<div class="prepare-offline-reports-toolbar"><button type="button" class="prepare-offline-select-all">Select all</button><button type="button" class="prepare-offline-select-none">Deselect all</button></div><ul class="prepare-offline-reports-ul">${{itemsHtml}}</ul>`;
+      offlineReportsList.querySelector(".prepare-offline-select-all").addEventListener("click", () => {{
+        offlineReportsList.querySelectorAll(".offline-report-cb").forEach((cb) => {{ cb.checked = true; }});
+      }});
+      offlineReportsList.querySelector(".prepare-offline-select-none").addEventListener("click", () => {{
+        offlineReportsList.querySelectorAll(".offline-report-cb").forEach((cb) => {{ cb.checked = false; }});
+      }});
+    }}
+
+    function getSelectedOfflineReportKeys() {{
+      return Array.from(document.querySelectorAll(".offline-report-cb:checked")).map((el) => el.value).filter(Boolean);
+    }}
+
+    prepareOfflineBtn.addEventListener("click", async () => {{
+      prepareOfflineModal.setAttribute("aria-hidden", "false");
+      setDefaultOfflineDates();
+      await loadOfflineReportsList();
+    }});
+
+    offlinePrepareCancel.addEventListener("click", () => {{
+      prepareOfflineModal.setAttribute("aria-hidden", "true");
+    }});
+    prepareOfflineModal.querySelector(".prepare-offline-backdrop").addEventListener("click", () => {{
+      prepareOfflineModal.setAttribute("aria-hidden", "true");
+    }});
+
+    offlinePrepareSubmit.addEventListener("click", async () => {{
+      const fromVal = (offlineFromDate.value || "").trim();
+      const toVal = (offlineToDate.value || "").trim();
+      if (!fromVal || !toVal) {{
+        setStatus("Please select from and to date.", "err");
+        return;
+      }}
+      if (toVal < fromVal) {{
+        setStatus("To date must be on or after from date.", "err");
+        return;
+      }}
+      const reportKeys = getSelectedOfflineReportKeys();
+      if (!reportKeys.length) {{
+        setStatus("Select at least one report.", "err");
+        return;
+      }}
+      offlinePrepareSubmit.disabled = true;
+      prepareOfflineProgress.style.display = "block";
+      prepareOfflineProgress.textContent = "Starting...";
+      try {{
+        const startRes = await fetch("/api/prepare-offline-html/start", {{
+          method: "POST",
+          headers: {{ "Content-Type": "application/json" }},
+          body: JSON.stringify({{ from_date: fromVal, to_date: toVal, report_keys: reportKeys }}),
+        }});
+        const startBody = await startRes.json().catch(() => ({{}}));
+        if (!startRes.ok || !startBody.ok) {{
+          throw new Error(startBody.error || "Failed to start");
+        }}
+        const jobId = startBody.job_id;
+        const poll = async () => {{
+          const statusRes = await fetch("/api/prepare-offline-html/status?job_id=" + encodeURIComponent(jobId), {{ cache: "no-store" }});
+          const statusBody = await statusRes.json().catch(() => ({{}}));
+          prepareOfflineProgress.textContent = (statusBody.message || "") + " " + (statusBody.progress != null ? statusBody.progress + "%" : "");
+          if (statusBody.status === "success") {{
+            prepareOfflineProgress.textContent = "Downloading...";
+            window.location.href = "/api/prepare-offline-html/download?job_id=" + encodeURIComponent(jobId);
+            prepareOfflineModal.setAttribute("aria-hidden", "true");
+            setStatus("Offline bundle ready: " + (statusBody.folder_name || ""), "ok");
+            return;
+          }}
+          if (statusBody.status === "failed") {{
+            throw new Error(statusBody.error || "Prepare failed");
+          }}
+          setTimeout(poll, 800);
+        }};
+        await poll();
+      }} catch (err) {{
+        setStatus(err.message || String(err), "err");
+        prepareOfflineProgress.textContent = err.message || "Error";
+      }} finally {{
+        offlinePrepareSubmit.disabled = false;
+      }}
+    }});
+
     (async function init() {{
       setBusy(false);
       try {{
@@ -8387,6 +9115,597 @@ def _canonical_refresh_settings_html() -> str:
   <script src="/shared-nav.js"></script>
 </body>
 </html>""".replace("__SETTINGS_TOP_NAV__", _settings_top_nav_html(CANONICAL_REFRESH_SETTINGS_ROUTE))
+
+
+def _sql_console_settings_html() -> str:
+    samples = {
+        "canonical": [
+            {
+                "label": "Canonical tables",
+                "sql": "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name LIMIT 100",
+            },
+            {
+                "label": "Total work by projects (subtasks only)",
+                "sql": "-- Total work by projects (1. Total work by projects) \u2013 no bindings; edit dates below if needed.\n-- Date range: 2026-02-01 to 2026-03-31 (change the 4 literals in the CTEs if needed).\n\nWITH\nrun AS (\n  SELECT last_success_run_id AS run_id\n  FROM canonical_refresh_state\n  WHERE id = 1\n),\n\nscoped_subtasks AS (\n  SELECT\n    i.issue_key,\n    UPPER(i.project_key) AS project_key,\n    UPPER(COALESCE(NULLIF(TRIM(i.epic_key), ''), 'NO_EPIC')) AS epic_key,\n    i.assignee,\n    i.issue_type,\n    i.start_date,\n    i.due_date,\n    COALESCE(i.original_estimate_hours, 0) AS planned_hours\n  FROM canonical_issues i\n  JOIN run r ON r.run_id = i.run_id\n  WHERE UPPER(i.project_key) <> 'RLT'\n    AND (\n      LOWER(i.issue_type) LIKE '%sub-task%'\n      OR LOWER(i.issue_type) LIKE '%subtask%'\n    )\n    AND (\n      (i.start_date <> '' AND i.start_date BETWEEN '2026-02-01' AND '2026-03-31')\n      OR\n      (i.due_date   <> '' AND i.due_date   BETWEEN '2026-02-01' AND '2026-03-31')\n    )\n),\n\nworklogs AS (\n  SELECT\n    w.issue_key,\n    SUM(COALESCE(w.hours_logged, 0)) AS total_hours_all,\n    SUM(\n      CASE\n        WHEN w.started_date BETWEEN '2026-02-01' AND '2026-03-31' THEN COALESCE(w.hours_logged, 0)\n        ELSE 0\n      END\n    ) AS total_hours_in_range\n  FROM canonical_worklogs w\n  JOIN run r ON r.run_id = w.run_id\n  GROUP BY w.issue_key\n),\n\nepic_meta AS (\n  SELECT\n    UPPER(i.issue_key) AS epic_key,\n    i.summary AS epic_summary,\n    i.status  AS epic_status,\n    i.start_date AS epic_start_date,\n    i.due_date   AS epic_due_date\n  FROM canonical_issues i\n  JOIN run r ON r.run_id = i.run_id\n  WHERE i.issue_key <> ''\n)\n\nSELECT\n  s.project_key,\n  s.epic_key,\n  COALESCE(em.epic_summary, '') AS epic_summary,\n  COALESCE(em.epic_status,  '') AS epic_status,\n  COALESCE(em.epic_start_date, '') AS epic_start_date,\n  COALESCE(em.epic_due_date,   '') AS epic_due_date,\n  ROUND(SUM(s.planned_hours), 2) AS planned_hours,\n  ROUND(SUM(COALESCE(w.total_hours_in_range, 0)), 2) AS actual_hours_log_date,\n  ROUND(SUM(s.planned_hours) - SUM(COALESCE(w.total_hours_in_range, 0)), 2) AS plan_actual_difference_log_date,\n  ROUND(SUM(COALESCE(w.total_hours_all, 0)), 2) AS actual_hours_planned_dates,\n  ROUND(SUM(s.planned_hours) - SUM(COALESCE(w.total_hours_all, 0)), 2) AS plan_actual_difference_planned_dates,\n  COUNT(*) AS subtask_count,\n  COUNT(DISTINCT NULLIF(LOWER(TRIM(s.assignee)), '')) AS assignee_count\nFROM scoped_subtasks s\nLEFT JOIN worklogs w ON w.issue_key = s.issue_key\nLEFT JOIN epic_meta em ON em.epic_key = s.epic_key\nGROUP BY s.project_key, s.epic_key\nORDER BY planned_hours DESC, s.project_key, s.epic_key;",
+            },
+            {
+                "label": "Total Planned Subtasks",
+                "sql": "WITH latest_run AS (\n  SELECT run_id\n  FROM canonical_refresh_runs\n  WHERE status = 'success'\n  ORDER BY updated_at_utc DESC\n  LIMIT 1\n), scoped_subtasks AS (\n  SELECT\n    ci.issue_key,\n    ci.project_key,\n    ci.assignee,\n    ci.issue_type,\n    ci.start_date,\n    ci.due_date,\n    COALESCE(ci.original_estimate_hours, 0) AS original_estimate_hours\n  FROM canonical_issues ci\n  WHERE ci.run_id = (SELECT run_id FROM latest_run)\n    AND ci.project_key IN ('DIGITALLOG', 'FF', 'ODL', 'MN', 'O2', 'WOM')\n    AND ci.project_key <> 'RLT'\n    AND (\n      LOWER(ci.issue_type) LIKE '%sub-task%'\n      OR LOWER(ci.issue_type) LIKE '%subtask%'\n    )\n    AND (\n      (ci.start_date >= '2026-02-01' AND ci.start_date <= '2026-02-28')\n      OR\n      (ci.due_date >= '2026-02-01' AND ci.due_date <= '2026-02-28')\n    )\n), worklog_totals AS (\n  SELECT\n    cw.issue_key,\n    ROUND(SUM(COALESCE(cw.hours_logged, 0)), 2) AS logged_hours\n  FROM canonical_worklogs cw\n  WHERE cw.run_id = (SELECT run_id FROM latest_run)\n    AND cw.started_date >= '2026-02-01'\n    AND cw.started_date <= '2026-02-28'\n  GROUP BY cw.issue_key\n)\nSELECT\n  ss.project_key,\n  ss.issue_key,\n  ss.assignee,\n  ss.issue_type,\n  ss.start_date,\n  ss.due_date,\n  ROUND(ss.original_estimate_hours, 2) AS original_estimate_hours,\n  COALESCE(wt.logged_hours, 0) AS logged_hours\nFROM scoped_subtasks ss\nLEFT JOIN worklog_totals wt\n  ON wt.issue_key = ss.issue_key\nORDER BY ss.project_key, ss.issue_key;",
+            },
+            {
+                "label": "Total Planned Subtasks Extended Actuals",
+                "sql": "WITH latest_run AS (\n  SELECT run_id\n  FROM canonical_refresh_runs\n  WHERE status = 'success'\n  ORDER BY updated_at_utc DESC\n  LIMIT 1\n), scoped_subtasks AS (\n  SELECT\n    ci.issue_key,\n    ci.project_key,\n    ci.assignee,\n    ci.issue_type,\n    ci.start_date,\n    ci.due_date,\n    COALESCE(ci.original_estimate_hours, 0) AS original_estimate_hours\n  FROM canonical_issues ci\n  WHERE ci.run_id = (SELECT run_id FROM latest_run)\n    AND ci.project_key IN ('DIGITALLOG', 'FF', 'ODL', 'MN', 'O2', 'WOM')\n    AND ci.project_key <> 'RLT'\n    AND (\n      LOWER(ci.issue_type) LIKE '%sub-task%'\n      OR LOWER(ci.issue_type) LIKE '%subtask%'\n    )\n    AND (\n      (ci.start_date >= '2026-02-01' AND ci.start_date <= '2026-02-28')\n      OR\n      (ci.due_date >= '2026-02-01' AND ci.due_date <= '2026-02-28')\n    )\n), worklog_totals AS (\n  SELECT\n    cw.issue_key,\n    ROUND(SUM(COALESCE(cw.hours_logged, 0)), 2) AS logged_hours\n  FROM canonical_worklogs cw\n  WHERE cw.run_id = (SELECT run_id FROM latest_run)\n  GROUP BY cw.issue_key\n)\nSELECT\n  ss.project_key,\n  ss.issue_key,\n  ss.assignee,\n  ss.issue_type,\n  ss.start_date,\n  ss.due_date,\n  ROUND(ss.original_estimate_hours, 2) AS original_estimate_hours,\n  COALESCE(wt.logged_hours, 0) AS logged_hours\nFROM scoped_subtasks ss\nLEFT JOIN worklog_totals wt\n  ON wt.issue_key = ss.issue_key\nORDER BY ss.project_key, ss.issue_key;",
+            },
+            {
+                "label": "Latest canonical run",
+                "sql": "SELECT run_id, scope_year, status, started_at_utc, ended_at_utc FROM canonical_refresh_runs ORDER BY started_at_utc DESC LIMIT 10",
+            },
+            {
+                "label": "Issue counts by type",
+                "sql": "SELECT issue_type, COUNT(*) AS issue_count FROM canonical_issues GROUP BY issue_type ORDER BY issue_count DESC LIMIT 20",
+            },
+        ],
+        "exports": [
+            {
+                "label": "Exports tables",
+                "sql": "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name LIMIT 100",
+            },
+            {
+                "label": "Recent work items",
+                "sql": "SELECT issue_key, project_key, status, assignee, updated FROM work_items ORDER BY updated DESC LIMIT 25",
+            },
+            {
+                "label": "Worklog totals by assignee",
+                "sql": "SELECT issue_assignee, ROUND(SUM(hours_logged), 2) AS total_hours FROM subtask_worklogs GROUP BY issue_assignee ORDER BY total_hours DESC LIMIT 25",
+            },
+        ],
+    }
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SQL Console</title>
+  <link rel="stylesheet" href="/shared-nav.css">
+  <link rel="stylesheet" href="/material-symbols.css">
+  <style>
+    :root {{
+      --bg:#eef6fb;
+      --panel:#ffffff;
+      --line:#d7e2ec;
+      --ink:#0f172a;
+      --muted:#516173;
+      --brand:#0f766e;
+      --brand-strong:#155e75;
+      --soft:#f7fbff;
+      --danger:#b91c1c;
+      --ok:#166534;
+      --code:#0b1120;
+      --code-line:#1e293b;
+      --code-ink:#e2e8f0;
+      --accent:#e0f2fe;
+    }}
+    * {{ box-sizing:border-box; }}
+    body {{
+      margin:0;
+      padding:20px;
+      color:var(--ink);
+      font-family:"Segoe UI",Tahoma,sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(14,165,233,.10), transparent 24%),
+        radial-gradient(circle at top right, rgba(15,118,110,.10), transparent 28%),
+        linear-gradient(180deg, #edf5fb 0%, #f8fbff 100%);
+    }}
+    .wrap {{ max-width:1400px; margin:0 auto; display:grid; gap:16px; }}
+    .card {{
+      background:var(--panel);
+      border:1px solid var(--line);
+      border-radius:18px;
+      padding:18px;
+      box-shadow:0 18px 34px rgba(15,23,42,.06);
+    }}
+    .top {{
+      display:flex;
+      justify-content:space-between;
+      gap:12px;
+      align-items:flex-start;
+      flex-wrap:wrap;
+    }}
+    .grid {{
+      display:grid;
+      gap:16px;
+      grid-template-columns:minmax(320px, 1.3fr) minmax(260px, .9fr);
+      align-items:start;
+    }}
+    .controls {{
+      display:grid;
+      gap:12px;
+    }}
+    label {{
+      display:block;
+      font-size:.78rem;
+      font-weight:800;
+      letter-spacing:.04em;
+      text-transform:uppercase;
+      color:#475569;
+      margin-bottom:6px;
+    }}
+    select, textarea, input {{
+      width:100%;
+      border:1px solid var(--line);
+      border-radius:12px;
+      padding:11px 12px;
+      font:inherit;
+      color:var(--ink);
+      background:#fff;
+    }}
+    textarea {{
+      min-height:300px;
+      resize:vertical;
+      font-family:Consolas, "Courier New", monospace;
+      font-size:.9rem;
+      line-height:1.5;
+      background:linear-gradient(180deg, #0f172a, #111827);
+      color:var(--code-ink);
+      border-color:#1e293b;
+    }}
+    .path-pill {{
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      border-radius:999px;
+      border:1px solid #bfdbfe;
+      background:#eff6ff;
+      color:#1d4ed8;
+      font-size:.8rem;
+      font-weight:700;
+      padding:7px 12px;
+      max-width:100%;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      white-space:nowrap;
+    }}
+    .button-row {{
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+      align-items:center;
+    }}
+    button {{
+      border:1px solid var(--line);
+      border-radius:12px;
+      padding:10px 14px;
+      font:inherit;
+      font-weight:700;
+      cursor:pointer;
+      background:#fff;
+      color:var(--ink);
+    }}
+    button.primary {{
+      border-color:var(--brand);
+      background:linear-gradient(135deg, var(--brand), #14b8a6);
+      color:#fff;
+    }}
+    button.secondary {{
+      border-color:#93c5fd;
+      background:#eff6ff;
+      color:#1d4ed8;
+    }}
+    button:disabled {{ opacity:.6; cursor:not-allowed; }}
+    .status {{
+      min-height:1.2em;
+      font-size:.92rem;
+      color:var(--muted);
+    }}
+    .status.ok {{ color:var(--ok); }}
+    .status.err {{ color:var(--danger); }}
+    .stat-row {{
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+      margin-top:10px;
+    }}
+    .pill {{
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+      border-radius:999px;
+      padding:6px 10px;
+      background:#f8fafc;
+      border:1px solid var(--line);
+      color:#334155;
+      font-size:.78rem;
+      font-weight:700;
+    }}
+    .helper {{
+      margin:0;
+      font-size:.88rem;
+      color:var(--muted);
+    }}
+    .sample-list, .schema-list {{
+      display:grid;
+      gap:10px;
+      margin-top:12px;
+    }}
+    .sample-card, .schema-card {{
+      border:1px solid var(--line);
+      border-radius:14px;
+      background:var(--soft);
+      padding:12px;
+    }}
+    .sample-card h3, .schema-card h3 {{
+      margin:0 0 8px;
+      font-size:.92rem;
+    }}
+    .sample-sql {{
+      margin:0;
+      white-space:pre-wrap;
+      font-family:Consolas, "Courier New", monospace;
+      font-size:.79rem;
+      color:#0f172a;
+      background:#fff;
+      border:1px solid var(--line);
+      border-radius:10px;
+      padding:10px;
+    }}
+    .schema-columns {{
+      margin-top:10px;
+      display:grid;
+      gap:6px;
+    }}
+    .schema-column {{
+      display:flex;
+      justify-content:space-between;
+      gap:10px;
+      font-size:.8rem;
+      border-bottom:1px dashed #d8e1e8;
+      padding-bottom:6px;
+    }}
+    .schema-column:last-child {{ border-bottom:none; padding-bottom:0; }}
+    .table-wrap {{
+      margin-top:14px;
+      border:1px solid var(--line);
+      border-radius:16px;
+      overflow:auto;
+      background:#fff;
+      max-height:560px;
+    }}
+    table {{
+      width:100%;
+      border-collapse:collapse;
+      min-width:720px;
+    }}
+    th, td {{
+      border-bottom:1px solid #e2e8f0;
+      padding:9px 10px;
+      text-align:left;
+      vertical-align:top;
+      font-size:.84rem;
+    }}
+    th {{
+      position:sticky;
+      top:0;
+      background:#f8fafc;
+      text-transform:uppercase;
+      letter-spacing:.05em;
+      font-size:.72rem;
+    }}
+    td {{
+      font-family:Consolas, "Courier New", monospace;
+      white-space:pre-wrap;
+      word-break:break-word;
+    }}
+    .empty {{
+      padding:24px;
+      color:var(--muted);
+      text-align:center;
+    }}
+    @media (max-width: 1040px) {{
+      .grid {{ grid-template-columns: 1fr; }}
+    }}
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <section class="card">
+      <div class="top">
+        <div>
+          <h1 style="margin:0;font-size:1.3rem;">SQL Console</h1>
+          <p class="helper" style="margin:.45rem 0 0;">Run read-only SQL against the canonical and exports SQLite databases. Only a single read-only statement is allowed per execution.</p>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">__SETTINGS_TOP_NAV__</div>
+      </div>
+      <div class="grid" style="margin-top:16px;">
+        <section class="controls">
+          <div>
+            <label for="database-select">Database</label>
+            <select id="database-select">
+              <option value="canonical">Canonical DB</option>
+              <option value="exports">Exports DB</option>
+            </select>
+          </div>
+          <div>
+            <label>Effective Path</label>
+            <div id="db-path" class="path-pill">Loading...</div>
+          </div>
+          <div>
+            <label for="sql-input">SQL Query</label>
+            <textarea id="sql-input" spellcheck="false" placeholder="SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name"></textarea>
+          </div>
+          <div class="button-row">
+            <button id="run-btn" class="primary" type="button">Run Query</button>
+            <button id="download-btn" class="secondary" type="button">Download Excel</button>
+            <button id="clear-btn" type="button">Clear</button>
+            <button id="schema-btn" class="secondary" type="button">Reload Schema</button>
+          </div>
+          <div id="status" class="status"></div>
+          <div class="stat-row">
+            <span id="elapsed-pill" class="pill">Elapsed: -</span>
+            <span id="rows-pill" class="pill">Rows: -</span>
+            <span id="trunc-pill" class="pill">Truncated: no</span>
+          </div>
+          <div class="table-wrap">
+            <div id="results-empty" class="empty">Run a query to inspect rows.</div>
+            <table id="results-table" hidden>
+              <thead><tr id="results-head"></tr></thead>
+              <tbody id="results-body"></tbody>
+            </table>
+          </div>
+        </section>
+        <aside class="controls">
+          <div>
+            <h2 style="margin:0;font-size:1rem;">Sample Queries</h2>
+            <p class="helper" style="margin:.35rem 0 0;">Click a sample to load it into the editor.</p>
+            <div id="sample-list" class="sample-list"></div>
+          </div>
+          <div>
+            <h2 style="margin:0;font-size:1rem;">Schema Browser</h2>
+            <p class="helper" style="margin:.35rem 0 0;">Live table and column metadata from the selected database.</p>
+            <div id="schema-list" class="schema-list"></div>
+          </div>
+        </aside>
+      </div>
+    </section>
+  </main>
+  <script>
+    (() => {{
+      const MAX_ROWS = {SQL_CONSOLE_MAX_ROWS};
+      const SAMPLE_QUERIES = {json.dumps(samples)};
+      const databaseEl = document.getElementById("database-select");
+      const sqlEl = document.getElementById("sql-input");
+      const statusEl = document.getElementById("status");
+      const dbPathEl = document.getElementById("db-path");
+      const elapsedPillEl = document.getElementById("elapsed-pill");
+      const rowsPillEl = document.getElementById("rows-pill");
+      const truncPillEl = document.getElementById("trunc-pill");
+      const runBtn = document.getElementById("run-btn");
+      const downloadBtn = document.getElementById("download-btn");
+      const clearBtn = document.getElementById("clear-btn");
+      const schemaBtn = document.getElementById("schema-btn");
+      const sampleListEl = document.getElementById("sample-list");
+      const schemaListEl = document.getElementById("schema-list");
+      const resultsTableEl = document.getElementById("results-table");
+      const resultsHeadEl = document.getElementById("results-head");
+      const resultsBodyEl = document.getElementById("results-body");
+      const resultsEmptyEl = document.getElementById("results-empty");
+
+      function setStatus(message, kind) {{
+        statusEl.textContent = message || "";
+        statusEl.className = "status" + (kind ? " " + kind : "");
+      }}
+
+      function selectedDatabase() {{
+        return String(databaseEl.value || "canonical");
+      }}
+
+      function renderSamples() {{
+        const db = selectedDatabase();
+        const rows = Array.isArray(SAMPLE_QUERIES[db]) ? SAMPLE_QUERIES[db] : [];
+        sampleListEl.innerHTML = "";
+        rows.forEach((sample) => {{
+          const card = document.createElement("div");
+          card.className = "sample-card";
+          const title = document.createElement("h3");
+          title.textContent = String(sample.label || "Sample");
+          const code = document.createElement("pre");
+          code.className = "sample-sql";
+          code.textContent = String(sample.sql || "");
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.textContent = "Use Query";
+          btn.addEventListener("click", () => {{
+            sqlEl.value = String(sample.sql || "");
+            sqlEl.focus();
+          }});
+          card.append(title, code, btn);
+          sampleListEl.appendChild(card);
+        }});
+      }}
+
+      function renderSchemaTables(tables) {{
+        schemaListEl.innerHTML = "";
+        const source = Array.isArray(tables) ? tables : [];
+        if (!source.length) {{
+          const empty = document.createElement("div");
+          empty.className = "empty";
+          empty.textContent = "No tables found.";
+          schemaListEl.appendChild(empty);
+          return;
+        }}
+        source.forEach((table) => {{
+          const card = document.createElement("div");
+          card.className = "schema-card";
+          const title = document.createElement("h3");
+          title.textContent = String(table.name || "");
+          const cols = document.createElement("div");
+          cols.className = "schema-columns";
+          (Array.isArray(table.columns) ? table.columns : []).forEach((col) => {{
+            const row = document.createElement("div");
+            row.className = "schema-column";
+            const left = document.createElement("span");
+            left.textContent = String(col.name || "");
+            const right = document.createElement("span");
+            const flags = [];
+            if (col.type) flags.push(String(col.type));
+            if (col.pk) flags.push("PK");
+            if (col.notnull) flags.push("NOT NULL");
+            right.textContent = flags.join(" • ");
+            row.append(left, right);
+            cols.appendChild(row);
+          }});
+          card.append(title, cols);
+          schemaListEl.appendChild(card);
+        }});
+      }}
+
+      function renderResults(columns, rows) {{
+        resultsHeadEl.innerHTML = "";
+        resultsBodyEl.innerHTML = "";
+        const colList = Array.isArray(columns) ? columns : [];
+        const rowList = Array.isArray(rows) ? rows : [];
+        if (!colList.length) {{
+          resultsTableEl.hidden = true;
+          resultsEmptyEl.hidden = false;
+          resultsEmptyEl.textContent = "Query returned no columns.";
+          return;
+        }}
+        colList.forEach((col) => {{
+          const th = document.createElement("th");
+          th.textContent = String(col || "");
+          resultsHeadEl.appendChild(th);
+        }});
+        if (!rowList.length) {{
+          resultsTableEl.hidden = true;
+          resultsEmptyEl.hidden = false;
+          resultsEmptyEl.textContent = "Query returned 0 rows.";
+          return;
+        }}
+        rowList.forEach((row) => {{
+          const tr = document.createElement("tr");
+          colList.forEach((col) => {{
+            const td = document.createElement("td");
+            const value = row && Object.prototype.hasOwnProperty.call(row, col) ? row[col] : "";
+            td.textContent = value == null ? "" : String(value);
+            tr.appendChild(td);
+          }});
+          resultsBodyEl.appendChild(tr);
+        }});
+        resultsEmptyEl.hidden = true;
+        resultsTableEl.hidden = false;
+      }}
+
+      async function loadSchema() {{
+        const db = selectedDatabase();
+        setStatus("Loading schema...", "");
+        dbPathEl.textContent = "Loading...";
+        try {{
+          const response = await fetch("/api/admin/sql-console/schema?database=" + encodeURIComponent(db), {{ cache: "no-store" }});
+          const body = await response.json().catch(() => ({{}}));
+          if (!response.ok || !body.ok) throw new Error(String(body.error || "Failed to load schema."));
+          dbPathEl.textContent = String(body.db_path || "-");
+          renderSchemaTables(body.tables || []);
+          setStatus("Schema loaded.", "ok");
+        }} catch (error) {{
+          dbPathEl.textContent = "Unavailable";
+          renderSchemaTables([]);
+          setStatus(String(error && error.message || error || "Failed to load schema."), "err");
+        }}
+      }}
+
+      async function runQuery() {{
+        const db = selectedDatabase();
+        const sql = String(sqlEl.value || "").trim();
+        if (!sql) {{
+          setStatus("Enter a SQL query first.", "err");
+          return;
+        }}
+        runBtn.disabled = true;
+        setStatus("Running query...", "");
+        try {{
+          const response = await fetch("/api/admin/sql-console/execute", {{
+            method: "POST",
+            headers: {{ "Content-Type": "application/json" }},
+            body: JSON.stringify({{ database: db, sql }})
+          }});
+          const body = await response.json().catch(() => ({{}}));
+          if (!response.ok || !body.ok) throw new Error(String(body.error || "Query failed."));
+          dbPathEl.textContent = String(body.db_path || "-");
+          elapsedPillEl.textContent = "Elapsed: " + String(body.elapsed_ms || 0) + " ms";
+          rowsPillEl.textContent = "Rows: " + String(body.row_count || 0);
+          truncPillEl.textContent = "Truncated: " + (body.truncated ? "yes (max " + MAX_ROWS + ")" : "no");
+          renderResults(body.columns || [], body.rows || []);
+          setStatus("Query completed successfully.", "ok");
+        }} catch (error) {{
+          elapsedPillEl.textContent = "Elapsed: -";
+          rowsPillEl.textContent = "Rows: -";
+          truncPillEl.textContent = "Truncated: no";
+          renderResults([], []);
+          setStatus(String(error && error.message || error || "Query failed."), "err");
+        }} finally {{
+          runBtn.disabled = false;
+        }}
+      }}
+
+      async function downloadExcel() {{
+        const db = selectedDatabase();
+        const sql = String(sqlEl.value || "").trim();
+        if (!sql) {{
+          setStatus("Enter a SQL query first.", "err");
+          return;
+        }}
+        downloadBtn.disabled = true;
+        setStatus("Preparing Excel download...", "");
+        try {{
+          const response = await fetch("/api/admin/sql-console/export", {{
+            method: "POST",
+            headers: {{ "Content-Type": "application/json" }},
+            body: JSON.stringify({{ database: db, sql }})
+          }});
+          if (!response.ok) {{
+            const body = await response.json().catch(() => ({{}}));
+            throw new Error(String(body.error || "Export failed."));
+          }}
+          const blob = await response.blob();
+          const disposition = String(response.headers.get("Content-Disposition") || "");
+          const match = disposition.match(/filename=\"?([^\";]+)\"?/i);
+          const filename = match && match[1] ? match[1] : "sql-console-export.xlsx";
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = filename;
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          URL.revokeObjectURL(url);
+          setStatus("Excel download started.", "ok");
+        }} catch (error) {{
+          setStatus(String(error && error.message || error || "Export failed."), "err");
+        }} finally {{
+          downloadBtn.disabled = false;
+        }}
+      }}
+
+      databaseEl.addEventListener("change", () => {{
+        renderSamples();
+        loadSchema();
+      }});
+      schemaBtn.addEventListener("click", loadSchema);
+      runBtn.addEventListener("click", runQuery);
+      downloadBtn.addEventListener("click", downloadExcel);
+      clearBtn.addEventListener("click", () => {{
+        sqlEl.value = "";
+        renderResults([], []);
+        setStatus("", "");
+      }});
+
+      renderSamples();
+      sqlEl.value = String((SAMPLE_QUERIES.canonical && SAMPLE_QUERIES.canonical[0] && SAMPLE_QUERIES.canonical[0].sql) || "");
+      loadSchema();
+    }})();
+  </script>
+  <script src="/shared-nav.js"></script>
+</body>
+</html>""".replace("__SETTINGS_TOP_NAV__", _settings_top_nav_html(SQL_CONSOLE_SETTINGS_ROUTE))
 
 
 def _page_categories_settings_html() -> str:
@@ -8418,7 +9737,7 @@ def _page_categories_settings_html() -> str:
     @media (max-width:980px) { .split { grid-template-columns:1fr; } }
     .page-block { border:1px solid var(--line); border-radius:10px; padding:10px; background:#fbfdff; }
     .page-grid { display:grid; gap:8px; }
-    .page-row { display:grid; grid-template-columns:240px 1fr; gap:8px; align-items:center; }
+    .page-row { display:grid; grid-template-columns:220px minmax(180px, 260px) 1fr; gap:8px; align-items:center; }
     .page-row label { font-weight:600; font-size:.84rem; }
     input[type="text"], input[type="number"], select { width:100%; border:1px solid var(--line); border-radius:8px; padding:7px; font-size:.85rem; }
     select[multiple] { min-height:78px; }
@@ -8466,7 +9785,7 @@ def _page_categories_settings_html() -> str:
 
     <section class="card">
       <h2 style="margin:0;font-size:1.02rem;">Page Assignments</h2>
-      <p class="muted" style="margin:.4rem 0 0;">Each page can belong to multiple categories.</p>
+      <p class="muted" style="margin:.4rem 0 0;">Each page can belong to multiple categories. Report display names are editable here; slugs stay fixed.</p>
       <div class="split">
         <section class="page-block">
           <h3 style="margin:0 0 8px;font-size:.95rem;">Reports</h3>
@@ -8637,16 +9956,33 @@ def _page_categories_settings_html() -> str:
       containerEl.innerHTML = pages.map((page) => {
         const key = String(page.page_key || "");
         const selectedIds = assignmentIdsByPageKey(key);
+        const editable = !!page.title_editable;
+        const defaultTitle = String(page.default_title || page.title || key);
+        const displayName = String(page.display_name || "");
         const optionsHtml = opts.map((cat) => {
           const cid = Number(cat.id || 0);
           const selected = selectedIds.has(cid) ? " selected" : "";
           return "<option value='" + cid + "'" + selected + ">" + esc(cat.name || "") + "</option>";
         }).join("");
         return "<div class='page-row'>"
-          + "<label>" + esc(page.title || key) + "</label>"
+          + "<label>" + esc(defaultTitle) + "</label>"
+          + (
+              editable
+                ? "<input type='text' data-page-display-name='" + esc(key) + "' value='" + esc(displayName) + "' placeholder='Default: " + esc(defaultTitle) + "'>"
+                : "<input type='text' value='" + esc(defaultTitle) + "' readonly>"
+            )
           + "<select multiple data-page-key='" + esc(key) + "' data-page-type='" + esc(type) + "'>" + optionsHtml + "</select>"
           + "</div>";
       }).join("");
+      Array.from(containerEl.querySelectorAll("input[data-page-display-name]")).forEach((inputEl) => {
+        inputEl.addEventListener("input", () => {
+          const pageKey = String(inputEl.getAttribute("data-page-display-name") || "");
+          const target = pageCatalog.find((item) => String(item.page_key || "") === pageKey);
+          if (!target) return;
+          target.display_name = String(inputEl.value || "").trim();
+          target.title = target.display_name || String(target.default_title || target.title || pageKey);
+        });
+      });
       Array.from(containerEl.querySelectorAll("select[data-page-key]")).forEach((selectEl) => {
         selectEl.addEventListener("change", () => {
           const pageKey = String(selectEl.getAttribute("data-page-key") || "");
@@ -8690,7 +10026,13 @@ def _page_categories_settings_html() -> str:
         page_type: String(item.page_type || ""),
         category_id: Number(item.category_id || 0),
       }));
-      return { categories: normalizedCategories, assignments: normalizedAssignments };
+      const normalizedPageOverrides = pageCatalog
+        .filter((item) => item && item.title_editable)
+        .map((item) => ({
+          page_key: String(item.page_key || ""),
+          display_name: String(item.display_name || "").trim(),
+        }));
+      return { categories: normalizedCategories, assignments: normalizedAssignments, page_overrides: normalizedPageOverrides };
     }
     async function loadAll() {
       const resp = await fetch(API, { cache: "no-store" });
@@ -8698,7 +10040,7 @@ def _page_categories_settings_html() -> str:
       if (!resp.ok) throw new Error(String(body.error || "Failed to load page categories."));
       categories = (Array.isArray(body.categories) ? body.categories : []).map((item) => ({ ...item, icon_name: normalizeIconName(item.icon_name) }));
       assignments = Array.isArray(body.assignments) ? body.assignments : [];
-      pageCatalog = Array.isArray(body.page_catalog) ? body.page_catalog : [];
+      pageCatalog = Array.isArray(body.page_catalog) ? body.page_catalog.map((item) => ({ ...item })) : [];
       renderCategories();
       renderAssignments();
       setStatus("Loaded " + categories.length + " categories.", "ok");
@@ -8714,7 +10056,7 @@ def _page_categories_settings_html() -> str:
       if (!resp.ok) throw new Error(String(body.error || "Failed to save page categories."));
       categories = (Array.isArray(body.categories) ? body.categories : []).map((item) => ({ ...item, icon_name: normalizeIconName(item.icon_name) }));
       assignments = Array.isArray(body.assignments) ? body.assignments : [];
-      pageCatalog = Array.isArray(body.page_catalog) ? body.page_catalog : pageCatalog;
+      pageCatalog = Array.isArray(body.page_catalog) ? body.page_catalog.map((item) => ({ ...item })) : pageCatalog;
       renderCategories();
       renderAssignments();
       setStatus("Saved page categories.", "ok");
@@ -9262,6 +10604,794 @@ def _epic_phases_settings_html() -> str:
 </html>""".replace("__SETTINGS_TOP_NAV__", _settings_top_nav_html(EPIC_PHASES_SETTINGS_ROUTE))
 
 
+def _ipp_meeting_planner_settings_html() -> str:
+    return """<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>IPP Meeting Planner</title>
+  <link rel="stylesheet" href="/shared-nav.css">
+  <link rel="stylesheet" href="/material-symbols.css">
+  <style>
+    :root { --bg:#f5f7fb; --card:#fff; --line:#d1d9e8; --text:#0f172a; --muted:#475569; --brand:#1d4ed8; }
+    * { box-sizing:border-box; }
+    body { margin:0; padding:0; background:var(--bg); color:var(--text); font-family:"Segoe UI",Tahoma,sans-serif; }
+    .settings-wrap { padding:12px; max-width:1600px; margin:0 auto; }
+    .ipp-grid { display:grid; grid-template-columns:1fr 1fr; grid-template-rows:1fr auto; gap:12px; }
+    .ipp-builder { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:12px; min-height:280px; }
+    .ipp-epic-list { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:12px; min-height:280px; }
+    .ipp-history { grid-column:1 / -1; background:var(--card); border:1px solid var(--line); border-radius:8px; padding:12px; }
+    .ipp-header { display:flex; align-items:center; gap:12px; margin-bottom:12px; flex-wrap:wrap; }
+    .ipp-header label { font-weight:600; }
+    .ipp-header input[type="text"] { padding:6px 8px; border:1px solid var(--line); border-radius:6px; }
+    .ipp-builder-canvas {
+      min-height: 220px;
+      border: 2px dashed #cbd5e1;
+      border-radius: 10px;
+      padding: 10px;
+      background: #fbfdff;
+      transition: border-color .16s ease, background-color .16s ease, box-shadow .16s ease;
+      position: relative;
+    }
+    .ipp-builder-canvas[data-drop-hint]::before {
+      content: attr(data-drop-hint);
+      display: block;
+      font-size: 0.82rem;
+      color: #64748b;
+      margin-bottom: 8px;
+    }
+    .ipp-builder-canvas.dropzone-active {
+      border-color: #2563eb;
+      background: #eff6ff;
+      box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.15);
+    }
+    .ipp-builder-canvas.dropzone-ready {
+      border-color: #16a34a;
+      background: #f0fdf4;
+      box-shadow: inset 0 0 0 1px rgba(22, 163, 74, 0.18);
+    }
+    .ipp-accordion { margin-bottom:8px; border:1px solid var(--line); border-radius:6px; overflow:hidden; }
+    .ipp-accordion-head { display:flex; align-items:center; justify-content:space-between; padding:8px 12px; background:#f8fafc; cursor:pointer; user-select:none; }
+    .ipp-accordion-head h3 { margin:0; font-size:0.95rem; }
+    .ipp-accordion-toggle { display:flex; align-items:center; gap:6px; font-size:0.8rem; color:var(--muted); }
+    .ipp-accordion-body { padding:8px; background:#fff; position:relative; transition:background-color .15s ease, box-shadow .15s ease; }
+    .ipp-accordion-body.drag-target { background:#eff6ff; box-shadow:inset 0 0 0 1px rgba(37,99,235,.22); }
+    .ipp-accordion-body.drop-at-end::after { content:""; display:block; border-top:2px dashed #2563eb; margin:6px 4px 0; }
+    .ipp-epic-card { border:1px solid var(--line); border-radius:6px; margin-bottom:8px; background:#fafbff; overflow:hidden; }
+    .ipp-epic-card:last-child { margin-bottom:0; }
+    .ipp-epic-card.dragging-card { opacity:.52; }
+    .ipp-epic-card.drop-before { box-shadow:inset 0 3px 0 0 #2563eb; }
+    .ipp-epic-card-head { width:100%; display:flex; align-items:center; justify-content:space-between; gap:10px; border:0; border-bottom:1px solid #e2e8f0; background:#f8fbff; padding:9px 10px; cursor:pointer; text-align:left; }
+    .ipp-epic-card-head:hover { background:#f1f5f9; }
+    .ipp-epic-card .card-title { font-weight:600; margin:0; font-size:0.9rem; color:#0f172a; }
+    .ipp-epic-card-summary { display:flex; align-items:center; gap:10px; flex-wrap:wrap; justify-content:flex-end; color:#334155; font-size:0.78rem; }
+    .ipp-summary-date { display:inline-flex; align-items:center; gap:4px; white-space:nowrap; }
+    .ipp-summary-chevron { font-size:1.05rem; color:#475569; }
+    .ipp-epic-card-head[aria-expanded="true"] .ipp-summary-chevron { transform:rotate(180deg); }
+    .ipp-epic-card-body { padding:10px; display:none; }
+    .ipp-epic-card-body.open { display:block; }
+    .ipp-epic-card .card-fields { display:grid; gap:6px; font-size:0.84rem; }
+    .ipp-epic-card select, .ipp-epic-card input[type="text"], .ipp-epic-card .remarks-editor { width:100%; max-width:100%; padding:4px 6px; border:1px solid var(--line); border-radius:4px; }
+    .ipp-epic-card .remarks-editor { min-height:60px; background:#fff; }
+    .ipp-epic-card .remarks-editor-wrap { min-width:100%; }
+    .ipp-epic-card .remarks-toolbar { display:none; gap:2px; margin-bottom:4px; flex-wrap:wrap; align-items:center; }
+    .ipp-epic-card .remarks-editor-wrap:focus-within .remarks-toolbar { display:flex; }
+    .ipp-epic-card .remarks-toolbar button { width:26px; height:26px; border:1px solid #cbd5e1; border-radius:6px; background:#fff; color:#334155; font-size:.75rem; font-weight:700; cursor:pointer; padding:0; display:inline-flex; align-items:center; justify-content:center; }
+    .ipp-epic-card .remarks-toolbar button:hover { background:#f1f5f9; }
+    .ipp-epic-card .remarks-toolbar .remarks-color-swatch { width:20px; height:20px; border-radius:4px; border:1px solid #94a3b8; padding:0; min-width:20px; }
+    .ipp-epic-card .remarks-toolbar .remarks-color-wrap { display:inline-flex; align-items:center; }
+    .ipp-epic-card .remarks-toolbar .remarks-color-input { width:26px; height:26px; border:1px solid #cbd5e1; border-radius:6px; padding:2px; cursor:pointer; background:#fff; }
+    .ipp-epic-card .remarks-editor-wrap:focus-within .remarks-editor { min-height:80px; }
+    .ipp-epic-card .remarks-editor:focus { border-color:#93c5fd; box-shadow:0 0 0 2px rgba(147,197,253,.3); }
+    .ipp-epic-actions { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+    .delivery-status-chip { display:inline-flex; align-items:center; gap:4px; font-size:0.76rem; font-weight:600; border-radius:999px; padding:2px 8px; border:1px solid #cbd5e1; background:#fff; }
+    .delivery-status-chip .material-symbols-outlined { font-size:0.95rem; line-height:1; }
+    .delivery-status-chip.status-yet { color:#334155; border-color:#cbd5e1; background:#f8fafc; }
+    .delivery-status-chip.status-ontrack { color:#166534; border-color:#86efac; background:#f0fdf4; }
+    .delivery-status-chip.status-late { color:#b91c1c; border-color:#fecaca; background:#fef2f2; }
+    .ipp-epic-list-filters { display:flex; gap:8px; margin-bottom:10px; flex-wrap:wrap; }
+    .ipp-epic-list-filters input, .ipp-epic-list-filters select { padding:6px 8px; border:1px solid var(--line); border-radius:6px; }
+    .ipp-epic-item { padding:8px 10px; border:1px solid var(--line); border-radius:6px; margin-bottom:6px; cursor:grab; background:#fff; }
+    .ipp-epic-item:hover { background:#f1f5f9; }
+    .ipp-epic-item.dragging { opacity:0.6; }
+    .ipp-history table { width:100%; border-collapse:collapse; }
+    .ipp-history th, .ipp-history td { padding:8px; text-align:left; border-bottom:1px solid var(--line); }
+    .ipp-history th { background:#f8fafc; font-weight:600; }
+    .btn { padding:6px 12px; border-radius:6px; border:1px solid var(--line); background:#fff; cursor:pointer; font-size:0.85rem; }
+    .btn.primary { background:var(--brand); color:#fff; border-color:var(--brand); }
+    .modal-backdrop { position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:1000; display:none; align-items:center; justify-content:center; }
+    .modal-backdrop.open { display:flex; }
+    .modal { background:#fff; border-radius:8px; padding:16px; max-width:600px; max-height:80vh; overflow:auto; }
+    #status { margin-top:8px; font-size:0.85rem; color:var(--muted); }
+  </style>
+</head>
+<body>
+  <div class="settings-wrap">
+    <div class="settings-top-nav">""" + _settings_top_nav_html(IPP_MEETING_PLANNER_SETTINGS_ROUTE) + """</div>
+    <h1>IPP Meeting Planner</h1>
+    <div id="status"></div>
+    <div class="ipp-grid">
+      <div class="ipp-builder">
+        <h2>IPP Builder</h2>
+        <div class="ipp-header">
+          <label for="ipp-meeting-date">Meeting Date</label>
+          <input type="text" id="ipp-meeting-date" placeholder="DD-MMM-YY">
+          <button type="button" class="btn primary" id="ipp-save-date-btn">Save Date</button>
+        </div>
+        <div id="ipp-builder-accordions" class="ipp-builder-canvas" data-drop-hint="Drag epics here to build the current IPP meeting."></div>
+      </div>
+      <div class="ipp-epic-list">
+        <h2>Epic List</h2>
+        <p class="ipp-epic-list-hint muted" style="margin:0 0 10px 0; font-size:0.85rem;">All epics created in Epics Planner are listed below. Drag an epic into the IPP Builder to include it in the meeting.</p>
+        <div class="ipp-epic-list-filters">
+          <input type="text" id="ipp-epic-search" placeholder="Search epics...">
+          <select id="ipp-epic-project-filter"><option value="">All projects</option></select>
+        </div>
+        <div id="ipp-epic-list-container"></div>
+      </div>
+      <div class="ipp-history">
+        <h2>History</h2>
+        <table>
+          <thead><tr><th>Created Date</th><th>Completed Date</th><th>Epics</th><th>Status</th></tr></thead>
+          <tbody id="ipp-history-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="modal-backdrop" id="ipp-history-modal">
+    <div class="modal">
+      <h3>Meeting Epics</h3>
+      <div id="ipp-history-modal-content"></div>
+      <button type="button" class="btn" id="ipp-history-modal-close">Close</button>
+    </div>
+  </div>
+  <script>
+    const API_CURRENT = "/api/ipp-meeting-planner/current";
+    const API_MEETINGS = "/api/ipp-meeting-planner/meetings";
+    const API_EPICS = "/api/epics-management/rows";
+    let currentMeetingId = null;
+    let currentData = null;
+    let allEpics = [];
+    let builderDropzoneBound = false;
+    let builderDragState = { sourceCard: null, externalData: null };
+
+    function setStatus(msg, type) {
+      const el = document.getElementById("status");
+      if (el) el.textContent = msg || "";
+    }
+
+    function formatIsoToDisplay(value) {
+      const text = String(value || "").trim();
+      if (!text) return "";
+      const iso = text.slice(0, 10);
+      const match = iso.match(/^(\\d{4})-(\\d{2})-(\\d{2})$/);
+      if (!match) return "";
+      const year = Number(match[1]);
+      const month = Number(match[2]);
+      const day = Number(match[3]);
+      if (!year || month < 1 || month > 12 || day < 1 || day > 31) return "";
+      const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+      return String(day).padStart(2, "0") + "-" + months[month - 1] + "-" + String(year).slice(-2);
+    }
+
+    function parseDisplayToIso(value) {
+      const text = String(value || "").trim();
+      if (!text) return "";
+      const m = text.match(/^(\\d{2})-([A-Za-z]{3})-(\\d{2})$/);
+      if (!m) return null;
+      const day = Number(m[1]);
+      const mon = m[2].toLowerCase();
+      const yy = Number(m[3]);
+      const monthMap = { jan:1, feb:2, mar:3, apr:4, may:5, jun:6, jul:7, aug:8, sep:9, oct:10, nov:11, dec:12 };
+      const month = monthMap[mon];
+      if (!month || day < 1 || day > 31) return null;
+      const year = 2000 + yy;
+      const d = new Date(Date.UTC(year, month - 1, day));
+      if (d.getUTCFullYear() !== year || d.getUTCMonth() + 1 !== month || d.getUTCDate() !== day) return null;
+      return String(year).padStart(4, "0") + "-" + String(month).padStart(2, "0") + "-" + String(day).padStart(2, "0");
+    }
+
+    async function fetchCurrent() {
+      const r = await fetch(API_CURRENT);
+      if (!r.ok) { if (r.status === 404) return null; throw new Error((await r.json()).error || "Failed"); }
+      return r.json();
+    }
+
+    async function loadCurrent() {
+      try {
+        currentData = await fetchCurrent();
+        if (!currentData) { setStatus("No scheduled meeting. Create one by completing a previous meeting."); return; }
+        currentMeetingId = currentData.id;
+        document.getElementById("ipp-meeting-date").value = formatIsoToDisplay(currentData.meeting_date || currentData.intended_date || "");
+        renderBuilderAccordions(currentData.epics || []);
+        setStatus("Loaded current meeting.");
+      } catch (e) {
+        setStatus(e.message || "Error loading meeting");
+      }
+    }
+
+    function renderBuilderAccordions(epics) {
+      const byProject = {};
+      (epics || []).forEach((e) => {
+        const p = e.project_key || "ORPHAN";
+        if (!byProject[p]) byProject[p] = { name: e.project_name || p, epics: [] };
+        byProject[p].epics.push(e);
+      });
+      const container = document.getElementById("ipp-builder-accordions");
+      container.innerHTML = Object.entries(byProject).map(([pk, data]) => {
+        const inc = data.epics.every((e) => e.include_on_dashboard !== 0);
+        return `
+        <div class="ipp-accordion" data-project-key="${pk}">
+          <div class="ipp-accordion-head">
+            <h3>${escapeHtml(data.name)}</h3>
+            <label class="ipp-accordion-toggle"><input type="checkbox" data-project-key="${pk}" ${inc ? "checked" : ""}> Show on Dashboard</label>
+          </div>
+          <div class="ipp-accordion-body">
+            ${data.epics.map((ep) => renderEpicCard(ep)).join("")}
+          </div>
+        </div>`;
+      }).join("") || "<p class='muted'>Drop epics from the list.</p>";
+      container.setAttribute("data-drop-hint", "Drag epics here to build the current IPP meeting.");
+      attachAccordionAndCardHandlers();
+    }
+
+    function escapeHtml(s) {
+      if (s == null) return "";
+      const t = String(s);
+      const div = document.createElement("div");
+      div.textContent = t;
+      return div.innerHTML;
+    }
+
+    function normalizeDeliveryStatus(value) {
+      const v = String(value || "").trim().toLowerCase();
+      if (v === "on-track" || v === "on track") return "On-track";
+      if (v === "late") return "Late";
+      return "Yet to start";
+    }
+
+    function deliveryStatusClass(value) {
+      const norm = normalizeDeliveryStatus(value);
+      if (norm === "On-track") return "status-ontrack";
+      if (norm === "Late") return "status-late";
+      return "status-yet";
+    }
+
+    function updateCardStatusSummary(card, value) {
+      if (!card) return;
+      const normalized = normalizeDeliveryStatus(value);
+      const cls = deliveryStatusClass(normalized);
+      card.querySelectorAll(".delivery-status-chip").forEach((chip) => {
+        chip.classList.remove("status-yet", "status-ontrack", "status-late");
+        chip.classList.add(cls);
+        const icon = chip.querySelector(".material-symbols-outlined");
+        chip.innerHTML = (icon ? '<span class="material-symbols-outlined">radio_button_checked</span>' : "") + escapeHtml(normalized);
+      });
+    }
+
+    function clearBuilderDropHints() {
+      document.querySelectorAll(".ipp-accordion-body").forEach((body) => {
+        body.classList.remove("drag-target");
+        body.classList.remove("drop-at-end");
+      });
+      document.querySelectorAll(".ipp-epic-card").forEach((card) => card.classList.remove("drop-before"));
+    }
+
+    function resolveDragPayload(ev) {
+      if (builderDragState.sourceCard) {
+        const epicKey = builderDragState.sourceCard.getAttribute("data-epic-key");
+        if (epicKey) return { epic_key: epicKey, internal: true };
+      }
+      if (builderDragState.externalData) return builderDragState.externalData;
+      try {
+        const raw = ev.dataTransfer ? ev.dataTransfer.getData("text/plain") : "";
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (!parsed || !parsed.epic_key) return null;
+        builderDragState.externalData = parsed;
+        return parsed;
+      } catch (_) {
+        return null;
+      }
+    }
+
+    function computeInsertBeforeCard(body, clientY) {
+      const cards = Array.from(body.querySelectorAll(".ipp-epic-card"))
+        .filter((card) => card !== builderDragState.sourceCard);
+      let beforeCard = null;
+      let bestOffset = Number.NEGATIVE_INFINITY;
+      cards.forEach((card) => {
+        const rect = card.getBoundingClientRect();
+        const offset = clientY - (rect.top + rect.height / 2);
+        if (offset < 0 && offset > bestOffset) {
+          bestOffset = offset;
+          beforeCard = card;
+        }
+      });
+      return beforeCard;
+    }
+
+    function applyDropHint(body, beforeCard) {
+      clearBuilderDropHints();
+      if (!body) return;
+      body.classList.add("drag-target");
+      if (beforeCard) beforeCard.classList.add("drop-before");
+      else body.classList.add("drop-at-end");
+    }
+
+    function epicKeysInBody(body) {
+      return Array.from(body.querySelectorAll(".ipp-epic-card"))
+        .map((card) => String(card.getAttribute("data-epic-key") || "").trim())
+        .filter(Boolean);
+    }
+
+    async function persistOrderForKeys(epicKeys) {
+      const uniqueKeys = [];
+      const seen = new Set();
+      epicKeys.forEach((k) => {
+        if (!seen.has(k)) {
+          seen.add(k);
+          uniqueKeys.push(k);
+        }
+      });
+      for (let idx = 0; idx < uniqueKeys.length; idx += 1) {
+        const key = uniqueKeys[idx];
+        await fetch(
+          API_MEETINGS + "/" + currentMeetingId + "/epics/" + encodeURIComponent(key),
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ display_order: (idx + 1) * 10 }),
+          }
+        );
+      }
+    }
+
+    function renderEpicCard(ep) {
+      const startDisplay = formatIsoToDisplay(ep.start_date || "") || "--";
+      const dueDisplay = formatIsoToDisplay(ep.due_date || "") || "--";
+      const deliveryStatus = normalizeDeliveryStatus(ep.delivery_status);
+      const deliveryClass = deliveryStatusClass(deliveryStatus);
+      const remarksRaw = String(ep.remarks_rich_text || "");
+      const remarksEncoded = encodeURIComponent(remarksRaw);
+      const epicPlannerHref = "/settings/epics-management?epic_key=" + encodeURIComponent(String(ep.epic_key || ""));
+      return `
+      <div class="ipp-epic-card" data-epic-key="${escapeHtml(ep.epic_key)}">
+        <button type="button" class="ipp-epic-card-head" aria-expanded="false">
+          <div class="card-title">${escapeHtml(ep.epic_name || ep.epic_key)}</div>
+          <div class="ipp-epic-card-summary">
+            <span class="ipp-summary-date">Start: <b>${escapeHtml(startDisplay)}</b></span>
+            <span class="ipp-summary-date">End: <b>${escapeHtml(dueDisplay)}</b></span>
+            <span class="delivery-status-chip ${deliveryClass}" title="Delivery status: ${escapeHtml(deliveryStatus)}"><span class="material-symbols-outlined">radio_button_checked</span>${escapeHtml(deliveryStatus)}</span>
+            <span class="material-symbols-outlined ipp-summary-chevron">expand_more</span>
+          </div>
+        </button>
+        <div class="ipp-epic-card-body">
+          <div class="card-fields">
+            <label>Delivery Status</label>
+            <select data-field="delivery_status"><option value="Yet to start" ${deliveryStatus === "Yet to start" ? "selected" : ""}>Yet to start</option><option value="On-track" ${deliveryStatus === "On-track" ? "selected" : ""}>On-track</option><option value="Late" ${deliveryStatus === "Late" ? "selected" : ""}>Late</option></select>
+            <label>Actual Production Date</label>
+            <input type="date" data-field="actual_production_date" value="${escapeHtml(String(ep.actual_production_date || "").trim().slice(0, 10))}">
+            <label>Remarks</label>
+            <div class="remarks-editor-wrap">
+              <div class="remarks-toolbar">
+                <button type="button" class="remarks-cmd" data-cmd="bold" title="Bold">B</button>
+                <button type="button" class="remarks-cmd" data-cmd="italic" title="Italic">I</button>
+                <button type="button" class="remarks-cmd" data-cmd="underline" title="Underline">U</button>
+                <span class="remarks-color-wrap" style="margin-left:4px;">
+                  <button type="button" class="remarks-cmd remarks-color-swatch" data-cmd="foreColor" data-value="#0f172a" title="Black" style="background:#0f172a;"></button>
+                  <button type="button" class="remarks-cmd remarks-color-swatch" data-cmd="foreColor" data-value="#b91c1c" title="Red" style="background:#b91c1c;"></button>
+                  <button type="button" class="remarks-cmd remarks-color-swatch" data-cmd="foreColor" data-value="#1d4ed8" title="Blue" style="background:#1d4ed8;"></button>
+                  <button type="button" class="remarks-cmd remarks-color-swatch" data-cmd="foreColor" data-value="#15803d" title="Green" style="background:#15803d;"></button>
+                  <button type="button" class="remarks-cmd remarks-color-swatch" data-cmd="foreColor" data-value="#64748b" title="Gray" style="background:#64748b;"></button>
+                  <input type="color" class="remarks-color-input" value="#1d4ed8" title="Text color" aria-label="Custom text color">
+                </span>
+                <button type="button" class="remarks-cmd" data-cmd="insertUnorderedList" title="Bullet list" style="margin-left:4px;">&bull;</button>
+                <button type="button" class="remarks-cmd" data-cmd="insertOrderedList" title="Numbered list">1.</button>
+              </div>
+              <div class="remarks-editor" contenteditable="true" data-field="remarks_rich_text" data-remarks-encoded="${remarksEncoded}"></div>
+            </div>
+          </div>
+          <div class="ipp-epic-actions">
+            <a class="btn" href="${epicPlannerHref}">Open in Epics Planner</a>
+            <button type="button" class="btn" data-remove-epic>Remove</button>
+          </div>
+        </div>
+      </div>`;
+    }
+
+    function attachAccordionAndCardHandlers() {
+      document.querySelectorAll(".ipp-epic-card [data-remarks-encoded]").forEach((el) => {
+        const raw = el.getAttribute("data-remarks-encoded");
+        if (raw != null) {
+          try {
+            el.innerHTML = decodeURIComponent(String(raw));
+          } catch (_) {
+            el.innerHTML = String(raw);
+          }
+          el.removeAttribute("data-remarks-encoded");
+        }
+      });
+      document.querySelectorAll(".ipp-epic-card .remarks-cmd").forEach((btn) => {
+        btn.addEventListener("mousedown", (ev) => {
+          ev.preventDefault();
+          const wrap = btn.closest(".remarks-editor-wrap");
+          const editor = wrap ? wrap.querySelector(".remarks-editor") : null;
+          if (!editor) return;
+          editor.focus();
+          const cmd = String(btn.getAttribute("data-cmd") || "").toLowerCase();
+          const value = btn.getAttribute("data-value");
+          if (cmd) document.execCommand(cmd, false, value || null);
+        });
+      });
+      document.querySelectorAll(".ipp-epic-card .remarks-color-input").forEach((input) => {
+        input.addEventListener("input", function() {
+          const wrap = input.closest(".remarks-editor-wrap");
+          const editor = wrap ? wrap.querySelector(".remarks-editor") : null;
+          if (!editor) return;
+          editor.focus();
+          document.execCommand("foreColor", false, input.value || "#000000");
+        });
+      });
+      document.querySelectorAll(".ipp-epic-card-head").forEach((head) => {
+        head.onclick = () => {
+          const card = head.closest(".ipp-epic-card");
+          const body = card ? card.querySelector(".ipp-epic-card-body") : null;
+          if (!body) return;
+          const expanded = head.getAttribute("aria-expanded") === "true";
+          head.setAttribute("aria-expanded", expanded ? "false" : "true");
+          body.classList.toggle("open", !expanded);
+        };
+      });
+      document.querySelectorAll(".ipp-epic-card").forEach((card) => {
+        card.setAttribute("draggable", "true");
+        card.addEventListener("dragstart", (ev) => {
+          builderDragState.sourceCard = card;
+          builderDragState.externalData = null;
+          card.classList.add("dragging-card");
+          if (ev.dataTransfer) {
+            ev.dataTransfer.effectAllowed = "move";
+            ev.dataTransfer.setData("text/plain", JSON.stringify({ epic_key: card.getAttribute("data-epic-key"), internal: true }));
+          }
+          setStatus("Drag and drop to place the epic in exact order.");
+        });
+        card.addEventListener("dragend", () => {
+          card.classList.remove("dragging-card");
+          builderDragState.sourceCard = null;
+          builderDragState.externalData = null;
+          clearBuilderDropHints();
+        });
+      });
+      document.querySelectorAll(".ipp-accordion-body").forEach((body) => {
+        body.addEventListener("dragover", (ev) => {
+          const payload = resolveDragPayload(ev);
+          if (!payload || !payload.epic_key) return;
+          ev.preventDefault();
+          ev.stopPropagation();
+          if (ev.dataTransfer) ev.dataTransfer.dropEffect = builderDragState.sourceCard ? "move" : "copy";
+          const beforeCard = computeInsertBeforeCard(body, ev.clientY);
+          applyDropHint(body, beforeCard);
+        });
+        body.addEventListener("dragleave", (ev) => {
+          const related = ev.relatedTarget;
+          if (related && body.contains(related)) return;
+          clearBuilderDropHints();
+        });
+        body.addEventListener("drop", async (ev) => {
+          const payload = resolveDragPayload(ev);
+          clearBuilderDropHints();
+          if (!payload || !payload.epic_key || !currentMeetingId) return;
+          ev.preventDefault();
+          ev.stopPropagation();
+          const beforeCard = computeInsertBeforeCard(body, ev.clientY);
+          const bodyProjectWrap = body.closest(".ipp-accordion");
+          const targetProjectKey = bodyProjectWrap ? String(bodyProjectWrap.getAttribute("data-project-key") || "") : "";
+          if (builderDragState.sourceCard) {
+            const sourceBody = builderDragState.sourceCard.closest(".ipp-accordion-body");
+            if (!sourceBody || sourceBody !== body) {
+              setStatus("Reordering is supported within the same project block.");
+              return;
+            }
+            if (beforeCard) body.insertBefore(builderDragState.sourceCard, beforeCard);
+            else body.appendChild(builderDragState.sourceCard);
+            const orderKeys = epicKeysInBody(body);
+            await persistOrderForKeys(orderKeys);
+            setStatus("Epic order updated.");
+            await loadCurrent();
+            return;
+          }
+          const payloadProjectKey = String(payload.project_key || "").trim().toUpperCase();
+          if (targetProjectKey && payloadProjectKey && targetProjectKey !== payloadProjectKey) {
+            setStatus("Drop this epic into its project block for ordered placement.");
+            return;
+          }
+          const existingKeys = epicKeysInBody(body);
+          const beforeKey = beforeCard ? String(beforeCard.getAttribute("data-epic-key") || "") : "";
+          const insertIndex = beforeKey ? existingKeys.indexOf(beforeKey) : existingKeys.length;
+          const orderKeys = existingKeys.slice();
+          const targetIndex = insertIndex < 0 ? orderKeys.length : insertIndex;
+          orderKeys.splice(targetIndex, 0, String(payload.epic_key));
+          const addResp = await fetch(
+            API_MEETINGS + "/" + currentMeetingId + "/epics",
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                epic_key: payload.epic_key,
+                project_key: payload.project_key || "ORPHAN",
+                project_name: payload.project_name || payload.project_key || "ORPHAN",
+                epic_name: payload.epic_name || payload.epic_key,
+              }),
+            }
+          );
+          if (!addResp.ok) {
+            setStatus((await addResp.json()).error || "Add failed");
+            return;
+          }
+          await persistOrderForKeys(orderKeys);
+          setStatus("Epic added in selected position.");
+          await loadCurrent();
+        });
+      });
+      document.querySelectorAll(".ipp-accordion-head").forEach((head) => {
+        head.onclick = () => {
+          const body = head.nextElementSibling;
+          body.style.display = body.style.display === "none" ? "" : "none";
+        };
+      });
+      document.querySelectorAll(".ipp-accordion-toggle input").forEach((cb) => {
+        cb.onclick = (e) => e.stopPropagation();
+        cb.onchange = async () => {
+          const pk = cb.getAttribute("data-project-key");
+          const r = await fetch(API_MEETINGS + "/" + currentMeetingId + "/project-visibility", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ project_key: pk, include_on_dashboard: cb.checked }) });
+          if (!r.ok) setStatus("Failed to update visibility");
+          else loadCurrent();
+        };
+      });
+      document.querySelectorAll(".ipp-epic-card [data-field]").forEach((el) => {
+        const card = el.closest(".ipp-epic-card");
+        if (!card) return;
+        const epicKey = card.getAttribute("data-epic-key");
+        const field = el.getAttribute("data-field");
+        const save = () => {
+          let value = el.tagName === "SELECT" ? el.value : (el.contentEditable === "true" ? el.innerHTML : el.value);
+          if (el.type === "date") {
+            value = (value || "").trim().slice(0, 10);
+          } else if (el.classList && el.classList.contains("ipp-date-input")) {
+            const parsed = parseDisplayToIso(value);
+            if (parsed === null) {
+              setStatus("Invalid date format. Use DD-MMM-YY (example: 13-Mar-26).");
+              return;
+            }
+            value = parsed;
+          }
+          fetch(API_MEETINGS + "/" + currentMeetingId + "/epics/" + encodeURIComponent(epicKey), { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ [field]: value }) }).then((r) => {
+            if (r.ok) {
+              setStatus("Saved");
+              if (el.type === "date") el.value = (value || "").slice(0, 10);
+              else if (el.classList && el.classList.contains("ipp-date-input")) el.value = formatIsoToDisplay(value);
+              if (field === "delivery_status") updateCardStatusSummary(card, value);
+            }
+          });
+        };
+        if (el.type === "date") {
+          el.onchange = save;
+        } else if (el.classList && el.classList.contains("ipp-date-input")) {
+          el.onblur = save;
+          el.onkeydown = (ev) => {
+            if (ev.key === "Enter") {
+              ev.preventDefault();
+              save();
+            }
+          };
+        } else if (el.tagName === "SELECT") {
+          el.onchange = save;
+        } else {
+          el.onblur = save;
+        }
+      });
+      document.querySelectorAll(".ipp-epic-card [data-remove-epic]").forEach((btn) => {
+        btn.onclick = async () => {
+          const card = btn.closest(".ipp-epic-card");
+          const epicKey = card.getAttribute("data-epic-key");
+          const r = await fetch(API_MEETINGS + "/" + currentMeetingId + "/epics/" + encodeURIComponent(epicKey), { method: "DELETE" });
+          if (r.ok) { card.remove(); setStatus("Removed"); }
+        };
+      });
+    }
+
+    async function loadEpicList() {
+      try {
+        const r = await fetch(API_EPICS);
+        if (!r.ok) throw new Error("Failed to load epics");
+        const data = await r.json();
+        allEpics = data.rows || [];
+        const projects = [...new Set(allEpics.map((e) => e.project_key).filter(Boolean))].sort();
+        const sel = document.getElementById("ipp-epic-project-filter");
+        sel.innerHTML = "<option value=''>All projects</option>" + projects.map((p) => "<option value='" + escapeHtml(p) + "'>" + escapeHtml(p) + "</option>").join("");
+        filterAndRenderEpicList();
+      } catch (e) {
+        setStatus(e.message || "Error loading epics");
+      }
+    }
+
+    function filterAndRenderEpicList() {
+      const q = (document.getElementById("ipp-epic-search").value || "").toLowerCase();
+      const proj = (document.getElementById("ipp-epic-project-filter").value || "").toUpperCase();
+      let list = allEpics.filter((e) => {
+        if (proj && (e.project_key || "").toUpperCase() !== proj) return false;
+        if (q) {
+          const s = [e.epic_key, e.epic_name, e.project_name, e.description].filter(Boolean).join(" ").toLowerCase();
+          if (!s.includes(q)) return false;
+        }
+        return true;
+      });
+      const container = document.getElementById("ipp-epic-list-container");
+      if (list.length === 0) {
+        const msg = allEpics.length === 0
+          ? "No epics in the system. Create epics in <strong>Epics Planner</strong> (Settings) to see them here."
+          : "No epics match the current search or project filter.";
+        container.innerHTML = "<p class='muted' style='margin:0; font-size:0.85rem;'>" + msg + "</p>";
+      } else {
+        container.innerHTML = list.map((e) => `<div class="ipp-epic-item" draggable="true" data-epic-key="${escapeHtml(e.epic_key)}" data-project-key="${escapeHtml(e.project_key || "")}" data-project-name="${escapeHtml(e.project_name || "")}" data-epic-name="${escapeHtml(e.epic_name || e.epic_key || "")}">${escapeHtml(e.epic_name || e.epic_key)} (${escapeHtml(e.project_key || "")})</div>`).join("");
+      }
+      container.querySelectorAll(".ipp-epic-item").forEach((item) => {
+        item.addEventListener("dragstart", (ev) => {
+          builderDragState.sourceCard = null;
+          builderDragState.externalData = {
+            epic_key: item.getAttribute("data-epic-key"),
+            project_key: item.getAttribute("data-project-key"),
+            project_name: item.getAttribute("data-project-name"),
+            epic_name: item.getAttribute("data-epic-name"),
+          };
+          if (ev.dataTransfer) {
+            ev.dataTransfer.effectAllowed = "copy";
+            ev.dataTransfer.setData("text/plain", JSON.stringify(builderDragState.externalData));
+          }
+          ev.target.classList.add("dragging");
+          setStatus("Drag epic over a project block; blue line shows insertion point.");
+        });
+        item.addEventListener("dragend", (ev) => {
+          ev.target.classList.remove("dragging");
+          builderDragState.externalData = null;
+          clearBuilderDropHints();
+        });
+      });
+    }
+
+    function bindBuilderDropzone() {
+      if (builderDropzoneBound) return;
+      const builder = document.getElementById("ipp-builder-accordions");
+      if (!builder) return;
+      builderDropzoneBound = true;
+      const HOLD_STILL_MS = 320;
+      let stableSince = 0;
+      let lastX = 0;
+      let lastY = 0;
+
+      function setHint(text) {
+        builder.setAttribute("data-drop-hint", text);
+      }
+      function resetDropzoneState() {
+        builder.classList.remove("dropzone-active");
+        builder.classList.remove("dropzone-ready");
+        setHint("Drag epics here to build the current IPP meeting.");
+        stableSince = 0;
+        lastX = 0;
+        lastY = 0;
+      }
+      function markActive() {
+        builder.classList.add("dropzone-active");
+        if (!builder.classList.contains("dropzone-ready")) {
+          setHint("Hold the epic still for a moment, then release to add.");
+        }
+      }
+      function updateHoldStillState(ev) {
+        const x = Number(ev.clientX || 0);
+        const y = Number(ev.clientY || 0);
+        const moved = Math.abs(x - lastX) > 2 || Math.abs(y - lastY) > 2;
+        const now = Date.now();
+        if (!stableSince || moved) {
+          stableSince = now;
+          lastX = x;
+          lastY = y;
+          builder.classList.remove("dropzone-ready");
+          setHint("Hold the epic still for a moment, then release to add.");
+          return;
+        }
+        if (now - stableSince >= HOLD_STILL_MS) {
+          builder.classList.add("dropzone-ready");
+          setHint("Release to add epic to IPP Builder.");
+        }
+      }
+
+      builder.addEventListener("dragenter", (ev) => {
+        ev.preventDefault();
+        markActive();
+      });
+      builder.addEventListener("dragover", (ev) => {
+        ev.preventDefault();
+        ev.dataTransfer.dropEffect = "copy";
+        markActive();
+        updateHoldStillState(ev);
+      });
+      builder.addEventListener("dragleave", (ev) => {
+        const next = ev.relatedTarget;
+        if (next && builder.contains(next)) return;
+        resetDropzoneState();
+      });
+      builder.addEventListener("drop", async (ev) => {
+        ev.preventDefault();
+        const raw = ev.dataTransfer.getData("text/plain");
+        resetDropzoneState();
+        builderDragState.externalData = null;
+        if (!raw) return;
+        const d = JSON.parse(raw);
+        if (!currentMeetingId || !d.epic_key) return;
+        const r = await fetch(API_MEETINGS + "/" + currentMeetingId + "/epics", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ epic_key: d.epic_key, project_key: d.project_key || "ORPHAN", project_name: d.project_name || d.project_key, epic_name: d.epic_name || d.epic_key }) });
+        if (r.ok) { loadCurrent(); setStatus("Epic added"); }
+        else setStatus((await r.json()).error || "Add failed");
+      });
+    }
+
+    document.getElementById("ipp-epic-search").oninput = filterAndRenderEpicList;
+    document.getElementById("ipp-epic-project-filter").onchange = filterAndRenderEpicList;
+
+    async function loadHistory() {
+      try {
+        const r = await fetch(API_MEETINGS + "?limit=50");
+        if (!r.ok) throw new Error("Failed");
+        const data = await r.json();
+        const tbody = document.getElementById("ipp-history-tbody");
+        tbody.innerHTML = (data.meetings || []).map((m) => {
+          const created = formatIsoToDisplay(m.created_at_utc || "");
+          const completed = formatIsoToDisplay(m.completed_at_utc || "");
+          return `<tr><td>${escapeHtml(created)}</td><td>${escapeHtml(completed)}</td><td><button type="button" class="btn" data-view-meeting="${m.id}">View</button></td><td>${escapeHtml(m.status || "")}</td></tr>`;
+        }).join("");
+        tbody.querySelectorAll("[data-view-meeting]").forEach((btn) => {
+          btn.onclick = async () => {
+            const id = btn.getAttribute("data-view-meeting");
+            const res = await fetch(API_MEETINGS + "/" + id);
+            if (!res.ok) return;
+            const meeting = await res.json();
+            const content = document.getElementById("ipp-history-modal-content");
+            content.innerHTML = (meeting.epics || []).map((e) => `<div class="ipp-epic-card"><strong>${escapeHtml(e.epic_name || e.epic_key)}</strong> (${escapeHtml(e.project_key)}) — ${escapeHtml(e.delivery_status)}</div>`).join("") || "<p>No epics.</p>";
+            document.getElementById("ipp-history-modal").classList.add("open");
+          };
+        });
+      } catch (e) {
+        setStatus(e.message);
+      }
+    }
+
+    document.getElementById("ipp-history-modal-close").onclick = () => document.getElementById("ipp-history-modal").classList.remove("open");
+
+    document.getElementById("ipp-save-date-btn").onclick = async () => {
+      const rawDateVal = document.getElementById("ipp-meeting-date").value;
+      const dateVal = parseDisplayToIso(rawDateVal);
+      if (dateVal === null) {
+        setStatus("Invalid meeting date format. Use DD-MMM-YY (example: 13-Mar-26).");
+        return;
+      }
+      if (!currentMeetingId) return;
+      const r = await fetch(API_MEETINGS + "/" + currentMeetingId, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meeting_date: dateVal }) });
+      if (r.ok) { document.getElementById("ipp-meeting-date").value = formatIsoToDisplay(dateVal); setStatus("Date saved"); }
+      else setStatus((await r.json()).error || "Failed");
+    };
+
+    (async () => {
+      bindBuilderDropzone();
+      await loadEpicList();
+      await loadCurrent();
+      await loadHistory();
+    })();
+  </script>
+  <script src="/shared-nav.js"></script>
+</body>
+</html>""".replace("__SETTINGS_TOP_NAV__", _settings_top_nav_html(IPP_MEETING_PLANNER_SETTINGS_ROUTE))
+
+
 def _epics_management_settings_html() -> str:
     return """<!doctype html>
 <html lang="en">
@@ -9289,6 +11419,11 @@ def _epics_management_settings_html() -> str:
     .planner-header-bar .shortcut-chip { padding:3px 8px; font-size:.72rem; }
     .planner-header-bar .shortcut-chip kbd { padding:1px 4px; font-size:.7rem; }
     .planner-header-ipp { margin-left:auto; font-size:.7rem; color:var(--muted); opacity:.85; }
+    .planner-filter-row { display:flex; flex-wrap:wrap; align-items:center; gap:10px 16px; margin-bottom:8px; }
+    .planner-filter-label { display:inline-flex; align-items:center; gap:6px; font-size:.8rem; font-weight:600; color:var(--text); }
+    .planner-filter-label .material-symbols-outlined { font-size:1.1rem; color:var(--brand); font-variation-settings:"FILL" 0,"wght" 400,"GRAD" 0,"opsz" 20; }
+    .planner-filter-select { min-width:180px; max-width:260px; border:1px solid var(--line); border-radius:8px; padding:6px 10px; font-size:.82rem; background:#fff; }
+    .planner-filter-search { min-width:200px; max-width:320px; border:1px solid var(--line); border-radius:8px; padding:6px 10px; font-size:.82rem; }
     #header-toggle-btn { font-size:.82rem; padding:6px 10px; }
     .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:10px; }
     .btn { border:1px solid #1e40af; background:var(--brand); color:#fff; border-radius:8px; padding:8px 12px; cursor:pointer; text-decoration:none; font-size:.86rem; }
@@ -9302,14 +11437,19 @@ def _epics_management_settings_html() -> str:
     table { border-collapse:separate; border-spacing:0; min-width:var(--epics-table-min-width); width:max(100%, var(--epics-table-min-width)); }
     th, td { border-bottom:1px solid #e2e8f0; border-right:1px solid #e2e8f0; padding:5px 8px; font-size:.8rem; line-height:1.2; text-align:left; vertical-align:top; background:#fff; }
     th:last-child, td:last-child { border-right:none; }
-    thead th { position:sticky; top:0; background:var(--head); font-size:.7rem; text-transform:uppercase; letter-spacing:.04em; z-index:3; }
-    thead th:nth-child(4), tbody td:nth-child(4) { position:sticky; left:0; z-index:4; background:var(--sticky); min-width:280px; }
-    thead th:nth-child(4) { z-index:5; }
-    th:nth-child(1), td:nth-child(1) { min-width:220px; }
+    thead th { position:sticky; top:0; background:#5b7cba; color:#fff; font-size:.7rem; text-transform:uppercase; letter-spacing:.04em; z-index:3; }
+    thead th:nth-child(5), tbody td:nth-child(5) { position:sticky; left:0; z-index:4; min-width:280px; }
+    thead th:nth-child(5) { z-index:5; background:#1e3a8a; color:#fff; }
+    tbody tr.epic-row td:nth-child(5) { background:#b0ccec; color:#0f172a; }
+    tbody tr.epic-row.row-alt-0 td { background:#e2e8f0; }
+    tbody tr.epic-row.row-alt-0 td:nth-child(5) { background:#b0ccec; color:#0f172a; }
+    tbody tr.epic-row.row-alt-1 td { background:#fff; }
+    tbody tr.epic-row.row-alt-1 td:nth-child(5) { background:#b0ccec; color:#0f172a; }
+    th:nth-child(1), td:nth-child(1) { min-width:44px; }
     th:nth-child(2), td:nth-child(2) { min-width:220px; }
     th:nth-child(3), td:nth-child(3) { min-width:220px; }
-    th:nth-child(4), td:nth-child(4) { min-width:280px; }
-    th:nth-child(5), td:nth-child(5) { min-width:220px; }
+    th:nth-child(4), td:nth-child(4) { min-width:220px; }
+    th:nth-child(5), td:nth-child(5) { min-width:280px; }
     th:nth-child(6), td:nth-child(6) { min-width:180px; }
     th:nth-child(7), td:nth-child(7) { min-width:120px; }
     th:nth-child(8), td:nth-child(8) { min-width:150px; white-space:nowrap; }
@@ -9335,6 +11475,8 @@ def _epics_management_settings_html() -> str:
     .tree-line { display:flex; align-items:center; gap:6px; white-space:nowrap; }
     .tree-epic { margin-left:6px; color:#1e3a8a; font-weight:600; }
     .tree-title { display:block; max-width:260px; white-space:normal; line-height:1.15; }
+    .tree-epic-name-wrap { display:inline-flex; align-items:center; gap:6px; flex-wrap:wrap; max-width:100%; }
+    .tree-epic-name-wrap .tree-title { display:inline; max-width:240px; white-space:normal; }
     .tree-actions { display:flex; gap:4px; flex-wrap:wrap; margin-top:2px; }
     .tree.tree-epic-cell .tree-actions { position:absolute; top:0; right:0; margin-top:0; flex-wrap:nowrap; }
     .tree-toggle { border:1px solid #cbd5e1; background:#fff; color:#334155; border-radius:6px; width:20px; height:20px; line-height:1; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; }
@@ -9377,10 +11519,52 @@ def _epics_management_settings_html() -> str:
     .icon-btn.danger { border-color:#fecaca; color:#b91c1c; background:#fff5f5; }
     .icon-btn.danger:hover { background:#ffe4e6; }
     .btn.danger { border-color:#fecaca; color:#b91c1c; background:#fff5f5; }
+    .delivery-status-wrap { display:inline-flex; align-items:center; gap:6px; min-width:0; }
+    .delivery-status-wrap .delivery-status-icon-inline { flex-shrink:0; font-size:1.1rem; }
+    .delivery-status-wrap select { flex:1; min-width:100px; }
+    .delivery-status-icon.delivery-status-late,
+    .delivery-status-icon-inline.delivery-status-late { color:#b91c1c; font-variation-settings:\"FILL\" 1,\"wght\" 500; }
+    .delivery-status-icon.delivery-status-on-track,
+    .delivery-status-icon-inline.delivery-status-on-track { color:#15803d; font-variation-settings:\"FILL\" 1,\"wght\" 500; }
+    .delivery-status-icon.delivery-status-yet-to-start,
+    .delivery-status-icon-inline.delivery-status-yet-to-start { color:#1d4ed8; font-variation-settings:\"FILL\" 0,\"wght\" 500; }
     .btn.danger:hover { background:#ffe4e6; }
+    .btn.seal-btn { border-color:#b91c1c; color:#fff; background:#b91c1c; }
+    .btn.seal-btn:hover:not(:disabled) { background:#991b1b; }
+    .btn.seal-btn:disabled { opacity:0.5; cursor:not-allowed; }
+    .epic-seal-lock { display:inline-flex; align-items:center; flex-shrink:0; color:#b91c1c; font-size:1rem; font-variation-settings:\"FILL\" 1,\"wght\" 500; vertical-align:middle; }
+    th:nth-child(1), td:nth-child(1) { min-width:44px; width:44px; text-align:center; }
     .icon-btn svg { width:12px; height:12px; display:block; }
     .draft-row td { background:#fff7ed; border-top:2px solid #fdba74; }
     .draft-input { width:100%; border:1px dashed #fb923c; border-radius:6px; padding:4px 6px; font-size:.78rem; background:#fff; }
+    .remarks-editor-wrap { min-width:180px; }
+    .remarks-toolbar { display:none; gap:2px; margin-bottom:4px; flex-wrap:wrap; align-items:center; }
+    .remarks-editor-wrap:focus-within .remarks-toolbar { display:flex; }
+    .epic-row.epic-sealed td select:disabled,
+    .epic-row.epic-sealed td input:disabled { cursor:not-allowed; opacity:0.85; background:#f1f5f9; }
+    .epic-row.epic-sealed [contenteditable="false"] { cursor:default; background:#f1f5f9; }
+    .plan-summary-readonly { padding:6px 8px; font-size:.78rem; color:var(--text); min-height:42px; }
+    .actions-cell { min-width:52px; }
+    .actions-menu-wrap { position:relative; display:inline-block; }
+    .actions-menu-btn { width:32px; height:32px; }
+    .actions-menu-btn .material-symbols-outlined { font-size:1.2rem; }
+    .actions-menu-dropdown { position:absolute; right:0; top:100%; margin-top:4px; min-width:160px; background:#fff; border:1px solid #e2e8f0; border-radius:8px; box-shadow:0 4px 12px rgba(15,23,42,.15); z-index:10; padding:4px 0; display:none; }
+    .actions-menu-wrap.open .actions-menu-dropdown { display:block; }
+    .actions-menu-item { display:block; width:100%; text-align:left; border:none; background:transparent; padding:8px 12px; font-size:.8rem; color:#334155; cursor:pointer; white-space:nowrap; }
+    .actions-menu-item:hover { background:#f1f5f9; }
+    .actions-menu-item-danger { color:#b91c1c; }
+    .actions-menu-item-danger:hover { background:#fef2f2; }
+    .remarks-toolbar button { width:26px; height:26px; border:1px solid #cbd5e1; border-radius:6px; background:#fff; color:#334155; font-size:.75rem; font-weight:700; cursor:pointer; padding:0; display:inline-flex; align-items:center; justify-content:center; }
+    .remarks-toolbar button:hover { background:#f1f5f9; }
+    .remarks-toolbar .remarks-color-swatch { width:20px; height:20px; border-radius:4px; border:1px solid #94a3b8; padding:0; min-width:20px; }
+    .remarks-toolbar .remarks-color-swatch:hover { transform:scale(1.1); }
+    .remarks-toolbar .remarks-color-wrap { display:inline-flex; align-items:center; }
+    .remarks-toolbar .remarks-color-input { width:26px; height:26px; border:1px solid #cbd5e1; border-radius:6px; padding:2px; cursor:pointer; background:#fff; }
+    .remarks-toolbar .remarks-color-input::-webkit-color-swatch-wrapper { padding:0; }
+    .remarks-toolbar .remarks-color-input::-webkit-color-swatch { border-radius:4px; border:none; }
+    .remarks-editor { height:42px; min-height:42px; max-height:42px; overflow-y:auto; border:1px solid var(--line); border-radius:6px; padding:6px 8px; font-size:.78rem; background:#fff; white-space:pre-wrap; word-break:break-word; outline:none; transition:height .15s ease, min-height .15s ease, max-height .15s ease; }
+    .remarks-editor-wrap:focus-within .remarks-editor { height:100px; min-height:100px; max-height:120px; }
+    .remarks-editor:focus { border-color:#93c5fd; box-shadow:0 0 0 2px rgba(147,197,253,.3); }
     dialog { width:min(440px,94vw); border:none; border-radius:12px; padding:0; box-shadow:0 16px 40px rgba(15,23,42,.25); }
     dialog::backdrop { background:rgba(15,23,42,.45); }
     .modal-head { padding:14px 14px 10px; border-bottom:1px solid var(--line); }
@@ -9390,6 +11574,31 @@ def _epics_management_settings_html() -> str:
     input { width:100%; border:1px solid var(--line); border-radius:8px; padding:8px; font-size:.88rem; }
     textarea { width:100%; border:1px solid var(--line); border-radius:8px; padding:8px; font-size:.88rem; font-family:inherit; resize:vertical; min-height:74px; max-height:200px; overflow-y:auto; }
     #manage-columns-dialog { width:min(760px,96vw); border:none; border-radius:12px; padding:0; box-shadow:0 16px 40px rgba(15,23,42,.25); }
+    dialog.manage-sealed-modal-full { width:min(96vw,1200px); max-width:1200px; height:min(90vh,900px); max-height:90vh; display:flex; flex-direction:column; overflow-x:hidden; }
+    dialog.manage-sealed-modal-full:not([open]) { display:none !important; }
+    dialog.manage-sealed-modal-full .modal-body { flex:1; min-height:0; display:flex; flex-direction:column; overflow:hidden; min-width:0; }
+    dialog.manage-sealed-modal-full #manage-sealed-dates-list { flex-shrink:0; min-width:0; }
+    dialog.manage-sealed-modal-full #manage-sealed-review-section { flex:1; min-height:200px; min-width:0; overflow-x:auto !important; overflow-y:auto !important; }
+    dialog.manage-sealed-modal-full #manage-sealed-review-content { min-width:0; }
+    dialog.manage-sealed-modal-full #manage-sealed-review-content table.manage-sealed-snapshot-table { width:100%; min-width:480px; table-layout:fixed; border-collapse:collapse; font-size:.82rem; box-sizing:border-box; }
+    dialog.manage-sealed-modal-full #manage-sealed-review-content table.manage-sealed-snapshot-table th,
+    dialog.manage-sealed-modal-full #manage-sealed-review-content table.manage-sealed-snapshot-table td { border:1px solid #e2e8f0; padding:8px 10px; text-align:left; vertical-align:middle; word-wrap:break-word; overflow-wrap:break-word; }
+    dialog.manage-sealed-modal-full #manage-sealed-review-content table.manage-sealed-snapshot-table th { background:#1e3a8a; color:#fff; font-weight:600; text-transform:uppercase; letter-spacing:.03em; font-size:.75rem; }
+    dialog.manage-sealed-modal-full #manage-sealed-review-content table.manage-sealed-snapshot-table td { background:#fff; }
+    dialog.manage-sealed-modal-full #manage-sealed-review-content table.manage-sealed-snapshot-table tbody tr:nth-child(even) td { background:#f8fafc; }
+    dialog.manage-sealed-modal-full #manage-sealed-review-content table.manage-sealed-snapshot-table th:nth-child(1),
+    dialog.manage-sealed-modal-full #manage-sealed-review-content table.manage-sealed-snapshot-table td:nth-child(1) { width:24%; min-width:0; }
+    dialog.manage-sealed-modal-full #manage-sealed-review-content table.manage-sealed-snapshot-table th:nth-child(2),
+    dialog.manage-sealed-modal-full #manage-sealed-review-content table.manage-sealed-snapshot-table td:nth-child(2) { width:12%; min-width:0; }
+    dialog.manage-sealed-modal-full #manage-sealed-review-content table.manage-sealed-snapshot-table th:nth-child(3),
+    dialog.manage-sealed-modal-full #manage-sealed-review-content table.manage-sealed-snapshot-table td:nth-child(3) { width:32%; min-width:95px; }
+    dialog.manage-sealed-modal-full #manage-sealed-review-content table.manage-sealed-snapshot-table th:nth-child(4),
+    dialog.manage-sealed-modal-full #manage-sealed-review-content table.manage-sealed-snapshot-table td:nth-child(4) { width:32%; min-width:95px; }
+    #manage-sealed-modal .btn { border:1px solid #1e40af; background:var(--brand); color:#fff; border-radius:8px; padding:8px 12px; cursor:pointer; font-size:.86rem; display:inline-block; }
+    #manage-sealed-modal .btn.alt { border-color:var(--line); background:#fff; color:var(--text); }
+    #manage-sealed-modal .btn.small { padding:5px 9px; font-size:.8rem; }
+    #manage-sealed-modal .btn.danger { border-color:#fecaca; color:#b91c1c; background:#fef2f2; }
+    #manage-sealed-modal .btn.danger:hover { background:#fee2e2; }
     .manage-columns-wrap { max-height:52vh; overflow:auto; border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
     .manage-columns-table { width:100%; min-width:680px; border-collapse:separate; border-spacing:0; }
     .manage-columns-table th, .manage-columns-table td { border-bottom:1px solid #e2e8f0; border-right:1px solid #e2e8f0; padding:8px 10px; font-size:.82rem; vertical-align:middle; }
@@ -9428,15 +11637,21 @@ def _epics_management_settings_html() -> str:
     <section id="planner-header" class="planner-header">
       <div id="planner-header-content" class="planner-header-content">
         <div class="row" style="margin-top:0;">__SETTINGS_TOP_NAV__</div>
+        <div class="planner-filter-row row">
+          <label class="planner-filter-label" for="epics-filter-project"><span class="material-symbols-outlined" aria-hidden="true">folder</span> Project</label>
+          <select id="epics-filter-project" class="planner-filter-select" title="Filter epics by project (display name)"></select>
+          <label class="planner-filter-label" for="epics-filter-search"><span class="material-symbols-outlined" aria-hidden="true">search</span> Search</label>
+          <input id="epics-filter-search" type="text" class="planner-filter-search" placeholder="Search epics…" title="Search by any column value">
+        </div>
         <div class="planner-header-bar">
           <button id="reload-btn" class="btn alt" type="button">Reload</button>
           <button id="add-epic-btn" class="btn" type="button">Add Epic</button>
           <button id="add-plan-column-btn" class="btn alt" type="button">Add Phase</button>
           <button id="manage-plan-columns-btn" class="btn alt" type="button">Manage Phases</button>
+          <button id="seal-epics-btn" class="btn seal-btn" type="button" disabled title="Select epics to seal">SEAL EPICS</button>
           <button id="expand-all-btn" class="btn alt" type="button">Expand</button>
           <button id="collapse-all-btn" class="btn alt" type="button">Collapse</button>
           <span class="shortcut-chip" title="Quick add epic"><kbd>Shift</kbd>+<kbd>Tab</kbd></span>
-          <span class="planner-header-ipp" title="IPP Meeting Planner column marks epics for the IPP dashboard">IPP</span>
         </div>
       </div>
       <div id="status"></div>
@@ -9458,8 +11673,8 @@ def _epics_management_settings_html() -> str:
     </div>
     <div class="modal-body">
       <div>
-        <label for="plan-mandays">Man-days</label>
-        <input id="plan-mandays" type="number" min="0" step="0.5" placeholder="e.g. 12">
+        <label for="plan-mandays">Approved man-days</label>
+        <input id="plan-mandays" type="number" min="0" step="0.5" placeholder="e.g. 12" title="Leadership-approved man-days for this plan">
       </div>
       <div>
         <label for="plan-start">Start Date</label>
@@ -9490,9 +11705,6 @@ def _epics_management_settings_html() -> str:
       <div><label for="epic-originator">Originator</label><input id="epic-originator" type="text"></div>
       <div><label for="epic-priority">Priority</label><select id="epic-priority"><option>Low</option><option>Medium</option><option>High</option><option>Highest</option></select></div>
       <div><label for="epic-plan-status">Plan Status</label><select id="epic-plan-status"><option>Planned</option><option>Not Planned Yet</option></select></div>
-      <div><label for="epic-ipp-meeting-planned">IPP Meeting Planner</label><select id="epic-ipp-meeting-planned"><option>No</option><option>Yes</option></select></div>
-      <div><label for="epic-actual-production-date">Actual Production Date</label><input id="epic-actual-production-date" type="date"></div>
-      <div><label for="epic-remarks">Remarks</label><input id="epic-remarks" type="text" placeholder="Reason if production exceeded planned date"></div>
       <div><label for="epic-jira-url">Jira URL</label><input id="epic-jira-url" type="url" placeholder="https://..."></div>
       <div><label for="epic-description">Description</label><textarea id="epic-description"></textarea></div>
       <div><label for="epic-research-urs-plan-jira-url">Research/URS Plan Jira URL</label><input id="epic-research-urs-plan-jira-url" type="url" placeholder="https://..."></div>
@@ -9551,8 +11763,55 @@ def _epics_management_settings_html() -> str:
     </div>
   </dialog>
 
+  <dialog id="seal-epics-modal">
+    <div class="modal-head">
+      <h2 style="margin:0;font-size:1rem;">Seal selected epics</h2>
+      <div class="muted" style="margin-top:4px;font-size:.8rem;">Epics will be locked; use RE-BUDGET to revise dates.</div>
+    </div>
+    <div class="modal-body">
+      <div id="seal-modal-dates-section">
+        <label>Last sealed dates (click to review)</label>
+        <div id="seal-modal-dates-list" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;"></div>
+      </div>
+      <div id="seal-modal-review-section" style="display:none;margin-top:10px;border:1px solid var(--line);border-radius:8px;padding:10px;max-height:40vh;overflow:auto;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <strong id="seal-modal-review-title">Snapshot</strong>
+          <button type="button" class="btn alt small" id="seal-modal-review-close">Close</button>
+        </div>
+        <div id="seal-modal-review-content"></div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button id="seal-modal-cancel" class="btn alt small" type="button">Cancel</button>
+      <button id="seal-modal-seal-it" class="btn small danger" type="button">SEAL IT</button>
+    </div>
+  </dialog>
+
+  <dialog id="manage-sealed-modal" class="modal manage-sealed-modal-full" aria-labelledby="manage-sealed-title">
+    <div class="modal-head">
+      <h2 id="manage-sealed-title" style="margin:0;font-size:1rem;">Manage sealed budgets</h2>
+      <div class="muted" style="margin-top:4px;font-size:.8rem;" id="manage-sealed-subtitle">Epic</div>
+    </div>
+    <div class="modal-body">
+      <div id="manage-sealed-dates-list" style="margin-top:6px;"></div>
+      <div id="manage-sealed-review-section" style="display:none;margin-top:10px;border:1px solid var(--line);border-radius:8px;padding:10px;flex:1;min-height:0;overflow:auto;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <strong id="manage-sealed-review-title">Snapshot</strong>
+          <button type="button" class="btn alt small" id="manage-sealed-review-close">Close</button>
+        </div>
+        <div id="manage-sealed-review-content"></div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button id="manage-sealed-close" class="btn alt small" type="button">Close</button>
+    </div>
+  </dialog>
+
   <script>
     const API = "/api/epics-management/rows";
+    const SEAL_API = "/api/epics-management/seal";
+    const SEALED_DATES_API = "/api/epics-management/sealed-dates";
+    const EPIC_SEALED_DATES_API_BASE = "/api/epics-management/epics";
     const HEADER_COLLAPSE_STORAGE_KEY = "epics-management-header-collapsed";
     const PLAN_COLUMNS_API = "/api/epics-management/plan-columns";
     const PLAN_COLUMNS_DELETE_API_BASE = "/api/epics-management/plan-columns";
@@ -9564,6 +11823,7 @@ def _epics_management_settings_html() -> str:
     const PRIORITY_OPTIONS = ["Low", "Medium", "High", "Highest"];
     let PLAN_STATUS_OPTIONS = ["Planned", "Not Planned Yet"];
     const IPP_MEETING_PLANNED_OPTIONS = ["No", "Yes"];
+    const DELIVERY_STATUS_OPTIONS = ["Late", "On-track", "Yet to start"];
     const DEFAULT_PLAN_COLUMNS = [
       { key: "epic_plan", label: "Epic Plan", jira_link_enabled: false, is_default: true },
       { key: "research_urs_plan", label: "Research/URS Plan", jira_link_enabled: true, is_default: true },
@@ -9608,9 +11868,6 @@ def _epics_management_settings_html() -> str:
     const epicOriginatorEl = document.getElementById("epic-originator");
     const epicPriorityEl = document.getElementById("epic-priority");
     const epicPlanStatusEl = document.getElementById("epic-plan-status");
-    const epicIppMeetingPlannedEl = document.getElementById("epic-ipp-meeting-planned");
-    const epicActualProductionDateEl = document.getElementById("epic-actual-production-date");
-    const epicRemarksEl = document.getElementById("epic-remarks");
     const epicJiraUrlEl = document.getElementById("epic-jira-url");
     const epicDescriptionEl = document.getElementById("epic-description");
     const epicResearchUrsPlanJiraUrlEl = document.getElementById("epic-research-urs-plan-jira-url");
@@ -9629,11 +11886,20 @@ def _epics_management_settings_html() -> str:
     const plannerHeaderToggleBtn = document.getElementById("header-toggle-btn");
     const manageColumnsDialogEl = document.getElementById("manage-columns-dialog");
     const manageColumnsTbodyEl = document.getElementById("manage-columns-tbody");
+    const epicsFilterProjectEl = document.getElementById("epics-filter-project");
+    const epicsFilterSearchEl = document.getElementById("epics-filter-search");
+
+    const FILTER_PROJECT_STORAGE_KEY = "epics-management-filter-project";
+    const DEFAULT_FILTER_PROJECT_KEY = "";
+    let filterProjectKey = "";
+    let filterSearchQuery = "";
 
     let rows = [];
     let managedProjects = [];
     let dropdownOptions = { product_category_options: [], component_options: [], plan_status_options: PLAN_STATUS_OPTIONS.slice() };
     let overrides = {};
+    const selectedEpicKeys = new Set();
+    const rebudgetedEpicKeys = new Set();
     let activePlan = { rowIndex: -1, planKey: "" };
     let activeEpicEditKey = "";
     let activePlanInsertPosition = 0;
@@ -9659,8 +11925,41 @@ def _epics_management_settings_html() -> str:
     let deepLinkHandled = false;
     let deepLinkMissingWarningShown = false;
 
+    function rowSearchString(row) {
+      if (!row) return "";
+      const parts = [
+        row.project_key, row.project_name, row.product_category, row.component,
+        row.epic_key, row.epic_name, row.description, row.originator, row.priority,
+        row.plan_status
+      ];
+      const plans = row.plans || {};
+      for (const key of Object.keys(plans)) {
+        const p = plans[key];
+        if (p && typeof p === "object") {
+          if (p.man_days != null && p.man_days !== "") parts.push(String(p.man_days));
+          if (p.start_date) parts.push(p.start_date);
+          if (p.due_date) parts.push(p.due_date);
+        }
+      }
+      return parts.map((v) => String(v == null ? "" : v)).join(" ").toLowerCase();
+    }
+    function getVisibleRowIndexes() {
+      const projectKey = String(filterProjectKey || "").trim().toUpperCase();
+      const query = String(filterSearchQuery || "").trim().toLowerCase();
+      return rows.map((row, index) => index).filter((rowIndex) => {
+        const row = rows[rowIndex];
+        if (!row) return false;
+        if (projectKey && String(row.project_key || "").trim().toUpperCase() !== projectKey) return false;
+        if (query && !rowSearchString(row).includes(query)) return false;
+        return true;
+      });
+    }
+
     function esc(value) {
       return String(value == null ? "" : value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+    function escAttr(value) {
+      return String(value == null ? "" : value).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     }
     function setStatus(message, kind) {
       statusEl.textContent = String(message || "");
@@ -9860,6 +12159,7 @@ def _epics_management_settings_html() -> str:
         return '<th class="plan-col-head" draggable="true" data-plan-key="' + esc(col.key) + '" data-plan-index="' + idx + '"><div class="plan-head-wrap">' + insertBeforeBtn + '<span class="plan-label">' + esc(col.label || col.key || "Plan") + '</span><span class="plan-head-actions">' + deleteBtn + '</span>' + insertAfterBtn + "</div></th>";
       }).join("");
       headerRowEl.innerHTML = ""
+        + "<th title=\\"Select epics to seal\\">Select</th>"
         + "<th>Project</th>"
         + "<th>Product Categorization</th>"
         + "<th>Component</th>"
@@ -9868,9 +12168,6 @@ def _epics_management_settings_html() -> str:
         + "<th>Originator</th>"
         + "<th>Priority</th>"
         + "<th>Plan Status</th>"
-        + "<th>IPP Meeting Planner</th>"
-        + "<th>Actual Production Date</th>"
-        + "<th>Remarks</th>"
         + planHeaders
         + "<th>Actions</th>";
       applyPlanColumnLayout();
@@ -10101,7 +12398,7 @@ def _epics_management_settings_html() -> str:
       selectEl.innerHTML = options.join("");
       if (selected) selectEl.value = selected;
     }
-    function renderCategorizationSelect(field, configuredValues, selectedValue, rowIndex) {
+    function renderCategorizationSelect(field, configuredValues, selectedValue, rowIndex, disabled) {
       const selected = String(selectedValue || "").trim();
       const values = uniqueNonEmptyOptions(configuredValues);
       if (selected && !values.some((item) => item.toLowerCase() === selected.toLowerCase())) {
@@ -10112,7 +12409,8 @@ def _epics_management_settings_html() -> str:
         const isSelected = selected && item.toLowerCase() === selected.toLowerCase();
         options.push('<option value="' + esc(item) + '"' + (isSelected ? " selected" : "") + ">" + esc(item) + "</option>");
       }
-      return '<select data-row-index="' + rowIndex + '" data-field="' + esc(field) + '">' + options.join("") + "</select>";
+      const dis = disabled ? " disabled" : "";
+      return '<select data-row-index="' + rowIndex + '" data-field="' + esc(field) + '"' + dis + '>' + options.join("") + "</select>";
     }
     function renderDraftCategorizationSelect(field, configuredValues, selectedValue) {
       const selected = String(selectedValue || "").trim();
@@ -10179,12 +12477,33 @@ def _epics_management_settings_html() -> str:
       }
       epicProjectSelectEl.innerHTML = options.join("");
     }
+    function renderFilterProjectOptions() {
+      if (!epicsFilterProjectEl) return;
+      const stored = localStorage.getItem(FILTER_PROJECT_STORAGE_KEY);
+      const options = ['<option value="">All projects</option>'];
+      for (const item of managedProjects) {
+        const key = normalizeProjectKey(item.project_key);
+        const displayName = String(item.display_name || item.project_name || key || "").trim();
+        options.push('<option value="' + esc(key) + '">' + esc(displayName) + "</option>");
+      }
+      epicsFilterProjectEl.innerHTML = options.join("");
+      let defaultKey = "";
+      if (stored && managedProjects.some((p) => normalizeProjectKey(p.project_key) === normalizeProjectKey(stored))) {
+        defaultKey = normalizeProjectKey(stored);
+      } else {
+        defaultKey = DEFAULT_FILTER_PROJECT_KEY;
+      }
+      filterProjectKey = defaultKey;
+      epicsFilterProjectEl.value = defaultKey;
+      if (defaultKey) localStorage.setItem(FILTER_PROJECT_STORAGE_KEY, defaultKey);
+    }
     async function loadManagedProjects() {
       const resp = await fetch(PROJECTS_API, { cache: "no-store" });
       const body = await resp.json().catch(() => ({}));
       if (!resp.ok) throw new Error(String(body.error || "Failed to load managed projects."));
       managedProjects = Array.isArray(body.projects) ? body.projects : [];
       renderProjectOptions(epicProjectSelectEl.value);
+      renderFilterProjectOptions();
     }
     function toDateValue(value) {
       const text = String(value || "").trim();
@@ -10257,7 +12576,7 @@ def _epics_management_settings_html() -> str:
             + (dueIso ? '<div><b>Due:</b> ' + esc(formatDateDisplay(dueIso)) + "</div>" : "")
           + "</div>"
         : "";
-      return '<div class="plan-summary"><div class="plan-main"><div><b>Man-days:</b> ' + esc(manDays) + "</div>" + toggle + "</div>" + dates + "</div>";
+      return '<div class="plan-summary"><div class="plan-main"><div><b>Approved md:</b> ' + esc(manDays) + "</div>" + toggle + "</div>" + dates + "</div>";
     }
     function isPlanJiraEnabled(planKey) {
       return PLAN_JIRA_COLUMN_KEYS.has(String(planKey || ""));
@@ -10271,9 +12590,12 @@ def _epics_management_settings_html() -> str:
         return "";
       }
     }
-    function renderPlanCell(rowIndex, planCol, row) {
+    function renderPlanCell(rowIndex, planCol, row, effectivelySealed) {
       const plan = (row.plans || {})[planCol.key] || {};
       const summary = planSummary(plan, rowIndex, planCol.key);
+      if (effectivelySealed) {
+        return '<td class="plan-col-cell"><div class="plan-summary-readonly">' + summary + "</div></td>";
+      }
       if (!isPlanJiraEnabled(planCol.key)) {
         return '<td class="plan-col-cell"><button class="plan-btn" type="button" data-row-index="' + rowIndex + '" data-plan-key="' + esc(planCol.key) + '">' + summary + "</button></td>";
       }
@@ -10317,31 +12639,34 @@ def _epics_management_settings_html() -> str:
         setStatus(err.message || String(err), "warn");
       }
     }
-    function renderPrioritySelect(priority, rowIndex) {
+    function renderPrioritySelect(priority, rowIndex, disabled) {
       const selected = PRIORITY_OPTIONS.includes(priority) ? priority : "Low";
-      return '<select data-row-index="' + rowIndex + '" data-field="priority">' +
+      const dis = disabled ? " disabled" : "";
+      return '<select data-row-index="' + rowIndex + '" data-field="priority"' + dis + '>' +
         PRIORITY_OPTIONS.map((item) => '<option value="' + esc(item) + '"' + (item === selected ? " selected" : "") + ">" + esc(item) + "</option>").join("") +
         "</select>";
     }
-    function renderPlanStatusSelect(planStatus, rowIndex) {
+    function renderPlanStatusSelect(planStatus, rowIndex, disabled) {
       const selected = normalizePlanStatus(planStatus);
-      return '<select data-row-index="' + rowIndex + '" data-field="plan_status">' +
+      const dis = disabled ? " disabled" : "";
+      return '<select data-row-index="' + rowIndex + '" data-field="plan_status"' + dis + '>' +
         PLAN_STATUS_OPTIONS.map((item) => '<option value="' + esc(item) + '"' + (item === selected ? " selected" : "") + ">" + esc(item) + "</option>").join("") +
         "</select>";
     }
-    function renderIppMeetingPlannedSelect(value, rowIndex) {
-      const selected = normalizeIppMeetingPlanned(value);
-      return '<select data-row-index="' + rowIndex + '" data-field="ipp_meeting_planned">' +
-        IPP_MEETING_PLANNED_OPTIONS.map((item) => '<option value="' + esc(item) + '"' + (item === selected ? " selected" : "") + ">" + esc(item) + "</option>").join("") +
-        "</select>";
+    function normalizeDeliveryStatus(value) {
+      const text = String(value || "").trim();
+      return DELIVERY_STATUS_OPTIONS.includes(text) ? text : "Yet to start";
+    }
+    function deliveryStatusIcon(value) {
+      const s = normalizeDeliveryStatus(value);
+      if (s === "Late") return "warning";
+      if (s === "On-track") return "check_circle";
+      return "schedule";
     }
     function normalizeIsoDateOrBlank(value) {
       const text = String(value || "").trim();
       if (!text) return "";
       return /^\\d{4}-\\d{2}-\\d{2}$/.test(text) ? text : "";
-    }
-    function renderActualProductionDateInput(value, rowIndex) {
-      return '<input type="date" data-row-index="' + rowIndex + '" data-field="actual_production_date" value="' + esc(normalizeIsoDateOrBlank(value)) + '">';
     }
     const UNCATEGORIZED_LABEL = "Uncategorized";
     function projectNodeKey(projectName) {
@@ -10403,43 +12728,65 @@ def _epics_management_settings_html() -> str:
       rowEl.scrollIntoView({ behavior: "smooth", block: "center" });
       window.setTimeout(() => rowEl.classList.remove("epic-jump-highlight"), 2000);
     }
-    function renderEpicCell(row) {
+    function renderEpicCell(row, effectivelySealed) {
       const hasJira = !!String(row.jira_url || "").trim();
+      const showLock = !!effectivelySealed;
+      const lockTitle = "Sealed – cannot be modified until RE-BUDGET is clicked.";
+      const lockHtml = showLock ? '<span class="material-symbols-outlined epic-seal-lock" title="' + esc(lockTitle) + '" aria-label="Sealed">lock</span>' : '';
       return ''
         + '<div class="tree tree-epic-cell">'
-        + '  <div class="tree-line tree-epic"><span class="tree-title">' + esc(row.epic_name || row.epic_key || "-") + '</span></div>'
+        + '  <div class="tree-line tree-epic"><span class="tree-epic-name-wrap"><span class="tree-title">' + esc(row.epic_name || row.epic_key || "-") + '</span>' + lockHtml + '</span></div>'
         + '  <div class="tree-actions">'
         + '    <a class="jira-open ' + (hasJira ? "" : "disabled") + '" href="' + esc(hasJira ? row.jira_url : "#") + '" target="_blank" rel="noopener noreferrer" title="' + (hasJira ? "Open Jira link" : "No Jira link set") + '">J</a>'
         + '    <button class="jira-edit" type="button" data-row-index="' + esc(row._row_index) + '" title="Set Jira link">E</button>'
         + '  </div>'
         + '</div>';
     }
-    function renderEpicRow(rowIndex) {
+    function renderEpicRow(rowIndex, visibleEpicIndex) {
       const row = rows[rowIndex];
-      const planTds = PLAN_COLUMNS.map((planCol) => renderPlanCell(rowIndex, planCol, row)).join("");
+      const epicKey = String(row.epic_key || row.id || "").trim().toUpperCase();
+      const effectivelySealed = !!(row.is_sealed) && !rebudgetedEpicKeys.has(epicKey);
+      const planTds = PLAN_COLUMNS.map((planCol) => renderPlanCell(rowIndex, planCol, row, effectivelySealed)).join("");
       const categoryRaw = String(row.product_category || "").trim();
       const componentRaw = String(row.component || "").trim();
       const categoryClass = categoryRaw ? "" : " missing-categorization";
       const componentClass = componentRaw ? "" : " missing-categorization";
-      const epicKey = String(row.epic_key || row.id || "").trim().toUpperCase();
       const project = String(row.project_name || row.project_key || "-").trim() || "-";
       const category = displayBucketValue(row.product_category);
       const component = displayBucketValue(row.component);
+      const altClass = (visibleEpicIndex != null && visibleEpicIndex >= 0) ? (" row-alt-" + (visibleEpicIndex % 2)) : "";
+      const checked = selectedEpicKeys.has(epicKey) ? " checked" : "";
+      const sealedClass = effectivelySealed ? " epic-sealed" : "";
+      const rebudgetItem = effectivelySealed ? '<button type="button" role="menuitem" class="actions-menu-item" data-rebudget-row="' + rowIndex + '" title="Unlock for this session to revise">RE-BUDGET</button>' : '';
+      const manageSealedItem = '<button type="button" role="menuitem" class="actions-menu-item" data-manage-sealed-row="' + rowIndex + '">Manage sealed budgets</button>';
+      const editItem = effectivelySealed ? '' : '<button type="button" role="menuitem" class="actions-menu-item" data-edit-row="' + rowIndex + '">Edit</button>';
+      const saveItem = effectivelySealed ? '' : '<button type="button" role="menuitem" class="actions-menu-item" data-save-row="' + rowIndex + '">Save</button>';
+      const syncItem = effectivelySealed ? '' : '<button type="button" role="menuitem" class="actions-menu-item" data-sync-epic-row="' + rowIndex + '">Sync Jira Epic</button>';
+      const deleteItem = effectivelySealed ? '' : '<button type="button" role="menuitem" class="actions-menu-item actions-menu-item-danger" data-delete-epic-row="' + rowIndex + '" title="Delete epic from Epics Planner">Delete</button>';
+      const menuItems = rebudgetItem + manageSealedItem + editItem + saveItem + syncItem + deleteItem;
+      const actionsCell = '<td class="actions-cell">'
+        + '<div class="actions-menu-wrap">'
+        + '<button type="button" class="icon-btn actions-menu-btn" data-row-index="' + rowIndex + '" aria-haspopup="true" aria-expanded="false" title="Actions">'
+        + '<span class="material-symbols-outlined">settings</span></button>'
+        + '<div class="actions-menu-dropdown" role="menu">' + menuItems + '</div>'
+        + '</div></td>';
+      /* When sealed, only these columns stay editable: Description, Originator, Priority, Plan Status */
+      const sealedDisable = effectivelySealed;
+      const sealedAllowEdit = false; /* allowed columns never disabled by seal */
+      const ceAllowed = "true"; /* description & originator always editable */
       return ""
-        + '<tr data-row-index="' + rowIndex + '" data-epic-key="' + esc(epicKey) + '" data-project-node-key="' + esc(projectNodeKey(project)) + '" data-category-node-key="' + esc(categoryNodeKey(project, category)) + '" data-component-node-key="' + esc(componentNodeKey(project, category, component)) + '">'
+        + '<tr class="epic-row' + altClass + sealedClass + '" data-row-index="' + rowIndex + '" data-epic-key="' + esc(epicKey) + '" data-project-node-key="' + esc(projectNodeKey(project)) + '" data-category-node-key="' + esc(categoryNodeKey(project, category)) + '" data-component-node-key="' + esc(componentNodeKey(project, category, component)) + '">'
+        + '<td><input type="checkbox" class="epic-select-cb" data-row-index="' + rowIndex + '" data-epic-key="' + esc(epicKey) + '"' + checked + ' title="Select to seal"></td>'
         + "<td>" + esc(String(row.project_name || row.project_key || "-").trim() || "-") + "</td>"
-        + '<td class="' + categoryClass.trim() + '">' + renderCategorizationSelect("product_category", dropdownOptions.product_category_options, categoryRaw, rowIndex) + "</td>"
-        + '<td class="' + componentClass.trim() + '">' + renderCategorizationSelect("component", dropdownOptions.component_options, componentRaw, rowIndex) + "</td>"
-        + "<td>" + renderEpicCell(row) + "</td>"
-        + '<td class="description-cell"><div class="description-editor" contenteditable="true" data-row-index="' + rowIndex + '" data-field="description">' + esc(row.description || "") + "</div></td>"
-        + '<td contenteditable="true" data-row-index="' + rowIndex + '" data-field="originator">' + esc(row.originator || "") + "</td>"
-        + "<td>" + renderPrioritySelect(normalizePriority(row.priority), rowIndex) + "</td>"
-        + "<td>" + renderPlanStatusSelect(normalizePlanStatus(row.plan_status), rowIndex) + "</td>"
-        + "<td>" + renderIppMeetingPlannedSelect(normalizeIppMeetingPlanned(row.ipp_meeting_planned), rowIndex) + "</td>"
-        + "<td>" + renderActualProductionDateInput(row.actual_production_date, rowIndex) + "</td>"
-        + '<td contenteditable="true" data-row-index="' + rowIndex + '" data-field="remarks">' + esc(row.remarks || "") + "</td>"
+        + '<td class="' + categoryClass.trim() + '">' + renderCategorizationSelect("product_category", dropdownOptions.product_category_options, categoryRaw, rowIndex, sealedDisable) + "</td>"
+        + '<td class="' + componentClass.trim() + '">' + renderCategorizationSelect("component", dropdownOptions.component_options, componentRaw, rowIndex, sealedDisable) + "</td>"
+        + "<td>" + renderEpicCell(row, sealedDisable) + "</td>"
+        + '<td class="description-cell"><div class="description-editor" contenteditable="' + ceAllowed + '" data-row-index="' + rowIndex + '" data-field="description">' + esc(row.description || "") + "</div></td>"
+        + '<td contenteditable="' + ceAllowed + '" data-row-index="' + rowIndex + '" data-field="originator">' + esc(row.originator || "") + "</td>"
+        + "<td>" + renderPrioritySelect(normalizePriority(row.priority), rowIndex, sealedAllowEdit) + "</td>"
+        + "<td>" + renderPlanStatusSelect(normalizePlanStatus(row.plan_status), rowIndex, sealedAllowEdit) + "</td>"
         + planTds
-        + '<td><div style="display:flex;gap:6px;flex-wrap:wrap;"><button class="btn alt small" type="button" data-edit-row="' + rowIndex + '">Edit</button><button class="btn alt small" type="button" data-save-row="' + rowIndex + '">Save</button><button class="btn alt small" type="button" data-sync-epic-row="' + rowIndex + '">Sync Jira Epic</button><button class="btn alt small danger" type="button" data-delete-epic-row="' + rowIndex + '" title="Delete epic from Epics Planner">Delete</button></div></td>'
+        + actionsCell
         + "</tr>";
     }
     function ensureDraftEpicRow() {
@@ -10455,9 +12802,6 @@ def _epics_management_settings_html() -> str:
         originator: "",
         priority: "Low",
         plan_status: defaultPlanStatus(),
-        ipp_meeting_planned: "No",
-        actual_production_date: "",
-        remarks: "",
         jira_url: "",
         plans: {},
       };
@@ -10468,6 +12812,7 @@ def _epics_management_settings_html() -> str:
       const planTds = PLAN_COLUMNS.map(() => '<td class="plan-col-cell"><span class="plan-empty">Draft</span></td>').join("");
       return ""
         + '<tr class="draft-row">'
+        + "<td></td>"
         + "<td>" + renderDraftProjectSelect(draft.project_key || "") + "</td>"
         + "<td>" + renderDraftCategorizationSelect("product_category", dropdownOptions.product_category_options, draft.product_category || "") + "</td>"
         + "<td>" + renderDraftCategorizationSelect("component", dropdownOptions.component_options, draft.component || "") + "</td>"
@@ -10476,9 +12821,6 @@ def _epics_management_settings_html() -> str:
         + '<td><input class="draft-input" data-draft-field="originator" placeholder="Originator (optional)" value="' + esc(draft.originator || "") + '"></td>'
         + '<td><span class="muted">Low</span></td>'
         + '<td><span class="muted">' + esc(defaultPlanStatus()) + "</span></td>"
-        + '<td><span class="muted">No</span></td>'
-        + '<td><span class="muted">-</span></td>'
-        + '<td><span class="muted">Draft row</span></td>'
         + planTds
         + '<td><button class="btn small" type="button" id="save-draft-epic-btn">Save Draft Epic</button></td>'
         + "</tr>";
@@ -10521,7 +12863,6 @@ def _epics_management_settings_html() -> str:
           originator: String(draftEpicRow.originator || "").trim(),
           priority: "Low",
           plan_status: defaultPlanStatus(),
-          ipp_meeting_planned: "No",
           jira_url: "",
           plans: {},
         };
@@ -10567,8 +12908,11 @@ def _epics_management_settings_html() -> str:
     }
     function renderTable() {
       rows.forEach((row, index) => { row._row_index = index; });
+      const visibleIndexes = getVisibleRowIndexes();
       const grouped = new Map();
-      rows.forEach((row, rowIndex) => {
+      visibleIndexes.forEach((rowIndex) => {
+        const row = rows[rowIndex];
+        if (!row) return;
         const project = String(row.project_name || row.project_key || "-").trim() || "-";
         const category = displayBucketValue(row.product_category);
         const component = displayBucketValue(row.component);
@@ -10586,6 +12930,18 @@ def _epics_management_settings_html() -> str:
         tbodyEl.innerHTML = '<tr><td colspan="' + totalCols + '" style="text-align:center;color:#64748b;padding:16px;">No epics found in database.</td></tr>';
         return;
       }
+      let visibleEpicRowIndex = 0;
+      if (filterSearchQuery && String(filterSearchQuery).trim()) {
+        for (const [project, categoryMap] of grouped.entries()) {
+          expandedProjects.add(projectNodeKey(project));
+          for (const [category, componentMap] of categoryMap.entries()) {
+            expandedCategories.add(categoryNodeKey(project, category));
+            for (const [component] of componentMap.entries()) {
+              expandedComponents.add(componentNodeKey(project, category, component));
+            }
+          }
+        }
+      }
       for (const [project, categoryMap] of grouped.entries()) {
         const pKey = projectNodeKey(project);
         const pExpanded = expandedProjects.has(pKey);
@@ -10597,6 +12953,7 @@ def _epics_management_settings_html() -> str:
         const projectPlanTotalTds = renderGroupPlanTotalCells(projectTotals);
         html.push(
           '<tr class="group-row project">'
+          + '<td></td>'
           + '<td><div class="tree-line"><button class="tree-toggle" type="button" data-toggle-project="' + esc(pKey) + '">' + (pExpanded ? "-" : "+") + '</button><span class="tree-label-project">' + esc(project) + '</span><span class="tree-group-total">Total: ' + esc(formatManDaysValue(projectTotals.overall)) + ' md</span></div></td>'
           + '<td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>'
           + projectPlanTotalTds
@@ -10614,7 +12971,7 @@ def _epics_management_settings_html() -> str:
           const categoryPlanTotalTds = renderGroupPlanTotalCells(categoryTotals);
           html.push(
             '<tr class="group-row category">'
-            + '<td></td>'
+            + '<td></td><td></td>'
             + '<td><div class="tree-line"><button class="tree-toggle" type="button" data-toggle-category="' + esc(cKey) + '">' + (cExpanded ? "-" : "+") + '</button><span class="tree-label-category">' + esc(category) + '</span><span class="tree-group-total">Total: ' + esc(formatManDaysValue(categoryTotals.overall)) + ' md</span></div></td>'
             + '<td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>'
             + categoryPlanTotalTds
@@ -10630,7 +12987,7 @@ def _epics_management_settings_html() -> str:
             const componentPlanTotalTds = renderGroupPlanTotalCells(componentTotals);
             html.push(
               '<tr class="group-row component">'
-              + '<td></td><td></td>'
+              + '<td></td><td></td><td></td>'
               + '<td><div class="tree-line"><button class="tree-toggle" type="button" data-toggle-component="' + esc(compKey) + '">' + (compExpanded ? "-" : "+") + '</button><span class="tree-label-category">' + esc(component) + '</span><span class="tree-group-total">Total: ' + esc(formatManDaysValue(componentTotals.overall)) + ' md</span></div></td>'
               + '<td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>'
               + componentPlanTotalTds
@@ -10640,7 +12997,8 @@ def _epics_management_settings_html() -> str:
             if (!compExpanded) continue;
 
             for (const rowIndex of epicIndexes) {
-              html.push(renderEpicRow(rowIndex));
+              html.push(renderEpicRow(rowIndex, visibleEpicRowIndex));
+              visibleEpicRowIndex++;
             }
           }
         }
@@ -10746,31 +13104,6 @@ def _epics_management_settings_html() -> str:
           queueAutoPersist(rowIndex, "Plan status saved for " + (rows[rowIndex].epic_key || rows[rowIndex].id || "epic") + ".");
         });
       });
-      Array.from(tbodyEl.querySelectorAll("select[data-field='ipp_meeting_planned']")).forEach((selectEl) => {
-        selectEl.addEventListener("change", () => {
-          const rowIndex = Number(selectEl.getAttribute("data-row-index"));
-          if (!rows[rowIndex]) return;
-          const nextValue = normalizeIppMeetingPlanned(selectEl.value);
-          rows[rowIndex].ipp_meeting_planned = nextValue;
-          ensureRowOverride(rows[rowIndex]).ipp_meeting_planned = nextValue;
-          saveOverrides();
-          setStatus("Saving " + (rows[rowIndex].epic_key || rows[rowIndex].id || "epic") + "...", "");
-          queueAutoPersist(rowIndex, "IPP Meeting Planner saved for " + (rows[rowIndex].epic_key || rows[rowIndex].id || "epic") + ".");
-        });
-      });
-      Array.from(tbodyEl.querySelectorAll("input[data-field='actual_production_date']")).forEach((inputEl) => {
-        inputEl.addEventListener("change", () => {
-          const rowIndex = Number(inputEl.getAttribute("data-row-index"));
-          if (!rows[rowIndex]) return;
-          const nextValue = normalizeIsoDateOrBlank(inputEl.value);
-          rows[rowIndex].actual_production_date = nextValue;
-          ensureRowOverride(rows[rowIndex]).actual_production_date = nextValue;
-          saveOverrides();
-          setStatus("Saving " + (rows[rowIndex].epic_key || rows[rowIndex].id || "epic") + "...", "");
-          queueAutoPersist(rowIndex, "Actual Production Date saved for " + (rows[rowIndex].epic_key || rows[rowIndex].id || "epic") + ".");
-        });
-      });
-
       Array.from(tbodyEl.querySelectorAll("button.plan-btn[data-plan-key]")).forEach((btn) => {
         btn.addEventListener("click", () => {
           const rowIndex = Number(btn.getAttribute("data-row-index"));
@@ -10819,15 +13152,44 @@ def _epics_management_settings_html() -> str:
         });
       });
 
+      function closeActionsMenuForRow(rowIndex) {
+        const tr = tbodyEl.querySelector("tr.epic-row[data-row-index=\\\"" + rowIndex + "\\\"]");
+        if (!tr) return;
+        const wrap = tr.querySelector(".actions-menu-wrap");
+        if (wrap) { wrap.classList.remove("open"); const b = wrap.querySelector(".actions-menu-btn"); if (b) b.setAttribute("aria-expanded", "false"); }
+      }
+      function closeAllActionsMenus() {
+        tbodyEl.querySelectorAll(".actions-menu-wrap.open").forEach((w) => {
+          w.classList.remove("open");
+          const b = w.querySelector(".actions-menu-btn"); if (b) b.setAttribute("aria-expanded", "false");
+        });
+      }
+      if (!window._epicsActionsMenuDocClick) {
+        window._epicsActionsMenuDocClick = true;
+        document.addEventListener("click", () => closeAllActionsMenus());
+      }
+      Array.from(tbodyEl.querySelectorAll("button.actions-menu-btn")).forEach((btn) => {
+        btn.addEventListener("click", (evt) => {
+          evt.preventDefault();
+          evt.stopPropagation();
+          const wrap = btn.closest(".actions-menu-wrap");
+          if (!wrap) return;
+          const isOpen = wrap.classList.contains("open");
+          closeAllActionsMenus();
+          if (!isOpen) { wrap.classList.add("open"); btn.setAttribute("aria-expanded", "true"); }
+        });
+      });
       Array.from(tbodyEl.querySelectorAll("button[data-save-row]")).forEach((btn) => {
         btn.addEventListener("click", () => {
           const rowIndex = Number(btn.getAttribute("data-save-row"));
+          closeActionsMenuForRow(rowIndex);
           persistRow(rowIndex).catch((err) => setStatus(err.message || String(err), "warn"));
         });
       });
       Array.from(tbodyEl.querySelectorAll("button[data-edit-row]")).forEach((btn) => {
         btn.addEventListener("click", () => {
           const rowIndex = Number(btn.getAttribute("data-edit-row"));
+          closeActionsMenuForRow(rowIndex);
           const row = rows[rowIndex];
           if (!row) return;
           openEpicDialogForEdit(row);
@@ -10836,14 +13198,52 @@ def _epics_management_settings_html() -> str:
       Array.from(tbodyEl.querySelectorAll("button[data-sync-epic-row]")).forEach((btn) => {
         btn.addEventListener("click", () => {
           const rowIndex = Number(btn.getAttribute("data-sync-epic-row"));
+          closeActionsMenuForRow(rowIndex);
           syncRowPlanFromJira(rowIndex).catch((err) => setStatus(err.message || String(err), "warn"));
         });
       });
       Array.from(tbodyEl.querySelectorAll("button[data-delete-epic-row]")).forEach((btn) => {
         btn.addEventListener("click", () => {
           const rowIndex = Number(btn.getAttribute("data-delete-epic-row"));
+          closeActionsMenuForRow(rowIndex);
           deleteEpicRow(rowIndex).catch((err) => setStatus(err.message || String(err), "warn"));
         });
+      });
+      Array.from(tbodyEl.querySelectorAll("button[data-rebudget-row]")).forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const rowIndex = Number(btn.getAttribute("data-rebudget-row"));
+          closeActionsMenuForRow(rowIndex);
+          const row = rows[rowIndex];
+          if (!row) return;
+          const epicKey = String(row.epic_key || row.id || "").trim().toUpperCase();
+          if (!epicKey) return;
+          rebudgetedEpicKeys.add(epicKey);
+          renderTable();
+          setStatus("Epic unlocked for this session. Edit and Save to persist, or SEAL EPICS again to lock. Refreshing the page will lock it again.", "ok");
+        });
+      });
+      Array.from(tbodyEl.querySelectorAll("button[data-manage-sealed-row]")).forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const rowIndex = Number(btn.getAttribute("data-manage-sealed-row"));
+          closeActionsMenuForRow(rowIndex);
+          const row = rows[rowIndex];
+          if (!row) return;
+          const epicKey = String(row.epic_key || row.id || "").trim().toUpperCase();
+          const epicName = String(row.epic_name || row.epic_key || "").trim() || epicKey;
+          if (!epicKey) return;
+          document.getElementById("manage-sealed-subtitle").textContent = epicName + " (" + epicKey + ")";
+          document.getElementById("manage-sealed-review-section").style.display = "none";
+          document.getElementById("manage-sealed-modal").showModal();
+          loadManageSealedDates(epicKey);
+        });
+      });
+      tbodyEl.addEventListener("change", (evt) => {
+        const cb = evt.target;
+        if (!cb || !cb.classList || !cb.classList.contains("epic-select-cb")) return;
+        const epicKey = String(cb.getAttribute("data-epic-key") || "").trim().toUpperCase();
+        if (!epicKey) return;
+        if (cb.checked) selectedEpicKeys.add(epicKey); else selectedEpicKeys.delete(epicKey);
+        updateSealButtonState();
       });
       Array.from(tbodyEl.querySelectorAll("input.draft-input[data-draft-field]")).forEach((inputEl) => {
         inputEl.addEventListener("input", () => {
@@ -10871,6 +13271,97 @@ def _epics_management_settings_html() -> str:
           saveDraftEpic().catch((err) => setStatus(err.message || String(err), "warn"));
         });
       }
+      updateSealButtonState();
+    }
+    function updateSealButtonState() {
+      const btn = document.getElementById("seal-epics-btn");
+      if (!btn) return;
+      btn.disabled = selectedEpicKeys.size === 0;
+    }
+    function loadManageSealedDates(epicKey) {
+      const listEl = document.getElementById("manage-sealed-dates-list");
+      if (!listEl) return;
+      listEl.innerHTML = "<span class=\\"muted\\">Loading…</span>";
+      fetch(EPIC_SEALED_DATES_API_BASE + "/" + encodeURIComponent(epicKey) + "/sealed-dates", { cache: "no-store" })
+        .then((r) => r.json())
+        .then((body) => {
+          const dates = Array.isArray(body.dates) ? body.dates : [];
+          if (dates.length === 0) {
+            listEl.innerHTML = "<span class=\\"muted\\">No sealed budgets for this epic.</span>";
+            return;
+          }
+          listEl.innerHTML = "";
+          dates.forEach((d) => {
+            const label = d.replace("T", " ").replace("Z", " UTC");
+            const row = document.createElement("div");
+            row.className = "manage-sealed-date-row";
+            row.style.cssText = "display:flex;align-items:center;gap:8px;margin-bottom:6px;";
+            const span = document.createElement("span");
+            span.style.flex = "1";
+            span.textContent = label;
+            const viewBtn = document.createElement("button");
+            viewBtn.type = "button";
+            viewBtn.className = "btn alt small manage-sealed-view-btn";
+            viewBtn.setAttribute("data-approved-at", d);
+            viewBtn.textContent = "View";
+            const deleteBtn = document.createElement("button");
+            deleteBtn.type = "button";
+            deleteBtn.className = "btn alt small danger manage-sealed-delete-btn";
+            deleteBtn.setAttribute("data-approved-at", d);
+            deleteBtn.textContent = "Delete";
+            row.appendChild(span);
+            row.appendChild(viewBtn);
+            row.appendChild(deleteBtn);
+            listEl.appendChild(row);
+          });
+          const reviewSection = document.getElementById("manage-sealed-review-section");
+          const reviewContent = document.getElementById("manage-sealed-review-content");
+          const reviewTitle = document.getElementById("manage-sealed-review-title");
+          listEl.querySelectorAll("button.manage-sealed-view-btn").forEach((btn) => {
+            btn.addEventListener("click", () => {
+              const approvedAt = btn.getAttribute("data-approved-at");
+              if (!approvedAt) return;
+              reviewTitle.textContent = "Sealed at " + approvedAt.replace("T", " ").replace("Z", " UTC");
+              reviewContent.innerHTML = "<span class=\\"muted\\">Loading…</span>";
+              reviewSection.style.display = "block";
+              fetch(EPIC_SEALED_DATES_API_BASE + "/" + encodeURIComponent(epicKey) + "/sealed-dates/" + encodeURIComponent(approvedAt), { cache: "no-store" })
+                .then((resp) => resp.json())
+                .then((data) => {
+                  const sn = data.snapshot || {};
+                  const plans = sn.plans || {};
+                  const planRows = Object.keys(plans).map((k) => {
+                    const p = plans[k] || {};
+                    const md = p.man_days != null ? p.man_days : p.mandays != null ? p.mandays : "-";
+                    const start = p.start_date || "-";
+                    const end = p.due_date || p.end_date || "-";
+                    const col = PLAN_COLUMNS.find((c) => c && c.key === k);
+                    const phaseName = (col && col.label) ? col.label : k;
+                    return "<tr><td>" + esc(phaseName) + "</td><td>" + esc(String(md)) + "</td><td>" + esc(start) + "</td><td>" + esc(end) + "</td></tr>";
+                  }).join("");
+                  reviewContent.innerHTML = "<div style=\\"margin-bottom:8px;\\">"
+                    + "<span class=\\"muted\\">" + esc(sn.project_name || "") + " | " + esc(sn.delivery_status || "") + " | " + esc(sn.plan_status || "") + "</span>"
+                    + "</div><table class=\\"manage-sealed-snapshot-table\\"><thead><tr><th>Phase</th><th>Man-days</th><th>Start date</th><th>End date</th></tr></thead><tbody>" + planRows + "</tbody></table>";
+                })
+                .catch(() => { reviewContent.innerHTML = "<span class=\\"muted\\">Failed to load snapshot.</span>"; });
+            });
+          });
+          listEl.querySelectorAll("button.manage-sealed-delete-btn").forEach((btn) => {
+            btn.addEventListener("click", () => {
+              const approvedAt = btn.getAttribute("data-approved-at");
+              if (!approvedAt) return;
+              if (!window.confirm("Remove this sealed budget entry? This cannot be undone.")) return;
+              fetch(EPIC_SEALED_DATES_API_BASE + "/" + encodeURIComponent(epicKey) + "/sealed-dates/" + encodeURIComponent(approvedAt), { method: "DELETE" })
+                .then((resp) => resp.json())
+                .then((body) => {
+                  if (body.error) throw new Error(body.error);
+                  setStatus("Sealed budget entry removed.", "ok");
+                  loadManageSealedDates(epicKey);
+                })
+                .catch((err) => setStatus(err.message || String(err), "warn"));
+            });
+          });
+        })
+        .catch(() => { listEl.innerHTML = "<span class=\\"muted\\">Failed to load sealed dates.</span>"; });
     }
     function payloadFromRow(row) {
       const plans = {};
@@ -10888,9 +13379,6 @@ def _epics_management_settings_html() -> str:
         originator: String(row.originator || ""),
         priority: normalizePriority(row.priority || "Low"),
         plan_status: normalizePlanStatus(row.plan_status || defaultPlanStatus()),
-        ipp_meeting_planned: normalizeIppMeetingPlanned(row.ipp_meeting_planned || "No"),
-        actual_production_date: normalizeIsoDateOrBlank(row.actual_production_date || ""),
-        remarks: String(row.remarks || ""),
         jira_url: validateJiraUrl(row.jira_url || ""),
         plans: plans,
       };
@@ -11009,9 +13497,6 @@ def _epics_management_settings_html() -> str:
       epicOriginatorEl.value = "";
       epicPriorityEl.value = "Low";
       epicPlanStatusEl.value = defaultPlanStatus();
-      epicIppMeetingPlannedEl.value = "No";
-      epicActualProductionDateEl.value = "";
-      epicRemarksEl.value = "";
       epicJiraUrlEl.value = "";
       epicDescriptionEl.value = "";
       epicResearchUrsPlanJiraUrlEl.value = "";
@@ -11045,9 +13530,6 @@ def _epics_management_settings_html() -> str:
       epicOriginatorEl.value = String(row.originator || "");
       epicPriorityEl.value = normalizePriority(row.priority || "Low");
       epicPlanStatusEl.value = normalizePlanStatus(row.plan_status || defaultPlanStatus());
-      epicIppMeetingPlannedEl.value = normalizeIppMeetingPlanned(row.ipp_meeting_planned || "No");
-      epicActualProductionDateEl.value = normalizeIsoDateOrBlank(row.actual_production_date || "");
-      epicRemarksEl.value = String(row.remarks || "");
       epicJiraUrlEl.value = String(row.jira_url || "");
       epicDescriptionEl.value = String(row.description || "");
       const plans = row.plans || {};
@@ -11122,9 +13604,6 @@ def _epics_management_settings_html() -> str:
         originator: String(epicOriginatorEl.value || "").trim(),
         priority: normalizePriority(epicPriorityEl.value),
         plan_status: normalizePlanStatus(epicPlanStatusEl.value),
-        ipp_meeting_planned: normalizeIppMeetingPlanned(epicIppMeetingPlannedEl.value),
-        actual_production_date: normalizeIsoDateOrBlank(epicActualProductionDateEl.value),
-        remarks: String(epicRemarksEl.value || "").trim(),
         jira_url: jiraUrl,
         description: String(epicDescriptionEl.value || "").trim(),
         plans: plans,
@@ -11241,11 +13720,10 @@ def _epics_management_settings_html() -> str:
         originator: String(row.originator || ""),
         priority: normalizePriority(row.priority || "Low"),
         plan_status: normalizePlanStatus(row.plan_status || defaultPlanStatus()),
-        ipp_meeting_planned: normalizeIppMeetingPlanned(row.ipp_meeting_planned || "No"),
-        actual_production_date: normalizeIsoDateOrBlank(row.actual_production_date || ""),
-        remarks: String(row.remarks || ""),
+        planned_due_date_epic: normalizeIsoDateOrBlank(row.planned_due_date_epic || ""),
         jira_url: String(row.jira_url || ""),
         plans: (row.plans && typeof row.plans === "object") ? row.plans : {},
+        is_sealed: row.hasOwnProperty("is_sealed") ? (Number(row.is_sealed) || 0) : 0,
       }));
       expandedProjects.clear();
       expandedCategories.clear();
@@ -11268,15 +13746,28 @@ def _epics_management_settings_html() -> str:
       }
       renderTable();
       jumpToDeepLinkedEpicIfNeeded();
-      const selectedCount = rows.filter((item) => normalizeIppMeetingPlanned(item.ipp_meeting_planned) === "Yes").length;
       if (!deepLinkMissingWarningShown) {
-        setStatus("Loaded " + rows.length + " epics from database (" + selectedCount + " selected for IPP Meeting Planner). Use + / - to collapse or expand Project/Product Categorization/Component groups. Yellow cells need categorization data.", "ok");
+        setStatus("Loaded " + rows.length + " epics from database. Use + / - to collapse or expand Project/Product Categorization/Component groups. Yellow cells need categorization data.", "ok");
       }
     }
 
     document.getElementById("reload-btn").addEventListener("click", () => {
       Promise.all([loadPlanColumns(), loadDropdownOptions(), loadRowsFromApi()]).catch((err) => setStatus(err.message || String(err), "warn"));
     });
+    if (epicsFilterProjectEl) {
+      epicsFilterProjectEl.addEventListener("change", () => {
+        filterProjectKey = String(epicsFilterProjectEl.value || "").trim();
+        if (filterProjectKey) localStorage.setItem(FILTER_PROJECT_STORAGE_KEY, filterProjectKey);
+        else localStorage.removeItem(FILTER_PROJECT_STORAGE_KEY);
+        renderTable();
+      });
+    }
+    if (epicsFilterSearchEl) {
+      epicsFilterSearchEl.addEventListener("input", () => {
+        filterSearchQuery = String(epicsFilterSearchEl.value || "").trim();
+        renderTable();
+      });
+    }
     window.addEventListener("resize", () => {
       applyPlanColumnLayout();
     });
@@ -11327,6 +13818,99 @@ def _epics_management_settings_html() -> str:
       expandedCategories.clear();
       expandedComponents.clear();
       renderTable();
+    });
+    const sealEpicsBtn = document.getElementById("seal-epics-btn");
+    if (sealEpicsBtn) {
+      sealEpicsBtn.addEventListener("click", () => {
+        if (selectedEpicKeys.size === 0) return;
+        const modal = document.getElementById("seal-epics-modal");
+        const datesListEl = document.getElementById("seal-modal-dates-list");
+        const reviewSection = document.getElementById("seal-modal-review-section");
+        const reviewContent = document.getElementById("seal-modal-review-content");
+        datesListEl.innerHTML = "<span class=\\"muted\\">Loading…</span>";
+        reviewSection.style.display = "none";
+        modal.showModal();
+        fetch(SEALED_DATES_API + "?limit=20", { cache: "no-store" })
+          .then((r) => r.json())
+          .then((body) => {
+            const dates = Array.isArray(body.dates) ? body.dates : [];
+            if (dates.length === 0) {
+              datesListEl.innerHTML = "<span class=\\"muted\\">No sealed dates yet.</span>";
+              return;
+            }
+            datesListEl.innerHTML = dates.map((d) => {
+              const label = d.replace("T", " ").replace("Z", " UTC");
+              return "<button type=\\"button\\" class=\\"btn alt small seal-date-btn\\" data-approved-at=\\"\\"" + escAttr(d) + "\\">" + esc(label) + "</button>";
+            }).join("");
+            datesListEl.querySelectorAll(".seal-date-btn").forEach((btn) => {
+              btn.addEventListener("click", () => {
+                const approvedAt = btn.getAttribute("data-approved-at");
+                if (!approvedAt) return;
+                document.getElementById("seal-modal-review-title").textContent = "Sealed at " + approvedAt.replace("T", " ").replace("Z", " UTC");
+                reviewContent.innerHTML = "<span class=\\"muted\\">Loading…</span>";
+                reviewSection.style.display = "block";
+                fetch(SEALED_DATES_API + "/" + encodeURIComponent(approvedAt) + "/snapshots", { cache: "no-store" })
+                  .then((r) => r.json())
+                  .then((data) => {
+                    const snapshots = Array.isArray(data.snapshots) ? data.snapshots : [];
+                    if (snapshots.length === 0) {
+                      reviewContent.innerHTML = "<span class=\\"muted\\">No snapshots for this date.</span>";
+                      return;
+                    }
+                    let html = "";
+                    snapshots.forEach((s) => {
+                      const sn = s.snapshot || {};
+                      const plans = sn.plans || {};
+                      const planRows = Object.keys(plans).map((k) => {
+                        const p = plans[k] || {};
+                        const md = p.man_days != null ? p.man_days : p.mandays != null ? p.mandays : "-";
+                        const start = p.start_date || "-";
+                        const end = p.due_date || p.end_date || "-";
+                        const col = PLAN_COLUMNS.find((c) => c && c.key === k);
+                        const phaseName = (col && col.label) ? col.label : k;
+                        return "<tr><td>" + esc(phaseName) + "</td><td>" + esc(String(md)) + "</td><td>" + esc(start) + "</td><td>" + esc(end) + "</td></tr>";
+                      }).join("");
+                      html += "<div style=\\"margin-bottom:14px;border:1px solid #e2e8f0;border-radius:8px;padding:10px;\\">"
+                        + "<strong>" + esc(sn.epic_name || sn.epic_key || s.epic_key || "-") + "</strong> (" + esc(s.epic_key || "") + ")<br>"
+                        + "<span class=\\"muted\\">" + esc(sn.project_name || "") + " | " + esc(sn.delivery_status || "") + " | " + esc(sn.plan_status || "") + "</span>"
+                        + "<table style=\\"width:100%;margin-top:8px;font-size:.8rem;\\"><thead><tr><th>Phase</th><th>Man-days</th><th>Start</th><th>End</th></tr></thead><tbody>" + planRows + "</tbody></table>"
+                        + "</div>";
+                    });
+                    reviewContent.innerHTML = html;
+                  })
+                  .catch(() => { reviewContent.innerHTML = "<span class=\\"muted\\">Failed to load snapshots.</span>"; });
+              });
+            });
+          })
+          .catch(() => { datesListEl.innerHTML = "<span class=\\"muted\\">Failed to load dates.</span>"; });
+      });
+    }
+    document.getElementById("seal-modal-cancel").addEventListener("click", () => document.getElementById("seal-epics-modal").close());
+    document.getElementById("seal-modal-review-close").addEventListener("click", () => {
+      document.getElementById("seal-modal-review-section").style.display = "none";
+    });
+    document.getElementById("manage-sealed-close").addEventListener("click", () => document.getElementById("manage-sealed-modal").close());
+    document.getElementById("manage-sealed-review-close").addEventListener("click", () => {
+      document.getElementById("manage-sealed-review-section").style.display = "none";
+    });
+    document.getElementById("seal-modal-seal-it").addEventListener("click", () => {
+      const epicKeys = Array.from(selectedEpicKeys);
+      if (epicKeys.length === 0) return;
+      fetch(SEAL_API, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ epic_keys: epicKeys }),
+      })
+        .then((r) => r.json())
+        .then((body) => {
+          if (body.error) throw new Error(body.error);
+          document.getElementById("seal-epics-modal").close();
+          epicKeys.forEach((k) => rebudgetedEpicKeys.delete(k));
+          selectedEpicKeys.clear();
+          setStatus("Sealed " + (body.sealed_count || epicKeys.length) + " epic(s). Lock icon shows on sealed epics.", "ok");
+          return loadRowsFromApi();
+        })
+        .catch((err) => setStatus(err.message || String(err), "warn"));
     });
     document.getElementById("plan-save").addEventListener("click", savePlan);
     document.getElementById("plan-clear").addEventListener("click", clearPlanValue);
@@ -11431,41 +14015,7 @@ def _resolve_report_html_sources(base_dir: Path) -> dict[str, Path]:
     }
 
 
-def resolve_report_html_dir(base_dir: Path, folder_raw: str) -> Path:
-    folder = (folder_raw or "").strip() or "report_html"
-    path = Path(folder)
-    if not path.is_absolute():
-        path = base_dir / path
-    return path
-
-
-def sync_report_html(base_dir: Path, folder_raw: str) -> int:
-    target_dir = resolve_report_html_dir(base_dir, folder_raw)
-    target_dir.mkdir(parents=True, exist_ok=True)
-
-    moved = 0
-    for report_name, source_path in _resolve_report_html_sources(base_dir).items():
-        if not source_path.exists() or not source_path.is_file():
-            continue
-        destination_path = target_dir / report_name
-        if source_path.resolve() == destination_path.resolve():
-            continue
-        if destination_path.exists():
-            destination_path.unlink()
-        shutil.move(str(source_path), str(destination_path))
-        moved += 1
-        print(f"[report-html-sync] Moved: {source_path.name} -> {destination_path}")
-
-    # Keep canonical + legacy aliases for Approved vs Planned report filename.
-    legacy_pvd_path = target_dir / LEGACY_PVD_HTML_FILE
-    canonical_pvd_path = target_dir / CANONICAL_PVD_HTML_FILE
-    if legacy_pvd_path.exists() and legacy_pvd_path.is_file() and not canonical_pvd_path.exists():
-        shutil.copy2(str(legacy_pvd_path), str(canonical_pvd_path))
-        print(f"[report-html-sync] Aliased: {legacy_pvd_path.name} -> {canonical_pvd_path.name}")
-    elif canonical_pvd_path.exists() and canonical_pvd_path.is_file() and not legacy_pvd_path.exists():
-        shutil.copy2(str(canonical_pvd_path), str(legacy_pvd_path))
-        print(f"[report-html-sync] Aliased: {canonical_pvd_path.name} -> {legacy_pvd_path.name}")
-
+def _sync_report_html_assets(base_dir: Path, target_dir: Path) -> None:
     # Keep shared nav assets alongside reports so generated pages can always load them.
     for asset_name in ("shared-nav.css", "shared-nav.js", "shared-date-filter.js", "material-symbols.css"):
         source_candidates = [
@@ -11498,8 +14048,125 @@ def sync_report_html(base_dir: Path, folder_raw: str) -> int:
                     f"[report-html-sync] Warning: could not sync font {f.name}: {exc}"
                 )
 
+
+def _promote_report_html_if_newer(base_dir: Path, report_dir: Path, report_name: str) -> Path:
+    target_path = report_dir / report_name
+    source_path = _resolve_report_html_sources(base_dir).get(report_name)
+    if not source_path or not source_path.exists() or not source_path.is_file():
+        return target_path
+    if source_path.resolve() == target_path.resolve():
+        return target_path
+    if target_path.exists() and target_path.is_file():
+        try:
+            source_stat = source_path.stat()
+            target_stat = target_path.stat()
+            source_mtime_ns = int(getattr(source_stat, "st_mtime_ns", int(source_stat.st_mtime * 1_000_000_000)))
+            target_mtime_ns = int(getattr(target_stat, "st_mtime_ns", int(target_stat.st_mtime * 1_000_000_000)))
+            # If timestamps tie (common on rapid regenerations), fall back to file size
+            # so changed content is still promoted.
+            if source_mtime_ns < target_mtime_ns:
+                return target_path
+            if source_mtime_ns == target_mtime_ns and source_stat.st_size == target_stat.st_size:
+                return target_path
+        except OSError:
+            pass
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temp_name = tempfile.mkstemp(
+        prefix=f".{target_path.stem}_",
+        suffix=target_path.suffix,
+        dir=str(target_path.parent),
+    )
+    os.close(fd)
+    temp_path = Path(temp_name)
+    try:
+        shutil.copy2(str(source_path), str(temp_path))
+        os.replace(str(temp_path), str(target_path))
+        print(f"[report-html-sync] Promoted newer HTML: {source_path.name} -> {target_path}")
+    finally:
+        try:
+            temp_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+    return target_path
+
+
+def resolve_report_html_dir(base_dir: Path, folder_raw: str) -> Path:
+    folder = (folder_raw or "").strip() or "report_html"
+    path = Path(folder)
+    if not path.is_absolute():
+        path = base_dir / path
+    return path
+
+
+def sync_report_html(base_dir: Path, folder_raw: str) -> int:
+    target_dir = resolve_report_html_dir(base_dir, folder_raw)
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    synced = 0
+    for report_name, source_path in _resolve_report_html_sources(base_dir).items():
+        if not source_path.exists() or not source_path.is_file():
+            continue
+        destination_path = target_dir / report_name
+        if source_path.resolve() == destination_path.resolve():
+            continue
+        should_sync = True
+        if destination_path.exists() and destination_path.is_file():
+            try:
+                source_stat = source_path.stat()
+                destination_stat = destination_path.stat()
+                source_mtime_ns = int(
+                    getattr(source_stat, "st_mtime_ns", int(source_stat.st_mtime * 1_000_000_000))
+                )
+                destination_mtime_ns = int(
+                    getattr(
+                        destination_stat,
+                        "st_mtime_ns",
+                        int(destination_stat.st_mtime * 1_000_000_000),
+                    )
+                )
+                if source_mtime_ns < destination_mtime_ns:
+                    should_sync = False
+                elif (
+                    source_mtime_ns == destination_mtime_ns
+                    and source_stat.st_size == destination_stat.st_size
+                ):
+                    should_sync = False
+            except OSError:
+                should_sync = True
+        if not should_sync:
+            continue
+        destination_path.parent.mkdir(parents=True, exist_ok=True)
+        fd, temp_name = tempfile.mkstemp(
+            prefix=f".{destination_path.stem}_",
+            suffix=destination_path.suffix,
+            dir=str(destination_path.parent),
+        )
+        os.close(fd)
+        temp_path = Path(temp_name)
+        try:
+            shutil.copy2(str(source_path), str(temp_path))
+            os.replace(str(temp_path), str(destination_path))
+            synced += 1
+            print(f"[report-html-sync] Synced: {source_path.name} -> {destination_path}")
+        finally:
+            try:
+                temp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+    # Keep canonical + legacy aliases for Approved vs Planned report filename.
+    legacy_pvd_path = target_dir / LEGACY_PVD_HTML_FILE
+    canonical_pvd_path = target_dir / CANONICAL_PVD_HTML_FILE
+    if legacy_pvd_path.exists() and legacy_pvd_path.is_file() and not canonical_pvd_path.exists():
+        shutil.copy2(str(legacy_pvd_path), str(canonical_pvd_path))
+        print(f"[report-html-sync] Aliased: {legacy_pvd_path.name} -> {canonical_pvd_path.name}")
+    elif canonical_pvd_path.exists() and canonical_pvd_path.is_file() and not legacy_pvd_path.exists():
+        shutil.copy2(str(canonical_pvd_path), str(legacy_pvd_path))
+        print(f"[report-html-sync] Aliased: {canonical_pvd_path.name} -> {legacy_pvd_path.name}")
+
+    _sync_report_html_assets(base_dir, target_dir)
     _materialize_refresh_widgets(target_dir)
-    return moved
+    return synced
 
 
 _LOCAL_MATERIAL_SYMBOLS_LINK = '<link rel="stylesheet" href="/material-symbols.css">'
@@ -11843,7 +14510,7 @@ def _inject_refresh_ui(html: str, report_id: str) -> str:
 <div id="codex-refresh-wrap" aria-live="polite">
   <button id="codex-refresh-btn" type="button">
     <span class="material-symbols-outlined" aria-hidden="true">refresh</span>
-    <span id="codex-refresh-btn-label">Refresh</span>
+    <span id="codex-refresh-btn-label">{"Regenerate Report" if report_id == "employee_performance" else "Refresh"}</span>
   </button>
   <button id="codex-refresh-cancel-btn" type="button">Cancel Refresh Run</button>
   <div id="codex-refresh-status"></div>
@@ -13247,6 +15914,12 @@ _EPICS_DROPDOWN_FIELD_KEY_ALIASES = {
 }
 
 
+# User-facing message for duplicate epic; do not expose backend epic keys (e.g. DIGITALLOG-219).
+_EPIC_ALREADY_EXISTS_MESSAGE = (
+    "An epic with this identifier already exists. Edit the existing one or use a different name."
+)
+
+
 class _EpicCreateConflictError(ValueError):
     def __init__(self, message: str, *, conflict_epic_key: str = "", vacant_tmp_key: str = "") -> None:
         super().__init__(message)
@@ -13735,6 +16408,421 @@ def _save_epics_dropdown_options(settings_db_path: Path, payload: dict) -> dict[
     return _load_epics_dropdown_options(settings_db_path)
 
 
+def _bootstrap_ipp_meetings_if_empty(conn: sqlite3.Connection) -> None:
+    """Ensure at least one Scheduled IPP meeting exists."""
+    row = conn.execute("SELECT 1 FROM ipp_meetings LIMIT 1").fetchone()
+    if row is not None:
+        return
+    now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    conn.execute(
+        """
+        INSERT INTO ipp_meetings (intended_date, meeting_date, status, created_at_utc, completed_at_utc)
+        VALUES (?, ?, 'Scheduled', ?, '')
+        """,
+        ("", "", now_utc),
+    )
+
+
+def _ipp_meeting_planner_get_current_meeting(settings_db_path: Path) -> dict | None:
+    """Return the current Scheduled meeting (for the builder)."""
+    _init_epics_management_db(settings_db_path)
+    conn = sqlite3.connect(settings_db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        row = conn.execute(
+            "SELECT id, intended_date, meeting_date, status, created_at_utc, completed_at_utc FROM ipp_meetings WHERE status = 'Scheduled' ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        if row is None:
+            return None
+        return dict(zip(row.keys(), row))
+    finally:
+        conn.close()
+
+
+def _ipp_meeting_planner_list_meetings(settings_db_path: Path, limit: int = 50) -> list[dict]:
+    """List meetings for history (Created Date, Completed Date, Epics count, Status)."""
+    _init_epics_management_db(settings_db_path)
+    conn = sqlite3.connect(settings_db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute(
+            """
+            SELECT m.id, m.intended_date, m.meeting_date, m.status, m.created_at_utc, m.completed_at_utc,
+                   (SELECT COUNT(*) FROM ipp_meeting_epics e WHERE e.meeting_id = m.id) AS epic_count
+            FROM ipp_meetings m
+            ORDER BY m.id DESC
+            LIMIT ?
+            """,
+            (max(1, min(limit, 200)),),
+        ).fetchall()
+        return [dict(zip(r.keys(), r)) for r in rows]
+    finally:
+        conn.close()
+
+
+def _ipp_has_visible_rich_text(value: object) -> bool:
+    raw = _to_text(value)
+    if not raw:
+        return False
+    plain = re.sub(r"<[^>]*>", "", raw)
+    plain = html.unescape(plain).replace("\xa0", " ").strip()
+    return bool(plain)
+
+
+def _ipp_meeting_planner_get_meeting_with_epics(settings_db_path: Path, meeting_id: int) -> dict | None:
+    """Get one meeting with its epics grouped by project."""
+    _init_epics_management_db(settings_db_path)
+    conn = sqlite3.connect(settings_db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        m = conn.execute(
+            "SELECT id, intended_date, meeting_date, status, created_at_utc, completed_at_utc FROM ipp_meetings WHERE id = ?",
+            (meeting_id,),
+        ).fetchone()
+        if m is None:
+            return None
+        meeting = dict(zip(m.keys(), m))
+        epics_rows = conn.execute(
+            """
+            SELECT e.meeting_id, e.epic_key, e.project_key, e.project_name, e.epic_name, e.display_order, e.include_on_dashboard,
+                   e.delivery_status, e.remarks_rich_text, e.start_date, e.due_date, e.actual_production_date,
+                   em.epic_plan_json, em.remarks, em.delivery_status AS planner_delivery_status
+            FROM ipp_meeting_epics e
+            LEFT JOIN epics_management em ON UPPER(em.epic_key) = UPPER(e.epic_key)
+            WHERE e.meeting_id = ?
+            ORDER BY e.project_key, e.display_order, e.epic_key
+            """,
+            (meeting_id,),
+        ).fetchall()
+        meeting_epics: list[dict[str, object]] = []
+        for r in epics_rows:
+            item = dict(zip(r.keys(), r))
+            start_date_val = _to_text(item.get("start_date")).strip()
+            due_date_val = _to_text(item.get("due_date")).strip()
+            if (not start_date_val) or (not due_date_val):
+                try:
+                    epic_plan = json.loads(_to_text(item.get("epic_plan_json")) or "{}")
+                except Exception:
+                    epic_plan = {}
+                if isinstance(epic_plan, dict):
+                    if not start_date_val:
+                        start_date_val = _to_text(epic_plan.get("start_date")).strip()
+                    if not due_date_val:
+                        due_date_val = _to_text(epic_plan.get("due_date")).strip()
+            remarks_val = _to_text(item.get("remarks_rich_text"))
+            planner_remarks_val = _to_text(item.get("remarks"))
+            if (not _ipp_has_visible_rich_text(remarks_val)) and _ipp_has_visible_rich_text(planner_remarks_val):
+                remarks_val = planner_remarks_val
+            delivery_status_val = _to_text(item.get("delivery_status")).strip()
+            planner_delivery_status_val = _to_text(item.get("planner_delivery_status")).strip()
+            valid_statuses = {"Late", "On-track", "Yet to start"}
+            if planner_delivery_status_val not in valid_statuses:
+                planner_delivery_status_val = ""
+            if delivery_status_val not in valid_statuses:
+                delivery_status_val = ""
+            # Backfill from Epics Planner when meeting status is missing/default.
+            if (not delivery_status_val or delivery_status_val == "Yet to start") and planner_delivery_status_val:
+                delivery_status_val = planner_delivery_status_val
+            if not delivery_status_val:
+                delivery_status_val = "Yet to start"
+            item["start_date"] = start_date_val
+            item["due_date"] = due_date_val
+            item["remarks_rich_text"] = remarks_val
+            item["delivery_status"] = delivery_status_val
+            item.pop("epic_plan_json", None)
+            item.pop("remarks", None)
+            item.pop("planner_delivery_status", None)
+            meeting_epics.append(item)
+        meeting["epics"] = meeting_epics
+        return meeting
+    finally:
+        conn.close()
+
+
+def _ipp_meeting_planner_update_meeting(
+    settings_db_path: Path,
+    meeting_id: int,
+    meeting_date: str | None = None,
+    intended_date: str | None = None,
+) -> dict | None:
+    _init_epics_management_db(settings_db_path)
+    conn = sqlite3.connect(settings_db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        cur = conn.execute("SELECT id FROM ipp_meetings WHERE id = ?", (meeting_id,))
+        if cur.fetchone() is None:
+            return None
+        updates: list[str] = []
+        params: list[object] = []
+        if meeting_date is not None:
+            updates.append("meeting_date = ?")
+            params.append(meeting_date.strip() if isinstance(meeting_date, str) else meeting_date)
+        if intended_date is not None:
+            updates.append("intended_date = ?")
+            params.append(intended_date.strip() if isinstance(intended_date, str) else intended_date)
+        if not updates:
+            row = conn.execute(
+                "SELECT id, intended_date, meeting_date, status, created_at_utc, completed_at_utc FROM ipp_meetings WHERE id = ?",
+                (meeting_id,),
+            ).fetchone()
+            conn.commit()
+            return dict(zip(row.keys(), row)) if row else None
+        params.append(meeting_id)
+        conn.execute("UPDATE ipp_meetings SET " + ", ".join(updates) + " WHERE id = ?", params)
+        conn.commit()
+        row = conn.execute(
+            "SELECT id, intended_date, meeting_date, status, created_at_utc, completed_at_utc FROM ipp_meetings WHERE id = ?",
+            (meeting_id,),
+        ).fetchone()
+        return dict(zip(row.keys(), row)) if row else None
+    finally:
+        conn.close()
+
+
+def _ipp_meeting_planner_add_epic(
+    settings_db_path: Path,
+    meeting_id: int,
+    epic_key: str,
+    project_key: str,
+    project_name: str = "",
+    epic_name: str = "",
+    display_order: int = 0,
+    include_on_dashboard: int = 1,
+    delivery_status: str = "Yet to start",
+    remarks_rich_text: str = "",
+    start_date: str = "",
+    due_date: str = "",
+    actual_production_date: str = "",
+) -> dict | None:
+    _init_epics_management_db(settings_db_path)
+    epic_key_n = _to_text(epic_key).strip().upper()
+    if not epic_key_n:
+        return None
+    project_key_n = _to_text(project_key).strip().upper() or "ORPHAN"
+    project_name_n = _to_text(project_name).strip() or project_key_n
+    epic_name_n = _to_text(epic_name).strip() or epic_key_n
+    start_date_n = _to_text(start_date).strip()
+    due_date_n = _to_text(due_date).strip()
+    actual_production_date_n = _to_text(actual_production_date).strip()
+    remarks_rich_text_n = _to_text(remarks_rich_text)
+    if delivery_status not in ("Late", "On-track", "Yet to start"):
+        delivery_status = "Yet to start"
+    conn = sqlite3.connect(settings_db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        # Prefill builder values from Epics Planner when the dropped epic has existing values there.
+        planner_row = conn.execute(
+            """
+            SELECT project_key, project_name, epic_name, delivery_status, remarks, actual_production_date, epic_plan_json
+            FROM epics_management
+            WHERE UPPER(epic_key) = ?
+            LIMIT 1
+            """,
+            (epic_key_n,),
+        ).fetchone()
+        if planner_row is not None:
+            planner_project_key = _to_text(planner_row["project_key"]).strip().upper()
+            planner_project_name = _to_text(planner_row["project_name"]).strip()
+            planner_epic_name = _to_text(planner_row["epic_name"]).strip()
+            if not project_key_n and planner_project_key:
+                project_key_n = planner_project_key
+            if (not project_name_n or project_name_n == project_key_n) and planner_project_name:
+                project_name_n = planner_project_name
+            if not epic_name_n and planner_epic_name:
+                epic_name_n = planner_epic_name
+
+            planner_delivery_status = _to_text(planner_row["delivery_status"]).strip()
+            if delivery_status == "Yet to start" and planner_delivery_status in ("Late", "On-track", "Yet to start"):
+                delivery_status = planner_delivery_status
+            if not _ipp_has_visible_rich_text(remarks_rich_text_n):
+                remarks_rich_text_n = _to_text(planner_row["remarks"])
+            if not actual_production_date_n:
+                actual_production_date_n = _to_text(planner_row["actual_production_date"]).strip()
+
+            try:
+                planner_epic_plan = json.loads(_to_text(planner_row["epic_plan_json"]) or "{}")
+            except Exception:
+                planner_epic_plan = {}
+            if isinstance(planner_epic_plan, dict):
+                if not start_date_n:
+                    start_date_n = _to_text(planner_epic_plan.get("start_date")).strip()
+                if not due_date_n:
+                    due_date_n = _to_text(planner_epic_plan.get("due_date")).strip()
+
+        conn.execute(
+            """
+            INSERT INTO ipp_meeting_epics (
+                meeting_id, epic_key, project_key, project_name, epic_name, display_order, include_on_dashboard,
+                delivery_status, remarks_rich_text, start_date, due_date, actual_production_date
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(meeting_id, epic_key) DO UPDATE SET
+                project_key=excluded.project_key, project_name=excluded.project_name, epic_name=excluded.epic_name,
+                display_order=excluded.display_order, include_on_dashboard=excluded.include_on_dashboard,
+                delivery_status=excluded.delivery_status, remarks_rich_text=excluded.remarks_rich_text,
+                start_date=excluded.start_date, due_date=excluded.due_date, actual_production_date=excluded.actual_production_date
+            """,
+            (
+                meeting_id,
+                epic_key_n,
+                project_key_n,
+                project_name_n,
+                epic_name_n,
+                display_order,
+                include_on_dashboard,
+                delivery_status,
+                remarks_rich_text_n,
+                start_date_n,
+                due_date_n,
+                actual_production_date_n,
+            ),
+        )
+        conn.commit()
+        row = conn.execute(
+            """
+            SELECT meeting_id, epic_key, project_key, project_name, epic_name, display_order, include_on_dashboard,
+                   delivery_status, remarks_rich_text, start_date, due_date, actual_production_date
+            FROM ipp_meeting_epics WHERE meeting_id = ? AND epic_key = ?
+            """,
+            (meeting_id, epic_key_n),
+        ).fetchone()
+        return dict(zip(row.keys(), row)) if row else None
+    finally:
+        conn.close()
+
+
+def _ipp_meeting_planner_update_epic(
+    settings_db_path: Path,
+    meeting_id: int,
+    epic_key: str,
+    **kwargs: object,
+) -> dict | None:
+    epic_key_n = _to_text(epic_key).strip().upper()
+    if not epic_key_n:
+        return None
+    allowed = {
+        "display_order", "include_on_dashboard", "delivery_status", "remarks_rich_text",
+        "start_date", "due_date", "actual_production_date", "project_key", "project_name", "epic_name",
+    }
+    updates: list[str] = []
+    params: list[object] = []
+    for k, v in kwargs.items():
+        if k not in allowed:
+            continue
+        if k == "delivery_status" and str(v).strip() not in ("Late", "On-track", "Yet to start"):
+            v = "Yet to start"
+        updates.append(f"{k} = ?")
+        params.append(v)
+    if not updates:
+        data = _ipp_meeting_planner_get_meeting_with_epics(settings_db_path, meeting_id)
+        if not data or not data.get("epics"):
+            return None
+        for ep in data["epics"]:
+            if _to_text(ep.get("epic_key")).upper() == epic_key_n:
+                return ep
+        return None
+    _init_epics_management_db(settings_db_path)
+    conn = sqlite3.connect(settings_db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        params.extend([meeting_id, epic_key_n])
+        conn.execute(
+            "UPDATE ipp_meeting_epics SET " + ", ".join(updates) + " WHERE meeting_id = ? AND epic_key = ?",
+            params,
+        )
+        conn.commit()
+        row = conn.execute(
+            """
+            SELECT meeting_id, epic_key, project_key, project_name, epic_name, display_order, include_on_dashboard,
+                   delivery_status, remarks_rich_text, start_date, due_date, actual_production_date
+            FROM ipp_meeting_epics WHERE meeting_id = ? AND epic_key = ?
+            """,
+            (meeting_id, epic_key_n),
+        ).fetchone()
+        return dict(zip(row.keys(), row)) if row else None
+    finally:
+        conn.close()
+
+
+def _ipp_meeting_planner_remove_epic(settings_db_path: Path, meeting_id: int, epic_key: str) -> bool:
+    _init_epics_management_db(settings_db_path)
+    epic_key_n = _to_text(epic_key).strip().upper()
+    if not epic_key_n:
+        return False
+    conn = sqlite3.connect(settings_db_path)
+    try:
+        cur = conn.execute("DELETE FROM ipp_meeting_epics WHERE meeting_id = ? AND epic_key = ?", (meeting_id, epic_key_n))
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def _ipp_meeting_planner_set_project_include_on_dashboard(
+    settings_db_path: Path,
+    meeting_id: int,
+    project_key: str,
+    include_on_dashboard: bool,
+) -> int:
+    _init_epics_management_db(settings_db_path)
+    project_key_n = _to_text(project_key).strip().upper()
+    if not project_key_n:
+        return 0
+    conn = sqlite3.connect(settings_db_path)
+    try:
+        cur = conn.execute(
+            "UPDATE ipp_meeting_epics SET include_on_dashboard = ? WHERE meeting_id = ? AND project_key = ?",
+            (1 if include_on_dashboard else 0, meeting_id, project_key_n),
+        )
+        conn.commit()
+        return cur.rowcount
+    finally:
+        conn.close()
+
+
+def _ipp_meeting_planner_complete_meeting(
+    settings_db_path: Path,
+    meeting_id: int,
+    next_intended_date: str,
+) -> dict:
+    """Mark meeting Completed, set completed_at_utc, create next Scheduled meeting with intended_date."""
+    _init_epics_management_db(settings_db_path)
+    now_utc = _utc_now_iso()
+    intended = _to_text(next_intended_date).strip() or ""
+    conn = sqlite3.connect(settings_db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        cur = conn.execute("SELECT id FROM ipp_meetings WHERE id = ? AND status = 'Scheduled'", (meeting_id,))
+        if cur.fetchone() is None:
+            raise ValueError("Meeting not found or already completed.")
+        conn.execute(
+            "UPDATE ipp_meetings SET status = 'Completed', completed_at_utc = ? WHERE id = ?",
+            (now_utc, meeting_id),
+        )
+        conn.execute(
+            """
+            INSERT INTO ipp_meetings (intended_date, meeting_date, status, created_at_utc, completed_at_utc)
+            VALUES (?, ?, 'Scheduled', ?, '')
+            """,
+            (intended, intended, now_utc),
+        )
+        conn.commit()
+        completed = conn.execute(
+            "SELECT id, intended_date, meeting_date, status, created_at_utc, completed_at_utc FROM ipp_meetings WHERE id = ?",
+            (meeting_id,),
+        ).fetchone()
+        next_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        next_row = conn.execute(
+            "SELECT id, intended_date, meeting_date, status, created_at_utc, completed_at_utc FROM ipp_meetings WHERE id = ?",
+            (next_id,),
+        ).fetchone()
+        return {
+            "completed_meeting": dict(zip(completed.keys(), completed)) if completed else None,
+            "next_meeting": dict(zip(next_row.keys(), next_row)) if next_row else None,
+        }
+    finally:
+        conn.close()
+
+
 def _init_epics_management_db(settings_db_path: Path) -> None:
     settings_db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(settings_db_path)
@@ -13754,6 +16842,7 @@ def _init_epics_management_db(settings_db_path: Path) -> None:
                 plan_status TEXT NOT NULL DEFAULT 'Not Planned Yet',
                 ipp_meeting_planned TEXT NOT NULL DEFAULT 'No',
                 actual_production_date TEXT NOT NULL DEFAULT '',
+                delivery_status TEXT NOT NULL DEFAULT 'Yet to start',
                 remarks TEXT NOT NULL DEFAULT '',
                 jira_url TEXT NOT NULL DEFAULT '',
                 epic_plan_json TEXT NOT NULL DEFAULT '{}',
@@ -13844,6 +16933,56 @@ def _init_epics_management_db(settings_db_path: Path) -> None:
             ON epics_management_plan_values(column_key)
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS epics_management_approved_dates (
+                epic_key TEXT NOT NULL,
+                approved_at_utc TEXT NOT NULL,
+                snapshot_json TEXT NOT NULL DEFAULT '{}',
+                PRIMARY KEY(epic_key, approved_at_utc)
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_epics_management_approved_dates_utc ON epics_management_approved_dates(approved_at_utc)"
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS ipp_meetings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                intended_date TEXT NOT NULL DEFAULT '',
+                meeting_date TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'Scheduled',
+                created_at_utc TEXT NOT NULL DEFAULT '',
+                completed_at_utc TEXT NOT NULL DEFAULT ''
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_ipp_meetings_status ON ipp_meetings(status)"
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS ipp_meeting_epics (
+                meeting_id INTEGER NOT NULL,
+                epic_key TEXT NOT NULL,
+                project_key TEXT NOT NULL,
+                project_name TEXT NOT NULL DEFAULT '',
+                epic_name TEXT NOT NULL DEFAULT '',
+                display_order INTEGER NOT NULL DEFAULT 0,
+                include_on_dashboard INTEGER NOT NULL DEFAULT 1,
+                delivery_status TEXT NOT NULL DEFAULT 'Yet to start',
+                remarks_rich_text TEXT NOT NULL DEFAULT '',
+                start_date TEXT NOT NULL DEFAULT '',
+                due_date TEXT NOT NULL DEFAULT '',
+                actual_production_date TEXT NOT NULL DEFAULT '',
+                PRIMARY KEY(meeting_id, epic_key)
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_ipp_meeting_epics_meeting_id ON ipp_meeting_epics(meeting_id)"
+        )
         columns = conn.execute("PRAGMA table_info(epics_management)").fetchall()
         names = {str(col[1]) for col in columns}
         col_defaults = {str(col[1]): col[4] for col in columns}
@@ -13868,6 +17007,7 @@ def _init_epics_management_db(settings_db_path: Path) -> None:
                     plan_status TEXT NOT NULL DEFAULT 'Not Planned Yet',
                     ipp_meeting_planned TEXT NOT NULL DEFAULT 'No',
                     actual_production_date TEXT NOT NULL DEFAULT '',
+                    delivery_status TEXT NOT NULL DEFAULT 'Yet to start',
                     remarks TEXT NOT NULL DEFAULT '',
                     jira_url TEXT NOT NULL DEFAULT '',
                     epic_plan_json TEXT NOT NULL DEFAULT '{}',
@@ -13917,14 +17057,19 @@ def _init_epics_management_db(settings_db_path: Path) -> None:
             conn.execute("ALTER TABLE epics_management ADD COLUMN ipp_meeting_planned TEXT NOT NULL DEFAULT 'No'")
         if "actual_production_date" not in names:
             conn.execute("ALTER TABLE epics_management ADD COLUMN actual_production_date TEXT NOT NULL DEFAULT ''")
+        if "delivery_status" not in names:
+            conn.execute("ALTER TABLE epics_management ADD COLUMN delivery_status TEXT NOT NULL DEFAULT 'Yet to start'")
         if "remarks" not in names:
             conn.execute("ALTER TABLE epics_management ADD COLUMN remarks TEXT NOT NULL DEFAULT ''")
         if "user_manual_plan_json" not in names:
             conn.execute("ALTER TABLE epics_management ADD COLUMN user_manual_plan_json TEXT NOT NULL DEFAULT '{}'")
         if "component" not in names:
             conn.execute("ALTER TABLE epics_management ADD COLUMN component TEXT NOT NULL DEFAULT ''")
+        if "is_sealed" not in names:
+            conn.execute("ALTER TABLE epics_management ADD COLUMN is_sealed INTEGER NOT NULL DEFAULT 0")
         _seed_default_epics_plan_columns(conn)
         _backfill_legacy_epics_plan_values(conn, names)
+        _bootstrap_ipp_meetings_if_empty(conn)
         conn.commit()
     finally:
         conn.close()
@@ -14114,7 +17259,7 @@ def _find_vacant_tmp_epic_key_for_reuse(conn: sqlite3.Connection, preferred_key:
         SELECT
             epic_key, project_key, project_name, product_category, component, epic_name,
             description, originator, priority, plan_status, ipp_meeting_planned,
-            actual_production_date, remarks, jira_url, epic_plan_json, research_urs_plan_json,
+            actual_production_date, delivery_status, remarks, jira_url, epic_plan_json, research_urs_plan_json,
             dds_plan_json, development_plan_json, sqa_plan_json, user_manual_plan_json, production_plan_json
         FROM epics_management
         WHERE epic_key LIKE 'TMP-%'
@@ -14192,6 +17337,8 @@ def _normalize_epics_management_payload(
     actual_production_date = _to_text(raw.get("actual_production_date"))
     if actual_production_date and not _parse_iso_date(actual_production_date):
         raise ValueError("actual_production_date must be ISO date YYYY-MM-DD.")
+    delivery_status_raw = _to_text(raw.get("delivery_status")).strip()
+    delivery_status = delivery_status_raw if delivery_status_raw in ("Late", "On-track", "Yet to start") else "Yet to start"
     remarks = _to_text(raw.get("remarks"))
     jira_url = _to_text(raw.get("jira_url"))
     if jira_url and not re.match(r"^https?://", jira_url, re.IGNORECASE):
@@ -14232,6 +17379,7 @@ def _normalize_epics_management_payload(
         "plan_status": plan_status,
         "ipp_meeting_planned": ipp_meeting_planned,
         "actual_production_date": actual_production_date,
+        "delivery_status": delivery_status,
         "remarks": remarks,
         "jira_url": jira_url,
         "plans": plans,
@@ -14297,6 +17445,18 @@ def _save_epics_management_row(settings_db_path: Path, payload: dict) -> dict[st
         elif not project_name_in:
             prepared_payload["project_name"] = project_key_in
 
+        # Preserve meeting-related fields when Epics Planner UI omits them (they are edited in IPP Meeting Planner).
+        if user_supplied_epic_key and _to_text(prepared_payload.get("epic_key")):
+            key_upper = _to_text(prepared_payload.get("epic_key")).upper()
+            existing_row = conn.execute(
+                "SELECT ipp_meeting_planned, actual_production_date, delivery_status, remarks FROM epics_management WHERE UPPER(epic_key)=?",
+                (key_upper,),
+            ).fetchone()
+            if existing_row is not None:
+                for field in ("ipp_meeting_planned", "actual_production_date", "delivery_status", "remarks"):
+                    if prepared_payload.get(field) is None or (isinstance(prepared_payload.get(field), str) and prepared_payload.get(field).strip() == ""):
+                        prepared_payload[field] = existing_row[field] if existing_row[field] is not None else ""
+
         row = _normalize_epics_management_payload(prepared_payload, plan_columns=plan_columns, require_all_fields=True)
 
         if reuse_vacant_tmp_key:
@@ -14309,7 +17469,7 @@ def _save_epics_management_row(settings_db_path: Path, payload: dict) -> dict[st
                 UPDATE epics_management
                 SET project_key=?, project_name=?, product_category=?, component=?, epic_name=?,
                     description=?, originator=?, priority=?, plan_status=?, ipp_meeting_planned=?,
-                    actual_production_date=?, remarks=?, jira_url=?,
+                    actual_production_date=?, delivery_status=?, remarks=?, jira_url=?,
                     epic_plan_json=?, research_urs_plan_json=?, dds_plan_json=?,
                     development_plan_json=?, sqa_plan_json=?, user_manual_plan_json=?, production_plan_json=?
                 WHERE epic_key=?
@@ -14326,6 +17486,7 @@ def _save_epics_management_row(settings_db_path: Path, payload: dict) -> dict[st
                     row["plan_status"],
                     row["ipp_meeting_planned"],
                     row["actual_production_date"],
+                    row["delivery_status"],
                     row["remarks"],
                     row["jira_url"],
                     json.dumps(legacy_plans["epic_plan"], ensure_ascii=True),
@@ -14351,10 +17512,10 @@ def _save_epics_management_row(settings_db_path: Path, payload: dict) -> dict[st
                         """
                         INSERT INTO epics_management (
                             epic_key, project_key, project_name, product_category, component, epic_name,
-                            description, originator, priority, plan_status, ipp_meeting_planned, actual_production_date, remarks, jira_url,
+                            description, originator, priority, plan_status, ipp_meeting_planned, actual_production_date, delivery_status, remarks, jira_url,
                             epic_plan_json, research_urs_plan_json, dds_plan_json,
                             development_plan_json, sqa_plan_json, user_manual_plan_json, production_plan_json
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             row["epic_key"],
@@ -14369,6 +17530,7 @@ def _save_epics_management_row(settings_db_path: Path, payload: dict) -> dict[st
                             row["plan_status"],
                             row["ipp_meeting_planned"],
                             row["actual_production_date"],
+                            row["delivery_status"],
                             row["remarks"],
                             row["jira_url"],
                             json.dumps(legacy_plans["epic_plan"], ensure_ascii=True),
@@ -14390,7 +17552,7 @@ def _save_epics_management_row(settings_db_path: Path, payload: dict) -> dict[st
                         conflict_key = _to_text(row.get("epic_key")).upper()
                         vacant_tmp_key = _find_vacant_tmp_epic_key_for_reuse(conn, preferred_key=conflict_key)
                         raise _EpicCreateConflictError(
-                            f"Epic '{conflict_key}' already exists.",
+                            _EPIC_ALREADY_EXISTS_MESSAGE,
                             conflict_epic_key=conflict_key,
                             vacant_tmp_key=vacant_tmp_key,
                         )
@@ -14404,7 +17566,7 @@ def _save_epics_management_row(settings_db_path: Path, payload: dict) -> dict[st
     except _EpicCreateConflictError:
         raise
     except sqlite3.IntegrityError:
-        raise ValueError(f"Epic '{row['epic_key']}' already exists.")
+        raise ValueError(_EPIC_ALREADY_EXISTS_MESSAGE)
     finally:
         conn.close()
     matches = [r for r in _load_epics_management_rows(settings_db_path) if _to_text(r.get("epic_key")).upper() == row["epic_key"]]
@@ -14446,7 +17608,7 @@ def _update_epics_management_row(settings_db_path: Path, epic_key: str, payload:
         if updated_epic_key != key:
             exists_target = conn.execute("SELECT 1 FROM epics_management WHERE epic_key=?", (updated_epic_key,)).fetchone()
             if exists_target:
-                raise ValueError(f"Epic '{updated_epic_key}' already exists.")
+                raise ValueError(_EPIC_ALREADY_EXISTS_MESSAGE)
         legacy_plans = {
             key_item: normalized["plans"].get(key_item, {})
             for key_item in _EPICS_MANAGEMENT_DEFAULT_PLAN_KEYS
@@ -14455,7 +17617,7 @@ def _update_epics_management_row(settings_db_path: Path, epic_key: str, payload:
             """
             UPDATE epics_management
             SET epic_key=?, project_key=?, project_name=?, product_category=?, component=?, epic_name=?,
-                description=?, originator=?, priority=?, plan_status=?, ipp_meeting_planned=?, actual_production_date=?, remarks=?, jira_url=?,
+                description=?, originator=?, priority=?, plan_status=?, ipp_meeting_planned=?, actual_production_date=?, delivery_status=?, remarks=?, jira_url=?,
                 epic_plan_json=?, research_urs_plan_json=?, dds_plan_json=?,
                 development_plan_json=?, sqa_plan_json=?, user_manual_plan_json=?, production_plan_json=?
             WHERE epic_key=?
@@ -14473,6 +17635,7 @@ def _update_epics_management_row(settings_db_path: Path, epic_key: str, payload:
                 normalized["plan_status"],
                 normalized["ipp_meeting_planned"],
                 normalized["actual_production_date"],
+                normalized["delivery_status"],
                 normalized["remarks"],
                 normalized["jira_url"],
                 json.dumps(legacy_plans["epic_plan"], ensure_ascii=True),
@@ -14543,11 +17706,16 @@ def _load_epics_management_rows(settings_db_path: Path) -> list[dict[str, str]]:
         ).fetchone()
         if not table_exists:
             return []
+        columns = conn.execute("PRAGMA table_info(epics_management)").fetchall()
+        col_names = {str(c[1]) for c in columns}
+        delivery_status_col = "delivery_status" if "delivery_status" in col_names else "'' AS delivery_status"
+        is_sealed_col = "is_sealed" if "is_sealed" in col_names else "0 AS is_sealed"
         rows = conn.execute(
-            """
+            f"""
             SELECT
                 epic_key, project_key, project_name, product_category, component, epic_name,
-                description, originator, priority, plan_status, ipp_meeting_planned, actual_production_date, remarks, jira_url,
+                description, originator, priority, plan_status, ipp_meeting_planned, actual_production_date, {delivery_status_col}, remarks, jira_url,
+                {is_sealed_col},
                 epic_plan_json, research_urs_plan_json, dds_plan_json,
                 development_plan_json, sqa_plan_json, user_manual_plan_json, production_plan_json
             FROM epics_management
@@ -14612,6 +17780,19 @@ def _load_epics_management_rows(settings_db_path: Path) -> list[dict[str, str]]:
             if not bool(col.get("jira_link_enabled")):
                 parsed["jira_url"] = ""
             plans[plan_key] = parsed
+        epic_plan = plans.get("epic_plan") or {}
+        planned_due_date_epic = _to_text(epic_plan.get("due_date"))
+        try:
+            delivery_status_val = _to_text(row["delivery_status"]).strip()
+        except (KeyError, TypeError):
+            delivery_status_val = ""
+        if delivery_status_val not in ("Late", "On-track", "Yet to start"):
+            delivery_status_val = "Yet to start"
+        is_sealed = 0
+        try:
+            is_sealed = int(row["is_sealed"] or 0)
+        except (KeyError, TypeError, ValueError):
+            pass
         out.append(
             {
                 "id": epic_key,
@@ -14627,12 +17808,289 @@ def _load_epics_management_rows(settings_db_path: Path) -> list[dict[str, str]]:
                 "plan_status": _plan_status_for_epics_management(row["plan_status"]),
                 "ipp_meeting_planned": _ipp_meeting_planned_for_epics_management(row["ipp_meeting_planned"]),
                 "actual_production_date": _to_text(row["actual_production_date"]),
+                "delivery_status": delivery_status_val,
+                "planned_due_date_epic": planned_due_date_epic,
                 "remarks": _to_text(row["remarks"]),
                 "jira_url": _to_text(row["jira_url"]),
                 "plans": plans,
+                "is_sealed": is_sealed,
             }
         )
     return out
+
+
+def _build_epics_management_snapshot_dict(
+    row: sqlite3.Row,
+    plan_columns: list[dict],
+    plan_values_by_epic_key: dict[str, dict[str, object]],
+    safe_json_dict: object,
+) -> dict:
+    """Build a single epic snapshot dict (same shape as one entry from _load_epics_management_rows)."""
+    epic_key = _to_text(row["epic_key"]).upper()
+    per_epic_values = plan_values_by_epic_key.get(epic_key, {})
+    plans: dict[str, dict] = {}
+    for col in plan_columns:
+        plan_key = _to_text(col.get("key"))
+        if not plan_key:
+            continue
+        raw_plan = per_epic_values.get(plan_key)
+        if raw_plan is None:
+            legacy_col = _EPICS_MANAGEMENT_LEGACY_PLAN_JSON_COLUMN_BY_KEY.get(plan_key)
+            if legacy_col:
+                try:
+                    raw_plan = row[legacy_col]
+                except (IndexError, KeyError, TypeError):
+                    raw_plan = None
+        parsed = safe_json_dict(raw_plan)
+        if not bool(col.get("jira_link_enabled")):
+            parsed["jira_url"] = ""
+        plans[plan_key] = parsed
+    try:
+        delivery_status_val = _to_text(row["delivery_status"]).strip()
+    except (KeyError, TypeError):
+        delivery_status_val = ""
+    if delivery_status_val not in ("Late", "On-track", "Yet to start"):
+        delivery_status_val = "Yet to start"
+    return {
+        "id": epic_key,
+        "project_key": _to_text(row["project_key"]).upper(),
+        "project_name": _to_text(row["project_name"]) or _to_text(row["project_key"]).upper(),
+        "product_category": _to_text(row["product_category"]),
+        "component": _to_text(row["component"]),
+        "epic_key": epic_key,
+        "epic_name": _to_text(row["epic_name"]) or epic_key,
+        "description": _to_text(row["description"]),
+        "originator": _to_text(row["originator"]),
+        "priority": _priority_for_epics_management(row["priority"]),
+        "plan_status": _plan_status_for_epics_management(row["plan_status"]),
+        "ipp_meeting_planned": _ipp_meeting_planned_for_epics_management(row["ipp_meeting_planned"]),
+        "actual_production_date": _to_text(row["actual_production_date"]),
+        "delivery_status": delivery_status_val,
+        "remarks": _to_text(row["remarks"]),
+        "jira_url": _to_text(row["jira_url"]),
+        "plans": plans,
+    }
+
+
+def _seal_epics_management_epics(settings_db_path: Path, epic_keys: list[str]) -> dict:
+    """Set is_sealed=1 for given epics and record snapshots in epics_management_approved_dates."""
+    _init_epics_management_db(settings_db_path)
+    normalized_keys = [_to_text(k).upper() for k in epic_keys if _to_text(k).strip()]
+    if not normalized_keys:
+        return {"sealed_count": 0, "approved_at_utc": "", "error": "No epic keys provided"}
+
+    def _safe_json_dict(text: object) -> dict:
+        raw = _to_text(text)
+        if not raw:
+            return {}
+        try:
+            parsed = json.loads(raw)
+            return parsed if isinstance(parsed, dict) else {}
+        except Exception:
+            return {}
+
+    conn = sqlite3.connect(settings_db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        columns = conn.execute("PRAGMA table_info(epics_management)").fetchall()
+        col_names = {str(c[1]) for c in columns}
+        delivery_status_col = "delivery_status" if "delivery_status" in col_names else "'' AS delivery_status"
+        is_sealed_col = "is_sealed" if "is_sealed" in col_names else "0 AS is_sealed"
+        placeholders = ",".join("?" for _ in normalized_keys)
+        rows = conn.execute(
+            f"""
+            SELECT
+                epic_key, project_key, project_name, product_category, component, epic_name,
+                description, originator, priority, plan_status, ipp_meeting_planned, actual_production_date, {delivery_status_col}, remarks, jira_url,
+                {is_sealed_col},
+                epic_plan_json, research_urs_plan_json, dds_plan_json,
+                development_plan_json, sqa_plan_json, user_manual_plan_json, production_plan_json
+            FROM epics_management
+            WHERE epic_key IN ({placeholders})
+            """,
+            normalized_keys,
+        ).fetchall()
+        plan_columns = _load_epics_plan_columns_from_conn(conn, include_inactive=False)
+        plan_keys = [_to_text(col.get("key")) for col in plan_columns if _to_text(col.get("key"))]
+        plan_values_by_epic_key: dict[str, dict[str, object]] = {}
+        if plan_keys:
+            key_placeholders = ",".join("?" for _ in plan_keys)
+            value_rows = conn.execute(
+                f"""
+                SELECT epic_key, column_key, plan_json
+                FROM epics_management_plan_values
+                WHERE epic_key IN ({placeholders}) AND column_key IN ({key_placeholders})
+                """,
+                [*normalized_keys, *plan_keys],
+            ).fetchall()
+            for value_row in value_rows:
+                key = _to_text(value_row["epic_key"]).upper()
+                column_key = _to_text(value_row["column_key"])
+                if not key or not column_key:
+                    continue
+                plan_values_by_epic_key.setdefault(key, {})[column_key] = value_row["plan_json"]
+
+        approved_at_utc = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        for row in rows:
+            snapshot = _build_epics_management_snapshot_dict(
+                row, plan_columns, plan_values_by_epic_key, _safe_json_dict
+            )
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO epics_management_approved_dates (epic_key, approved_at_utc, snapshot_json)
+                VALUES (?, ?, ?)
+                """,
+                (_to_text(row["epic_key"]).upper(), approved_at_utc, json.dumps(snapshot)),
+            )
+        conn.execute(
+            f"UPDATE epics_management SET is_sealed = 1 WHERE epic_key IN ({placeholders})",
+            normalized_keys,
+        )
+        conn.commit()
+        return {"sealed_count": len(rows), "approved_at_utc": approved_at_utc}
+    finally:
+        conn.close()
+
+
+def _rebudget_epics_management_epic(settings_db_path: Path, epic_key: str) -> None:
+    """Set is_sealed=0 for the given epic. Raises LookupError if epic not found."""
+    _init_epics_management_db(settings_db_path)
+    normalized = _to_text(epic_key).upper()
+    if not normalized:
+        raise LookupError("Epic key is required")
+    conn = sqlite3.connect(settings_db_path)
+    try:
+        cur = conn.execute("UPDATE epics_management SET is_sealed = 0 WHERE epic_key = ?", (normalized,))
+        conn.commit()
+        if cur.rowcount == 0:
+            raise LookupError(f"Epic not found: {epic_key}")
+    finally:
+        conn.close()
+
+
+def _load_epics_management_sealed_dates(settings_db_path: Path, limit: int = 50) -> list[str]:
+    """Return distinct approved_at_utc values, newest first."""
+    _init_epics_management_db(settings_db_path)
+    conn = sqlite3.connect(settings_db_path)
+    try:
+        rows = conn.execute(
+            """
+            SELECT DISTINCT approved_at_utc
+            FROM epics_management_approved_dates
+            ORDER BY approved_at_utc DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+        return [_to_text(r[0]) for r in rows if _to_text(r[0])]
+    finally:
+        conn.close()
+
+
+def _load_epics_management_snapshots_for_date(
+    settings_db_path: Path, approved_at_utc: str
+) -> list[dict]:
+    """Return list of {epic_key, snapshot} for the given approved_at_utc."""
+    _init_epics_management_db(settings_db_path)
+    approved_at_utc = _to_text(approved_at_utc).strip()
+    if not approved_at_utc:
+        return []
+    conn = sqlite3.connect(settings_db_path)
+    try:
+        rows = conn.execute(
+            """
+            SELECT epic_key, snapshot_json
+            FROM epics_management_approved_dates
+            WHERE approved_at_utc = ?
+            ORDER BY epic_key ASC
+            """,
+            (approved_at_utc,),
+        ).fetchall()
+        out = []
+        for row in rows:
+            epic_key = _to_text(row[0]).upper()
+            raw = _to_text(row[1])
+            try:
+                snapshot = json.loads(raw) if raw else {}
+            except Exception:
+                snapshot = {}
+            out.append({"epic_key": epic_key, "snapshot": snapshot})
+        return out
+    finally:
+        conn.close()
+
+
+def _load_epics_management_sealed_dates_for_epic(settings_db_path: Path, epic_key: str) -> list[str]:
+    """Return approved_at_utc list for one epic (for IPP dashboard row)."""
+    _init_epics_management_db(settings_db_path)
+    normalized = _to_text(epic_key).upper()
+    if not normalized:
+        return []
+    conn = sqlite3.connect(settings_db_path)
+    try:
+        rows = conn.execute(
+            """
+            SELECT approved_at_utc
+            FROM epics_management_approved_dates
+            WHERE epic_key = ?
+            ORDER BY approved_at_utc DESC
+            """,
+            (normalized,),
+        ).fetchall()
+        return [_to_text(r[0]) for r in rows if _to_text(r[0])]
+    finally:
+        conn.close()
+
+
+def _load_epics_management_snapshot_for_epic_date(
+    settings_db_path: Path, epic_key: str, approved_at_utc: str
+) -> dict | None:
+    """Return snapshot dict for one epic at one approved date, or None."""
+    _init_epics_management_db(settings_db_path)
+    normalized = _to_text(epic_key).upper()
+    approved_at_utc = _to_text(approved_at_utc).strip()
+    if not normalized or not approved_at_utc:
+        return None
+    conn = sqlite3.connect(settings_db_path)
+    try:
+        row = conn.execute(
+            """
+            SELECT snapshot_json
+            FROM epics_management_approved_dates
+            WHERE epic_key = ? AND approved_at_utc = ?
+            """,
+            (normalized, approved_at_utc),
+        ).fetchone()
+        if not row:
+            return None
+        raw = _to_text(row[0])
+        try:
+            return json.loads(raw) if raw else {}
+        except Exception:
+            return {}
+    finally:
+        conn.close()
+
+
+def _delete_epics_management_approved_date(
+    settings_db_path: Path, epic_key: str, approved_at_utc: str
+) -> bool:
+    """Delete one approved date record for an epic. Returns True if a row was deleted."""
+    _init_epics_management_db(settings_db_path)
+    normalized = _to_text(epic_key).upper()
+    approved_at_utc = _to_text(approved_at_utc).strip()
+    if not normalized or not approved_at_utc:
+        return False
+    conn = sqlite3.connect(settings_db_path)
+    try:
+        cur = conn.execute(
+            "DELETE FROM epics_management_approved_dates WHERE epic_key = ? AND approved_at_utc = ?",
+            (normalized, approved_at_utc),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
 
 
 def _fetch_jira_issues_for_jql(session, jql: str, fields: list[str]) -> list[dict]:
@@ -15754,6 +19212,8 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
     canonical_runtime_state: dict[str, str] = {"active_run_id": ""}
     report_jobs_lock = threading.Lock()
     report_runtime_state: dict[str, str] = {}
+    prepare_offline_lock = threading.Lock()
+    prepare_offline_state: dict[str, dict[str, object]] = {}  # job_id -> status, progress, message, folder_name, folder_path, error, zip_path
 
     def _request_roles() -> set[str]:
         direct = _to_text(request.headers.get("X-Role"))
@@ -15846,6 +19306,42 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 item["aspect"] = display_name
             out.append(item)
         return out
+
+    def _sql_console_open_connection(db_path: Path) -> sqlite3.Connection:
+        return sqlite3.connect(_sqlite_readonly_uri(db_path), uri=True)
+
+    def _sql_console_resolve_target_or_error(database_key: object) -> tuple[str, Path]:
+        db_name, db_path = _sql_console_target_path(base_dir, capacity_paths["db_path"], database_key)
+        if not db_path.exists() or not db_path.is_file():
+            raise FileNotFoundError(f"Selected database is not available: {db_path}")
+        return db_name, db_path
+
+    def _sql_console_run_query(
+        database_key: object,
+        sql_value: object,
+        *,
+        row_limit: int | None,
+    ) -> tuple[str, Path, list[str], list[dict[str, object]], bool]:
+        database_name, db_path = _sql_console_resolve_target_or_error(database_key)
+        sql = _normalize_sql_console_query(sql_value)
+        with _sql_console_open_connection(db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute(sql)
+            column_names = [str(item[0]) for item in (cursor.description or [])]
+            if row_limit is None:
+                fetched = cursor.fetchall()
+                truncated = False
+            else:
+                fetched = cursor.fetchmany(max(0, int(row_limit)) + 1)
+                truncated = len(fetched) > int(row_limit)
+                fetched = fetched[: int(row_limit)]
+        rows: list[dict[str, object]] = []
+        for row in fetched:
+            item: dict[str, object] = {}
+            for idx, value in enumerate(tuple(row)):
+                item[column_names[idx]] = value.decode("utf-8", errors="replace") if isinstance(value, bytes) else value
+            rows.append(item)
+        return database_name, db_path, column_names, rows, truncated
 
     def _parse_pactv_request_filters(args_or_payload) -> tuple[str, str, str, set[str], set[str], set[str], object]:
         mode = _to_text((args_or_payload or {}).get("mode")).lower() or "log_date"
@@ -15993,6 +19489,120 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         start_iso = min(starts).isoformat() if starts else ""
         due_iso = max(dues).isoformat() if dues else ""
         return start_iso, due_iso
+
+    def _pvd_bucket_mode(from_date: date, to_date: date) -> str:
+        return "month" if (from_date.year != to_date.year or from_date.month != to_date.month) else "week"
+
+    def _pvd_bucket_key_label(day_value: date, bucket_mode: str) -> tuple[str, str]:
+        if bucket_mode == "month":
+            month_key = f"{day_value.year:04d}-{day_value.month:02d}"
+            return month_key, month_key
+        week_key = _iso_week_code(day_value)
+        return week_key, week_key
+
+    def _load_canonical_worklogs_by_issue(run_id: str, issue_keys: set[str]) -> dict[str, list[dict[str, object]]]:
+        run_id_text = _to_text(run_id)
+        normalized_keys = sorted({_to_text(item).upper() for item in (issue_keys or set()) if _to_text(item)})
+        out: dict[str, list[dict[str, object]]] = defaultdict(list)
+        if not run_id_text or not normalized_keys:
+            return out
+        with sqlite3.connect(capacity_paths["db_path"]) as conn:
+            conn.row_factory = sqlite3.Row
+            for chunk in _chunked(normalized_keys, 400):
+                placeholders = ",".join("?" for _ in chunk)
+                query = f"""
+                    SELECT issue_key, started_date, hours_logged
+                    FROM canonical_worklogs
+                    WHERE run_id = ? AND issue_key IN ({placeholders})
+                """
+                params: list[object] = [run_id_text, *chunk]
+                rows = conn.execute(query, params).fetchall()
+                for row in rows:
+                    issue_key = _to_text(row["issue_key"]).upper()
+                    if not issue_key:
+                        continue
+                    out[issue_key].append(
+                        {
+                            "issue_key": issue_key,
+                            "started_date": _to_text(row["started_date"]),
+                            "hours_logged": float(row["hours_logged"] or 0.0),
+                        }
+                    )
+        return out
+
+    def _pvd_subtask_actual_metrics(
+        subtask: dict[str, object],
+        worklogs: list[dict[str, object]],
+        from_date: date,
+        to_date: date,
+        mode: str,
+        bucket_mode: str,
+    ) -> dict[str, object]:
+        issue_type_name = _to_text((subtask or {}).get("issue_type_name")) or "Subtask"
+        if not _canonical_is_subtask_type(issue_type_name):
+            return {
+                "actual_hours": 0.0,
+                "actual_in_range_hours": 0.0,
+                "actual_bucket_mode": bucket_mode,
+                "actual_buckets": [],
+                "actual_stack_hours": 0.0,
+            }
+        planned_start = _parse_iso_date(_to_text((subtask or {}).get("planned_start")))
+        planned_due = _parse_iso_date(_to_text((subtask or {}).get("planned_due")))
+        qualifies_by_plan = bool(
+            (planned_start is not None and from_date <= planned_start <= to_date)
+            or (planned_due is not None and from_date <= planned_due <= to_date)
+        )
+        qualifies_by_worklog = any(
+            (
+                (started_day := _parse_iso_date(_to_text((row or {}).get("started_date")))) is not None
+                and from_date <= started_day <= to_date
+                and float((row or {}).get("hours_logged") or 0.0) > 0
+            )
+            for row in (worklogs or [])
+        )
+        bucket_hours: dict[str, float] = defaultdict(float)
+        bucket_labels: dict[str, str] = {}
+        actual_in_range_total = 0.0
+        actual_total = 0.0
+        for row in (worklogs or []):
+            started_day = _parse_iso_date(_to_text((row or {}).get("started_date")))
+            hours = float((row or {}).get("hours_logged") or 0.0)
+            if started_day is None or hours <= 0:
+                continue
+            in_range = from_date <= started_day <= to_date
+            include_subtask = qualifies_by_worklog if mode == "log_date" else qualifies_by_plan
+            if not include_subtask:
+                continue
+            actual_total += hours
+            if not in_range:
+                bucket_hours["remaining_hours"] = float(bucket_hours.get("remaining_hours") or 0.0) + hours
+                bucket_labels["remaining_hours"] = "Remaining Hours"
+                continue
+            actual_in_range_total += hours
+            bucket_key, bucket_label = _pvd_bucket_key_label(started_day, bucket_mode)
+            bucket_hours[bucket_key] = float(bucket_hours.get(bucket_key) or 0.0) + hours
+            bucket_labels[bucket_key] = bucket_label
+        bucket_keys = sorted(
+            bucket_hours.keys(),
+            key=lambda key: (str(key).lower() == "remaining_hours", str(key)),
+        )
+        actual_buckets = [
+            {
+                "bucket_key": bucket_key,
+                "bucket_label": _to_text(bucket_labels.get(bucket_key)) or bucket_key,
+                "hours": _round_hours(float(bucket_hours.get(bucket_key) or 0.0)),
+            }
+            for bucket_key in bucket_keys
+        ]
+        rounded_total = _round_hours(actual_total)
+        return {
+            "actual_hours": rounded_total,
+            "actual_in_range_hours": _round_hours(actual_in_range_total),
+            "actual_bucket_mode": bucket_mode,
+            "actual_buckets": actual_buckets,
+            "actual_stack_hours": _round_hours(sum(float(item.get("hours") or 0.0) for item in actual_buckets)),
+        }
 
     def _init_planned_vs_dispensed_cache_db() -> None:
         conn = sqlite3.connect(capacity_paths["db_path"])
@@ -16281,6 +19891,9 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         _save_planned_vs_dispensed_cache(from_date, to_date, mode, selected_projects, hierarchy, source_scope)
         return hierarchy, "canonical_db"
 
+    globals()["_get_planned_vs_dispensed_hierarchy_cached"] = _get_planned_vs_dispensed_hierarchy_cached
+    globals()["_load_canonical_worklogs_by_issue"] = _load_canonical_worklogs_by_issue
+
     def _planned_vs_dispensed_response_cache_key(
         endpoint: str,
         from_date: date,
@@ -16453,6 +20066,20 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             conn.execute(
                 "UPDATE global_report_date_filters SET source_page = ? WHERE source_page = ?",
                 (CANONICAL_PVD_PAGE_KEY, LEGACY_PVD_PAGE_KEY),
+            )
+            conn.execute(
+                """
+                INSERT INTO page_display_name_overrides(page_key, display_name, updated_at_utc)
+                SELECT ?, display_name, updated_at_utc
+                FROM page_display_name_overrides
+                WHERE page_key = ?
+                ON CONFLICT(page_key) DO NOTHING
+                """,
+                (CANONICAL_PVD_PAGE_KEY, LEGACY_PVD_PAGE_KEY),
+            )
+            conn.execute(
+                "DELETE FROM page_display_name_overrides WHERE page_key = ?",
+                (LEGACY_PVD_PAGE_KEY,),
             )
             conn.commit()
         finally:
@@ -17285,6 +20912,9 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             or req_path.startswith(f"{CANONICAL_PVD_API_PREFIX}/")
             or req_path.startswith("/api/planned-actual-table-view/")
             or req_path.startswith("/api/original-estimates/")
+            or req_path.endswith(".html")
+            or req_path.endswith(".js")
+            or req_path.endswith(".css")
         ):
             response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
             response.headers["Pragma"] = "no-cache"
@@ -17293,6 +20923,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
 
     @app.route("/")
     def index():
+        _promote_report_html_if_newer(base_dir, report_dir, "dashboard.html")
         dashboard_path = report_dir / "dashboard.html"
         if dashboard_path.exists():
             return redirect("/dashboard.html", code=302)
@@ -17305,8 +20936,16 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             f'<li><a href="{route}">{label}</a></li>'
             for label, route in _settings_nav_items()
         )
+        page_catalog_by_route = {
+            _to_text(item.get("route_or_file")): item
+            for item in _page_catalog(capacity_paths["db_path"])
+            if _to_text(item.get("page_type")) == "report"
+        }
         report_links = "\n".join(
-            f'<li><a href="/{name}">{name}</a></li>' for name in files
+            (
+                f'<li><a href="/{name}">{_to_text(page_catalog_by_route.get(name, {}).get("title")) or name}</a></li>'
+            )
+            for name in files
         )
         if not report_links:
             report_links = "<li>No HTML reports available yet.</li>"
@@ -19016,6 +22655,130 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             }
         )
 
+    @app.route("/api/prepare-offline-html/start", methods=["POST"])
+    def prepare_offline_html_start():
+        payload = request.get_json(silent=True) or {}
+        from_date = _to_text(payload.get("from_date", "")).strip()[:10]
+        to_date = _to_text(payload.get("to_date", "")).strip()[:10]
+        if not from_date or not to_date:
+            return jsonify({"ok": False, "error": "from_date and to_date are required (YYYY-MM-DD)."}), 400
+        from_parsed = _parse_iso_date(from_date)
+        to_parsed = _parse_iso_date(to_date)
+        if from_parsed is None or to_parsed is None:
+            return jsonify({"ok": False, "error": "Invalid date format. Expected YYYY-MM-DD."}), 400
+        if to_parsed < from_parsed:
+            return jsonify({"ok": False, "error": "to_date must be on or after from_date."}), 400
+        report_keys = payload.get("report_keys")
+        if report_keys is not None and not isinstance(report_keys, list):
+            return jsonify({"ok": False, "error": "report_keys must be a list."}), 400
+        if not report_keys:
+            report_keys = [r["key"] for r in get_default_reports_for_ui()]
+        job_id = str(uuid.uuid4())
+        folder_name = "Preparing..."
+
+        def fetch_api(method: str, path: str, params: dict | None) -> object:
+            with app.test_client() as client:
+                if method == "GET":
+                    r = client.get(path, query_string=params)
+                    if r.status_code != 200:
+                        return None
+                    return r.get_json(silent=True)
+            return None
+
+        def update_progress(done: int, total: int, message: str) -> None:
+            with prepare_offline_lock:
+                if job_id in prepare_offline_state:
+                    prepare_offline_state[job_id]["progress"] = int(100 * done / total) if total else 0
+                    prepare_offline_state[job_id]["message"] = message
+
+        with prepare_offline_lock:
+            if any(s.get("status") == "running" for s in prepare_offline_state.values()):
+                return jsonify({"ok": False, "error": "Another prepare-offline job is already running."}), 409
+            prepare_offline_state[job_id] = {
+                "status": "running",
+                "progress": 0,
+                "message": "Starting...",
+                "folder_name": folder_name,
+                "folder_path": None,
+                "error": None,
+                "zip_path": None,
+            }
+
+        def run_job() -> None:
+            try:
+                output_dir, errs = run_prepare_job(
+                    base_dir=base_dir,
+                    from_date=from_date,
+                    to_date=to_date,
+                    report_keys=report_keys,
+                    resolve_sources=_resolve_report_html_sources,
+                    sync_assets=_sync_report_html_assets,
+                    fetch_api=fetch_api,
+                    update_progress=update_progress,
+                )
+                zip_path = create_zip_of_folder(output_dir)
+                with prepare_offline_lock:
+                    prepare_offline_state[job_id]["status"] = "success"
+                    prepare_offline_state[job_id]["progress"] = 100
+                    prepare_offline_state[job_id]["message"] = "Completed."
+                    prepare_offline_state[job_id]["folder_name"] = output_dir.name
+                    prepare_offline_state[job_id]["folder_path"] = str(output_dir)
+                    prepare_offline_state[job_id]["zip_path"] = str(zip_path)
+                    if errs:
+                        prepare_offline_state[job_id]["errors"] = errs
+            except Exception as exc:
+                with prepare_offline_lock:
+                    prepare_offline_state[job_id]["status"] = "failed"
+                    prepare_offline_state[job_id]["error"] = str(exc)
+                    prepare_offline_state[job_id]["message"] = str(exc)
+
+        thread = threading.Thread(target=run_job, daemon=True)
+        thread.start()
+        return jsonify({"ok": True, "job_id": job_id, "folder_name": folder_name})
+
+    @app.route("/api/prepare-offline-html/reports", methods=["GET"])
+    def prepare_offline_html_reports():
+        return jsonify({"ok": True, "reports": get_default_reports_for_ui()})
+
+    @app.route("/api/prepare-offline-html/status", methods=["GET"])
+    def prepare_offline_html_status():
+        job_id = _to_text(request.args.get("job_id", "")).strip()
+        if not job_id:
+            return jsonify({"ok": False, "error": "job_id is required."}), 400
+        with prepare_offline_lock:
+            state = prepare_offline_state.get(job_id)
+        if not state:
+            return jsonify({"ok": False, "error": "Job not found."}), 404
+        return jsonify({
+            "ok": True,
+            "status": state.get("status", "unknown"),
+            "progress": state.get("progress", 0),
+            "message": state.get("message", ""),
+            "folder_name": state.get("folder_name", ""),
+            "error": state.get("error"),
+        })
+
+    @app.route("/api/prepare-offline-html/download", methods=["GET"])
+    def prepare_offline_html_download():
+        job_id = _to_text(request.args.get("job_id", "")).strip()
+        if not job_id:
+            return jsonify({"ok": False, "error": "job_id is required."}), 400
+        with prepare_offline_lock:
+            state = prepare_offline_state.get(job_id)
+        if not state:
+            return jsonify({"ok": False, "error": "Job not found."}), 404
+        if state.get("status") != "success":
+            return jsonify({"ok": False, "error": "Job has not completed successfully yet."}), 409
+        zip_path = state.get("zip_path")
+        if not zip_path or not Path(zip_path).exists():
+            return jsonify({"ok": False, "error": "Zip file not found."}), 404
+        return send_file(
+            zip_path,
+            as_attachment=True,
+            download_name=Path(zip_path).name,
+            mimetype="application/zip",
+        )
+
     def _start_employee_performance_refresh_async(assignee_name: str = "", trigger_source: str = "api_refresh_async") -> tuple[dict[str, object], int]:
         with epf_jobs_lock:
             active_runtime_run = _to_text(epf_runtime_state.get("active_run_id"))
@@ -19474,10 +23237,73 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             }
         )
 
+    @app.route("/api/scoped-subtasks", methods=["GET"])
+    def scoped_subtasks():
+        mode = _to_text(request.args.get("mode")).lower() or "log_date"
+        projects_raw = _to_text(request.args.get("projects"))
+        assignees_raw = _to_text(request.args.get("assignees"))
+        selected_projects = {
+            item.strip().upper()
+            for item in projects_raw.split(",")
+            if item.strip()
+        } if projects_raw else None
+        selected_assignees = {
+            item.strip().lower()
+            for item in assignees_raw.split(",")
+            if item.strip()
+        } if assignees_raw else None
+        try:
+            from_raw, to_raw = _resolve_effective_range_from_request(request.args)
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        if mode not in {"log_date", "planned_dates", "extended"}:
+            return jsonify({"ok": False, "error": "Invalid mode. Expected 'log_date', 'planned_dates', or 'extended'."}), 400
+        from_date = _parse_iso_date(from_raw)
+        to_date = _parse_iso_date(to_raw)
+        if from_date is None or to_date is None:
+            return jsonify({"ok": False, "error": "Invalid date format. Expected YYYY-MM-DD."}), 400
+        canonical_run_id = _canonical_last_success_run_id(capacity_paths["db_path"])
+        if not canonical_run_id:
+            return jsonify(
+                {
+                    "ok": False,
+                    "error": "No successful canonical refresh found. Run the canonical refresh first.",
+                }
+            ), 409
+        try:
+            payload = _canonical_compute_scoped_subtasks(
+                db_path=capacity_paths["db_path"],
+                run_id=canonical_run_id,
+                from_date=from_date,
+                to_date=to_date,
+                actual_mode=("extended" if mode in {"planned_dates", "extended"} else "log_date"),
+                selected_projects=selected_projects,
+                selected_assignees=selected_assignees,
+                include_rows=True,
+            )
+        except Exception as exc:
+            return jsonify({"ok": False, "error": f"Failed to compute scoped subtasks: {exc}"}), 500
+        return jsonify(
+            {
+                "ok": True,
+                "from_date": from_date.isoformat(),
+                "to_date": to_date.isoformat(),
+                "mode": ("extended" if mode in {"planned_dates", "extended"} else "log_date"),
+                "rows": payload.get("rows") or [],
+                **(payload.get("summary") or {}),
+            }
+        )
+
     @app.route("/api/nested-view/actual-hours", methods=["GET"])
     def nested_view_actual_hours():
         mode = _to_text(request.args.get("mode")).lower() or "log_date"
+        projects_raw = _to_text(request.args.get("projects"))
         assignees_raw = _to_text(request.args.get("assignees"))
+        selected_projects = {
+            item.strip().upper()
+            for item in projects_raw.split(",")
+            if item.strip()
+        } if projects_raw else None
         selected_assignees = {
             item.strip().lower()
             for item in assignees_raw.split(",")
@@ -19511,6 +23337,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             from_date.isoformat(),
             to_date.isoformat(),
             mode,
+            ",".join(sorted(selected_projects or set())),
             ",".join(sorted(selected_assignees or set())),
             canonical_run_id,
             str(worklog_path.resolve()),
@@ -19527,6 +23354,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                     from_date=from_date,
                     to_date=to_date,
                     mode=mode,
+                    selected_projects=selected_projects,
                     selected_assignees=selected_assignees,
                 )
             except Exception as exc:
@@ -19541,6 +23369,35 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 "mode": mode,
                 "source_file": "canonical_db",
                 "subtask_hours_by_issue": cached.get("subtask_hours_by_issue", {}),
+            }
+        )
+
+    @app.route("/api/nested-view/tree", methods=["GET"])
+    def nested_view_tree():
+        """Return full nested view hierarchy from canonical DB for the report table."""
+        canonical_run_id = _canonical_last_success_run_id(capacity_paths["db_path"])
+        if not canonical_run_id:
+            return jsonify(
+                {
+                    "ok": False,
+                    "error": "No successful canonical refresh found. Run the canonical refresh first.",
+                }
+            ), 409
+        try:
+            exports_db_path = _resolve_exports_db_path(base_dir)
+            rows = load_nested_view_tree_for_api(
+                db_path=capacity_paths["db_path"],
+                exports_db_path=exports_db_path,
+                run_id=canonical_run_id,
+            )
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+        return jsonify(
+            {
+                "ok": True,
+                "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+                "source_file": "canonical_db",
+                "rows": rows,
             }
         )
 
@@ -19603,16 +23460,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 return True
             return _to_text(value).lower() in selected
 
-        dispensed_bucket_mode = "month" if (
-            from_date.year != to_date.year or from_date.month != to_date.month
-        ) else "week"
-
-        def _bucket_key_label(day_value: date) -> tuple[str, str]:
-            if dispensed_bucket_mode == "month":
-                month_key = f"{day_value.year:04d}-{day_value.month:02d}"
-                return month_key, month_key
-            week_key = _iso_week_code(day_value)
-            return week_key, week_key
+        dispensed_bucket_mode = _pvd_bucket_mode(from_date, to_date)
 
         def _subtask_matches_planned_range(subtask: dict) -> bool:
             planned_start = _parse_iso_date(_to_text(subtask.get("planned_start")))
@@ -19636,11 +23484,12 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             anchor_day = planned_start if planned_start is not None and from_date <= planned_start <= to_date else planned_due
             if anchor_day is None:
                 return []
-            bucket_key, bucket_label = _bucket_key_label(anchor_day)
+            bucket_key, bucket_label = _pvd_bucket_key_label(anchor_day, dispensed_bucket_mode)
             return [(bucket_key, bucket_label, estimate_hours)]
 
+        hierarchy_loader = globals().get("_get_planned_vs_dispensed_hierarchy_cached") or _get_planned_vs_dispensed_hierarchy_cached
         try:
-            hierarchy, source = _get_planned_vs_dispensed_hierarchy_cached(
+            hierarchy, source = hierarchy_loader(
                 from_date=from_date,
                 to_date=to_date,
                 mode=mode,
@@ -19655,6 +23504,17 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         epics = hierarchy.get("epics", []) or []
         stories = hierarchy.get("stories", []) or []
         subtasks = hierarchy.get("subtasks", []) or []
+        canonical_run_id = _canonical_last_success_run_id(capacity_paths["db_path"])
+        worklog_loader = globals().get("_load_canonical_worklogs_by_issue") or _load_canonical_worklogs_by_issue
+        actual_worklogs_by_issue = worklog_loader(
+            canonical_run_id,
+            {
+                _to_text(item.get("issue_key")).upper()
+                for item in subtasks
+                if _to_text(item.get("issue_key"))
+                and _canonical_is_subtask_type(_to_text(item.get("issue_type_name")) or "Subtask")
+            },
+        )
         planner_epic_map: dict[str, dict[str, object]] = {}
         if plan_source == "epic_planner":
             planner_epic_map, _planner_story_map = _load_pvd_planner_maps()
@@ -19694,6 +23554,9 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                     "subtask_count": 0,
                     "dispensed_bucket_hours": {},
                     "dispensed_bucket_labels": {},
+                    "actual_hours": 0.0,
+                    "actual_bucket_hours": {},
+                    "actual_bucket_labels": {},
                     "outside_before_hours_raw": 0.0,
                     "outside_after_hours_raw": 0.0,
                 },
@@ -19727,6 +23590,23 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 estimate_hours = float(subtask.get("estimate_hours") or 0.0)
                 row["dispensed_subtask_hours"] = float(row["dispensed_subtask_hours"]) + estimate_hours
                 subtask_in_selected_range = _subtask_matches_planned_range(subtask)
+                issue_key = _to_text(subtask.get("issue_key")).upper()
+                actual_metrics = _pvd_subtask_actual_metrics(
+                    subtask=subtask,
+                    worklogs=actual_worklogs_by_issue.get(issue_key, []),
+                    from_date=from_date,
+                    to_date=to_date,
+                    mode=mode,
+                    bucket_mode=dispensed_bucket_mode,
+                )
+                row["actual_hours"] = float(row.get("actual_hours") or 0.0) + float(actual_metrics.get("actual_hours") or 0.0)
+                for bucket in (actual_metrics.get("actual_buckets") or []):
+                    bucket_key = _to_text(bucket.get("bucket_key"))
+                    if not bucket_key:
+                        continue
+                    current_actual_total = float((row.get("actual_bucket_hours") or {}).get(bucket_key) or 0.0)
+                    row["actual_bucket_hours"][bucket_key] = current_actual_total + float(bucket.get("hours") or 0.0)
+                    row["actual_bucket_labels"][bucket_key] = _to_text(bucket.get("bucket_label")) or bucket_key
                 for bucket_key, bucket_label, bucket_hours in _dispensed_bucket_allocations(subtask):
                     current_bucket_total = float((row.get("dispensed_bucket_hours") or {}).get(bucket_key) or 0.0)
                     row["dispensed_bucket_hours"][bucket_key] = current_bucket_total + float(bucket_hours)
@@ -19760,7 +23640,16 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             dispensed_hours = _round_hours(float(row["dispensed_subtask_hours"]))
             bucket_hours_map = row.get("dispensed_bucket_hours") or {}
             bucket_labels_map = row.get("dispensed_bucket_labels") or {}
+            actual_bucket_hours_map = row.get("actual_bucket_hours") or {}
+            actual_bucket_labels_map = row.get("actual_bucket_labels") or {}
             in_range_dispensed_hours = float(sum(float(value or 0.0) for value in bucket_hours_map.values()))
+            in_range_actual_hours = float(
+                sum(
+                    float(value or 0.0)
+                    for key, value in actual_bucket_hours_map.items()
+                    if str(key).lower() != "remaining_hours"
+                )
+            )
             remaining_hours = max(0.0, planned_hours - in_range_dispensed_hours)
             outside_before_raw = float(row.get("outside_before_hours_raw") or 0.0)
             outside_after_raw = float(row.get("outside_after_hours_raw") or 0.0)
@@ -19775,6 +23664,18 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                     "hours": _round_hours(float(bucket_hours_map.get(bucket_key) or 0.0)),
                 }
                 for bucket_key in bucket_keys
+            ]
+            actual_bucket_keys = sorted(
+                actual_bucket_hours_map.keys(),
+                key=lambda key: (str(key).lower() == "remaining_hours", str(key)),
+            )
+            actual_buckets = [
+                {
+                    "bucket_key": bucket_key,
+                    "bucket_label": _to_text(actual_bucket_labels_map.get(bucket_key)) or _to_text(bucket_key),
+                    "hours": _round_hours(float(actual_bucket_hours_map.get(bucket_key) or 0.0)),
+                }
+                for bucket_key in actual_bucket_keys
             ]
             dispensed_buckets = list(in_range_buckets)
             if remaining_hours > 0.0:
@@ -19792,7 +23693,14 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             row_payload = {
                 key: value
                 for key, value in row.items()
-                if key not in {"dispensed_bucket_hours", "dispensed_bucket_labels", "outside_before_hours_raw", "outside_after_hours_raw"}
+                if key not in {
+                    "dispensed_bucket_hours",
+                    "dispensed_bucket_labels",
+                    "actual_bucket_hours",
+                    "actual_bucket_labels",
+                    "outside_before_hours_raw",
+                    "outside_after_hours_raw",
+                }
             }
             rows_out.append(
                 {
@@ -19801,6 +23709,11 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                     "dispensed_subtask_hours": dispensed_hours,
                     "dispensed_in_range_hours": _round_hours(in_range_dispensed_hours),
                     "dispensed_stack_hours": dispensed_stack_hours,
+                    "actual_hours": _round_hours(float(row.get("actual_hours") or 0.0)),
+                    "actual_in_range_hours": _round_hours(in_range_actual_hours),
+                    "actual_stack_hours": _round_hours(sum(float(item.get("hours") or 0.0) for item in actual_buckets)),
+                    "actual_bucket_mode": dispensed_bucket_mode,
+                    "actual_buckets": actual_buckets,
                     "remaining_hours_outside_range": _round_hours(remaining_hours),
                     "remaining_hours": _round_hours(planned_hours - dispensed_hours),
                     "dispensed_bucket_mode": dispensed_bucket_mode,
@@ -19822,6 +23735,11 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                     "subtask_count": 0,
                     "dispensed_in_range_hours": 0.0,
                     "dispensed_stack_hours": 0.0,
+                        "actual_hours": 0.0,
+                        "actual_in_range_hours": 0.0,
+                        "actual_stack_hours": 0.0,
+                        "actual_bucket_mode": dispensed_bucket_mode,
+                        "actual_buckets": [],
                     "remaining_hours_outside_range": 0.0,
                     "dispensed_bucket_mode": dispensed_bucket_mode,
                     "dispensed_buckets": [],
@@ -19877,6 +23795,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             "mode": mode,
             "plan_source": plan_source,
             "dispensed_bucket_mode": dispensed_bucket_mode,
+            "actual_bucket_mode": dispensed_bucket_mode,
             "rows": rows_out,
             "selected_projects": sorted(selected_projects),
             "filter_options": {
@@ -19966,8 +23885,34 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 return True
             return _to_text(value).lower() in selected
 
+        dispensed_bucket_mode = _pvd_bucket_mode(from_date, to_date)
+
+        def _subtask_matches_planned_range(subtask: dict) -> bool:
+            planned_start = _parse_iso_date(_to_text(subtask.get("planned_start")))
+            planned_due = _parse_iso_date(_to_text(subtask.get("planned_due")))
+            if planned_start is not None and from_date <= planned_start <= to_date:
+                return True
+            if planned_due is not None and from_date <= planned_due <= to_date:
+                return True
+            return False
+
+        def _dispensed_bucket_allocations(subtask: dict) -> list[tuple[str, str, float]]:
+            estimate_hours = float(subtask.get("estimate_hours") or 0.0)
+            if estimate_hours <= 0 or not _subtask_matches_planned_range(subtask):
+                return []
+            planned_start = _parse_iso_date(_to_text(subtask.get("planned_start")))
+            planned_due = _parse_iso_date(_to_text(subtask.get("planned_due")))
+            if planned_start is None and planned_due is None:
+                return []
+            anchor_day = planned_start if planned_start is not None and from_date <= planned_start <= to_date else planned_due
+            if anchor_day is None:
+                return []
+            bucket_key, bucket_label = _pvd_bucket_key_label(anchor_day, dispensed_bucket_mode)
+            return [(bucket_key, bucket_label, estimate_hours)]
+
+        hierarchy_loader = globals().get("_get_planned_vs_dispensed_hierarchy_cached") or _get_planned_vs_dispensed_hierarchy_cached
         try:
-            hierarchy, source = _get_planned_vs_dispensed_hierarchy_cached(
+            hierarchy, source = hierarchy_loader(
                 from_date=from_date,
                 to_date=to_date,
                 mode=mode,
@@ -19997,6 +23942,18 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 break
         stories = hierarchy.get("stories", []) or []
         subtasks = hierarchy.get("subtasks", []) or []
+        canonical_run_id = _canonical_last_success_run_id(capacity_paths["db_path"])
+        worklog_loader = globals().get("_load_canonical_worklogs_by_issue") or _load_canonical_worklogs_by_issue
+        actual_worklogs_by_issue = worklog_loader(
+            canonical_run_id,
+            {
+                _to_text(item.get("issue_key")).upper()
+                for item in subtasks
+                if _to_text(item.get("issue_key"))
+                and _canonical_is_subtask_type(_to_text(item.get("issue_type_name")) or "Subtask")
+            },
+        )
+        actual_bucket_mode = dispensed_bucket_mode
         stories_by_epic: dict[str, list[dict]] = defaultdict(list)
         subtasks_by_story: dict[str, list[dict]] = defaultdict(list)
         for story in stories:
@@ -20007,6 +23964,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         epic_rows: list[dict[str, object]] = []
         total_planned = 0.0
         total_dispensed = 0.0
+        total_actual = 0.0
         missing_epic_keys: list[str] = []
 
         for epic in epics:
@@ -20017,7 +23975,14 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             epic_key = _to_text(epic.get("issue_key")).upper()
             story_rows: list[dict[str, object]] = []
             epic_dispensed = 0.0
+            epic_actual = 0.0
             epic_subtask_count = 0
+            epic_dispensed_bucket_hours: dict[str, float] = defaultdict(float)
+            epic_dispensed_bucket_labels: dict[str, str] = {}
+            epic_outside_before_hours_raw = 0.0
+            epic_outside_after_hours_raw = 0.0
+            epic_actual_bucket_hours: dict[str, float] = defaultdict(float)
+            epic_actual_bucket_labels: dict[str, str] = {}
             source_stories = stories_by_epic.get(epic_key, [])
             source_stories.sort(key=lambda item: (_to_text(item.get("summary")).lower(), _to_text(item.get("issue_key"))))
 
@@ -20030,6 +23995,13 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 ]
                 story_subtasks.sort(key=lambda item: (_to_text(item.get("summary")).lower(), _to_text(item.get("issue_key"))))
                 story_dispensed_from_subtasks = _round_hours(sum(float(item.get("estimate_hours") or 0.0) for item in story_subtasks))
+                story_actual = 0.0
+                story_dispensed_bucket_hours: dict[str, float] = defaultdict(float)
+                story_dispensed_bucket_labels: dict[str, str] = {}
+                story_outside_before_hours_raw = 0.0
+                story_outside_after_hours_raw = 0.0
+                story_actual_bucket_hours: dict[str, float] = defaultdict(float)
+                story_actual_bucket_labels: dict[str, str] = {}
                 story_estimate_hours = _round_hours(float(story.get("estimate_hours") or 0.0))
                 story_planned_hours = story_estimate_hours
                 story_planned_start = _to_text(story.get("planned_start"))
@@ -20051,6 +24023,119 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 story_dispensed_start, story_dispensed_due = _rollup_dispensed_dates(story_subtasks)
                 epic_dispensed += story_dispensed
                 epic_subtask_count += len(story_subtasks)
+                subtask_rows: list[dict[str, object]] = []
+                for subtask in story_subtasks:
+                    subtask_issue_key = _to_text(subtask.get("issue_key")).upper()
+                    subtask_estimate_hours = float(subtask.get("estimate_hours") or 0.0)
+                    subtask_in_selected_range = _subtask_matches_planned_range(subtask)
+                    actual_metrics = _pvd_subtask_actual_metrics(
+                        subtask=subtask,
+                        worklogs=actual_worklogs_by_issue.get(subtask_issue_key, []),
+                        from_date=from_date,
+                        to_date=to_date,
+                        mode=mode,
+                        bucket_mode=actual_bucket_mode,
+                    )
+                    subtask_actual = _round_hours(float(actual_metrics.get("actual_hours") or 0.0))
+                    story_actual += subtask_actual
+                    for bucket in (actual_metrics.get("actual_buckets") or []):
+                        bucket_key = _to_text(bucket.get("bucket_key"))
+                        if not bucket_key:
+                            continue
+                        story_actual_bucket_hours[bucket_key] = float(story_actual_bucket_hours.get(bucket_key) or 0.0) + float(bucket.get("hours") or 0.0)
+                        story_actual_bucket_labels[bucket_key] = _to_text(bucket.get("bucket_label")) or bucket_key
+                    for bucket_key, bucket_label, bucket_hours in _dispensed_bucket_allocations(subtask):
+                        story_dispensed_bucket_hours[bucket_key] = float(story_dispensed_bucket_hours.get(bucket_key) or 0.0) + float(bucket_hours or 0.0)
+                        story_dispensed_bucket_labels[bucket_key] = bucket_label
+                    planned_start = _parse_iso_date(_to_text(subtask.get("planned_start")))
+                    planned_due = _parse_iso_date(_to_text(subtask.get("planned_due")))
+                    if subtask_in_selected_range and (planned_start is not None or planned_due is not None):
+                        span_start = planned_start or planned_due
+                        span_end = planned_due or planned_start
+                        if span_start is not None and span_end is not None:
+                            if span_end < span_start:
+                                span_start, span_end = span_end, span_start
+                            total_days = int((span_end - span_start).days) + 1
+                            if total_days > 0 and subtask_estimate_hours > 0:
+                                before_end = min(span_end, from_date - timedelta(days=1))
+                                before_days = 0
+                                if before_end >= span_start:
+                                    before_days = int((before_end - span_start).days) + 1
+                                after_start = max(span_start, to_date + timedelta(days=1))
+                                after_days = 0
+                                if span_end >= after_start:
+                                    after_days = int((span_end - after_start).days) + 1
+                                if before_days > 0:
+                                    story_outside_before_hours_raw += subtask_estimate_hours * (before_days / total_days)
+                                if after_days > 0:
+                                    story_outside_after_hours_raw += subtask_estimate_hours * (after_days / total_days)
+                    subtask_rows.append(
+                        {
+                            "issue_key": _to_text(subtask.get("issue_key")).upper(),
+                            "issue_kind": _to_text(subtask.get("issue_kind")) or "subtask",
+                            "issue_type_name": _to_text(subtask.get("issue_type_name")) or "Subtask",
+                            "jira_url": _to_text(subtask.get("jira_url")) or _jira_browse_url(_to_text(subtask.get("issue_key")).upper()),
+                            "summary": _to_text(subtask.get("summary")),
+                            "assignee": _to_text(subtask.get("assignee")) or "Unassigned",
+                            "status": _to_text(subtask.get("status")),
+                            "planned_start": _to_text(subtask.get("planned_start")),
+                            "planned_due": _to_text(subtask.get("planned_due")),
+                            "estimate_hours": _round_hours(float(subtask.get("estimate_hours") or 0.0)),
+                            "planned_hours": None,
+                            "dispensed_estimates": _round_hours(float(subtask.get("estimate_hours") or 0.0)),
+                            "dispensed_start": _to_text(subtask.get("planned_start")),
+                            "dispensed_due": _to_text(subtask.get("planned_due")),
+                            "actual_hours": subtask_actual,
+                            "actual_in_range_hours": _round_hours(float(actual_metrics.get("actual_in_range_hours") or 0.0)),
+                            "actual_bucket_mode": actual_bucket_mode,
+                            "actual_buckets": list(actual_metrics.get("actual_buckets") or []),
+                            "actual_stack_hours": _round_hours(float(actual_metrics.get("actual_stack_hours") or 0.0)),
+                            "remaining": 0.0,
+                        }
+                    )
+                story_actual = _round_hours(story_actual)
+                epic_actual += story_actual
+                for bucket_key, bucket_hours in story_dispensed_bucket_hours.items():
+                    epic_dispensed_bucket_hours[bucket_key] = float(epic_dispensed_bucket_hours.get(bucket_key) or 0.0) + float(bucket_hours or 0.0)
+                    epic_dispensed_bucket_labels[bucket_key] = _to_text(story_dispensed_bucket_labels.get(bucket_key)) or bucket_key
+                epic_outside_before_hours_raw += story_outside_before_hours_raw
+                epic_outside_after_hours_raw += story_outside_after_hours_raw
+                for bucket_key, bucket_hours in story_actual_bucket_hours.items():
+                    epic_actual_bucket_hours[bucket_key] = float(epic_actual_bucket_hours.get(bucket_key) or 0.0) + float(bucket_hours or 0.0)
+                    epic_actual_bucket_labels[bucket_key] = _to_text(story_actual_bucket_labels.get(bucket_key)) or bucket_key
+                story_dispensed_in_range = _round_hours(sum(float(bucket_hours or 0.0) for bucket_hours in story_dispensed_bucket_hours.values()))
+                story_remaining_hours = max(0.0, story_planned_hours - story_dispensed_in_range)
+                story_dispensed_bucket_keys = sorted(
+                    story_dispensed_bucket_hours.keys(),
+                    key=lambda key: (str(key).lower() == "unscheduled", str(key)),
+                )
+                story_dispensed_buckets = [
+                    {
+                        "bucket_key": bucket_key,
+                        "bucket_label": _to_text(story_dispensed_bucket_labels.get(bucket_key)) or bucket_key,
+                        "hours": _round_hours(float(story_dispensed_bucket_hours.get(bucket_key) or 0.0)),
+                    }
+                    for bucket_key in story_dispensed_bucket_keys
+                ]
+                if story_remaining_hours > 0.0:
+                    remaining_item = {
+                        "bucket_key": "remaining_hours",
+                        "bucket_label": "Remaining Hours",
+                        "hours": _round_hours(story_remaining_hours),
+                    }
+                    remaining_first = story_outside_before_hours_raw > 0.0 and story_outside_after_hours_raw <= 0.0
+                    story_dispensed_buckets = ([remaining_item] + story_dispensed_buckets) if remaining_first else (story_dispensed_buckets + [remaining_item])
+                story_actual_in_range = _round_hours(
+                    sum(
+                        float(bucket_hours or 0.0)
+                        for bucket_key, bucket_hours in story_actual_bucket_hours.items()
+                        if str(bucket_key).lower() != "remaining_hours"
+                    )
+                )
+                story_actual_bucket_keys = sorted(
+                    story_actual_bucket_hours.keys(),
+                    key=lambda key: (str(key).lower() == "remaining_hours", str(key)),
+                )
                 story_rows.append(
                     {
                         "issue_key": _to_text(story.get("issue_key")).upper(),
@@ -20067,27 +24152,24 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                         "dispensed_estimates": story_dispensed,
                         "dispensed_start": story_dispensed_start,
                         "dispensed_due": story_dispensed_due,
-                        "remaining": _round_hours(story_planned_hours - story_dispensed),
-                        "subtasks": [
+                        "dispensed_in_range_hours": story_dispensed_in_range,
+                        "dispensed_bucket_mode": dispensed_bucket_mode,
+                        "dispensed_buckets": story_dispensed_buckets,
+                        "dispensed_stack_hours": _round_hours(sum(float(item.get("hours") or 0.0) for item in story_dispensed_buckets)),
+                        "actual_hours": story_actual,
+                        "actual_in_range_hours": story_actual_in_range,
+                        "actual_bucket_mode": actual_bucket_mode,
+                        "actual_buckets": [
                             {
-                                "issue_key": _to_text(subtask.get("issue_key")).upper(),
-                                "issue_kind": _to_text(subtask.get("issue_kind")) or "subtask",
-                                "issue_type_name": _to_text(subtask.get("issue_type_name")) or "Subtask",
-                                "jira_url": _to_text(subtask.get("jira_url")) or _jira_browse_url(_to_text(subtask.get("issue_key")).upper()),
-                                "summary": _to_text(subtask.get("summary")),
-                                "assignee": _to_text(subtask.get("assignee")) or "Unassigned",
-                                "status": _to_text(subtask.get("status")),
-                                "planned_start": _to_text(subtask.get("planned_start")),
-                                "planned_due": _to_text(subtask.get("planned_due")),
-                                "estimate_hours": _round_hours(float(subtask.get("estimate_hours") or 0.0)),
-                                "planned_hours": None,
-                                "dispensed_estimates": _round_hours(float(subtask.get("estimate_hours") or 0.0)),
-                                "dispensed_start": _to_text(subtask.get("planned_start")),
-                                "dispensed_due": _to_text(subtask.get("planned_due")),
-                                "remaining": 0.0,
+                                "bucket_key": bucket_key,
+                                "bucket_label": _to_text(story_actual_bucket_labels.get(bucket_key)) or bucket_key,
+                                "hours": _round_hours(float(story_actual_bucket_hours.get(bucket_key) or 0.0)),
                             }
-                            for subtask in story_subtasks
+                            for bucket_key in story_actual_bucket_keys
                         ],
+                        "actual_stack_hours": _round_hours(sum(float(story_actual_bucket_hours.get(bucket_key) or 0.0) for bucket_key in story_actual_bucket_keys)),
+                        "remaining": _round_hours(story_planned_hours - story_dispensed),
+                        "subtasks": subtask_rows,
                     }
                 )
 
@@ -20110,8 +24192,43 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 for story_row in story_rows
                 for subtask in (story_row.get("subtasks") or [])
             ])
+            epic_actual = _round_hours(epic_actual)
+            epic_actual_in_range = _round_hours(
+                sum(
+                    float(bucket_hours or 0.0)
+                    for bucket_key, bucket_hours in epic_actual_bucket_hours.items()
+                    if str(bucket_key).lower() != "remaining_hours"
+                )
+            )
+            epic_dispensed_in_range = _round_hours(sum(float(bucket_hours or 0.0) for bucket_hours in epic_dispensed_bucket_hours.values()))
+            epic_remaining_hours = max(0.0, epic_planned - epic_dispensed_in_range)
+            epic_dispensed_bucket_keys = sorted(
+                epic_dispensed_bucket_hours.keys(),
+                key=lambda key: (str(key).lower() == "unscheduled", str(key)),
+            )
+            epic_dispensed_buckets = [
+                {
+                    "bucket_key": bucket_key,
+                    "bucket_label": _to_text(epic_dispensed_bucket_labels.get(bucket_key)) or bucket_key,
+                    "hours": _round_hours(float(epic_dispensed_bucket_hours.get(bucket_key) or 0.0)),
+                }
+                for bucket_key in epic_dispensed_bucket_keys
+            ]
+            if epic_remaining_hours > 0.0:
+                remaining_item = {
+                    "bucket_key": "remaining_hours",
+                    "bucket_label": "Remaining Hours",
+                    "hours": _round_hours(epic_remaining_hours),
+                }
+                remaining_first = epic_outside_before_hours_raw > 0.0 and epic_outside_after_hours_raw <= 0.0
+                epic_dispensed_buckets = ([remaining_item] + epic_dispensed_buckets) if remaining_first else (epic_dispensed_buckets + [remaining_item])
+            epic_actual_bucket_keys = sorted(
+                epic_actual_bucket_hours.keys(),
+                key=lambda key: (str(key).lower() == "remaining_hours", str(key)),
+            )
             total_planned += epic_planned
             total_dispensed += epic_dispensed
+            total_actual += epic_actual
             epic_rows.append(
                 {
                     "issue_key": _to_text(epic.get("issue_key")).upper(),
@@ -20128,6 +24245,22 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                     "dispensed_estimates": epic_dispensed,
                     "dispensed_start": epic_dispensed_start,
                     "dispensed_due": epic_dispensed_due,
+                    "dispensed_in_range_hours": epic_dispensed_in_range,
+                    "dispensed_bucket_mode": dispensed_bucket_mode,
+                    "dispensed_buckets": epic_dispensed_buckets,
+                    "dispensed_stack_hours": _round_hours(sum(float(item.get("hours") or 0.0) for item in epic_dispensed_buckets)),
+                    "actual_hours": epic_actual,
+                    "actual_in_range_hours": epic_actual_in_range,
+                    "actual_bucket_mode": actual_bucket_mode,
+                    "actual_buckets": [
+                        {
+                            "bucket_key": bucket_key,
+                            "bucket_label": _to_text(epic_actual_bucket_labels.get(bucket_key)) or bucket_key,
+                            "hours": _round_hours(float(epic_actual_bucket_hours.get(bucket_key) or 0.0)),
+                        }
+                        for bucket_key in epic_actual_bucket_keys
+                    ],
+                    "actual_stack_hours": _round_hours(sum(float(epic_actual_bucket_hours.get(bucket_key) or 0.0) for bucket_key in epic_actual_bucket_keys)),
                     "remaining": _round_hours(epic_planned - epic_dispensed),
                     "story_count": len(story_rows),
                     "subtask_count": epic_subtask_count,
@@ -20160,6 +24293,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             "totals": {
                 "planned_epic_hours": _round_hours(total_planned),
                 "dispensed_subtask_hours": _round_hours(total_dispensed),
+                "actual_hours": _round_hours(total_actual),
                 "remaining_hours": _round_hours(total_planned - total_dispensed),
                 "epic_count": len(epic_rows),
             },
@@ -20912,6 +25046,106 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             return jsonify({"settings": saved, "source": "db"})
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
+
+    @app.route("/api/admin/sql-console/schema", methods=["GET"])
+    def sql_console_schema():
+        try:
+            database_name, db_path = _sql_console_resolve_target_or_error(request.args.get("database"))
+            with _sql_console_open_connection(db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                table_rows = conn.execute(
+                    """
+                    SELECT name
+                    FROM sqlite_master
+                    WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
+                    ORDER BY name
+                    """
+                ).fetchall()
+                tables: list[dict[str, object]] = []
+                for row in table_rows:
+                    table_name = _to_text(row["name"])
+                    escaped_name = table_name.replace('"', '""')
+                    pragma_rows = conn.execute(f'PRAGMA table_info("{escaped_name}")').fetchall()
+                    tables.append(
+                        {
+                            "name": table_name,
+                            "columns": [
+                                {
+                                    "name": _to_text(col["name"]),
+                                    "type": _to_text(col["type"]),
+                                    "notnull": int(col["notnull"] or 0) == 1,
+                                    "pk": int(col["pk"] or 0) == 1,
+                                }
+                                for col in pragma_rows
+                            ],
+                        }
+                    )
+            return jsonify({"ok": True, "database": database_name, "db_path": str(db_path), "tables": tables})
+        except FileNotFoundError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 404
+        except (ValueError, sqlite3.Error) as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+
+    @app.route("/api/admin/sql-console/execute", methods=["POST"])
+    def sql_console_execute():
+        started = time.perf_counter()
+        try:
+            payload = request.get_json(silent=True) or {}
+            database_name, db_path, column_names, rows, truncated = _sql_console_run_query(
+                payload.get("database"),
+                payload.get("sql"),
+                row_limit=SQL_CONSOLE_MAX_ROWS,
+            )
+            elapsed_ms = int((time.perf_counter() - started) * 1000)
+            return jsonify(
+                {
+                    "ok": True,
+                    "database": database_name,
+                    "db_path": str(db_path),
+                    "columns": column_names,
+                    "rows": rows,
+                    "row_count": len(rows),
+                    "truncated": truncated,
+                    "elapsed_ms": elapsed_ms,
+                }
+            )
+        except FileNotFoundError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 404
+        except (ValueError, sqlite3.Error) as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+
+    @app.route("/api/admin/sql-console/export", methods=["POST"])
+    def sql_console_export():
+        try:
+            payload = request.get_json(silent=True) or {}
+            database_name, _db_path, column_names, rows, truncated = _sql_console_run_query(
+                payload.get("database"),
+                payload.get("sql"),
+                row_limit=SQL_CONSOLE_EXPORT_MAX_ROWS,
+            )
+            workbook = Workbook()
+            worksheet = workbook.active
+            worksheet.title = "Query Results"
+            worksheet.append(column_names or ["result"])
+            if column_names:
+                for row in rows:
+                    worksheet.append([row.get(column) for column in column_names])
+            output = io.BytesIO()
+            workbook.save(output)
+            output.seek(0)
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+            suffix = "-truncated" if truncated else ""
+            filename = f"sql-console-{database_name}-{timestamp}{suffix}.xlsx"
+            return send_file(
+                output,
+                mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                as_attachment=True,
+                download_name=filename,
+            )
+        except FileNotFoundError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 404
+        except (ValueError, sqlite3.Error) as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
 
     @app.route("/api/dashboard-risk/settings", methods=["GET"])
     def get_dashboard_risk_settings():
@@ -21721,7 +25955,6 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 {
                     "error": str(exc),
                     "code": "epic_key_exists",
-                    "conflict_epic_key": exc.conflict_epic_key,
                     "vacant_tmp_key": exc.vacant_tmp_key,
                     "can_reuse_vacant_tmp_key": bool(exc.vacant_tmp_key),
                 }
@@ -21742,7 +25975,9 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         except LookupError as exc:
             return jsonify({"error": str(exc)}), 404
         except ValueError as exc:
-            return jsonify({"error": str(exc)}), 400
+            message = str(exc)
+            status = 409 if "already exists" in message else 400
+            return jsonify({"error": message}), status
         except Exception as exc:
             return jsonify({"error": f"Failed to update epic row: {exc}"}), 500
 
@@ -21793,6 +26028,231 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         except Exception as exc:
             return jsonify({"error": f"Failed to sync epic from Jira: {exc}"}), 500
 
+    @app.route("/api/epics-management/seal", methods=["POST"])
+    def seal_epics_management_api():
+        try:
+            payload = request.get_json(silent=True) or {}
+            epic_keys = payload.get("epic_keys")
+            if not isinstance(epic_keys, list):
+                return jsonify({"error": "epic_keys array required"}), 400
+            result = _seal_epics_management_epics(capacity_paths["db_path"], epic_keys)
+            if result.get("error"):
+                return jsonify(result), 400
+            return jsonify({**result, "source": "epics_management_db"})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @app.route("/api/epics-management/rows/<path:epic_key>/re-budget", methods=["POST"])
+    def rebudget_epics_management_api(epic_key: str):
+        try:
+            _rebudget_epics_management_epic(capacity_paths["db_path"], epic_key)
+            return jsonify({"epic_key": epic_key, "is_sealed": 0, "source": "epics_management_db"})
+        except LookupError as exc:
+            return jsonify({"error": str(exc)}), 404
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @app.route("/api/epics-management/sealed-dates", methods=["GET"])
+    def epics_management_sealed_dates_api():
+        try:
+            limit_raw = _to_text(request.args.get("limit", "50"))
+            try:
+                limit = max(1, min(100, int(limit_raw)))
+            except ValueError:
+                limit = 50
+            dates = _load_epics_management_sealed_dates(capacity_paths["db_path"], limit=limit)
+            return jsonify({"dates": dates, "source": "epics_management_db"})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @app.route("/api/epics-management/sealed-dates/<path:approved_at_utc>/snapshots", methods=["GET"])
+    def epics_management_sealed_date_snapshots_api(approved_at_utc: str):
+        try:
+            snapshots = _load_epics_management_snapshots_for_date(capacity_paths["db_path"], approved_at_utc)
+            return jsonify({"approved_at_utc": approved_at_utc, "snapshots": snapshots, "source": "epics_management_db"})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @app.route("/api/epics-management/epics/<path:epic_key>/sealed-dates", methods=["GET"])
+    def epics_management_epic_sealed_dates_api(epic_key: str):
+        try:
+            dates = _load_epics_management_sealed_dates_for_epic(capacity_paths["db_path"], epic_key)
+            return jsonify({"epic_key": epic_key, "dates": dates, "source": "epics_management_db"})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @app.route("/api/epics-management/epics/<path:epic_key>/sealed-dates/<path:approved_at_utc>", methods=["GET"])
+    def epics_management_epic_sealed_date_snapshot_api(epic_key: str, approved_at_utc: str):
+        try:
+            snapshot = _load_epics_management_snapshot_for_epic_date(
+                capacity_paths["db_path"], epic_key, approved_at_utc
+            )
+            if snapshot is None:
+                return jsonify({"error": "Not found"}), 404
+            return jsonify({
+                "epic_key": epic_key,
+                "approved_at_utc": approved_at_utc,
+                "snapshot": snapshot,
+                "source": "epics_management_db",
+            })
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @app.route("/api/epics-management/epics/<path:epic_key>/sealed-dates/<path:approved_at_utc>", methods=["DELETE"])
+    def epics_management_epic_sealed_date_delete_api(epic_key: str, approved_at_utc: str):
+        try:
+            deleted = _delete_epics_management_approved_date(
+                capacity_paths["db_path"], epic_key, approved_at_utc
+            )
+            if not deleted:
+                return jsonify({"error": "Not found"}), 404
+            return jsonify({"epic_key": epic_key, "approved_at_utc": approved_at_utc, "deleted": True})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @app.route("/api/ipp-meeting-planner/current", methods=["GET"])
+    def ipp_meeting_planner_current_api():
+        try:
+            meeting = _ipp_meeting_planner_get_current_meeting(capacity_paths["db_path"])
+            if meeting is None:
+                return jsonify({"error": "No scheduled meeting"}), 404
+            epics_data = _ipp_meeting_planner_get_meeting_with_epics(capacity_paths["db_path"], meeting["id"])
+            return jsonify(epics_data if epics_data else meeting)
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @app.route("/api/ipp-meeting-planner/meetings", methods=["GET"])
+    def ipp_meeting_planner_meetings_list_api():
+        try:
+            limit = max(1, min(200, int(request.args.get("limit", "50"))))
+            meetings = _ipp_meeting_planner_list_meetings(capacity_paths["db_path"], limit=limit)
+            return jsonify({"meetings": meetings})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @app.route("/api/ipp-meeting-planner/meetings/<int:meeting_id>", methods=["GET"])
+    def ipp_meeting_planner_meeting_detail_api(meeting_id: int):
+        try:
+            data = _ipp_meeting_planner_get_meeting_with_epics(capacity_paths["db_path"], meeting_id)
+            if data is None:
+                return jsonify({"error": "Not found"}), 404
+            return jsonify(data)
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @app.route("/api/ipp-meeting-planner/meetings/<int:meeting_id>", methods=["PATCH"])
+    def ipp_meeting_planner_update_meeting_api(meeting_id: int):
+        try:
+            payload = request.get_json(silent=True) or {}
+            meeting_date = payload.get("meeting_date") if "meeting_date" in payload else None
+            intended_date = payload.get("intended_date") if "intended_date" in payload else None
+            meeting = _ipp_meeting_planner_update_meeting(
+                capacity_paths["db_path"],
+                meeting_id,
+                meeting_date=_to_text(meeting_date) if meeting_date is not None else None,
+                intended_date=_to_text(intended_date) if intended_date is not None else None,
+            )
+            if meeting is None:
+                return jsonify({"error": "Not found"}), 404
+            return jsonify(meeting)
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @app.route("/api/ipp-meeting-planner/meetings/<int:meeting_id>/epics", methods=["POST"])
+    def ipp_meeting_planner_add_epic_api(meeting_id: int):
+        try:
+            payload = request.get_json(silent=True) or {}
+            epic_key = _to_text(payload.get("epic_key")).strip().upper()
+            if not epic_key:
+                return jsonify({"error": "epic_key required"}), 400
+            project_key = _to_text(payload.get("project_key")).strip().upper() or "ORPHAN"
+            project_name = _to_text(payload.get("project_name")).strip() or project_key
+            epic_name = _to_text(payload.get("epic_name")).strip() or epic_key
+            display_order = int(payload.get("display_order") or 0)
+            include_on_dashboard = 1 if payload.get("include_on_dashboard", True) else 0
+            delivery_status = _to_text(payload.get("delivery_status")).strip() or "Yet to start"
+            if delivery_status not in ("Late", "On-track", "Yet to start"):
+                delivery_status = "Yet to start"
+            remarks_rich_text = _to_text(payload.get("remarks_rich_text")).strip()
+            if not _ipp_has_visible_rich_text(remarks_rich_text):
+                remarks_rich_text = ""
+            start_date = _to_text(payload.get("start_date")).strip()
+            due_date = _to_text(payload.get("due_date")).strip()
+            actual_production_date = _to_text(payload.get("actual_production_date")).strip()
+            row = _ipp_meeting_planner_add_epic(
+                capacity_paths["db_path"],
+                meeting_id,
+                epic_key,
+                project_key,
+                project_name=project_name,
+                epic_name=epic_name,
+                display_order=display_order,
+                include_on_dashboard=include_on_dashboard,
+                delivery_status=delivery_status,
+                remarks_rich_text=remarks_rich_text,
+                start_date=start_date,
+                due_date=due_date,
+                actual_production_date=actual_production_date,
+            )
+            if row is None:
+                return jsonify({"error": "Failed to add epic"}), 400
+            return jsonify(row)
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @app.route("/api/ipp-meeting-planner/meetings/<int:meeting_id>/epics/<path:epic_key>", methods=["PATCH"])
+    def ipp_meeting_planner_update_epic_api(meeting_id: int, epic_key: str):
+        try:
+            payload = request.get_json(silent=True) or {}
+            row = _ipp_meeting_planner_update_epic(
+                capacity_paths["db_path"],
+                meeting_id,
+                epic_key,
+                **{k: v for k, v in payload.items() if k in ("display_order", "include_on_dashboard", "delivery_status", "remarks_rich_text", "start_date", "due_date", "actual_production_date", "project_key", "project_name", "epic_name")},
+            )
+            if row is None:
+                return jsonify({"error": "Not found"}), 404
+            return jsonify(row)
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @app.route("/api/ipp-meeting-planner/meetings/<int:meeting_id>/epics/<path:epic_key>", methods=["DELETE"])
+    def ipp_meeting_planner_remove_epic_api(meeting_id: int, epic_key: str):
+        try:
+            removed = _ipp_meeting_planner_remove_epic(capacity_paths["db_path"], meeting_id, epic_key)
+            if not removed:
+                return jsonify({"error": "Not found"}), 404
+            return jsonify({"deleted": True, "meeting_id": meeting_id, "epic_key": epic_key})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @app.route("/api/ipp-meeting-planner/meetings/<int:meeting_id>/project-visibility", methods=["PATCH"])
+    def ipp_meeting_planner_project_visibility_api(meeting_id: int):
+        try:
+            payload = request.get_json(silent=True) or {}
+            project_key = _to_text(payload.get("project_key")).strip().upper()
+            include_on_dashboard = bool(payload.get("include_on_dashboard", True))
+            if not project_key:
+                return jsonify({"error": "project_key required"}), 400
+            count = _ipp_meeting_planner_set_project_include_on_dashboard(
+                capacity_paths["db_path"], meeting_id, project_key, include_on_dashboard
+            )
+            return jsonify({"updated": count})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @app.route("/api/ipp-meeting-planner/meetings/<int:meeting_id>/complete", methods=["POST"])
+    def ipp_meeting_planner_complete_api(meeting_id: int):
+        try:
+            payload = request.get_json(silent=True) or {}
+            next_intended_date = _to_text(payload.get("next_intended_date", payload.get("intended_date", "")))
+            result = _ipp_meeting_planner_complete_meeting(capacity_paths["db_path"], meeting_id, next_intended_date)
+            return jsonify(result)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
     @app.route(CAPACITY_SETTINGS_ROUTE, methods=["GET"])
     def capacity_settings():
         return _capacity_settings_html()
@@ -21821,6 +26281,10 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
     def canonical_refresh_settings():
         return _canonical_refresh_settings_html()
 
+    @app.route(SQL_CONSOLE_SETTINGS_ROUTE, methods=["GET"])
+    def sql_console_settings():
+        return _sql_console_settings_html()
+
     @app.route(PAGE_CATEGORIES_SETTINGS_ROUTE, methods=["GET"])
     def page_categories_settings():
         return _page_categories_settings_html()
@@ -21837,12 +26301,18 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
     def epics_management_settings():
         return _epics_management_settings_html()
 
+    @app.route(IPP_MEETING_PLANNER_SETTINGS_ROUTE, methods=["GET"])
+    def ipp_meeting_planner_settings():
+        return _ipp_meeting_planner_settings_html()
+
     @app.route("/settings/capactiy", methods=["GET"])
     def capacity_settings_typo_redirect():
         return redirect(CAPACITY_SETTINGS_ROUTE, code=302)
 
     @app.route(f"/{CANONICAL_PVD_HTML_FILE}", methods=["GET"])
     def canonical_pvd_report_route():
+        _promote_report_html_if_newer(base_dir, report_dir, CANONICAL_PVD_HTML_FILE)
+        _promote_report_html_if_newer(base_dir, report_dir, LEGACY_PVD_HTML_FILE)
         target = report_dir / CANONICAL_PVD_HTML_FILE
         if not target.exists():
             target = report_dir / LEGACY_PVD_HTML_FILE
@@ -21858,6 +26328,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
     def serve_report_asset(requested_path: str):
         requested_name = _to_text(requested_path)
         if requested_name in {"shared-nav.js", "shared-nav.css", "shared-date-filter.js", "material-symbols.css"}:
+            _sync_report_html_assets(base_dir, report_dir)
             source_candidates = [
                 base_dir / requested_name,
                 base_dir / "report_html" / requested_name,
@@ -21867,6 +26338,9 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             if not source_asset:
                 return jsonify({"error": "Not found"}), 404
             return send_file(source_asset)
+
+        if requested_name.lower().endswith(".html"):
+            _promote_report_html_if_newer(base_dir, report_dir, Path(requested_name).name)
 
         target = (report_dir / requested_path).resolve()
         if not target.exists() or not target.is_file():

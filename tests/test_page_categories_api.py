@@ -61,6 +61,9 @@ class PageCategoriesApiTests(unittest.TestCase):
                         {"page_key": "dashboard", "page_type": "report", "category_id": cid},
                         {"page_key": "capacity_settings", "page_type": "configuration", "category_id": cid},
                     ],
+                    "page_overrides": [
+                        {"page_key": "dashboard", "display_name": "Executive Dashboard"},
+                    ],
                 },
             )
             self.assertEqual(bulk_resp.status_code, 200)
@@ -78,10 +81,25 @@ class PageCategoriesApiTests(unittest.TestCase):
                     for item in body["page_catalog"]
                 )
             )
+            self.assertTrue(
+                any(
+                    item["page_key"] == "dashboard"
+                    and item["title"] == "Executive Dashboard"
+                    and item["default_title"] == "Dashboard"
+                    for item in body["page_catalog"]
+                )
+            )
 
             reports_categories = body["navigation"]["reports"]["categories"]
             self.assertTrue(any(group["name"] == "Operations" for group in reports_categories))
             self.assertTrue(any(group["icon_name"] == "monitoring" for group in reports_categories))
+            self.assertTrue(
+                any(
+                    item["page_key"] == "dashboard" and item["title"] == "Executive Dashboard"
+                    for group in reports_categories
+                    for item in group["items"]
+                )
+            )
             admin_categories = body["navigation"]["admin_settings"]["categories"]
             self.assertTrue(any(group["name"] == "Operations" for group in admin_categories))
 
@@ -120,6 +138,79 @@ class PageCategoriesApiTests(unittest.TestCase):
             body = save_resp.get_json()
             self.assertTrue(body["navigation"]["enabled"])
             self.assertEqual(body["navigation"]["reports"]["categories"], [])
+
+    def test_report_display_names_round_trip_and_configuration_rename_rejected(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            app = self._build_app(Path(td))
+            client = app.test_client()
+
+            save_resp = client.put(
+                "/api/page-categories",
+                json={
+                    "categories": [],
+                    "assignments": [],
+                    "page_overrides": [
+                        {"page_key": "dashboard", "display_name": "Executive Dashboard"},
+                        {"page_key": "capacity_settings", "display_name": "Capacity Admin"},
+                    ],
+                },
+            )
+            self.assertEqual(save_resp.status_code, 400)
+            self.assertIn("only supported for report pages", save_resp.get_json()["error"])
+
+            good_save = client.put(
+                "/api/page-categories",
+                json={
+                    "categories": [],
+                    "assignments": [],
+                    "page_overrides": [
+                        {"page_key": "dashboard", "display_name": "Executive Dashboard"},
+                        {"page_key": "original_estimates_hierarchy_report", "display_name": "Epic Estimates"},
+                    ],
+                },
+            )
+            self.assertEqual(good_save.status_code, 200)
+            body = good_save.get_json()
+            self.assertFalse(body["navigation"]["enabled"])
+            self.assertTrue(any(item["page_key"] == "dashboard" and item["display_name"] == "Executive Dashboard" for item in body["page_overrides"]))
+            self.assertTrue(
+                any(
+                    item["page_key"] == "dashboard"
+                    and item["title"] == "Executive Dashboard"
+                    and item["default_title"] == "Dashboard"
+                    and item["title_editable"] is True
+                    for item in body["page_catalog"]
+                )
+            )
+            self.assertTrue(
+                any(
+                    item["page_key"] == "capacity_settings"
+                    and item["title"] == "Capacity Settings"
+                    and item["display_name"] == ""
+                    and item["title_editable"] is False
+                    for item in body["page_catalog"]
+                )
+            )
+            self.assertTrue(
+                any(
+                    item["page_key"] == "original_estimates_hierarchy_report"
+                    and item["title"] == "Epic Estimates"
+                    for item in body["page_catalog"]
+                )
+            )
+
+            reload_resp = client.get("/api/page-categories")
+            self.assertEqual(reload_resp.status_code, 200)
+            reload_body = reload_resp.get_json()
+            self.assertTrue(any(item["page_key"] == "dashboard" and item["display_name"] == "Executive Dashboard" for item in reload_body["page_overrides"]))
+            self.assertTrue(
+                any(
+                    item["page_key"] == "dashboard"
+                    and item["title"] == "Executive Dashboard"
+                    and item["route_or_file"] == "dashboard.html"
+                    for item in reload_body["page_catalog"]
+                )
+            )
 
 
 if __name__ == "__main__":

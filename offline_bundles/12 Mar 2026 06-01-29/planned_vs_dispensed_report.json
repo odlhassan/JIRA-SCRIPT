@@ -1,0 +1,1217 @@
+{
+  "GET /api/approved-vs-planned-hours/ui-settings": {
+    "ok": true,
+    "settings": {
+      "first_column_width_px": 333,
+      "updated_at_utc": "2026-03-03T07:48:23Z"
+    }
+  },
+  "GET /api/approved-vs-planned-hours/summary?from=2026-02-01&to=2026-02-28": {
+    "actual_bucket_mode": "week",
+    "default_selected_projects": [
+      "CRM",
+      "DIGITALLOG",
+      "FF",
+      "MN",
+      "O2",
+      "ODL",
+      "WOM"
+    ],
+    "dispensed_bucket_mode": "week",
+    "filter_options": {
+      "assignees": [
+        "Aiza Hamid",
+        "Ali Qumail",
+        "Ameer Hamza Khan",
+        "Arsalan Zafar Khan",
+        "Arslan sohail",
+        "Ayyan Babar",
+        "DANIYAL AHMAD",
+        "Danish Rashid",
+        "Faiq Butt",
+        "Faiza Nasir",
+        "Hamza Ali",
+        "Hassan Malik",
+        "Hassan Saeed Wattoo",
+        "Hassan Wali",
+        "Ibrahim Ahmed Qureshi",
+        "Maria Sharafat",
+        "Mariam Zulfiqar",
+        "Mohsin Junaid",
+        "Muhammad Abbas",
+        "Muhammad Abdul Wasi",
+        "Muhammad Abdullah",
+        "Muhammad Ahmad Saleem",
+        "Muhammad Imran Aslam",
+        "Muhammad Usman Javed",
+        "Muhammad Yousha  Agha",
+        "Muhammad Zeeshan Aslam",
+        "Namra Zahid",
+        "Sarmad Sabir",
+        "Syed Yousaf Qadri",
+        "Taimur Zahid",
+        "Unassigned",
+        "Usama Tariq",
+        "Waqar Rasheed",
+        "Zain Munir",
+        "Zeeshan Sarwar",
+        "ahad omer",
+        "awais akhter",
+        "kamran khalid",
+        "nadeem ahmed",
+        "yousha.agha"
+      ],
+      "project_options": [
+        {
+          "project_key": "CRM",
+          "project_name": "CRM"
+        },
+        {
+          "project_key": "DIGITALLOG",
+          "project_name": "Digital Log"
+        },
+        {
+          "project_key": "FF",
+          "project_name": "Fintech Fuel"
+        },
+        {
+          "project_key": "MN",
+          "project_name": "OmniChat"
+        },
+        {
+          "project_key": "O2",
+          "project_name": "OmniConnect"
+        },
+        {
+          "project_key": "ODL",
+          "project_name": "ODL Miscellaneous"
+        },
+        {
+          "project_key": "RLT",
+          "project_name": "RnD Leaves"
+        },
+        {
+          "project_key": "WOM",
+          "project_name": "Work Order Management"
+        }
+      ],
+      "projects": [
+        "CRM",
+        "DIGITALLOG",
+        "FF",
+        "MN",
+        "O2",
+        "ODL",
+        "RLT",
+        "WOM"
+      ],
+      "statuses": [
+        "Backlog / To Do",
+        "Bug Fixed",
+        "Considered in Roadmap & Queued",
+        "Development",
+        "Draft.",
+        "Failed Testing",
+        "In-Process",
+        "In-Progress",
+        "Not a Bug",
+        "On Hold",
+        "QA Testing",
+        "Resolved",
+        "Resolved!",
+        "To Do"
+      ]
+    },
+    "from_date": "2026-02-01",
+    "missing_plan": {
+      "count": 0,
+      "enabled": false,
+      "message": "The following epics in selected date range do not have planned hours in Epics Planner. Either switch source or specify plan in Epics Planner.",
+      "projects": []
+    },
+    "mode": "log_date",
+    "ok": true,
+    "plan_source": "jira_estimates",
+    "rows": [
+      {
+        "actual_bucket_mode": "week",
+        "actual_buckets": [
+          {
+            "bucket_key": "2026-W07",
+            "bucket_label": "2026-W07",
+            "hours": 8.0
+          },
+          {
+            "bucket_key": "2026-W08",
+            "bucket_label": "2026-W08",
+            "hours": 6.5
+          },
+          {
+            "bucket_key": "2026-W09",
+            "bucket_label": "2026-W09",
+            "hours": 6.5
+          }
+        ],
+        "actual_hours": 21.0,
+        "actual_in_range_hours": 21.0,
+        "actual_stack_hours": 21.0,
+        "dispensed_bucket_mode": "week",
+        "dispensed_buckets": [
+          {
+            "bucket_key": "2026-W07",
+            "bucket_label": "2026-W07",
+            "hours": 8.0
+          },
+          {
+            "bucket_key": "2026-W08",
+            "bucket_label": "2026-W08",
+            "hours": 6.5
+          },
+          {
+            "bucket_key": "2026-W09",
+            "bucket_label": "2026-W09",
+            "hours": 6.5
+          },
+          {
+            "bucket_key": "remaining_hours",
+            "bucket_label": "Remaining Hours",
+            "hours": 171.0
+          }
+        ],
+        "dispensed_in_range_hours": 21.0,
+        "dispensed_stack_hours": 192.0,
+        "dispensed_subtask_hours": 35.5,
+        "epic_count": 1,
+        "planned_epic_hours": 192.0,
+        "project_key": "CRM",
+        "project_name": "CRM",
+        "remaining_hours": 156.5,
+        "remaining_hours_outside_range": 171.0,
+        "story_count": 1,
+        "subtask_count": 5
+      },
+      {
+        "actual_bucket_mode": "week",
+        "actual_buckets": [
+          {
+            "bucket_key": "2026-W06",
+            "bucket_label": "2026-W06",
+            "hours": 128.0
+          },
+          {
+            "bucket_key": "2026-W07",
+            "bucket_label": "2026-W07",
+            "hours": 174.0
+          },
+          {
+            "bucket_key": "2026-W08",
+            "bucket_label": "2026-W08",
+            "hours": 149.0
+          },
+          {
+            "bucket_key": "2026-W09",
+            "bucket_label": "2026-W09",
+            "hours": 89.0
+          },
+          {
+            "bucket_key": "remaining_hours",
+            "bucket_label": "Remaining Hours",
+            "hours": 30.5
+          }
+        ],
+        "actual_hours": 570.5,
+        "actual_in_range_hours": 540.0,
+        "actual_stack_hours": 570.5,
+        "dispensed_bucket_mode": "week",
+        "dispensed_buckets": [
+          {
+            "bucket_key": "2026-W06",
+            "bucket_label": "2026-W06",
+            "hours": 152.0
+          },
+          {
+            "bucket_key": "2026-W07",
+            "bucket_label": "2026-W07",
+            "hours": 168.0
+          },
+          {
+            "bucket_key": "2026-W08",
+            "bucket_label": "2026-W08",
+            "hours": 183.0
+          },
+          {
+            "bucket_key": "2026-W09",
+            "bucket_label": "2026-W09",
+            "hours": 122.0
+          },
+          {
+            "bucket_key": "remaining_hours",
+            "bucket_label": "Remaining Hours",
+            "hours": 823.0
+          }
+        ],
+        "dispensed_in_range_hours": 625.0,
+        "dispensed_stack_hours": 1448.0,
+        "dispensed_subtask_hours": 1315.0,
+        "epic_count": 9,
+        "planned_epic_hours": 1448.0,
+        "project_key": "DIGITALLOG",
+        "project_name": "Digital Log",
+        "remaining_hours": 133.0,
+        "remaining_hours_outside_range": 823.0,
+        "story_count": 32,
+        "subtask_count": 160
+      },
+      {
+        "actual_bucket_mode": "week",
+        "actual_buckets": [
+          {
+            "bucket_key": "2026-W06",
+            "bucket_label": "2026-W06",
+            "hours": 150.0
+          },
+          {
+            "bucket_key": "2026-W07",
+            "bucket_label": "2026-W07",
+            "hours": 205.0
+          },
+          {
+            "bucket_key": "2026-W08",
+            "bucket_label": "2026-W08",
+            "hours": 132.08
+          },
+          {
+            "bucket_key": "2026-W09",
+            "bucket_label": "2026-W09",
+            "hours": 168.05
+          },
+          {
+            "bucket_key": "remaining_hours",
+            "bucket_label": "Remaining Hours",
+            "hours": 155.0
+          }
+        ],
+        "actual_hours": 810.13,
+        "actual_in_range_hours": 655.13,
+        "actual_stack_hours": 810.13,
+        "dispensed_bucket_mode": "week",
+        "dispensed_buckets": [
+          {
+            "bucket_key": "2026-W05",
+            "bucket_label": "2026-W05",
+            "hours": 24.0
+          },
+          {
+            "bucket_key": "2026-W06",
+            "bucket_label": "2026-W06",
+            "hours": 158.0
+          },
+          {
+            "bucket_key": "2026-W07",
+            "bucket_label": "2026-W07",
+            "hours": 180.0
+          },
+          {
+            "bucket_key": "2026-W08",
+            "bucket_label": "2026-W08",
+            "hours": 355.67
+          },
+          {
+            "bucket_key": "2026-W09",
+            "bucket_label": "2026-W09",
+            "hours": 355.02
+          },
+          {
+            "bucket_key": "remaining_hours",
+            "bucket_label": "Remaining Hours",
+            "hours": 279.31
+          }
+        ],
+        "dispensed_in_range_hours": 1072.69,
+        "dispensed_stack_hours": 1352.0,
+        "dispensed_subtask_hours": 1656.21,
+        "epic_count": 8,
+        "planned_epic_hours": 1352.0,
+        "project_key": "FF",
+        "project_name": "Fintech Fuel",
+        "remaining_hours": -304.21,
+        "remaining_hours_outside_range": 279.31,
+        "story_count": 34,
+        "subtask_count": 205
+      },
+      {
+        "actual_bucket_mode": "week",
+        "actual_buckets": [
+          {
+            "bucket_key": "2026-W06",
+            "bucket_label": "2026-W06",
+            "hours": 24.0
+          },
+          {
+            "bucket_key": "2026-W07",
+            "bucket_label": "2026-W07",
+            "hours": 66.0
+          },
+          {
+            "bucket_key": "2026-W08",
+            "bucket_label": "2026-W08",
+            "hours": 109.0
+          },
+          {
+            "bucket_key": "2026-W09",
+            "bucket_label": "2026-W09",
+            "hours": 46.5
+          }
+        ],
+        "actual_hours": 245.5,
+        "actual_in_range_hours": 245.5,
+        "actual_stack_hours": 245.5,
+        "dispensed_bucket_mode": "week",
+        "dispensed_buckets": [
+          {
+            "bucket_key": "2026-W06",
+            "bucket_label": "2026-W06",
+            "hours": 24.0
+          },
+          {
+            "bucket_key": "2026-W07",
+            "bucket_label": "2026-W07",
+            "hours": 68.0
+          },
+          {
+            "bucket_key": "2026-W08",
+            "bucket_label": "2026-W08",
+            "hours": 104.0
+          },
+          {
+            "bucket_key": "2026-W09",
+            "bucket_label": "2026-W09",
+            "hours": 48.0
+          },
+          {
+            "bucket_key": "remaining_hours",
+            "bucket_label": "Remaining Hours",
+            "hours": 1012.0
+          }
+        ],
+        "dispensed_in_range_hours": 244.0,
+        "dispensed_stack_hours": 1256.0,
+        "dispensed_subtask_hours": 415.0,
+        "epic_count": 3,
+        "planned_epic_hours": 1256.0,
+        "project_key": "MN",
+        "project_name": "OmniChat",
+        "remaining_hours": 841.0,
+        "remaining_hours_outside_range": 1012.0,
+        "story_count": 15,
+        "subtask_count": 63
+      },
+      {
+        "actual_bucket_mode": "week",
+        "actual_buckets": [
+          {
+            "bucket_key": "2026-W06",
+            "bucket_label": "2026-W06",
+            "hours": 590.0
+          },
+          {
+            "bucket_key": "2026-W07",
+            "bucket_label": "2026-W07",
+            "hours": 637.0
+          },
+          {
+            "bucket_key": "2026-W08",
+            "bucket_label": "2026-W08",
+            "hours": 684.5
+          },
+          {
+            "bucket_key": "2026-W09",
+            "bucket_label": "2026-W09",
+            "hours": 606.16
+          },
+          {
+            "bucket_key": "remaining_hours",
+            "bucket_label": "Remaining Hours",
+            "hours": 339.5
+          }
+        ],
+        "actual_hours": 2857.16,
+        "actual_in_range_hours": 2517.66,
+        "actual_stack_hours": 2857.16,
+        "dispensed_bucket_mode": "week",
+        "dispensed_buckets": [
+          {
+            "bucket_key": "2026-W06",
+            "bucket_label": "2026-W06",
+            "hours": 702.5
+          },
+          {
+            "bucket_key": "2026-W07",
+            "bucket_label": "2026-W07",
+            "hours": 535.5
+          },
+          {
+            "bucket_key": "2026-W08",
+            "bucket_label": "2026-W08",
+            "hours": 523.5
+          },
+          {
+            "bucket_key": "2026-W09",
+            "bucket_label": "2026-W09",
+            "hours": 708.72
+          },
+          {
+            "bucket_key": "remaining_hours",
+            "bucket_label": "Remaining Hours",
+            "hours": 2545.78
+          }
+        ],
+        "dispensed_in_range_hours": 2470.22,
+        "dispensed_stack_hours": 5016.0,
+        "dispensed_subtask_hours": 6031.3,
+        "epic_count": 35,
+        "planned_epic_hours": 5016.0,
+        "project_key": "O2",
+        "project_name": "OmniConnect",
+        "remaining_hours": -1015.3,
+        "remaining_hours_outside_range": 2545.78,
+        "story_count": 216,
+        "subtask_count": 567
+      },
+      {
+        "actual_bucket_mode": "week",
+        "actual_buckets": [
+          {
+            "bucket_key": "2026-W06",
+            "bucket_label": "2026-W06",
+            "hours": 42.5
+          },
+          {
+            "bucket_key": "2026-W07",
+            "bucket_label": "2026-W07",
+            "hours": 64.0
+          },
+          {
+            "bucket_key": "2026-W08",
+            "bucket_label": "2026-W08",
+            "hours": 2.0
+          }
+        ],
+        "actual_hours": 108.5,
+        "actual_in_range_hours": 108.5,
+        "actual_stack_hours": 108.5,
+        "dispensed_bucket_mode": "week",
+        "dispensed_buckets": [
+          {
+            "bucket_key": "2026-W06",
+            "bucket_label": "2026-W06",
+            "hours": 38.5
+          },
+          {
+            "bucket_key": "2026-W07",
+            "bucket_label": "2026-W07",
+            "hours": 43.5
+          },
+          {
+            "bucket_key": "2026-W08",
+            "bucket_label": "2026-W08",
+            "hours": 2.0
+          }
+        ],
+        "dispensed_in_range_hours": 84.0,
+        "dispensed_stack_hours": 84.0,
+        "dispensed_subtask_hours": 120.0,
+        "epic_count": 3,
+        "planned_epic_hours": 0.0,
+        "project_key": "ODL",
+        "project_name": "ODL Miscellaneous",
+        "remaining_hours": -120.0,
+        "remaining_hours_outside_range": 0.0,
+        "story_count": 8,
+        "subtask_count": 63
+      },
+      {
+        "actual_bucket_mode": "week",
+        "actual_buckets": [
+          {
+            "bucket_key": "2026-W06",
+            "bucket_label": "2026-W06",
+            "hours": 16.0
+          },
+          {
+            "bucket_key": "2026-W07",
+            "bucket_label": "2026-W07",
+            "hours": 16.0
+          },
+          {
+            "bucket_key": "2026-W08",
+            "bucket_label": "2026-W08",
+            "hours": 16.0
+          },
+          {
+            "bucket_key": "2026-W09",
+            "bucket_label": "2026-W09",
+            "hours": 13.0
+          }
+        ],
+        "actual_hours": 61.0,
+        "actual_in_range_hours": 61.0,
+        "actual_stack_hours": 61.0,
+        "dispensed_bucket_mode": "week",
+        "dispensed_buckets": [
+          {
+            "bucket_key": "2026-W06",
+            "bucket_label": "2026-W06",
+            "hours": 16.0
+          },
+          {
+            "bucket_key": "2026-W07",
+            "bucket_label": "2026-W07",
+            "hours": 16.0
+          },
+          {
+            "bucket_key": "2026-W08",
+            "bucket_label": "2026-W08",
+            "hours": 16.0
+          },
+          {
+            "bucket_key": "2026-W09",
+            "bucket_label": "2026-W09",
+            "hours": 13.0
+          },
+          {
+            "bucket_key": "remaining_hours",
+            "bucket_label": "Remaining Hours",
+            "hours": 699.0
+          }
+        ],
+        "dispensed_in_range_hours": 61.0,
+        "dispensed_stack_hours": 760.0,
+        "dispensed_subtask_hours": 127.0,
+        "epic_count": 1,
+        "planned_epic_hours": 760.0,
+        "project_key": "WOM",
+        "project_name": "Work Order Management",
+        "remaining_hours": 633.0,
+        "remaining_hours_outside_range": 699.0,
+        "story_count": 7,
+        "subtask_count": 13
+      }
+    ],
+    "selected_projects": [
+      "CRM",
+      "DIGITALLOG",
+      "FF",
+      "MN",
+      "O2",
+      "ODL",
+      "WOM"
+    ],
+    "source": "canonical_db",
+    "to_date": "2026-02-28"
+  },
+  "GET /api/approved-vs-planned-hours/summary": {
+    "actual_bucket_mode": "week",
+    "default_selected_projects": [
+      "CRM",
+      "DIGITALLOG",
+      "FF",
+      "MN",
+      "O2",
+      "ODL",
+      "WOM"
+    ],
+    "dispensed_bucket_mode": "week",
+    "filter_options": {
+      "assignees": [
+        "Aiza Hamid",
+        "Ali Qumail",
+        "Ameer Hamza Khan",
+        "Arsalan Zafar Khan",
+        "Arslan sohail",
+        "Ayyan Babar",
+        "DANIYAL AHMAD",
+        "Danish Rashid",
+        "Faiq Butt",
+        "Faiza Nasir",
+        "Hamza Ali",
+        "Hassan Malik",
+        "Hassan Saeed Wattoo",
+        "Hassan Wali",
+        "Ibrahim Ahmed Qureshi",
+        "Maria Sharafat",
+        "Mariam Zulfiqar",
+        "Mohsin Junaid",
+        "Muhammad Abbas",
+        "Muhammad Abdul Wasi",
+        "Muhammad Abdullah",
+        "Muhammad Ahmad Saleem",
+        "Muhammad Imran Aslam",
+        "Muhammad Usman Javed",
+        "Muhammad Yousha  Agha",
+        "Muhammad Zeeshan Aslam",
+        "Namra Zahid",
+        "Sarmad Sabir",
+        "Syed Yousaf Qadri",
+        "Taimur Zahid",
+        "Unassigned",
+        "Usama Tariq",
+        "Waqar Rasheed",
+        "Zain Munir",
+        "Zeeshan Sarwar",
+        "ahad omer",
+        "awais akhter",
+        "kamran khalid",
+        "nadeem ahmed",
+        "yousha.agha"
+      ],
+      "project_options": [
+        {
+          "project_key": "CRM",
+          "project_name": "CRM"
+        },
+        {
+          "project_key": "DIGITALLOG",
+          "project_name": "Digital Log"
+        },
+        {
+          "project_key": "FF",
+          "project_name": "Fintech Fuel"
+        },
+        {
+          "project_key": "MN",
+          "project_name": "OmniChat"
+        },
+        {
+          "project_key": "O2",
+          "project_name": "OmniConnect"
+        },
+        {
+          "project_key": "ODL",
+          "project_name": "ODL Miscellaneous"
+        },
+        {
+          "project_key": "RLT",
+          "project_name": "RnD Leaves"
+        },
+        {
+          "project_key": "WOM",
+          "project_name": "Work Order Management"
+        }
+      ],
+      "projects": [
+        "CRM",
+        "DIGITALLOG",
+        "FF",
+        "MN",
+        "O2",
+        "ODL",
+        "RLT",
+        "WOM"
+      ],
+      "statuses": [
+        "Backlog / To Do",
+        "Bug Fixed",
+        "Considered in Roadmap & Queued",
+        "Development",
+        "Draft.",
+        "Failed Testing",
+        "In-Process",
+        "In-Progress",
+        "Not a Bug",
+        "On Hold",
+        "QA Testing",
+        "Resolved",
+        "Resolved!",
+        "To Do"
+      ]
+    },
+    "from_date": "2026-02-01",
+    "missing_plan": {
+      "count": 0,
+      "enabled": false,
+      "message": "The following epics in selected date range do not have planned hours in Epics Planner. Either switch source or specify plan in Epics Planner.",
+      "projects": []
+    },
+    "mode": "log_date",
+    "ok": true,
+    "plan_source": "jira_estimates",
+    "rows": [
+      {
+        "actual_bucket_mode": "week",
+        "actual_buckets": [
+          {
+            "bucket_key": "2026-W07",
+            "bucket_label": "2026-W07",
+            "hours": 8.0
+          },
+          {
+            "bucket_key": "2026-W08",
+            "bucket_label": "2026-W08",
+            "hours": 6.5
+          },
+          {
+            "bucket_key": "2026-W09",
+            "bucket_label": "2026-W09",
+            "hours": 6.5
+          }
+        ],
+        "actual_hours": 21.0,
+        "actual_in_range_hours": 21.0,
+        "actual_stack_hours": 21.0,
+        "dispensed_bucket_mode": "week",
+        "dispensed_buckets": [
+          {
+            "bucket_key": "2026-W07",
+            "bucket_label": "2026-W07",
+            "hours": 8.0
+          },
+          {
+            "bucket_key": "2026-W08",
+            "bucket_label": "2026-W08",
+            "hours": 6.5
+          },
+          {
+            "bucket_key": "2026-W09",
+            "bucket_label": "2026-W09",
+            "hours": 6.5
+          },
+          {
+            "bucket_key": "remaining_hours",
+            "bucket_label": "Remaining Hours",
+            "hours": 171.0
+          }
+        ],
+        "dispensed_in_range_hours": 21.0,
+        "dispensed_stack_hours": 192.0,
+        "dispensed_subtask_hours": 35.5,
+        "epic_count": 1,
+        "planned_epic_hours": 192.0,
+        "project_key": "CRM",
+        "project_name": "CRM",
+        "remaining_hours": 156.5,
+        "remaining_hours_outside_range": 171.0,
+        "story_count": 1,
+        "subtask_count": 5
+      },
+      {
+        "actual_bucket_mode": "week",
+        "actual_buckets": [
+          {
+            "bucket_key": "2026-W06",
+            "bucket_label": "2026-W06",
+            "hours": 128.0
+          },
+          {
+            "bucket_key": "2026-W07",
+            "bucket_label": "2026-W07",
+            "hours": 174.0
+          },
+          {
+            "bucket_key": "2026-W08",
+            "bucket_label": "2026-W08",
+            "hours": 149.0
+          },
+          {
+            "bucket_key": "2026-W09",
+            "bucket_label": "2026-W09",
+            "hours": 89.0
+          },
+          {
+            "bucket_key": "remaining_hours",
+            "bucket_label": "Remaining Hours",
+            "hours": 30.5
+          }
+        ],
+        "actual_hours": 570.5,
+        "actual_in_range_hours": 540.0,
+        "actual_stack_hours": 570.5,
+        "dispensed_bucket_mode": "week",
+        "dispensed_buckets": [
+          {
+            "bucket_key": "2026-W06",
+            "bucket_label": "2026-W06",
+            "hours": 152.0
+          },
+          {
+            "bucket_key": "2026-W07",
+            "bucket_label": "2026-W07",
+            "hours": 168.0
+          },
+          {
+            "bucket_key": "2026-W08",
+            "bucket_label": "2026-W08",
+            "hours": 183.0
+          },
+          {
+            "bucket_key": "2026-W09",
+            "bucket_label": "2026-W09",
+            "hours": 122.0
+          },
+          {
+            "bucket_key": "remaining_hours",
+            "bucket_label": "Remaining Hours",
+            "hours": 823.0
+          }
+        ],
+        "dispensed_in_range_hours": 625.0,
+        "dispensed_stack_hours": 1448.0,
+        "dispensed_subtask_hours": 1315.0,
+        "epic_count": 9,
+        "planned_epic_hours": 1448.0,
+        "project_key": "DIGITALLOG",
+        "project_name": "Digital Log",
+        "remaining_hours": 133.0,
+        "remaining_hours_outside_range": 823.0,
+        "story_count": 32,
+        "subtask_count": 160
+      },
+      {
+        "actual_bucket_mode": "week",
+        "actual_buckets": [
+          {
+            "bucket_key": "2026-W06",
+            "bucket_label": "2026-W06",
+            "hours": 150.0
+          },
+          {
+            "bucket_key": "2026-W07",
+            "bucket_label": "2026-W07",
+            "hours": 205.0
+          },
+          {
+            "bucket_key": "2026-W08",
+            "bucket_label": "2026-W08",
+            "hours": 132.08
+          },
+          {
+            "bucket_key": "2026-W09",
+            "bucket_label": "2026-W09",
+            "hours": 168.05
+          },
+          {
+            "bucket_key": "remaining_hours",
+            "bucket_label": "Remaining Hours",
+            "hours": 155.0
+          }
+        ],
+        "actual_hours": 810.13,
+        "actual_in_range_hours": 655.13,
+        "actual_stack_hours": 810.13,
+        "dispensed_bucket_mode": "week",
+        "dispensed_buckets": [
+          {
+            "bucket_key": "2026-W05",
+            "bucket_label": "2026-W05",
+            "hours": 24.0
+          },
+          {
+            "bucket_key": "2026-W06",
+            "bucket_label": "2026-W06",
+            "hours": 158.0
+          },
+          {
+            "bucket_key": "2026-W07",
+            "bucket_label": "2026-W07",
+            "hours": 180.0
+          },
+          {
+            "bucket_key": "2026-W08",
+            "bucket_label": "2026-W08",
+            "hours": 355.67
+          },
+          {
+            "bucket_key": "2026-W09",
+            "bucket_label": "2026-W09",
+            "hours": 355.02
+          },
+          {
+            "bucket_key": "remaining_hours",
+            "bucket_label": "Remaining Hours",
+            "hours": 279.31
+          }
+        ],
+        "dispensed_in_range_hours": 1072.69,
+        "dispensed_stack_hours": 1352.0,
+        "dispensed_subtask_hours": 1656.21,
+        "epic_count": 8,
+        "planned_epic_hours": 1352.0,
+        "project_key": "FF",
+        "project_name": "Fintech Fuel",
+        "remaining_hours": -304.21,
+        "remaining_hours_outside_range": 279.31,
+        "story_count": 34,
+        "subtask_count": 205
+      },
+      {
+        "actual_bucket_mode": "week",
+        "actual_buckets": [
+          {
+            "bucket_key": "2026-W06",
+            "bucket_label": "2026-W06",
+            "hours": 24.0
+          },
+          {
+            "bucket_key": "2026-W07",
+            "bucket_label": "2026-W07",
+            "hours": 66.0
+          },
+          {
+            "bucket_key": "2026-W08",
+            "bucket_label": "2026-W08",
+            "hours": 109.0
+          },
+          {
+            "bucket_key": "2026-W09",
+            "bucket_label": "2026-W09",
+            "hours": 46.5
+          }
+        ],
+        "actual_hours": 245.5,
+        "actual_in_range_hours": 245.5,
+        "actual_stack_hours": 245.5,
+        "dispensed_bucket_mode": "week",
+        "dispensed_buckets": [
+          {
+            "bucket_key": "2026-W06",
+            "bucket_label": "2026-W06",
+            "hours": 24.0
+          },
+          {
+            "bucket_key": "2026-W07",
+            "bucket_label": "2026-W07",
+            "hours": 68.0
+          },
+          {
+            "bucket_key": "2026-W08",
+            "bucket_label": "2026-W08",
+            "hours": 104.0
+          },
+          {
+            "bucket_key": "2026-W09",
+            "bucket_label": "2026-W09",
+            "hours": 48.0
+          },
+          {
+            "bucket_key": "remaining_hours",
+            "bucket_label": "Remaining Hours",
+            "hours": 1012.0
+          }
+        ],
+        "dispensed_in_range_hours": 244.0,
+        "dispensed_stack_hours": 1256.0,
+        "dispensed_subtask_hours": 415.0,
+        "epic_count": 3,
+        "planned_epic_hours": 1256.0,
+        "project_key": "MN",
+        "project_name": "OmniChat",
+        "remaining_hours": 841.0,
+        "remaining_hours_outside_range": 1012.0,
+        "story_count": 15,
+        "subtask_count": 63
+      },
+      {
+        "actual_bucket_mode": "week",
+        "actual_buckets": [
+          {
+            "bucket_key": "2026-W06",
+            "bucket_label": "2026-W06",
+            "hours": 590.0
+          },
+          {
+            "bucket_key": "2026-W07",
+            "bucket_label": "2026-W07",
+            "hours": 637.0
+          },
+          {
+            "bucket_key": "2026-W08",
+            "bucket_label": "2026-W08",
+            "hours": 684.5
+          },
+          {
+            "bucket_key": "2026-W09",
+            "bucket_label": "2026-W09",
+            "hours": 606.16
+          },
+          {
+            "bucket_key": "remaining_hours",
+            "bucket_label": "Remaining Hours",
+            "hours": 339.5
+          }
+        ],
+        "actual_hours": 2857.16,
+        "actual_in_range_hours": 2517.66,
+        "actual_stack_hours": 2857.16,
+        "dispensed_bucket_mode": "week",
+        "dispensed_buckets": [
+          {
+            "bucket_key": "2026-W06",
+            "bucket_label": "2026-W06",
+            "hours": 702.5
+          },
+          {
+            "bucket_key": "2026-W07",
+            "bucket_label": "2026-W07",
+            "hours": 535.5
+          },
+          {
+            "bucket_key": "2026-W08",
+            "bucket_label": "2026-W08",
+            "hours": 523.5
+          },
+          {
+            "bucket_key": "2026-W09",
+            "bucket_label": "2026-W09",
+            "hours": 708.72
+          },
+          {
+            "bucket_key": "remaining_hours",
+            "bucket_label": "Remaining Hours",
+            "hours": 2545.78
+          }
+        ],
+        "dispensed_in_range_hours": 2470.22,
+        "dispensed_stack_hours": 5016.0,
+        "dispensed_subtask_hours": 6031.3,
+        "epic_count": 35,
+        "planned_epic_hours": 5016.0,
+        "project_key": "O2",
+        "project_name": "OmniConnect",
+        "remaining_hours": -1015.3,
+        "remaining_hours_outside_range": 2545.78,
+        "story_count": 216,
+        "subtask_count": 567
+      },
+      {
+        "actual_bucket_mode": "week",
+        "actual_buckets": [
+          {
+            "bucket_key": "2026-W06",
+            "bucket_label": "2026-W06",
+            "hours": 42.5
+          },
+          {
+            "bucket_key": "2026-W07",
+            "bucket_label": "2026-W07",
+            "hours": 64.0
+          },
+          {
+            "bucket_key": "2026-W08",
+            "bucket_label": "2026-W08",
+            "hours": 2.0
+          }
+        ],
+        "actual_hours": 108.5,
+        "actual_in_range_hours": 108.5,
+        "actual_stack_hours": 108.5,
+        "dispensed_bucket_mode": "week",
+        "dispensed_buckets": [
+          {
+            "bucket_key": "2026-W06",
+            "bucket_label": "2026-W06",
+            "hours": 38.5
+          },
+          {
+            "bucket_key": "2026-W07",
+            "bucket_label": "2026-W07",
+            "hours": 43.5
+          },
+          {
+            "bucket_key": "2026-W08",
+            "bucket_label": "2026-W08",
+            "hours": 2.0
+          }
+        ],
+        "dispensed_in_range_hours": 84.0,
+        "dispensed_stack_hours": 84.0,
+        "dispensed_subtask_hours": 120.0,
+        "epic_count": 3,
+        "planned_epic_hours": 0.0,
+        "project_key": "ODL",
+        "project_name": "ODL Miscellaneous",
+        "remaining_hours": -120.0,
+        "remaining_hours_outside_range": 0.0,
+        "story_count": 8,
+        "subtask_count": 63
+      },
+      {
+        "actual_bucket_mode": "week",
+        "actual_buckets": [
+          {
+            "bucket_key": "2026-W06",
+            "bucket_label": "2026-W06",
+            "hours": 16.0
+          },
+          {
+            "bucket_key": "2026-W07",
+            "bucket_label": "2026-W07",
+            "hours": 16.0
+          },
+          {
+            "bucket_key": "2026-W08",
+            "bucket_label": "2026-W08",
+            "hours": 16.0
+          },
+          {
+            "bucket_key": "2026-W09",
+            "bucket_label": "2026-W09",
+            "hours": 13.0
+          }
+        ],
+        "actual_hours": 61.0,
+        "actual_in_range_hours": 61.0,
+        "actual_stack_hours": 61.0,
+        "dispensed_bucket_mode": "week",
+        "dispensed_buckets": [
+          {
+            "bucket_key": "2026-W06",
+            "bucket_label": "2026-W06",
+            "hours": 16.0
+          },
+          {
+            "bucket_key": "2026-W07",
+            "bucket_label": "2026-W07",
+            "hours": 16.0
+          },
+          {
+            "bucket_key": "2026-W08",
+            "bucket_label": "2026-W08",
+            "hours": 16.0
+          },
+          {
+            "bucket_key": "2026-W09",
+            "bucket_label": "2026-W09",
+            "hours": 13.0
+          },
+          {
+            "bucket_key": "remaining_hours",
+            "bucket_label": "Remaining Hours",
+            "hours": 699.0
+          }
+        ],
+        "dispensed_in_range_hours": 61.0,
+        "dispensed_stack_hours": 760.0,
+        "dispensed_subtask_hours": 127.0,
+        "epic_count": 1,
+        "planned_epic_hours": 760.0,
+        "project_key": "WOM",
+        "project_name": "Work Order Management",
+        "remaining_hours": 633.0,
+        "remaining_hours_outside_range": 699.0,
+        "story_count": 7,
+        "subtask_count": 13
+      }
+    ],
+    "selected_projects": [
+      "CRM",
+      "DIGITALLOG",
+      "FF",
+      "MN",
+      "O2",
+      "ODL",
+      "WOM"
+    ],
+    "source": "canonical_db",
+    "to_date": "2026-02-28"
+  }
+}

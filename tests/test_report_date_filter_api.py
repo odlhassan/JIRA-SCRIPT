@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from time import sleep
 from pathlib import Path
 from unittest.mock import patch
 
@@ -135,22 +136,20 @@ class ReportDateFilterApiTests(unittest.TestCase):
             self.assertEqual(save.status_code, 200)
 
             actual_resp = client.get("/api/actual-hours/aggregate?mode=log_date&report=test")
-            self.assertEqual(actual_resp.status_code, 200)
+            self.assertEqual(actual_resp.status_code, 409)
             actual_json = actual_resp.get_json()
-            self.assertTrue(actual_json.get("ok"))
-            self.assertEqual(actual_json.get("from_date"), "2026-02-01")
-            self.assertEqual(actual_json.get("to_date"), "2026-02-28")
+            self.assertFalse(actual_json.get("ok"))
+            self.assertIn("No successful canonical refresh found", actual_json.get("error", ""))
 
             with (
                 patch("report_server.get_session", return_value=object()),
                 patch("report_server._load_planned_vs_dispensed_hierarchy", return_value=hierarchy),
             ):
                 summary_resp = client.get("/api/planned-vs-dispensed/summary?mode=log_date&projects=O2")
-                self.assertEqual(summary_resp.status_code, 200)
+                self.assertEqual(summary_resp.status_code, 409)
                 summary_json = summary_resp.get_json()
-                self.assertTrue(summary_json.get("ok"))
-                self.assertEqual(summary_json.get("from_date"), "2026-02-01")
-                self.assertEqual(summary_json.get("to_date"), "2026-02-28")
+                self.assertFalse(summary_json.get("ok"))
+                self.assertIn("No successful canonical refresh found", summary_json.get("error", ""))
 
             capacity_resp = client.get("/api/capacity")
             self.assertEqual(capacity_resp.status_code, 200)
@@ -176,6 +175,67 @@ class ReportDateFilterApiTests(unittest.TestCase):
             self.assertEqual(resp.status_code, 200)
             html = resp.get_data(as_text=True)
             self.assertIn("shared-date-filter.js", html)
+
+    def test_dashboard_html_promotes_newer_root_source_before_serving(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            app = _build_app(root)
+            client = app.test_client()
+            report_dashboard = root / "report_html" / "dashboard.html"
+            report_dashboard.write_text("<html><body>old dashboard</body></html>", encoding="utf-8")
+            sleep(1.1)
+            (root / "dashboard.html").write_text("<html><body>new dashboard</body></html>", encoding="utf-8")
+
+            resp = client.get("/dashboard.html")
+            self.assertEqual(resp.status_code, 200)
+            html = resp.get_data(as_text=True)
+            self.assertIn("new dashboard", html)
+            self.assertIn("no-store", resp.headers.get("Cache-Control", ""))
+            self.assertIn("new dashboard", report_dashboard.read_text(encoding="utf-8"))
+
+    def test_employee_performance_html_promotes_newer_root_source_before_serving(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            app = _build_app(root)
+            client = app.test_client()
+            report_path = root / "report_html" / "employee_performance_report.html"
+            report_path.write_text("<html><body>old employee report</body></html>", encoding="utf-8")
+            sleep(1.1)
+            (root / "employee_performance_report.html").write_text(
+                "<html><body>new employee report</body></html>", encoding="utf-8"
+            )
+
+            resp = client.get("/employee_performance_report.html")
+            self.assertEqual(resp.status_code, 200)
+            self.assertIn("new employee report", resp.get_data(as_text=True))
+            self.assertIn("new employee report", report_path.read_text(encoding="utf-8"))
+
+    def test_report_html_keeps_current_copy_when_root_source_is_older(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            (root / "dashboard.html").write_text("<html><body>older root</body></html>", encoding="utf-8")
+            sleep(1.1)
+            app = _build_app(root)
+            client = app.test_client()
+            report_dashboard = root / "report_html" / "dashboard.html"
+            report_dashboard.write_text("<html><body>current published</body></html>", encoding="utf-8")
+
+            resp = client.get("/dashboard.html")
+            self.assertEqual(resp.status_code, 200)
+            html = resp.get_data(as_text=True)
+            self.assertIn("current published", html)
+            self.assertNotIn("older root", html)
+
+    def test_report_html_falls_back_when_only_published_copy_exists(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            app = _build_app(root)
+            client = app.test_client()
+
+            resp = client.get("/dashboard.html")
+            self.assertEqual(resp.status_code, 200)
+            self.assertIn("ok", resp.get_data(as_text=True))
+            self.assertIn("no-store", resp.headers.get("Cache-Control", ""))
 
 
 if __name__ == "__main__":

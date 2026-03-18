@@ -36,7 +36,7 @@ SUBTASK_WORKLOGS_COLS = [
     "worklog_author",
 ]
 
-# Column names for work_items (29 cols) - match xlsx headers (already snake_case or with spaces; we use snake_case in DB)
+# Column names for work_items (28 cols) - match xlsx headers (already snake_case or with spaces; we use snake_case in DB)
 WORK_ITEMS_COLS = [
     "project_key",
     "issue_key",
@@ -46,7 +46,6 @@ WORK_ITEMS_COLS = [
     "fix_type",
     "summary",
     "status",
-    "resolved_stable_since_date",
     "start_date",
     "end_date",
     "actual_start_date",
@@ -213,7 +212,6 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             fix_type TEXT,
             summary TEXT,
             status TEXT,
-            resolved_stable_since_date TEXT,
             start_date TEXT,
             end_date TEXT,
             actual_start_date TEXT,
@@ -403,7 +401,7 @@ def _work_items_row_from_list(row: list) -> list:
 
 
 def write_work_items(conn: sqlite3.Connection, rows: list[list]) -> None:
-    """Full-replace work_items table. rows are 29-element lists in WORK_ITEMS_COLS order."""
+    """Full-replace work_items table. rows are 28-element lists in WORK_ITEMS_COLS order."""
     conn.execute("DELETE FROM work_items")
     if not rows:
         conn.commit()
@@ -436,6 +434,54 @@ def write_subtask_worklog_rollup(conn: sqlite3.Connection, rows: list[list[objec
         values = [_cell(row[i]) if i < len(row) else None for i in range(len(SUBTASK_ROLLUP_COLS))]
         conn.execute(sql, values)
     conn.commit()
+
+
+def read_work_items(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    """Return all work_items as list of dicts with keys matching WORK_ITEMS_COLS (snake_case)."""
+    cur = conn.execute(
+        "SELECT "
+        "project_key, issue_key, work_item_id, work_item_type, jira_issue_type, fix_type, summary, status, "
+        "start_date, end_date, actual_start_date, actual_end_date, original_estimate, original_estimate_hours, "
+        "assignee, total_hours_logged, priority, parent_issue_key, parent_work_item_id, parent_jira_url, "
+        "jira_url, latest_ipp_meeting, jira_ipp_rmi_dates_altered, ipp_actual_date, ipp_remarks, "
+        "ipp_actual_date_matches_jira_end_date, created, updated "
+        "FROM work_items"
+    )
+    rows = []
+    for row in cur.fetchall():
+        rows.append(
+            {
+                "project_key": row[0],
+                "issue_key": row[1],
+                "work_item_id": row[2],
+                "work_item_type": row[3],
+                "jira_issue_type": row[4],
+                "fix_type": row[5],
+                "summary": row[6],
+                "status": row[7],
+                "start_date": row[8],
+                "end_date": row[9],
+                "actual_start_date": row[10],
+                "actual_end_date": row[11],
+                "original_estimate": row[12],
+                "original_estimate_hours": row[13],
+                "assignee": row[14],
+                "total_hours_logged": row[15],
+                "priority": row[16],
+                "parent_issue_key": row[17],
+                "parent_work_item_id": row[18],
+                "parent_jira_url": row[19],
+                "jira_url": row[20],
+                "latest_ipp_meeting": row[21],
+                "jira_ipp_rmi_dates_altered": row[22],
+                "ipp_actual_date": row[23],
+                "ipp_remarks": row[24],
+                "ipp_actual_date_matches_jira_end_date": row[25],
+                "created": row[26],
+                "updated": row[27],
+            }
+        )
+    return rows
 
 
 def read_subtask_worklog_rollup(conn: sqlite3.Connection) -> dict[str, dict[str, object]]:

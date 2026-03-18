@@ -1,0 +1,37 @@
+TEST 1 - Initial Load:
+Total Capacity: 4900h
+Total Planned Hours: 4698.91h
+Total Leaves Planned: 224h
+Total Actual Hours: 3801.01h
+Availability (Capacity - Leaves): 4676h
+Total Leaves Taken: Element not found
+Row Count: 687 rows visible
+Date Range: 2026-01-31 to 2026-02-28
+
+TEST 2 - January 2026 (2026-01-01 to 2026-01-31):
+Total Capacity: 6160h
+Total Planned Hours: 3440.02h
+Total Leaves Planned: 0h
+Total Actual Hours: 3313.5h
+Availability (Capacity - Leaves): 6160h
+Total Leaves Taken: Element not found
+Row Count: 531 rows visible
+
+TEST 3 - February 2026 (2026-02-01 to 2026-02-28):
+Total Capacity: 4900h
+Total Planned Hours: 4698.91h
+Total Leaves Planned: 224h
+Total Actual Hours: 3801.01h
+Availability (Capacity - Leaves): 4676h
+Total Leaves Taken: Element not found
+Row Count: 687 rows visible
+
+No JavaScript errors found.
+
+============================================================
+ANALYSIS SUMMARY
+============================================================
+Values changed from Initial to Jan 2026: True
+Values changed from Jan 2026 to Feb 2026: True
+
+[SUCCESS] Scorecard values changed correctly with date changes!

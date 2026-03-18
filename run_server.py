@@ -96,11 +96,11 @@ def main() -> None:
         print("[server] Skipping report-html sync (--no-sync).")
     else:
         _run_planned_vs_dispensed_script(base_dir)
-        moved = sync_report_html(base_dir, args.report_html_dir)
-        if moved == 0:
-            print("[server] report-html sync completed: no files moved.")
+        synced = sync_report_html(base_dir, args.report_html_dir)
+        if synced == 0:
+            print("[server] report-html sync completed: no files updated.")
         else:
-            print(f"[server] report-html sync completed: {moved} file(s) moved.")
+            print(f"[server] report-html sync completed: {synced} file(s) updated.")
 
     port = _resolve_server_port(args.host, args.port)
 

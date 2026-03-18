@@ -72,11 +72,15 @@ def _seed_canonical_run(db_path: Path, run_id: str = "canonical-test-run") -> st
             ("O2-EP1", "O2", "Epic", "", "2026-02-10", "2026-02-20", "", "O2-EP1"),
             ("O2-ST1", "O2", "Story", "O2-EP1", "", "", "O2-ST1", "O2-EP1"),
             ("O2-SUB1", "O2", "Sub-task", "O2-ST1", "2026-02-12", "2026-02-18", "O2-ST1", "O2-EP1"),
+            ("FF-EP1", "FF", "Epic", "", "2026-02-10", "2026-02-20", "", "FF-EP1"),
+            ("FF-ST1", "FF", "Story", "FF-EP1", "", "", "FF-ST1", "FF-EP1"),
+            ("FF-451", "FF", "Bug Subtask", "FF-ST1", "2026-02-12", "2026-02-18", "FF-ST1", "FF-EP1"),
             ("O2-EP2", "O2", "Epic", "", "2026-01-01", "2026-01-05", "", "O2-EP2"),
             ("O2-ST2", "O2", "Story", "O2-EP2", "", "", "O2-ST2", "O2-EP2"),
             ("O2-SUB2", "O2", "Sub-task", "O2-ST2", "2026-01-02", "2026-01-04", "O2-ST2", "O2-EP2"),
         ]
         for idx, (issue_key, project_key, issue_type, parent_key, start_date, due_date, story_key, epic_key) in enumerate(issues, start=1):
+            assignee = "Fiona" if issue_key.startswith("FF-") else ("Alice" if "1" in issue_key else "Bob")
             conn.execute(
                 """
                 INSERT OR REPLACE INTO canonical_issues(
@@ -85,7 +89,7 @@ def _seed_canonical_run(db_path: Path, run_id: str = "canonical-test-run") -> st
                     original_estimate_hours, total_hours_logged, fix_type, parent_issue_key, story_key, epic_key, raw_payload_json
                 ) VALUES (?, ?, ?, ?, ?, ?, 'Open', ?, ?, ?, ?, ?, '', 0, 0, '', ?, ?, ?, '{}')
                 """,
-                (run_id, str(idx), issue_key, project_key, issue_type, issue_key, "Alice" if "1" in issue_key else "Bob", start_date, due_date, now, now, parent_key, story_key, epic_key),
+                (run_id, str(idx), issue_key, project_key, issue_type, issue_key, assignee, start_date, due_date, now, now, parent_key, story_key, epic_key),
             )
             conn.execute(
                 """
@@ -98,6 +102,8 @@ def _seed_canonical_run(db_path: Path, run_id: str = "canonical-test-run") -> st
         for worklog_id, issue_key, started_date, hours, author in [
             ("wl-1", "O2-SUB1", "2026-02-15", 3.0, "Alice"),
             ("wl-2", "O2-SUB1", "2026-03-01", 2.0, "Alice"),
+            ("wl-ff-1", "FF-451", "2026-02-20", 5.0, "Fiona"),
+            ("wl-ff-2", "FF-451", "2026-03-02", 7.0, "Fiona"),
             ("wl-3", "O2-SUB2", "2026-02-16", 4.0, "Bob"),
         ]:
             conn.execute(
@@ -135,8 +141,9 @@ class ActualHoursAggregateApiTests(unittest.TestCase):
             self.assertEqual(log_payload.get("mode"), "log_date")
             self.assertEqual(log_payload.get("source_file"), "canonical_db")
             self.assertEqual(log_payload["epic_hours_by_issue"].get("O2-EP1"), 3.0)
-            self.assertEqual(log_payload["epic_hours_by_issue"].get("O2-EP2"), 4.0)
-            self.assertEqual(log_payload["project_hours_by_key"].get("O2"), 7.0)
+            self.assertIsNone(log_payload["epic_hours_by_issue"].get("O2-EP2"))
+            self.assertEqual(log_payload["project_hours_by_key"].get("O2"), 3.0)
+            self.assertEqual(log_payload["project_hours_by_key"].get("FF"), 5.0)
 
             planned_resp = client.get(
                 "/api/actual-hours/aggregate?from=2026-02-01&to=2026-02-28&mode=planned_dates&report=test"
@@ -146,11 +153,38 @@ class ActualHoursAggregateApiTests(unittest.TestCase):
             self.assertTrue(planned_payload.get("ok"))
             self.assertEqual(planned_payload.get("mode"), "planned_dates")
             self.assertEqual(planned_payload["epic_hours_by_issue"].get("O2-EP1"), 5.0)
+            self.assertEqual(planned_payload["epic_hours_by_issue"].get("FF-EP1"), 12.0)
             self.assertIsNone(planned_payload["epic_hours_by_issue"].get("O2-EP2"))
             self.assertEqual(planned_payload["project_hours_by_key"].get("O2"), 5.0)
+            self.assertEqual(planned_payload["project_hours_by_key"].get("FF"), 12.0)
             day_map = planned_payload["assignee_hours_by_period"]["day"]
             self.assertEqual(day_map["2026-02-15"]["Alice"], 3.0)
             self.assertIsNone(day_map.get("2026-03-01"))
+
+            scoped_log_resp = client.get(
+                "/api/scoped-subtasks?from=2026-02-01&to=2026-02-28&mode=log_date&projects=O2,FF"
+            )
+            self.assertEqual(scoped_log_resp.status_code, 200)
+            scoped_log_payload = scoped_log_resp.get_json() or {}
+            self.assertTrue(scoped_log_payload.get("ok"))
+            self.assertEqual(scoped_log_payload.get("total_subtasks"), 2)
+            self.assertEqual(scoped_log_payload.get("total_assignees"), 2)
+            self.assertEqual(scoped_log_payload.get("total_planned_hours"), 0.0)
+            self.assertEqual(scoped_log_payload.get("total_actual_hours"), 8.0)
+            scoped_by_key = {str(row.get("issue_key")): row for row in scoped_log_payload.get("rows") or []}
+            self.assertEqual(scoped_by_key["O2-SUB1"]["logged_hours"], 3.0)
+            self.assertEqual(scoped_by_key["FF-451"]["logged_hours"], 5.0)
+
+            scoped_ext_resp = client.get(
+                "/api/scoped-subtasks?from=2026-02-01&to=2026-02-28&mode=extended&projects=O2,FF"
+            )
+            self.assertEqual(scoped_ext_resp.status_code, 200)
+            scoped_ext_payload = scoped_ext_resp.get_json() or {}
+            self.assertTrue(scoped_ext_payload.get("ok"))
+            self.assertEqual(scoped_ext_payload.get("total_actual_hours"), 17.0)
+            scoped_ext_by_key = {str(row.get("issue_key")): row for row in scoped_ext_payload.get("rows") or []}
+            self.assertEqual(scoped_ext_by_key["O2-SUB1"]["logged_hours"], 5.0)
+            self.assertEqual(scoped_ext_by_key["FF-451"]["logged_hours"], 12.0)
 
             invalid_resp = client.get(
                 "/api/actual-hours/aggregate?from=2026-02-01&to=2026-02-28&mode=bad_mode&report=test"
@@ -166,7 +200,14 @@ class ActualHoursAggregateApiTests(unittest.TestCase):
             self.assertEqual(legacy_payload.get("source_file"), "canonical_db")
             self.assertEqual(legacy_payload.get("mode"), "planned_dates")
             self.assertEqual(legacy_payload["subtask_hours_by_issue"].get("O2-SUB1"), 5.0)
-            self.assertEqual(legacy_payload["subtask_hours_by_issue"].get("O2-SUB2"), 4.0)
+            self.assertIsNone(legacy_payload["subtask_hours_by_issue"].get("O2-SUB2"))
+            nested_ff_resp = client.get(
+                "/api/nested-view/actual-hours?from=2026-02-01&to=2026-02-28&mode=planned_dates&projects=FF"
+            )
+            self.assertEqual(nested_ff_resp.status_code, 200)
+            nested_ff_payload = nested_ff_resp.get_json() or {}
+            self.assertEqual(nested_ff_payload["subtask_hours_by_issue"].get("FF-451"), 12.0)
+            self.assertIsNone(nested_ff_payload["subtask_hours_by_issue"].get("O2-SUB1"))
 
             nested_log_resp = client.get(
                 "/api/nested-view/actual-hours?from=2026-02-01&to=2026-02-28&mode=log_date"
@@ -176,7 +217,7 @@ class ActualHoursAggregateApiTests(unittest.TestCase):
             self.assertTrue(nested_log_payload.get("ok"))
             self.assertEqual(nested_log_payload.get("mode"), "log_date")
             self.assertEqual(nested_log_payload["subtask_hours_by_issue"].get("O2-SUB1"), 3.0)
-            self.assertEqual(nested_log_payload["subtask_hours_by_issue"].get("O2-SUB2"), 4.0)
+            self.assertIsNone(nested_log_payload["subtask_hours_by_issue"].get("O2-SUB2"))
 
 
 if __name__ == "__main__":

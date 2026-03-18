@@ -44,6 +44,7 @@ DEFAULT_PROJECT_NAME = "RnD Leave Tracker"
 DEFAULT_XLSX_OUT = "rlt_leave_report.xlsx"
 DEFAULT_HTML_OUT = "rlt_leave_report.html"
 DEFAULT_MD_OUT = "RLT_LEAVE_REPORT.md"
+DEFAULT_SOURCE = "canonical_db"
 DEFAULT_WINDOW = "prev-current-next"
 DEFAULT_START_DATE_FIELD = "customfield_10133"
 LEAVE_TYPE_FIELD = "customfield_10584"
@@ -2135,7 +2136,11 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--html-out", default=DEFAULT_HTML_OUT)
     p.add_argument("--md-out", default=DEFAULT_MD_OUT)
     p.add_argument("--start-date-field-id", default=DEFAULT_START_DATE_FIELD)
-    p.add_argument("--source", default=_to_text(os.getenv("JIRA_LEAVE_REPORT_SOURCE", "jira")) or "jira")
+    p.add_argument(
+        "--source",
+        default=_to_text(os.getenv("JIRA_LEAVE_REPORT_SOURCE", DEFAULT_SOURCE)) or DEFAULT_SOURCE,
+        help="Report source mode. Use 'canonical_db' to regenerate from colossal fetch data; 'jira' is legacy opt-in only.",
+    )
     p.add_argument("--canonical-run-id", default=_to_text(os.getenv("JIRA_CANONICAL_RUN_ID")))
     p.add_argument(
         "--incremental",
@@ -2163,7 +2168,7 @@ def main() -> None:
 
     print(f"Generating leave report for {args.project_key} ({args.project_name})")
     print(f"Window: {from_date} -> {to_date}")
-    source = _to_text(args.source).lower() or "jira"
+    source = _to_text(args.source).lower() or DEFAULT_SOURCE
     if source == "canonical_db":
         canonical_db_path = Path(_to_text(os.getenv("JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH", "assignee_hours_capacity.db")) or "assignee_hours_capacity.db")
         if not canonical_db_path.is_absolute():

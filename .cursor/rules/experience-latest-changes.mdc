@@ -1,0 +1,29 @@
+---
+description: When implementing a solution, always include a section on how to experience the latest changes on live localhost with CLI commands and steps
+alwaysApply: true
+---
+
+# How to Experience Latest Changes on Live Localhost
+
+Whenever you implement a solution, new feature, or fix, you **must** include a short section titled **"How to experience latest changes on live localhost"** (or equivalent) in your response.
+
+## What to include
+
+1. **CLI commands** – Exact commands to run (e.g. start dev server, run migrations, install deps).
+2. **Steps** – Ordered steps so the user can run the app and see the new behavior (e.g. open URL, click where, what to expect).
+3. **Context** – If the project has a known dev server or script (e.g. `npm run dev`, `python run_server.py`), use those; otherwise infer from the codebase and state assumptions.
+
+## Example
+
+After implementing a new report page, you might add:
+
+**How to experience latest changes on live localhost**
+
+1. From the project root, start the report server:
+   ```bash
+   python run_server.py
+   ```
+2. Open in a browser: `http://localhost:8000/reports/new-report`.
+3. Use the date filter and click "Apply" to see the new chart.
+
+Keep this section concise (a few bullets and one code block is usually enough) but complete enough that someone can run it and see the change.

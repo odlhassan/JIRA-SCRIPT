@@ -8,9 +8,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from openpyxl import Workbook
-
 import generate_ipp_meeting_dashboard as dashboard_gen
+from jira_export_db import ensure_schema
+from jira_export_db import write_work_items
 
 
 def _create_epics_db(path: Path) -> None:
@@ -23,6 +23,7 @@ def _create_epics_db(path: Path) -> None:
                 project_key TEXT NOT NULL,
                 project_name TEXT NOT NULL,
                 product_category TEXT NOT NULL,
+                component TEXT NOT NULL DEFAULT '',
                 epic_name TEXT NOT NULL,
                 description TEXT NOT NULL DEFAULT '',
                 originator TEXT NOT NULL DEFAULT '',
@@ -42,17 +43,18 @@ def _create_epics_db(path: Path) -> None:
         conn.execute(
             """
             INSERT INTO epics_management (
-                epic_key, project_key, project_name, product_category, epic_name,
+                epic_key, project_key, project_name, product_category, component, epic_name,
                 description, originator, priority, plan_status, ipp_meeting_planned, jira_url,
                 epic_plan_json, research_urs_plan_json, dds_plan_json,
                 development_plan_json, sqa_plan_json, production_plan_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 "O2-111",
                 "O2",
                 "O2 Project",
                 "Payments",
+                "Dashboard",
                 "Selected Epic",
                 "Selected for dashboard",
                 "Lead",
@@ -71,17 +73,18 @@ def _create_epics_db(path: Path) -> None:
         conn.execute(
             """
             INSERT INTO epics_management (
-                epic_key, project_key, project_name, product_category, epic_name,
+                epic_key, project_key, project_name, product_category, component, epic_name,
                 description, originator, priority, plan_status, ipp_meeting_planned, jira_url,
                 epic_plan_json, research_urs_plan_json, dds_plan_json,
                 development_plan_json, sqa_plan_json, production_plan_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '{}', '{}', '{}', '{}', '{}', '{}')
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '{}', '{}', '{}', '{}', '{}', '{}')
             """,
             (
                 "O2-222",
                 "O2",
                 "O2 Project",
                 "Payments",
+                "",
                 "Not Selected Epic",
                 "",
                 "",
@@ -94,17 +97,18 @@ def _create_epics_db(path: Path) -> None:
         conn.execute(
             """
             INSERT INTO epics_management (
-                epic_key, project_key, project_name, product_category, epic_name,
+                epic_key, project_key, project_name, product_category, component, epic_name,
                 description, originator, priority, plan_status, ipp_meeting_planned, jira_url,
                 epic_plan_json, research_urs_plan_json, dds_plan_json,
                 development_plan_json, sqa_plan_json, production_plan_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '{}', '{}', '{}', '{}', '{}')
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '{}', '{}', '{}', '{}', '{}')
             """,
             (
                 "O2-333",
                 "O2",
                 "O2 Project",
                 "Core",
+                "Enhancements",
                 "Selected Without Jira",
                 "",
                 "",
@@ -120,99 +124,85 @@ def _create_epics_db(path: Path) -> None:
         conn.close()
 
 
-def _create_work_items_xlsx(path: Path) -> None:
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "WorkItems"
-    ws.append(
-        [
-            "project_key",
-            "issue_key",
-            "parent_issue_key",
-            "epic_key",
-            "work_item_id",
-            "work_item_type",
-            "jira_issue_type",
-            "summary",
-            "status",
-            "start_date",
-            "end_date",
-            "actual_end_date",
-            "original_estimate_hours",
-            "assignee",
-            "total_hours_logged",
-            "jira_url",
-            "IPP Actual Date (Production Date)",
-            "IPP Remarks",
+def _work_item_row(
+    project_key,
+    issue_key,
+    work_item_id,
+    work_item_type,
+    jira_issue_type,
+    summary,
+    status,
+    start_date,
+    end_date,
+    actual_end_date,
+    original_estimate_hours,
+    assignee,
+    total_hours_logged,
+    parent_issue_key,
+    jira_url,
+    ipp_actual_date,
+    ipp_remarks,
+):
+    """Build a row list in WORK_ITEMS_COLS order (28 cols)."""
+    return [
+        project_key,
+        issue_key,
+        str(work_item_id) if work_item_id else None,
+        work_item_type,
+        jira_issue_type,
+        None,  # fix_type
+        summary,
+        status,
+        start_date,
+        end_date,
+        None,  # actual_start_date
+        actual_end_date,
+        None,  # original_estimate
+        original_estimate_hours,
+        assignee,
+        total_hours_logged,
+        None,  # priority
+        parent_issue_key or None,
+        None,  # parent_work_item_id
+        None,  # parent_jira_url
+        jira_url,
+        None,  # latest_ipp_meeting
+        None,  # jira_ipp_rmi_dates_altered
+        ipp_actual_date,
+        ipp_remarks,
+        None,  # ipp_actual_date_matches_jira_end_date
+        None,  # created
+        None,  # updated
+    ]
+
+
+def _create_work_items_db(exports_db_path: Path) -> None:
+    """Create jira_exports.db with work_items table and test data (no Excel)."""
+    exports_db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(exports_db_path))
+    conn.row_factory = sqlite3.Row
+    try:
+        ensure_schema(conn)
+        rows = [
+            _work_item_row(
+                "O2", "O2-111", "1", "Epic", "Epic", "Selected Epic", "In Progress",
+                "2026-02-02", "2026-02-21", "2026-02-18", 20.0, "Alice", 15.0,
+                "", "https://jira.example.com/browse/O2-111", "2026-02-18", "On track",
+            ),
+            _work_item_row(
+                "O2", "O2-222", "2", "Epic", "Epic", "Not Selected Epic", "Done",
+                "2026-01-01", "2026-01-20", "2026-01-20", 12.0, "Bob", 12.0,
+                "", "https://jira.example.com/browse/O2-222", "2026-01-20", "",
+            ),
+            _work_item_row(
+                "O2", "O2-1111", "3", "Story", "Story", "Story from Excel", "In Progress",
+                "2026-02-03", "2026-02-07", "", 8.0, "Charlie", 6.0,
+                "O2-111", "https://jira.example.com/browse/O2-1111", "", "",
+            ),
         ]
-    )
-    ws.append(
-        [
-            "O2",
-            "O2-111",
-            "",
-            "O2-111",
-            "1",
-            "Epic",
-            "Epic",
-            "Selected Epic",
-            "In Progress",
-            "2026-02-02",
-            "2026-02-21",
-            "2026-02-18",
-            20.0,
-            "Alice",
-            15.0,
-            "https://jira.example.com/browse/O2-111",
-            "2026-02-18",
-            "On track",
-        ]
-    )
-    ws.append(
-        [
-            "O2",
-            "O2-222",
-            "",
-            "O2-222",
-            "2",
-            "Epic",
-            "Epic",
-            "Not Selected Epic",
-            "Done",
-            "2026-01-01",
-            "2026-01-20",
-            "2026-01-20",
-            12.0,
-            "Bob",
-            12.0,
-            "https://jira.example.com/browse/O2-222",
-            "2026-01-20",
-            "",
-        ]
-    )
-    ws.append(
-        [
-            "O2",
-            "O2-1111",
-            "O2-111",
-            "O2-111",
-            "3",
-            "Story",
-            "Story",
-            "Story from Excel",
-            "In Progress",
-            "2026-02-03",
-            "2026-02-07",
-            "",
-            8.0,
-            "Charlie",
-            6.0,
-            "https://jira.example.com/browse/O2-1111",
-            "",
-            "",
-        ]
-    )
-    wb.save(path)
+        write_work_items(conn, rows)
+    finally:
+        conn.close()
 
 
 def _extract_payload_rows(output_html: Path) -> list[dict]:
@@ -234,14 +224,14 @@ class IppMeetingDashboardMergeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             root = Path(td)
             db_path = root / "assignee_hours_capacity.db"
-            work_items_path = root / "1_jira_work_items_export.xlsx"
+            exports_db_path = root / "jira_exports.db"
             output_html = root / "ipp_meeting_dashboard.html"
             _create_epics_db(db_path)
-            _create_work_items_xlsx(work_items_path)
+            _create_work_items_db(exports_db_path)
 
             env = {
                 "JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH": str(db_path),
-                "JIRA_EXPORT_XLSX_PATH": str(work_items_path),
+                "JIRA_EXPORTS_DB_PATH": str(exports_db_path),
                 "IPP_PHASE_DASHBOARD_HTML_PATH": str(output_html),
             }
             with patch.dict(os.environ, env, clear=False):
@@ -272,7 +262,7 @@ class IppMeetingDashboardMergeTests(unittest.TestCase):
             stories = selected_with_jira.get("stories") or []
             self.assertEqual(len(stories), 1)
             self.assertEqual(stories[0].get("story_key"), "O2-1111")
-            self.assertEqual(stories[0].get("story_name"), "Story from Excel")
+            self.assertEqual(stories[0].get("story_name"), "Story from Excel")  # from DB work_items
             self.assertEqual(stories[0].get("story_start_date"), "2026-02-03")
             self.assertEqual(stories[0].get("story_end_date"), "2026-02-07")
             self.assertEqual(stories[0].get("story_planned_hours"), 8.0)
@@ -295,9 +285,9 @@ class IppMeetingDashboardMergeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             root = Path(td)
             db_path = root / "assignee_hours_capacity.db"
-            work_items_path = root / "1_jira_work_items_export.xlsx"
+            exports_db_path = root / "jira_exports.db"
             _create_epics_db(db_path)
-            _create_work_items_xlsx(work_items_path)
+            _create_work_items_db(exports_db_path)
 
             conn = sqlite3.connect(db_path)
             try:
@@ -308,7 +298,7 @@ class IppMeetingDashboardMergeTests(unittest.TestCase):
 
             env = {
                 "JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH": str(db_path),
-                "JIRA_EXPORT_XLSX_PATH": str(work_items_path),
+                "JIRA_EXPORTS_DB_PATH": str(exports_db_path),
             }
             with patch.dict(os.environ, env, clear=False):
                 payload = dashboard_gen.build_payload_from_sources(base_dir=root)

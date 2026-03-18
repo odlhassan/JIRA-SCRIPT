@@ -6,7 +6,7 @@
   <title>Approved vs Planned Hours Report</title>
   <link rel="stylesheet" href="/shared-nav.css">
   <style>
-    :root { --bg:#f3f6fb; --card:#fff; --line:#d7e0ea; --text:#1f2937; --muted:#64748b; --brand:#0f4c5c; --planned:#6495ed; --dispensed:#eab308; }
+    :root { --bg:#f3f6fb; --card:#fff; --line:#d7e0ea; --text:#1f2937; --muted:#64748b; --brand:#0f4c5c; --planned:#6495ed; --dispensed:#eab308; --actual:#0f766e; }
     * { box-sizing:border-box; }
     body { margin:0; font-family:"Segoe UI", Tahoma, sans-serif; color:var(--text); background:linear-gradient(180deg,#f7fbff,var(--bg)); }
     .page { max-width:1500px; margin:0 auto; padding:16px; display:grid; gap:12px; }
@@ -329,6 +329,7 @@
     .dot { width:10px; height:10px; border-radius:999px; display:inline-block; }
     .dot.planned { background:var(--planned); }
     .dot.dispensed { background:var(--dispensed); }
+    .dot.actual { background:var(--actual); }
     .stack-legend { display:flex; gap:8px; flex-wrap:wrap; font-size:.74rem; color:#334155; margin-top:2px; }
     .stack-pill { display:inline-flex; align-items:center; gap:6px; border:1px solid #d7e2ee; border-radius:999px; background:#f8fafc; padding:3px 8px; }
     .stack-dot { width:10px; height:10px; border-radius:999px; display:inline-block; }
@@ -375,9 +376,18 @@
       overflow:hidden;
     }
     .compare-rows { display:grid; gap:8px; }
-    .compare-row { display:grid; grid-template-columns:minmax(180px,220px) 1fr; align-items:center; gap:10px; }
+    .compare-row { display:grid; grid-template-columns:minmax(180px,220px) minmax(0,1fr) auto; align-items:center; gap:10px; }
     .compare-label { font-size:.76rem; font-weight:700; color:#334155; line-height:1.3; }
     .compare-label-mode { display:block; font-size:.68rem; font-weight:600; color:#64748b; margin-top:2px; }
+    .compare-bar-wrap { min-width:0; }
+    .compare-total {
+      min-width:96px;
+      text-align:right;
+      font-size:.76rem;
+      font-weight:900;
+      color:#0f172a;
+      white-space:nowrap;
+    }
     .epic-mini-table-wrap {
       border:1px solid #d4e1ee;
       border-radius:8px;
@@ -452,6 +462,7 @@
     }
     .hbar:hover { filter:brightness(.98); }
     .hbar-fill.planned { background:linear-gradient(90deg,#9bbaf3,var(--planned)); }
+    .hbar-fill.actual { background:linear-gradient(90deg,#86efac,var(--actual)); }
     .hbar-seg { height:100%; display:block; }
     .hbar-seg {
       display:flex;
@@ -470,21 +481,11 @@
       pointer-events:none;
       line-height:1;
     }
-    .hbar-value {
-      position:absolute;
-      right:10px;
-      top:50%;
-      transform:translateY(-50%);
-      font-size:.73rem;
-      font-weight:800;
-      color:#0f172a;
-      text-shadow:0 1px 0 rgba(255,255,255,.45);
-      pointer-events:none;
-    }
     @media (max-width: 700px) {
       .pre-bar-metrics { grid-template-columns:1fr; }
       .compare-row { grid-template-columns:1fr; gap:6px; }
       .compare-label-mode { display:inline; margin-left:6px; }
+      .compare-total { text-align:left; min-width:0; }
       .drill-filter-row { grid-template-columns:1fr; }
       .drill-filter-count { justify-self:start; padding-bottom:0; }
     }
@@ -880,6 +881,11 @@
           <div id="pvd-total-planned-hours" class="scorecard-v">0.00h</div>
           <div class="scorecard-s">Sum of planned subtask estimates in selected date range</div>
         </div>
+        <div class="scorecard">
+          <div class="scorecard-k">ACTUAL HOURS</div>
+          <div id="pvd-total-actual-hours" class="scorecard-v">0.00h</div>
+          <div class="scorecard-s">Sum of actual hours logged on subtasks and bug subtasks</div>
+        </div>
       </div>
     </section>
     <section class="card chart-shell">
@@ -893,6 +899,7 @@
       <div class="legend">
         <span class="pill"><span class="dot planned"></span> Leadership Approved Hours (Epic Original Estimates)</span>
         <span class="pill"><span class="dot dispensed"></span> Planned Hours (Subtask Original Estimates)</span>
+        <span class="pill"><span class="dot actual"></span> Actual Hours (Subtask and Bug Subtask Worklogs)</span>
       </div>
       <div id="pvd-stack-legend" class="stack-legend"></div>
       <div id="pvd-missing-plan" class="empty" style="display:none;margin:8px 0 0;"></div>
@@ -1407,6 +1414,100 @@
       $("date-filter-status").textContent = msg || "";
     }
 
+    function bucketModeForRows(rows, fallbackMode){
+      const first = Array.isArray(rows) ? rows.find((row)=>row) : null;
+      const mode = String((first && (first.dispensed_bucket_mode || first.actual_bucket_mode)) || fallbackMode || "week").toLowerCase();
+      return mode === "month" ? "month" : "week";
+    }
+
+    function collectBucketLegendMeta(rows, bucketKeys){
+      const weekMode = bucketModeForRows(rows, "week") === "week";
+      const keySet = new Set((Array.isArray(bucketKeys) ? bucketKeys : []).map((item)=>String(item || "").trim()).filter(Boolean));
+      let hasRemaining = false;
+      let maxWeekCount = 0;
+      const monthByKey = new Map();
+      (Array.isArray(rows) ? rows : []).forEach((row)=>{
+        const bucketGroups = [
+          Array.isArray(row && row.dispensed_buckets) ? row.dispensed_buckets : [],
+          Array.isArray(row && row.actual_buckets) ? row.actual_buckets : [],
+        ];
+        bucketGroups.forEach((items)=>{
+          let groupWeekCount = 0;
+          items.forEach((item)=>{
+            const bucketKey = String(item && item.bucket_key || "").trim();
+            if (!bucketKey) return;
+            if (bucketKey.toLowerCase() === "remaining_hours"){
+              hasRemaining = true;
+              return;
+            }
+            if (keySet.size && !keySet.has(bucketKey)) return;
+            if (weekMode){
+              groupWeekCount += 1;
+              return;
+            }
+            const label = String(item && (item.bucket_label || item.bucket_key) || "").trim();
+            if (label && !monthByKey.has(bucketKey)) monthByKey.set(bucketKey, label);
+          });
+          if (weekMode) maxWeekCount = Math.max(maxWeekCount, groupWeekCount);
+        });
+      });
+      return { weekMode, hasRemaining, maxWeekCount, monthByKey };
+    }
+
+    function monthLegendLabelFactory(monthEntries){
+      const monthKeyToParts = (key) => {
+        const m = /^(\d{4})-(\d{2})$/.exec(String(key || "").trim());
+        if (!m) return null;
+        const year = Number(m[1]);
+        const month = Number(m[2]);
+        if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) return null;
+        return { year, month };
+      };
+      const monthNameShort = (month) => {
+        const names = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+        return names[Math.max(1, Math.min(12, month)) - 1] || String(month);
+      };
+      const parsedMonths = (Array.isArray(monthEntries) ? monthEntries : []).map(([key]) => monthKeyToParts(key)).filter(Boolean);
+      const multipleYearsInLegend = new Set(parsedMonths.map((x)=>x.year)).size > 1;
+      return (key, fallback) => {
+        const parts = monthKeyToParts(key);
+        if (!parts) return String(fallback || key || "");
+        const base = monthNameShort(parts.month);
+        return multipleYearsInLegend ? `${base} ${parts.year}` : base;
+      };
+    }
+
+    function renderBucketSegments(totalHours, displayPct, buckets, bucketMode, palette, monthColorIndex, isDarkHex, includeFallback){
+      const segmentPalette = Array.isArray(palette) && palette.length ? palette : ["#e5e7eb"];
+      const remainingColor = "#6b7280";
+      const workingBuckets = Array.isArray(buckets) ? buckets.filter((item)=>n(item && item.hours) > 0) : [];
+      const sourceBuckets = (totalHours > 0 && workingBuckets.length)
+        ? workingBuckets
+        : (includeFallback ? [{ bucket_label: "Unscheduled", hours: totalHours }] : []);
+      let timedIdx = 0;
+      return sourceBuckets.map((item)=>{
+        const hours = n(item && item.hours);
+        const segPct = totalHours > 0 ? ((hours / totalHours) * displayPct) : 0;
+        const width = Math.max(0, Math.min(100, segPct));
+        const isRemaining = String(item && item.bucket_key || "").toLowerCase() === "remaining_hours";
+        let label = String(item && (item.bucket_label || item.bucket_key) || "Unscheduled");
+        let color = remainingColor;
+        if (!isRemaining){
+          if (bucketMode === "week"){
+            label = `Week ${timedIdx + 1}`;
+            color = segmentPalette[timedIdx % segmentPalette.length];
+          } else {
+            const monthKey = String(item && item.bucket_key || "").trim();
+            color = segmentPalette[(monthColorIndex.get(monthKey) || 0) % segmentPalette.length];
+          }
+          timedIdx += 1;
+        }
+        const labelColor = isDarkHex(color) ? "#f8fafc" : "#0f172a";
+        const labelShadow = isDarkHex(color) ? "0 1px 0 rgba(0,0,0,.35)" : "0 1px 0 rgba(255,255,255,.45)";
+        return `<span class="hbar-seg" data-show-label="1" style="width:${width.toFixed(2)}%;background:${color}" title="${esc(label)}: ${hRound(hours)}"><span class="hbar-seg-label" style="color:${labelColor};text-shadow:${labelShadow}">${hRound(hours)}</span></span>`;
+      }).join("");
+    }
+
     async function loadSummary(forceRefresh){
       const host = $("pvd-comparison-chart");
       host.innerHTML = '<div class="empty">Loading...</div>';
@@ -1505,6 +1606,7 @@
       const totalApprovedEl = $("pvd-total-approved-hours");
       const totalPlannedAllEl = $("pvd-total-planned-hours-all");
       const totalPlannedEl = $("pvd-total-planned-hours");
+      const totalActualEl = $("pvd-total-actual-hours");
       const comparativeOn = !!($("pvd-comparative-bars") && $("pvd-comparative-bars").checked);
       if(!st.rows.length){
         host.innerHTML = '<div class="empty">No data for current filters.</div>';
@@ -1512,18 +1614,24 @@
         if (totalApprovedEl) totalApprovedEl.textContent = "0.00h";
         if (totalPlannedAllEl) totalPlannedAllEl.textContent = "0.00h";
         if (totalPlannedEl) totalPlannedEl.textContent = "0.00h";
+        if (totalActualEl) totalActualEl.textContent = "0.00h";
         return;
       }
       const totalApproved = st.rows.reduce((sum, row)=> sum + n(row.planned_epic_hours), 0);
       const totalPlannedAll = st.rows.reduce((sum, row)=> sum + n(row.dispensed_subtask_hours), 0);
       const totalPlannedInRange = st.rows.reduce((sum, row)=> sum + n(row.dispensed_in_range_hours || row.dispensed_subtask_hours), 0);
+      const totalActual = st.rows.reduce((sum, row)=> sum + n(row.actual_hours), 0);
       if (totalApprovedEl) totalApprovedEl.textContent = h(totalApproved);
       if (totalPlannedAllEl) totalPlannedAllEl.textContent = h(totalPlannedAll);
       if (totalPlannedEl) totalPlannedEl.textContent = h(totalPlannedInRange);
-      const maxVal = Math.max(1, ...st.rows.map(r=>Math.max(n(r.planned_epic_hours), n(r.dispensed_stack_hours || r.dispensed_subtask_hours))));
+      if (totalActualEl) totalActualEl.textContent = h(totalActual);
+      const maxVal = Math.max(1, ...st.rows.map(r=>Math.max(
+        n(r.planned_epic_hours),
+        n(r.dispensed_stack_hours || r.dispensed_subtask_hours),
+        n(r.actual_stack_hours || r.actual_hours)
+      )));
       const segmentPalette = ["#f59e0b", "#fbbf24", "#fcd34d", "#f97316", "#fca5a5", "#fda4af", "#fb7185", "#fb923c"];
       const segmentColor = (idx) => segmentPalette[idx % segmentPalette.length];
-      const remainingColor = "#6b7280";
       const isDarkHex = (hex) => {
         const raw = String(hex || "").trim().replace("#", "");
         if (!/^[0-9a-fA-F]{6}$/.test(raw)) return false;
@@ -1533,102 +1641,66 @@
         const luminance = (0.299 * r) + (0.587 * g) + (0.114 * b);
         return luminance < 150;
       };
-      const weekMode = String((st.rows[0] && st.rows[0].dispensed_bucket_mode) || "").toLowerCase() === "week";
-      const monthByKey = new Map();
-      let hasRemaining = false;
-      let maxWeekCount = 0;
-      st.rows.forEach((row)=>{
-        const buckets = Array.isArray(row.dispensed_buckets) ? row.dispensed_buckets : [];
-        let rowWeekCount = 0;
-        buckets.forEach((item)=>{
-          const isRemaining = String(item.bucket_key || "").toLowerCase() === "remaining_hours";
-          if (isRemaining){
-            hasRemaining = true;
-            return;
-          }
-          if (weekMode){
-            rowWeekCount += 1;
-            return;
-          }
-          const key = String(item.bucket_key || "").trim();
-          const label = String(item.bucket_label || item.bucket_key || "").trim();
-          if (key && label && !monthByKey.has(key)) monthByKey.set(key, label);
-        });
-        if (weekMode) maxWeekCount = Math.max(maxWeekCount, rowWeekCount);
-      });
-      const monthEntries = Array.from(monthByKey.entries()).sort((a,b)=>String(a[0]).localeCompare(String(b[0])));
+      const legendMeta = collectBucketLegendMeta(st.rows);
+      const weekMode = !!legendMeta.weekMode;
+      const monthEntries = Array.from((legendMeta.monthByKey || new Map()).entries()).sort((a,b)=>String(a[0]).localeCompare(String(b[0])));
       const monthColorIndex = new Map(monthEntries.map(([key], idx)=>[key, idx]));
-      const monthKeyToParts = (key) => {
-        const m = /^(\d{4})-(\d{2})$/.exec(String(key || "").trim());
-        if (!m) return null;
-        const year = Number(m[1]);
-        const month = Number(m[2]);
-        if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) return null;
-        return { year, month };
-      };
-      const monthNameShort = (month) => {
-        const names = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-        return names[Math.max(1, Math.min(12, month)) - 1] || String(month);
-      };
-      const parsedMonths = monthEntries.map(([key]) => monthKeyToParts(key)).filter(Boolean);
-      const multipleYearsInLegend = new Set(parsedMonths.map((x)=>x.year)).size > 1;
-      const monthLegendLabel = (key, fallback) => {
-        const parts = monthKeyToParts(key);
-        if (!parts) return String(fallback || key || "");
-        const base = monthNameShort(parts.month);
-        return multipleYearsInLegend ? `${base} ${parts.year}` : base;
-      };
+      const monthLegendLabel = monthLegendLabelFactory(monthEntries);
       if (legendHost){
         if (weekMode){
-          const weekItems = Array.from({length:maxWeekCount}).map((_, idx)=>(
+          const weekItems = Array.from({length:legendMeta.maxWeekCount}).map((_, idx)=>(
             `<span class="stack-pill"><span class="stack-dot" style="background:${segmentColor(idx)}"></span>Week ${idx+1}</span>`
           ));
-          if (hasRemaining) weekItems.push(`<span class="stack-pill"><span class="stack-dot" style="background:${remainingColor}"></span>Remaining Hours</span>`);
+          if (legendMeta.hasRemaining) weekItems.push(`<span class="stack-pill"><span class="stack-dot" style="background:#6b7280"></span>Remaining Hours</span>`);
           legendHost.innerHTML = weekItems.join("");
         } else {
           const monthItems = monthEntries.map(([key, label])=>(
             `<span class="stack-pill"><span class="stack-dot" style="background:${segmentColor(monthColorIndex.get(key) || 0)}"></span>${esc(monthLegendLabel(key, label))}</span>`
           ));
-          if (hasRemaining) monthItems.push(`<span class="stack-pill"><span class="stack-dot" style="background:${remainingColor}"></span>Remaining Hours</span>`);
+          if (legendMeta.hasRemaining) monthItems.push(`<span class="stack-pill"><span class="stack-dot" style="background:#6b7280"></span>Remaining Hours</span>`);
           legendHost.innerHTML = monthItems.join("");
         }
       }
       host.innerHTML = st.rows.map(r=>{
         const planned = n(r.planned_epic_hours);
         const dispensed = n(r.dispensed_stack_hours || r.dispensed_subtask_hours);
+        const actual = n(r.actual_stack_hours || r.actual_hours);
         const plannedPct = comparativeOn
           ? Math.max(0, Math.min(100, (planned / maxVal) * 100))
           : (planned > 0 ? 100 : 0);
         const dispensedPct = comparativeOn
           ? Math.max(0, Math.min(100, (dispensed / maxVal) * 100))
           : (dispensed > 0 ? 100 : 0);
+        const actualPct = comparativeOn
+          ? Math.max(0, Math.min(100, (actual / maxVal) * 100))
+          : (actual > 0 ? 100 : 0);
         const rawBuckets = Array.isArray(r.dispensed_buckets) ? r.dispensed_buckets : [];
-        const buckets = rawBuckets.filter((item)=>n(item.hours) > 0);
+        const plannedBuckets = rawBuckets.filter((item)=>n(item.hours) > 0);
+        const actualBuckets = (Array.isArray(r.actual_buckets) ? r.actual_buckets : []).filter((item)=>n(item.hours) > 0);
         const inRangeHours = n(r.dispensed_in_range_hours || r.dispensed_subtask_hours);
+        const actualInRangeHours = n(r.actual_in_range_hours || r.actual_hours);
         const mode = String(r.dispensed_bucket_mode || "").toLowerCase() || "week";
         const modeLabel = mode === "month" ? "Month-wise stack" : "Week-wise stack";
-        let timedIdx = 0;
-        const dispensedSegments = (dispensed > 0 && buckets.length ? buckets : [{ bucket_label: "Unscheduled", hours: dispensed }]).map((item)=>{
-          const hours = n(item.hours);
-          const segPct = dispensed > 0 ? ((hours / dispensed) * dispensedPct) : 0;
-          const width = Math.max(0, Math.min(100, segPct));
-          const isRemaining = String(item.bucket_key || "").toLowerCase() === "remaining_hours";
-          let label = String(item.bucket_label || item.bucket_key || "Unscheduled");
-          let color = remainingColor;
-          if (!isRemaining){
-            if (mode === "week"){
-              label = `Week ${timedIdx + 1}`;
-              color = segmentColor(timedIdx);
-            } else {
-              const monthKey = String(item.bucket_key || "").trim();
-              color = segmentColor(monthColorIndex.get(monthKey) || 0);
-            }
-            timedIdx += 1;
-          }
-          const labelColor = isDarkHex(color) ? "#f8fafc" : "#0f172a";
-          const labelShadow = isDarkHex(color) ? "0 1px 0 rgba(0,0,0,.35)" : "0 1px 0 rgba(255,255,255,.45)";
-          return `<span class="hbar-seg" data-show-label="1" style="width:${width.toFixed(2)}%;background:${color}" title="${esc(label)}: ${hRound(hours)}"><span class="hbar-seg-label" style="color:${labelColor};text-shadow:${labelShadow}">${hRound(hours)}</span></span>`;
-        }).join("");
+        const dispensedSegments = renderBucketSegments(
+          dispensed,
+          dispensedPct,
+          plannedBuckets,
+          mode,
+          segmentPalette,
+          monthColorIndex,
+          isDarkHex,
+          true
+        );
+        const actualSegments = renderBucketSegments(
+          actual,
+          actualPct,
+          actualBuckets,
+          mode,
+          segmentPalette,
+          monthColorIndex,
+          isDarkHex,
+          true
+        );
         return `
           <div class="group">
             <div class="project" title="${esc(r.project_name || r.project_key)}">${esc(r.project_name || r.project_key)}</div>
@@ -1647,6 +1719,10 @@
                   <div class="pre-bar-v">${h(inRangeHours)}</div>
                 </div>
                 <div class="pre-bar-col">
+                  <div class="pre-bar-k">Actual Hours</div>
+                  <div class="pre-bar-v">${h(actual)}</div>
+                </div>
+                <div class="pre-bar-col">
                   <div class="pre-bar-k">No. of Epics</div>
                   <div class="pre-bar-v">${Math.max(0, Math.trunc(n(r.epic_count)))}</div>
                 </div>
@@ -1654,20 +1730,36 @@
               <div class="compare-rows">
                 <div class="compare-row">
                   <div class="compare-label">Leadership Approved Hours</div>
-                  <button class="hbar" data-project="${esc(r.project_key)}" data-kind="planned" title="Leadership Approved Hours: ${h(planned)}">
-                    <span class="hbar-fill planned" style="width:${plannedPct.toFixed(2)}%"></span>
-                    <span class="hbar-value">${h(planned)}</span>
-                  </button>
+                  <div class="compare-bar-wrap">
+                    <button class="hbar" data-project="${esc(r.project_key)}" data-kind="planned" title="Leadership Approved Hours: ${h(planned)}">
+                      <span class="hbar-fill planned" style="width:${plannedPct.toFixed(2)}%"></span>
+                    </button>
+                  </div>
+                  <div class="compare-total">${h(planned)}</div>
                 </div>
                 <div class="compare-row">
                   <div class="compare-label">
                     Planned Hours
                     <span class="compare-label-mode">${modeLabel}</span>
                   </div>
-                  <button class="hbar" data-project="${esc(r.project_key)}" data-kind="dispensed" title="Planned Hours: ${h(dispensed)}">
-                    ${dispensedSegments}
-                    <span class="hbar-value">${h(dispensed)}</span>
-                  </button>
+                  <div class="compare-bar-wrap">
+                    <button class="hbar" data-project="${esc(r.project_key)}" data-kind="dispensed" title="Planned Hours: ${h(dispensed)}">
+                      ${dispensedSegments}
+                    </button>
+                  </div>
+                  <div class="compare-total">${h(dispensed)}</div>
+                </div>
+                <div class="compare-row">
+                  <div class="compare-label">
+                    Actual Hours
+                    <span class="compare-label-mode">${modeLabel}</span>
+                  </div>
+                  <div class="compare-bar-wrap">
+                    <button class="hbar" data-project="${esc(r.project_key)}" data-kind="actual" title="Actual Hours: ${h(actual)}">
+                      ${actualSegments}
+                    </button>
+                  </div>
+                  <div class="compare-total">${h(actual)}</div>
                 </div>
               </div>
             </div>
@@ -1726,11 +1818,18 @@
       const epics = Array.isArray(data && data.epics) ? data.epics : [];
       if(!epics.length){ host.innerHTML = '<div class="empty">No epic data for selected project and filters.</div>'; return; }
       const comparativeOn = !!($("pvd-comparative-bars") && $("pvd-comparative-bars").checked);
-
-      const fromDate = parseIsoDateUtc(data && data.from_date);
-      const toDate = parseIsoDateUtc(data && data.to_date);
-      const monthMode = !!(fromDate && toDate && (fromDate.getUTCFullYear() !== toDate.getUTCFullYear() || fromDate.getUTCMonth() !== toDate.getUTCMonth()));
-      const bucketMode = monthMode ? "month" : "week";
+      const bucketMode = bucketModeForRows(epics, "week");
+      const segmentPalette = ["#f59e0b", "#fbbf24", "#fcd34d", "#f97316", "#fca5a5", "#fda4af", "#fb7185", "#fb923c"];
+      const storyPalette = ["#4f7fdd", "#5f90ef", "#3f74d2", "#87a8f1", "#2f64c3", "#a7bef5", "#6c92e8", "#7f9eea"];
+      const storyColor = (idx) => storyPalette[idx % storyPalette.length];
+      const isDarkHex = (hex) => {
+        const raw = String(hex || "").trim().replace("#", "");
+        if (!/^[0-9a-fA-F]{6}$/.test(raw)) return false;
+        const r = parseInt(raw.slice(0,2), 16);
+        const g = parseInt(raw.slice(2,4), 16);
+        const b = parseInt(raw.slice(4,6), 16);
+        return ((0.299 * r) + (0.587 * g) + (0.114 * b)) < 150;
+      };
 
       const epicRows = epics.map((epic)=>{
         const leadershipHours = n(epic && epic.planned_hours);
@@ -1752,59 +1851,19 @@
         const storySegments = storySegmentsRaw.length
           ? storySegmentsRaw
           : (leadershipHours > 0 ? [{ name: "No Story Estimates", hours: leadershipHours }] : []);
-        const subtaskRows = storyRows
-          .flatMap((story)=>Array.isArray(story && story.subtasks) ? story.subtasks : []);
+        const subtaskRows = storyRows.flatMap((story)=>Array.isArray(story && story.subtasks) ? story.subtasks : []);
         const totalPlannedHours = subtaskRows.reduce((sum, subtask)=>sum + n(subtask && subtask.estimate_hours), 0);
-        const bucketHours = new Map();
-        const outside = { before: 0, after: 0 };
-        subtaskRows.forEach((subtask)=>{
-          const estimate = n(subtask && subtask.estimate_hours);
-          if (estimate <= 0) return;
-          const start = parseIsoDateUtc(subtask && subtask.planned_start);
-          const due = parseIsoDateUtc(subtask && subtask.planned_due);
-          if (!start && !due) return;
-          let spanStart = start || due;
-          let spanEnd = due || start;
-          if (!spanStart || !spanEnd) return;
-          if (spanEnd < spanStart){ const t = spanStart; spanStart = spanEnd; spanEnd = t; }
-          const totalDays = Math.floor((spanEnd - spanStart) / 86400000) + 1;
-          if (totalDays <= 0) return;
-          if (fromDate && toDate){
-            const beforeEnd = new Date(Math.min(spanEnd.getTime(), fromDate.getTime() - 86400000));
-            const beforeDays = beforeEnd >= spanStart ? (Math.floor((beforeEnd - spanStart) / 86400000) + 1) : 0;
-            const afterStart = new Date(Math.max(spanStart.getTime(), toDate.getTime() + 86400000));
-            const afterDays = spanEnd >= afterStart ? (Math.floor((spanEnd - afterStart) / 86400000) + 1) : 0;
-            if (beforeDays > 0) outside.before += estimate * (beforeDays / totalDays);
-            if (afterDays > 0) outside.after += estimate * (afterDays / totalDays);
-          }
-          const overlapStart = fromDate ? new Date(Math.max(spanStart.getTime(), fromDate.getTime())) : spanStart;
-          const overlapEnd = toDate ? new Date(Math.min(spanEnd.getTime(), toDate.getTime())) : spanEnd;
-          if (overlapStart > overlapEnd) return;
-          const seen = new Set();
-          eachDayUtc(overlapStart, overlapEnd, (d)=>{
-            const key = bucketMode === "month" ? monthKeyUtc(d) : isoWeekKeyUtc(d);
-            seen.add(key);
-          });
-          if (!seen.size) return;
-          const share = estimate / seen.size;
-          Array.from(seen).forEach((key)=>{
-            bucketHours.set(key, n(bucketHours.get(key)) + share);
-          });
-        });
-        const sortedKeys = Array.from(bucketHours.keys()).sort((a,b)=>String(a).localeCompare(String(b)));
-        const buckets = sortedKeys.map((key)=>({
-          bucket_key:key,
-          bucket_label:key,
-          hours:n(bucketHours.get(key)),
+        const plannedBuckets = (Array.isArray(epic && epic.dispensed_buckets) ? epic.dispensed_buckets : []).map((bucket)=>({
+          ...bucket,
+          hours: Number(n(bucket && bucket.hours).toFixed(2)),
         }));
-        const inRangeHours = buckets.reduce((sum, item)=>sum + n(item.hours), 0);
-        const remaining = Math.max(0, leadershipHours - inRangeHours);
-        if (remaining > 0){
-          const remainingItem = { bucket_key:"remaining_hours", bucket_label:"Remaining Hours", hours:remaining };
-          const remainingFirst = outside.before > 0 && outside.after <= 0;
-          if (remainingFirst) buckets.unshift(remainingItem); else buckets.push(remainingItem);
-        }
-        const stackHours = buckets.reduce((sum, item)=>sum + n(item.hours), 0);
+        const plannedInRangeHours = plannedBuckets
+          .filter((bucket)=>String(bucket && bucket.bucket_key || "").toLowerCase() !== "remaining_hours")
+          .reduce((sum, bucket)=>sum + n(bucket && bucket.hours), 0);
+        const actualBuckets = (Array.isArray(epic && epic.actual_buckets) ? epic.actual_buckets : []).map((bucket)=>({
+          ...bucket,
+          hours: Number(n(bucket && bucket.hours).toFixed(2)),
+        }));
         return {
           epic_key: String((epic && epic.issue_key) || "").trim(),
           epic_name: String((epic && epic.summary) || (epic && epic.issue_key) || "Unnamed Epic"),
@@ -1813,59 +1872,29 @@
           epic_url: String((epic && epic.jira_url) || ""),
           planned_epic_hours: leadershipHours,
           total_planned_hours: Number(totalPlannedHours.toFixed(2)),
-          planned_in_range_hours: Number(inRangeHours.toFixed(2)),
+          planned_in_range_hours: Number(plannedInRangeHours.toFixed(2)),
+          actual_hours: Number(n(epic && epic.actual_hours).toFixed(2)),
           story_count: storyRows.length,
           story_segments: storySegments,
           dispensed_bucket_mode: bucketMode,
-          dispensed_buckets: buckets.map((b)=>({ ...b, hours: Number(n(b.hours).toFixed(2)) })),
-          dispensed_stack_hours: Number(stackHours.toFixed(2)),
+          dispensed_buckets: plannedBuckets,
+          dispensed_stack_hours: Number(n(epic && epic.dispensed_stack_hours).toFixed(2)),
+          actual_bucket_mode: bucketMode,
+          actual_buckets: actualBuckets,
+          actual_stack_hours: Number(n(epic && epic.actual_stack_hours).toFixed(2)),
         };
       });
 
-      const maxVal = Math.max(1, ...epicRows.map((r)=>Math.max(n(r.planned_epic_hours), n(r.dispensed_stack_hours))));
-      const segmentPalette = ["#f59e0b", "#fbbf24", "#fcd34d", "#f97316", "#fca5a5", "#fda4af", "#fb7185", "#fb923c"];
-      const segmentColor = (idx) => segmentPalette[idx % segmentPalette.length];
-      const remainingColor = "#6b7280";
-      const storyPalette = ["#4f7fdd", "#5f90ef", "#3f74d2", "#87a8f1", "#2f64c3", "#a7bef5", "#6c92e8", "#7f9eea"];
-      const storyColor = (idx) => storyPalette[idx % storyPalette.length];
-      const isDarkHex = (hex) => {
-        const raw = String(hex || "").trim().replace("#", "");
-        if (!/^[0-9a-fA-F]{6}$/.test(raw)) return false;
-        const r = parseInt(raw.slice(0,2), 16);
-        const g = parseInt(raw.slice(2,4), 16);
-        const b = parseInt(raw.slice(4,6), 16);
-        return ((0.299 * r) + (0.587 * g) + (0.114 * b)) < 150;
-      };
-      const monthByKey = new Map();
-      let maxWeekCount = 0;
-      let hasRemaining = false;
-      epicRows.forEach((row)=>{
-        const buckets = Array.isArray(row.dispensed_buckets) ? row.dispensed_buckets : [];
-        let weekCount = 0;
-        buckets.forEach((b)=>{
-          const isRemaining = String(b.bucket_key || "").toLowerCase() === "remaining_hours";
-          if (isRemaining){ hasRemaining = true; return; }
-          if (bucketMode === "week"){ weekCount += 1; return; }
-          const key = String(b.bucket_key || "").trim();
-          const label = String(b.bucket_label || key).trim();
-          if (key && label && !monthByKey.has(key)) monthByKey.set(key, label);
-        });
-        maxWeekCount = Math.max(maxWeekCount, weekCount);
-      });
-      const monthEntries = Array.from(monthByKey.entries()).sort((a,b)=>String(a[0]).localeCompare(String(b[0])));
+      const maxVal = Math.max(1, ...epicRows.map((r)=>Math.max(n(r.planned_epic_hours), n(r.dispensed_stack_hours), n(r.actual_stack_hours || r.actual_hours))));
+      const legendMeta = collectBucketLegendMeta(epicRows);
+      const monthEntries = Array.from((legendMeta.monthByKey || new Map()).entries()).sort((a,b)=>String(a[0]).localeCompare(String(b[0])));
       const monthColorIndex = new Map(monthEntries.map(([key], idx)=>[key, idx]));
-      const monthLegendLabel = (key) => {
-        const m = /^(\d{4})-(\d{2})$/.exec(String(key || "").trim());
-        if (!m) return String(key || "");
-        const monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-        return monthNames[Math.max(1, Math.min(12, Number(m[2]))) - 1] || String(key || "");
-      };
-
-      const stackLegend = bucketMode === "week"
-        ? Array.from({ length:maxWeekCount }).map((_, idx)=>`<span class="stack-pill"><span class="stack-dot" style="background:${segmentColor(idx)}"></span>Week ${idx+1}</span>`).join("")
-        : monthEntries.map(([key])=>`<span class="stack-pill"><span class="stack-dot" style="background:${segmentColor(monthColorIndex.get(key) || 0)}"></span>${esc(monthLegendLabel(key))}</span>`).join("");
-      const legendHtml = hasRemaining
-        ? stackLegend + `<span class="stack-pill"><span class="stack-dot" style="background:${remainingColor}"></span>Remaining Hours</span>`
+      const monthLegendLabel = monthLegendLabelFactory(monthEntries);
+      const stackLegend = legendMeta.weekMode
+        ? Array.from({ length:legendMeta.maxWeekCount }).map((_, idx)=>`<span class="stack-pill"><span class="stack-dot" style="background:${segmentPalette[idx % segmentPalette.length]}"></span>Week ${idx+1}</span>`).join("")
+        : monthEntries.map(([key, label])=>`<span class="stack-pill"><span class="stack-dot" style="background:${segmentPalette[(monthColorIndex.get(key) || 0) % segmentPalette.length]}"></span>${esc(monthLegendLabel(key, label))}</span>`).join("");
+      const legendHtml = legendMeta.hasRemaining
+        ? stackLegend + `<span class="stack-pill"><span class="stack-dot" style="background:#6b7280"></span>Remaining Hours</span>`
         : stackLegend;
       const drillStatuses = Array.from(new Set(epicRows.map((r)=>String(r.epic_status || "").trim()).filter(Boolean))).sort((a,b)=>a.localeCompare(b));
       const drillAssignees = Array.from(new Set(epicRows.map((r)=>String(r.epic_assignee || "").trim()).filter(Boolean))).sort((a,b)=>a.localeCompare(b));
@@ -1873,11 +1902,12 @@
       host.innerHTML = `
         <div class="totals">
           <div class="metric"><strong>Project:</strong> ${esc(data.project_name || data.project_key || "-")}</div>
-          <div class="metric"><strong>Epic Drill-down:</strong> ${bucketMode === "month" ? "Month-wise" : "Week-wise"} Planned Hours</div>
+          <div class="metric"><strong>Epic Drill-down:</strong> ${bucketMode === "month" ? "Month-wise" : "Week-wise"} Planned vs Actual Hours</div>
         </div>
         <div class="legend">
           <span class="pill"><span class="dot planned"></span> Leadership Approved Hours (Epic Original Estimates)</span>
           <span class="pill"><span class="dot dispensed"></span> Planned Hours (Subtask Original Estimates)</span>
+          <span class="pill"><span class="dot actual"></span> Actual Hours (Subtask and Bug Subtask Worklogs)</span>
         </div>
         <div class="stack-legend">${legendHtml}</div>
         <div class="drill-filter-row">
@@ -1905,33 +1935,12 @@
           ${epicRows.map((r)=>{
             const planned = n(r.planned_epic_hours);
             const dispensed = n(r.dispensed_stack_hours);
-            const plannedPct = comparativeOn
-              ? Math.max(0, Math.min(100, (planned / maxVal) * 100))
-              : (planned > 0 ? 100 : 0);
-            const dispensedPct = comparativeOn
-              ? Math.max(0, Math.min(100, (dispensed / maxVal) * 100))
-              : (dispensed > 0 ? 100 : 0);
-            let timedIdx = 0;
-            const segments = (Array.isArray(r.dispensed_buckets) ? r.dispensed_buckets : []).filter((x)=>n(x.hours) > 0).map((b)=>{
-              const isRemaining = String(b.bucket_key || "").toLowerCase() === "remaining_hours";
-              let color = remainingColor;
-              let label = String(b.bucket_label || b.bucket_key || "");
-              if (!isRemaining){
-                if (bucketMode === "week"){
-                  label = `Week ${timedIdx + 1}`;
-                  color = segmentColor(timedIdx);
-                } else {
-                  const key = String(b.bucket_key || "");
-                  color = segmentColor(monthColorIndex.get(key) || 0);
-                }
-                timedIdx += 1;
-              }
-              const width = dispensed > 0 ? Math.max(0, Math.min(100, (n(b.hours) / dispensed) * dispensedPct)) : 0;
-              const dark = /^#/.test(color) && (()=>{ const c=color.slice(1); if(c.length!==6) return false; const rr=parseInt(c.slice(0,2),16),gg=parseInt(c.slice(2,4),16),bb=parseInt(c.slice(4,6),16); return ((0.299*rr)+(0.587*gg)+(0.114*bb)) < 150; })();
-              const lblColor = dark ? "#f8fafc" : "#0f172a";
-              const lblShadow = dark ? "0 1px 0 rgba(0,0,0,.35)" : "0 1px 0 rgba(255,255,255,.45)";
-              return `<span class="hbar-seg" data-show-label="1" style="width:${width.toFixed(2)}%;background:${color}" title="${esc(label)}: ${hRound(b.hours)}"><span class="hbar-seg-label" style="color:${lblColor};text-shadow:${lblShadow}">${hRound(b.hours)}</span></span>`;
-            }).join("");
+            const actual = n(r.actual_stack_hours || r.actual_hours);
+            const plannedPct = comparativeOn ? Math.max(0, Math.min(100, (planned / maxVal) * 100)) : (planned > 0 ? 100 : 0);
+            const dispensedPct = comparativeOn ? Math.max(0, Math.min(100, (dispensed / maxVal) * 100)) : (dispensed > 0 ? 100 : 0);
+            const actualPct = comparativeOn ? Math.max(0, Math.min(100, (actual / maxVal) * 100)) : (actual > 0 ? 100 : 0);
+            const plannedSegments = renderBucketSegments(dispensed, dispensedPct, r.dispensed_buckets, bucketMode, segmentPalette, monthColorIndex, isDarkHex, true);
+            const actualSegments = renderBucketSegments(actual, actualPct, r.actual_buckets, bucketMode, segmentPalette, monthColorIndex, isDarkHex, true);
             return `
               <div class="group" data-epic-name="${esc(r.epic_name || "")}" data-epic-key="${esc(r.epic_key || "")}" data-epic-status="${esc(String(r.epic_status || "").toLowerCase())}" data-epic-assignee="${esc(String(r.epic_assignee || "").toLowerCase())}">
                 ${String(r.epic_url || "").trim() ? `<a class="epic-open-link" href="${esc(r.epic_url)}" target="_blank" rel="noopener noreferrer" title="Open epic in Jira"><span class="material-icons-outlined" aria-hidden="true">open_in_new</span></a>` : ""}
@@ -1941,26 +1950,39 @@
                 </div>
                 <div class="compare-rows">
                   <div class="compare-row">
-                <div class="compare-label">Leadership Approved Hours</div>
-                    <button class="hbar" type="button" data-story-drill="1" data-project="${esc(data.project_key || "")}" data-epic-key="${esc(r.epic_key || "")}" title="Leadership Approved Hours: ${h(planned)}. Click to open stories drawer.">${
-                      (() => {
-                        const stories = Array.isArray(r.story_segments) ? r.story_segments : [];
-                        const totalStoryHours = stories.reduce((sum, item)=>sum + n(item.hours), 0);
-                        if (totalStoryHours <= 0) return `<span class="hbar-fill planned" style="width:${plannedPct.toFixed(2)}%"></span>`;
-                        return stories.map((s, idx)=>{
-                          const width = Math.max(0, Math.min(100, (n(s.hours) / totalStoryHours) * plannedPct));
-                          const color = storyColor(idx);
-                          const dark = isDarkHex(color);
-                          const lblColor = dark ? "#f8fafc" : "#0f172a";
-                          const lblShadow = dark ? "0 1px 0 rgba(0,0,0,.35)" : "0 1px 0 rgba(255,255,255,.45)";
-                          return `<span class="hbar-seg" data-show-label="1" style="width:${width.toFixed(2)}%;background:${color}" title="${esc(storySegmentTooltip(s))}"><span class="hbar-seg-label" style="color:${lblColor};text-shadow:${lblShadow}">${h(s.hours)}</span></span>`;
-                        }).join("");
-                      })()
-                    }<span class="hbar-value">${h(planned)}</span></button>
+                    <div class="compare-label">Leadership Approved Hours</div>
+                    <div class="compare-bar-wrap">
+                      <button class="hbar" type="button" data-story-drill="1" data-project="${esc(data.project_key || "")}" data-epic-key="${esc(r.epic_key || "")}" title="Leadership Approved Hours: ${h(planned)}. Click to open stories drawer.">${
+                        (() => {
+                          const stories = Array.isArray(r.story_segments) ? r.story_segments : [];
+                          const totalStoryHours = stories.reduce((sum, item)=>sum + n(item.hours), 0);
+                          if (totalStoryHours <= 0) return `<span class="hbar-fill planned" style="width:${plannedPct.toFixed(2)}%"></span>`;
+                          return stories.map((s, idx)=>{
+                            const width = Math.max(0, Math.min(100, (n(s.hours) / totalStoryHours) * plannedPct));
+                            const color = storyColor(idx);
+                            const dark = isDarkHex(color);
+                            const lblColor = dark ? "#f8fafc" : "#0f172a";
+                            const lblShadow = dark ? "0 1px 0 rgba(0,0,0,.35)" : "0 1px 0 rgba(255,255,255,.45)";
+                            return `<span class="hbar-seg" data-show-label="1" style="width:${width.toFixed(2)}%;background:${color}" title="${esc(storySegmentTooltip(s))}"><span class="hbar-seg-label" style="color:${lblColor};text-shadow:${lblShadow}">${h(s.hours)}</span></span>`;
+                          }).join("");
+                        })()
+                      }</button>
+                    </div>
+                    <div class="compare-total">${h(planned)}</div>
                   </div>
                   <div class="compare-row">
                     <div class="compare-label">Planned Hours <span class="compare-label-mode">${bucketMode === "month" ? "Month-wise stack" : "Week-wise stack"}</span></div>
-                    <div class="hbar" title="Planned Hours: ${h(dispensed)}">${segments}<span class="hbar-value">${h(dispensed)}</span></div>
+                    <div class="compare-bar-wrap">
+                      <div class="hbar" title="Planned Hours: ${h(dispensed)}">${plannedSegments}</div>
+                    </div>
+                    <div class="compare-total">${h(dispensed)}</div>
+                  </div>
+                  <div class="compare-row">
+                    <div class="compare-label">Actual Hours <span class="compare-label-mode">${bucketMode === "month" ? "Month-wise stack" : "Week-wise stack"}</span></div>
+                    <div class="compare-bar-wrap">
+                      <div class="hbar" title="Actual Hours: ${h(actual)}">${actualSegments}</div>
+                    </div>
+                    <div class="compare-total">${h(actual)}</div>
                   </div>
                 </div>
                 <div class="epic-mini-table-wrap">
@@ -1970,6 +1992,7 @@
                         <th>Leadership Approved Hours</th>
                         <th>Total Planned Hours</th>
                         <th>Planned Hours in Range</th>
+                        <th>Actual Hours</th>
                         <th>No. of Stories</th>
                       </tr>
                     </thead>
@@ -1978,6 +2001,7 @@
                         <td>${h(planned)}</td>
                         <td>${h(r.total_planned_hours)}</td>
                         <td>${h(r.planned_in_range_hours)}</td>
+                        <td>${h(r.actual_hours)}</td>
                         <td>${Math.max(0, Math.trunc(n(r.story_count)))}</td>
                       </tr>
                     </tbody>
@@ -2395,6 +2419,1326 @@
   </script>
   <script src="/shared-date-filter.js"></script>
   <script src="/shared-nav.js"></script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

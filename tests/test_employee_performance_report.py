@@ -24,6 +24,8 @@ from generate_employee_performance_report import (
     _load_performance_settings,
     _normalize_performance_settings,
     _precompute_simple_scoring,
+    _resolve_employee_performance_source_mode,
+    _resolve_runtime_paths,
     _save_performance_settings,
 )
 import report_server
@@ -269,14 +271,26 @@ class EmployeePerformanceReportTests(unittest.TestCase):
         self.assertIn('id="shortcut-quarter-to-date"', html)
         self.assertIn('id="assignee-overloaded-penalty-toggle"', html)
         self.assertIn('id="assignee-planning-realism-toggle"', html)
-        self.assertIn('id="simple-overrun-mode"', html)
-        self.assertIn("Overrun Subtask Hours", html)
-        self.assertIn("Total Overrun Hours", html)
+        self.assertIn('id="header-performance-controls-trigger"', html)
+        self.assertIn('id="header-performance-controls-popover"', html)
+        self.assertIn('id="top-overburn-mode"', html)
+        self.assertIn('id="top-efficiency-mode"', html)
+        self.assertIn("Overburn Per Task", html)
+        self.assertIn("Overburn Total", html)
+        self.assertIn("Penalty Inclusive Efficiency", html)
+        self.assertIn("Simple Efficiency", html)
         self.assertIn('id="header-average-performance-value"', html)
         self.assertIn('id="header-average-performance-mode"', html)
         self.assertIn('id="header-average-performance-meta"', html)
+        self.assertIn('id="header-efficiency-value"', html)
+        self.assertIn('id="header-efficiency-mode"', html)
+        self.assertIn('id="header-efficiency-meta"', html)
+        self.assertIn('id="header-total-planned-hours-value"', html)
+        self.assertIn('id="header-total-actual-hours-value"', html)
         self.assertIn('fetch("/api/performance/settings")', html)
         self.assertIn("function applyPerformanceSettings(nextSettings)", html)
+        self.assertIn("function syncEfficiencyScorecardMode(nextMode)", html)
+        self.assertIn("function syncHeaderPerformanceControls()", html)
         self.assertIn("hydratePerformanceSettings().finally(() => {", html)
         self.assertIn("let performanceSettingsReady = false;", html)
         self.assertIn("Loading performance settings before calculating scores.", html)
@@ -312,6 +326,16 @@ class EmployeePerformanceReportTests(unittest.TestCase):
         html = _build_html(payload)
         self.assertIn('if (label.includes("sub-task") || label.includes("subtask")) return true;', html)
         self.assertIn('return label.includes("bug") && (label.includes("sub-task") || label.includes("subtask"));', html)
+
+    def test_html_leaderboard_search_prefers_name_token_matches(self):
+        payload = _build_payload([], [], [], dict(DEFAULT_PERFORMANCE_SETTINGS), [], [], [], [])
+        html = _build_html(payload)
+        self.assertIn("function assigneeSearchRank(name, query)", html)
+        self.assertIn('else if (parts.some((part) => part.startsWith(term))) score += 30;', html)
+        self.assertIn('const strongSearchMatchExists = viewItems.some((it) => assigneeSearchRank(String(it.assignee || ""), leaderSearchText) >= 20);', html)
+        self.assertIn('const searchRank = assigneeSearchRank(String(it.assignee || ""), leaderSearchText);', html)
+        self.assertIn('return !strongSearchMatchExists || searchRank >= 20;', html)
+        self.assertIn('const searchDiff = assigneeSearchRank(String(b.assignee || ""), leaderSearchText) - assigneeSearchRank(String(a.assignee || ""), leaderSearchText);', html)
 
     def test_html_marks_zero_planned_hours_as_score_na(self):
         payload = _build_payload([], [], [], dict(DEFAULT_PERFORMANCE_SETTINGS), [], [], [], [])
@@ -363,6 +387,17 @@ class EmployeePerformanceReportTests(unittest.TestCase):
         self.assertIn("it.ss_total_overrun = liveTotalOverrun;", html)
         self.assertIn('simpleOverrunMode === "total" ? totalOverTotal : totalOverSubtasks', html)
         self.assertIn('syncSimpleOverrunMode("subtasks")', html)
+        self.assertIn('syncEfficiencyScorecardMode("penalty_inclusive")', html)
+
+    def test_html_uses_shared_scoped_subtasks_endpoint_for_filter_refresh(self):
+        payload = _build_payload([], [], [], dict(DEFAULT_PERFORMANCE_SETTINGS), [], [], [], [])
+        html = _build_html(payload)
+        self.assertIn('const SCOPED_SUBTASKS_ENDPOINT = "/api/scoped-subtasks";', html)
+        self.assertIn("async function loadScopedSubtasksForCurrentFilters()", html)
+        self.assertIn('params.set("mode", extendedActualsEnabled ? "extended" : "log_date");', html)
+        self.assertIn('async function renderAll()', html)
+        self.assertIn("await loadScopedSubtasksForCurrentFilters();", html)
+        self.assertIn("const scopedIssueSet = scopedSubtasksIssueKeySet instanceof Set ? scopedSubtasksIssueKeySet : null;", html)
 
     def test_html_due_completion_mode_mentions_late_completion_penalties(self):
         payload = _build_payload([], [], [], dict(DEFAULT_PERFORMANCE_SETTINGS), [], [], [], [])
@@ -375,28 +410,73 @@ class EmployeePerformanceReportTests(unittest.TestCase):
     def test_html_due_compliance_table_uses_updated_completion_headers(self):
         payload = _build_payload([], [], [], dict(DEFAULT_PERFORMANCE_SETTINGS), [], [], [], [])
         html = _build_html(payload)
-        self.assertIn("<th>Due</th><th>Last Logged Date</th><th>Actual Completed Date</th><th>Stable Resolved</th><th>Bucket</th>", html)
-        self.assertIn("Actual complete date came from last logged date after resolved date.", html)
-        self.assertIn("Actual complete date came from resolved date.", html)
+        self.assertIn("<th>Due</th><th>Last Logged Date</th><th>Actual Completed Date</th><th>Bucket</th>", html)
+        self.assertIn("Actual complete date came from last logged date.", html)
+        self.assertNotIn("Stable Resolved", html)
+        self.assertNotIn("Status Resolved Date", html)
+        self.assertNotIn("Actual complete date came from resolved date.", html)
 
-    def test_derive_actual_completion_prefers_last_log_when_after_resolved(self):
-        meta = _derive_actual_completion("2026-03-05", "2026-03-07", "2026-03-03")
+    def test_html_simple_scoring_table_declares_late_completed_status(self):
+        payload = _build_payload([], [], [], dict(DEFAULT_PERFORMANCE_SETTINGS), [], [], [], [])
+        html = _build_html(payload)
+        self.assertIn('if (est === "within_estimate" && due === "late") return `<span class="ss-status-pill ss-pill-late">Late Completed</span>`;', html)
+        self.assertIn('if (est === "over_estimate" && due === "late") return `<span class="ss-status-pill ss-pill-late">Over + Late Completed</span>`;', html)
+
+    def test_runtime_paths_default_employee_performance_source_is_db(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            tdp = Path(td)
+            with patch.dict("os.environ", {}, clear=True):
+                paths = _resolve_runtime_paths(tdp)
+        self.assertEqual(paths["source_mode"], "db")
+
+    def test_source_mode_prefers_active_epf_snapshot_by_default(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            db_path = Path(td) / "assignee_hours_capacity.db"
+            _init_performance_settings_db(db_path)
+            report_server._init_epf_refresh_db(db_path)
+            with sqlite3.connect(db_path) as conn:
+                conn.execute(
+                    "UPDATE epf_refresh_state SET active_run_id = ?, last_success_run_id = ?, updated_at_utc = ? WHERE id = 1",
+                    ("epf-active-run", "epf-active-run", "2026-03-11T00:00:00+00:00"),
+                )
+                conn.commit()
+            mode, run_id = _resolve_employee_performance_source_mode(
+                {"source_mode": "db", "db_path": db_path, "run_id": "", "canonical_run_id": ""}
+            )
+        self.assertEqual(mode, "db")
+        self.assertEqual(run_id, "epf-active-run")
+
+    def test_source_mode_falls_back_to_xlsx_when_no_epf_snapshot_exists(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            db_path = Path(td) / "assignee_hours_capacity.db"
+            _init_performance_settings_db(db_path)
+            mode, run_id = _resolve_employee_performance_source_mode(
+                {"source_mode": "db", "db_path": db_path, "run_id": "", "canonical_run_id": ""}
+            )
+        self.assertEqual(mode, "xlsx")
+        self.assertEqual(run_id, "")
+
+    def test_source_mode_preserves_explicit_canonical_db_requirement(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            db_path = Path(td) / "assignee_hours_capacity.db"
+            report_server._init_canonical_refresh_db(db_path)
+            canonical_run_id = _seed_canonical_run(db_path)
+            mode, run_id = _resolve_employee_performance_source_mode(
+                {"source_mode": "canonical_db", "db_path": db_path, "run_id": "", "canonical_run_id": canonical_run_id}
+            )
+        self.assertEqual(mode, "canonical_db")
+        self.assertEqual(run_id, canonical_run_id)
+
+    def test_derive_actual_completion_uses_last_log(self):
+        meta = _derive_actual_completion("2026-03-05", "2026-03-07")
         self.assertEqual(meta["actual_complete_date"], "2026-03-07")
         self.assertEqual(meta["actual_complete_source"], "last_logged_date")
         self.assertEqual(meta["completion_bucket"], "after_due")
 
-    def test_derive_actual_completion_prefers_resolved_when_after_last_log(self):
-        meta = _derive_actual_completion("2026-03-05", "2026-03-06", "2026-03-08")
-        self.assertEqual(meta["actual_complete_date"], "2026-03-08")
-        self.assertEqual(meta["actual_complete_source"], "resolved_stable_since_date")
-        self.assertEqual(meta["completion_bucket"], "after_due")
-
     def test_derive_actual_completion_handles_missing_dates(self):
-        only_last = _derive_actual_completion("2026-03-05", "2026-03-04", "")
-        only_resolved = _derive_actual_completion("2026-03-05", "", "2026-03-04")
-        none = _derive_actual_completion("2026-03-05", "", "")
+        only_last = _derive_actual_completion("2026-03-05", "2026-03-04")
+        none = _derive_actual_completion("2026-03-05", "")
         self.assertEqual(only_last["actual_complete_date"], "2026-03-04")
-        self.assertEqual(only_resolved["actual_complete_date"], "2026-03-04")
         self.assertEqual(none["actual_complete_date"], "")
         self.assertEqual(none["completion_bucket"], "not_completed")
 
@@ -409,7 +489,6 @@ class EmployeePerformanceReportTests(unittest.TestCase):
                     "assignee": "Alice",
                     "original_estimate_hours": 8,
                     "due_date": "2026-03-05",
-                    "resolved_stable_since_date": "2026-03-03",
                     "status": "Done",
                 },
                 "O2-102": {
@@ -417,7 +496,6 @@ class EmployeePerformanceReportTests(unittest.TestCase):
                     "assignee": "Alice",
                     "original_estimate_hours": 8,
                     "due_date": "2026-03-08",
-                    "resolved_stable_since_date": "2026-03-08",
                     "status": "Done",
                 },
             }
@@ -435,8 +513,8 @@ class EmployeePerformanceReportTests(unittest.TestCase):
             self.assertEqual(rows["O2-101"]["actual_complete_source"], "last_logged_date")
             self.assertEqual(rows["O2-101"]["due_completion_status"], "late")
 
-            self.assertEqual(rows["O2-102"]["actual_complete_date"], "2026-03-08")
-            self.assertEqual(rows["O2-102"]["actual_complete_source"], "resolved_stable_since_date")
+            self.assertEqual(rows["O2-102"]["actual_complete_date"], "2026-03-06")
+            self.assertEqual(rows["O2-102"]["actual_complete_source"], "last_logged_date")
             self.assertEqual(rows["O2-102"]["due_completion_status"], "on_time")
 
     def test_load_leave_issue_keys_prefers_raw_subtasks_and_normalizes(self):
@@ -875,14 +953,13 @@ class EmployeePerformanceReportTests(unittest.TestCase):
                     "fix_type",
                     "summary",
                     "status",
-                    "resolved_stable_since_date",
                     "end_date",
                     "original_estimate_hours",
                     "parent_issue_key",
                 ]
             )
             wi_ws.append(
-                ["O2", "O2-101", "O2-101", "Subtask", "Sub-task", "rework", "A", "Open", "2026-02-12", "2026-02-10", 8, "O2-100"]
+                ["O2", "O2-101", "O2-101", "Subtask", "Sub-task", "rework", "A", "Open", "2026-02-10", 8, "O2-100"]
             )
             wi_wb.save(work_items_xlsx)
 
@@ -894,12 +971,10 @@ class EmployeePerformanceReportTests(unittest.TestCase):
 
             work_items = _load_work_items(work_items_xlsx)
             self.assertEqual(work_items["O2-101"]["fix_type"], "rework")
-            self.assertEqual(work_items["O2-101"]["resolved_stable_since_date"], "2026-02-12")
 
             worklogs = _load_worklogs(worklogs_xlsx, work_items)
             self.assertEqual(len(worklogs), 1)
             self.assertEqual(worklogs[0]["fix_type"], "rework")
-            self.assertEqual(worklogs[0]["item_resolved_stable_since_date"], "2026-02-12")
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -261,6 +261,11 @@
             margin-top: 0.35rem;
             font-size: 0.84rem;
             color: #c8f2f0;
+        }
+        .hero-meta:empty {
+            display: none;
+            margin: 0;
+            padding: 0;
         }
         .source-switch {
             margin-top: 0.58rem;
@@ -741,6 +746,36 @@
             color: #0f172a;
             letter-spacing: 0.03em;
         }
+        .roadmap-heading-row {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            flex-wrap: wrap;
+            margin-bottom: 0.35rem;
+        }
+        .roadmap-heading-row h3 { margin: 0; }
+        .roadmap-legend {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.75rem;
+            font-size: 0.72rem;
+            font-weight: 600;
+            color: #516875;
+        }
+        .roadmap-legend-item {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+        }
+        .roadmap-legend-swatch {
+            display: inline-block;
+            width: 14px;
+            height: 10px;
+            border-radius: 3px;
+        }
+        .roadmap-legend-swatch.legend-late { background: linear-gradient(90deg, #dc2626 0%, #f43f5e 100%); }
+        .roadmap-legend-swatch.legend-on-track { background: linear-gradient(90deg, #16a34a 0%, #22c55e 100%); }
+        .roadmap-legend-swatch.legend-yet-to-start { background: linear-gradient(90deg, #1d4ed8 0%, #3b82f6 100%); }
         .roadmap-sub {
             margin: 0 0 0.45rem;
             font-size: 0.73rem;
@@ -756,7 +791,8 @@
         }
         .roadmap-axis-row {
             display: grid;
-            grid-template-columns: minmax(120px, 140px) minmax(220px, 320px) minmax(72px, 92px) minmax(130px, 170px) minmax(0, 1fr);
+            /* Match epic row grid (0 first column) so top calendar aligns with bar track left */
+            grid-template-columns: 0 minmax(220px, 320px) minmax(72px, 92px) minmax(130px, 170px) minmax(0, 1fr);
             gap: 0.5rem;
             align-items: center;
             margin-bottom: 0.35rem;
@@ -919,9 +955,33 @@
             padding: 0.25rem 0.15rem 0.2rem;
             background: #fff;
         }
+        /* Epic rows to the wall: no left indent, first (PROJECT) column collapsed */
+        .roadmap-group-rows:has(> .roadmap-row) {
+            padding-left: 0;
+        }
         .roadmap-group-rows.is-collapsed {
             display: none;
         }
+        .roadmap-hierarchy-level-1 .roadmap-group-header {
+            background: #0C3645;
+            color: #fff;
+            border-bottom-color: rgba(255, 255, 255, 0.15);
+        }
+        .roadmap-hierarchy-level-1 .roadmap-group-header:hover {
+            background: #0f4457;
+            color: #fff;
+        }
+        .roadmap-hierarchy-level-1 .roadmap-group-header .roadmap-group-name,
+        .roadmap-hierarchy-level-1 .roadmap-group-header .roadmap-group-count,
+        .roadmap-hierarchy-level-1 .roadmap-group-header .roadmap-group-chevron {
+            color: #fff;
+        }
+        .roadmap-hierarchy-level-2 .roadmap-group-header { padding-left: 1.25rem; background: #f8fcff; }
+        .roadmap-hierarchy-level-2 .roadmap-group-name { font-weight: 700; }
+        .roadmap-hierarchy-level-3 .roadmap-group-header { padding-left: 2rem; background: #f0f9ff; }
+        .roadmap-hierarchy-level-3 .roadmap-group-name { font-weight: 600; }
+        .roadmap-group-rows-inline { display: contents; }
+        .roadmap-group-rows-inline .roadmap-row { display: grid; }
         .roadmap-row {
             display: grid;
             grid-template-columns: minmax(120px, 140px) minmax(220px, 320px) minmax(72px, 92px) minmax(130px, 170px) minmax(0, 1fr);
@@ -940,13 +1000,35 @@
         .roadmap-shell.cols-hide-status .roadmap-row {
             grid-template-columns: minmax(120px, 140px) minmax(220px, 320px) minmax(130px, 170px) minmax(0, 1fr) !important;
         }
+        .roadmap-shell.cols-hide-status .roadmap-axis-row {
+            grid-template-columns: 0 minmax(220px, 320px) minmax(130px, 170px) minmax(0, 1fr) !important;
+        }
+        .roadmap-shell.cols-hide-status .roadmap-row.is-clickable {
+            grid-template-columns: 0 minmax(220px, 320px) minmax(130px, 170px) minmax(0, 1fr) !important;
+        }
         .roadmap-shell.cols-hide-mandays .roadmap-axis-row,
         .roadmap-shell.cols-hide-mandays .roadmap-row {
             grid-template-columns: minmax(120px, 140px) minmax(220px, 320px) minmax(72px, 92px) minmax(0, 1fr) !important;
         }
+        .roadmap-shell.cols-hide-mandays .roadmap-axis-row {
+            grid-template-columns: 0 minmax(220px, 320px) minmax(72px, 92px) minmax(0, 1fr) !important;
+        }
+        .roadmap-shell.cols-hide-mandays .roadmap-row.is-clickable {
+            grid-template-columns: 0 minmax(220px, 320px) minmax(72px, 92px) minmax(0, 1fr) !important;
+        }
         .roadmap-shell.cols-hide-status.cols-hide-mandays .roadmap-axis-row,
         .roadmap-shell.cols-hide-status.cols-hide-mandays .roadmap-row {
             grid-template-columns: minmax(120px, 140px) minmax(220px, 320px) minmax(0, 1fr) !important;
+        }
+        .roadmap-shell.cols-hide-status.cols-hide-mandays .roadmap-axis-row {
+            grid-template-columns: 0 minmax(220px, 320px) minmax(0, 1fr) !important;
+        }
+        .roadmap-shell.cols-hide-status.cols-hide-mandays .roadmap-row.is-clickable {
+            grid-template-columns: 0 minmax(220px, 320px) minmax(0, 1fr) !important;
+        }
+        /* Epic rows: first column (PROJECT) zero width so RMI labels align to the wall */
+        .roadmap-row.is-clickable {
+            grid-template-columns: 0 minmax(220px, 320px) minmax(72px, 92px) minmax(130px, 170px) minmax(0, 1fr);
         }
         .roadmap-row.is-clickable {
             cursor: pointer;
@@ -1220,6 +1302,58 @@
         .roadmap-row.status-late .roadmap-bar {
             background: linear-gradient(90deg, #dc2626 0%, #f43f5e 100%);
         }
+        .roadmap-row.delivery-late .roadmap-bar { background: linear-gradient(90deg, #dc2626 0%, #f43f5e 100%); }
+        .roadmap-row.delivery-late .roadmap-label, .roadmap-row.delivery-late .roadmap-mandays { color: #9f1239; }
+        .roadmap-row.delivery-late .roadmap-track { border-color: #fda4af; background: #fff7f8; }
+        .roadmap-row.delivery-on-track .roadmap-bar { background: linear-gradient(90deg, #16a34a 0%, #22c55e 100%); }
+        .roadmap-row.delivery-on-track .roadmap-label, .roadmap-row.delivery-on-track .roadmap-mandays { color: #166534; }
+        .roadmap-row.delivery-on-track .roadmap-track { border-color: #86efac; background: #f0fdf4; }
+        .roadmap-row.delivery-yet-to-start .roadmap-bar { background: linear-gradient(90deg, #1d4ed8 0%, #3b82f6 100%); }
+        .roadmap-row.delivery-yet-to-start .roadmap-label, .roadmap-row.delivery-yet-to-start .roadmap-mandays { color: #1e40af; }
+        .roadmap-row.delivery-yet-to-start .roadmap-track { border-color: #93c5fd; background: #eff6ff; }
+        .roadmap-delivery-icon { display: inline-flex; align-items: center; margin-right: 4px; font-size: 1rem; vertical-align: middle; }
+        .roadmap-delivery-icon.late { color: #dc2626; }
+        .roadmap-delivery-icon.on-track { color: #16a34a; }
+        .roadmap-delivery-icon.yet-to-start { color: #1d4ed8; }
+        .hero-with-help { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+        .ipp-categorization-wrap {
+            display: inline-flex; align-items: center; gap: 0;
+            background: rgba(255, 255, 255, 0.18);
+            border: 1px solid rgba(255, 255, 255, 0.4);
+            border-radius: 999px;
+            padding: 0.4rem 0.5rem 0.4rem 1rem;
+            margin-left: 0.25rem;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+        }
+        .ipp-categorization-toggle { display: inline-flex; align-items: center; gap: 0.5rem; cursor: pointer; user-select: none; font-size: 1rem; font-weight: 700; color: #ecfeff; letter-spacing: 0.02em; }
+        .ipp-categorization-label { white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,0.2); }
+        .ipp-categorization-toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
+        .ipp-categorization-switch { display: inline-block; width: 48px; height: 26px; background: rgba(255,255,255,0.35); border-radius: 13px; position: relative; transition: background 0.2s; flex-shrink: 0; }
+        .ipp-categorization-switch::after { content: ""; position: absolute; width: 22px; height: 22px; left: 2px; top: 2px; background: #fff; border-radius: 50%; box-shadow: 0 2px 4px rgba(0,0,0,0.25); transition: transform 0.2s; }
+        .ipp-categorization-toggle input:checked + .ipp-categorization-switch { background: #0e7490; }
+        .ipp-categorization-toggle input:checked + .ipp-categorization-switch::after { transform: translateX(22px); }
+        .ipp-categorization-toggle input:focus-visible + .ipp-categorization-switch { outline: 2px solid #ecfeff; outline-offset: 2px; }
+        .ipp-categorization-wrap:hover { background: rgba(255, 255, 255, 0.24); border-color: rgba(255, 255, 255, 0.5); }
+        .ipp-help-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 36px; height: 36px; padding: 0 10px; border: 1px solid var(--line); border-radius: 50%; background: var(--panel); color: var(--accent); cursor: pointer; flex-shrink: 0; }
+        .ipp-help-btn:hover { background: #e0f2fe; color: #0c4a6e; }
+        .ipp-complete-meeting-btn { border-radius: 18px; border-color: var(--accent); color: var(--accent); }
+        .ipp-complete-meeting-btn:hover { background: #e0f2fe; }
+        .ipp-guide-drawer { position: fixed; top: 0; right: 0; width: min(420px, 100vw); height: 100vh; background: var(--panel); box-shadow: -4px 0 20px rgba(0,0,0,0.12); z-index: 100002; display: flex; flex-direction: column; transform: translateX(100%); transition: transform 0.25s ease; overflow: hidden; }
+        .ipp-guide-drawer.is-open { transform: translateX(0); }
+        .ipp-guide-drawer-header { display: flex; align-items: center; justify-content: space-between; padding: 1rem 1.25rem; border-bottom: 1px solid var(--line); background: #f8fafc; }
+        .ipp-guide-drawer-header h2 { margin: 0; font-size: 1.1rem; color: var(--ink); }
+        .ipp-guide-drawer-close { border: none; background: none; cursor: pointer; padding: 0.35rem; color: var(--muted); border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; }
+        .ipp-guide-drawer-close:hover { background: #e2e8f0; color: var(--ink); }
+        .ipp-guide-body { padding: 1rem 1.25rem; overflow-y: auto; flex: 1; font-size: 0.9rem; line-height: 1.55; color: var(--ink); }
+        .ipp-guide-body h3 { font-size: 1rem; margin: 1rem 0 0.5rem; color: var(--accent); }
+        .ipp-guide-body h3:first-child { margin-top: 0; }
+        .ipp-guide-body p { margin: 0.5rem 0; }
+        .ipp-guide-body ul { margin: 0.5rem 0; padding-left: 1.25rem; }
+        .ipp-guide-body li { margin: 0.35rem 0; }
+        .ipp-guide-body strong { color: var(--ink); }
+        .ipp-guide-body .example { background: #f1f5f9; border-radius: 8px; padding: 0.75rem 1rem; margin: 0.75rem 0; font-size: 0.85rem; border-left: 4px solid var(--accent); }
+        .ipp-guide-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.3); z-index: 100001; opacity: 0; pointer-events: none; transition: opacity 0.2s; }
+        .ipp-guide-backdrop.is-open { opacity: 1; pointer-events: auto; }
         .roadmap-empty {
             display: inline-flex;
             align-items: center;
@@ -1371,6 +1505,30 @@
             word-break: break-word;
             min-height: 4.8rem;
         }
+        .rmi-remarks-panel.is-late {
+            border-color: #fecaca;
+            background: linear-gradient(180deg, #fee2e2 0%, #fecaca 100%);
+        }
+        .rmi-remarks-panel.is-late .rmi-remarks-title,
+        .rmi-remarks-panel.is-late .rmi-remarks-value {
+            color: #7f1d1d;
+        }
+        .rmi-remarks-panel.is-on-track {
+            border-color: #86efac;
+            background: linear-gradient(180deg, #dcfce7 0%, #bbf7d0 100%);
+        }
+        .rmi-remarks-panel.is-on-track .rmi-remarks-title,
+        .rmi-remarks-panel.is-on-track .rmi-remarks-value {
+            color: #14532d;
+        }
+        .rmi-remarks-panel.is-yet-to-start {
+            border-color: #93c5fd;
+            background: linear-gradient(180deg, #dbeafe 0%, #bfdbfe 100%);
+        }
+        .rmi-remarks-panel.is-yet-to-start .rmi-remarks-title,
+        .rmi-remarks-panel.is-yet-to-start .rmi-remarks-value {
+            color: #1e3a8a;
+        }
         .rmi-calendar-wrap {
             border: 1px solid #d7e7ee;
             border-radius: 10px;
@@ -1489,6 +1647,80 @@
             font-size: 0.83rem;
             font-weight: 800;
             color: #0f172a;
+        }
+        .rmi-sealed-dates-panel {
+            margin: 0.52rem 0 0.78rem;
+        }
+        .rmi-sealed-dates-title {
+            margin: 0 0 0.35rem;
+            font-size: 0.83rem;
+            font-weight: 800;
+            color: #0f172a;
+        }
+        .rmi-sealed-dates-accordion {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+        .rmi-sealed-date-accordion-item {
+            border: 1px solid #d7e7ee;
+            border-radius: 8px;
+            background: #f8fcff;
+            overflow: hidden;
+        }
+        .rmi-sealed-date-accordion-trigger {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            width: 100%;
+            padding: 0.45rem 0.6rem;
+            border: none;
+            background: transparent;
+            font-size: 0.88rem;
+            color: #0f172a;
+            cursor: pointer;
+            text-align: left;
+        }
+        .rmi-sealed-date-accordion-trigger:hover {
+            background: #eef7fc;
+        }
+        .rmi-sealed-date-accordion-icon {
+            flex-shrink: 0;
+            font-size: 1.2rem;
+            color: #475569;
+            transition: transform 0.2s ease;
+        }
+        .rmi-sealed-date-accordion-trigger[aria-expanded="true"] .rmi-sealed-date-accordion-icon {
+            transform: rotate(180deg);
+        }
+        .rmi-sealed-date-accordion-content {
+            padding: 0 0.6rem 0.6rem;
+        }
+        .rmi-sealed-date-accordion-content[hidden] {
+            display: none !important;
+        }
+        .rmi-sealed-snapshot-meta {
+            margin-bottom: 0.4rem;
+            font-size: 0.78rem;
+        }
+        .rmi-sealed-snapshot-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.8rem;
+        }
+        .rmi-sealed-snapshot-table th,
+        .rmi-sealed-snapshot-table td {
+            padding: 0.35rem 0.5rem;
+            border: 1px solid #d7e7ee;
+            text-align: left;
+        }
+        .rmi-sealed-snapshot-table th {
+            background: #eef7fc;
+            font-weight: 700;
+            color: #0f172a;
+        }
+        .rmi-sealed-snapshot-table tbody tr:nth-child(even) {
+            background: #f8fcff;
         }
         .hours-compare-row {
             display: grid;
@@ -1639,7 +1871,7 @@
             padding: 0.18rem 0.56rem;
         }
         .roadmap-axis-row {
-            grid-template-columns: minmax(150px, 180px) minmax(320px, 420px) minmax(110px, 140px) minmax(170px, 230px) minmax(0, 1fr);
+            grid-template-columns: 0 minmax(320px, 420px) minmax(110px, 140px) minmax(170px, 230px) minmax(0, 1fr);
             gap: 0.75rem;
             margin-bottom: 0.55rem;
             padding: 0.35rem 0;
@@ -1662,6 +1894,7 @@
             gap: 0.75rem;
         }
         .roadmap-row.is-clickable {
+            grid-template-columns: 0 minmax(320px, 420px) minmax(110px, 140px) minmax(170px, 230px) minmax(0, 1fr);
             padding: 0.3rem 0.35rem;
         }
         .roadmap-product {
@@ -1745,12 +1978,21 @@
             grid-template-columns: minmax(150px, 200px) minmax(360px, 480px) minmax(120px, 160px) minmax(210px, 270px) minmax(0, 1fr);
             gap: 0.85rem;
         }
+        .roadmap-axis-row {
+            grid-template-columns: 0 minmax(360px, 480px) minmax(120px, 160px) minmax(210px, 270px) minmax(0, 1fr);
+        }
+        .roadmap-row.is-clickable {
+            grid-template-columns: 0 minmax(360px, 480px) minmax(120px, 160px) minmax(210px, 270px) minmax(0, 1fr);
+        }
         .roadmap-grid {
             gap: 0.38rem;
         }
         .roadmap-group-rows {
             gap: 0.35rem;
             padding: 0.4rem 0.3rem 0.35rem;
+        }
+        .roadmap-group-rows:has(> .roadmap-row) {
+            padding-left: 0;
         }
         .roadmap-row.is-clickable {
             padding: 0.4rem 0.42rem;
@@ -1908,22 +2150,35 @@
             </button>
         </div>
         <div class="wrap">
-            <div class="hero">
+            <div class="hero hero-with-help">
                 <h1>IPP Meeting Dashboard</h1>
-                <div class="hero-meta" id="hero-meta"></div>
-                <div class="source-switch">
-                    <span class="source-switch-label">Epic Plan Source</span>
-                    <div class="source-switch-buttons" role="group" aria-label="Epic plan source toggle">
-                        <button class="source-switch-btn" id="plan-source-db" type="button" data-plan-source="db">Database</button>
-                        <button class="source-switch-btn is-active" id="plan-source-jira" type="button" data-plan-source="jira">Jira Excel</button>
-                    </div>
-                    <span class="source-switch-hint" id="plan-source-hint">Showing planned hours/dates from Jira Excel.</span>
+                <div class="ipp-categorization-wrap">
+                    <label class="ipp-categorization-toggle" title="Show Input → Component hierarchy under each project">
+                        <span class="ipp-categorization-label">Categorization</span>
+                        <input type="checkbox" id="ipp-categorization-toggle" checked aria-label="Categorization (Input → Component hierarchy)">
+                        <span class="ipp-categorization-switch"></span>
+                    </label>
                 </div>
+                <button type="button" id="ipp-complete-meeting-btn" class="ipp-help-btn ipp-complete-meeting-btn" aria-label="Complete IPP Meeting" title="Complete this IPP meeting and set next intended date" style="display:none;">
+                    <span class="material-symbols-outlined" aria-hidden="true">event_available</span>
+                    <span>Complete IPP Meeting</span>
+                </button>
+                <button type="button" id="ipp-help-btn" class="ipp-help-btn" aria-label="Open IPP Dashboard guide" title="Open guide">
+                    <span class="material-symbols-outlined" aria-hidden="true">help</span>
+                </button>
+                <div class="hero-meta" id="hero-meta"></div>
             </div>
             <section class="report-view is-active" data-report-view="roadmap">
                 <section class="panel">
                     <section class="roadmap">
-                        <h3>PRODUCT ROADMAP</h3>
+                        <div class="roadmap-heading-row">
+                            <h3>PRODUCT ROADMAP</h3>
+                            <div class="roadmap-legend" aria-label="Delivery status bar colors">
+                                <span class="roadmap-legend-item"><span class="roadmap-legend-swatch legend-late" aria-hidden="true"></span> Late</span>
+                                <span class="roadmap-legend-item"><span class="roadmap-legend-swatch legend-on-track" aria-hidden="true"></span> On-track</span>
+                                <span class="roadmap-legend-item"><span class="roadmap-legend-swatch legend-yet-to-start" aria-hidden="true"></span> Yet to start</span>
+                            </div>
+                        </div>
                         <p class="roadmap-sub">Gantt view of all RMIs found in the IPP workbook.</p>
                         <div id="roadmap-gantt" class="roadmap-shell"></div>
                     </section>
@@ -1960,8 +2215,51 @@
         <div class="muted">Select an RMI from roadmap.</div>
     </div>
 </aside>
+<div id="ipp-complete-meeting-modal" class="ipp-modal-backdrop" aria-hidden="true" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:100001; align-items:center; justify-content:center;">
+    <div class="ipp-modal" style="background:#fff; border-radius:12px; padding:24px; max-width:400px; box-shadow:0 8px 32px rgba(0,0,0,0.2);">
+        <h3 style="margin:0 0 16px 0;">Complete IPP Meeting</h3>
+        <p class="muted" style="margin:0 0 12px 0;">Enter the next IPP Meeting Date (Intended Date). The current meeting will be marked Completed and a new Scheduled meeting will be created.</p>
+        <label style="display:block; margin-bottom:4px; font-weight:600;">Next IPP Meeting Date (Intended Date)</label>
+        <input type="date" id="ipp-complete-next-date" style="width:100%; padding:8px 12px; border:1px solid #d1d9e8; border-radius:8px; margin-bottom:16px;">
+        <div style="display:flex; gap:8px; justify-content:flex-end;">
+            <button type="button" id="ipp-complete-cancel" class="btn alt" style="padding:8px 16px;">Cancel</button>
+            <button type="button" id="ipp-complete-submit" class="btn primary" style="padding:8px 16px;">Complete meeting</button>
+        </div>
+    </div>
+</div>
+<div id="ipp-guide-backdrop" class="ipp-guide-backdrop" aria-hidden="true"></div>
+<aside id="ipp-guide-drawer" class="ipp-guide-drawer" aria-hidden="true" aria-label="IPP Meeting Dashboard guide">
+    <div class="ipp-guide-drawer-header">
+        <h2>IPP Meeting Dashboard — Guide</h2>
+        <button type="button" class="ipp-guide-drawer-close" id="ipp-guide-drawer-close" aria-label="Close guide"><span class="material-symbols-outlined" aria-hidden="true">close</span></button>
+    </div>
+    <div class="ipp-guide-body">
+        <h3>Purpose of this dashboard</h3>
+        <p>The <strong>IPP Meeting Dashboard</strong> is a <strong>leadership report</strong>. It speaks a different language from operational monitoring reports and is meant for communicating with leadership in a broader company perspective.</p>
+        <h3>How it differs from other reports</h3>
+        <p>On other reports, the <strong>planned due date</strong> is the approved date from management and is used as a benchmark to see whether work has been delayed against the time of worklogs. Those are <strong>operational monitoring reports</strong>.</p>
+        <p>Here, the date you see as “Actual Production Date” is treated as a <strong>Tentative Production Date</strong>. Whether we will reach it or have already reached it is a separate discussion. This <strong>Tentative Production Date</strong> is different from the <strong>Planned Due Date</strong> of the Epic.</p>
+        <h3>Delivery Status</h3>
+        <p>Each epic has a <strong>Delivery Status</strong> that you set in Epics Management: <strong>Late</strong>, <strong>On-track</strong>, or <strong>Yet to start</strong>. The dashboard shows this status with bar colors and icons:</p>
+        <ul>
+            <li><strong>Late</strong> — Red bar, warning icon</li>
+            <li><strong>On-track</strong> — Green bar, check mark icon</li>
+            <li><strong>Yet to start</strong> — Blue bar, hour-gauge icon</li>
+        </ul>
+        <p>This status is <strong>manually set</strong> so you can communicate clearly to leadership. The system can suggest a status based on dates, but you can always override it.</p>
+        <h3>Why manual status matters</h3>
+        <p>Tentative Production Date and Planned Due Date can differ in rare cases and the epic can still be <strong>on track</strong>. For example: all phases of the epic are done, but an external factor (client, contract, holidays, approvals) delays the final production date. You do not want the dashboard to auto-mark the epic as late and draw leadership attention as if the team were at fault. By setting <strong>On-track</strong> manually, you communicate that delivery is on track even though the tentative production date may differ.</p>
+        <div class="example">
+            <strong>Example:</strong> Epic planned due date is 15 Mar. Tentative production date is 20 Mar because of a client sign-off delay. You set Delivery Status to <strong>On-track</strong> so leadership sees the right message.
+        </div>
+        <h3>Hierarchy on this dashboard</h3>
+        <p>RMIs are shown in the order: <strong>Project → Input → Component → Epic</strong>. When an epic has no <strong>Input</strong> (Product Categorization) or no <strong>Component</strong> set in Epics Planner, those levels are omitted in the tree so the epic still appears directly under the level that is set (e.g. under Project only, or under Project → Input).</p>
+        <h3>Where to set Delivery Status</h3>
+        <p>Open <strong>Epics Planner</strong> (Epics Management), find the epic, and use the <strong>Delivery Status</strong> column. You can change it anytime; the IPP Meeting Dashboard will reflect your choice in bar colors and icons.</p>
+    </div>
+</aside>
 
-<script id="ipp-phase-data" type="application/json">{"generated_at": "2026-03-10 16:36 UTC", "source_workbook": "E:\\JIRA SCRIPT\\1_jira_work_items_export.xlsx", "source_sheet": "Epics Planner DB + Jira WorkItems Export", "settings_db_path": "E:\\JIRA SCRIPT\\assignee_hours_capacity.db", "phase_names": ["Research/URS", "DDS", "Development", "SQA", "User Manual", "Production"], "rows": [{"source_sheet": "Epics Planner DB", "row_number": 1, "product": "Digital Log", "epic_rmi": "DIGITALLOG-150", "epic_name": "Digital Log Journal Operator", "project_name": "Digital Log", "plan_status": "Planned", "priority": "Low", "jira_link": "https://octopusdtlsupport.atlassian.net/browse/DIGITALLOG-150", "epic_planned_start_date": "2026-01-07", "epic_planned_end_date": "2026-02-20", "epic_planned_start_date_db": "2026-01-07", "epic_planned_end_date_db": "2026-02-20", "epic_planned_start_date_jira": "2026-01-07", "epic_planned_end_date_jira": "2026-02-20", "epic_actual_date": "2026-02-20", "remarks": "", "computed_total_mandays": 33.0, "jira_status": "Resolved!", "jira_assignee": "Arsalan Zafar Khan", "db_epic_planned_mandays": 30.0, "epic_planned_hours_db": 240.0, "epic_planned_hours_jira": 240.0, "jira_original_estimate_hours": 240.0, "jira_total_hours_logged": 0.0, "jira_progress_pct": 0.0, "phase_data": {"Research/URS": {"start": "", "end": "", "mandays": "", "raw": "", "state": "no_entry", "warning": ""}, "DDS": {"start": "", "end": "", "mandays": "", "raw": "", "state": "no_entry", "warning": ""}, "Development": {"start": "2026-01-23", "end": "2026-02-06", "mandays": "30", "raw": "2026-01-23 to 2026-02-06 (30 md)", "state": "planned", "warning": ""}, "SQA": {"start": "", "end": "", "mandays": "", "raw": "", "state": "no_entry", "warning": ""}, "User Manual": {"start": "", "end": "", "mandays": "", "raw": "", "state": "no_entry", "warning": ""}, "Production": {"start": "2026-02-20", "end": "2026-02-20", "mandays": "3", "raw": "2026-02-20 to 2026-02-20 (3 md)", "state": "planned", "warning": ""}}, "stories": [{"story_key": "DIGITALLOG-69", "story_type": "Story", "story_name": "Development", "story_status": "Resolved!", "story_assignee": "Arsalan Zafar Khan", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/DIGITALLOG-69", "story_start_date": "2026-01-23", "story_end_date": "2026-02-06", "story_actual_end_date": "2026-02-18T12:00:00+00:00", "story_planned_hours": 240.0, "story_logged_hours": 208.0, "story_progress_pct": 86.67}, {"story_key": "DIGITALLOG-153", "story_type": "Story", "story_name": "Production Release", "story_status": "Resolved!", "story_assignee": "Arsalan Zafar Khan", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/DIGITALLOG-153", "story_start_date": "2026-02-20", "story_end_date": "2026-02-20", "story_actual_end_date": "2026-02-20T10:30:00+00:00", "story_planned_hours": 24.0, "story_logged_hours": 6.0, "story_progress_pct": 25.0}, {"story_key": "DIGITALLOG-151", "story_type": "Story", "story_name": "SQA", "story_status": "Resolved!", "story_assignee": "Zeeshan Sarwar", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/DIGITALLOG-151", "story_start_date": "", "story_end_date": "", "story_actual_end_date": "", "story_planned_hours": 0.0, "story_logged_hours": 0.0, "story_progress_pct": null}, {"story_key": "DIGITALLOG-152", "story_type": "Story", "story_name": "User Manual", "story_status": "To Do", "story_assignee": "Hassan Malik", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/DIGITALLOG-152", "story_start_date": "", "story_end_date": "", "story_actual_end_date": "", "story_planned_hours": 0.0, "story_logged_hours": 0.0, "story_progress_pct": null}], "roadmap": {"valid": true, "axis_start_iso": "2025-11-08", "axis_end_iso": "2026-05-10", "axis_span_days": 184, "today_in_range": true, "today_left_pct": 66.6667, "bar_left_pct": 32.7869, "bar_width_pct": 24.0437, "actual_left_pct": 56.8306, "week_ticks": [{"iso": "2025-11-08", "label": "08-Nov-2025", "left_pct": 0.0}, {"iso": "2025-11-23", "label": "23-Nov-2025", "left_pct": 8.1967}, {"iso": "2025-12-08", "label": "08-Dec-2025", "left_pct": 16.3934}, {"iso": "2025-12-23", "label": "23-Dec-2025", "left_pct": 24.5902}, {"iso": "2026-01-07", "label": "07-Jan-2026", "left_pct": 32.7869}, {"iso": "2026-01-22", "label": "22-Jan-2026", "left_pct": 40.9836}, {"iso": "2026-02-06", "label": "06-Feb-2026", "left_pct": 49.1803}, {"iso": "2026-02-21", "label": "21-Feb-2026", "left_pct": 57.377}, {"iso": "2026-03-08", "label": "08-Mar-2026", "left_pct": 65.5738}, {"iso": "2026-03-23", "label": "23-Mar-2026", "left_pct": 73.7705}, {"iso": "2026-04-07", "label": "07-Apr-2026", "left_pct": 81.9672}, {"iso": "2026-04-22", "label": "22-Apr-2026", "left_pct": 90.1639}, {"iso": "2026-05-07", "label": "07-May-2026", "left_pct": 98.3607}]}, "mini_gantt": {"has_dated_phases": true, "axis_start_iso": "2026-01-13", "axis_end_iso": "2026-03-02", "axis_span_days": 49, "timeline_width_px": 1176, "scroll_enabled": true, "week_ticks": [{"iso": "2026-01-13", "label": "13-Jan-2026", "left_pct": 0.0}, {"iso": "2026-01-20", "label": "20-Jan-2026", "left_pct": 14.5833}, {"iso": "2026-01-27", "label": "27-Jan-2026", "left_pct": 29.1667}, {"iso": "2026-02-03", "label": "03-Feb-2026", "left_pct": 43.75}, {"iso": "2026-02-10", "label": "10-Feb-2026", "left_pct": 58.3333}, {"iso": "2026-02-17", "label": "17-Feb-2026", "left_pct": 72.9167}, {"iso": "2026-02-24", "label": "24-Feb-2026", "left_pct": 87.5}], "today_in_range": false, "today_left_pct": "", "phases": {"Research/URS": {"state": "no_entry", "state_label": "no entry", "warning": "", "start_iso": "", "end_iso": "", "mandays_text": "", "mandays_num": null, "raw": "", "valid": false, "bar_left_pct": "", "bar_width_pct": "", "bar_thickness_px": "", "bar_top_offset_px": "", "start_label": "-", "end_label": "-", "bar_label": "-", "show_no_bar": true}, "DDS": {"state": "no_entry", "state_label": "no entry", "warning": "", "start_iso": "", "end_iso": "", "mandays_text": "", "mandays_num": null, "raw": "", "valid": false, "bar_left_pct": "", "bar_width_pct": "", "bar_thickness_px": "", "bar_top_offset_px": "", "start_label": "-", "end_label": "-", "bar_label": "-", "show_no_bar": true}, "Development": {"state": "planned", "state_label": "planned", "warning": "", "start_iso": "2026-01-23", "end_iso": "2026-02-06", "mandays_text": "30", "mandays_num": 30.0, "raw": "2026-01-23 to 2026-02-06 (30 md)", "valid": true, "bar_left_pct": 20.8333, "bar_width_pct": 29.1667, "bar_thickness_px": 19.6667, "bar_top_offset_px": 5.1667, "start_label": "23-Jan-2026", "end_label": "06-Feb-2026", "bar_label": "30 md", "show_no_bar": false}, "SQA": {"state": "no_entry", "state_label": "no entry", "warning": "", "start_iso": "", "end_iso": "", "mandays_text": "", "mandays_num": null, "raw": "", "valid": false, "bar_left_pct": "", "bar_width_pct": "", "bar_thickness_px": "", "bar_top_offset_px": "", "start_label": "-", "end_label": "-", "bar_label": "-", "show_no_bar": true}, "User Manual": {"state": "no_entry", "state_label": "no entry", "warning": "", "start_iso": "", "end_iso": "", "mandays_text": "", "mandays_num": null, "raw": "", "valid": false, "bar_left_pct": "", "bar_width_pct": "", "bar_thickness_px": "", "bar_top_offset_px": "", "start_label": "-", "end_label": "-", "bar_label": "-", "show_no_bar": true}, "Production": {"state": "planned", "state_label": "planned", "warning": "", "start_iso": "2026-02-20", "end_iso": "2026-02-20", "mandays_text": "3", "mandays_num": 3.0, "raw": "2026-02-20 to 2026-02-20 (3 md)", "valid": true, "bar_left_pct": 79.1667, "bar_width_pct": 0.8, "bar_thickness_px": 9.1667, "bar_top_offset_px": 10.4167, "start_label": "20-Feb-2026", "end_label": "20-Feb-2026", "bar_label": "3 md", "show_no_bar": false}}}}, {"source_sheet": "Epics Planner DB", "row_number": 2, "product": "Digital Log", "epic_rmi": "DIGITALLOG-146", "epic_name": "Digital Log Read API", "project_name": "Digital Log", "plan_status": "Planned", "priority": "Low", "jira_link": "https://octopusdtlsupport.atlassian.net/browse/DIGITALLOG-146", "epic_planned_start_date": "2026-01-07", "epic_planned_end_date": "2026-02-20", "epic_planned_start_date_db": "2026-01-07", "epic_planned_end_date_db": "2026-02-20", "epic_planned_start_date_jira": "2026-01-07", "epic_planned_end_date_jira": "2026-02-20", "epic_actual_date": "2026-02-20", "remarks": "", "computed_total_mandays": 24.0, "jira_status": "Resolved!", "jira_assignee": "Arsalan Zafar Khan", "db_epic_planned_mandays": 21.0, "epic_planned_hours_db": 168.0, "epic_planned_hours_jira": 168.0, "jira_original_estimate_hours": 168.0, "jira_total_hours_logged": 0.0, "jira_progress_pct": 0.0, "phase_data": {"Research/URS": {"start": "", "end": "", "mandays": "", "raw": "", "state": "no_entry", "warning": ""}, "DDS": {"start": "", "end": "", "mandays": "", "raw": "", "state": "no_entry", "warning": ""}, "Development": {"start": "2026-01-14", "end": "2026-01-22", "mandays": "21", "raw": "2026-01-14 to 2026-01-22 (21 md)", "state": "planned", "warning": ""}, "SQA": {"start": "", "end": "", "mandays": "", "raw": "", "state": "no_entry", "warning": ""}, "User Manual": {"start": "", "end": "", "mandays": "", "raw": "", "state": "no_entry", "warning": ""}, "Production": {"start": "2026-02-20", "end": "2026-02-20", "mandays": "3", "raw": "2026-02-20 to 2026-02-20 (3 md)", "state": "planned", "warning": ""}}, "stories": [{"story_key": "DIGITALLOG-68", "story_type": "Story", "story_name": "Development", "story_status": "Resolved!", "story_assignee": "Arsalan Zafar Khan", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/DIGITALLOG-68", "story_start_date": "2026-01-14", "story_end_date": "2026-01-22", "story_actual_end_date": "2026-01-22T12:00:00+00:00", "story_planned_hours": 168.0, "story_logged_hours": 168.0, "story_progress_pct": 100.0}, {"story_key": "DIGITALLOG-149", "story_type": "Story", "story_name": "Production Release", "story_status": "Resolved!", "story_assignee": "Arsalan Zafar Khan", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/DIGITALLOG-149", "story_start_date": "2026-02-20", "story_end_date": "2026-02-20", "story_actual_end_date": "2026-02-20T10:30:00+00:00", "story_planned_hours": 24.0, "story_logged_hours": 14.0, "story_progress_pct": 58.33}, {"story_key": "DIGITALLOG-147", "story_type": "Story", "story_name": "SQA", "story_status": "Resolved!", "story_assignee": "Zeeshan Sarwar", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/DIGITALLOG-147", "story_start_date": "", "story_end_date": "", "story_actual_end_date": "", "story_planned_hours": 0.0, "story_logged_hours": 0.0, "story_progress_pct": null}, {"story_key": "DIGITALLOG-148", "story_type": "Story", "story_name": "User Manual", "story_status": "To Do", "story_assignee": "Hassan Malik", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/DIGITALLOG-148", "story_start_date": "", "story_end_date": "", "story_actual_end_date": "", "story_planned_hours": 0.0, "story_logged_hours": 0.0, "story_progress_pct": null}], "roadmap": {"valid": true, "axis_start_iso": "2025-11-08", "axis_end_iso": "2026-05-10", "axis_span_days": 184, "today_in_range": true, "today_left_pct": 66.6667, "bar_left_pct": 32.7869, "bar_width_pct": 24.0437, "actual_left_pct": 56.8306, "week_ticks": [{"iso": "2025-11-08", "label": "08-Nov-2025", "left_pct": 0.0}, {"iso": "2025-11-23", "label": "23-Nov-2025", "left_pct": 8.1967}, {"iso": "2025-12-08", "label": "08-Dec-2025", "left_pct": 16.3934}, {"iso": "2025-12-23", "label": "23-Dec-2025", "left_pct": 24.5902}, {"iso": "2026-01-07", "label": "07-Jan-2026", "left_pct": 32.7869}, {"iso": "2026-01-22", "label": "22-Jan-2026", "left_pct": 40.9836}, {"iso": "2026-02-06", "label": "06-Feb-2026", "left_pct": 49.1803}, {"iso": "2026-02-21", "label": "21-Feb-2026", "left_pct": 57.377}, {"iso": "2026-03-08", "label": "08-Mar-2026", "left_pct": 65.5738}, {"iso": "2026-03-23", "label": "23-Mar-2026", "left_pct": 73.7705}, {"iso": "2026-04-07", "label": "07-Apr-2026", "left_pct": 81.9672}, {"iso": "2026-04-22", "label": "22-Apr-2026", "left_pct": 90.1639}, {"iso": "2026-05-07", "label": "07-May-2026", "left_pct": 98.3607}]}, "mini_gantt": {"has_dated_phases": true, "axis_start_iso": "2026-01-04", "axis_end_iso": "2026-03-02", "axis_span_days": 58, "timeline_width_px": 1392, "scroll_enabled": true, "week_ticks": [{"iso": "2026-01-04", "label": "04-Jan-2026", "left_pct": 0.0}, {"iso": "2026-01-11", "label": "11-Jan-2026", "left_pct": 12.2807}, {"iso": "2026-01-18", "label": "18-Jan-2026", "left_pct": 24.5614}, {"iso": "2026-01-25", "label": "25-Jan-2026", "left_pct": 36.8421}, {"iso": "2026-02-01", "label": "01-Feb-2026", "left_pct": 49.1228}, {"iso": "2026-02-08", "label": "08-Feb-2026", "left_pct": 61.4035}, {"iso": "2026-02-15", "label": "15-Feb-2026", "left_pct": 73.6842}, {"iso": "2026-02-22", "label": "22-Feb-2026", "left_pct": 85.9649}, {"iso": "2026-03-01", "label": "01-Mar-2026", "left_pct": 98.2456}], "today_in_range": false, "today_left_pct": "", "phases": {"Research/URS": {"state": "no_entry", "state_label": "no entry", "warning": "", "start_iso": "", "end_iso": "", "mandays_text": "", "mandays_num": null, "raw": "", "valid": false, "bar_left_pct": "", "bar_width_pct": "", "bar_thickness_px": "", "bar_top_offset_px": "", "start_label": "-", "end_label": "-", "bar_label": "-", "show_no_bar": true}, "DDS": {"state": "no_entry", "state_label": "no entry", "warning": "", "start_iso": "", "end_iso": "", "mandays_text": "", "mandays_num": null, "raw": "", "valid": false, "bar_left_pct": "", "bar_width_pct": "", "bar_thickness_px": "", "bar_top_offset_px": "", "start_label": "-", "end_label": "-", "bar_label": "-", "show_no_bar": true}, "Development": {"state": "planned", "state_label": "planned", "warning": "", "start_iso": "2026-01-14", "end_iso": "2026-01-22", "mandays_text": "21", "mandays_num": 21.0, "raw": "2026-01-14 to 2026-01-22 (21 md)", "valid": true, "bar_left_pct": 17.5439, "bar_width_pct": 14.0351, "bar_thickness_px": 16.1667, "bar_top_offset_px": 6.9167, "start_label": "14-Jan-2026", "end_label": "22-Jan-2026", "bar_label": "21 md", "show_no_bar": false}, "SQA": {"state": "no_entry", "state_label": "no entry", "warning": "", "start_iso": "", "end_iso": "", "mandays_text": "", "mandays_num": null, "raw": "", "valid": false, "bar_left_pct": "", "bar_width_pct": "", "bar_thickness_px": "", "bar_top_offset_px": "", "start_label": "-", "end_label": "-", "bar_label": "-", "show_no_bar": true}, "User Manual": {"state": "no_entry", "state_label": "no entry", "warning": "", "start_iso": "", "end_iso": "", "mandays_text": "", "mandays_num": null, "raw": "", "valid": false, "bar_left_pct": "", "bar_width_pct": "", "bar_thickness_px": "", "bar_top_offset_px": "", "start_label": "-", "end_label": "-", "bar_label": "-", "show_no_bar": true}, "Production": {"state": "planned", "state_label": "planned", "warning": "", "start_iso": "2026-02-20", "end_iso": "2026-02-20", "mandays_text": "3", "mandays_num": 3.0, "raw": "2026-02-20 to 2026-02-20 (3 md)", "valid": true, "bar_left_pct": 82.4561, "bar_width_pct": 0.8, "bar_thickness_px": 9.1667, "bar_top_offset_px": 10.4167, "start_label": "20-Feb-2026", "end_label": "20-Feb-2026", "bar_label": "3 md", "show_no_bar": false}}}}, {"source_sheet": "Epics Planner DB", "row_number": 3, "product": "Digital Log", "epic_rmi": "DIGITALLOG-192", "epic_name": "Log Chat Integration", "project_name": "Digital Log", "plan_status": "Planned", "priority": "Low", "jira_link": "https://octopusdtlsupport.atlassian.net/browse/DIGITALLOG-192", "epic_planned_start_date": "2026-01-07", "epic_planned_end_date": "2026-02-20", "epic_planned_start_date_db": "2026-01-07", "epic_planned_end_date_db": "2026-02-20", "epic_planned_start_date_jira": "2026-01-07", "epic_planned_end_date_jira": "2026-02-20", "epic_actual_date": "2026-02-20", "remarks": "", "computed_total_mandays": 16.0, "jira_status": "Resolved!", "jira_assignee": "Arsalan Zafar Khan", "db_epic_planned_mandays": 20.0, "epic_planned_hours_db": 160.0, "epic_planned_hours_jira": 80.0, "jira_original_estimate_hours": 80.0, "jira_total_hours_logged": 0.0, "jira_progress_pct": 0.0, "phase_data": {"Research/URS": {"start": "", "end": "", "mandays": "", "raw": "", "state": "no_entry", "warning": ""}, "DDS": {"start": "", "end": "", "mandays": "", "raw": "", "state": "no_entry", "warning": ""}, "Development": {"start": "2026-01-07", "end": "2026-01-13", "mandays": "10", "raw": "2026-01-07 to 2026-01-13 (10 md)", "state": "planned", "warning": ""}, "SQA": {"start": "2026-01-14", "end": "2026-01-21", "mandays": "6", "raw": "2026-01-14 to 2026-01-21 (6 md)", "state": "planned", "warning": ""}, "User Manual": {"start": "", "end": "", "mandays": "", "raw": "", "state": "no_entry", "warning": ""}, "Production": {"start": "", "end": "", "mandays": "", "raw": "", "state": "no_entry", "warning": ""}}, "stories": [{"story_key": "DIGITALLOG-66", "story_type": "Story", "story_name": "Development", "story_status": "Resolved!", "story_assignee": "Arsalan Zafar Khan", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/DIGITALLOG-66", "story_start_date": "2026-01-07", "story_end_date": "2026-01-13", "story_actual_end_date": "2026-02-12T12:00:00+00:00", "story_planned_hours": 80.0, "story_logged_hours": 120.0, "story_progress_pct": 100.0}, {"story_key": "DIGITALLOG-193", "story_type": "Story", "story_name": "SQA", "story_status": "Resolved!", "story_assignee": "Zeeshan Sarwar", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/DIGITALLOG-193", "story_start_date": "", "story_end_date": "", "story_actual_end_date": "", "story_planned_hours": 0.0, "story_logged_hours": 0.0, "story_progress_pct": null}], "roadmap": {"valid": true, "axis_start_iso": "2025-11-08", "axis_end_iso": "2026-05-10", "axis_span_days": 184, "today_in_range": true, "today_left_pct": 66.6667, "bar_left_pct": 32.7869, "bar_width_pct": 24.0437, "actual_left_pct": 56.8306, "week_ticks": [{"iso": "2025-11-08", "label": "08-Nov-2025", "left_pct": 0.0}, {"iso": "2025-11-23", "label": "23-Nov-2025", "left_pct": 8.1967}, {"iso": "2025-12-08", "label": "08-Dec-2025", "left_pct": 16.3934}, {"iso": "2025-12-23", "label": "23-Dec-2025", "left_pct": 24.5902}, {"iso": "2026-01-07", "label": "07-Jan-2026", "left_pct": 32.7869}, {"iso": "2026-01-22", "label": "22-Jan-2026", "left_pct": 40.9836}, {"iso": "2026-02-06", "label": "06-Feb-2026", "left_pct": 49.1803}, {"iso": "2026-02-21", "label": "21-Feb-2026", "left_pct": 57.377}, {"iso": "2026-03-08", "label": "08-Mar-2026", "left_pct": 65.5738}, {"iso": "2026-03-23", "label": "23-Mar-2026", "left_pct": 73.7705}, {"iso": "2026-04-07", "label": "07-Apr-2026", "left_pct": 81.9672}, {"iso": "2026-04-22", "label": "22-Apr-2026", "left_pct": 90.1639}, {"iso": "2026-05-07", "label": "07-May-2026", "left_pct": 98.3607}]}, "mini_gantt": {"has_dated_phases": true, "axis_start_iso": "2025-12-28", "axis_end_iso": "2026-01-31", "axis_span_days": 35, "timeline_width_px": 840, "scroll_enabled": true, "week_ticks": [{"iso": "2025-12-28", "label": "28-Dec-2025", "left_pct": 0.0}, {"iso": "2026-01-04", "label": "04-Jan-2026", "left_pct": 20.5882}, {"iso": "2026-01-11", "label": "11-Jan-2026", "left_pct": 41.1765}, {"iso": "2026-01-18", "label": "18-Jan-2026", "left_pct": 61.7647}, {"iso": "2026-01-25", "label": "25-Jan-2026", "left_pct": 82.3529}], "today_in_range": false, "today_left_pct": "", "phases": {"Research/URS": {"state": "no_entry", "state_label": "no entry", "warning": "", "start_iso": "", "end_iso": "", "mandays_text": "", "mandays_num": null, "raw": "", "valid": false, "bar_left_pct": "", "bar_width_pct": "", "bar_thickness_px": "", "bar_top_offset_px": "", "start_label": "-", "end_label": "-", "bar_label": "-", "show_no_bar": true}, "DDS": {"state": "no_entry", "state_label": "no entry", "warning": "", "start_iso": "", "end_iso": "", "mandays_text": "", "mandays_num": null, "raw": "", "valid": false, "bar_left_pct": "", "bar_width_pct": "", "bar_thickness_px": "", "bar_top_offset_px": "", "start_label": "-", "end_label": "-", "bar_label": "-", "show_no_bar": true}, "Development": {"state": "planned", "state_label": "planned", "warning": "", "start_iso": "2026-01-07", "end_iso": "2026-01-13", "mandays_text": "10", "mandays_num": 10.0, "raw": "2026-01-07 to 2026-01-13 (10 md)", "valid": true, "bar_left_pct": 29.4118, "bar_width_pct": 17.6471, "bar_thickness_px": 11.8889, "bar_top_offset_px": 9.0556, "start_label": "07-Jan-2026", "end_label": "13-Jan-2026", "bar_label": "10 md", "show_no_bar": false}, "SQA": {"state": "planned", "state_label": "planned", "warning": "", "start_iso": "2026-01-14", "end_iso": "2026-01-21", "mandays_text": "6", "mandays_num": 6.0, "raw": "2026-01-14 to 2026-01-21 (6 md)", "valid": true, "bar_left_pct": 50.0, "bar_width_pct": 20.5882, "bar_thickness_px": 10.3333, "bar_top_offset_px": 9.8333, "start_label": "14-Jan-2026", "end_label": "21-Jan-2026", "bar_label": "6 md", "show_no_bar": false}, "User Manual": {"state": "no_entry", "state_label": "no entry", "warning": "", "start_iso": "", "end_iso": "", "mandays_text": "", "mandays_num": null, "raw": "", "valid": false, "bar_left_pct": "", "bar_width_pct": "", "bar_thickness_px": "", "bar_top_offset_px": "", "start_label": "-", "end_label": "-", "bar_label": "-", "show_no_bar": true}, "Production": {"state": "no_entry", "state_label": "no entry", "warning": "", "start_iso": "", "end_iso": "", "mandays_text": "", "mandays_num": null, "raw": "", "valid": false, "bar_left_pct": "", "bar_width_pct": "", "bar_thickness_px": "", "bar_top_offset_px": "", "start_label": "-", "end_label": "-", "bar_label": "-", "show_no_bar": true}}}}, {"source_sheet": "Epics Planner DB", "row_number": 4, "product": "Fintech Fuel", "epic_rmi": "FF-292", "epic_name": "ALSONs device integration (read only)", "project_name": "Fintech Fuel", "plan_status": "Plan", "priority": "High", "jira_link": "https://octopusdtlsupport.atlassian.net/browse/FF-292", "epic_planned_start_date": "2026-02-09", "epic_planned_end_date": "2026-03-06", "epic_planned_start_date_db": "2026-02-09", "epic_planned_end_date_db": "2026-03-06", "epic_planned_start_date_jira": "2026-02-09", "epic_planned_end_date_jira": "2026-03-31", "epic_actual_date": "2026-03-26T00:30:00+00:00", "remarks": "", "computed_total_mandays": 0.0, "jira_status": "In-Progress", "jira_assignee": "yousha.agha", "db_epic_planned_mandays": 15.0, "epic_planned_hours_db": 120.0, "epic_planned_hours_jira": 120.0, "jira_original_estimate_hours": 120.0, "jira_total_hours_logged": 152.0, "jira_progress_pct": 100.0, "phase_data": {"Research/URS": {"start": "", "end": "", "mandays": "", "raw": "", "state": "no_entry", "warning": ""}, "DDS": {"start": "", "end": "", "mandays": "", "raw": "", "state": "no_entry", "warning": ""}, "Development": {"start": "", "end": "", "mandays": "", "raw": "", "state": "no_entry", "warning": ""}, "SQA": {"start": "", "end": "", "mandays": "", "raw": "", "state": "no_entry", "warning": ""}, "User Manual": {"start": "", "end": "", "mandays": "", "raw": "", "state": "no_entry", "warning": ""}, "Production": {"start": "", "end": "", "mandays": "", "raw": "", "state": "no_entry", "warning": ""}}, "stories": [{"story_key": "FF-293", "story_type": "Story", "story_name": "Development", "story_status": "In-Progress", "story_assignee": "Muhammad Yousha  Agha", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/FF-293", "story_start_date": "2026-02-01", "story_end_date": "2026-03-31", "story_actual_end_date": "2026-03-26T00:30:00+00:00", "story_planned_hours": 120.0, "story_logged_hours": 327.5, "story_progress_pct": 100.0}, {"story_key": "FF-294", "story_type": "Story", "story_name": "SQA", "story_status": "To Do", "story_assignee": "Muhammad Abbas", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/FF-294", "story_start_date": "", "story_end_date": "", "story_actual_end_date": "", "story_planned_hours": 0.0, "story_logged_hours": 0.0, "story_progress_pct": null}, {"story_key": "FF-295", "story_type": "Story", "story_name": "User Manual", "story_status": "To Do", "story_assignee": "Hassan Malik", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/FF-295", "story_start_date": "", "story_end_date": "", "story_actual_end_date": "", "story_planned_hours": 0.0, "story_logged_hours": 0.0, "story_progress_pct": null}, {"story_key": "FF-296", "story_type": "Story", "story_name": "Production Release", "story_status": "To Do", "story_assignee": "Hassan Malik", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/FF-296", "story_start_date": "", "story_end_date": "", "story_actual_end_date": "", "story_planned_hours": 0.0, "story_logged_hours": 0.0, "story_progress_pct": null}], "roadmap": {"valid": true, "axis_start_iso": "2025-11-08", "axis_end_iso": "2026-05-10", "axis_span_days": 184, "today_in_range": true, "today_left_pct": 66.6667, "bar_left_pct": 50.8197, "bar_width_pct": 13.6612, "actual_left_pct": "", "week_ticks": [{"iso": "2025-11-08", "label": "08-Nov-2025", "left_pct": 0.0}, {"iso": "2025-11-23", "label": "23-Nov-2025", "left_pct": 8.1967}, {"iso": "2025-12-08", "label": "08-Dec-2025", "left_pct": 16.3934}, {"iso": "2025-12-23", "label": "23-Dec-2025", "left_pct": 24.5902}, {"iso": "2026-01-07", "label": "07-Jan-2026", "left_pct": 32.7869}, {"iso": "2026-01-22", "label": "22-Jan-2026", "left_pct": 40.9836}, {"iso": "2026-02-06", "label": "06-Feb-2026", "left_pct": 49.1803}, {"iso": "2026-02-21", "label": "21-Feb-2026", "left_pct": 57.377}, {"iso": "2026-03-08", "label": "08-Mar-2026", "left_pct": 65.5738}, {"iso": "2026-03-23", "label": "23-Mar-2026", "left_pct": 73.7705}, {"iso": "2026-04-07", "label": "07-Apr-2026", "left_pct": 81.9672}, {"iso": "2026-04-22", "label": "22-Apr-2026", "left_pct": 90.1639}, {"iso": "2026-05-07", "label": "07-May-2026", "left_pct": 98.3607}]}, "mini_gantt": {"has_dated_phases": false, "axis_start_iso": "", "axis_end_iso": "", "axis_span_days": 0, "timeline_width_px": 520, "scroll_enabled": false, "week_ticks": [], "today_in_range": false, "today_left_pct": "", "phases": {"Research/URS": {"state": "no_entry", "state_label": "no entry", "warning": "", "start_iso": "", "end_iso": "", "mandays_text": "", "mandays_num": null, "raw": "", "valid": false, "bar_left_pct": "", "bar_width_pct": "", "bar_thickness_px": "", "bar_top_offset_px": "", "start_label": "-", "end_label": "-", "bar_label": "-", "show_no_bar": true}, "DDS": {"state": "no_entry", "state_label": "no entry", "warning": "", "start_iso": "", "end_iso": "", "mandays_text": "", "mandays_num": null, "raw": "", "valid": false, "bar_left_pct": "", "bar_width_pct": "", "bar_thickness_px": "", "bar_top_offset_px": "", "start_label": "-", "end_label": "-", "bar_label": "-", "show_no_bar": true}, "Development": {"state": "no_entry", "state_label": "no entry", "warning": "", "start_iso": "", "end_iso": "", "mandays_text": "", "mandays_num": null, "raw": "", "valid": false, "bar_left_pct": "", "bar_width_pct": "", "bar_thickness_px": "", "bar_top_offset_px": "", "start_label": "-", "end_label": "-", "bar_label": "-", "show_no_bar": true}, "SQA": {"state": "no_entry", "state_label": "no entry", "warning": "", "start_iso": "", "end_iso": "", "mandays_text": "", "mandays_num": null, "raw": "", "valid": false, "bar_left_pct": "", "bar_width_pct": "", "bar_thickness_px": "", "bar_top_offset_px": "", "start_label": "-", "end_label": "-", "bar_label": "-", "show_no_bar": true}, "User Manual": {"state": "no_entry", "state_label": "no entry", "warning": "", "start_iso": "", "end_iso": "", "mandays_text": "", "mandays_num": null, "raw": "", "valid": false, "bar_left_pct": "", "bar_width_pct": "", "bar_thickness_px": "", "bar_top_offset_px": "", "start_label": "-", "end_label": "-", "bar_label": "-", "show_no_bar": true}, "Production": {"state": "no_entry", "state_label": "no entry", "warning": "", "start_iso": "", "end_iso": "", "mandays_text": "", "mandays_num": null, "raw": "", "valid": false, "bar_left_pct": "", "bar_width_pct": "", "bar_thickness_px": "", "bar_top_offset_px": "", "start_label": "-", "end_label": "-", "bar_label": "-", "show_no_bar": true}}}}, {"source_sheet": "Epics Planner DB", "row_number": 5, "product": "Fintech Fuel", "epic_rmi": "FF-271", "epic_name": "Fintech Fuel Read API", "project_name": "Fintech Fuel", "plan_status": "Not Planned Yet", "priority": "High", "jira_link": "https://octopusdtlsupport.atlassian.net/browse/FF-271", "epic_planned_start_date": "2026-01-21", "epic_planned_end_date": "2026-02-27", "epic_planned_start_date_db": "2026-01-21", "epic_planned_end_date_db": "2026-02-27", "epic_planned_start_date_jira": "2026-01-21", "epic_planned_end_date_jira": "2026-02-27", "epic_actual_date": "2026-02-09", "remarks": "", "computed_total_mandays": 0.0, "jira_status": "In-Progress", "jira_assignee": "Muhammad Usman Javed", "db_epic_planned_mandays": 38.0, "epic_planned_hours_db": 304.0, "epic_planned_hours_jira": 208.0, "jira_original_estimate_hours": 208.0, "jira_total_hours_logged": 2.0, "jira_progress_pct": 0.96, "phase_data": {"Research/URS": {"start": "", "end": "", "mandays": "", "raw": "", "state": "no_entry", "warning": ""}, "DDS": {"start": "", "end": "", "mandays": "", "raw": "", "state": "no_entry", "warning": ""}, "Development": {"start": "", "end": "", "mandays": "", "raw": "", "state": "no_entry", "warning": ""}, "SQA": {"start": "", "end": "", "mandays": "", "raw": "", "state": "no_entry", "warning": ""}, "User Manual": {"start": "", "end": "", "mandays": "", "raw": "", "state": "no_entry", "warning": ""}, "Production": {"start": "", "end": "", "mandays": "", "raw": "", "state": "no_entry", "warning": ""}}, "stories": [{"story_key": "FF-275", "story_type": "Story", "story_name": "Development", "story_status": "Resolved!", "story_assignee": "Muhammad Usman Javed", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/FF-275", "story_start_date": "2026-02-02", "story_end_date": "2026-02-13", "story_actual_end_date": "2026-03-11T07:43:00+00:00", "story_planned_hours": 80.0, "story_logged_hours": 80.0, "story_progress_pct": 100.0}, {"story_key": "FF-276", "story_type": "Story", "story_name": "Handover", "story_status": "Resolved!", "story_assignee": "Muhammad Usman Javed", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/FF-276", "story_start_date": "2026-02-23", "story_end_date": "2026-02-23", "story_actual_end_date": "", "story_planned_hours": 8.0, "story_logged_hours": 2.0, "story_progress_pct": 25.0}, {"story_key": "FF-289", "story_type": "Story", "story_name": "SQA", "story_status": "To Do", "story_assignee": "kamran khalid", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/FF-289", "story_start_date": "", "story_end_date": "", "story_actual_end_date": "", "story_planned_hours": 40.0, "story_logged_hours": 0.0, "story_progress_pct": 0.0}, {"story_key": "FF-291", "story_type": "Story", "story_name": "Bug Fixing", "story_status": "To Do", "story_assignee": "Muhammad Usman Javed", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/FF-291", "story_start_date": "", "story_end_date": "", "story_actual_end_date": "", "story_planned_hours": 0.0, "story_logged_hours": 0.0, "story_progress_pct": null}, {"story_key": "FF-414", "story_type": "Story", "story_name": "User Manual", "story_status": "To Do", "story_assignee": "Hassan Malik", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/FF-414", "story_start_date": "", "story_end_date": "", "story_actual_end_date": "", "story_planned_hours": 0.0, "story_logged_hours": 0.0, "story_progress_pct": null}, {"story_key": "FF-415", "story_type": "Story", "story_name": "Production Release", "story_status": "To Do", "story_assignee": "Muhammad Usman Javed", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/FF-415", "story_start_date": "", "story_end_date": "", "story_actual_end_date": "", "story_planned_hours": 0.0, "story_logged_hours": 0.0, "story_progress_pct": null}], "roadmap": {"valid": true, "axis_start_iso": "2025-11-08", "axis_end_iso": "2026-05-10", "axis_span_days": 184, "today_in_range": true, "today_left_pct": 66.6667, "bar_left_pct": 40.4372, "bar_width_pct": 20.2186, "actual_left_pct": 50.8197, "week_ticks": [{"iso": "2025-11-08", "label": "08-Nov-2025", "left_pct": 0.0}, {"iso": "2025-11-23", "label": "23-Nov-2025", "left_pct": 8.1967}, {"iso": "2025-12-08", "label": "08-Dec-2025", "left_pct": 16.3934}, {"iso": "2025-12-23", "label": "23-Dec-2025", "left_pct": 24.5902}, {"iso": "2026-01-07", "label": "07-Jan-2026", "left_pct": 32.7869}, {"iso": "2026-01-22", "label": "22-Jan-2026", "left_pct": 40.9836}, {"iso": "2026-02-06", "label": "06-Feb-2026", "left_pct": 49.1803}, {"iso": "2026-02-21", "label": "21-Feb-2026", "left_pct": 57.377}, {"iso": "2026-03-08", "label": "08-Mar-2026", "left_pct": 65.5738}, {"iso": "2026-03-23", "label": "23-Mar-2026", "left_pct": 73.7705}, {"iso": "2026-04-07", "label": "07-Apr-2026", "left_pct": 81.9672}, {"iso": "2026-04-22", "label": "22-Apr-2026", "left_pct": 90.1639}, {"iso": "2026-05-07", "label": "07-May-2026", "left_pct": 98.3607}]}, "mini_gantt": {"has_dated_phases": false, "axis_start_iso": "", "axis_end_iso": "", "axis_span_days": 0, "timeline_width_px": 520, "scroll_enabled": false, "week_ticks": [], "today_in_range": false, "today_left_pct": "", "phases": {"Research/URS": {"state": "no_entry", "state_label": "no entry", "warning": "", "start_iso": "", "end_iso": "", "mandays_text": "", "mandays_num": null, "raw": "", "valid": false, "bar_left_pct": "", "bar_width_pct": "", "bar_thickness_px": "", "bar_top_offset_px": "", "start_label": "-", "end_label": "-", "bar_label": "-", "show_no_bar": true}, "DDS": {"state": "no_entry", "state_label": "no entry", "warning": "", "start_iso": "", "end_iso": "", "mandays_text": "", "mandays_num": null, "raw": "", "valid": false, "bar_left_pct": "", "bar_width_pct": "", "bar_thickness_px": "", "bar_top_offset_px": "", "start_label": "-", "end_label": "-", "bar_label": "-", "show_no_bar": true}, "Development": {"state": "no_entry", "state_label": "no entry", "warning": "", "start_iso": "", "end_iso": "", "mandays_text": "", "mandays_num": null, "raw": "", "valid": false, "bar_left_pct": "", "bar_width_pct": "", "bar_thickness_px": "", "bar_top_offset_px": "", "start_label": "-", "end_label": "-", "bar_label": "-", "show_no_bar": true}, "SQA": {"state": "no_entry", "state_label": "no entry", "warning": "", "start_iso": "", "end_iso": "", "mandays_text": "", "mandays_num": null, "raw": "", "valid": false, "bar_left_pct": "", "bar_width_pct": "", "bar_thickness_px": "", "bar_top_offset_px": "", "start_label": "-", "end_label": "-", "bar_label": "-", "show_no_bar": true}, "User Manual": {"state": "no_entry", "state_label": "no entry", "warning": "", "start_iso": "", "end_iso": "", "mandays_text": "", "mandays_num": null, "raw": "", "valid": false, "bar_left_pct": "", "bar_width_pct": "", "bar_thickness_px": "", "bar_top_offset_px": "", "start_label": "-", "end_label": "-", "bar_label": "-", "show_no_bar": true}, "Production": {"state": "no_entry", "state_label": "no entry", "warning": "", "start_iso": "", "end_iso": "", "mandays_text": "", "mandays_num": null, "raw": "", "valid": false, "bar_left_pct": "", "bar_width_pct": "", "bar_thickness_px": "", "bar_top_offset_px": "", "start_label": "-", "end_label": "-", "bar_label": "-", "show_no_bar": true}}}}, {"source_sheet": "Epics Planner DB", "row_number": 6, "product": "Fintech Fuel", "epic_rmi": "FF-302", "epic_name": "Fuel price write back", "project_name": "Fintech Fuel", "plan_status": "Plan", "priority": "High", "jira_link": "https://octopusdtlsupport.atlassian.net/browse/FF-302", "epic_planned_start_date": "", "epic_planned_end_date": "", "epic_planned_start_date_db": "", "epic_planned_end_date_db": "", "epic_planned_start_date_jira": "", "epic_planned_end_date_jira": "", "epic_actual_date": "", "remarks": "", "computed_total_mandays": 0.0, "jira_status": "To Do", "jira_assignee": "Hassan Malik", "db_epic_planned_mandays": null, "epic_planned_hours_db": null, "epic_planned_hours_jira": 0.0, "jira_original_estimate_hours": 0.0, "jira_total_hours_logged": 0.0, "jira_progress_pct": null, "phase_data": {"Research/URS": {"start": "", "end": "", "mandays": "", "raw": "", "state": "no_entry", "warning": ""}, "DDS": {"start": "", "end": "", "mandays": "", "raw": "", "state": "no_entry", "warning": ""}, "Development": {"start": "", "end": "", "mandays": "", "raw": "", "state": "no_entry", "warning": ""}, "SQA": {"start": "", "end": "", "mandays": "", "raw": "", "state": "no_entry", "warning": ""}, "User Manual": {"start": "", "end": "", "mandays": "", "raw": "", "state": "no_entry", "warning": ""}, "Production": {"start": "", "end": "", "mandays": "", "raw": "", "state": "no_entry", "warning": ""}}, "stories": [{"story_key": "FF-303", "story_type": "Story", "story_name": "Development", "story_status": "To Do", "story_assignee": "Hassan Malik", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/FF-303", "story_start_date": "", "story_end_date": "", "story_actual_end_date": "", "story_planned_hours": 0.0, "story_logged_hours": 0.0, "story_progress_pct": null}, {"story_key": "FF-304", "story_type": "Story", "story_name": "SQA", "story_status": "To Do", "story_assignee": "Hassan Malik", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/FF-304", "story_start_date": "", "story_end_date": "", "story_actual_end_date": "", "story_planned_hours": 0.0, "story_logged_hours": 0.0, "story_progress_pct": null}, {"story_key": "FF-305", "story_type": "Story", "story_name": "User Manual", "story_status": "To Do", "story_assignee": "Hassan Malik", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/FF-305", "story_start_date": "", "story_end_date": "", "story_actual_end_date": "", "story_planned_hours": 0.0, "story_logged_hours": 0.0, "story_progress_pct": null}, {"story_key": "FF-306", "story_type": "Story", "story_name": "Production Release", "story_status": "To Do", "story_assignee": "Hassan Malik", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/FF-306", "story_start_date": "", "story_end_date": "", "story_actual_end_date": "", "story_planned_hours": 0.0, "story_logged_hours": 0.0, "story_progress_pct": null}], "roadmap": {"valid": false, "axis_start_iso": "2025-11-08", "axis_end_iso": "2026-05-10", "axis_span_days": 184, "today_in_range": true, "today_left_pct": 66.6667, "bar_left_pct": "", "bar_width_pct": "", "actual_left_pct": "", "week_ticks": [{"iso": "2025-11-08", "label": "08-Nov-2025", "left_pct": 0.0}, {"iso": "2025-11-23", "label": "23-Nov-2025", "left_pct": 8.1967}, {"iso": "2025-12-08", "label": "08-Dec-2025", "left_pct": 16.3934}, {"iso": "2025-12-23", "label": "23-Dec-2025", "left_pct": 24.5902}, {"iso": "2026-01-07", "label": "07-Jan-2026", "left_pct": 32.7869}, {"iso": "2026-01-22", "label": "22-Jan-2026", "left_pct": 40.9836}, {"iso": "2026-02-06", "label": "06-Feb-2026", "left_pct": 49.1803}, {"iso": "2026-02-21", "label": "21-Feb-2026", "left_pct": 57.377}, {"iso": "2026-03-08", "label": "08-Mar-2026", "left_pct": 65.5738}, {"iso": "2026-03-23", "label": "23-Mar-2026", "left_pct": 73.7705}, {"iso": "2026-04-07", "label": "07-Apr-2026", "left_pct": 81.9672}, {"iso": "2026-04-22", "label": "22-Apr-2026", "left_pct": 90.1639}, {"iso": "2026-05-07", "label": "07-May-2026", "left_pct": 98.3607}]}, "mini_gantt": {"has_dated_phases": false, "axis_start_iso": "", "axis_end_iso": "", "axis_span_days": 0, "timeline_width_px": 520, "scroll_enabled": false, "week_ticks": [], "today_in_range": false, "today_left_pct": "", "phases": {"Research/URS": {"state": "no_entry", "state_label": "no entry", "warning": "", "start_iso": "", "end_iso": "", "mandays_text": "", "mandays_num": null, "raw": "", "valid": false, "bar_left_pct": "", "bar_width_pct": "", "bar_thickness_px": "", "bar_top_offset_px": "", "start_label": "-", "end_label": "-", "bar_label": "-", "show_no_bar": true}, "DDS": {"state": "no_entry", "state_label": "no entry", "warning": "", "start_iso": "", "end_iso": "", "mandays_text": "", "mandays_num": null, "raw": "", "valid": false, "bar_left_pct": "", "bar_width_pct": "", "bar_thickness_px": "", "bar_top_offset_px": "", "start_label": "-", "end_label": "-", "bar_label": "-", "show_no_bar": true}, "Development": {"state": "no_entry", "state_label": "no entry", "warning": "", "start_iso": "", "end_iso": "", "mandays_text": "", "mandays_num": null, "raw": "", "valid": false, "bar_left_pct": "", "bar_width_pct": "", "bar_thickness_px": "", "bar_top_offset_px": "", "start_label": "-", "end_label": "-", "bar_label": "-", "show_no_bar": true}, "SQA": {"state": "no_entry", "state_label": "no entry", "warning": "", "start_iso": "", "end_iso": "", "mandays_text": "", "mandays_num": null, "raw": "", "valid": false, "bar_left_pct": "", "bar_width_pct": "", "bar_thickness_px": "", "bar_top_offset_px": "", "start_label": "-", "end_label": "-", "bar_label": "-", "show_no_bar": true}, "User Manual": {"state": "no_entry", "state_label": "no entry", "warning": "", "start_iso": "", "end_iso": "", "mandays_text": "", "mandays_num": null, "raw": "", "valid": false, "bar_left_pct": "", "bar_width_pct": "", "bar_thickness_px": "", "bar_top_offset_px": "", "start_label": "-", "end_label": "-", "bar_label": "-", "show_no_bar": true}, "Production": {"state": "no_entry", "state_label": "no entry", "warning": "", "start_iso": "", "end_iso": "", "mandays_text": "", "mandays_num": null, "raw": "", "valid": false, "bar_left_pct": "", "bar_width_pct": "", "bar_thickness_px": "", "bar_top_offset_px": "", "start_label": "-", "end_label": "-", "bar_label": "-", "show_no_bar": true}}}}, {"source_sheet": "Epics Planner DB", "row_number": 7, "product": "OmniChat", "epic_rmi": "MN-78", "epic_name": "OmniChat Front-End Bugs Fixing", "project_name": "OmniChat", "plan_status": "Planned", "priority": "Medium", "jira_link": "https://octopusdtlsupport.atlassian.net/browse/MN-78", "epic_planned_start_date": "2026-01-27", "epic_planned_end_date": "2026-03-13", "epic_planned_start_date_db": "2026-01-27", "epic_planned_end_date_db": "2026-03-13", "epic_planned_start_date_jira": "2026-01-07", "epic_planned_end_date_jira": "2026-03-13", "epic_actual_date": "2026-03-27T04:00:00+00:00", "remarks": "", "computed_total_mandays": 10.0, "jira_status": "In-Progress", "jira_assignee": "Taimur Zahid", "db_epic_planned_mandays": 52.0, "epic_planned_hours_db": 416.0, "epic_planned_hours_jira": 416.0, "jira_original_estimate_hours": 416.0, "jira_total_hours_logged": 0.0, "jira_progress_pct": 0.0, "phase_data": {"Research/URS": {"start": "", "end": "", "mandays": "", "raw": "", "state": "no_entry", "warning": ""}, "DDS": {"start": "", "end": "", "mandays": "", "raw": "", "state": "no_entry", "warning": ""}, "Development": {"start": "", "end": "", "mandays": "", "raw": "", "state": "no_entry", "warning": ""}, "SQA": {"start": "", "end": "", "mandays": "", "raw": "", "state": "no_entry", "warning": ""}, "User Manual": {"start": "", "end": "", "mandays": "", "raw": "", "state": "no_entry", "warning": ""}, "Production": {"start": "2026-02-24", "end": "2026-03-13", "mandays": "10", "raw": "2026-02-24 to 2026-03-13 (10 md)", "state": "planned", "warning": ""}}, "stories": [{"story_key": "MN-6", "story_type": "Story", "story_name": "Frontend Changes", "story_status": "Resolved!", "story_assignee": "Aiza Hamid", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/MN-6", "story_start_date": "2026-01-07", "story_end_date": "2026-02-24", "story_actual_end_date": "2026-03-27T04:00:00+00:00", "story_planned_hours": 296.0, "story_logged_hours": 185.0, "story_progress_pct": 62.5}, {"story_key": "MN-95", "story_type": "Story", "story_name": "Staging Release", "story_status": "In-Progress", "story_assignee": "Ibrahim Ahmed Qureshi", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/MN-95", "story_start_date": "2026-02-24", "story_end_date": "2026-03-13", "story_actual_end_date": "2026-02-24T04:00:00+00:00", "story_planned_hours": 80.0, "story_logged_hours": 22.5, "story_progress_pct": 28.12}, {"story_key": "MN-86", "story_type": "Story", "story_name": "OmniChat Front-End Testing", "story_status": "Resolved!", "story_assignee": "Muhammad Abbas", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/MN-86", "story_start_date": "2026-03-03", "story_end_date": "2026-03-03", "story_actual_end_date": "2026-03-03T04:00:00+00:00", "story_planned_hours": 8.0, "story_logged_hours": 8.0, "story_progress_pct": 100.0}, {"story_key": "MN-121", "story_type": "Story", "story_name": "Collaboration with Implementation Team", "story_status": "Resolved!", "story_assignee": "Taimur Zahid", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/MN-121", "story_start_date": "2026-03-05", "story_end_date": "2026-03-05", "story_actual_end_date": "2026-03-05T04:00:00+00:00", "story_planned_hours": 8.0, "story_logged_hours": 3.0, "story_progress_pct": 37.5}], "roadmap": {"valid": true, "axis_start_iso": "2025-11-08", "axis_end_iso": "2026-05-10", "axis_span_days": 184, "today_in_range": true, "today_left_pct": 66.6667, "bar_left_pct": 43.7158, "bar_width_pct": 24.5902, "actual_left_pct": "", "week_ticks": [{"iso": "2025-11-08", "label": "08-Nov-2025", "left_pct": 0.0}, {"iso": "2025-11-23", "label": "23-Nov-2025", "left_pct": 8.1967}, {"iso": "2025-12-08", "label": "08-Dec-2025", "left_pct": 16.3934}, {"iso": "2025-12-23", "label": "23-Dec-2025", "left_pct": 24.5902}, {"iso": "2026-01-07", "label": "07-Jan-2026", "left_pct": 32.7869}, {"iso": "2026-01-22", "label": "22-Jan-2026", "left_pct": 40.9836}, {"iso": "2026-02-06", "label": "06-Feb-2026", "left_pct": 49.1803}, {"iso": "2026-02-21", "label": "21-Feb-2026", "left_pct": 57.377}, {"iso": "2026-03-08", "label": "08-Mar-2026", "left_pct": 65.5738}, {"iso": "2026-03-23", "label": "23-Mar-2026", "left_pct": 73.7705}, {"iso": "2026-04-07", "label": "07-Apr-2026", "left_pct": 81.9672}, {"iso": "2026-04-22", "label": "22-Apr-2026", "left_pct": 90.1639}, {"iso": "2026-05-07", "label": "07-May-2026", "left_pct": 98.3607}]}, "mini_gantt": {"has_dated_phases": true, "axis_start_iso": "2026-02-14", "axis_end_iso": "2026-03-23", "axis_span_days": 38, "timeline_width_px": 912, "scroll_enabled": true, "week_ticks": [{"iso": "2026-02-14", "label": "14-Feb-2026", "left_pct": 0.0}, {"iso": "2026-02-21", "label": "21-Feb-2026", "left_pct": 18.9189}, {"iso": "2026-02-28", "label": "28-Feb-2026", "left_pct": 37.8378}, {"iso": "2026-03-07", "label": "07-Mar-2026", "left_pct": 56.7568}, {"iso": "2026-03-14", "label": "14-Mar-2026", "left_pct": 75.6757}, {"iso": "2026-03-21", "label": "21-Mar-2026", "left_pct": 94.5946}], "today_in_range": true, "today_left_pct": 64.8649, "phases": {"Research/URS": {"state": "no_entry", "state_label": "no entry", "warning": "", "start_iso": "", "end_iso": "", "mandays_text": "", "mandays_num": null, "raw": "", "valid": false, "bar_left_pct": "", "bar_width_pct": "", "bar_thickness_px": "", "bar_top_offset_px": "", "start_label": "-", "end_label": "-", "bar_label": "-", "show_no_bar": true}, "DDS": {"state": "no_entry", "state_label": "no entry", "warning": "", "start_iso": "", "end_iso": "", "mandays_text": "", "mandays_num": null, "raw": "", "valid": false, "bar_left_pct": "", "bar_width_pct": "", "bar_thickness_px": "", "bar_top_offset_px": "", "start_label": "-", "end_label": "-", "bar_label": "-", "show_no_bar": true}, "Development": {"state": "no_entry", "state_label": "no entry", "warning": "", "start_iso": "", "end_iso": "", "mandays_text": "", "mandays_num": null, "raw": "", "valid": false, "bar_left_pct": "", "bar_width_pct": "", "bar_thickness_px": "", "bar_top_offset_px": "", "start_label": "-", "end_label": "-", "bar_label": "-", "show_no_bar": true}, "SQA": {"state": "no_entry", "state_label": "no entry", "warning": "", "start_iso": "", "end_iso": "", "mandays_text": "", "mandays_num": null, "raw": "", "valid": false, "bar_left_pct": "", "bar_width_pct": "", "bar_thickness_px": "", "bar_top_offset_px": "", "start_label": "-", "end_label": "-", "bar_label": "-", "show_no_bar": true}, "User Manual": {"state": "no_entry", "state_label": "no entry", "warning": "", "start_iso": "", "end_iso": "", "mandays_text": "", "mandays_num": null, "raw": "", "valid": false, "bar_left_pct": "", "bar_width_pct": "", "bar_thickness_px": "", "bar_top_offset_px": "", "start_label": "-", "end_label": "-", "bar_label": "-", "show_no_bar": true}, "Production": {"state": "planned", "state_label": "planned", "warning": "", "start_iso": "2026-02-24", "end_iso": "2026-03-13", "mandays_text": "10", "mandays_num": 10.0, "raw": "2026-02-24 to 2026-03-13 (10 md)", "valid": true, "bar_left_pct": 27.027, "bar_width_pct": 45.9459, "bar_thickness_px": 11.8889, "bar_top_offset_px": 9.0556, "start_label": "24-Feb-2026", "end_label": "13-Mar-2026", "bar_label": "10 md", "show_no_bar": false}}}}, {"source_sheet": "Epics Planner DB", "row_number": 8, "product": "OmniChat", "epic_rmi": "O2-1461", "epic_name": "OmniChat Integration with OmniAgent", "project_name": "OmniChat", "plan_status": "Planned", "priority": "High", "jira_link": "https://octopusdtlsupport.atlassian.net/browse/O2-1461", "epic_planned_start_date": "2026-02-23", "epic_planned_end_date": "2026-03-26", "epic_planned_start_date_db": "2026-02-23", "epic_planned_end_date_db": "2026-03-26", "epic_planned_start_date_jira": "2026-02-23", "epic_planned_end_date_jira": "2026-03-26", "epic_actual_date": "2026-03-26", "remarks": "", "computed_total_mandays": 56.0, "jira_status": "In-Progress", "jira_assignee": "Hamza Ali", "db_epic_planned_mandays": 59.0, "epic_planned_hours_db": 472.0, "epic_planned_hours_jira": 472.0, "jira_original_estimate_hours": 472.0, "jira_total_hours_logged": 0.0, "jira_progress_pct": 0.0, "phase_data": {"Research/URS": {"start": "", "end": "", "mandays": "", "raw": "", "state": "no_entry", "warning": ""}, "DDS": {"start": "2026-02-23", "end": "2026-02-25", "mandays": "4", "raw": "2026-02-23 to 2026-02-25 (4 md)", "state": "planned", "warning": ""}, "Development": {"start": "2026-02-26", "end": "2026-03-16", "mandays": "33", "raw": "2026-02-26 to 2026-03-16 (33 md)", "state": "planned", "warning": ""}, "SQA": {"start": "2026-03-17", "end": "2026-03-24", "mandays": "5", "raw": "2026-03-17 to 2026-03-24 (5 md)", "state": "planned", "warning": ""}, "User Manual": {"start": "", "end": "", "mandays": "", "raw": "", "state": "no_entry", "warning": ""}, "Production": {"start": "2026-03-25", "end": "2026-03-26", "mandays": "14", "raw": "2026-03-25 to 2026-03-26 (14 md)", "state": "planned", "warning": ""}}, "stories": [{"story_key": "O2-1462", "story_type": "Story", "story_name": "DDS", "story_status": "In-Progress", "story_assignee": "Hamza Ali", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/O2-1462", "story_start_date": "2026-02-23", "story_end_date": "2026-02-26", "story_actual_end_date": "2026-02-26T04:00:00+00:00", "story_planned_hours": 32.0, "story_logged_hours": 29.0, "story_progress_pct": 90.62}, {"story_key": "O2-1472", "story_type": "Story", "story_name": "Development", "story_status": "To Do", "story_assignee": "Hamza Ali", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/O2-1472", "story_start_date": "2026-02-26", "story_end_date": "2026-03-16", "story_actual_end_date": "", "story_planned_hours": 264.0, "story_logged_hours": 0.0, "story_progress_pct": 0.0}, {"story_key": "O2-1469", "story_type": "Story", "story_name": "SQA", "story_status": "To Do", "story_assignee": "Muhammad Abbas", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/O2-1469", "story_start_date": "2026-03-17", "story_end_date": "2026-03-24", "story_actual_end_date": "", "story_planned_hours": 40.0, "story_logged_hours": 0.0, "story_progress_pct": 0.0}, {"story_key": "O2-1470", "story_type": "Story", "story_name": "User Manual", "story_status": "To Do", "story_assignee": "Hassan Malik", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/O2-1470", "story_start_date": "2026-03-17", "story_end_date": "2026-03-24", "story_actual_end_date": "", "story_planned_hours": 24.0, "story_logged_hours": 0.0, "story_progress_pct": 0.0}, {"story_key": "O2-1506", "story_type": "Story", "story_name": "Production Release", "story_status": "To Do", "story_assignee": "Hamza Ali", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/O2-1506", "story_start_date": "2026-03-25", "story_end_date": "2026-03-26", "story_actual_end_date": "", "story_planned_hours": 112.0, "story_logged_hours": 0.0, "story_progress_pct": 0.0}], "roadmap": {"valid": true, "axis_start_iso": "2025-11-08", "axis_end_iso": "2026-05-10", "axis_span_days": 184, "today_in_range": true, "today_left_pct": 66.6667, "bar_left_pct": 58.4699, "bar_width_pct": 16.9399, "actual_left_pct": 75.4098, "week_ticks": [{"iso": "2025-11-08", "label": "08-Nov-2025", "left_pct": 0.0}, {"iso": "2025-11-23", "label": "23-Nov-2025", "left_pct": 8.1967}, {"iso": "2025-12-08", "label": "08-Dec-2025", "left_pct": 16.3934}, {"iso": "2025-12-23", "label": "23-Dec-2025", "left_pct": 24.5902}, {"iso": "2026-01-07", "label": "07-Jan-2026", "left_pct": 32.7869}, {"iso": "2026-01-22", "label": "22-Jan-2026", "left_pct": 40.9836}, {"iso": "2026-02-06", "label": "06-Feb-2026", "left_pct": 49.1803}, {"iso": "2026-02-21", "label": "21-Feb-2026", "left_pct": 57.377}, {"iso": "2026-03-08", "label": "08-Mar-2026", "left_pct": 65.5738}, {"iso": "2026-03-23", "label": "23-Mar-2026", "left_pct": 73.7705}, {"iso": "2026-04-07", "label": "07-Apr-2026", "left_pct": 81.9672}, {"iso": "2026-04-22", "label": "22-Apr-2026", "left_pct": 90.1639}, {"iso": "2026-05-07", "label": "07-May-2026", "left_pct": 98.3607}]}, "mini_gantt": {"has_dated_phases": true, "axis_start_iso": "2026-02-13", "axis_end_iso": "2026-04-05", "axis_span_days": 52, "timeline_width_px": 1248, "scroll_enabled": true, "week_ticks": [{"iso": "2026-02-13", "label": "13-Feb-2026", "left_pct": 0.0}, {"iso": "2026-02-20", "label": "20-Feb-2026", "left_pct": 13.7255}, {"iso": "2026-02-27", "label": "27-Feb-2026", "left_pct": 27.451}, {"iso": "2026-03-06", "label": "06-Mar-2026", "left_pct": 41.1765}, {"iso": "2026-03-13", "label": "13-Mar-2026", "left_pct": 54.902}, {"iso": "2026-03-20", "label": "20-Mar-2026", "left_pct": 68.6275}, {"iso": "2026-03-27", "label": "27-Mar-2026", "left_pct": 82.3529}, {"iso": "2026-04-03", "label": "03-Apr-2026", "left_pct": 96.0784}], "today_in_range": true, "today_left_pct": 49.0196, "phases": {"Research/URS": {"state": "no_entry", "state_label": "no entry", "warning": "", "start_iso": "", "end_iso": "", "mandays_text": "", "mandays_num": null, "raw": "", "valid": false, "bar_left_pct": "", "bar_width_pct": "", "bar_thickness_px": "", "bar_top_offset_px": "", "start_label": "-", "end_label": "-", "bar_label": "-", "show_no_bar": true}, "DDS": {"state": "planned", "state_label": "planned", "warning": "", "start_iso": "2026-02-23", "end_iso": "2026-02-25", "mandays_text": "4", "mandays_num": 4.0, "raw": "2026-02-23 to 2026-02-25 (4 md)", "valid": true, "bar_left_pct": 19.6078, "bar_width_pct": 3.9216, "bar_thickness_px": 9.5556, "bar_top_offset_px": 10.2222, "start_label": "23-Feb-2026", "end_label": "25-Feb-2026", "bar_label": "4 md", "show_no_bar": false}, "Development": {"state": "planned", "state_label": "planned", "warning": "", "start_iso": "2026-02-26", "end_iso": "2026-03-16", "mandays_text": "33", "mandays_num": 33.0, "raw": "2026-02-26 to 2026-03-16 (33 md)", "valid": true, "bar_left_pct": 25.4902, "bar_width_pct": 35.2941, "bar_thickness_px": 20.8333, "bar_top_offset_px": 4.5833, "start_label": "26-Feb-2026", "end_label": "16-Mar-2026", "bar_label": "33 md", "show_no_bar": false}, "SQA": {"state": "planned", "state_label": "planned", "warning": "", "start_iso": "2026-03-17", "end_iso": "2026-03-24", "mandays_text": "5", "mandays_num": 5.0, "raw": "2026-03-17 to 2026-03-24 (5 md)", "valid": true, "bar_left_pct": 62.7451, "bar_width_pct": 13.7255, "bar_thickness_px": 9.9444, "bar_top_offset_px": 10.0278, "start_label": "17-Mar-2026", "end_label": "24-Mar-2026", "bar_label": "5 md", "show_no_bar": false}, "User Manual": {"state": "no_entry", "state_label": "no entry", "warning": "", "start_iso": "", "end_iso": "", "mandays_text": "", "mandays_num": null, "raw": "", "valid": false, "bar_left_pct": "", "bar_width_pct": "", "bar_thickness_px": "", "bar_top_offset_px": "", "start_label": "-", "end_label": "-", "bar_label": "-", "show_no_bar": true}, "Production": {"state": "planned", "state_label": "planned", "warning": "", "start_iso": "2026-03-25", "end_iso": "2026-03-26", "mandays_text": "14", "mandays_num": 14.0, "raw": "2026-03-25 to 2026-03-26 (14 md)", "valid": true, "bar_left_pct": 78.4314, "bar_width_pct": 1.9608, "bar_thickness_px": 13.4444, "bar_top_offset_px": 8.2778, "start_label": "25-Mar-2026", "end_label": "26-Mar-2026", "bar_label": "14 md", "show_no_bar": false}}}}, {"source_sheet": "Epics Planner DB", "row_number": 9, "product": "OmniConnect", "epic_rmi": "O2-887", "epic_name": "APX Pump \u2013 Variable Speed Dashboard", "project_name": "OmniConnect", "plan_status": "Plan", "priority": "High", "jira_link": "https://octopusdtlsupport.atlassian.net/browse/O2-887", "epic_planned_start_date": "2025-12-23", "epic_planned_end_date": "2026-02-06", "epic_planned_start_date_db": "2025-12-23", "epic_planned_end_date_db": "2026-02-06", "epic_planned_start_date_jira": "2025-12-23", "epic_planned_end_date_jira": "2026-02-06", "epic_actual_date": "2026-02-19", "remarks": "Production linked with\u00a0Batch/Bpm modify Existing ADX IT Table", "computed_total_mandays": 27.0, "jira_status": "Resolved!", "jira_assignee": "Zain Munir", "db_epic_planned_mandays": 30.0, "epic_planned_hours_db": 240.0, "epic_planned_hours_jira": 240.0, "jira_original_estimate_hours": 240.0, "jira_total_hours_logged": 0.0, "jira_progress_pct": 0.0, "phase_data": {"Research/URS": {"start": "", "end": "", "mandays": "", "raw": "", "state": "no_entry", "warning": ""}, "DDS": {"start": "", "end": "", "mandays": "", "raw": "", "state": "no_entry", "warning": ""}, "Development": {"start": "2026-01-09", "end": "2026-01-23", "mandays": "25", "raw": "2026-01-09 to 2026-01-23 (25 md)", "state": "planned", "warning": ""}, "SQA": {"start": "", "end": "", "mandays": "", "raw": "", "state": "no_entry", "warning": ""}, "User Manual": {"start": "", "end": "", "mandays": "", "raw": "", "state": "no_entry", "warning": ""}, "Production": {"start": "2026-01-23", "end": "2026-01-26", "mandays": "2", "raw": "2026-01-23 to 2026-01-26 (2 md)", "state": "planned", "warning": ""}}, "stories": [{"story_key": "O2-1095", "story_type": "Story", "story_name": "Development of VFD Dashboard", "story_status": "Resolved!", "story_assignee": "Muhammad Ahmad Saleem", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/O2-1095", "story_start_date": "2026-01-09", "story_end_date": "2026-01-23", "story_actual_end_date": "2026-01-23T04:00:00+00:00", "story_planned_hours": 200.0, "story_logged_hours": 116.0, "story_progress_pct": 58.0}, {"story_key": "O2-1090", "story_type": "Story", "story_name": "Production Release Green", "story_status": "Resolved!", "story_assignee": "Faiza Nasir", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/O2-1090", "story_start_date": "2026-01-23", "story_end_date": "2026-01-26", "story_actual_end_date": "2026-01-26T13:55:09.307000+00:00", "story_planned_hours": 48.0, "story_logged_hours": 12.0, "story_progress_pct": 25.0}, {"story_key": "O2-1093", "story_type": "Story", "story_name": "Production Deployment", "story_status": "Resolved!", "story_assignee": "Zain Munir", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/O2-1093", "story_start_date": "2026-01-23", "story_end_date": "2026-01-26", "story_actual_end_date": "2026-01-26T04:00:00+00:00", "story_planned_hours": 16.0, "story_logged_hours": 13.0, "story_progress_pct": 81.25}, {"story_key": "O2-1092", "story_type": "Story", "story_name": "User Manual/Guide", "story_status": "Resolved!", "story_assignee": "Hassan Malik", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/O2-1092", "story_start_date": "2026-01-26", "story_end_date": "2026-01-26", "story_actual_end_date": "2026-01-26T04:00:00+00:00", "story_planned_hours": 8.0, "story_logged_hours": 8.0, "story_progress_pct": 100.0}, {"story_key": "O2-1110", "story_type": "Story", "story_name": "Ashghal Release Management / Deployment", "story_status": "Resolved!", "story_assignee": "Faiza Nasir", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/O2-1110", "story_start_date": "2026-01-27", "story_end_date": "2026-01-28", "story_actual_end_date": "2026-01-27T12:00:00+00:00", "story_planned_hours": 16.0, "story_logged_hours": 8.0, "story_progress_pct": 50.0}, {"story_key": "O2-1179", "story_type": "Story", "story_name": "SQA", "story_status": "Resolved!", "story_assignee": "Muhammad Abbas", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/O2-1179", "story_start_date": "", "story_end_date": "", "story_actual_end_date": "2026-01-28T07:58:36.771000+00:00", "story_planned_hours": 0.0, "story_logged_hours": 4.0, "story_progress_pct": null}], "roadmap": {"valid": true, "axis_start_iso": "2025-11-08", "axis_end_iso": "2026-05-10", "axis_span_days": 184, "today_in_range": true, "today_left_pct": 66.6667, "bar_left_pct": 24.5902, "bar_width_pct": 24.5902, "actual_left_pct": 56.2842, "week_ticks": [{"iso": "2025-11-08", "label": "08-Nov-2025", "left_pct": 0.0}, {"iso": "2025-11-23", "label": "23-Nov-2025", "left_pct": 8.1967}, {"iso": "2025-12-08", "label": "08-Dec-2025", "left_pct": 16.3934}, {"iso": "2025-12-23", "label": "23-Dec-2025", "left_pct": 24.5902}, {"iso": "2026-01-07", "label": "07-Jan-2026", "left_pct": 32.7869}, {"iso": "2026-01-22", "label": "22-Jan-2026", "left_pct": 40.9836}, {"iso": "2026-02-06", "label": "06-Feb-2026", "left_pct": 49.1803}, {"iso": "2026-02-21", "label": "21-Feb-2026", "left_pct": 57.377}, {"iso": "2026-03-08", "label": "08-Mar-2026", "left_pct": 65.5738}, {"iso": "2026-03-23", "label": "23-Mar-2026", "left_pct": 73.7705}, {"iso": "2026-04-07", "label": "07-Apr-2026", "left_pct": 81.9672}, {"iso": "2026-04-22", "label": "22-Apr-2026", "left_pct": 90.1639}, {"iso": "2026-05-07", "label": "07-May-2026", "left_pct": 98.3607}]}, "mini_gantt": {"has_dated_phases": true, "axis_start_iso": "2025-12-30", "axis_end_iso": "2026-02-05", "axis_span_days": 38, "timeline_width_px": 912, "scroll_enabled": true, "week_ticks": [{"iso": "2025-12-30", "label": "30-Dec-2025", "left_pct": 0.0}, {"iso": "2026-01-06", "label": "06-Jan-2026", "left_pct": 18.9189}, {"iso": "2026-01-13", "label": "13-Jan-2026", "left_pct": 37.8378}, {"iso": "2026-01-20", "label": "20-Jan-2026", "left_pct": 56.7568}, {"iso": "2026-01-27", "label": "27-Jan-2026", "left_pct": 75.6757}, {"iso": "2026-02-03", "label": "03-Feb-2026", "left_pct": 94.5946}], "today_in_range": false, "today_left_pct": "", "phases": {"Research/URS": {"state": "no_entry", "state_label": "no entry", "warning": "", "start_iso": "", "end_iso": "", "mandays_text": "", "mandays_num": null, "raw": "", "valid": false, "bar_left_pct": "", "bar_width_pct": "", "bar_thickness_px": "", "bar_top_offset_px": "", "start_label": "-", "end_label": "-", "bar_label": "-", "show_no_bar": true}, "DDS": {"state": "no_entry", "state_label": "no entry", "warning": "", "start_iso": "", "end_iso": "", "mandays_text": "", "mandays_num": null, "raw": "", "valid": false, "bar_left_pct": "", "bar_width_pct": "", "bar_thickness_px": "", "bar_top_offset_px": "", "start_label": "-", "end_label": "-", "bar_label": "-", "show_no_bar": true}, "Development": {"state": "planned", "state_label": "planned", "warning": "", "start_iso": "2026-01-09", "end_iso": "2026-01-23", "mandays_text": "25", "mandays_num": 25.0, "raw": "2026-01-09 to 2026-01-23 (25 md)", "valid": true, "bar_left_pct": 27.027, "bar_width_pct": 37.8378, "bar_thickness_px": 17.7222, "bar_top_offset_px": 6.1389, "start_label": "09-Jan-2026", "end_label": "23-Jan-2026", "bar_label": "25 md", "show_no_bar": false}, "SQA": {"state": "no_entry", "state_label": "no entry", "warning": "", "start_iso": "", "end_iso": "", "mandays_text": "", "mandays_num": null, "raw": "", "valid": false, "bar_left_pct": "", "bar_width_pct": "", "bar_thickness_px": "", "bar_top_offset_px": "", "start_label": "-", "end_label": "-", "bar_label": "-", "show_no_bar": true}, "User Manual": {"state": "no_entry", "state_label": "no entry", "warning": "", "start_iso": "", "end_iso": "", "mandays_text": "", "mandays_num": null, "raw": "", "valid": false, "bar_left_pct": "", "bar_width_pct": "", "bar_thickness_px": "", "bar_top_offset_px": "", "start_label": "-", "end_label": "-", "bar_label": "-", "show_no_bar": true}, "Production": {"state": "planned", "state_label": "planned", "warning": "", "start_iso": "2026-01-23", "end_iso": "2026-01-26", "mandays_text": "2", "mandays_num": 2.0, "raw": "2026-01-23 to 2026-01-26 (2 md)", "valid": true, "bar_left_pct": 64.8649, "bar_width_pct": 8.1081, "bar_thickness_px": 8.7778, "bar_top_offset_px": 10.6111, "start_label": "23-Jan-2026", "end_label": "26-Jan-2026", "bar_label": "2 md", "show_no_bar": false}}}}, {"source_sheet": "Epics Planner DB", "row_number": 10, "product": "OmniConnect", "epic_rmi": "O2-457", "epic_name": "APX Visualisations Enhancements", "project_name": "OmniConnect", "plan_status": "Plan", "priority": "High", "jira_link": "https://octopusdtlsupport.atlassian.net/browse/O2-457", "epic_planned_start_date": "2026-01-26", "epic_planned_end_date": "2026-03-03", "epic_planned_start_date_db": "2026-01-26", "epic_planned_end_date_db": "2026-03-03", "epic_planned_start_date_jira": "2026-01-26", "epic_planned_end_date_jira": "2026-03-03", "epic_actual_date": "2026-03-03", "remarks": "", "computed_total_mandays": 45.0, "jira_status": "In-Progress", "jira_assignee": "Zain Munir", "db_epic_planned_mandays": 55.0, "epic_planned_hours_db": 440.0, "epic_planned_hours_jira": 440.0, "jira_original_estimate_hours": 440.0, "jira_total_hours_logged": 0.0, "jira_progress_pct": 0.0, "phase_data": {"Research/URS": {"start": "2025-10-06", "end": "2025-10-17", "mandays": "", "raw": "2025-10-06 to 2025-10-17 (- md)", "state": "planned", "warning": ""}, "DDS": {"start": "2026-01-26", "end": "2026-01-30", "mandays": "15", "raw": "2026-01-26 to 2026-01-30 (15 md)", "state": "planned", "warning": ""}, "Development": {"start": "2026-02-02", "end": "2026-02-23", "mandays": "15", "raw": "2026-02-02 to 2026-02-23 (15 md)", "state": "planned", "warning": ""}, "SQA": {"start": "2026-02-18", "end": "2026-02-27", "mandays": "5", "raw": "2026-02-18 to 2026-02-27 (5 md)", "state": "planned", "warning": ""}, "User Manual": {"start": "", "end": "", "mandays": "", "raw": "", "state": "no_entry", "warning": ""}, "Production": {"start": "2026-03-02", "end": "2026-03-03", "mandays": "10", "raw": "2026-03-02 to 2026-03-03 (10 md)", "state": "planned", "warning": ""}}, "stories": [{"story_key": "O2-513", "story_type": "Story", "story_name": "Research/URS (P)", "story_status": "Resolved!", "story_assignee": "Mariam Zulfiqar", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/O2-513", "story_start_date": "2025-10-06", "story_end_date": "2025-10-17", "story_actual_end_date": "", "story_planned_hours": 0.0, "story_logged_hours": 0.0, "story_progress_pct": null}, {"story_key": "O2-514", "story_type": "Story", "story_name": "Research/DDS", "story_status": "Resolved!", "story_assignee": "Zain Munir", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/O2-514", "story_start_date": "2026-01-26", "story_end_date": "2026-01-30", "story_actual_end_date": "2026-02-02T06:27:00+00:00", "story_planned_hours": 120.0, "story_logged_hours": 98.0, "story_progress_pct": 81.67}, {"story_key": "O2-515", "story_type": "Story", "story_name": "Development", "story_status": "Resolved!", "story_assignee": "Zain Munir", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/O2-515", "story_start_date": "2026-02-02", "story_end_date": "2026-02-23", "story_actual_end_date": "2026-02-17T04:00:00+00:00", "story_planned_hours": 120.0, "story_logged_hours": 61.5, "story_progress_pct": 51.25}, {"story_key": "O2-1397", "story_type": "Story", "story_name": "QA-Handover", "story_status": "Resolved!", "story_assignee": "Muhammad Abbas", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/O2-1397", "story_start_date": "2026-02-17", "story_end_date": "2026-02-17", "story_actual_end_date": "2026-02-17T06:00:00+00:00", "story_planned_hours": 5.0, "story_logged_hours": 5.0, "story_progress_pct": 100.0}, {"story_key": "O2-517", "story_type": "Story", "story_name": "SQA", "story_status": "Resolved!", "story_assignee": "Muhammad Abbas", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/O2-517", "story_start_date": "2026-02-18", "story_end_date": "2026-02-27", "story_actual_end_date": "2026-03-04T03:48:59.015000+00:00", "story_planned_hours": 40.0, "story_logged_hours": 50.5, "story_progress_pct": 100.0}, {"story_key": "O2-519", "story_type": "Story", "story_name": "User Manual", "story_status": "To Do", "story_assignee": "Hassan Malik", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/O2-519", "story_start_date": "2026-02-18", "story_end_date": "2026-02-27", "story_actual_end_date": "", "story_planned_hours": 24.0, "story_logged_hours": 0.0, "story_progress_pct": 0.0}, {"story_key": "O2-520", "story_type": "Story", "story_name": "Production Release", "story_status": "To Do", "story_assignee": "Ameer Hamza Khan", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/O2-520", "story_start_date": "2026-03-02", "story_end_date": "2026-03-03", "story_actual_end_date": "", "story_planned_hours": 80.0, "story_logged_hours": 0.0, "story_progress_pct": 0.0}, {"story_key": "O2-518", "story_type": "Story", "story_name": "Make Training Material (P)", "story_status": "To Do", "story_assignee": "Mariam Zulfiqar", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/O2-518", "story_start_date": "", "story_end_date": "2026-02-27", "story_actual_end_date": "", "story_planned_hours": 40.0, "story_logged_hours": 0.0, "story_progress_pct": 0.0}], "roadmap": {"valid": true, "axis_start_iso": "2025-11-08", "axis_end_iso": "2026-05-10", "axis_span_days": 184, "today_in_range": true, "today_left_pct": 66.6667, "bar_left_pct": 43.1694, "bar_width_pct": 19.6721, "actual_left_pct": 62.8415, "week_ticks": [{"iso": "2025-11-08", "label": "08-Nov-2025", "left_pct": 0.0}, {"iso": "2025-11-23", "label": "23-Nov-2025", "left_pct": 8.1967}, {"iso": "2025-12-08", "label": "08-Dec-2025", "left_pct": 16.3934}, {"iso": "2025-12-23", "label": "23-Dec-2025", "left_pct": 24.5902}, {"iso": "2026-01-07", "label": "07-Jan-2026", "left_pct": 32.7869}, {"iso": "2026-01-22", "label": "22-Jan-2026", "left_pct": 40.9836}, {"iso": "2026-02-06", "label": "06-Feb-2026", "left_pct": 49.1803}, {"iso": "2026-02-21", "label": "21-Feb-2026", "left_pct": 57.377}, {"iso": "2026-03-08", "label": "08-Mar-2026", "left_pct": 65.5738}, {"iso": "2026-03-23", "label": "23-Mar-2026", "left_pct": 73.7705}, {"iso": "2026-04-07", "label": "07-Apr-2026", "left_pct": 81.9672}, {"iso": "2026-04-22", "label": "22-Apr-2026", "left_pct": 90.1639}, {"iso": "2026-05-07", "label": "07-May-2026", "left_pct": 98.3607}]}, "mini_gantt": {"has_dated_phases": true, "axis_start_iso": "2025-09-26", "axis_end_iso": "2026-03-13", "axis_span_days": 169, "timeline_width_px": 4056, "scroll_enabled": true, "week_ticks": [{"iso": "2025-09-26", "label": "26-Sep-2025", "left_pct": 0.0}, {"iso": "2025-10-03", "label": "03-Oct-2025", "left_pct": 4.1667}, {"iso": "2025-10-10", "label": "10-Oct-2025", "left_pct": 8.3333}, {"iso": "2025-10-17", "label": "17-Oct-2025", "left_pct": 12.5}, {"iso": "2025-10-24", "label": "24-Oct-2025", "left_pct": 16.6667}, {"iso": "2025-10-31", "label": "31-Oct-2025", "left_pct": 20.8333}, {"iso": "2025-11-07", "label": "07-Nov-2025", "left_pct": 25.0}, {"iso": "2025-11-14", "label": "14-Nov-2025", "left_pct": 29.1667}, {"iso": "2025-11-21", "label": "21-Nov-2025", "left_pct": 33.3333}, {"iso": "2025-11-28", "label": "28-Nov-2025", "left_pct": 37.5}, {"iso": "2025-12-05", "label": "05-Dec-2025", "left_pct": 41.6667}, {"iso": "2025-12-12", "label": "12-Dec-2025", "left_pct": 45.8333}, {"iso": "2025-12-19", "label": "19-Dec-2025", "left_pct": 50.0}, {"iso": "2025-12-26", "label": "26-Dec-2025", "left_pct": 54.1667}, {"iso": "2026-01-02", "label": "02-Jan-2026", "left_pct": 58.3333}, {"iso": "2026-01-09", "label": "09-Jan-2026", "left_pct": 62.5}, {"iso": "2026-01-16", "label": "16-Jan-2026", "left_pct": 66.6667}, {"iso": "2026-01-23", "label": "23-Jan-2026", "left_pct": 70.8333}, {"iso": "2026-01-30", "label": "30-Jan-2026", "left_pct": 75.0}, {"iso": "2026-02-06", "label": "06-Feb-2026", "left_pct": 79.1667}, {"iso": "2026-02-13", "label": "13-Feb-2026", "left_pct": 83.3333}, {"iso": "2026-02-20", "label": "20-Feb-2026", "left_pct": 87.5}, {"iso": "2026-02-27", "label": "27-Feb-2026", "left_pct": 91.6667}, {"iso": "2026-03-06", "label": "06-Mar-2026", "left_pct": 95.8333}, {"iso": "2026-03-13", "label": "13-Mar-2026", "left_pct": 100.0}], "today_in_range": true, "today_left_pct": 98.2143, "phases": {"Research/URS": {"state": "planned", "state_label": "planned", "warning": "", "start_iso": "2025-10-06", "end_iso": "2025-10-17", "mandays_text": "", "mandays_num": null, "raw": "2025-10-06 to 2025-10-17 (- md)", "valid": true, "bar_left_pct": 5.9524, "bar_width_pct": 6.5476, "bar_thickness_px": 8.0, "bar_top_offset_px": 11.0, "start_label": "06-Oct-2025", "end_label": "17-Oct-2025", "bar_label": "-", "show_no_bar": false}, "DDS": {"state": "planned", "state_label": "planned", "warning": "", "start_iso": "2026-01-26", "end_iso": "2026-01-30", "mandays_text": "15", "mandays_num": 15.0, "raw": "2026-01-26 to 2026-01-30 (15 md)", "valid": true, "bar_left_pct": 72.619, "bar_width_pct": 2.381, "bar_thickness_px": 13.8333, "bar_top_offset_px": 8.0833, "start_label": "26-Jan-2026", "end_label": "30-Jan-2026", "bar_label": "15 md", "show_no_bar": false}, "Development": {"state": "planned", "state_label": "planned", "warning": "", "start_iso": "2026-02-02", "end_iso": "2026-02-23", "mandays_text": "15", "mandays_num": 15.0, "raw": "2026-02-02 to 2026-02-23 (15 md)", "valid": true, "bar_left_pct": 76.7857, "bar_width_pct": 12.5, "bar_thickness_px": 13.8333, "bar_top_offset_px": 8.0833, "start_label": "02-Feb-2026", "end_label": "23-Feb-2026", "bar_label": "15 md", "show_no_bar": false}, "SQA": {"state": "planned", "state_label": "planned", "warning": "", "start_iso": "2026-02-18", "end_iso": "2026-02-27", "mandays_text": "5", "mandays_num": 5.0, "raw": "2026-02-18 to 2026-02-27 (5 md)", "valid": true, "bar_left_pct": 86.3095, "bar_width_pct": 5.3571, "bar_thickness_px": 9.9444, "bar_top_offset_px": 10.0278, "start_label": "18-Feb-2026", "end_label": "27-Feb-2026", "bar_label": "5 md", "show_no_bar": false}, "User Manual": {"state": "no_entry", "state_label": "no entry", "warning": "", "start_iso": "", "end_iso": "", "mandays_text": "", "mandays_num": null, "raw": "", "valid": false, "bar_left_pct": "", "bar_width_pct": "", "bar_thickness_px": "", "bar_top_offset_px": "", "start_label": "-", "end_label": "-", "bar_label": "-", "show_no_bar": true}, "Production": {"state": "planned", "state_label": "planned", "warning": "", "start_iso": "2026-03-02", "end_iso": "2026-03-03", "mandays_text": "10", "mandays_num": 10.0, "raw": "2026-03-02 to 2026-03-03 (10 md)", "valid": true, "bar_left_pct": 93.4524, "bar_width_pct": 0.8, "bar_thickness_px": 11.8889, "bar_top_offset_px": 9.0556, "start_label": "02-Mar-2026", "end_label": "03-Mar-2026", "bar_label": "10 md", "show_no_bar": false}}}}, {"source_sheet": "Epics Planner DB", "row_number": 11, "product": "OmniConnect", "epic_rmi": "O2-810", "epic_name": "Batch/Bpm modify Existing ADX IT Table", "project_name": "OmniConnect", "plan_status": "Plan", "priority": "Low", "jira_link": "https://octopusdtlsupport.atlassian.net/browse/O2-810", "epic_planned_start_date": "2025-12-30", "epic_planned_end_date": "2026-02-06", "epic_planned_start_date_db": "2025-12-30", "epic_planned_end_date_db": "2026-02-06", "epic_planned_start_date_jira": "2025-12-30", "epic_planned_end_date_jira": "2026-02-06", "epic_actual_date": "2026-02-19", "remarks": "Required\nconfirmation from IMPL team", "computed_total_mandays": 54.0, "jira_status": "Resolved!", "jira_assignee": "ahad omer", "db_epic_planned_mandays": 60.0, "epic_planned_hours_db": 480.0, "epic_planned_hours_jira": 480.0, "jira_original_estimate_hours": 480.0, "jira_total_hours_logged": 16.0, "jira_progress_pct": 3.33, "phase_data": {"Research/URS": {"start": "2025-12-30", "end": "2026-01-06", "mandays": "12", "raw": "2025-12-30 to 2026-01-06 (12 md)", "state": "planned", "warning": ""}, "DDS": {"start": "", "end": "", "mandays": "", "raw": "", "state": "no_entry", "warning": ""}, "Development": {"start": "2026-01-07", "end": "2026-01-16", "mandays": "24", "raw": "2026-01-07 to 2026-01-16 (24 md)", "state": "planned", "warning": ""}, "SQA": {"start": "2026-01-19", "end": "2026-01-26", "mandays": "18", "raw": "2026-01-19 to 2026-01-26 (18 md)", "state": "planned", "warning": ""}, "User Manual": {"start": "", "end": "", "mandays": "", "raw": "", "state": "no_entry", "warning": ""}, "Production": {"start": "", "end": "", "mandays": "", "raw": "", "state": "no_entry", "warning": ""}}, "stories": [{"story_key": "O2-1113", "story_type": "Story", "story_name": "Research/URS", "story_status": "Resolved!", "story_assignee": "Syed Yousaf Qadri", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/O2-1113", "story_start_date": "2025-12-31", "story_end_date": "2026-01-06", "story_actual_end_date": "2026-01-06T03:04:00+00:00", "story_planned_hours": 80.0, "story_logged_hours": 72.0, "story_progress_pct": 90.0}, {"story_key": "O2-1041", "story_type": "Story", "story_name": "Development", "story_status": "Resolved!", "story_assignee": "ahad omer", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/O2-1041", "story_start_date": "2026-01-07", "story_end_date": "2026-01-19", "story_actual_end_date": "2026-02-09T22:50:33.600000+00:00", "story_planned_hours": 192.0, "story_logged_hours": 256.0, "story_progress_pct": 100.0}, {"story_key": "O2-969", "story_type": "Story", "story_name": "SQA", "story_status": "Resolved!", "story_assignee": "Muhammad Abbas", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/O2-969", "story_start_date": "2026-01-20", "story_end_date": "2026-01-26", "story_actual_end_date": "2026-02-11T03:42:00+00:00", "story_planned_hours": 144.0, "story_logged_hours": 162.0, "story_progress_pct": 100.0}, {"story_key": "O2-1125", "story_type": "Story", "story_name": "OC-Regression 02/02/2026", "story_status": "Resolved!", "story_assignee": "Muhammad Abbas", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/O2-1125", "story_start_date": "2026-02-02", "story_end_date": "2026-02-05", "story_actual_end_date": "2026-02-06T04:05:30.587000+00:00", "story_planned_hours": 32.0, "story_logged_hours": 133.5, "story_progress_pct": 100.0}, {"story_key": "O2-1335", "story_type": "Story", "story_name": "OCM-Sanity-Testing-Blue-02/16/2026", "story_status": "Resolved!", "story_assignee": "kamran khalid", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/O2-1335", "story_start_date": "2026-02-16", "story_end_date": "2026-02-16", "story_actual_end_date": "2026-02-17T04:00:00+00:00", "story_planned_hours": 32.0, "story_logged_hours": 41.0, "story_progress_pct": 100.0}, {"story_key": "O2-1042", "story_type": "Story", "story_name": "User Manual", "story_status": "Resolved!", "story_assignee": "Hassan Malik", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/O2-1042", "story_start_date": "", "story_end_date": "", "story_actual_end_date": "", "story_planned_hours": 48.0, "story_logged_hours": 16.0, "story_progress_pct": 33.33}, {"story_key": "O2-1043", "story_type": "Story", "story_name": "Production Release", "story_status": "Resolved!", "story_assignee": "ahad omer", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/O2-1043", "story_start_date": "", "story_end_date": "", "story_actual_end_date": "", "story_planned_hours": 0.0, "story_logged_hours": 0.0, "story_progress_pct": null}, {"story_key": "O2-1260", "story_type": "Story", "story_name": "OCM-Sanity-Testing-Green-09/02/2026", "story_status": "Resolved!", "story_assignee": "Muhammad Abbas", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/O2-1260", "story_start_date": "", "story_end_date": "", "story_actual_end_date": "2026-02-17T08:10:12.225000+00:00", "story_planned_hours": 0.0, "story_logged_hours": 68.0, "story_progress_pct": null}], "roadmap": {"valid": true, "axis_start_iso": "2025-11-08", "axis_end_iso": "2026-05-10", "axis_span_days": 184, "today_in_range": true, "today_left_pct": 66.6667, "bar_left_pct": 28.4153, "bar_width_pct": 20.765, "actual_left_pct": 56.2842, "week_ticks": [{"iso": "2025-11-08", "label": "08-Nov-2025", "left_pct": 0.0}, {"iso": "2025-11-23", "label": "23-Nov-2025", "left_pct": 8.1967}, {"iso": "2025-12-08", "label": "08-Dec-2025", "left_pct": 16.3934}, {"iso": "2025-12-23", "label": "23-Dec-2025", "left_pct": 24.5902}, {"iso": "2026-01-07", "label": "07-Jan-2026", "left_pct": 32.7869}, {"iso": "2026-01-22", "label": "22-Jan-2026", "left_pct": 40.9836}, {"iso": "2026-02-06", "label": "06-Feb-2026", "left_pct": 49.1803}, {"iso": "2026-02-21", "label": "21-Feb-2026", "left_pct": 57.377}, {"iso": "2026-03-08", "label": "08-Mar-2026", "left_pct": 65.5738}, {"iso": "2026-03-23", "label": "23-Mar-2026", "left_pct": 73.7705}, {"iso": "2026-04-07", "label": "07-Apr-2026", "left_pct": 81.9672}, {"iso": "2026-04-22", "label": "22-Apr-2026", "left_pct": 90.1639}, {"iso": "2026-05-07", "label": "07-May-2026", "left_pct": 98.3607}]}, "mini_gantt": {"has_dated_phases": true, "axis_start_iso": "2025-12-20", "axis_end_iso": "2026-02-05", "axis_span_days": 48, "timeline_width_px": 1152, "scroll_enabled": true, "week_ticks": [{"iso": "2025-12-20", "label": "20-Dec-2025", "left_pct": 0.0}, {"iso": "2025-12-27", "label": "27-Dec-2025", "left_pct": 14.8936}, {"iso": "2026-01-03", "label": "03-Jan-2026", "left_pct": 29.7872}, {"iso": "2026-01-10", "label": "10-Jan-2026", "left_pct": 44.6809}, {"iso": "2026-01-17", "label": "17-Jan-2026", "left_pct": 59.5745}, {"iso": "2026-01-24", "label": "24-Jan-2026", "left_pct": 74.4681}, {"iso": "2026-01-31", "label": "31-Jan-2026", "left_pct": 89.3617}], "today_in_range": false, "today_left_pct": "", "phases": {"Research/URS": {"state": "planned", "state_label": "planned", "warning": "", "start_iso": "2025-12-30", "end_iso": "2026-01-06", "mandays_text": "12", "mandays_num": 12.0, "raw": "2025-12-30 to 2026-01-06 (12 md)", "valid": true, "bar_left_pct": 21.2766, "bar_width_pct": 14.8936, "bar_thickness_px": 12.6667, "bar_top_offset_px": 8.6667, "start_label": "30-Dec-2025", "end_label": "06-Jan-2026", "bar_label": "12 md", "show_no_bar": false}, "DDS": {"state": "no_entry", "state_label": "no entry", "warning": "", "start_iso": "", "end_iso": "", "mandays_text": "", "mandays_num": null, "raw": "", "valid": false, "bar_left_pct": "", "bar_width_pct": "", "bar_thickness_px": "", "bar_top_offset_px": "", "start_label": "-", "end_label": "-", "bar_label": "-", "show_no_bar": true}, "Development": {"state": "planned", "state_label": "planned", "warning": "", "start_iso": "2026-01-07", "end_iso": "2026-01-16", "mandays_text": "24", "mandays_num": 24.0, "raw": "2026-01-07 to 2026-01-16 (24 md)", "valid": true, "bar_left_pct": 38.2979, "bar_width_pct": 19.1489, "bar_thickness_px": 17.3333, "bar_top_offset_px": 6.3333, "start_label": "07-Jan-2026", "end_label": "16-Jan-2026", "bar_label": "24 md", "show_no_bar": false}, "SQA": {"state": "planned", "state_label": "planned", "warning": "", "start_iso": "2026-01-19", "end_iso": "2026-01-26", "mandays_text": "18", "mandays_num": 18.0, "raw": "2026-01-19 to 2026-01-26 (18 md)", "valid": true, "bar_left_pct": 63.8298, "bar_width_pct": 14.8936, "bar_thickness_px": 15.0, "bar_top_offset_px": 7.5, "start_label": "19-Jan-2026", "end_label": "26-Jan-2026", "bar_label": "18 md", "show_no_bar": false}, "User Manual": {"state": "no_entry", "state_label": "no entry", "warning": "", "start_iso": "", "end_iso": "", "mandays_text": "", "mandays_num": null, "raw": "", "valid": false, "bar_left_pct": "", "bar_width_pct": "", "bar_thickness_px": "", "bar_top_offset_px": "", "start_label": "-", "end_label": "-", "bar_label": "-", "show_no_bar": true}, "Production": {"state": "no_entry", "state_label": "no entry", "warning": "", "start_iso": "", "end_iso": "", "mandays_text": "", "mandays_num": null, "raw": "", "valid": false, "bar_left_pct": "", "bar_width_pct": "", "bar_thickness_px": "", "bar_top_offset_px": "", "start_label": "-", "end_label": "-", "bar_label": "-", "show_no_bar": true}}}}, {"source_sheet": "Epics Planner DB", "row_number": 12, "product": "OmniConnect", "epic_rmi": "O2-697", "epic_name": "Calculated Tags Enhancements (With No Code)", "project_name": "OmniConnect", "plan_status": "Planned", "priority": "Low", "jira_link": "https://octopusdtlsupport.atlassian.net/browse/O2-697", "epic_planned_start_date": "2026-01-28", "epic_planned_end_date": "2026-03-13", "epic_planned_start_date_db": "2026-01-28", "epic_planned_end_date_db": "2026-03-13", "epic_planned_start_date_jira": "2026-01-28", "epic_planned_end_date_jira": "2026-03-13", "epic_actual_date": "2026-02-27", "remarks": "", "computed_total_mandays": 32.0, "jira_status": "On Hold", "jira_assignee": "Mohsin Junaid", "db_epic_planned_mandays": 38.0, "epic_planned_hours_db": 304.0, "epic_planned_hours_jira": 304.0, "jira_original_estimate_hours": 304.0, "jira_total_hours_logged": 48.0, "jira_progress_pct": 15.79, "phase_data": {"Research/URS": {"start": "", "end": "", "mandays": "", "raw": "", "state": "no_entry", "warning": ""}, "DDS": {"start": "", "end": "", "mandays": "", "raw": "", "state": "no_entry", "warning": ""}, "Development": {"start": "2026-02-16", "end": "2026-02-20", "mandays": "15", "raw": "2026-02-16 to 2026-02-20 (15 md)", "state": "planned", "warning": ""}, "SQA": {"start": "2026-02-23", "end": "2026-03-03", "mandays": "10", "raw": "2026-02-23 to 2026-03-03 (10 md)", "state": "planned", "warning": ""}, "User Manual": {"start": "", "end": "", "mandays": "", "raw": "", "state": "no_entry", "warning": ""}, "Production": {"start": "2026-03-10", "end": "2026-03-13", "mandays": "7", "raw": "2026-03-10 to 2026-03-13 (7 md)", "state": "planned", "warning": ""}}, "stories": [{"story_key": "O2-703", "story_type": "Story", "story_name": "User Manual", "story_status": "To Do", "story_assignee": "Hassan Malik", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/O2-703", "story_start_date": "2025-12-22", "story_end_date": "2025-12-25", "story_actual_end_date": "", "story_planned_hours": 32.0, "story_logged_hours": 0.0, "story_progress_pct": 0.0}, {"story_key": "O2-794", "story_type": "Story", "story_name": "Counter Tag Reset", "story_status": "To Do", "story_assignee": "Mohsin Junaid", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/O2-794", "story_start_date": "2026-01-15", "story_end_date": "2026-01-26", "story_actual_end_date": "2025-12-22T04:00:00+00:00", "story_planned_hours": 80.0, "story_logged_hours": 80.0, "story_progress_pct": 100.0}, {"story_key": "O2-1362", "story_type": "Story", "story_name": "Development Web", "story_status": "In-Progress", "story_assignee": "Ameer Hamza Khan", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/O2-1362", "story_start_date": "2026-02-10", "story_end_date": "2026-02-20", "story_actual_end_date": "2026-02-20T10:30:00+00:00", "story_planned_hours": 80.0, "story_logged_hours": 16.0, "story_progress_pct": 20.0}, {"story_key": "O2-700", "story_type": "Story", "story_name": "Development", "story_status": "In-Progress", "story_assignee": "Mohsin Junaid", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/O2-700", "story_start_date": "2026-02-16", "story_end_date": "2026-02-20", "story_actual_end_date": "2026-02-19T09:07:00+00:00", "story_planned_hours": 120.0, "story_logged_hours": 88.0, "story_progress_pct": 73.33}, {"story_key": "O2-698", "story_type": "Story", "story_name": "SQA", "story_status": "To Do", "story_assignee": "Muhammad Abbas", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/O2-698", "story_start_date": "2026-02-23", "story_end_date": "2026-03-03", "story_actual_end_date": "", "story_planned_hours": 80.0, "story_logged_hours": 0.0, "story_progress_pct": 0.0}, {"story_key": "O2-701", "story_type": "Story", "story_name": "Production Release", "story_status": "To Do", "story_assignee": "Taimur Zahid", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/O2-701", "story_start_date": "2026-03-10", "story_end_date": "2026-03-13", "story_actual_end_date": "", "story_planned_hours": 56.0, "story_logged_hours": 0.0, "story_progress_pct": 0.0}], "roadmap": {"valid": true, "axis_start_iso": "2025-11-08", "axis_end_iso": "2026-05-10", "axis_span_days": 184, "today_in_range": true, "today_left_pct": 66.6667, "bar_left_pct": 44.2623, "bar_width_pct": 24.0437, "actual_left_pct": 60.6557, "week_ticks": [{"iso": "2025-11-08", "label": "08-Nov-2025", "left_pct": 0.0}, {"iso": "2025-11-23", "label": "23-Nov-2025", "left_pct": 8.1967}, {"iso": "2025-12-08", "label": "08-Dec-2025", "left_pct": 16.3934}, {"iso": "2025-12-23", "label": "23-Dec-2025", "left_pct": 24.5902}, {"iso": "2026-01-07", "label": "07-Jan-2026", "left_pct": 32.7869}, {"iso": "2026-01-22", "label": "22-Jan-2026", "left_pct": 40.9836}, {"iso": "2026-02-06", "label": "06-Feb-2026", "left_pct": 49.1803}, {"iso": "2026-02-21", "label": "21-Feb-2026", "left_pct": 57.377}, {"iso": "2026-03-08", "label": "08-Mar-2026", "left_pct": 65.5738}, {"iso": "2026-03-23", "label": "23-Mar-2026", "left_pct": 73.7705}, {"iso": "2026-04-07", "label": "07-Apr-2026", "left_pct": 81.9672}, {"iso": "2026-04-22", "label": "22-Apr-2026", "left_pct": 90.1639}, {"iso": "2026-05-07", "label": "07-May-2026", "left_pct": 98.3607}]}, "mini_gantt": {"has_dated_phases": true, "axis_start_iso": "2026-02-06", "axis_end_iso": "2026-03-23", "axis_span_days": 46, "timeline_width_px": 1104, "scroll_enabled": true, "week_ticks": [{"iso": "2026-02-06", "label": "06-Feb-2026", "left_pct": 0.0}, {"iso": "2026-02-13", "label": "13-Feb-2026", "left_pct": 15.5556}, {"iso": "2026-02-20", "label": "20-Feb-2026", "left_pct": 31.1111}, {"iso": "2026-02-27", "label": "27-Feb-2026", "left_pct": 46.6667}, {"iso": "2026-03-06", "label": "06-Mar-2026", "left_pct": 62.2222}, {"iso": "2026-03-13", "label": "13-Mar-2026", "left_pct": 77.7778}, {"iso": "2026-03-20", "label": "20-Mar-2026", "left_pct": 93.3333}], "today_in_range": true, "today_left_pct": 71.1111, "phases": {"Research/URS": {"state": "no_entry", "state_label": "no entry", "warning": "", "start_iso": "", "end_iso": "", "mandays_text": "", "mandays_num": null, "raw": "", "valid": false, "bar_left_pct": "", "bar_width_pct": "", "bar_thickness_px": "", "bar_top_offset_px": "", "start_label": "-", "end_label": "-", "bar_label": "-", "show_no_bar": true}, "DDS": {"state": "no_entry", "state_label": "no entry", "warning": "", "start_iso": "", "end_iso": "", "mandays_text": "", "mandays_num": null, "raw": "", "valid": false, "bar_left_pct": "", "bar_width_pct": "", "bar_thickness_px": "", "bar_top_offset_px": "", "start_label": "-", "end_label": "-", "bar_label": "-", "show_no_bar": true}, "Development": {"state": "planned", "state_label": "planned", "warning": "", "start_iso": "2026-02-16", "end_iso": "2026-02-20", "mandays_text": "15", "mandays_num": 15.0, "raw": "2026-02-16 to 2026-02-20 (15 md)", "valid": true, "bar_left_pct": 22.2222, "bar_width_pct": 8.8889, "bar_thickness_px": 13.8333, "bar_top_offset_px": 8.0833, "start_label": "16-Feb-2026", "end_label": "20-Feb-2026", "bar_label": "15 md", "show_no_bar": false}, "SQA": {"state": "planned", "state_label": "planned", "warning": "", "start_iso": "2026-02-23", "end_iso": "2026-03-03", "mandays_text": "10", "mandays_num": 10.0, "raw": "2026-02-23 to 2026-03-03 (10 md)", "valid": true, "bar_left_pct": 37.7778, "bar_width_pct": 17.7778, "bar_thickness_px": 11.8889, "bar_top_offset_px": 9.0556, "start_label": "23-Feb-2026", "end_label": "03-Mar-2026", "bar_label": "10 md", "show_no_bar": false}, "User Manual": {"state": "no_entry", "state_label": "no entry", "warning": "", "start_iso": "", "end_iso": "", "mandays_text": "", "mandays_num": null, "raw": "", "valid": false, "bar_left_pct": "", "bar_width_pct": "", "bar_thickness_px": "", "bar_top_offset_px": "", "start_label": "-", "end_label": "-", "bar_label": "-", "show_no_bar": true}, "Production": {"state": "planned", "state_label": "planned", "warning": "", "start_iso": "2026-03-10", "end_iso": "2026-03-13", "mandays_text": "7", "mandays_num": 7.0, "raw": "2026-03-10 to 2026-03-13 (7 md)", "valid": true, "bar_left_pct": 71.1111, "bar_width_pct": 6.6667, "bar_thickness_px": 10.7222, "bar_top_offset_px": 9.6389, "start_label": "10-Mar-2026", "end_label": "13-Mar-2026", "bar_label": "7 md", "show_no_bar": false}}}}, {"source_sheet": "Epics Planner DB", "row_number": 13, "product": "OmniConnect", "epic_rmi": "O2-793", "epic_name": "Real-time Tag Streaming", "project_name": "OmniConnect", "plan_status": "Not Planned Yet", "priority": "Low", "jira_link": "https://octopusdtlsupport.atlassian.net/browse/O2-793", "epic_planned_start_date": "2025-12-23", "epic_planned_end_date": "2026-02-06", "epic_planned_start_date_db": "2025-12-23", "epic_planned_end_date_db": "2026-02-06", "epic_planned_start_date_jira": "2025-12-23", "epic_planned_end_date_jira": "2026-02-06", "epic_actual_date": "2026-03-13", "remarks": "", "computed_total_mandays": 52.0, "jira_status": "In-Progress", "jira_assignee": "Mohsin Junaid", "db_epic_planned_mandays": 52.0, "epic_planned_hours_db": 416.0, "epic_planned_hours_jira": 416.0, "jira_original_estimate_hours": 416.0, "jira_total_hours_logged": 200.0, "jira_progress_pct": 48.08, "phase_data": {"Research/URS": {"start": "2026-01-01", "end": "2026-01-16", "mandays": "16", "raw": "2026-01-01 to 2026-01-16 (16 md)", "state": "planned", "warning": ""}, "DDS": {"start": "", "end": "", "mandays": "", "raw": "", "state": "no_entry", "warning": ""}, "Development": {"start": "2026-01-16", "end": "2026-02-11", "mandays": "20", "raw": "2026-01-16 to 2026-02-11 (20 md)", "state": "planned", "warning": ""}, "SQA": {"start": "2026-01-05", "end": "2026-01-09", "mandays": "6", "raw": "2026-01-05 to 2026-01-09 (6 md)", "state": "planned", "warning": ""}, "User Manual": {"start": "", "end": "", "mandays": "", "raw": "", "state": "no_entry", "warning": ""}, "Production": {"start": "2026-01-12", "end": "2026-01-15", "mandays": "10", "raw": "2026-01-12 to 2026-01-15 (10 md)", "state": "planned", "warning": ""}}, "stories": [{"story_key": "O2-788", "story_type": "Story", "story_name": "Research/URS", "story_status": "Resolved!", "story_assignee": "Ayyan Babar", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/O2-788", "story_start_date": "2026-01-01", "story_end_date": "2026-01-16", "story_actual_end_date": "2026-01-16T03:01:00+00:00", "story_planned_hours": 128.0, "story_logged_hours": 96.0, "story_progress_pct": 75.0}, {"story_key": "O2-790", "story_type": "Story", "story_name": "SQA", "story_status": "In-Progress", "story_assignee": "Muhammad Abbas", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/O2-790", "story_start_date": "2026-01-05", "story_end_date": "2026-01-09", "story_actual_end_date": "2026-03-09T04:00:00+00:00", "story_planned_hours": 48.0, "story_logged_hours": 238.5, "story_progress_pct": 100.0}, {"story_key": "O2-791", "story_type": "Story", "story_name": "User manual", "story_status": "To Do", "story_assignee": "Hassan Malik", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/O2-791", "story_start_date": "2026-01-05", "story_end_date": "2026-01-09", "story_actual_end_date": "", "story_planned_hours": 4.0, "story_logged_hours": 0.0, "story_progress_pct": 0.0}, {"story_key": "O2-792", "story_type": "Story", "story_name": "Production Release", "story_status": "To Do", "story_assignee": "Ayyan Babar", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/O2-792", "story_start_date": "2026-01-12", "story_end_date": "2026-01-15", "story_actual_end_date": "2026-02-26T20:46:00+00:00", "story_planned_hours": 80.0, "story_logged_hours": 121.0, "story_progress_pct": 100.0}, {"story_key": "O2-789", "story_type": "Story", "story_name": "Development", "story_status": "In-Progress", "story_assignee": "Ayyan Babar", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/O2-789", "story_start_date": "2026-01-16", "story_end_date": "2026-02-11", "story_actual_end_date": "2026-03-06T08:12:00+00:00", "story_planned_hours": 160.0, "story_logged_hours": 168.0, "story_progress_pct": 100.0}], "roadmap": {"valid": true, "axis_start_iso": "2025-11-08", "axis_end_iso": "2026-05-10", "axis_span_days": 184, "today_in_range": true, "today_left_pct": 66.6667, "bar_left_pct": 24.5902, "bar_width_pct": 24.5902, "actual_left_pct": 68.306, "week_ticks": [{"iso": "2025-11-08", "label": "08-Nov-2025", "left_pct": 0.0}, {"iso": "2025-11-23", "label": "23-Nov-2025", "left_pct": 8.1967}, {"iso": "2025-12-08", "label": "08-Dec-2025", "left_pct": 16.3934}, {"iso": "2025-12-23", "label": "23-Dec-2025", "left_pct": 24.5902}, {"iso": "2026-01-07", "label": "07-Jan-2026", "left_pct": 32.7869}, {"iso": "2026-01-22", "label": "22-Jan-2026", "left_pct": 40.9836}, {"iso": "2026-02-06", "label": "06-Feb-2026", "left_pct": 49.1803}, {"iso": "2026-02-21", "label": "21-Feb-2026", "left_pct": 57.377}, {"iso": "2026-03-08", "label": "08-Mar-2026", "left_pct": 65.5738}, {"iso": "2026-03-23", "label": "23-Mar-2026", "left_pct": 73.7705}, {"iso": "2026-04-07", "label": "07-Apr-2026", "left_pct": 81.9672}, {"iso": "2026-04-22", "label": "22-Apr-2026", "left_pct": 90.1639}, {"iso": "2026-05-07", "label": "07-May-2026", "left_pct": 98.3607}]}, "mini_gantt": {"has_dated_phases": true, "axis_start_iso": "2025-12-22", "axis_end_iso": "2026-02-21", "axis_span_days": 62, "timeline_width_px": 1488, "scroll_enabled": true, "week_ticks": [{"iso": "2025-12-22", "label": "22-Dec-2025", "left_pct": 0.0}, {"iso": "2025-12-29", "label": "29-Dec-2025", "left_pct": 11.4754}, {"iso": "2026-01-05", "label": "05-Jan-2026", "left_pct": 22.9508}, {"iso": "2026-01-12", "label": "12-Jan-2026", "left_pct": 34.4262}, {"iso": "2026-01-19", "label": "19-Jan-2026", "left_pct": 45.9016}, {"iso": "2026-01-26", "label": "26-Jan-2026", "left_pct": 57.377}, {"iso": "2026-02-02", "label": "02-Feb-2026", "left_pct": 68.8525}, {"iso": "2026-02-09", "label": "09-Feb-2026", "left_pct": 80.3279}, {"iso": "2026-02-16", "label": "16-Feb-2026", "left_pct": 91.8033}], "today_in_range": false, "today_left_pct": "", "phases": {"Research/URS": {"state": "planned", "state_label": "planned", "warning": "", "start_iso": "2026-01-01", "end_iso": "2026-01-16", "mandays_text": "16", "mandays_num": 16.0, "raw": "2026-01-01 to 2026-01-16 (16 md)", "valid": true, "bar_left_pct": 16.3934, "bar_width_pct": 24.5902, "bar_thickness_px": 14.2222, "bar_top_offset_px": 7.8889, "start_label": "01-Jan-2026", "end_label": "16-Jan-2026", "bar_label": "16 md", "show_no_bar": false}, "DDS": {"state": "no_entry", "state_label": "no entry", "warning": "", "start_iso": "", "end_iso": "", "mandays_text": "", "mandays_num": null, "raw": "", "valid": false, "bar_left_pct": "", "bar_width_pct": "", "bar_thickness_px": "", "bar_top_offset_px": "", "start_label": "-", "end_label": "-", "bar_label": "-", "show_no_bar": true}, "Development": {"state": "planned", "state_label": "planned", "warning": "", "start_iso": "2026-01-16", "end_iso": "2026-02-11", "mandays_text": "20", "mandays_num": 20.0, "raw": "2026-01-16 to 2026-02-11 (20 md)", "valid": true, "bar_left_pct": 40.9836, "bar_width_pct": 42.623, "bar_thickness_px": 15.7778, "bar_top_offset_px": 7.1111, "start_label": "16-Jan-2026", "end_label": "11-Feb-2026", "bar_label": "20 md", "show_no_bar": false}, "SQA": {"state": "planned", "state_label": "planned", "warning": "", "start_iso": "2026-01-05", "end_iso": "2026-01-09", "mandays_text": "6", "mandays_num": 6.0, "raw": "2026-01-05 to 2026-01-09 (6 md)", "valid": true, "bar_left_pct": 22.9508, "bar_width_pct": 6.5574, "bar_thickness_px": 10.3333, "bar_top_offset_px": 9.8333, "start_label": "05-Jan-2026", "end_label": "09-Jan-2026", "bar_label": "6 md", "show_no_bar": false}, "User Manual": {"state": "no_entry", "state_label": "no entry", "warning": "", "start_iso": "", "end_iso": "", "mandays_text": "", "mandays_num": null, "raw": "", "valid": false, "bar_left_pct": "", "bar_width_pct": "", "bar_thickness_px": "", "bar_top_offset_px": "", "start_label": "-", "end_label": "-", "bar_label": "-", "show_no_bar": true}, "Production": {"state": "planned", "state_label": "planned", "warning": "", "start_iso": "2026-01-12", "end_iso": "2026-01-15", "mandays_text": "10", "mandays_num": 10.0, "raw": "2026-01-12 to 2026-01-15 (10 md)", "valid": true, "bar_left_pct": 34.4262, "bar_width_pct": 4.918, "bar_thickness_px": 11.8889, "bar_top_offset_px": 9.0556, "start_label": "12-Jan-2026", "end_label": "15-Jan-2026", "bar_label": "10 md", "show_no_bar": false}}}}, {"source_sheet": "Epics Planner DB", "row_number": 14, "product": "OmniConnect", "epic_rmi": "O2-857", "epic_name": "Subscription Management", "project_name": "OmniConnect", "plan_status": "Plan", "priority": "Low", "jira_link": "https://octopusdtlsupport.atlassian.net/browse/O2-857", "epic_planned_start_date": "2026-01-07", "epic_planned_end_date": "2026-03-06", "epic_planned_start_date_db": "2026-01-07", "epic_planned_end_date_db": "2026-03-06", "epic_planned_start_date_jira": "2026-01-07", "epic_planned_end_date_jira": "2026-03-06", "epic_actual_date": "2026-03-06", "remarks": "", "computed_total_mandays": 65.0, "jira_status": "In-Progress", "jira_assignee": "Faiza Nasir", "db_epic_planned_mandays": 65.0, "epic_planned_hours_db": 520.0, "epic_planned_hours_jira": 520.0, "jira_original_estimate_hours": 520.0, "jira_total_hours_logged": 0.0, "jira_progress_pct": 0.0, "phase_data": {"Research/URS": {"start": "2026-01-07", "end": "2026-01-08", "mandays": "4", "raw": "2026-01-07 to 2026-01-08 (4 md)", "state": "planned", "warning": ""}, "DDS": {"start": "2026-01-08", "end": "2026-01-08", "mandays": "1", "raw": "2026-01-08 to 2026-01-08 (1 md)", "state": "planned", "warning": ""}, "Development": {"start": "2026-01-09", "end": "2026-02-23", "mandays": "36", "raw": "2026-01-09 to 2026-02-23 (36 md)", "state": "planned", "warning": ""}, "SQA": {"start": "2026-02-23", "end": "2026-03-06", "mandays": "20", "raw": "2026-02-23 to 2026-03-06 (20 md)", "state": "planned", "warning": ""}, "User Manual": {"start": "", "end": "", "mandays": "", "raw": "", "state": "no_entry", "warning": ""}, "Production": {"start": "", "end": "", "mandays": "4", "raw": "- to - (4 md)", "state": "invalid", "warning": "missing_or_invalid_date_range"}}, "stories": [{"story_key": "O2-1249", "story_type": "Story", "story_name": "Research/DDS", "story_status": "Resolved!", "story_assignee": "Faiza Nasir", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/O2-1249", "story_start_date": "2026-01-07", "story_end_date": "2026-01-08", "story_actual_end_date": "2026-02-03T02:59:00+00:00", "story_planned_hours": 32.0, "story_logged_hours": 18.0, "story_progress_pct": 56.25}, {"story_key": "O2-889", "story_type": "Story", "story_name": "Development", "story_status": "In-Progress", "story_assignee": "Faiza Nasir", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/O2-889", "story_start_date": "2026-01-09", "story_end_date": "2026-02-23", "story_actual_end_date": "2026-03-09T04:00:00+00:00", "story_planned_hours": 288.0, "story_logged_hours": 344.78, "story_progress_pct": 100.0}, {"story_key": "O2-1636", "story_type": "Story", "story_name": "Handover", "story_status": "To Do", "story_assignee": "Ameer Hamza Khan", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/O2-1636", "story_start_date": "2026-02-27", "story_end_date": "2026-02-27", "story_actual_end_date": "2026-02-27T10:30:00+00:00", "story_planned_hours": 11.0, "story_logged_hours": 13.37, "story_progress_pct": 100.0}, {"story_key": "O2-1257", "story_type": "Story", "story_name": "SQA", "story_status": "In-Progress", "story_assignee": "Muhammad Abbas", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/O2-1257", "story_start_date": "2026-03-02", "story_end_date": "2026-03-11", "story_actual_end_date": "2026-03-09T04:00:00+00:00", "story_planned_hours": 160.0, "story_logged_hours": 115.5, "story_progress_pct": 72.19}, {"story_key": "O2-1250", "story_type": "Story", "story_name": "DDS", "story_status": "To Do", "story_assignee": "Hassan Malik", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/O2-1250", "story_start_date": "", "story_end_date": "", "story_actual_end_date": "", "story_planned_hours": 0.0, "story_logged_hours": 0.0, "story_progress_pct": null}, {"story_key": "O2-1258", "story_type": "Story", "story_name": "User Manual", "story_status": "To Do", "story_assignee": "Hassan Malik", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/O2-1258", "story_start_date": "", "story_end_date": "", "story_actual_end_date": "", "story_planned_hours": 40.0, "story_logged_hours": 0.0, "story_progress_pct": 0.0}, {"story_key": "O2-1259", "story_type": "Story", "story_name": "Production Release", "story_status": "To Do", "story_assignee": "Ameer Hamza Khan", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/O2-1259", "story_start_date": "", "story_end_date": "", "story_actual_end_date": "", "story_planned_hours": 32.0, "story_logged_hours": 0.0, "story_progress_pct": 0.0}, {"story_key": "O2-1643", "story_type": "Story", "story_name": "Bug-Fixing", "story_status": "To Do", "story_assignee": "Ameer Hamza Khan", "story_jira_url": "https://octopusdtlsupport.atlassian.net/browse/O2-1643", "story_start_date": "", "story_end_date": "", "story_actual_end_date": "2026-03-10T08:12:38.387000+00:00", "story_planned_hours": 0.0, "story_logged_hours": 84.0, "story_progress_pct": null}], "roadmap": {"valid": true, "axis_start_iso": "2025-11-08", "axis_end_iso": "2026-05-10", "axis_span_days": 184, "today_in_range": true, "today_left_pct": 66.6667, "bar_left_pct": 32.7869, "bar_width_pct": 31.694, "actual_left_pct": 64.4809, "week_ticks": [{"iso": "2025-11-08", "label": "08-Nov-2025", "left_pct": 0.0}, {"iso": "2025-11-23", "label": "23-Nov-2025", "left_pct": 8.1967}, {"iso": "2025-12-08", "label": "08-Dec-2025", "left_pct": 16.3934}, {"iso": "2025-12-23", "label": "23-Dec-2025", "left_pct": 24.5902}, {"iso": "2026-01-07", "label": "07-Jan-2026", "left_pct": 32.7869}, {"iso": "2026-01-22", "label": "22-Jan-2026", "left_pct": 40.9836}, {"iso": "2026-02-06", "label": "06-Feb-2026", "left_pct": 49.1803}, {"iso": "2026-02-21", "label": "21-Feb-2026", "left_pct": 57.377}, {"iso": "2026-03-08", "label": "08-Mar-2026", "left_pct": 65.5738}, {"iso": "2026-03-23", "label": "23-Mar-2026", "left_pct": 73.7705}, {"iso": "2026-04-07", "label": "07-Apr-2026", "left_pct": 81.9672}, {"iso": "2026-04-22", "label": "22-Apr-2026", "left_pct": 90.1639}, {"iso": "2026-05-07", "label": "07-May-2026", "left_pct": 98.3607}]}, "mini_gantt": {"has_dated_phases": true, "axis_start_iso": "2025-12-28", "axis_end_iso": "2026-03-16", "axis_span_days": 79, "timeline_width_px": 1896, "scroll_enabled": true, "week_ticks": [{"iso": "2025-12-28", "label": "28-Dec-2025", "left_pct": 0.0}, {"iso": "2026-01-04", "label": "04-Jan-2026", "left_pct": 8.9744}, {"iso": "2026-01-11", "label": "11-Jan-2026", "left_pct": 17.9487}, {"iso": "2026-01-18", "label": "18-Jan-2026", "left_pct": 26.9231}, {"iso": "2026-01-25", "label": "25-Jan-2026", "left_pct": 35.8974}, {"iso": "2026-02-01", "label": "01-Feb-2026", "left_pct": 44.8718}, {"iso": "2026-02-08", "label": "08-Feb-2026", "left_pct": 53.8462}, {"iso": "2026-02-15", "label": "15-Feb-2026", "left_pct": 62.8205}, {"iso": "2026-02-22", "label": "22-Feb-2026", "left_pct": 71.7949}, {"iso": "2026-03-01", "label": "01-Mar-2026", "left_pct": 80.7692}, {"iso": "2026-03-08", "label": "08-Mar-2026", "left_pct": 89.7436}, {"iso": "2026-03-15", "label": "15-Mar-2026", "left_pct": 98.7179}], "today_in_range": true, "today_left_pct": 92.3077, "phases": {"Research/URS": {"state": "planned", "state_label": "planned", "warning": "", "start_iso": "2026-01-07", "end_iso": "2026-01-08", "mandays_text": "4", "mandays_num": 4.0, "raw": "2026-01-07 to 2026-01-08 (4 md)", "valid": true, "bar_left_pct": 12.8205, "bar_width_pct": 1.2821, "bar_thickness_px": 9.5556, "bar_top_offset_px": 10.2222, "start_label": "07-Jan-2026", "end_label": "08-Jan-2026", "bar_label": "4 md", "show_no_bar": false}, "DDS": {"state": "planned", "state_label": "planned", "warning": "", "start_iso": "2026-01-08", "end_iso": "2026-01-08", "mandays_text": "1", "mandays_num": 1.0, "raw": "2026-01-08 to 2026-01-08 (1 md)", "valid": true, "bar_left_pct": 14.1026, "bar_width_pct": 0.8, "bar_thickness_px": 8.3889, "bar_top_offset_px": 10.8056, "start_label": "08-Jan-2026", "end_label": "08-Jan-2026", "bar_label": "1 md", "show_no_bar": false}, "Development": {"state": "planned", "state_label": "planned", "warning": "", "start_iso": "2026-01-09", "end_iso": "2026-02-23", "mandays_text": "36", "mandays_num": 36.0, "raw": "2026-01-09 to 2026-02-23 (36 md)", "valid": true, "bar_left_pct": 15.3846, "bar_width_pct": 57.6923, "bar_thickness_px": 22.0, "bar_top_offset_px": 4.0, "start_label": "09-Jan-2026", "end_label": "23-Feb-2026", "bar_label": "36 md", "show_no_bar": false}, "SQA": {"state": "planned", "state_label": "planned", "warning": "", "start_iso": "2026-02-23", "end_iso": "2026-03-06", "mandays_text": "20", "mandays_num": 20.0, "raw": "2026-02-23 to 2026-03-06 (20 md)", "valid": true, "bar_left_pct": 73.0769, "bar_width_pct": 14.1026, "bar_thickness_px": 15.7778, "bar_top_offset_px": 7.1111, "start_label": "23-Feb-2026", "end_label": "06-Mar-2026", "bar_label": "20 md", "show_no_bar": false}, "User Manual": {"state": "no_entry", "state_label": "no entry", "warning": "", "start_iso": "", "end_iso": "", "mandays_text": "", "mandays_num": null, "raw": "", "valid": false, "bar_left_pct": "", "bar_width_pct": "", "bar_thickness_px": "", "bar_top_offset_px": "", "start_label": "-", "end_label": "-", "bar_label": "-", "show_no_bar": true}, "Production": {"state": "invalid", "state_label": "invalid", "warning": "missing_or_invalid_date_range", "start_iso": "", "end_iso": "", "mandays_text": "4", "mandays_num": 4.0, "raw": "- to - (4 md)", "valid": false, "bar_left_pct": "", "bar_width_pct": "", "bar_thickness_px": "", "bar_top_offset_px": "", "start_label": "-", "end_label": "-", "bar_label": "4 md", "show_no_bar": true}}}}], "selection_mode": "selected_only", "selected_epics_count": 14, "total_epics_count": 22}</script>
+<script id="ipp-phase-data" type="application/json">{"generated_at": "2026-03-15 14:52 UTC", "source_workbook": "E:\\JIRA SCRIPT\\jira_exports.db (work_items)", "source_sheet": "Epics Planner DB + Jira work_items (database)", "settings_db_path": "E:\\JIRA SCRIPT\\assignee_hours_capacity.db", "phase_names": ["Research/URS", "DDS", "Development", "SQA", "User Manual", "Production"], "rows": [], "selection_mode": "ipp_meeting_planner", "selected_epics_count": 0, "total_epics_count": 24, "current_ipp_meeting_id": 1}</script>
 <script>
 const payloadNode = document.getElementById("ipp-phase-data");
 let payload = {};
@@ -1971,16 +2269,37 @@ try {
     console.error("Failed to parse embedded IPP payload:", err);
     payload = { generated_at: "-", source_workbook: "-", source_sheet: "-", phase_names: [], rows: [] };
 }
+const currentIppMeetingId = payload.current_ipp_meeting_id != null ? Number(payload.current_ipp_meeting_id) : null;
+if (currentIppMeetingId != null) {
+    const completeBtn = document.getElementById("ipp-complete-meeting-btn");
+    if (completeBtn) completeBtn.style.display = "inline-flex";
+}
 let phaseNames = payload.phase_names || [];
 let allRows = payload.rows || [];
-let plannedSourceMode = "jira";
+const plannedSourceMode = "db";
 
 let selectedRowIndex = -1;
 let isDrawerOpen = false;
 let activeReport = "roadmap";
 let showRoadmapStatusCol = false;
 let showRoadmapMandaysCol = false;
+const IPP_CATEGORIZATION_STORAGE_KEY = "ipp-meeting-dashboard-categorization";
+function getShowCategorization() {
+    try {
+        const stored = localStorage.getItem(IPP_CATEGORIZATION_STORAGE_KEY);
+        if (stored === "0" || stored === "false") return false;
+        if (stored === "1" || stored === "true") return true;
+    } catch (_) {}
+    return true;
+}
+function setShowCategorization(value) {
+    try {
+        localStorage.setItem(IPP_CATEGORIZATION_STORAGE_KEY, value ? "1" : "0");
+    } catch (_) {}
+}
+let showCategorization = getShowCategorization();
 const productCollapsedState = {};
+const hierarchyCollapsedState = {};
 
 function esc(text) {
     return String(text ?? "")
@@ -1993,6 +2312,30 @@ function esc(text) {
 
 function asText(value) {
     return String(value ?? "").trim();
+}
+
+function decodeHtmlEntities(value) {
+    const textarea = document.createElement("textarea");
+    textarea.innerHTML = String(value ?? "");
+    return textarea.value;
+}
+
+function formatRemarksText(value) {
+    const raw = asText(value);
+    if (!raw) return "-";
+    const decoded = decodeHtmlEntities(raw);
+    const withBreaks = decoded
+        .replace(/<\s*br\s*\/?\s*>/gi, "\n")
+        .replace(/<\s*\/\s*(p|div|li)\s*>/gi, "\n")
+        .replace(/<\s*li[^>]*>/gi, "- ");
+    const noTags = withBreaks.replace(/<[^>]+>/g, " ");
+    const normalized = noTags
+        .replace(/\r\n/g, "\n")
+        .replace(/[ \t]+\n/g, "\n")
+        .replace(/\n{3,}/g, "\n\n")
+        .replace(/[ \t]{2,}/g, " ")
+        .trim();
+    return normalized || "-";
 }
 
 function formatMandays(value) {
@@ -2038,57 +2381,41 @@ function formatDisplayDate(value) {
 
     const isoMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})(?:$|[T\s])/);
     if (isoMatch) {
-        const year = isoMatch[1];
+        const yearFull = isoMatch[1];
+        const yearShort = yearFull.slice(-2);
         const month = Number(isoMatch[2]);
         const day = isoMatch[3];
-        if (month >= 1 && month <= 12) return `${day}-${MONTH_ABBREVIATIONS[month - 1]}-${year}`;
+        if (month >= 1 && month <= 12) return `${day}-${MONTH_ABBREVIATIONS[month - 1]}-${yearShort}`;
     }
 
     const parsed = new Date(raw);
     if (!Number.isNaN(parsed.getTime())) {
-        const year = parsed.getUTCFullYear();
+        const yearFull = parsed.getUTCFullYear();
+        const yearShort = String(yearFull % 100).padStart(2, "0");
         const month = parsed.getUTCMonth();
         const day = String(parsed.getUTCDate()).padStart(2, "0");
-        if (month >= 0 && month <= 11) return `${day}-${MONTH_ABBREVIATIONS[month]}-${year}`;
+        if (month >= 0 && month <= 11) return `${day}-${MONTH_ABBREVIATIONS[month]}-${yearShort}`;
     }
 
     return raw;
 }
 
 function getPlannedStartBySource(row, allowFallback = true) {
-    if (plannedSourceMode === "jira") {
-        const primary = asText(row.epic_planned_start_date_jira);
-        if (primary || !allowFallback) return primary;
-        return asText(row.epic_planned_start_date_db) || asText(row.epic_planned_start_date);
-    }
     const primary = asText(row.epic_planned_start_date_db);
     if (primary || !allowFallback) return primary;
     return asText(row.epic_planned_start_date_jira) || asText(row.epic_planned_start_date);
 }
 
 function getPlannedEndBySource(row, allowFallback = true) {
-    if (plannedSourceMode === "jira") {
-        const primary = asText(row.epic_planned_end_date_jira);
-        if (primary || !allowFallback) return primary;
-        return asText(row.epic_planned_end_date_db) || asText(row.epic_planned_end_date);
-    }
     const primary = asText(row.epic_planned_end_date_db);
     if (primary || !allowFallback) return primary;
     return asText(row.epic_planned_end_date_jira) || asText(row.epic_planned_end_date);
 }
 
 function getPlannedHoursBySource(row, allowFallback = true) {
-    if (plannedSourceMode === "jira") {
-        const jiraHours = Number(row.epic_planned_hours_jira);
-        if (Number.isFinite(jiraHours)) return jiraHours;
-        if (!allowFallback) return NaN;
-    } else {
-        const dbHours = Number(row.epic_planned_hours_db);
-        if (Number.isFinite(dbHours)) return dbHours;
-        if (!allowFallback) return NaN;
-    }
-    const fallback = Number(row.epic_planned_hours_db);
-    if (Number.isFinite(fallback)) return fallback;
+    const dbHours = Number(row.epic_planned_hours_db);
+    if (Number.isFinite(dbHours)) return dbHours;
+    if (!allowFallback) return NaN;
     const fallbackJira = Number(row.epic_planned_hours_jira);
     return Number.isFinite(fallbackJira) ? fallbackJira : NaN;
 }
@@ -2252,7 +2579,7 @@ function buildMonthCalendarHtml(monthStartUtc, markerByIsoDate) {
         if (marker.actual) classes.push("actual");
         const titleBits = [];
         if (marker.planned) titleBits.push("Planned");
-        if (marker.actual) titleBits.push("Actual (Production)");
+        if (marker.actual) titleBits.push("Tentative (Production)");
         const title = titleBits.length ? ` title="${esc(`${iso} ${titleBits.join(" + ")}`)}"` : "";
         dayCells.push(`<div class="${classes.join(" ")}"${title}>${day}</div>`);
     }
@@ -2441,7 +2768,7 @@ function renderDeliveryHealth(rows) {
             <div class="stat-card"><div class="label">Overdue</div><div class="value">${esc(totals.overdue)}</div></div>
             <div class="stat-card"><div class="label">At Risk</div><div class="value">${esc(totals.atRisk)}</div></div>
             <div class="stat-card"><div class="label">Jira Logged Hours</div><div class="value">${esc(formatMandays(totals.loggedHours))}</div></div>
-            <div class="stat-card"><div class="label">Planned Hours (${esc(plannedSourceMode === "db" ? "DB" : "Jira Excel")})</div><div class="value">${esc(formatMandays(totals.plannedHours))}</div></div>
+            <div class="stat-card"><div class="label">Planned Hours (Database)</div><div class="value">${esc(formatMandays(totals.plannedHours))}</div></div>
             <div class="stat-card"><div class="label">Avg Progress</div><div class="value">${esc(formatPercent(totals.epicsWithProgress ? (totals.totalProgressPct / totals.epicsWithProgress) : NaN))}</div></div>
         </div>
         <div class="simple-table-wrap">
@@ -2577,30 +2904,54 @@ function renderProductRoadmap(rows) {
         ? `<span class="roadmap-today-line" style="left:${pctStyle(firstWithTicks.roadmap.today_left_pct)}%;"></span><span class="roadmap-today-label" style="left:${pctStyle(firstWithTicks.roadmap.today_left_pct)}%;">Today</span>`
         : "";
 
-    const grouped = [];
-    const groupedMap = new Map();
-    rows.forEach((row, rowIndex) => {
-        const productKey = asText(row.product) || "Unmapped";
-        if (!groupedMap.has(productKey)) {
-            const entry = { product: productKey, items: [] };
-            groupedMap.set(productKey, entry);
-            grouped.push(entry);
-        }
-        groupedMap.get(productKey).items.push({ row, rowIndex });
+    const projectName = (row) => asText(row.project_name) || "";
+    const inputName = (row) => asText(row.product_category) || "";
+    const componentName = (row) => asText(row.component) || "";
+    const isHiddenLevel = (key) => !asText(key) || key === "Unmapped";
+    function projectGroupKey(row) {
+        const name = projectName(row);
+        const normalized = name.toUpperCase().replace(/[^A-Z0-9]/g, "");
+        if (normalized === "FF" || normalized === "FINTECHFUEL") return "FINTECH FUEL";
+        return name || "";
+    }
+    const projectDisplayNames = new Map();
+    rows.forEach((row) => {
+      const k = projectGroupKey(row);
+      if (!k) return;
+      const n = projectName(row);
+      if (!projectDisplayNames.has(k)) projectDisplayNames.set(k, n || k);
+      else if (n && n.length > (projectDisplayNames.get(k) || "").length) projectDisplayNames.set(k, n);
     });
+    const projectDisplayLabel = (key) => projectDisplayNames.get(key) || key || "";
 
+    function getDeliveryStatusClass(status) {
+        const s = asText(status).toLowerCase().replace(/\s/g, "-");
+        if (s === "late") return "delivery-late";
+        if (s === "on-track") return "delivery-on-track";
+        return "delivery-yet-to-start";
+    }
+    function getDeliveryStatusIcon(status) {
+        const s = asText(status).toLowerCase();
+        if (s === "late") return "warning";
+        if (s === "on-track") return "check_circle";
+        return "schedule";
+    }
     const renderRoadmapRow = (row, rowIndex) => {
         const roadmap = getRoadmapBySource(row);
         const rmiText = asText(row.epic_name) || asText(row.epic_rmi) || "(No RMI)";
         const selectedClass = rowIndex === selectedRowIndex ? " selected" : "";
         const statusClass = getRmiDateStatusClass(row);
+        const deliveryStatus = asText(row.delivery_status) || "Yet to start";
+        const deliveryClass = getDeliveryStatusClass(deliveryStatus);
+        const deliveryIcon = getDeliveryStatusIcon(deliveryStatus);
+        const deliveryIconHtml = `<span class="material-symbols-outlined roadmap-delivery-icon ${esc(deliveryClass)}" aria-hidden="true" title="Delivery: ${esc(deliveryStatus)}">${esc(deliveryIcon)}</span>`;
         const manDaysHtml = getManDaysCellHtml(row);
         const progress = getRmiProgressStatus(row);
-        const progressChipHtml = `<span class="roadmap-progress-chip ${esc(progress.chipClass)}">${esc(progress.label)}</span>`;
+        const progressChipHtml = `${deliveryIconHtml}<span class="roadmap-progress-chip ${esc(progress.chipClass)}">${esc(progress.label)}</span>`;
 
         if (!roadmap.valid || !Number.isFinite(Number(roadmap.bar_left_pct)) || !Number.isFinite(Number(roadmap.bar_width_pct))) {
             return `
-                <div class="roadmap-row is-clickable ${statusClass}${selectedClass}" data-row-index="${rowIndex}" tabindex="0" role="button" aria-label="Open details for ${esc(rmiText)}">
+                <div class="roadmap-row is-clickable ${statusClass} ${deliveryClass}${selectedClass}" data-row-index="${rowIndex}" tabindex="0" role="button" aria-label="Open details for ${esc(rmiText)}">
                     <div class="roadmap-product roadmap-product-child" aria-hidden="true"></div>
                     <div class="roadmap-label">${esc(rmiText)}</div>
                     <div class="roadmap-status-cell">${progressChipHtml}</div>
@@ -2614,11 +2965,11 @@ function renderProductRoadmap(rows) {
             ? `<span class="roadmap-today-line" style="left:${pctStyle(roadmap.today_left_pct)}%;"></span>`
             : "";
         const actualLineHtml = Number.isFinite(Number(roadmap.actual_left_pct))
-            ? `<span class="roadmap-actual-line" title="Actual (Production): ${esc(formatDisplayDate(row.epic_actual_date))}" style="left:${pctStyle(roadmap.actual_left_pct)}%;"></span>`
+            ? `<span class="roadmap-actual-line" title="Tentative (Production): ${esc(formatDisplayDate(row.epic_actual_date))}" style="left:${pctStyle(roadmap.actual_left_pct)}%;"></span>`
             : "";
 
         return `
-            <div class="roadmap-row is-clickable ${statusClass}${selectedClass}" data-row-index="${rowIndex}" tabindex="0" role="button" aria-label="Open details for ${esc(rmiText)}">
+            <div class="roadmap-row is-clickable ${statusClass} ${deliveryClass}${selectedClass}" data-row-index="${rowIndex}" tabindex="0" role="button" aria-label="Open details for ${esc(rmiText)}">
                 <div class="roadmap-product roadmap-product-child" aria-hidden="true"></div>
                 <div class="roadmap-label">${esc(rmiText)}</div>
                 <div class="roadmap-status-cell">${progressChipHtml}</div>
@@ -2637,25 +2988,140 @@ function renderProductRoadmap(rows) {
         `;
     };
 
-    const groupsHtml = grouped.map((group) => {
-        const collapsed = productCollapsedState[group.product] === true;
-        const chevron = collapsed ? "▸" : "▾";
-        const groupRows = group.items.map(({ row, rowIndex }) => renderRoadmapRow(row, rowIndex)).join("");
-        return `
-            <section class="roadmap-product-group">
-                <button type="button" class="roadmap-group-header" data-product="${esc(group.product)}" aria-expanded="${collapsed ? "false" : "true"}">
+    let groupsHtml;
+    if (!showCategorization) {
+        const flatByProject = new Map();
+        rows.forEach((row, rowIndex) => {
+            const proj = projectGroupKey(row) || "\u200b";
+            if (!flatByProject.has(proj)) flatByProject.set(proj, []);
+            flatByProject.get(proj).push({ row, rowIndex });
+        });
+        const projectsOrderedFlat = Array.from(flatByProject.entries()).sort((a, b) => (a[0] || "").localeCompare(b[0] || ""));
+        const renderFlatProjectSection = (projKey, items) => {
+            const key = projKey === "\u200b" ? "" : projKey;
+            const label = projectDisplayLabel(projKey) || key || "";
+            const collapsed = hierarchyCollapsedState["flat:" + projKey] === true;
+            const chevron = collapsed ? "▸" : "▾";
+            const groupRows = items.map(({ row, rowIndex }) => renderRoadmapRow(row, rowIndex)).join("");
+            return `
+            <section class="roadmap-product-group roadmap-hierarchy-level-1">
+                <button type="button" class="roadmap-group-header roadmap-group-header-project" data-hierarchy-key="flat:${esc(projKey)}" aria-expanded="${collapsed ? "false" : "true"}">
                     <span class="roadmap-group-chevron">${chevron}</span>
-                    <span class="roadmap-group-name">${esc(group.product)}</span>
-                    <span class="roadmap-group-count">${esc(group.items.length)} RMI${group.items.length === 1 ? "" : "s"}</span>
+                    <span class="roadmap-group-name">${esc(label) || "—"}</span>
+                    <span class="roadmap-group-count">${esc(items.length)} RMI${items.length === 1 ? "" : "s"}</span>
+                </button>
+                <div class="roadmap-group-rows${collapsed ? " is-collapsed" : ""}">${groupRows}</div>
+            </section>
+            `;
+        };
+        groupsHtml = projectsOrderedFlat.map(([projKey, items]) => renderFlatProjectSection(projKey, items)).join("");
+    } else {
+    const hierarchy = new Map();
+    rows.forEach((row, rowIndex) => {
+        const proj = projectGroupKey(row);
+        const inp = inputName(row);
+        const comp = componentName(row);
+        if (!hierarchy.has(proj)) hierarchy.set(proj, new Map());
+        const inputsMap = hierarchy.get(proj);
+        if (!inputsMap.has(inp)) inputsMap.set(inp, new Map());
+        const componentsMap = inputsMap.get(inp);
+        if (!componentsMap.has(comp)) componentsMap.set(comp, []);
+        componentsMap.get(comp).push({ row, rowIndex });
+    });
+    const projectsOrdered = Array.from(hierarchy.entries()).sort((a, b) => (a[0] || "").localeCompare(b[0] || ""));
+
+    function renderComponentBlock(projectKey, inputKey, componentKey, items) {
+        const key = [projectKey, inputKey, componentKey].filter(Boolean).join("|");
+        const collapsed = hierarchyCollapsedState[key] === true;
+        const chevron = collapsed ? "▸" : "▾";
+        const groupRows = items.map(({ row, rowIndex }) => renderRoadmapRow(row, rowIndex)).join("");
+        if (isHiddenLevel(componentKey)) {
+            return `<div class="roadmap-group-rows roadmap-group-rows-inline">${groupRows}</div>`;
+        }
+        return `
+            <section class="roadmap-product-group roadmap-hierarchy-level-3">
+                <button type="button" class="roadmap-group-header" data-hierarchy-key="${esc(key)}" aria-expanded="${collapsed ? "false" : "true"}">
+                    <span class="roadmap-group-chevron">${chevron}</span>
+                    <span class="roadmap-group-name">${esc(componentKey)}</span>
+                    <span class="roadmap-group-count">${esc(items.length)} RMI${items.length === 1 ? "" : "s"}</span>
                 </button>
                 <div class="roadmap-group-rows${collapsed ? " is-collapsed" : ""}">${groupRows}</div>
             </section>
         `;
+    }
+    function renderProjectSection(projKey, inputsMap) {
+        const key = projKey;
+        const collapsed = hierarchyCollapsedState[key] === true;
+        const chevron = collapsed ? "▸" : "▾";
+        const displayName = projectDisplayLabel(projKey) || projKey;
+        const inputEntries = Array.from(inputsMap.entries()).sort((a, b) => (a[0] || "").localeCompare(b[0] || ""));
+        const totalRmis = inputEntries.reduce((sum, [, comps]) => sum + Array.from(comps.values()).reduce((s, arr) => s + arr.length, 0), 0);
+        const innerHtml = inputEntries.map(([inputKey, componentsMap]) => {
+            const compEntries = Array.from(componentsMap.entries()).sort((a, b) => (a[0] || "").localeCompare(b[0] || ""));
+            const inputSections = compEntries.map(([componentKey, items]) => renderComponentBlock(projKey, inputKey, componentKey, items));
+            const inputKeyFull = projKey + "|" + inputKey;
+            const inputCollapsed = hierarchyCollapsedState[inputKeyFull] === true;
+            const inputChevron = inputCollapsed ? "▸" : "▾";
+            const inputTotal = compEntries.reduce((s, [, arr]) => s + arr.length, 0);
+            const hasInputLabel = asText(inputKey) && !isHiddenLevel(inputKey);
+            if (!hasInputLabel) {
+                return `<div class="roadmap-group-rows roadmap-group-rows-inline">${inputSections.join("")}</div>`;
+            }
+            return `
+            <section class="roadmap-product-group roadmap-hierarchy-level-2">
+                <button type="button" class="roadmap-group-header roadmap-group-header-input" data-hierarchy-key="${esc(inputKeyFull)}" aria-expanded="${inputCollapsed ? "false" : "true"}">
+                    <span class="roadmap-group-chevron">${inputChevron}</span>
+                    <span class="roadmap-group-name">${esc(inputKey)}</span>
+                    <span class="roadmap-group-count">${esc(inputTotal)} RMI${inputTotal === 1 ? "" : "s"}</span>
+                </button>
+                <div class="roadmap-group-rows${inputCollapsed ? " is-collapsed" : ""}">${inputSections.join("")}</div>
+            </section>`;
+        }).join("");
+        return `
+            <section class="roadmap-product-group roadmap-hierarchy-level-1">
+                <button type="button" class="roadmap-group-header roadmap-group-header-project" data-hierarchy-key="${esc(key)}" aria-expanded="${collapsed ? "false" : "true"}">
+                    <span class="roadmap-group-chevron">${chevron}</span>
+                    <span class="roadmap-group-name">${esc(displayName)}</span>
+                    <span class="roadmap-group-count">${esc(totalRmis)} RMI${totalRmis === 1 ? "" : "s"}</span>
+                </button>
+                <div class="roadmap-group-rows${collapsed ? " is-collapsed" : ""}">${innerHtml}</div>
+            </section>
+        `;
+    }
+    groupsHtml = projectsOrdered.map(([projKey, inputsMap]) => {
+        if (isHiddenLevel(projKey)) {
+            const key = projKey;
+            const inputEntries = Array.from(inputsMap.entries()).sort((a, b) => (a[0] || "").localeCompare(b[0] || ""));
+            const innerHtml = inputEntries.map(([inputKey, componentsMap]) => {
+                const compEntries = Array.from(componentsMap.entries()).sort((a, b) => (a[0] || "").localeCompare(b[0] || ""));
+                const inputSections = compEntries.map(([componentKey, items]) => renderComponentBlock(projKey, inputKey, componentKey, items));
+                const inputKeyFull = projKey + "|" + inputKey;
+                const inputCollapsed = hierarchyCollapsedState[inputKeyFull] === true;
+                const inputChevron = inputCollapsed ? "▸" : "▾";
+                const inputTotal = compEntries.reduce((s, [, arr]) => s + arr.length, 0);
+                const hasInputLabel = asText(inputKey) && !isHiddenLevel(inputKey);
+                if (!hasInputLabel) {
+                    return `<div class="roadmap-group-rows roadmap-group-rows-inline">${inputSections.join("")}</div>`;
+                }
+                return `
+            <section class="roadmap-product-group roadmap-hierarchy-level-2">
+                <button type="button" class="roadmap-group-header roadmap-group-header-input" data-hierarchy-key="${esc(inputKeyFull)}" aria-expanded="${inputCollapsed ? "false" : "true"}">
+                    <span class="roadmap-group-chevron">${inputChevron}</span>
+                    <span class="roadmap-group-name">${esc(inputKey)}</span>
+                    <span class="roadmap-group-count">${esc(inputTotal)} RMI${inputTotal === 1 ? "" : "s"}</span>
+                </button>
+                <div class="roadmap-group-rows${inputCollapsed ? " is-collapsed" : ""}">${inputSections.join("")}</div>
+            </section>`;
+            }).join("");
+            return `<div class="roadmap-group-rows roadmap-group-rows-inline">${innerHtml}</div>`;
+        }
+        return renderProjectSection(projKey, inputsMap);
     }).join("");
+    }
 
     host.innerHTML = `
         <div class="roadmap-axis-row">
-            <div class="roadmap-col-title">PRODUCT</div>
+            <div class="roadmap-col-title">PROJECT</div>
             <div class="roadmap-col-title">RMI</div>
             <div class="roadmap-col-title"><button type="button" class="roadmap-col-toggle" data-col-toggle="status" aria-pressed="${showRoadmapStatusCol ? "true" : "false"}">Status ${showRoadmapStatusCol ? "Hide" : "Show"}</button></div>
             <div class="roadmap-col-title"><button type="button" class="roadmap-col-toggle" data-col-toggle="mandays" aria-pressed="${showRoadmapMandaysCol ? "true" : "false"}">Man-days ${showRoadmapMandaysCol ? "Hide" : "Show"}</button></div>
@@ -2673,11 +3139,12 @@ function renderProductRoadmap(rows) {
         });
     });
 
-    Array.from(host.querySelectorAll(".roadmap-group-header")).forEach((buttonNode) => {
-        buttonNode.addEventListener("click", () => {
-            const product = asText(buttonNode.getAttribute("data-product"));
-            const collapsed = productCollapsedState[product] === true;
-            productCollapsedState[product] = !collapsed;
+    Array.from(host.querySelectorAll(".roadmap-group-header[data-hierarchy-key]")).forEach((buttonNode) => {
+        buttonNode.addEventListener("click", (e) => {
+            e.stopPropagation();
+            const key = asText(buttonNode.getAttribute("data-hierarchy-key"));
+            const collapsed = hierarchyCollapsedState[key] === true;
+            hierarchyCollapsedState[key] = !collapsed;
             renderAll();
         });
     });
@@ -2801,7 +3268,7 @@ function buildRmiDetailsHtml(row) {
         <div class="hours-compare">
             <div class="hours-compare-title">Hours Comparison</div>
             <div class="hours-compare-row">
-                <div class="hours-compare-label">Planned Hours (Jira Excel)</div>
+                <div class="hours-compare-label">Planned Hours (Database)</div>
                 <div class="hours-compare-track"><span class="hours-compare-fill planned" style="width:${pctStyle(plannedHoursPct)}%;"></span></div>
                 <div class="hours-compare-value">${esc(plannedHoursJiraLabel)}</div>
             </div>
@@ -2811,8 +3278,13 @@ function buildRmiDetailsHtml(row) {
                 <div class="hours-compare-value">${esc(actualHoursLabel)}</div>
             </div>
         </div>
-    ` : '<div class="muted">No planned/actual hours available from Jira Excel for this RMI.</div>';
+    ` : '<div class="muted">No planned/actual hours available from database for this RMI.</div>';
     const stories = Array.isArray(row.stories) ? row.stories : [];
+    const deliveryStatus = asText(row.delivery_status) || "Yet to start";
+    const remarksToneClass = deliveryStatus === "Late"
+        ? "is-late"
+        : (deliveryStatus === "On-track" ? "is-on-track" : "is-yet-to-start");
+    const remarksText = formatRemarksText(row.remarks);
 
     const phasesObj = row.mini_gantt?.phases || {};
     const phaseMdItems = phaseNames.map((phase) => {
@@ -2881,18 +3353,23 @@ function buildRmiDetailsHtml(row) {
                 </tbody>
             </table>
         </div>
-    ` : '<div class="muted">No story rows found in generated Jira Excel export for this RMI.</div>';
+    ` : '<div class="muted">No story rows found in database for this RMI.</div>';
 
     return `
         <h3>${esc(rmiText)}</h3>
+        <section class="rmi-remarks-panel ${esc(remarksToneClass)}" aria-label="RMI remarks from database">
+            <h4 class="rmi-remarks-title">Remarks (Database)</h4>
+            <p class="rmi-remarks-value">${esc(remarksText)}</p>
+        </section>
         <div class="rmi-meta"><strong>Epic Key:</strong> ${esc(row.epic_rmi || "-")}</div>
         <div class="rmi-meta"><strong>Project:</strong> ${esc(row.project_name || "-")}</div>
-        <div class="rmi-meta"><strong>Product:</strong> ${esc(row.product || "-")}</div>
+        <div class="rmi-meta"><strong>Input:</strong> ${esc(row.product_category || row.product || "-")}</div>
+        <div class="rmi-meta"><strong>Component:</strong> ${esc(row.component || "-")}</div>
         <div class="rmi-meta"><strong>Jira:</strong> ${jira}</div>
         <div class="rmi-summary">
             <div><strong>Jira Status</strong><br>${esc(jiraStatus)}</div>
             <div><strong>Jira Assignee</strong><br>${esc(jiraAssignee)}</div>
-            <div><strong>Planned Hours (${esc(plannedSourceMode === "db" ? "DB" : "Jira Excel")})</strong><br>${esc(selectedPlannedHoursLabel)}</div>
+            <div><strong>Planned Hours (Database)</strong><br>${esc(selectedPlannedHoursLabel)}</div>
             <div><strong>Actual Hours</strong><br>${esc(jiraLogged)}</div>
         </div>
         <div class="rmi-calendar-wrap">
@@ -2900,23 +3377,37 @@ function buildRmiDetailsHtml(row) {
             <div class="rmi-calendar-legend">
                 <span class="rmi-calendar-legend-item">
                     <span class="rmi-calendar-legend-dot"></span>
-                    Planned (${esc(plannedSourceMode === "db" ? "DB" : "Jira Excel")})
+                    Planned (Database)
                 </span>
                 <span class="rmi-calendar-legend-item">
                     <span class="rmi-calendar-legend-dot actual"></span>
-                    Actual (Production)
+                    Tentative (Production)
                 </span>
             </div>
             ${buildRmiThreeMonthCalendarHtml(row)}
         </div>
-        <div class="rmi-meta"><strong>Planned Hours (Jira Excel):</strong> ${esc(plannedHoursJiraLabel)}</div>
+        <div class="rmi-meta"><strong>Planned Hours (Jira):</strong> ${esc(plannedHoursJiraLabel)}</div>
         ${hoursCompareHtml}
-        <section class="rmi-remarks-panel" aria-label="RMI remarks from database">
-            <h4 class="rmi-remarks-title">Remarks (Database)</h4>
-            <p class="rmi-remarks-value">${esc(row.remarks || "-")}</p>
+        <section class="rmi-sealed-dates-panel" aria-label="Approved dates (sealed)">
+            <h4 class="rmi-sealed-dates-title">Approved dates (sealed)</h4>
+            ${(Array.isArray(row.sealed_dates) && row.sealed_dates.length > 0)
+                ? "<div class=\"rmi-sealed-dates-accordion\">" + row.sealed_dates.map((d) => {
+                    const dateStr = typeof d === "string" ? d : String(d);
+                    const label = dateStr.replace("T", " ").replace("Z", " UTC");
+                    const epicKey = esc(row.epic_rmi || "");
+                    const approvedAt = esc(dateStr);
+                    return "<div class=\"rmi-sealed-date-accordion-item\">"
+                        + "<button type=\"button\" class=\"rmi-sealed-date-accordion-trigger\" data-epic-key=\"" + epicKey + "\" data-approved-at=\"" + approvedAt + "\" aria-expanded=\"false\">"
+                        + "<span class=\"rmi-sealed-date-accordion-label\">" + esc(label) + "</span>"
+                        + "<span class=\"rmi-sealed-date-accordion-icon material-symbols-outlined\" aria-hidden=\"true\">expand_more</span>"
+                        + "</button>"
+                        + "<div class=\"rmi-sealed-date-accordion-content\" hidden></div>"
+                        + "</div>";
+                }).join("") + "</div>"
+                : "<p class=\"muted\">No sealed dates recorded for this RMI.</p>"}
         </section>
         ${renderMiniGantt(row)}
-        <h3>Stories (Jira Excel)</h3>
+        <h3>Stories</h3>
         ${storiesHtml}
         <h3>Phase Man-days</h3>
         <div class="phase-md-list">${phaseMdItems}</div>
@@ -3025,6 +3516,40 @@ function renderAll() {
     renderDrawer();
 }
 
+function openGuideDrawer() {
+    const drawer = document.getElementById("ipp-guide-drawer");
+    const backdrop = document.getElementById("ipp-guide-backdrop");
+    if (drawer) { drawer.classList.add("is-open"); drawer.setAttribute("aria-hidden", "false"); }
+    if (backdrop) { backdrop.classList.add("is-open"); backdrop.setAttribute("aria-hidden", "false"); }
+}
+function closeGuideDrawer() {
+    const drawer = document.getElementById("ipp-guide-drawer");
+    const backdrop = document.getElementById("ipp-guide-backdrop");
+    if (drawer) { drawer.classList.remove("is-open"); drawer.setAttribute("aria-hidden", "true"); }
+    if (backdrop) { backdrop.classList.remove("is-open"); backdrop.setAttribute("aria-hidden", "true"); }
+}
+const EPIC_SEALED_DATE_SNAPSHOT_API_BASE = "/api/epics-management/epics";
+
+function phaseKeyToLabel(key) {
+    return String(key ?? "").replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function buildSealedSnapshotTableHtml(snapshot) {
+    const sn = snapshot || {};
+    const plans = sn.plans || {};
+    const planRows = Object.keys(plans).map((k) => {
+        const p = plans[k] || {};
+        const md = p.man_days != null ? p.man_days : (p.mandays != null ? p.mandays : "-");
+        const start = p.start_date || "-";
+        const end = p.due_date || p.end_date || "-";
+        const phaseName = phaseKeyToLabel(k);
+        return "<tr><td>" + esc(phaseName) + "</td><td>" + esc(String(md)) + "</td><td>" + esc(start) + "</td><td>" + esc(end) + "</td></tr>";
+    }).join("");
+    const meta = [sn.project_name, sn.delivery_status, sn.plan_status].filter(Boolean).map(esc).join(" | ");
+    return (meta ? "<div class=\"rmi-sealed-snapshot-meta muted\">" + meta + "</div>" : "")
+        + "<table class=\"rmi-sealed-snapshot-table\"><thead><tr><th>Phase</th><th>Man-days</th><th>Start date</th><th>End date</th></tr></thead><tbody>" + planRows + "</tbody></table>";
+}
+
 function wireActions() {
     document.getElementById("rmi-drawer-close").addEventListener("click", () => {
         closeDrawer();
@@ -3032,36 +3557,97 @@ function wireActions() {
     document.getElementById("rmi-drawer-backdrop").addEventListener("click", () => {
         closeDrawer();
     });
+    document.getElementById("rmi-drawer").addEventListener("click", (e) => {
+        const trigger = e.target.closest(".rmi-sealed-date-accordion-trigger");
+        if (!trigger) return;
+        e.preventDefault();
+        const content = trigger.parentElement.querySelector(".rmi-sealed-date-accordion-content");
+        if (!content) return;
+        const isExpanded = trigger.getAttribute("aria-expanded") === "true";
+        if (isExpanded) {
+            content.setAttribute("hidden", "");
+            trigger.setAttribute("aria-expanded", "false");
+            return;
+        }
+        trigger.setAttribute("aria-expanded", "true");
+        content.removeAttribute("hidden");
+        if (content.children.length === 0) {
+            const epicKey = trigger.getAttribute("data-epic-key");
+            const approvedAt = trigger.getAttribute("data-approved-at");
+            if (!epicKey || !approvedAt) return;
+            content.innerHTML = "<span class=\"muted\">Loading…</span>";
+            fetch(EPIC_SEALED_DATE_SNAPSHOT_API_BASE + "/" + encodeURIComponent(epicKey) + "/sealed-dates/" + encodeURIComponent(approvedAt), { cache: "no-store" })
+                .then((resp) => {
+                    if (!resp.ok) throw new Error("Not found");
+                    return resp.json();
+                })
+                .then((data) => {
+                    content.innerHTML = buildSealedSnapshotTableHtml(data.snapshot || {});
+                })
+                .catch(() => {
+                    content.innerHTML = "<span class=\"muted\">Failed to load snapshot.</span>";
+                });
+        }
+    });
+    const helpBtn = document.getElementById("ipp-help-btn");
+    if (helpBtn) helpBtn.addEventListener("click", openGuideDrawer);
+    const guideClose = document.getElementById("ipp-guide-drawer-close");
+    if (guideClose) guideClose.addEventListener("click", closeGuideDrawer);
+    const guideBackdrop = document.getElementById("ipp-guide-backdrop");
+    if (guideBackdrop) guideBackdrop.addEventListener("click", closeGuideDrawer);
+
+    (function initCompleteIppMeetingModal() {
+        if (currentIppMeetingId == null) return;
+        const modal = document.getElementById("ipp-complete-meeting-modal");
+        const completeBtn = document.getElementById("ipp-complete-meeting-btn");
+        const nextDateInput = document.getElementById("ipp-complete-next-date");
+        const cancelBtn = document.getElementById("ipp-complete-cancel");
+        const submitBtn = document.getElementById("ipp-complete-submit");
+        function openCompleteModal() {
+            if (modal && nextDateInput) {
+                nextDateInput.value = "";
+                modal.style.display = "flex";
+                modal.setAttribute("aria-hidden", "false");
+            }
+        }
+        function closeCompleteModal() {
+            if (modal) {
+                modal.style.display = "none";
+                modal.setAttribute("aria-hidden", "true");
+            }
+        }
+        if (completeBtn) completeBtn.addEventListener("click", openCompleteModal);
+        if (cancelBtn) cancelBtn.addEventListener("click", closeCompleteModal);
+        if (modal) modal.addEventListener("click", function (e) { if (e.target === modal) closeCompleteModal(); });
+        if (submitBtn && nextDateInput) submitBtn.addEventListener("click", async function () {
+            const dateVal = nextDateInput.value.trim();
+            if (!dateVal) return;
+            submitBtn.disabled = true;
+            try {
+                const r = await fetch("/api/ipp-meeting-planner/meetings/" + currentIppMeetingId + "/complete", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ next_intended_date: dateVal })
+                });
+                const body = await r.json().catch(function () { return {}; });
+                if (!r.ok) {
+                    alert(body.error || "Failed to complete meeting");
+                    return;
+                }
+                closeCompleteModal();
+                window.location.reload();
+            } finally {
+                submitBtn.disabled = false;
+            }
+        });
+    })();
     document.addEventListener("keydown", (event) => {
-        if (event.key === "Escape") closeDrawer();
+        if (event.key === "Escape") { closeDrawer(); closeGuideDrawer(); }
     });
 }
 
 function wirePlanSourceToggle() {
-    const buttons = Array.from(document.querySelectorAll(".source-switch-btn[data-plan-source]"));
-    const hint = document.getElementById("plan-source-hint");
-
-    const refreshUi = () => {
-        buttons.forEach((button) => {
-            button.classList.toggle("is-active", button.getAttribute("data-plan-source") === plannedSourceMode);
-        });
-        if (hint) {
-            hint.textContent = `Showing planned hours/dates from ${plannedSourceMode === "db" ? "Database" : "Jira Excel"}.`;
-        }
-    };
-
-    buttons.forEach((button) => {
-        button.addEventListener("click", () => {
-            const next = asText(button.getAttribute("data-plan-source")).toLowerCase();
-            if (next !== "db" && next !== "jira") return;
-            if (plannedSourceMode === next) return;
-            plannedSourceMode = next;
-            refreshUi();
-            renderAll();
-        });
-    });
-
-    refreshUi();
+    /* Epic plan source is always database; toggle removed. */
 }
 
 async function init() {
@@ -3078,16 +3664,19 @@ async function init() {
     } catch (_err) {
         // Keep embedded payload when API is unavailable (e.g., file:// usage).
     }
-    const meta = [
-        `Generated: ${payload.generated_at || "-"}`,
-        `Input workbook: ${payload.source_workbook || "-"}`,
-        `Source sheet: ${payload.source_sheet || "-"}`,
-    ];
-    document.getElementById("hero-meta").textContent = meta.join(" | ");
     wireNavigation();
     setActiveReport(activeReport);
     wireActions();
     wirePlanSourceToggle();
+    const catToggle = document.getElementById("ipp-categorization-toggle");
+    if (catToggle) {
+        catToggle.checked = showCategorization;
+        catToggle.addEventListener("change", () => {
+            showCategorization = catToggle.checked;
+            setShowCategorization(showCategorization);
+            renderAll();
+        });
+    }
     renderAll();
 }
 
@@ -3109,150 +3698,6 @@ try {
 
 
 <script src="/shared-date-filter.js"></script>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 

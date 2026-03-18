@@ -10,7 +10,9 @@ import sqlite3
 from datetime import date, datetime, timezone
 from pathlib import Path
 
-from openpyxl import load_workbook
+from jira_export_db import connect as exports_db_connect
+from jira_export_db import get_exports_db_path
+from jira_export_db import read_work_items as read_work_items_db
 
 from export_ipp_phase_breakdown import (
     PHASE_COLUMNS,
@@ -26,7 +28,6 @@ from export_ipp_phase_breakdown import (
 DEFAULT_HTML_OUTPUT = "ipp_meeting_dashboard.html"
 DEFAULT_TEMPLATE = "ipp_meeting_dashboard_template.html"
 DEFAULT_SETTINGS_DB = "assignee_hours_capacity.db"
-DEFAULT_WORK_ITEMS_XLSX = "1_jira_work_items_export.xlsx"
 PHASE_NAMES = ["Research/URS", "DDS", "Development", "SQA", "User Manual", "Production"]
 
 PLAN_KEY_BY_PHASE = {
@@ -70,6 +71,13 @@ def _normalize_yes_no(value: object) -> str:
     return "No"
 
 
+def _normalize_delivery_status(value: object) -> str:
+    text = _as_text(value).strip()
+    if text in ("Late", "On-track", "Yet to start"):
+        return text
+    return "Yet to start"
+
+
 def _safe_json_dict(value: object) -> dict[str, object]:
     text = _as_text(value)
     if not text:
@@ -79,6 +87,119 @@ def _safe_json_dict(value: object) -> dict[str, object]:
     except Exception:
         return {}
     return parsed if isinstance(parsed, dict) else {}
+
+
+def _load_sealed_dates_for_epic(settings_db_path: Path, epic_key: str) -> list[str]:
+    """Return approved_at_utc list for one epic (from epics_management_approved_dates)."""
+    epic_key = _as_text(epic_key).strip().upper()
+    if not epic_key or not settings_db_path.exists():
+        return []
+    try:
+        conn = sqlite3.connect(settings_db_path)
+        try:
+            table_exists = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='epics_management_approved_dates'"
+            ).fetchone()
+            if not table_exists:
+                return []
+            rows = conn.execute(
+                "SELECT approved_at_utc FROM epics_management_approved_dates WHERE epic_key = ? ORDER BY approved_at_utc DESC",
+                (epic_key,),
+            ).fetchall()
+            return [_as_text(r[0]) for r in rows if _as_text(r[0])]
+        finally:
+            conn.close()
+    except Exception:
+        return []
+
+
+def _load_current_ipp_meeting_epics(settings_db_path: Path) -> tuple[list[dict[str, object]] | None, int | None]:
+    """Load epics for the current Scheduled IPP meeting (include_on_dashboard=1). Returns (epics_list or None, meeting_id or None)."""
+    if not settings_db_path.exists():
+        return None, None
+    try:
+        conn = sqlite3.connect(settings_db_path)
+        conn.row_factory = sqlite3.Row
+        try:
+            m = conn.execute(
+                "SELECT id FROM ipp_meetings WHERE status = 'Scheduled' ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+            if m is None:
+                return None, None
+            meeting_id = int(m[0])
+            rows = conn.execute(
+                """
+                SELECT e.meeting_id, e.epic_key, e.project_key, e.project_name, e.epic_name, e.display_order,
+                       e.include_on_dashboard, e.delivery_status, e.remarks_rich_text, e.start_date, e.due_date, e.actual_production_date
+                FROM ipp_meeting_epics e
+                WHERE e.meeting_id = ? AND e.include_on_dashboard = 1
+                ORDER BY e.project_key, e.display_order, e.epic_key
+                """,
+                (meeting_id,),
+            ).fetchall()
+        finally:
+            conn.close()
+    except Exception:
+        return None, None
+
+    if not rows:
+        return [], meeting_id
+
+    epic_keys = [_as_text(r["epic_key"]).upper() for r in rows]
+    # Load plans and base fields from epics_management for these epics
+    conn = sqlite3.connect(settings_db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        schema = conn.execute("PRAGMA table_info(epics_management)").fetchall()
+        column_names = {str(c[1]) for c in schema}
+        placeholders = ",".join("?" for _ in epic_keys)
+        em_rows = conn.execute(
+            f"""
+            SELECT epic_key, project_key, project_name, product_category, component, epic_name, description,
+                   originator, priority, plan_status, jira_url,
+                   epic_plan_json, research_urs_plan_json, dds_plan_json, development_plan_json, sqa_plan_json, production_plan_json
+            FROM epics_management
+            WHERE UPPER(epic_key) IN ({placeholders})
+            """,
+            epic_keys,
+        ).fetchall()
+    finally:
+        conn.close()
+
+    em_by_key = {_as_text(r["epic_key"]).upper(): dict(r) for r in em_rows}
+    selected: list[dict[str, object]] = []
+    for r in rows:
+        epic_key = _as_text(r["epic_key"]).upper()
+        em = em_by_key.get(epic_key, {})
+        plans = {
+            "epic_plan": _safe_json_dict(em.get("epic_plan_json")),
+            "research_urs_plan": _safe_json_dict(em.get("research_urs_plan_json")),
+            "dds_plan": _safe_json_dict(em.get("dds_plan_json")),
+            "development_plan": _safe_json_dict(em.get("development_plan_json")),
+            "sqa_plan": _safe_json_dict(em.get("sqa_plan_json")),
+            "production_plan": _safe_json_dict(em.get("production_plan_json")),
+        }
+        epic_plan = plans.get("epic_plan") or {}
+        selected.append({
+            "epic_key": epic_key,
+            "project_key": _as_text(r["project_key"]).upper(),
+            "project_name": _as_text(r["project_name"]) or _as_text(r["project_key"]),
+            "product_category": _as_text(em.get("product_category")),
+            "component": _as_text(em.get("component", "")),
+            "epic_name": _as_text(r["epic_name"]) or _as_text(em.get("epic_name")) or epic_key,
+            "description": _as_text(em.get("description")),
+            "remarks": _as_text(r["remarks_rich_text"]),
+            "originator": _as_text(em.get("originator")),
+            "priority": _as_text(em.get("priority")),
+            "plan_status": _as_text(em.get("plan_status")),
+            "jira_url": _as_text(em.get("jira_url")),
+            "ipp_meeting_planned": "Yes",
+            "actual_production_date": _as_text(r["actual_production_date"]),
+            "delivery_status": _normalize_delivery_status(r["delivery_status"]),
+            "plans": {**plans, "epic_plan": {**epic_plan, "start_date": _as_text(r["start_date"]), "due_date": _as_text(r["due_date"])}},
+            "_record_source": "IPP Meeting Planner",
+        })
+    return selected, meeting_id
 
 
 def _load_epics_from_db(db_path: Path) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
@@ -97,15 +218,19 @@ def _load_epics_from_db(db_path: Path) -> tuple[list[dict[str, object]], list[di
         if "ipp_meeting_planned" not in column_names:
             return [], []
         remarks_select = "remarks" if "remarks" in column_names else "'' AS remarks"
+        actual_production_select = "actual_production_date" if "actual_production_date" in column_names else "'' AS actual_production_date"
+        delivery_status_select = "delivery_status" if "delivery_status" in column_names else "'Yet to start' AS delivery_status"
+        component_col = "component" if "component" in column_names else "'' AS component"
         rows = conn.execute(
             f"""
             SELECT
-                epic_key, project_key, project_name, product_category, epic_name,
+                epic_key, project_key, project_name, product_category, {component_col}, epic_name,
                 description, {remarks_select}, originator, priority, plan_status, ipp_meeting_planned, jira_url,
+                {actual_production_select}, {delivery_status_select},
                 epic_plan_json, research_urs_plan_json, dds_plan_json,
                 development_plan_json, sqa_plan_json, production_plan_json
             FROM epics_management
-            ORDER BY lower(project_name) ASC, lower(product_category) ASC, lower(epic_name) ASC, epic_key ASC
+            ORDER BY lower(project_name) ASC, lower(product_category) ASC, lower(component) ASC, lower(epic_name) ASC, epic_key ASC
             """
         ).fetchall()
     finally:
@@ -114,11 +239,16 @@ def _load_epics_from_db(db_path: Path) -> tuple[list[dict[str, object]], list[di
     all_rows: list[dict[str, object]] = []
     selected_rows: list[dict[str, object]] = []
     for row in rows:
+        try:
+            component_val = _as_text(row["component"])
+        except (KeyError, TypeError):
+            component_val = ""
         item = {
             "epic_key": _as_text(row["epic_key"]).upper(),
             "project_key": _as_text(row["project_key"]).upper(),
             "project_name": _as_text(row["project_name"]),
             "product_category": _as_text(row["product_category"]),
+            "component": component_val,
             "epic_name": _as_text(row["epic_name"]),
             "description": _as_text(row["description"]),
             "remarks": _as_text(row["remarks"]),
@@ -127,6 +257,8 @@ def _load_epics_from_db(db_path: Path) -> tuple[list[dict[str, object]], list[di
             "plan_status": _as_text(row["plan_status"]),
             "jira_url": _as_text(row["jira_url"]),
             "ipp_meeting_planned": _normalize_yes_no(row["ipp_meeting_planned"]),
+            "actual_production_date": _as_text(row["actual_production_date"]),
+            "delivery_status": _normalize_delivery_status(row["delivery_status"] if "delivery_status" in row.keys() else "Yet to start"),
             "plans": {
                 "epic_plan": _safe_json_dict(row["epic_plan_json"]),
                 "research_urs_plan": _safe_json_dict(row["research_urs_plan_json"]),
@@ -147,85 +279,109 @@ def _is_story_issue_type(issue_type: str) -> bool:
     return "story" in normalized
 
 
-def _load_jira_rows_by_epic(
-    work_items_path: Path,
+def _resolve_epic_key(
+    issue_key: str,
+    issue_type: str,
+    parent_issue_key: str,
+    type_by_key: dict[str, str],
+    parent_by_key: dict[str, str],
+) -> str:
+    """Resolve epic key for an issue by walking parent_issue_key until an epic is found."""
+    key = _as_text(issue_key).upper()
+    if not key:
+        return ""
+    if "epic" in _as_text(issue_type).lower():
+        return key
+    seen: set[str] = set()
+    current = _as_text(parent_issue_key).upper() or parent_by_key.get(key, "")
+    while current and current not in seen:
+        seen.add(current)
+        if "epic" in _as_text(type_by_key.get(current, "")).lower():
+            return current
+        current = parent_by_key.get(current, "")
+    return ""
+
+
+def _load_jira_rows_by_epic_from_db(
+    exports_db_path: Path,
 ) -> tuple[dict[str, dict[str, object]], dict[str, list[dict[str, object]]]]:
+    """Load Jira epics and stories grouped by epic from jira_exports.db work_items table. No Excel."""
     epic_rows: dict[str, dict[str, object]] = {}
     stories_by_epic: dict[str, list[dict[str, object]]] = {}
-    if not work_items_path.exists():
+    if not exports_db_path.exists():
         return epic_rows, stories_by_epic
-    wb = load_workbook(work_items_path, read_only=True, data_only=True)
+    conn = exports_db_connect()
     try:
-        ws = wb.active
-        header = next(ws.iter_rows(min_row=1, max_row=1, values_only=True), None)
-        if not header:
-            return epic_rows, stories_by_epic
-        headers = [_as_text(item) for item in header]
-        idx = {name: pos for pos, name in enumerate(headers)}
-        required = ["issue_key"]
-        if any(name not in idx for name in required):
-            return epic_rows, stories_by_epic
-
-        for row in ws.iter_rows(min_row=2, values_only=True):
-            issue_key = _as_text(row[idx["issue_key"]]).upper()
-            if not issue_key:
-                continue
-            issue_type = _as_text(row[idx.get("jira_issue_type", -1)] if "jira_issue_type" in idx else "")
-            if not issue_type:
-                issue_type = _as_text(row[idx.get("work_item_type", -1)] if "work_item_type" in idx else "")
-
-            epic_key = _as_text(row[idx.get("epic_key", -1)] if "epic_key" in idx else "").upper()
-            parent_issue_key = _as_text(row[idx.get("parent_issue_key", -1)] if "parent_issue_key" in idx else "").upper()
-            linked_epic_key = epic_key or parent_issue_key
-            estimate = _to_float(row[idx.get("original_estimate_hours", -1)] if "original_estimate_hours" in idx else "")
-            logged = _to_float(row[idx.get("total_hours_logged", -1)] if "total_hours_logged" in idx else "")
-            progress_pct = None
-            if estimate and estimate > 0 and logged is not None:
-                progress_pct = round(min(100.0, (logged / estimate) * 100.0), 2)
-
-            if "epic" in issue_type.lower():
-                epic_rows[issue_key] = {
-                    "issue_key": issue_key,
-                    "project_key": _as_text(row[idx.get("project_key", -1)] if "project_key" in idx else "").upper(),
-                    "summary": _as_text(row[idx.get("summary", -1)] if "summary" in idx else ""),
-                    "status": _as_text(row[idx.get("status", -1)] if "status" in idx else ""),
-                    "assignee": _as_text(row[idx.get("assignee", -1)] if "assignee" in idx else ""),
-                    "jira_url": _as_text(row[idx.get("jira_url", -1)] if "jira_url" in idx else ""),
-                    "start_date": _as_text(row[idx.get("start_date", -1)] if "start_date" in idx else ""),
-                    "end_date": _as_text(row[idx.get("end_date", -1)] if "end_date" in idx else ""),
-                    "actual_end_date": _as_text(row[idx.get("actual_end_date", -1)] if "actual_end_date" in idx else ""),
-                    "ipp_actual_date": _as_text(
-                        row[idx.get("IPP Actual Date (Production Date)", -1)] if "IPP Actual Date (Production Date)" in idx else ""
-                    ),
-                    "ipp_remarks": _as_text(row[idx.get("IPP Remarks", -1)] if "IPP Remarks" in idx else ""),
-                    "original_estimate_hours": estimate,
-                    "total_hours_logged": logged,
-                    "progress_pct": progress_pct,
-                }
-                continue
-
-            if not _is_story_issue_type(issue_type):
-                continue
-            if not linked_epic_key:
-                continue
-            stories_by_epic.setdefault(linked_epic_key, []).append(
-                {
-                    "story_key": issue_key,
-                    "story_type": issue_type,
-                    "story_name": _as_text(row[idx.get("summary", -1)] if "summary" in idx else ""),
-                    "story_status": _as_text(row[idx.get("status", -1)] if "status" in idx else ""),
-                    "story_assignee": _as_text(row[idx.get("assignee", -1)] if "assignee" in idx else ""),
-                    "story_jira_url": _as_text(row[idx.get("jira_url", -1)] if "jira_url" in idx else ""),
-                    "story_start_date": _as_text(row[idx.get("start_date", -1)] if "start_date" in idx else ""),
-                    "story_end_date": _as_text(row[idx.get("end_date", -1)] if "end_date" in idx else ""),
-                    "story_actual_end_date": _as_text(row[idx.get("actual_end_date", -1)] if "actual_end_date" in idx else ""),
-                    "story_planned_hours": estimate,
-                    "story_logged_hours": logged,
-                    "story_progress_pct": progress_pct,
-                }
-            )
+        work_items = read_work_items_db(conn)
     finally:
-        wb.close()
+        conn.close()
+    if not work_items:
+        return epic_rows, stories_by_epic
+
+    type_by_key: dict[str, str] = {}
+    parent_by_key: dict[str, str] = {}
+    for w in work_items:
+        key = _as_text(w.get("issue_key")).upper()
+        if not key:
+            continue
+        type_by_key[key] = _as_text(w.get("jira_issue_type") or w.get("work_item_type"))
+        parent_by_key[key] = _as_text(w.get("parent_issue_key")).upper()
+
+    for w in work_items:
+        issue_key = _as_text(w.get("issue_key")).upper()
+        if not issue_key:
+            continue
+        issue_type = _as_text(w.get("jira_issue_type") or w.get("work_item_type"))
+        parent_issue_key = _as_text(w.get("parent_issue_key")).upper()
+        estimate = _to_float(w.get("original_estimate_hours"))
+        logged = _to_float(w.get("total_hours_logged"))
+        progress_pct = None
+        if estimate and estimate > 0 and logged is not None:
+            progress_pct = round(min(100.0, (logged / estimate) * 100.0), 2)
+
+        if "epic" in issue_type.lower():
+            epic_rows[issue_key] = {
+                "issue_key": issue_key,
+                "project_key": _as_text(w.get("project_key")).upper(),
+                "summary": _as_text(w.get("summary")),
+                "status": _as_text(w.get("status")),
+                "assignee": _as_text(w.get("assignee")),
+                "jira_url": _as_text(w.get("jira_url")),
+                "start_date": _as_text(w.get("start_date")),
+                "end_date": _as_text(w.get("end_date")),
+                "actual_end_date": _as_text(w.get("actual_end_date")),
+                "ipp_actual_date": _as_text(w.get("ipp_actual_date")),
+                "ipp_remarks": _as_text(w.get("ipp_remarks")),
+                "original_estimate_hours": estimate,
+                "total_hours_logged": logged,
+                "progress_pct": progress_pct,
+            }
+            continue
+
+        if not _is_story_issue_type(issue_type):
+            continue
+        linked_epic_key = _resolve_epic_key(
+            issue_key, issue_type, parent_issue_key, type_by_key, parent_by_key
+        )
+        if not linked_epic_key:
+            continue
+        stories_by_epic.setdefault(linked_epic_key, []).append(
+            {
+                "story_key": issue_key,
+                "story_type": issue_type,
+                "story_name": _as_text(w.get("summary")),
+                "story_status": _as_text(w.get("status")),
+                "story_assignee": _as_text(w.get("assignee")),
+                "story_jira_url": _as_text(w.get("jira_url")),
+                "story_start_date": _as_text(w.get("start_date")),
+                "story_end_date": _as_text(w.get("end_date")),
+                "story_actual_end_date": _as_text(w.get("actual_end_date")),
+                "story_planned_hours": estimate,
+                "story_logged_hours": logged,
+                "story_progress_pct": progress_pct,
+            }
+        )
+
     for epic_key, story_rows in stories_by_epic.items():
         stories_by_epic[epic_key] = sorted(
             story_rows,
@@ -294,7 +450,8 @@ def _build_records(
         jira_epic_end_iso = _as_text(jira.get("end_date"))
         epic_start_iso = db_epic_start_iso or jira_epic_start_iso
         epic_end_iso = db_epic_end_iso or jira_epic_end_iso
-        epic_actual_iso = _as_text(jira.get("ipp_actual_date")) or _as_text(jira.get("actual_end_date"))
+        # Actual Production Date: prefer Epics Planner DB (actual_production_date), then Jira work_items
+        epic_actual_iso = _as_text(epic.get("actual_production_date")) or _as_text(jira.get("ipp_actual_date")) or _as_text(jira.get("actual_end_date"))
         db_epic_mandays = _to_number(epic_plan.get("man_days"))
         db_epic_planned_hours = round(db_epic_mandays * 8.0, 4) if db_epic_mandays is not None else None
 
@@ -311,12 +468,14 @@ def _build_records(
         has_valid_epic_plan = bool(epic_start_date and epic_end_date and epic_start_date <= epic_end_date)
 
         product = _as_text(epic.get("product_category")) or _as_text(epic.get("project_name")) or "Unmapped"
+        component = _as_text(epic.get("component", "")).strip()
         remarks = _as_text(epic.get("remarks"))
         jira_link = _as_text(epic.get("jira_url")) or _as_text(jira.get("jira_url")) or _normalize_jira_link(epic_key)
 
         source_sheet = _as_text(epic.get("_record_source")) or "Epics Planner DB"
         story_rows = jira_stories_by_epic.get(epic_key, [])
 
+        delivery_status = _normalize_delivery_status(epic.get("delivery_status"))
         records.append(
             {
                 "source_sheet": source_sheet,
@@ -334,6 +493,7 @@ def _build_records(
                     "Epic Actual Date (Production Date)": epic_actual_iso,
                     "Remarks": remarks,
                 },
+                "delivery_status": delivery_status,
                 "phases": phases,
                 "total_mandays": total_mandays,
                 "computed_has_valid_epic_plan": "Yes" if has_valid_epic_plan else "No",
@@ -349,6 +509,8 @@ def _build_records(
                 "jira_progress_pct": jira.get("progress_pct"),
                 "epic_name": _as_text(epic.get("epic_name")) or _as_text(jira.get("summary")),
                 "project_name": _as_text(epic.get("project_name")),
+                "product_category": _as_text(epic.get("product_category", "")).strip(),
+                "component": component,
                 "plan_status": _as_text(epic.get("plan_status")),
                 "priority": _as_text(epic.get("priority")),
                 "stories": story_rows,
@@ -392,8 +554,11 @@ def _rows_for_payload(records: list[dict[str, object]]) -> list[dict[str, object
                 "epic_rmi": r["base"]["Epic/RMI"],
                 "epic_name": r.get("epic_name", ""),
                 "project_name": r.get("project_name", ""),
+                "product_category": r.get("product_category", ""),
+                "component": r.get("component", ""),
                 "plan_status": r.get("plan_status", ""),
                 "priority": r.get("priority", ""),
+                "delivery_status": r.get("delivery_status", "Yet to start"),
                 "jira_link": r["base"]["Epic/RMI Jira Link"],
                 "epic_planned_start_date": r["base"]["Epic Planned Start Date"],
                 "epic_planned_end_date": r["base"]["Epic Planned End Date"],
@@ -453,12 +618,16 @@ def _rows_for_payload(records: list[dict[str, object]]) -> list[dict[str, object
     return out_rows
 
 
-def _build_payload(rows: list[dict[str, object]], db_path: Path, work_items_path: Path) -> dict[str, object]:
+def _build_payload(
+    rows: list[dict[str, object]],
+    settings_db_path: Path,
+    work_items_source_label: str,
+) -> dict[str, object]:
     return {
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
-        "source_workbook": str(work_items_path),
-        "source_sheet": "Epics Planner DB + Jira WorkItems Export",
-        "settings_db_path": str(db_path),
+        "source_workbook": work_items_source_label,
+        "source_sheet": "Epics Planner DB + Jira work_items (database)",
+        "settings_db_path": str(settings_db_path),
         "phase_names": [name for name, _ in PHASE_COLUMNS],
         "rows": rows,
     }
@@ -467,19 +636,31 @@ def _build_payload(rows: list[dict[str, object]], db_path: Path, work_items_path
 def build_payload_from_sources(base_dir: Path) -> dict[str, object]:
     settings_db_value = os.getenv("JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH", DEFAULT_SETTINGS_DB).strip() or DEFAULT_SETTINGS_DB
     settings_db_path = _resolve_path(settings_db_value, base_dir)
-    work_items_value = os.getenv("JIRA_EXPORT_XLSX_PATH", DEFAULT_WORK_ITEMS_XLSX).strip() or DEFAULT_WORK_ITEMS_XLSX
-    work_items_path = _resolve_path(work_items_value, base_dir)
+    exports_db_path = get_exports_db_path()
 
+    from report_server import _init_epics_management_db
+    _init_epics_management_db(settings_db_path)
+
+    meeting_epics, current_ipp_meeting_id = _load_current_ipp_meeting_epics(settings_db_path)
     selected_epics, all_epics = _load_epics_from_db(settings_db_path)
-    jira_rows, jira_stories = _load_jira_rows_by_epic(work_items_path)
+    if meeting_epics is not None and len(meeting_epics) > 0:
+        selected_epics = meeting_epics
+
+    jira_rows, jira_stories = _load_jira_rows_by_epic_from_db(exports_db_path)
     epics_to_render = selected_epics
 
     records = _build_records(epics_to_render, jira_rows, jira_stories)
     rows = _rows_for_payload(records)
-    payload = _build_payload(rows, settings_db_path, work_items_path)
-    payload["selection_mode"] = "selected_only"
+    for row in rows:
+        epic_key = _as_text(row.get("epic_rmi")).strip().upper()
+        row["sealed_dates"] = _load_sealed_dates_for_epic(settings_db_path, epic_key) if epic_key else []
+    work_items_source_label = str(exports_db_path) + " (work_items)"
+    payload = _build_payload(rows, settings_db_path, work_items_source_label)
+    payload["selection_mode"] = "ipp_meeting_planner" if (meeting_epics is not None and len(meeting_epics) > 0) else "selected_only"
     payload["selected_epics_count"] = len(selected_epics)
     payload["total_epics_count"] = len(all_epics)
+    if current_ipp_meeting_id is not None:
+        payload["current_ipp_meeting_id"] = current_ipp_meeting_id
     return payload
 
 
@@ -517,7 +698,7 @@ def main() -> None:
     output_html_path.write_text(html, encoding="utf-8")
 
     print(f"Settings DB: {payload.get('settings_db_path', '')}")
-    print(f"Jira work-items export: {payload.get('source_workbook', '')}")
+    print(f"Jira work-items source: {payload.get('source_workbook', '')}")
     print(
         "Selected epics: "
         f"{payload.get('selected_epics_count', 0)} / total epics in DB: {payload.get('total_epics_count', 0)} "

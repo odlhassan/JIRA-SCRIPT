@@ -51,7 +51,8 @@
         { page_key: "epic_dropdowns", title: "Epic Dropdowns", href: "/settings/epics-dropdown-options", icon: "arrow_drop_down_circle", path: "/settings/epics-dropdown-options" },
         { page_key: "epic_phases", title: "Epic Phases", href: "/settings/epic-phases", icon: "alt_route", path: "/settings/epic-phases" },
         { page_key: "epics_planner", title: "Epics Planner", href: "/settings/epics-management", icon: "event_note", path: "/settings/epics-management" },
-        { page_key: "page_categories", title: "Page Categories", href: "/settings/page-categories", icon: "category", path: "/settings/page-categories" }
+        { page_key: "page_categories", title: "Page Categories", href: "/settings/page-categories", icon: "category", path: "/settings/page-categories" },
+        { page_key: "sql_console", title: "SQL Console", href: "/settings/sql-console", icon: "query_stats", path: "/settings/sql-console" }
       ],
       categories: []
     }
@@ -59,6 +60,25 @@
 
   function cloneStaticNavSections() {
     return JSON.parse(JSON.stringify(STATIC_NAV_SECTIONS));
+  }
+
+  function applyCatalogTitles(sections, pageCatalog) {
+    const catalog = Array.isArray(pageCatalog) ? pageCatalog : [];
+    const titleByPageKey = new Map();
+    catalog.forEach((item) => {
+      const pageKey = String(item.page_key || "");
+      if (!pageKey) return;
+      const title = String(item.title || "").trim();
+      if (!title) return;
+      titleByPageKey.set(pageKey, title);
+    });
+    sections.forEach((section) => {
+      (Array.isArray(section.items) ? section.items : []).forEach((item) => {
+        const title = titleByPageKey.get(String(item.page_key || ""));
+        if (title) item.title = title;
+      });
+    });
+    return sections;
   }
 
   function normalizeNavItem(rawItem) {
@@ -81,6 +101,7 @@
       const response = await fetch("/api/page-categories", { cache: "no-store" });
       if (!response.ok) return staticSections;
       const body = await response.json().catch(() => ({}));
+      applyCatalogTitles(staticSections, body && body.page_catalog);
       const nav = body && body.navigation ? body.navigation : {};
       if (!nav || !nav.enabled) return staticSections;
 
