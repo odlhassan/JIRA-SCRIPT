@@ -376,6 +376,20 @@ class EmployeePerformanceReportTests(unittest.TestCase):
         self.assertIn("planningRealismEnabled", html)
         self.assertIn("simple_score_overloaded_penalty_pct", html)
         self.assertIn("simple_score_overrun_active", html)
+        self.assertIn(
+            'it.employee_capacity_hours = Math.max(0, n(it.base_capacity_hours) - n(it.planned_leave_hours));',
+            html,
+        )
+        self.assertNotIn(
+            'it.employee_capacity_hours = Math.max(0, n(it.base_capacity_hours) - n(it.planned_leave_hours) - n(it.unplanned_leave_hours));',
+            html,
+        )
+
+    def test_html_availability_breakdown_shows_unplanned_leave_as_not_deducted(self):
+        payload = _build_payload([], [], [], dict(DEFAULT_PERFORMANCE_SETTINGS), [], [], [], [])
+        html = _build_html(payload)
+        self.assertIn("Unplanned Leaves (Not Deducted)", html)
+        self.assertIn("const availabilityDisplayIngredients = [...availabilityIngredients];", html)
 
     def test_html_recomputes_simple_score_when_extended_actuals_toggle_changes_actuals(self):
         payload = _build_payload([], [], [], dict(DEFAULT_PERFORMANCE_SETTINGS), [], [], [], [])

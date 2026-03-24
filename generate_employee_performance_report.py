@@ -3568,7 +3568,7 @@ function compute() {{
     if (it.penalties.missed_due_date) it.feed.push({{label:"Missed due dates", points:it.penalties.missed_due_date, hours:it.missed_due_date_count}});
     it.feed.sort((a,b)=>n(b.points)-n(a.points));
     it.base_capacity_hours = Math.max(0, n(capacityByAssignee.get(it.assignee)));
-    it.employee_capacity_hours = Math.max(0, n(it.base_capacity_hours) - n(it.planned_leave_hours) - n(it.unplanned_leave_hours));
+    it.employee_capacity_hours = Math.max(0, n(it.base_capacity_hours) - n(it.planned_leave_hours));
     it.missed_start_ratio = n(it.total_assigned_count) > 0 ? (n(it.missed_start_count) / n(it.total_assigned_count)) * 100 : 0;
     it.entity_values = {{
       capacity: n(it.base_capacity_hours),
@@ -4476,6 +4476,15 @@ function render(items) {{
       source: missing ? "default" : source,
     }};
   }});
+  const availabilityDisplayIngredients = [...availabilityIngredients];
+  if (availabilityEntry) {{
+    availabilityDisplayIngredients.push({{
+      key: "Unplanned Leaves (Not Deducted)",
+      value: n(item?.unplanned_leave_hours),
+      missing: false,
+      source: "entity",
+    }});
+  }}
   const availabilityRawValue = n(availabilityEntry?.value);
   const otherMetricMax = Math.max(1, ...managedEntries
     .filter((entry) => {{
@@ -4593,8 +4602,8 @@ function render(items) {{
       const isPlannedOpen = b.isPlannedAssigned && plannedHoursBreakdownForAssignee === String(item.assignee || "");
       const isActualOpen = b.isActualSpent && actualHoursBreakdownForAssignee === String(item.assignee || "");
       const isHoursRequiredOpen = b.isHoursRequired && hoursRequiredBreakdownForAssignee === String(item.assignee || "");
-      const ingredientRows = availabilityIngredients.length
-        ? availabilityIngredients.map((part) => `<div class="availability-line"><span class="availability-name">${{e(part.key)}}${{part.missing ? " (default)" : ""}}</span><span class="availability-num">${{n(part.value).toFixed(2)}}${{b.isAvailability ? "h" : ""}}</span></div>`).join("")
+      const ingredientRows = availabilityDisplayIngredients.length
+        ? availabilityDisplayIngredients.map((part) => `<div class="availability-line"><span class="availability-name">${{e(part.key)}}${{part.missing ? " (default)" : ""}}</span><span class="availability-num">${{n(part.value).toFixed(2)}}${{b.isAvailability ? "h" : ""}}</span></div>`).join("")
         : '<div class="availability-note">No ingredients detected from formula.</div>';
       const formulaBlock = b.isAvailability && isAvailabilityOpen
         ? `<div class="availability-breakdown"><div class="availability-line"><span class="availability-name">Formula</span><span class="availability-num">${{availabilityFormula ? e(availabilityFormula) : "Formula not configured"}}</span></div><div class="availability-line"><span class="availability-name">Business Days</span><span class="availability-num">${{n(businessDaysInRange).toFixed(0)}}d</span></div><div class="availability-note">Ingredients</div>${{ingredientRows}}<div class="availability-line"><span class="availability-name"><strong>Result</strong></span><span class="availability-num"><strong>${{b.rawValue.toFixed(2)}}h</strong></span></div></div>`

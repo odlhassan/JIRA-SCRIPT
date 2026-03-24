@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Executive Dashboard</title>
+  <link rel="stylesheet" href="/shared-nav.css">
+  <link rel="stylesheet" href="/material-symbols.css">
+  <style>
+    :root { --bg:#f4f7fb; --card:#ffffff; --ink:#0f172a; --muted:#475569; --line:#dbe3ef; --brand:#0f766e; --accent:#0f4c81; --warn:#92400e; --bad:#991b1b; --ok:#166534; }
+    * { box-sizing:border-box; }
+    body { margin:0; padding:20px; font-family:"Segoe UI",Tahoma,sans-serif; color:var(--ink); background:radial-gradient(circle at top left,#dbeafe 0,#f8fafc 42%,#eef2ff 100%); }
+    .wrap { max-width:1280px; margin:0 auto; }
+    .hero { display:flex; justify-content:space-between; align-items:flex-start; gap:14px; flex-wrap:wrap; margin-bottom:14px; }
+    .hero h1 { margin:0; font-size:1.6rem; }
+    .hero p { margin:.4rem 0 0; color:var(--muted); max-width:760px; }
+    .hero-actions { display:flex; gap:8px; flex-wrap:wrap; }
+    .btn, .icon-btn { border:1px solid var(--brand); background:var(--brand); color:#fff; border-radius:10px; cursor:pointer; text-decoration:none; display:inline-flex; align-items:center; gap:6px; }
+    .btn { padding:10px 14px; font-weight:700; }
+    .btn.alt, .icon-btn.alt { background:#fff; color:var(--ink); border-color:var(--line); }
+    .icon-btn { width:42px; height:42px; justify-content:center; }
+    .panel { background:rgba(255,255,255,.9); border:1px solid var(--line); border-radius:18px; box-shadow:0 14px 34px rgba(15,23,42,.08); }
+    .filter-panel { padding:14px; margin-bottom:16px; }
+    .filters { display:grid; gap:12px; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); align-items:end; }
+    label { display:block; font-size:.8rem; font-weight:700; margin-bottom:6px; color:#334155; }
+    input, select { width:100%; border:1px solid var(--line); border-radius:10px; padding:10px; font-size:.94rem; background:#fff; }
+    .section-head { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap; margin-bottom:12px; }
+    .section-head h2 { margin:0; font-size:1.18rem; }
+    .section-head p { margin:.35rem 0 0; color:var(--muted); }
+    .stats-panel { padding:16px; }
+    .stats-grid { display:grid; gap:12px; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); }
+    .metric-card { position:relative; overflow:hidden; padding:14px; border:1px solid #d8e2f0; border-radius:16px; background:linear-gradient(180deg,#fff,#f8fbff); }
+    .metric-card::before { content:""; position:absolute; inset:auto -30px -40px auto; width:120px; height:120px; background:radial-gradient(circle,rgba(59,130,246,.18),rgba(59,130,246,0)); border-radius:999px; }
+    .metric-top { display:flex; justify-content:space-between; gap:8px; align-items:flex-start; }
+    .metric-label { display:flex; align-items:center; gap:6px; font-size:.82rem; font-weight:800; letter-spacing:.03em; text-transform:uppercase; color:#334155; }
+    .metric-label [data-info-id] { cursor:pointer; color:#64748b; }
+    .metric-value { margin-top:10px; font-size:2rem; font-weight:800; line-height:1; }
+    .metric-sub { margin-top:8px; color:var(--muted); font-size:.86rem; line-height:1.45; }
+    .table-panel { padding:16px; margin-top:16px; }
+    .table-wrap { margin-top:10px; border:1px solid var(--line); border-radius:14px; overflow:auto; background:#fff; }
+    table { width:100%; min-width:920px; border-collapse:collapse; }
+    th, td { padding:10px 12px; border-bottom:1px solid #e5eaf2; text-align:left; vertical-align:top; font-size:.88rem; }
+    th { background:#f8fbff; text-transform:uppercase; letter-spacing:.03em; font-size:.74rem; color:#475569; }
+    .mono { font-family:Consolas,monospace; }
+    .empty { padding:18px; color:var(--muted); font-size:.92rem; }
+    .status { min-height:1.2em; margin-top:10px; font-size:.9rem; }
+    .status.ok { color:var(--ok); }
+    .status.err { color:var(--bad); }
+    .status.warn { color:var(--warn); }
+    @media (max-width:760px) {
+      body { padding:10px; }
+      .metric-value { font-size:1.7rem; }
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <section class="hero">
+      <div>
+        <h1>Executive Dashboard</h1>
+        <p>Leadership-facing delivery metrics for committed work, completion, estimation realism, and epic cycle time.</p>
+      </div>
+      <div class="hero-actions">
+        <a href="/settings/executive-dashboard" class="btn alt"><span class="material-symbols-outlined" aria-hidden="true">settings</span>Settings</a>
+      </div>
+    </section>
+
+    <section class="panel filter-panel">
+      <div class="filters">
+        <div>
+          <label for="date-filter-from">From</label>
+          <input id="date-filter-from" type="date">
+        </div>
+        <div>
+          <label for="date-filter-to">To</label>
+          <input id="date-filter-to" type="date">
+        </div>
+        <div>
+          <label for="project-filter">Projects</label>
+          <select id="project-filter" multiple size="4"></select>
+        </div>
+        <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;">
+          <button id="date-filter-apply" class="btn" type="button">Apply</button>
+          <button id="date-filter-reset" class="btn alt" type="button">Reset</button>
+        </div>
+      </div>
+      <div id="page-status" class="status"></div>
+    </section>
+
+    <section class="panel stats-panel">
+      <div class="section-head">
+        <div>
+          <h2>Delivery Insights</h2>
+          <p>Committed work volume, resolved work, planning accuracy, and cycle time for fully resolved phase chains.</p>
+        </div>
+      </div>
+      <div class="stats-grid">
+        <article class="metric-card">
+          <div class="metric-top">
+            <div class="metric-label">Total Committed Items <span class="material-symbols-outlined" tabindex="0" role="button" data-info-id="executive.total_committed_items" aria-label="Total committed items info">info</span></div>
+          </div>
+          <div id="metric-total-committed" class="metric-value">-</div>
+          <div class="metric-sub">Subtasks with planned start or due date inside the selected range.</div>
+        </article>
+        <article class="metric-card">
+          <div class="metric-top">
+            <div class="metric-label">Completed Items <span class="material-symbols-outlined" tabindex="0" role="button" data-info-id="executive.completed_items" aria-label="Completed items info">info</span></div>
+          </div>
+          <div id="metric-completed-items" class="metric-value">-</div>
+          <div class="metric-sub">Committed subtasks whose work status is resolved.</div>
+        </article>
+        <article class="metric-card">
+          <div class="metric-top">
+            <div class="metric-label">Estimation Accuracy <span class="material-symbols-outlined" tabindex="0" role="button" data-info-id="executive.estimation_accuracy" aria-label="Estimation accuracy info">info</span></div>
+          </div>
+          <div id="metric-estimation-accuracy" class="metric-value">-</div>
+          <div id="metric-estimation-accuracy-sub" class="metric-sub">Weighted accuracy against the configured planning basis.</div>
+        </article>
+        <article class="metric-card">
+          <div class="metric-top">
+            <div class="metric-label">Cycle Time <span class="material-symbols-outlined" tabindex="0" role="button" data-info-id="executive.cycle_time" aria-label="Cycle time info">info</span></div>
+          </div>
+          <div id="metric-cycle-time" class="metric-value">-</div>
+          <div id="metric-cycle-time-sub" class="metric-sub">Average time from the first development worklog to the last production worklog for resolved phase chains.</div>
+        </article>
+      </div>
+    </section>
+
+    <section class="panel table-panel">
+      <div class="section-head">
+        <div>
+          <h2>Cycle Time Exclusions</h2>
+          <p>Epics excluded from cycle time because the phase chain is incomplete, unresolved, or missing worklogs.</p>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Epic Key</th>
+              <th>Epic Name</th>
+              <th>Blocking Phase</th>
+              <th>Blocking Reason</th>
+              <th>Current Phase Statuses</th>
+            </tr>
+          </thead>
+          <tbody id="blocked-cycle-table"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const SUMMARY_API = "/api/executive-dashboard/summary";
+    const statusEl = document.getElementById("page-status");
+    const fromEl = document.getElementById("date-filter-from");
+    const toEl = document.getElementById("date-filter-to");
+    const projectsEl = document.getElementById("project-filter");
+    const blockedTableEl = document.getElementById("blocked-cycle-table");
+    const metrics = {
+      committed: document.getElementById("metric-total-committed"),
+      completed: document.getElementById("metric-completed-items"),
+      accuracy: document.getElementById("metric-estimation-accuracy"),
+      accuracySub: document.getElementById("metric-estimation-accuracy-sub"),
+      cycle: document.getElementById("metric-cycle-time"),
+      cycleSub: document.getElementById("metric-cycle-time-sub")
+    };
+
+    function esc(text) {
+      return String(text || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+    function setStatus(message, kind) {
+      statusEl.textContent = message || "";
+      statusEl.className = "status " + (kind || "");
+    }
+    function selectedProjects() {
+      return Array.from(projectsEl.selectedOptions).map((option) => String(option.value || "")).filter(Boolean);
+    }
+    function formatPct(value) {
+      const num = Number(value || 0);
+      return Number.isFinite(num) ? num.toFixed(2) + "%" : "-";
+    }
+    function formatCycle(days, hours) {
+      const d = Number(days || 0);
+      const h = Number(hours || 0);
+      if (!Number.isFinite(d) || !Number.isFinite(h) || h <= 0) return "-";
+      return d.toFixed(2) + "d";
+    }
+    function basisLabel(value) {
+      if (value === "epic_planned_hours") return "Epic Planned Hours";
+      if (value === "epic_sealed_hours") return "Epic Sealed Hours";
+      return "Subtask Planned Hours";
+    }
+    function renderProjects(projectKeys) {
+      const current = new Set(selectedProjects());
+      const keys = Array.isArray(projectKeys) ? projectKeys.slice().sort() : [];
+      projectsEl.innerHTML = keys.map((key) => {
+        const selected = current.has(String(key)) ? " selected" : "";
+        return '<option value="' + esc(key) + '"' + selected + ">" + esc(key) + "</option>";
+      }).join("");
+    }
+    function renderBlockedRows(rows) {
+      const items = Array.isArray(rows) ? rows : [];
+      if (!items.length) {
+        blockedTableEl.innerHTML = '<tr><td colspan="5" class="empty">No blocked epics for the selected range.</td></tr>';
+        return;
+      }
+      blockedTableEl.innerHTML = items.map((row) => {
+        return [
+          "<tr>",
+          '<td class="mono">' + esc(row.epic_key) + "</td>",
+          "<td>" + esc(row.epic_name) + "</td>",
+          "<td>" + esc(row.blocking_phase) + "</td>",
+          "<td>" + esc(row.blocking_reason) + "</td>",
+          "<td>" + esc(row.current_phase_statuses) + "</td>",
+          "</tr>"
+        ].join("");
+      }).join("");
+    }
+    function buildQuery() {
+      const params = new URLSearchParams();
+      if (fromEl.value) params.set("from", fromEl.value);
+      if (toEl.value) params.set("to", toEl.value);
+      const projects = selectedProjects();
+      if (projects.length) params.set("projects", projects.join(","));
+      return params.toString();
+    }
+    async function loadSummary() {
+      setStatus("Loading delivery insights...", "");
+      const response = await fetch(SUMMARY_API + "?" + buildQuery(), { cache: "no-store" });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error || "Failed to load executive dashboard.");
+      const insights = body.delivery_insights || {};
+      metrics.committed.textContent = String(insights.total_committed_items ?? "-");
+      metrics.completed.textContent = String(insights.completed_items ?? "-");
+      metrics.accuracy.textContent = formatPct(insights.estimation_accuracy_pct);
+      metrics.accuracySub.textContent = "Basis: " + basisLabel(insights.estimation_accuracy_basis) + " | Excluded: " + String(insights.estimation_accuracy_excluded_count || 0);
+      metrics.cycle.textContent = formatCycle(insights.cycle_time_avg_days, insights.cycle_time_avg_hours);
+      metrics.cycleSub.textContent = "Eligible epics: " + String(insights.cycle_time_item_count || 0) + " | Blocked: " + String(insights.cycle_time_blocked_count || 0) + " | Avg hours: " + Number(insights.cycle_time_avg_hours || 0).toFixed(2);
+      renderProjects(((body.filters || {}).available_projects) || ((body.filters || {}).projects) || []);
+      renderBlockedRows(body.blocked_epics || []);
+      setStatus("Loaded.", "ok");
+    }
+    document.getElementById("date-filter-apply").addEventListener("click", () => loadSummary().catch((err) => setStatus(err.message || String(err), "err")));
+    document.getElementById("date-filter-reset").addEventListener("click", () => {
+      fromEl.value = "";
+      toEl.value = "";
+      Array.from(projectsEl.options).forEach((option) => { option.selected = false; });
+      loadSummary().catch((err) => setStatus(err.message || String(err), "err"));
+    });
+    loadSummary().catch((err) => setStatus(err.message || String(err), "err"));
+  </script>
+  <script src="/shared-nav.js"></script>
+</body>
+</html>

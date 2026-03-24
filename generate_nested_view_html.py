@@ -1305,7 +1305,9 @@ def _build_html(data: dict) -> str:
       position: fixed;
       top: 0;
       right: 0;
-      width: min(560px, 92vw);
+      width: 50vw;
+      min-width: 360px;
+      max-width: 92vw;
       height: 100vh;
       overflow-y: auto;
       border-left: 1px solid #d7e3ea;
@@ -1316,6 +1318,37 @@ def _build_html(data: dict) -> str:
       transform: translateX(102%);
       pointer-events: none;
       transition: transform 220ms ease;
+    }}
+    .capacity-profile-drawer.is-resizing {{
+      transition: none;
+      user-select: none;
+      cursor: ew-resize;
+    }}
+    .capacity-profile-resize-handle {{
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 14px;
+      height: 100%;
+      cursor: ew-resize;
+      touch-action: none;
+      z-index: 2;
+    }}
+    .capacity-profile-resize-handle::before {{
+      content: "";
+      position: absolute;
+      top: 50%;
+      left: 4px;
+      transform: translateY(-50%);
+      width: 4px;
+      height: 48px;
+      border-radius: 999px;
+      background: #b6c7d2;
+      box-shadow: 0 0 0 1px rgba(18, 49, 63, 0.06);
+    }}
+    .capacity-profile-resize-handle:hover::before,
+    .capacity-profile-drawer.is-resizing .capacity-profile-resize-handle::before {{
+      background: #2a6274;
     }}
     .capacity-profile-drawer.is-open {{
       transform: translateX(0);
@@ -1356,6 +1389,10 @@ def _build_html(data: dict) -> str:
     body.capacity-modal-open {{
       overflow: hidden;
     }}
+    body.capacity-modal-resizing {{
+      cursor: ew-resize;
+      user-select: none;
+    }}
     .capacity-profile-label {{
       font-size: 0.8rem;
       font-weight: 700;
@@ -1382,6 +1419,205 @@ def _build_html(data: dict) -> str:
       font-size: 0.78rem;
       color: #3b5562;
       line-height: 1.35;
+    }}
+    .capacity-expanded {{
+      flex: 1 1 100%;
+      border: 1px solid #d7e3ea;
+      border-radius: 10px;
+      background: #ffffff;
+      padding: 10px;
+    }}
+    .capacity-expanded-head {{
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 8px;
+    }}
+    .capacity-expanded-title {{
+      font-size: 0.86rem;
+      font-weight: 800;
+      color: #12313f;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+    }}
+    .capacity-expanded-sub {{
+      font-size: 0.74rem;
+      color: #5a7480;
+    }}
+    .capacity-expanded-grid {{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 6px;
+      margin-bottom: 8px;
+    }}
+    .capacity-chip {{
+      border: 1px solid #d7e3ea;
+      border-radius: 8px;
+      background: #f8fbfd;
+      padding: 6px 8px;
+    }}
+    .capacity-chip .k {{
+      font-size: 0.66rem;
+      color: #5a7480;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }}
+    .capacity-chip .v {{
+      font-size: 0.85rem;
+      color: #12313f;
+      font-weight: 700;
+      margin-top: 2px;
+    }}
+    .capacity-legend {{
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-bottom: 8px;
+    }}
+    .capacity-legend .pill {{
+      font-size: 0.68rem;
+      padding: 2px 7px;
+      border-radius: 999px;
+      border: 1px solid #d7e3ea;
+      color: #355564;
+      background: #f1f7fb;
+    }}
+    .capacity-calendar-wrap {{
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding-bottom: 6px;
+      scroll-snap-type: x proximity;
+      scrollbar-width: thin;
+      scrollbar-color: #b6c7d2 #edf4f8;
+    }}
+    .capacity-calendar-wrap::-webkit-scrollbar {{
+      height: 10px;
+    }}
+    .capacity-calendar-wrap::-webkit-scrollbar-track {{
+      background: #edf4f8;
+      border-radius: 999px;
+    }}
+    .capacity-calendar-wrap::-webkit-scrollbar-thumb {{
+      background: #b6c7d2;
+      border-radius: 999px;
+      border: 2px solid #edf4f8;
+    }}
+    .capacity-calendar-wrap::-webkit-scrollbar-thumb:hover {{
+      background: #8ca6b5;
+    }}
+    .capacity-month {{
+      border: 1px solid #d7e3ea;
+      border-radius: 10px;
+      background: #f8fbfd;
+      padding: 8px;
+      flex: 0 0 calc((100% - 16px) / 3);
+      min-width: 250px;
+      scroll-snap-align: start;
+    }}
+    .capacity-month-head {{
+      font-size: 0.8rem;
+      font-weight: 800;
+      color: #12313f;
+      margin-bottom: 6px;
+    }}
+    .capacity-month-grid {{
+      display: grid;
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+      gap: 4px;
+    }}
+    .capacity-dow {{
+      font-size: 0.62rem;
+      color: #5a7480;
+      text-transform: uppercase;
+      text-align: center;
+    }}
+    .capacity-day {{
+      min-height: 44px;
+      border: 1px solid #d7e3ea;
+      border-radius: 6px;
+      background: #ffffff;
+      padding: 3px 4px;
+    }}
+    .capacity-day.is-out {{
+      opacity: 0.35;
+    }}
+    .capacity-day.is-weekend {{
+      background: #eef3f6;
+      border-color: #d0d9df;
+    }}
+    .capacity-day.is-ramadan {{
+      border-color: #38bdf8;
+      box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.18);
+    }}
+    .capacity-day.is-holiday {{
+      border-color: #f59e0b;
+      box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.18);
+    }}
+    .capacity-day.has-leave {{
+      border-color: #94a3b8;
+      box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.22);
+    }}
+    .capacity-day.has-ramadan-leave {{
+      border-color: #38bdf8;
+      box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.28);
+    }}
+    .capacity-day.is-today {{
+      background: #fde68a;
+      border-color: #f59e0b;
+      box-shadow: inset 0 0 0 1px rgba(217, 119, 6, 0.32), 0 0 0 1px rgba(245, 158, 11, 0.18);
+    }}
+    .capacity-day.is-today .capacity-day-num {{
+      color: #78350f;
+      font-weight: 900;
+    }}
+    .capacity-day.is-today .capacity-day-tag {{
+      color: #78350f;
+      border-color: #d97706;
+      background: #fef3c7;
+    }}
+    .capacity-day-num {{
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: #12313f;
+      line-height: 1.1;
+    }}
+    .capacity-day-tags {{
+      margin-top: 2px;
+      display: flex;
+      gap: 3px;
+      flex-wrap: wrap;
+    }}
+    .capacity-day-tag {{
+      font-size: 0.58rem;
+      line-height: 1;
+      padding: 2px 4px;
+      border-radius: 999px;
+      border: 1px solid #d7e3ea;
+      background: #f1f7fb;
+      color: #355564;
+    }}
+    .capacity-day-tag.r {{
+      border-color: #38bdf8;
+      background: #e0f2fe;
+    }}
+    .capacity-day-tag.h {{
+      border-color: #f59e0b;
+      background: #fff4df;
+    }}
+    .capacity-day-tag.l {{
+      border-color: #94a3b8;
+      background: #eef2f6;
+    }}
+    .capacity-day-tag.rl {{
+      border-color: #38bdf8;
+      background: #e0f2fe;
+    }}
+    .capacity-empty {{
+      font-size: 0.76rem;
+      color: #5a7480;
     }}
     .capacity-profile-editor {{
       flex: 1 1 100%;
@@ -1436,6 +1672,24 @@ def _build_html(data: dict) -> str:
     }}
     .capacity-profile-status[data-variant="error"] {{
       color: #991b1b;
+    }}
+    @media (max-width: 1200px) {{
+      .capacity-month {{
+        flex-basis: calc((100% - 8px) / 2);
+      }}
+    }}
+    @media (max-width: 760px) {{
+      .capacity-profile-drawer {{
+        width: min(92vw, 560px);
+        min-width: 280px;
+      }}
+      .capacity-profile-resize-handle {{
+        display: none;
+      }}
+      .capacity-month {{
+        flex-basis: 100%;
+        min-width: 0;
+      }}
     }}
     .score-card {{
       border: 1px solid #d7e3ea;
@@ -2513,6 +2767,14 @@ def _build_html(data: dict) -> str:
       background: #0f172a;
       border-left-color: #334155;
     }}
+    html[data-theme="dark"] .capacity-profile-resize-handle::before {{
+      background: #475569;
+      box-shadow: 0 0 0 1px rgba(148, 163, 184, 0.12);
+    }}
+    html[data-theme="dark"] .capacity-profile-resize-handle:hover::before,
+    html[data-theme="dark"] .capacity-profile-drawer.is-resizing .capacity-profile-resize-handle::before {{
+      background: #93c5fd;
+    }}
     html[data-theme="dark"] .capacity-profile-drawer-title {{
       color: #f3f4f6;
     }}
@@ -2534,6 +2796,61 @@ def _build_html(data: dict) -> str:
     }}
     html[data-theme="dark"] .capacity-profile-details {{
       color: #cbd5e1;
+    }}
+    html[data-theme="dark"] .capacity-expanded,
+    html[data-theme="dark"] .capacity-chip,
+    html[data-theme="dark"] .capacity-month {{
+      background: #111827;
+      border-color: #334155;
+    }}
+    html[data-theme="dark"] .capacity-expanded-title,
+    html[data-theme="dark"] .capacity-month-head,
+    html[data-theme="dark"] .capacity-chip .v,
+    html[data-theme="dark"] .capacity-day-num {{
+      color: #f3f4f6;
+    }}
+    html[data-theme="dark"] .capacity-expanded-sub,
+    html[data-theme="dark"] .capacity-chip .k,
+    html[data-theme="dark"] .capacity-dow,
+    html[data-theme="dark"] .capacity-empty {{
+      color: #cbd5e1;
+    }}
+    html[data-theme="dark"] .capacity-legend .pill {{
+      border-color: #334155;
+      background: #172554;
+      color: #bfdbfe;
+    }}
+    html[data-theme="dark"] .capacity-calendar-wrap {{
+      scrollbar-color: #475569 #0f172a;
+    }}
+    html[data-theme="dark"] .capacity-calendar-wrap::-webkit-scrollbar-track {{
+      background: #0f172a;
+    }}
+    html[data-theme="dark"] .capacity-calendar-wrap::-webkit-scrollbar-thumb {{
+      background: #475569;
+      border-color: #0f172a;
+    }}
+    html[data-theme="dark"] .capacity-calendar-wrap::-webkit-scrollbar-thumb:hover {{
+      background: #64748b;
+    }}
+    html[data-theme="dark"] .capacity-day {{
+      background: #0f172a;
+      border-color: #334155;
+    }}
+    html[data-theme="dark"] .capacity-day.is-weekend {{
+      background: #1f2937;
+      border-color: #475569;
+    }}
+    html[data-theme="dark"] .capacity-day-tag {{
+      background: #172554;
+      border-color: #334155;
+      color: #bfdbfe;
+    }}
+    html[data-theme="dark"] .capacity-day-tag.h {{
+      background: #422006;
+    }}
+    html[data-theme="dark"] .capacity-day-tag.l {{
+      background: #374151;
     }}
     html[data-theme="dark"] .capacity-profile-field label {{
       color: #93c5fd;
@@ -3205,6 +3522,7 @@ Total Leaves Taken = 0h</span>
         -->
       </div>
       <div class="capacity-profile-drawer" id="capacity-profile-drawer" role="dialog" aria-modal="true" aria-label="Capacity profile">
+        <div class="capacity-profile-resize-handle" id="capacity-profile-resize-handle" role="separator" aria-orientation="vertical" aria-label="Resize capacity profile drawer"></div>
         <div class="capacity-profile-drawer-head">
           <h2 class="capacity-profile-drawer-title">Capacity Profile</h2>
           <button class="capacity-profile-close" type="button" id="capacity-profile-close" aria-label="Close capacity profile">
@@ -3221,6 +3539,7 @@ Total Leaves Taken = 0h</span>
           <a class="btn alt" href="/settings/capacity">Manage Capacity Profiles</a>
           <div class="capacity-profile-status" id="capacity-profile-status" data-variant="info"></div>
           <div class="capacity-profile-details" id="capacity-profile-details"></div>
+          <div class="capacity-expanded" id="capacity-profile-expanded"></div>
         </div>
       </div>
     </section>
@@ -3360,8 +3679,10 @@ Total Leaves Taken = 0h</span>
     const capacityProfileDrawerEl = document.getElementById("capacity-profile-drawer");
     const capacityProfileOverlayEl = document.getElementById("capacity-profile-overlay");
     const capacityProfileCloseEl = document.getElementById("capacity-profile-close");
+    const capacityProfileResizeHandleEl = document.getElementById("capacity-profile-resize-handle");
     const capacityProfileStatusEl = document.getElementById("capacity-profile-status");
     const capacityProfileDetailsEl = document.getElementById("capacity-profile-details");
+    const capacityProfileExpandedEl = document.getElementById("capacity-profile-expanded");
     const DATE_FILTER_WORK_TYPES = new Set(["rmi"]);
     const WORK_ROW_TYPES = new Set(["subtask", "story"]);
     const ACTUAL_HOURS_MODE_STORAGE_KEY = "actual-hours-mode:nested-view";
@@ -3385,9 +3706,13 @@ Total Leaves Taken = 0h</span>
     const THEME_STORAGE_KEY = "rmi-nested-report-theme";
     const DENSITY_STORAGE_KEY = "rmi-nested-report-density";
     const HEADER_COLLAPSED_STORAGE_KEY = "rmi-nested-report-header-collapsed";
+    const CAPACITY_DRAWER_WIDTH_STORAGE_KEY = "nested-view:capacity-drawer-width";
     const ASPECT_COL_WIDTH_STORAGE_KEY = "rmi-nested-report-aspect-width";
     const MIN_ASPECT_COL_WIDTH = 240;
     const MAX_ASPECT_COL_WIDTH = 900;
+    const DEFAULT_CAPACITY_DRAWER_WIDTH_VW = 50;
+    const MIN_CAPACITY_DRAWER_WIDTH_VW = 35;
+    const MAX_CAPACITY_DRAWER_WIDTH_VW = 85;
     const WORK_NO_ENTRY_TYPES = new Set(["rmi", "story", "subtask"]);
     const allProjects = [];
     const selectedProjectKeys = new Set();
@@ -3429,6 +3754,7 @@ Total Leaves Taken = 0h</span>
     let scorecardUpdateVersion = 0;
     let projectFilterLoadingVersion = 0;
     let teamFilterLoadingVersion = 0;
+    let capacityDrawerPointerId = null;
 
     function toFiniteNumber(value, fallback = 0) {{
       const n = Number(value);
@@ -4062,6 +4388,192 @@ Total Leaves Taken = 0h</span>
       return findCapacityProfileByKey(selectedKey);
     }}
 
+    function renderCapacityProfileExpanded(profile) {{
+      if (!capacityProfileExpandedEl) {{
+        return;
+      }}
+      const bounds = getDateFilterBounds();
+      const fromDate = bounds && bounds.start ? toIsoDate(bounds.start) : "";
+      const toDate = bounds && bounds.end ? toIsoDate(bounds.end) : "";
+      if (!profile) {{
+        capacityProfileExpandedEl.innerHTML = '<div class="capacity-empty">Select a saved profile to preview its calendar for the active nested-view date range.</div>';
+        return;
+      }}
+      if (!fromDate || !toDate || toDate < fromDate) {{
+        capacityProfileExpandedEl.innerHTML = '<div class="capacity-empty">Select a valid date range to view the capacity calendar.</div>';
+        return;
+      }}
+      const breakdown = computeCapacityBreakdownForRange(profile, bounds);
+      const employees = Math.max(0, Math.round(toFiniteNumber(profile.employee_count, 0)));
+      const standardHours = toFiniteNumber(profile.standard_hours_per_day, 0);
+      const ramadanHours = toFiniteNumber(profile.ramadan_hours_per_day, standardHours);
+      const ramadanStart = asText(profile.ramadan_start_date);
+      const ramadanEnd = asText(profile.ramadan_end_date);
+      const holidayDates = Array.isArray(profile.holiday_dates)
+        ? profile.holiday_dates.map((item) => asText(item)).filter(Boolean).sort()
+        : [];
+      const holidaySet = new Set(holidayDates);
+      const leaveByDay = new Map();
+      for (const row of leaveDailyRows) {{
+        const day = asText(row && row.period_day);
+        if (!day || day < fromDate || day > toDate) {{
+          continue;
+        }}
+        const planned = toFiniteNumber(row && row.planned_taken_hours, 0);
+        const unplanned = toFiniteNumber(row && row.unplanned_taken_hours, 0);
+        if (planned <= 0 && unplanned <= 0) {{
+          continue;
+        }}
+        const current = leaveByDay.get(day) || {{ planned: 0, unplanned: 0 }};
+        current.planned += planned;
+        current.unplanned += unplanned;
+        leaveByDay.set(day, current);
+      }}
+      let totalPlannedLeave = 0;
+      let totalUnplannedLeave = 0;
+      leaveByDay.forEach((item) => {{
+        totalPlannedLeave += toFiniteNumber(item && item.planned, 0);
+        totalUnplannedLeave += toFiniteNumber(item && item.unplanned, 0);
+      }});
+      const cursor = parseDateValue(fromDate);
+      const end = parseDateValue(toDate);
+      if (!cursor || !end) {{
+        capacityProfileExpandedEl.innerHTML = '<div class="capacity-empty">Date range is invalid for calendar rendering.</div>';
+        return;
+      }}
+      const todayIso = toIsoDate(new Date());
+      const monthCards = [];
+      cursor.setDate(1);
+      while (cursor <= end) {{
+        const monthStart = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
+        const monthEnd = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0);
+        const firstDayOffset = (monthStart.getDay() + 6) % 7;
+        const lastDayOffset = (monthEnd.getDay() + 6) % 7;
+        const gridStart = new Date(monthStart);
+        gridStart.setDate(gridStart.getDate() - firstDayOffset);
+        const gridEnd = new Date(monthEnd);
+        gridEnd.setDate(gridEnd.getDate() + (6 - lastDayOffset));
+        const cells = [
+          '<div class="capacity-dow">Mon</div>',
+          '<div class="capacity-dow">Tue</div>',
+          '<div class="capacity-dow">Wed</div>',
+          '<div class="capacity-dow">Thu</div>',
+          '<div class="capacity-dow">Fri</div>',
+          '<div class="capacity-dow">Sat</div>',
+          '<div class="capacity-dow">Sun</div>',
+        ];
+        for (let day = new Date(gridStart); day <= gridEnd; day.setDate(day.getDate() + 1)) {{
+          const iso = toIsoDate(day);
+          const isOutsideMonth = day.getMonth() !== monthStart.getMonth();
+          const isWeekend = day.getDay() === 0 || day.getDay() === 6;
+          const isRamadan = !!(ramadanStart && ramadanEnd && iso >= ramadanStart && iso <= ramadanEnd);
+          const isHoliday = holidaySet.has(iso);
+          const isToday = iso === todayIso;
+          const leave = leaveByDay.get(iso) || null;
+          const classes = ["capacity-day"];
+          if (isOutsideMonth) {{
+            classes.push("is-out");
+          }}
+          if (isWeekend) {{
+            classes.push("is-weekend");
+          }}
+          if (isRamadan) {{
+            classes.push("is-ramadan");
+          }}
+          if (isHoliday) {{
+            classes.push("is-holiday");
+          }}
+          if (isToday) {{
+            classes.push("is-today");
+          }}
+          if (leave && isRamadan) {{
+            classes.push("has-ramadan-leave");
+          }} else if (leave) {{
+            classes.push("has-leave");
+          }}
+          const tags = [];
+          if (isRamadan) {{
+            tags.push('<span class="capacity-day-tag r">R</span>');
+          }}
+          if (isHoliday) {{
+            tags.push('<span class="capacity-day-tag h">H</span>');
+          }}
+          if (leave) {{
+            const rawLeaveHours = toFiniteNumber(leave.planned, 0) + toFiniteNumber(leave.unplanned, 0);
+            const leaveHours = rawLeaveHours > 0 ? (isRamadan ? ramadanHours : standardHours) : 0;
+            tags.push(
+              isRamadan
+                ? '<span class="capacity-day-tag rl">RL ' + escapeHtml(leaveHours.toFixed(1)) + 'h</span>'
+                : '<span class="capacity-day-tag l">L ' + escapeHtml(leaveHours.toFixed(1)) + 'h</span>'
+            );
+          }}
+          cells.push(
+            '<div class="' + classes.join(" ") + '"><div class="capacity-day-num">' + String(day.getDate()) + '</div><div class="capacity-day-tags">' + tags.join("") + '</div></div>'
+          );
+        }}
+        const monthLabel = monthStart.toLocaleDateString(undefined, {{
+          year: "numeric",
+          month: "long",
+        }});
+        const isCurrentMonth = monthStart.getFullYear() === new Date().getFullYear()
+          && monthStart.getMonth() === new Date().getMonth();
+        monthCards.push(
+          '<div class="capacity-month"' + (isCurrentMonth ? ' data-current-month="1"' : "") + '><div class="capacity-month-head">'
+          + escapeHtml(monthLabel)
+          + '</div><div class="capacity-month-grid">'
+          + cells.join("")
+          + '</div></div>'
+        );
+        cursor.setMonth(cursor.getMonth() + 1, 1);
+      }}
+      const isAppliedProfile = !!(
+        appliedCapacityProfile
+        && capacityProfileKey(appliedCapacityProfile) === capacityProfileKey(profile)
+      );
+      const modeLabel = isAppliedProfile ? "Applied profile" : "Preview profile";
+      const holidayText = holidayDates.length
+        ? holidayDates.map((value) => formatCapacityDate(value)).join(", ")
+        : "None";
+      const ramadanText = ramadanStart && ramadanEnd
+        ? formatCapacityDate(ramadanStart) + " to " + formatCapacityDate(ramadanEnd)
+        : "Not set";
+      const perAssigneeCapacity = employees > 0
+        ? (toFiniteNumber(breakdown.profileCapacityHours, 0) / employees)
+        : 0;
+      capacityProfileExpandedEl.innerHTML = ''
+        + '<div class="capacity-expanded-head">'
+        + '<div class="capacity-expanded-title">Capacity Profile Calendar</div>'
+        + '<div class="capacity-expanded-sub">' + escapeHtml(modeLabel) + ' | Active range: '
+        + escapeHtml(formatCapacityDate(fromDate)) + ' to ' + escapeHtml(formatCapacityDate(toDate)) + '</div>'
+        + '</div>'
+        + '<div class="capacity-expanded-grid">'
+        + '<div class="capacity-chip"><div class="k">Profile Range</div><div class="v">' + escapeHtml(formatCapacityDate(profile.from_date)) + ' to ' + escapeHtml(formatCapacityDate(profile.to_date)) + '</div></div>'
+        + '<div class="capacity-chip"><div class="k">Employee Count</div><div class="v">' + String(employees) + '</div></div>'
+        + '<div class="capacity-chip"><div class="k">Standard Hours/Day</div><div class="v">' + escapeHtml(standardHours.toFixed(2)) + 'h</div></div>'
+        + '<div class="capacity-chip"><div class="k">Ramadan Hours/Day</div><div class="v">' + escapeHtml(ramadanHours.toFixed(2)) + 'h</div></div>'
+        + '<div class="capacity-chip"><div class="k">Ramadan Range</div><div class="v">' + escapeHtml(ramadanText) + '</div></div>'
+        + '<div class="capacity-chip"><div class="k">Business Days</div><div class="v">' + String(Math.round(toFiniteNumber(breakdown.weekdayCount, 0))) + 'd</div></div>'
+        + '<div class="capacity-chip"><div class="k">Holiday Weekdays</div><div class="v">' + String(Math.round(toFiniteNumber(breakdown.holidayWeekdayCount, 0))) + '</div></div>'
+        + '<div class="capacity-chip"><div class="k">Range Capacity</div><div class="v">' + escapeHtml(formatHours(breakdown.profileCapacityHours)) + '</div></div>'
+        + '<div class="capacity-chip"><div class="k">Per Assignee Capacity</div><div class="v">' + escapeHtml(formatHours(perAssigneeCapacity)) + '</div></div>'
+        + '<div class="capacity-chip"><div class="k">Planned Leave (Range)</div><div class="v">' + escapeHtml(formatHours(totalPlannedLeave)) + '</div></div>'
+        + '<div class="capacity-chip"><div class="k">Unplanned Leave (Range)</div><div class="v">' + escapeHtml(formatHours(totalUnplannedLeave)) + '</div></div>'
+        + '</div>'
+        + '<div class="capacity-legend">'
+        + '<span class="pill">R = Ramadan</span>'
+        + '<span class="pill">H = Holiday</span>'
+        + '<span class="pill">L = Leave hours</span>'
+        + '<span class="pill">RL = Ramadan leave hours</span>'
+        + '</div>'
+        + '<div class="capacity-expanded-sub" style="margin-bottom:8px;">Holiday dates: ' + escapeHtml(holidayText) + '</div>'
+        + '<div class="capacity-calendar-wrap">' + monthCards.join("") + '</div>';
+      const calendarWrap = capacityProfileExpandedEl.querySelector(".capacity-calendar-wrap");
+      const currentMonthCard = calendarWrap ? calendarWrap.querySelector('[data-current-month="1"]') : null;
+      if (calendarWrap && currentMonthCard) {{
+        calendarWrap.scrollLeft = Math.max(0, currentMonthCard.offsetLeft - 8);
+      }}
+    }}
+
     function renderCapacityProfileDetails() {{
       if (!capacityProfileDetailsEl) {{
         return;
@@ -4069,6 +4581,7 @@ Total Leaves Taken = 0h</span>
       const profile = getSelectedCapacityProfile();
       if (!profile) {{
         capacityProfileDetailsEl.textContent = "Select a saved profile and click Apply to use its calculated capacity.";
+        renderCapacityProfileExpanded(null);
         return;
       }}
       const holidays = Array.isArray(profile.holiday_dates) ? profile.holiday_dates.length : 0;
@@ -4100,6 +4613,7 @@ Total Leaves Taken = 0h</span>
           " | Applied to selected range: " + rangeStart + " to " + rangeEnd +
           " | Dynamic Capacity: " + formatHours(dynamicCapacity);
       }}
+      renderCapacityProfileExpanded(profile);
     }}
 
     function applyProfilesPayload(nextProfiles) {{
@@ -5350,6 +5864,9 @@ Total Leaves Taken = 0h</span>
 
     function setCapacityProfileDrawerOpen(isOpen) {{
       const open = Boolean(isOpen);
+      if (!open) {{
+        stopCapacityDrawerResize();
+      }}
       if (capacityProfileDrawerEl) {{
         capacityProfileDrawerEl.classList.toggle("is-open", open);
       }}
@@ -5377,6 +5894,69 @@ Total Leaves Taken = 0h</span>
 
     function clampAspectWidth(value) {{
       return Math.min(MAX_ASPECT_COL_WIDTH, Math.max(MIN_ASPECT_COL_WIDTH, value));
+    }}
+
+    function clampCapacityDrawerWidthVw(value) {{
+      const numeric = Number(value);
+      if (!Number.isFinite(numeric)) {{
+        return DEFAULT_CAPACITY_DRAWER_WIDTH_VW;
+      }}
+      return Math.min(MAX_CAPACITY_DRAWER_WIDTH_VW, Math.max(MIN_CAPACITY_DRAWER_WIDTH_VW, numeric));
+    }}
+
+    function setCapacityDrawerWidth(widthVw) {{
+      const nextWidth = clampCapacityDrawerWidthVw(widthVw);
+      document.documentElement.style.setProperty("--capacity-profile-drawer-width", nextWidth.toFixed(2) + "vw");
+      try {{
+        localStorage.setItem(CAPACITY_DRAWER_WIDTH_STORAGE_KEY, String(nextWidth));
+      }} catch (_error) {{
+      }}
+      if (capacityProfileDrawerEl) {{
+        capacityProfileDrawerEl.style.width = nextWidth.toFixed(2) + "vw";
+      }}
+      return nextWidth;
+    }}
+
+    function initializeCapacityDrawerWidth() {{
+      let initialWidth = DEFAULT_CAPACITY_DRAWER_WIDTH_VW;
+      try {{
+        initialWidth = clampCapacityDrawerWidthVw(localStorage.getItem(CAPACITY_DRAWER_WIDTH_STORAGE_KEY));
+      }} catch (_error) {{
+        initialWidth = DEFAULT_CAPACITY_DRAWER_WIDTH_VW;
+      }}
+      setCapacityDrawerWidth(initialWidth);
+    }}
+
+    function stopCapacityDrawerResize() {{
+      if (capacityProfileDrawerEl) {{
+        capacityProfileDrawerEl.classList.remove("is-resizing");
+      }}
+      document.body.classList.remove("capacity-modal-resizing");
+      capacityDrawerPointerId = null;
+    }}
+
+    function handleCapacityDrawerResizeClientX(clientX) {{
+      const viewportWidth = Math.max(window.innerWidth || 0, 1);
+      const desiredWidthPx = viewportWidth - Number(clientX || 0);
+      const desiredWidthVw = (desiredWidthPx / viewportWidth) * 100;
+      setCapacityDrawerWidth(desiredWidthVw);
+    }}
+
+    function startCapacityDrawerResize(event) {{
+      if (!capacityProfileDrawerEl || !capacityProfileResizeHandleEl) {{
+        return;
+      }}
+      if (window.innerWidth <= 760) {{
+        return;
+      }}
+      event.preventDefault();
+      capacityDrawerPointerId = typeof event.pointerId === "number" ? event.pointerId : null;
+      capacityProfileDrawerEl.classList.add("is-resizing");
+      document.body.classList.add("capacity-modal-resizing");
+      handleCapacityDrawerResizeClientX(event.clientX);
+      if (capacityDrawerPointerId !== null && typeof capacityProfileResizeHandleEl.setPointerCapture === "function") {{
+        capacityProfileResizeHandleEl.setPointerCapture(capacityDrawerPointerId);
+      }}
     }}
 
     function setAspectColumnWidth(width) {{
@@ -5994,6 +6574,15 @@ Total Leaves Taken = 0h</span>
       return String(value || "").trim();
     }}
 
+    function escapeHtml(value) {{
+      return String(value || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }}
+
     function parseDateValue(value) {{
       const text = asText(value);
       if (!text) {{
@@ -6012,6 +6601,18 @@ Total Leaves Taken = 0h</span>
         return null;
       }}
       return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    }}
+
+    function formatCapacityDate(value) {{
+      const parsed = parseDateValue(value);
+      if (!parsed) {{
+        return asText(value);
+      }}
+      return parsed.toLocaleDateString(undefined, {{
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+      }});
     }}
 
     function parseMonthValue(value) {{
@@ -7289,6 +7890,7 @@ Total Leaves Taken = 0h</span>
       if (nextOptions.teamFilterLoading || (teamFilterProgress && !teamFilterProgress.hidden)) {{
         setTeamFilterLoading(true, requestVersion);
       }}
+      renderCapacityProfileDetails();
       void updateScoreCards(scorecardSourceRows, requestVersion, renderSelection);
       renderRows(displayRows);
       applyVisibility();
@@ -7297,6 +7899,7 @@ Total Leaves Taken = 0h</span>
     initializeThemeToggle();
     initializeDensityToggle();
     initializeAspectColumnResize();
+    initializeCapacityDrawerWidth();
     initializeProjectFilter();
     initializeTeamFilter().catch((error) => {{
       console.warn("Failed to initialize team filter:", error);
@@ -7480,6 +8083,28 @@ Total Leaves Taken = 0h</span>
         setCapacityProfileDrawerOpen(false);
       }});
     }}
+    if (capacityProfileResizeHandleEl) {{
+      capacityProfileResizeHandleEl.addEventListener("pointerdown", (event) => {{
+        startCapacityDrawerResize(event);
+      }});
+      capacityProfileResizeHandleEl.addEventListener("pointermove", (event) => {{
+        if (capacityDrawerPointerId === null || event.pointerId !== capacityDrawerPointerId) {{
+          return;
+        }}
+        event.preventDefault();
+        handleCapacityDrawerResizeClientX(event.clientX);
+      }});
+      capacityProfileResizeHandleEl.addEventListener("pointerup", (event) => {{
+        if (capacityDrawerPointerId !== null && event.pointerId === capacityDrawerPointerId) {{
+          stopCapacityDrawerResize();
+        }}
+      }});
+      capacityProfileResizeHandleEl.addEventListener("pointercancel", (event) => {{
+        if (capacityDrawerPointerId !== null && event.pointerId === capacityDrawerPointerId) {{
+          stopCapacityDrawerResize();
+        }}
+      }});
+    }}
     if (scoreCapacityProfileOpenButton) {{
       scoreCapacityProfileOpenButton.addEventListener("click", () => {{
         setHeaderCollapsed(false);
@@ -7492,6 +8117,16 @@ Total Leaves Taken = 0h</span>
     document.addEventListener("keydown", (event) => {{
       if (event.key === "Escape" && capacityProfileDrawerEl && capacityProfileDrawerEl.classList.contains("is-open")) {{
         setCapacityProfileDrawerOpen(false);
+      }}
+    }});
+    window.addEventListener("pointerup", () => {{
+      if (capacityDrawerPointerId !== null) {{
+        stopCapacityDrawerResize();
+      }}
+    }});
+    window.addEventListener("resize", () => {{
+      if (window.innerWidth <= 760) {{
+        stopCapacityDrawerResize();
       }}
     }});
     if (viewOptionsToggle) {{

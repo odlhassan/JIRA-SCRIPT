@@ -4,6 +4,7 @@
   var GLOBAL_DATE_FILTER_API = "/api/report-date-filter";
   var FILE_TO_PAGE_KEY = {
     "dashboard.html": "dashboard",
+    "executive_dashboard.html": "executive_dashboard",
     "nested_view_report.html": "nested_view_report",
     "employee_performance_report.html": "employee_performance_report",
     "assignee_hours_report.html": "assignee_hours_report",

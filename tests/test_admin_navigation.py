@@ -10,6 +10,7 @@ from report_server import (
     CAPACITY_SETTINGS_ROUTE,
     EPIC_PHASES_SETTINGS_ROUTE,
     EPICS_DROPDOWN_OPTIONS_SETTINGS_ROUTE,
+    EXECUTIVE_DASHBOARD_SETTINGS_ROUTE,
     EPICS_MANAGEMENT_SETTINGS_ROUTE,
     MANAGE_FIELDS_SETTINGS_ROUTE,
     PAGE_CATEGORIES_SETTINGS_ROUTE,
@@ -25,6 +26,7 @@ class AdminNavigationTests(unittest.TestCase):
     def _build_app(self, root: Path):
         (root / "report_html").mkdir(parents=True, exist_ok=True)
         (root / "report_html" / "dashboard.html").write_text("<html><body>ok</body></html>", encoding="utf-8")
+        (root / "executive_dashboard.html").write_text("<html><body>executive</body></html>", encoding="utf-8")
         wb = Workbook()
         ws = wb.active
         ws.append(["project_key", "worklog_date", "period_day", "period_week", "period_month", "issue_assignee", "hours_logged"])
@@ -40,6 +42,7 @@ class AdminNavigationTests(unittest.TestCase):
             routes = [
                 CAPACITY_SETTINGS_ROUTE,
                 PERFORMANCE_SETTINGS_ROUTE,
+                EXECUTIVE_DASHBOARD_SETTINGS_ROUTE,
                 REPORT_ENTITIES_SETTINGS_ROUTE,
                 MANAGE_FIELDS_SETTINGS_ROUTE,
                 PROJECTS_SETTINGS_ROUTE,
@@ -71,6 +74,7 @@ class AdminNavigationTests(unittest.TestCase):
             self.assertIn("<h2>Reports</h2>", html)
             self.assertIn(f'href="{CAPACITY_SETTINGS_ROUTE}"', html)
             self.assertIn(f'href="{PERFORMANCE_SETTINGS_ROUTE}"', html)
+            self.assertIn(f'href="{EXECUTIVE_DASHBOARD_SETTINGS_ROUTE}"', html)
             self.assertIn(f'href="{REPORT_ENTITIES_SETTINGS_ROUTE}"', html)
             self.assertIn(f'href="{MANAGE_FIELDS_SETTINGS_ROUTE}"', html)
             self.assertIn(f'href="{PROJECTS_SETTINGS_ROUTE}"', html)
@@ -112,6 +116,8 @@ class AdminNavigationTests(unittest.TestCase):
         self.assertIn("applyCatalogTitles", nav_js)
         self.assertIn(CAPACITY_SETTINGS_ROUTE, nav_js)
         self.assertIn(PERFORMANCE_SETTINGS_ROUTE, nav_js)
+        self.assertIn(EXECUTIVE_DASHBOARD_SETTINGS_ROUTE, nav_js)
+        self.assertIn("executive_dashboard.html", nav_js)
         self.assertIn(REPORT_ENTITIES_SETTINGS_ROUTE, nav_js)
         self.assertIn(MANAGE_FIELDS_SETTINGS_ROUTE, nav_js)
         self.assertIn(PROJECTS_SETTINGS_ROUTE, nav_js)

@@ -7,7 +7,7 @@
 
 ## Executive Summary
 - Planned Taken (hours): `622.50`
-- Unplanned Taken (hours): `162.50`
+- Unplanned Taken (hours): `169.00`
 - Planned Not Yet Taken (hours): `8.00`
 - Planned Not Yet Taken (No Entry count): `9`
 - Defective subtasks listed: `25`
@@ -17,6 +17,7 @@
 | Assignee | Planned Taken (h) | Unplanned Taken (h) | Planned Not Yet Taken (h) | No Entry Count | Unknown Count |
 | --- | --- | --- | --- | --- | --- |
 | Ameer Hamza Khan | 0.00 | 32.00 | 0.00 | 0 | 0 |
+| Arsalan Zafar Khan | 0.00 | 6.50 | 0.00 | 0 | 0 |
 | awais akhter | 0.00 | 0.00 | 0.00 | 0 | 2 |
 | Faiza Nasir | 0.00 | 8.00 | 0.00 | 0 | 0 |
 | Hamza Ali | 0.00 | 8.00 | 0.00 | 0 | 0 |

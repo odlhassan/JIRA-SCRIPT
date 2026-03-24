@@ -21,6 +21,7 @@
       title: "Reports",
       items: [
         { page_key: "dashboard", title: "Dashboard", href: resolveReportHref("dashboard.html"), icon: "space_dashboard", file: "dashboard.html" },
+        { page_key: "executive_dashboard", title: "Executive Dashboard", href: resolveReportHref("executive_dashboard.html"), icon: "analytics", file: "executive_dashboard.html" },
         { page_key: "nested_view_report", title: "Nested View Report", href: resolveReportHref("nested_view_report.html"), icon: "account_tree", file: "nested_view_report.html" },
         { page_key: "missed_entries_report", title: "Missed Entries Report", href: resolveReportHref("missed_entries.html"), icon: "event_busy", file: "missed_entries.html" },
         { page_key: "assignee_hours_report", title: "Assignee Hours Report", href: resolveReportHref("assignee_hours_report.html"), icon: "schedule", file: "assignee_hours_report.html" },
@@ -45,6 +46,7 @@
       items: [
         { page_key: "capacity_settings", title: "Capacity Settings", href: "/settings/capacity", icon: "tune", path: "/settings/capacity" },
         { page_key: "performance_settings", title: "Performance Settings", href: "/settings/performance", icon: "speed", path: "/settings/performance" },
+        { page_key: "executive_dashboard_settings", title: "Executive Dashboard Settings", href: "/settings/executive-dashboard", icon: "tune", path: "/settings/executive-dashboard" },
         { page_key: "report_entities", title: "Report Entities", href: "/settings/report-entities", icon: "dataset", path: "/settings/report-entities" },
         { page_key: "manage_fields", title: "Manage Fields", href: "/settings/manage-fields", icon: "list_alt", path: "/settings/manage-fields" },
         { page_key: "projects", title: "Projects", href: "/settings/projects", icon: "work", path: "/settings/projects" },

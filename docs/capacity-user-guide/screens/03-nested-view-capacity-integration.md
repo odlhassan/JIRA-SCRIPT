@@ -4,7 +4,7 @@
 
 - Name: Nested View Report - Capacity Profile section
 - Route: `/nested_view_report.html`
-- Purpose: Apply an existing saved capacity profile to report KPIs without editing profile definitions.
+- Purpose: Apply an existing saved capacity profile to report KPIs and preview its active-range calendar without editing profile definitions.
 
 ## Sections
 
@@ -23,6 +23,8 @@
 | Manage Capacity Profiles | Link button | No | Enabled | Opens settings page for create/edit/delete. | Navigates to `/settings/capacity`. |
 | Status (`capacity-profile-status`) | Read-only text | No | Informational message | Shows load/apply/reset errors and confirmation. | Variant state: info/success/error. |
 | Profile Details (`capacity-profile-details`) | Read-only text | No | Guidance text | Shows selected profile details and computed capacity. | Includes dynamic capacity when profile is applied. |
+| Calendar Preview (`capacity-profile-expanded`) | Read-only panel | No | Guidance text when no profile is selected | Shows range summary chips plus a month-by-month calendar for the active report date filter. | Mirrors the selected dropdown profile; marks Ramadan, holidays, leave, and today; auto-scrolls to current month when visible. |
+| Drawer Resize Handle (`capacity-profile-resize-handle`) | Drag handle | No | Drawer opens at `50vw` on desktop | Lets the user drag the drawer's left border to increase or decrease width. | Desktop-only behavior; width is clamped to a safe viewport range and falls back to fixed mobile width on narrow screens. |
 
 ## KPI Linkage
 
@@ -66,6 +68,10 @@
 - Profile source on load:
   - Embedded `capacity_profiles` in report payload.
   - First available profile is auto-applied when present.
+- Calendar preview logic:
+  - Reads the report's active `from` and `to` date filter values.
+  - Uses saved profile holidays, Ramadan start/end, and leave daily rows already embedded in the report payload.
+  - Updates when the selected profile changes, when Apply/Reset is used, and when the report rerenders after date filter changes.
 - Live refresh source:
   - `GET /api/capacity/profiles`
 - Settings handoff:

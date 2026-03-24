@@ -73,6 +73,7 @@ Rules:
   - Uses profile + leave metrics to show remaining capacity.
 - Nested View:
   - Loads saved profiles and applies selected profile to current report filter range.
+  - Shows a read-only calendar preview for the selected profile, including Ramadan, holidays, leave tags, and range summary chips.
   - Can reset to project totals.
 - RnD Data Story:
   - Applies saved capacity profiles to the selected date range.

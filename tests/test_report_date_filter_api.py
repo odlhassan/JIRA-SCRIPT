@@ -14,6 +14,7 @@ from report_server import create_report_server_app
 def _build_app(root: Path):
     (root / "report_html").mkdir(parents=True, exist_ok=True)
     (root / "report_html" / "dashboard.html").write_text("<html><body>ok</body></html>", encoding="utf-8")
+    (root / "executive_dashboard.html").write_text("<html><body>Executive</body><script src=\"/shared-nav.js\"></script></html>", encoding="utf-8")
     (root / "report_html" / "shared-nav.js").write_text("console.log('nav');", encoding="utf-8")
     (root / "report_html" / "shared-nav.css").write_text("body{}", encoding="utf-8")
     (root / "report_html" / "shared-date-filter.js").write_text("console.log('date-filter');", encoding="utf-8")
@@ -175,6 +176,9 @@ class ReportDateFilterApiTests(unittest.TestCase):
             self.assertEqual(resp.status_code, 200)
             html = resp.get_data(as_text=True)
             self.assertIn("shared-date-filter.js", html)
+            exec_resp = client.get("/executive_dashboard.html")
+            self.assertEqual(exec_resp.status_code, 200)
+            self.assertIn("shared-date-filter.js", exec_resp.get_data(as_text=True))
 
     def test_dashboard_html_promotes_newer_root_source_before_serving(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:

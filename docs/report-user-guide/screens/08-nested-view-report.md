@@ -15,5 +15,10 @@ INFO_IDS: `nested.capacity_gap`, `nested.total_capacity_adjusted`
 
 - Drawer uses live breakdown terms to explain profile capacity, leaves, and downstream planning impact.
 - On load, the first available saved capacity profile is auto-applied to KPI calculations.
+- On desktop, the drawer opens at 50% viewport width and can be resized by dragging its left edge.
+- The Capacity Profile drawer now includes a read-only calendar preview for the currently selected profile.
+- The preview follows the active Nested View date filter and shows:
+  - summary chips for range capacity, business days, holiday weekdays, per-assignee capacity, and leave totals
+  - month cards with Ramadan (`R`), holidays (`H`), leave (`L`), and Ramadan leave (`RL`) tags
 - `Total Capacity (Hours)` uses: `Employee Count x Available Business Days x Per Day Hours`, and shows this as an icon-based top-right formula chip.
 - `Total Leaves Taken` is currently hidden/commented in the scorecard UI (reserved for later activation).

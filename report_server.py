@@ -187,6 +187,7 @@ from generate_nested_view_html import load_nested_view_tree_for_api
 
 REPORT_FILENAME_TO_ID: dict[str, str] = {
     "dashboard.html": "dashboard",
+    "executive_dashboard.html": "executive_dashboard",
     "nested_view_report.html": "nested_view",
     "missed_entries.html": "missed_entries",
     "assignee_hours_report.html": "assignee_hours",
@@ -213,6 +214,7 @@ REPORT_REFRESH_CHAINS: dict[str, list[str]] = {
         "run_all_exports.py",
         "fetch_jira_dashboard.py",
     ],
+    "executive_dashboard": [],
     "nested_view": [
         "run_all_exports.py",
         "generate_nested_view_html.py",
@@ -288,6 +290,7 @@ IPP_MEETING_PLANNER_SETTINGS_ROUTE = "/settings/ipp-meeting-planner"
 EPICS_DROPDOWN_OPTIONS_SETTINGS_ROUTE = "/settings/epics-dropdown-options"
 EPIC_PHASES_SETTINGS_ROUTE = "/settings/epic-phases"
 DASHBOARD_RISK_SETTINGS_ROUTE = "/settings/dashboard-risk"
+EXECUTIVE_DASHBOARD_SETTINGS_ROUTE = "/settings/executive-dashboard"
 PAGE_CATEGORIES_SETTINGS_ROUTE = "/settings/page-categories"
 CANONICAL_REFRESH_SETTINGS_ROUTE = "/settings/canonical-refresh"
 SQL_CONSOLE_SETTINGS_ROUTE = "/settings/sql-console"
@@ -300,6 +303,7 @@ CANONICAL_PVD_API_PREFIX = "/api/approved-vs-planned-hours"
 
 STATIC_REPORT_NAV_ITEMS: list[dict[str, object]] = [
     {"page_key": "dashboard", "title": "Dashboard", "href": "/dashboard.html", "icon": "space_dashboard", "file": "dashboard.html", "default_nav_order": 10, "page_type": "report"},
+    {"page_key": "executive_dashboard", "title": "Executive Dashboard", "href": "/executive_dashboard.html", "icon": "analytics", "file": "executive_dashboard.html", "default_nav_order": 15, "page_type": "report"},
     {"page_key": "nested_view_report", "title": "Nested View Report", "href": "/nested_view_report.html", "icon": "account_tree", "file": "nested_view_report.html", "default_nav_order": 20, "page_type": "report"},
     {"page_key": "missed_entries_report", "title": "Missed Entries Report", "href": "/missed_entries.html", "icon": "event_busy", "file": "missed_entries.html", "default_nav_order": 30, "page_type": "report"},
     {"page_key": "assignee_hours_report", "title": "Assignee Hours Report", "href": "/assignee_hours_report.html", "icon": "schedule", "file": "assignee_hours_report.html", "default_nav_order": 40, "page_type": "report"},
@@ -318,6 +322,7 @@ STATIC_REPORT_NAV_ITEMS: list[dict[str, object]] = [
 STATIC_ADMIN_NAV_ITEMS: list[dict[str, object]] = [
     {"page_key": "capacity_settings", "title": "Capacity Settings", "href": CAPACITY_SETTINGS_ROUTE, "icon": "tune", "path": CAPACITY_SETTINGS_ROUTE, "default_nav_order": 10, "page_type": "configuration"},
     {"page_key": "performance_settings", "title": "Performance Settings", "href": PERFORMANCE_SETTINGS_ROUTE, "icon": "speed", "path": PERFORMANCE_SETTINGS_ROUTE, "default_nav_order": 20, "page_type": "configuration"},
+    {"page_key": "executive_dashboard_settings", "title": "Executive Dashboard Settings", "href": EXECUTIVE_DASHBOARD_SETTINGS_ROUTE, "icon": "tune", "path": EXECUTIVE_DASHBOARD_SETTINGS_ROUTE, "default_nav_order": 25, "page_type": "configuration"},
     {"page_key": "report_entities", "title": "Report Entities", "href": REPORT_ENTITIES_SETTINGS_ROUTE, "icon": "dataset", "path": REPORT_ENTITIES_SETTINGS_ROUTE, "default_nav_order": 30, "page_type": "configuration"},
     {"page_key": "manage_fields", "title": "Manage Fields", "href": MANAGE_FIELDS_SETTINGS_ROUTE, "icon": "list_alt", "path": MANAGE_FIELDS_SETTINGS_ROUTE, "default_nav_order": 40, "page_type": "configuration"},
     {"page_key": "projects", "title": "Projects", "href": PROJECTS_SETTINGS_ROUTE, "icon": "work", "path": PROJECTS_SETTINGS_ROUTE, "default_nav_order": 50, "page_type": "configuration"},
@@ -335,6 +340,7 @@ def _settings_nav_items() -> list[tuple[str, str]]:
     return [
         ("Capacity Settings", CAPACITY_SETTINGS_ROUTE),
         ("Performance Settings", PERFORMANCE_SETTINGS_ROUTE),
+        ("Executive Dashboard Settings", EXECUTIVE_DASHBOARD_SETTINGS_ROUTE),
         ("Dashboard Risk", DASHBOARD_RISK_SETTINGS_ROUTE),
         ("Report Entities", REPORT_ENTITIES_SETTINGS_ROUTE),
         ("Manage Fields", MANAGE_FIELDS_SETTINGS_ROUTE),
@@ -373,6 +379,15 @@ DEFAULT_DASHBOARD_RISK_SETTINGS: dict[str, object] = {
 
 def _default_dashboard_risk_settings() -> dict[str, object]:
     return json.loads(json.dumps(DEFAULT_DASHBOARD_RISK_SETTINGS))
+
+
+DEFAULT_EXECUTIVE_DASHBOARD_SETTINGS: dict[str, str] = {
+    "estimation_basis": "subtask_planned_hours",
+}
+
+
+def _default_executive_dashboard_settings() -> dict[str, str]:
+    return dict(DEFAULT_EXECUTIVE_DASHBOARD_SETTINGS)
 
 
 def _coerce_int(value: object, field_name: str, minimum: int = 0, maximum: int = 100) -> int:
@@ -505,6 +520,76 @@ def _save_dashboard_risk_settings(settings_db_path: Path, payload: object) -> di
         conn.execute(
             """
             INSERT INTO dashboard_risk_settings(id, settings_json, updated_at_utc)
+            VALUES(1, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET settings_json=excluded.settings_json, updated_at_utc=excluded.updated_at_utc
+            """,
+            (json.dumps(normalized, ensure_ascii=True), now_utc),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return normalized
+
+
+def _normalize_executive_dashboard_settings(payload: object) -> dict[str, str]:
+    raw = payload if isinstance(payload, dict) else {}
+    basis = _to_text(raw.get("estimation_basis", DEFAULT_EXECUTIVE_DASHBOARD_SETTINGS["estimation_basis"]))
+    allowed = {"subtask_planned_hours", "epic_planned_hours", "epic_sealed_hours"}
+    if basis not in allowed:
+        raise ValueError("estimation_basis must be one of: subtask_planned_hours, epic_planned_hours, epic_sealed_hours.")
+    return {"estimation_basis": basis}
+
+
+def _init_executive_dashboard_settings_db(settings_db_path: Path) -> None:
+    settings_db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(settings_db_path)
+    try:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS executive_dashboard_settings (
+                id INTEGER PRIMARY KEY CHECK(id = 1),
+                settings_json TEXT NOT NULL,
+                updated_at_utc TEXT NOT NULL DEFAULT ''
+            )
+            """
+        )
+        existing = conn.execute("SELECT settings_json FROM executive_dashboard_settings WHERE id = 1").fetchone()
+        if not existing:
+            now_utc = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+            conn.execute(
+                "INSERT INTO executive_dashboard_settings(id, settings_json, updated_at_utc) VALUES(1, ?, ?)",
+                (json.dumps(_default_executive_dashboard_settings(), ensure_ascii=True), now_utc),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _load_executive_dashboard_settings(settings_db_path: Path) -> dict[str, str]:
+    _init_executive_dashboard_settings_db(settings_db_path)
+    conn = sqlite3.connect(settings_db_path)
+    try:
+        row = conn.execute("SELECT settings_json FROM executive_dashboard_settings WHERE id = 1").fetchone()
+        raw_json = _to_text(row[0]) if row else ""
+        parsed: object = {}
+        if raw_json:
+            try:
+                parsed = json.loads(raw_json)
+            except Exception:
+                parsed = {}
+        return _normalize_executive_dashboard_settings(parsed)
+    finally:
+        conn.close()
+
+
+def _save_executive_dashboard_settings(settings_db_path: Path, payload: object) -> dict[str, str]:
+    normalized = _normalize_executive_dashboard_settings(payload)
+    conn = sqlite3.connect(settings_db_path)
+    try:
+        now_utc = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        conn.execute(
+            """
+            INSERT INTO executive_dashboard_settings(id, settings_json, updated_at_utc)
             VALUES(1, ?, ?)
             ON CONFLICT(id) DO UPDATE SET settings_json=excluded.settings_json, updated_at_utc=excluded.updated_at_utc
             """,
@@ -6706,6 +6791,110 @@ def _dashboard_risk_settings_html() -> str:
   <script src="/shared-nav.js"></script>
 </body>
 </html>""".replace("__SETTINGS_TOP_NAV__", _settings_top_nav_html(DASHBOARD_RISK_SETTINGS_ROUTE))
+
+
+def _executive_dashboard_settings_html() -> str:
+    return """<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Executive Dashboard Settings</title>
+  <link rel="stylesheet" href="/shared-nav.css">
+  <link rel="stylesheet" href="/material-symbols.css">
+  <style>
+    :root { --bg:#f8fafc; --card:#ffffff; --ink:#0f172a; --muted:#475569; --line:#cbd5e1; --brand:#0f766e; --ok:#166534; --err:#b91c1c; }
+    * { box-sizing:border-box; }
+    body { margin:0; padding:20px; font-family:"Segoe UI",Tahoma,sans-serif; color:var(--ink); background:linear-gradient(180deg,#eff6ff,#f8fafc); }
+    .wrap { max-width:980px; margin:0 auto; }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px; box-shadow:0 10px 24px rgba(15,23,42,.08); }
+    .top { display:flex; justify-content:space-between; align-items:flex-start; gap:10px; flex-wrap:wrap; }
+    .btn { border:1px solid var(--brand); background:var(--brand); color:#fff; border-radius:9px; padding:8px 12px; cursor:pointer; text-decoration:none; }
+    .btn.alt { background:#fff; color:#0f172a; border-color:var(--line); }
+    .row { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
+    .grid { display:grid; gap:12px; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); margin-top:14px; }
+    label { display:block; font-size:.83rem; font-weight:700; margin-bottom:6px; }
+    select { width:100%; border:1px solid var(--line); border-radius:9px; padding:10px; font-size:.95rem; }
+    .hint { margin:6px 0 0; color:var(--muted); font-size:.84rem; line-height:1.45; }
+    .panel { border:1px solid #dbeafe; border-radius:12px; background:#f8fbff; padding:12px; }
+    #status { min-height:1.2em; margin-top:10px; font-size:.92rem; }
+    #status.ok { color:var(--ok); }
+    #status.err { color:var(--err); }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <section class="card">
+      <div class="top">
+        <div>
+          <h1 style="margin:0;font-size:1.24rem;">Executive Dashboard Settings</h1>
+          <p class="hint">Controls how Delivery Insights measures estimation accuracy on the Executive Dashboard.</p>
+        </div>
+        <div class="row">__SETTINGS_TOP_NAV__</div>
+      </div>
+      <div class="grid">
+        <div class="panel">
+          <label for="estimation-basis">Estimation Accuracy Basis</label>
+          <select id="estimation-basis">
+            <option value="subtask_planned_hours">Subtask Planned Hours</option>
+            <option value="epic_planned_hours">Epic Planned Hours</option>
+            <option value="epic_sealed_hours">Epic Sealed Hours</option>
+          </select>
+          <p class="hint" id="basis-help"></p>
+        </div>
+      </div>
+      <div class="row">
+        <button class="btn alt" type="button" id="reload-btn">Reload</button>
+        <button class="btn" type="button" id="save-btn">Save Settings</button>
+      </div>
+      <div id="status"></div>
+    </section>
+  </main>
+  <script>
+    const API = "/api/executive-dashboard/settings";
+    const DEFAULTS = """ + json.dumps(_default_executive_dashboard_settings()) + """;
+    const basisEl = document.getElementById("estimation-basis");
+    const statusEl = document.getElementById("status");
+    const helpEl = document.getElementById("basis-help");
+    const HELP = {
+      subtask_planned_hours: "Compare each committed subtask's actual logged hours against that subtask's own planned hours.",
+      epic_planned_hours: "Compare each qualifying epic's committed-subtask actuals against the epic's current planner hours.",
+      epic_sealed_hours: "Compare each qualifying epic's committed-subtask actuals against the latest sealed epic hours at or before the report end date."
+    };
+    function setStatus(msg, kind) { statusEl.textContent = msg || ""; statusEl.className = kind || ""; }
+    function applySettings(settings) {
+      const use = settings || DEFAULTS;
+      basisEl.value = String(use.estimation_basis || DEFAULTS.estimation_basis);
+      helpEl.textContent = HELP[basisEl.value] || "";
+    }
+    async function loadSettings() {
+      setStatus("Loading...", "");
+      const response = await fetch(API, { cache: "no-store" });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error || "Failed to load settings.");
+      applySettings(body.settings || DEFAULTS);
+      setStatus("Loaded.", "ok");
+    }
+    async function saveSettings() {
+      setStatus("Saving...", "");
+      const response = await fetch(API, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ estimation_basis: basisEl.value })
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error || "Failed to save settings.");
+      applySettings(body.settings || DEFAULTS);
+      setStatus("Saved.", "ok");
+    }
+    basisEl.addEventListener("change", () => applySettings({ estimation_basis: basisEl.value }));
+    document.getElementById("reload-btn").addEventListener("click", () => loadSettings().catch((err) => setStatus(err.message || String(err), "err")));
+    document.getElementById("save-btn").addEventListener("click", () => saveSettings().catch((err) => setStatus(err.message || String(err), "err")));
+    loadSettings().catch((err) => setStatus(err.message || String(err), "err"));
+  </script>
+  <script src="/shared-nav.js"></script>
+</body>
+</html>""".replace("__SETTINGS_TOP_NAV__", _settings_top_nav_html(EXECUTIVE_DASHBOARD_SETTINGS_ROUTE))
 
 
 def _report_entities_settings_html() -> str:
@@ -13970,6 +14159,9 @@ def _resolve_output_html_path(env_var: str, default_name: str, base_dir: Path) -
 def _resolve_report_html_sources(base_dir: Path) -> dict[str, Path]:
     return {
         "dashboard.html": base_dir / "dashboard.html",
+        "executive_dashboard.html": _resolve_output_html_path(
+            "JIRA_EXECUTIVE_DASHBOARD_HTML_PATH", "executive_dashboard.html", base_dir
+        ),
         "nested_view_report.html": _resolve_output_html_path(
             "JIRA_NESTED_VIEW_HTML_PATH", "nested_view_report.html", base_dir
         ),
@@ -15384,6 +15576,64 @@ def _build_report_info_catalog(report_id: str) -> list[dict]:
                 "data_sources": ["1_jira_work_items_export.xlsx", "2_jira_subtask_worklogs.xlsx", "3_jira_subtask_worklog_rollup.xlsx"],
                 "leadership_interpretation": "Operational pulse view for execution, data consistency, and risk flags.",
             }
+        ],
+        "executive_dashboard": [
+            {
+                "id": "executive.total_committed_items",
+                "label": "Total Committed Items",
+                "report": "executive_dashboard",
+                "ui_targets": ["#metric-total-committed"],
+                "definition": "Count of subtasks committed in the selected range using planned start OR planned due dates.",
+                "formula": "Count(subtasks where planned_start in range OR planned_due in range)",
+                "ingredients": ["subtask.start_date", "subtask.due_date", "subtask.issue_type"],
+                "business_validations": ["Only subtask issue types are included.", "RLT project rows are excluded."],
+                "field_linkages": ["Completed Items", "Estimation Accuracy"],
+                "cross_report_linkages": ["employee.planned_hours_assigned", "planned_vs_dispensed.project_gap"],
+                "data_sources": ["canonical_issues", "global_report_date_filters"],
+                "leadership_interpretation": "Shows committed delivery volume for the selected planning window.",
+            },
+            {
+                "id": "executive.completed_items",
+                "label": "Completed Items",
+                "report": "executive_dashboard",
+                "ui_targets": ["#metric-completed-items"],
+                "definition": "Committed subtasks whose work status is resolved.",
+                "formula": "Count(committed subtasks where normalized status is resolved)",
+                "ingredients": ["subtask.status", "committed population"],
+                "business_validations": ["Resolved status normalization includes current Jira variants such as Resolved and Resolved!."],
+                "field_linkages": ["Total Committed Items"],
+                "cross_report_linkages": ["dashboard.delivery_health"],
+                "data_sources": ["canonical_issues"],
+                "leadership_interpretation": "Shows how much of the committed delivery set actually reached completion.",
+            },
+            {
+                "id": "executive.estimation_accuracy",
+                "label": "Estimation Accuracy",
+                "report": "executive_dashboard",
+                "ui_targets": ["#metric-estimation-accuracy"],
+                "definition": "Weighted accuracy score comparing actual hours to the configured planning baseline.",
+                "formula": "max(0, 100 - sum(abs(actual - baseline)) / sum(baseline) * 100)",
+                "ingredients": ["actual logged hours", "subtask planned hours or epic planner hours or epic sealed hours", "executive dashboard settings"],
+                "business_validations": ["Rows with baseline <= 0 are excluded.", "Sealed basis uses the latest approved snapshot at or before the selected end date."],
+                "field_linkages": ["Executive Dashboard Settings"],
+                "cross_report_linkages": ["employee.total_penalty", "planned_vs_dispensed.project_gap"],
+                "data_sources": ["canonical_worklogs", "canonical_issues", "assignee_hours_capacity.db:epics_management", "/api/executive-dashboard/settings"],
+                "leadership_interpretation": "Higher values indicate tighter planning realism against actual execution effort.",
+            },
+            {
+                "id": "executive.cycle_time",
+                "label": "Cycle Time",
+                "report": "executive_dashboard",
+                "ui_targets": ["#metric-cycle-time", "#blocked-cycle-table"],
+                "definition": "Average epic-level duration from the first development subtask worklog to the last production subtask worklog for resolved phase chains.",
+                "formula": "Average(max(production subtask worklog timestamp) - min(development subtask worklog timestamp))",
+                "ingredients": ["epic planner phase links", "story resolved status", "subtask worklog timestamps"],
+                "business_validations": ["Only epics with a complete resolved phase chain from Development through Production are included.", "Blocked epics are shown separately and excluded from the KPI."],
+                "field_linkages": ["Blocked Cycle Time Exclusions"],
+                "cross_report_linkages": ["phase_rmi.weekly_load", "dashboard.delivery_health"],
+                "data_sources": ["canonical_worklogs", "canonical_issues", "assignee_hours_capacity.db:epics_management", "assignee_hours_capacity.db:epics_management_plan_columns"],
+                "leadership_interpretation": "Shows actual delivery flow time for fully completed epics and highlights phase-chain blockers separately.",
+            },
         ],
         "planned_vs_dispensed": [
             {
@@ -19162,6 +19412,373 @@ def _compute_nested_actual_hours(
             pass
 
 
+def _is_resolved_status_text(value: object) -> bool:
+    text = _to_text(value).strip().lower().rstrip("!").strip()
+    return text in {"resolved", "done", "closed"}
+
+
+def _parse_iso_datetime_flexible(value: object) -> datetime | None:
+    text = _to_text(value).strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        dt = datetime.fromisoformat(text)
+    except ValueError:
+        try:
+            dt = datetime.strptime(text, "%Y-%m-%dT%H:%M:%S.%f%z")
+        except ValueError:
+            try:
+                dt = datetime.strptime(text, "%Y-%m-%dT%H:%M:%S%z")
+            except ValueError:
+                return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _executive_dashboard_story_key_from_plan_url(value: object) -> str:
+    text = _to_text(value).strip()
+    if not text:
+        return ""
+    match = re.search(r"/browse/([A-Z][A-Z0-9_]*-[A-Z0-9_]+)(?:[/?#]|$)", text, re.IGNORECASE)
+    if match:
+        return _to_text(match.group(1)).upper()
+    matches = re.findall(r"\b([A-Z][A-Z0-9_]*-[A-Z0-9_]+)\b", text, re.IGNORECASE)
+    if matches:
+        return _to_text(matches[-1]).upper()
+    return ""
+
+
+def _executive_dashboard_plan_hours(plan: object) -> float:
+    if isinstance(plan, dict):
+        man_days = plan.get("man_days")
+        try:
+            if man_days not in ("", None):
+                return round(float(man_days) * 8.0, 2)
+        except (TypeError, ValueError):
+            return 0.0
+    return 0.0
+
+
+def _executive_dashboard_phase_chain(settings_db_path: Path) -> list[dict[str, object]]:
+    columns = _load_epics_plan_columns(settings_db_path, include_inactive=False)
+    by_key = {_to_text(item.get("key")): item for item in columns}
+    ordered_keys = [_to_text(item.get("key")) for item in columns if _to_text(item.get("key"))]
+    if "development_plan" not in ordered_keys or "production_plan" not in ordered_keys:
+        ordered_keys = ["development_plan", "sqa_plan", "user_manual_plan", "production_plan"]
+    try:
+        start_idx = ordered_keys.index("development_plan")
+        end_idx = ordered_keys.index("production_plan")
+    except ValueError:
+        start_idx, end_idx = 0, len(ordered_keys) - 1
+    if end_idx < start_idx:
+        start_idx, end_idx = end_idx, start_idx
+    chain: list[dict[str, object]] = []
+    for key in ordered_keys[start_idx:end_idx + 1]:
+        item = dict(by_key.get(key) or {"key": key, "label": key.replace("_", " ").title()})
+        if not item.get("label"):
+            item["label"] = key.replace("_", " ").title()
+        chain.append(item)
+    return chain
+
+
+def _executive_dashboard_latest_sealed_snapshot(settings_db_path: Path, epic_key: str, to_date: date) -> dict | None:
+    for approved_at_utc in _load_epics_management_sealed_dates_for_epic(settings_db_path, epic_key):
+        approved_day = _parse_iso_date(_to_text(approved_at_utc)[:10])
+        if approved_day is None or approved_day > to_date:
+            continue
+        snapshot = _load_epics_management_snapshot_for_epic_date(settings_db_path, epic_key, approved_at_utc)
+        if isinstance(snapshot, dict):
+            return snapshot
+    return None
+
+
+def _executive_dashboard_project_name_map(settings_db_path: Path) -> dict[str, str]:
+    out: dict[str, str] = {}
+    try:
+        for row in list_managed_projects(settings_db_path, include_inactive=True):
+            key = _to_text(row.get("project_key")).upper()
+            if key:
+                out[key] = _to_text(row.get("display_name")) or key
+    except Exception:
+        return out
+    return out
+
+
+def _executive_dashboard_summary(
+    settings_db_path: Path,
+    from_date: date,
+    to_date: date,
+    selected_projects: set[str] | None = None,
+) -> dict[str, object]:
+    canonical_run_id = _canonical_last_success_run_id(settings_db_path)
+    if not canonical_run_id:
+        raise _CanonicalMissingError("No successful canonical refresh found. Run the canonical refresh first.")
+
+    project_scope = {_to_text(item).upper() for item in (selected_projects or set()) if _to_text(item)}
+    with sqlite3.connect(settings_db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        issue_rows = [
+            dict(row) for row in conn.execute(
+                """
+                SELECT issue_key, project_key, issue_type, summary, status, assignee,
+                       start_date, due_date, original_estimate_hours, parent_issue_key,
+                       story_key, epic_key
+                FROM canonical_issues
+                WHERE run_id = ?
+                """,
+                (canonical_run_id,),
+            ).fetchall()
+        ]
+        worklog_rows = [
+            dict(row) for row in conn.execute(
+                """
+                SELECT issue_key, started_utc, started_date, hours_logged
+                FROM canonical_worklogs
+                WHERE run_id = ?
+                ORDER BY started_utc ASC, issue_key ASC
+                """,
+                (canonical_run_id,),
+            ).fetchall()
+        ]
+
+    managed_names = _executive_dashboard_project_name_map(settings_db_path)
+    issues_by_key: dict[str, dict[str, object]] = {}
+    stories_by_key: dict[str, dict[str, object]] = {}
+    subtasks_by_story_key: dict[str, list[dict[str, object]]] = defaultdict(list)
+    worklogs_by_issue: dict[str, list[dict[str, object]]] = defaultdict(list)
+
+    for row in issue_rows:
+        issue_key = _to_text(row.get("issue_key")).upper()
+        project_key = _to_text(row.get("project_key")).upper()
+        if not issue_key or project_key == "RLT":
+            continue
+        if project_scope and project_key not in project_scope:
+            continue
+        normalized = {
+            **row,
+            "issue_key": issue_key,
+            "project_key": project_key,
+            "project_name": managed_names.get(project_key, project_key),
+            "issue_type": _to_text(row.get("issue_type")),
+            "summary": _to_text(row.get("summary")) or issue_key,
+            "status": _to_text(row.get("status")),
+            "assignee": _to_text(row.get("assignee")) or "Unassigned",
+            "start_date": _to_text(row.get("start_date")),
+            "due_date": _to_text(row.get("due_date")),
+            "parent_issue_key": _to_text(row.get("parent_issue_key")).upper(),
+            "story_key": _to_text(row.get("story_key")).upper(),
+            "epic_key": _to_text(row.get("epic_key")).upper(),
+            "original_estimate_hours": round(float(row.get("original_estimate_hours") or 0.0), 2),
+        }
+        issues_by_key[issue_key] = normalized
+        if _canonical_is_subtask_type(normalized["issue_type"]):
+            story_key = normalized["story_key"] or normalized["parent_issue_key"]
+            if story_key:
+                subtasks_by_story_key[story_key].append(normalized)
+        elif "story" in normalized["issue_type"].lower() or (
+            "task" in normalized["issue_type"].lower() and not _canonical_is_epic_type(normalized["issue_type"])
+        ):
+            stories_by_key[issue_key] = normalized
+
+    for row in worklog_rows:
+        issue_key = _to_text(row.get("issue_key")).upper()
+        if issue_key not in issues_by_key:
+            continue
+        worklogs_by_issue[issue_key].append(
+            {
+                "started_utc": _to_text(row.get("started_utc")),
+                "started_date": _to_text(row.get("started_date")),
+                "hours_logged": round(float(row.get("hours_logged") or 0.0), 2),
+            }
+        )
+
+    committed_subtasks: list[dict[str, object]] = []
+    for issue in issues_by_key.values():
+        if not _canonical_is_scoped_subtask_issue_type(issue.get("issue_type")):
+            continue
+        start_day = _parse_iso_date(_to_text(issue.get("start_date")))
+        due_day = _parse_iso_date(_to_text(issue.get("due_date")))
+        if not ((start_day and from_date <= start_day <= to_date) or (due_day and from_date <= due_day <= to_date)):
+            continue
+        issue_key = _to_text(issue.get("issue_key")).upper()
+        actual_hours = round(sum(float(item.get("hours_logged") or 0.0) for item in worklogs_by_issue.get(issue_key, [])), 2)
+        committed_subtasks.append(
+            {
+                **issue,
+                "actual_hours": actual_hours,
+                "worklogs": worklogs_by_issue.get(issue_key, []),
+            }
+        )
+
+    planner_rows = {
+        _to_text(item.get("epic_key")).upper(): item
+        for item in _load_epics_management_rows(settings_db_path)
+        if _to_text(item.get("epic_key"))
+    }
+    active_phase_chain = _executive_dashboard_phase_chain(settings_db_path)
+
+    total_committed_items = len(committed_subtasks)
+    completed_items = sum(1 for item in committed_subtasks if _is_resolved_status_text(item.get("status")))
+    available_projects = sorted({_to_text(item.get("project_key")).upper() for item in committed_subtasks if _to_text(item.get("project_key"))})
+
+    epic_actual_hours: dict[str, float] = defaultdict(float)
+    epic_names: dict[str, str] = {}
+    epic_project_keys: dict[str, str] = {}
+    for item in committed_subtasks:
+        epic_key = _to_text(item.get("epic_key")).upper()
+        if not epic_key:
+            continue
+        epic_actual_hours[epic_key] += float(item.get("actual_hours") or 0.0)
+        epic_names.setdefault(epic_key, _to_text(item.get("summary")) or epic_key)
+        epic_project_keys.setdefault(epic_key, _to_text(item.get("project_key")).upper())
+
+    settings = _load_executive_dashboard_settings(settings_db_path)
+    basis = _to_text(settings.get("estimation_basis"))
+    accuracy_abs_delta = 0.0
+    accuracy_baseline_total = 0.0
+    accuracy_excluded = 0
+    if basis == "subtask_planned_hours":
+        for item in committed_subtasks:
+            baseline = float(item.get("original_estimate_hours") or 0.0)
+            if baseline <= 0:
+                accuracy_excluded += 1
+                continue
+            actual = float(item.get("actual_hours") or 0.0)
+            accuracy_abs_delta += abs(actual - baseline)
+            accuracy_baseline_total += baseline
+    else:
+        for epic_key, actual in epic_actual_hours.items():
+            baseline = 0.0
+            if basis == "epic_planned_hours":
+                baseline = _executive_dashboard_plan_hours(((planner_rows.get(epic_key) or {}).get("plans") or {}).get("epic_plan"))
+            elif basis == "epic_sealed_hours":
+                snapshot = _executive_dashboard_latest_sealed_snapshot(settings_db_path, epic_key, to_date)
+                if isinstance(snapshot, dict):
+                    baseline = _executive_dashboard_plan_hours(((snapshot.get("plans") or {}).get("epic_plan")))
+            if baseline <= 0:
+                accuracy_excluded += 1
+                continue
+            accuracy_abs_delta += abs(actual - baseline)
+            accuracy_baseline_total += baseline
+
+    estimation_accuracy_pct = 0.0
+    if accuracy_baseline_total > 0:
+        estimation_accuracy_pct = round(max(0.0, 100.0 - (accuracy_abs_delta / accuracy_baseline_total * 100.0)), 2)
+
+    cycle_rows: list[dict[str, object]] = []
+    blocked_rows: list[dict[str, object]] = []
+    for epic_key in sorted(epic_actual_hours.keys()):
+        planner_row = planner_rows.get(epic_key) or {}
+        plans = planner_row.get("plans") if isinstance(planner_row.get("plans"), dict) else {}
+        phase_statuses: list[str] = []
+        blocked_phase_label = ""
+        blocked_reason = ""
+        phase_story_keys: list[tuple[str, str]] = []
+        for idx, phase in enumerate(active_phase_chain):
+            phase_key = _to_text(phase.get("key"))
+            phase_label = _to_text(phase.get("label")) or phase_key
+            plan = plans.get(phase_key) if isinstance(plans, dict) else {}
+            jira_url = _to_text((plan or {}).get("jira_url"))
+            story_key = _executive_dashboard_story_key_from_plan_url(jira_url)
+            story = stories_by_key.get(story_key) if story_key else None
+            story_status = _to_text((story or {}).get("status"))
+            phase_statuses.append(f"{phase_label}: {story_status or 'Missing'}")
+            if blocked_reason:
+                continue
+            if not story_key:
+                blocked_phase_label = phase_label
+                if idx == 0:
+                    blocked_reason = "missing development phase"
+                elif idx == len(active_phase_chain) - 1:
+                    blocked_reason = "missing production phase"
+                else:
+                    blocked_reason = "missing intermediate phase"
+                continue
+            phase_story_keys.append((phase_label, story_key))
+            if not story or not _is_resolved_status_text(story_status):
+                blocked_phase_label = phase_label
+                blocked_reason = "unresolved phase story"
+        if not blocked_reason and phase_story_keys:
+            dev_label, dev_story_key = phase_story_keys[0]
+            prod_label, prod_story_key = phase_story_keys[-1]
+            dev_datetimes = [
+                dt
+                for subtask in subtasks_by_story_key.get(dev_story_key, [])
+                for item in worklogs_by_issue.get(_to_text(subtask.get("issue_key")).upper(), [])
+                if (dt := _parse_iso_datetime_flexible(item.get("started_utc"))) is not None
+            ]
+            prod_datetimes = [
+                dt
+                for subtask in subtasks_by_story_key.get(prod_story_key, [])
+                for item in worklogs_by_issue.get(_to_text(subtask.get("issue_key")).upper(), [])
+                if (dt := _parse_iso_datetime_flexible(item.get("started_utc"))) is not None
+            ]
+            if not dev_datetimes:
+                blocked_phase_label = dev_label
+                blocked_reason = "missing development worklogs"
+            elif not prod_datetimes:
+                blocked_phase_label = prod_label
+                blocked_reason = "missing production worklogs"
+            else:
+                start_dt = min(dev_datetimes)
+                end_dt = max(prod_datetimes)
+                duration_hours = max(0.0, round((end_dt - start_dt).total_seconds() / 3600.0, 2))
+                cycle_rows.append(
+                    {
+                        "epic_key": epic_key,
+                        "epic_name": _to_text((planner_row or {}).get("epic_name")) or epic_names.get(epic_key) or epic_key,
+                        "project_key": epic_project_keys.get(epic_key, ""),
+                        "cycle_time_hours": duration_hours,
+                        "cycle_time_days": round(duration_hours / 24.0, 2),
+                        "start_utc": start_dt.isoformat().replace("+00:00", "Z"),
+                        "end_utc": end_dt.isoformat().replace("+00:00", "Z"),
+                    }
+                )
+        if blocked_reason:
+            blocked_rows.append(
+                {
+                    "epic_key": epic_key,
+                    "epic_name": _to_text((planner_row or {}).get("epic_name")) or epic_names.get(epic_key) or epic_key,
+                    "project_key": epic_project_keys.get(epic_key, ""),
+                    "blocking_phase": blocked_phase_label,
+                    "blocking_reason": blocked_reason,
+                    "current_phase_statuses": " | ".join(phase_statuses),
+                }
+            )
+
+    avg_cycle_hours = round(sum(float(item.get("cycle_time_hours") or 0.0) for item in cycle_rows) / len(cycle_rows), 2) if cycle_rows else 0.0
+    avg_cycle_days = round(avg_cycle_hours / 24.0, 2) if avg_cycle_hours else 0.0
+    blocked_rows.sort(key=lambda item: (_to_text(item.get("project_key")), _to_text(item.get("epic_key"))))
+
+    return {
+        "ok": True,
+        "settings": settings,
+        "filters": {
+            "from_date": from_date.isoformat(),
+            "to_date": to_date.isoformat(),
+            "projects": sorted(project_scope),
+            "available_projects": available_projects,
+            "canonical_run_id": canonical_run_id,
+        },
+        "delivery_insights": {
+            "total_committed_items": total_committed_items,
+            "completed_items": completed_items,
+            "estimation_accuracy_pct": estimation_accuracy_pct,
+            "estimation_accuracy_basis": basis,
+            "estimation_accuracy_excluded_count": accuracy_excluded,
+            "cycle_time_avg_hours": avg_cycle_hours,
+            "cycle_time_avg_days": avg_cycle_days,
+            "cycle_time_item_count": len(cycle_rows),
+            "cycle_time_blocked_count": len(blocked_rows),
+        },
+        "cycle_time_rows": cycle_rows,
+        "blocked_epics": blocked_rows,
+    }
+
+
 def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
     app = Flask(__name__)
     report_dir = resolve_report_html_dir(base_dir, folder_raw)
@@ -19171,6 +19788,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
     _init_performance_settings_db(capacity_paths["db_path"])
     _init_epf_refresh_db(capacity_paths["db_path"])
     _init_dashboard_risk_settings_db(capacity_paths["db_path"])
+    _init_executive_dashboard_settings_db(capacity_paths["db_path"])
     init_report_entities_db(capacity_paths["db_path"])
     init_manage_fields_db(capacity_paths["db_path"])
     init_managed_projects_db(capacity_paths["db_path"])
@@ -22139,7 +22757,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                         "canonical_run_id": canonical_run_id,
                     }
                 )
-            if report_id in {"planned_rmis", "gantt_chart", "phase_rmi_gantt", "planned_vs_dispensed", "planned_actual_table_view", "original_estimates_hierarchy"}:
+            if report_id in {"executive_dashboard", "planned_rmis", "gantt_chart", "phase_rmi_gantt", "planned_vs_dispensed", "planned_actual_table_view", "original_estimates_hierarchy"}:
                 canonical_run_id = _canonical_last_success_run_id(capacity_paths["db_path"])
                 if not canonical_run_id:
                     return jsonify(
@@ -22149,7 +22767,9 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                             "error": "No successful canonical refresh found. Run the canonical refresh first.",
                         }
                     ), 409
-                if report_id == "planned_vs_dispensed":
+                if report_id == "executive_dashboard":
+                    script_plan = []
+                elif report_id == "planned_vs_dispensed":
                     script_plan = ["generate_planned_vs_dispensed_report.py"]
                 elif report_id == "planned_actual_table_view":
                     script_plan = ["generate_planned_actual_table_view.py"]
@@ -25047,6 +25667,46 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
 
+    @app.route("/api/executive-dashboard/settings", methods=["GET"])
+    def get_executive_dashboard_settings():
+        try:
+            settings = _load_executive_dashboard_settings(capacity_paths["db_path"])
+            return jsonify({"settings": settings, "source": "db"})
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+
+    @app.route("/api/executive-dashboard/settings", methods=["POST"])
+    def save_executive_dashboard_settings():
+        try:
+            payload = request.get_json(silent=True) or {}
+            saved = _save_executive_dashboard_settings(capacity_paths["db_path"], payload)
+            return jsonify({"settings": saved, "source": "db"})
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+
+    @app.route("/api/executive-dashboard/summary", methods=["GET"])
+    def executive_dashboard_summary():
+        try:
+            from_iso, to_iso = _resolve_effective_range_from_request(request.args)
+            selected_projects = {
+                _to_text(item).upper()
+                for item in (_to_text(request.args.get("projects")).split(",") if _to_text(request.args.get("projects")) else [])
+                if _to_text(item)
+            }
+            payload = _executive_dashboard_summary(
+                settings_db_path=capacity_paths["db_path"],
+                from_date=_parse_iso_date(from_iso) or date.min,
+                to_date=_parse_iso_date(to_iso) or date.min,
+                selected_projects=selected_projects,
+            )
+            return jsonify(payload)
+        except _CanonicalMissingError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 409
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"ok": False, "error": f"Failed to build executive dashboard summary: {exc}"}), 500
+
     @app.route("/api/admin/sql-console/schema", methods=["GET"])
     def sql_console_schema():
         try:
@@ -26260,6 +26920,10 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
     @app.route(PERFORMANCE_SETTINGS_ROUTE, methods=["GET"])
     def performance_settings():
         return _performance_settings_html()
+
+    @app.route(EXECUTIVE_DASHBOARD_SETTINGS_ROUTE, methods=["GET"])
+    def executive_dashboard_settings():
+        return _executive_dashboard_settings_html()
 
     @app.route(DASHBOARD_RISK_SETTINGS_ROUTE, methods=["GET"])
     def dashboard_risk_settings():
