@@ -6,12 +6,12 @@
 - Reporting Window: `2026-02-01` to `2026-04-30`
 
 ## Executive Summary
-- Planned Taken (hours): `622.50`
+- Planned Taken (hours): `646.50`
 - Unplanned Taken (hours): `169.00`
 - Planned Not Yet Taken (hours): `8.00`
 - Planned Not Yet Taken (No Entry count): `9`
 - Defective subtasks listed: `25`
-- Clubbed leave subtasks: `12`
+- Clubbed leave subtasks: `13`
 
 ## Assignee-wise Summary
 | Assignee | Planned Taken (h) | Unplanned Taken (h) | Planned Not Yet Taken (h) | No Entry Count | Unknown Count |
@@ -21,7 +21,7 @@
 | awais akhter | 0.00 | 0.00 | 0.00 | 0 | 2 |
 | Faiza Nasir | 0.00 | 8.00 | 0.00 | 0 | 0 |
 | Hamza Ali | 0.00 | 8.00 | 0.00 | 0 | 0 |
-| Hassan Malik | 40.00 | 30.50 | 0.00 | 0 | 1 |
+| Hassan Malik | 64.00 | 30.50 | 0.00 | 0 | 1 |
 | Hassan Saeed Wattoo | 0.00 | 0.00 | 0.00 | 1 | 0 |
 | Maria Sharafat | 512.00 | 0.00 | 0.00 | 1 | 0 |
 | Muhammad Abbas | 8.00 | 8.00 | 0.00 | 7 | 0 |

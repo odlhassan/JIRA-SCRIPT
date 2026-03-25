@@ -15,6 +15,8 @@ def _build_app(root: Path):
     (root / "report_html").mkdir(parents=True, exist_ok=True)
     (root / "report_html" / "dashboard.html").write_text("<html><body>ok</body></html>", encoding="utf-8")
     (root / "executive_dashboard.html").write_text("<html><body>Executive</body><script src=\"/shared-nav.js\"></script></html>", encoding="utf-8")
+    delayed_epic_html = Path(__file__).resolve().parents[1] / "delayed_epic_chain_gantt_report.html"
+    (root / "delayed_epic_chain_gantt_report.html").write_text(delayed_epic_html.read_text(encoding="utf-8"), encoding="utf-8")
     (root / "report_html" / "shared-nav.js").write_text("console.log('nav');", encoding="utf-8")
     (root / "report_html" / "shared-nav.css").write_text("body{}", encoding="utf-8")
     (root / "report_html" / "shared-date-filter.js").write_text("console.log('date-filter');", encoding="utf-8")

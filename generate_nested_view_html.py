@@ -20,8 +20,10 @@ from generate_assignee_hours_report import (
 
 EXPECTED_HEADERS = [
     "Aspect",
-    "Man-days",
-    "Man-hours",
+    "Approved Days",
+    "Approved Hours",
+    "Planned Days",
+    "Planned Hours",
     "Actual Hours",
     "Actual Days",
     "Planned Start Date",
@@ -376,8 +378,19 @@ def _assign_row_metadata(rows: list[dict], *, attach_links_from_workbook: bool, 
             current_project_key, current_project_name = _project_key_and_name_from_aspect(row_data["aspect"])
         row_data["project_key"] = current_project_key
         row_data["project_name"] = current_project_name
-        row_data["delta_hours"] = _subtract_numbers_or_blank(row_data["man_hours"], row_data["actual_hours"])
-        row_data["delta_days"] = _subtract_numbers_or_blank(row_data["man_days"], row_data["actual_days"])
+        approved_hours = row_data.get("approved_hours", row_data.get("man_hours", ""))
+        approved_days = row_data.get("approved_days", row_data.get("man_days", ""))
+        planned_hours = row_data.get("planned_hours", approved_hours)
+        planned_days = row_data.get("planned_days", approved_days)
+        row_data["approved_hours"] = approved_hours
+        row_data["approved_days"] = approved_days
+        row_data["planned_hours"] = planned_hours
+        row_data["planned_days"] = planned_days
+        # Keep legacy aliases so existing scorecards and formulas continue to work.
+        row_data["man_hours"] = approved_hours
+        row_data["man_days"] = approved_days
+        row_data["delta_hours"] = _subtract_numbers_or_blank(approved_hours, row_data["actual_hours"])
+        row_data["delta_days"] = _subtract_numbers_or_blank(approved_days, row_data["actual_days"])
 
         if row_data["row_type"] == "story":
             parent = row_by_id.get(parent_id) if parent_id else None
@@ -621,6 +634,10 @@ def _load_nested_rows_from_canonical_db(db_path: Path, exports_db_path: Path | N
             "assignee": _to_text(row["assignee"]) or "Unassigned",
             "planned_start": _to_text(row["start_date"]),
             "planned_end": _to_text(row["due_date"]),
+            "approved_hours": round(float(row["original_estimate_hours"] or 0), 2),
+            "approved_days": _hours_to_days(row["original_estimate_hours"] or 0),
+            "planned_hours": round(float(row["original_estimate_hours"] or 0), 2) if kind == "subtask" else 0.0,
+            "planned_days": _hours_to_days(row["original_estimate_hours"] or 0) if kind == "subtask" else 0.0,
             "man_hours": round(float(row["original_estimate_hours"] or 0), 2),
             "man_days": _hours_to_days(row["original_estimate_hours"] or 0),
             "actual_hours": round(float(row["total_hours_logged"] or 0), 2),
@@ -698,22 +715,28 @@ def _load_nested_rows_from_canonical_db(db_path: Path, exports_db_path: Path | N
         planned_start = _to_text(story.get("planned_start")) or fallback_start
         planned_end = _to_text(story.get("planned_end")) or fallback_end
         story_metrics[story["key"]] = {
-            "man_days": round(float(story.get("man_days") or 0), 2),
-            "man_hours": round(float(story.get("man_hours") or 0), 2),
+            "approved_days": round(float(story.get("approved_days") or 0), 2),
+            "approved_hours": round(float(story.get("approved_hours") or 0), 2),
+            "planned_days": round(sum(float(item.get("planned_days") or 0) for item in related_subtasks), 2),
+            "planned_hours": round(sum(float(item.get("planned_hours") or 0) for item in related_subtasks), 2),
             "actual_hours": round(float(story.get("actual_hours") or 0), 2),
             "planned_start": planned_start,
             "planned_end": planned_end,
         }
 
     def _aggregate_metrics(items: list[dict[str, object]]) -> dict[str, object]:
-        man_days = round(sum(float(item.get("man_days", 0) or 0) for item in items), 2)
-        man_hours = round(sum(float(item.get("man_hours", 0) or 0) for item in items), 2)
+        approved_days = round(sum(float(item.get("approved_days", 0) or 0) for item in items), 2)
+        approved_hours = round(sum(float(item.get("approved_hours", 0) or 0) for item in items), 2)
+        planned_days = round(sum(float(item.get("planned_days", 0) or 0) for item in items), 2)
+        planned_hours = round(sum(float(item.get("planned_hours", 0) or 0) for item in items), 2)
         actual_hours = round(sum(float(item.get("actual_hours", 0) or 0) for item in items), 2)
         planned_start, _ = _merge_date_bounds([_to_text(item.get("planned_start")) for item in items])
         _, planned_end = _merge_date_bounds([_to_text(item.get("planned_end")) for item in items])
         return {
-            "man_days": man_days,
-            "man_hours": man_hours,
+            "approved_days": approved_days,
+            "approved_hours": approved_hours,
+            "planned_days": planned_days,
+            "planned_hours": planned_hours,
             "actual_hours": actual_hours,
             "planned_start": planned_start,
             "planned_end": planned_end,
@@ -738,6 +761,10 @@ def _load_nested_rows_from_canonical_db(db_path: Path, exports_db_path: Path | N
                         "summary": "No RMI",
                         "project_key": project_key,
                         "product_category": product_label,
+                        "approved_hours": 0.0,
+                        "approved_days": 0.0,
+                        "planned_hours": 0.0,
+                        "planned_days": 0.0,
                         "man_hours": 0.0,
                         "man_days": 0.0,
                         "actual_hours": 0.0,
@@ -754,8 +781,10 @@ def _load_nested_rows_from_canonical_db(db_path: Path, exports_db_path: Path | N
                 fallback_start, _ = _merge_date_bounds([_to_text(metric.get("planned_start")) for metric in related_story_metrics])
                 _, fallback_end = _merge_date_bounds([_to_text(metric.get("planned_end")) for metric in related_story_metrics])
                 epic_metrics[_to_text(epic.get("key"))] = {
-                    "man_days": round(float(epic.get("man_days") or 0), 2),
-                    "man_hours": round(float(epic.get("man_hours") or 0), 2),
+                    "approved_days": round(float(epic.get("approved_days") or 0), 2),
+                    "approved_hours": round(float(epic.get("approved_hours") or 0), 2),
+                    "planned_days": round(sum(float(metric.get("planned_days") or 0) for metric in related_story_metrics), 2),
+                    "planned_hours": round(sum(float(metric.get("planned_hours") or 0) for metric in related_story_metrics), 2),
                     "actual_hours": round(float(epic.get("actual_hours") or 0), 2),
                     "planned_start": _to_text(epic.get("planned_start")) or fallback_start,
                     "planned_end": _to_text(epic.get("planned_end")) or fallback_end,
@@ -779,8 +808,12 @@ def _load_nested_rows_from_canonical_db(db_path: Path, exports_db_path: Path | N
             {
                 "level": 1,
                 "aspect": f"{project_key} - {project_name}",
-                "man_days": project_metric["man_days"],
-                "man_hours": project_metric["man_hours"],
+                "approved_days": project_metric["approved_days"],
+                "approved_hours": project_metric["approved_hours"],
+                "planned_days": project_metric["planned_days"],
+                "planned_hours": project_metric["planned_hours"],
+                "man_days": project_metric["approved_days"],
+                "man_hours": project_metric["approved_hours"],
                 "actual_hours": project_metric["actual_hours"],
                 "actual_days": _hours_to_days(project_metric["actual_hours"]),
                 "planned_start": _to_text(project_metric["planned_start"]),
@@ -792,8 +825,12 @@ def _load_nested_rows_from_canonical_db(db_path: Path, exports_db_path: Path | N
                 {
                     "level": 2,
                     "aspect": _to_text(block["label"]),
-                    "man_days": block["metric"]["man_days"],
-                    "man_hours": block["metric"]["man_hours"],
+                    "approved_days": block["metric"]["approved_days"],
+                    "approved_hours": block["metric"]["approved_hours"],
+                    "planned_days": block["metric"]["planned_days"],
+                    "planned_hours": block["metric"]["planned_hours"],
+                    "man_days": block["metric"]["approved_days"],
+                    "man_hours": block["metric"]["approved_hours"],
                     "actual_hours": block["metric"]["actual_hours"],
                     "actual_days": _hours_to_days(block["metric"]["actual_hours"]),
                     "planned_start": _to_text(block["metric"]["planned_start"]),
@@ -807,8 +844,12 @@ def _load_nested_rows_from_canonical_db(db_path: Path, exports_db_path: Path | N
                     {
                         "level": 3,
                         "aspect": _to_text(epic.get("summary")),
-                        "man_days": metrics.get("man_days", 0.0),
-                        "man_hours": metrics.get("man_hours", 0.0),
+                        "approved_days": metrics.get("approved_days", 0.0),
+                        "approved_hours": metrics.get("approved_hours", 0.0),
+                        "planned_days": metrics.get("planned_days", 0.0),
+                        "planned_hours": metrics.get("planned_hours", 0.0),
+                        "man_days": metrics.get("approved_days", 0.0),
+                        "man_hours": metrics.get("approved_hours", 0.0),
                         "actual_hours": metrics.get("actual_hours", 0.0),
                         "actual_days": _hours_to_days(metrics.get("actual_hours", 0.0)),
                         "planned_start": _to_text(metrics.get("planned_start")),
@@ -830,8 +871,12 @@ def _load_nested_rows_from_canonical_db(db_path: Path, exports_db_path: Path | N
                         {
                             "level": 4,
                             "aspect": _to_text(story.get("summary")),
-                            "man_days": story_metric.get("man_days", round(float(story.get("man_days") or 0), 2)),
-                            "man_hours": story_metric.get("man_hours", round(float(story.get("man_hours") or 0), 2)),
+                            "approved_days": story_metric.get("approved_days", round(float(story.get("approved_days") or 0), 2)),
+                            "approved_hours": story_metric.get("approved_hours", round(float(story.get("approved_hours") or 0), 2)),
+                            "planned_days": story_metric.get("planned_days", 0.0),
+                            "planned_hours": story_metric.get("planned_hours", 0.0),
+                            "man_days": story_metric.get("approved_days", round(float(story.get("approved_days") or 0), 2)),
+                            "man_hours": story_metric.get("approved_hours", round(float(story.get("approved_hours") or 0), 2)),
                             "actual_hours": story_metric.get("actual_hours", round(float(story.get("actual_hours") or 0), 2)),
                             "actual_days": _hours_to_days(story_metric.get("actual_hours", story.get("actual_hours", 0))),
                             "planned_start": _to_text(story_metric.get("planned_start")) or _to_text(story.get("planned_start")),
@@ -851,8 +896,12 @@ def _load_nested_rows_from_canonical_db(db_path: Path, exports_db_path: Path | N
                             {
                                 "level": 5,
                                 "aspect": _to_text(subtask.get("summary")),
-                                "man_days": round(float(subtask.get("man_days") or 0), 2),
-                                "man_hours": round(float(subtask.get("man_hours") or 0), 2),
+                                "approved_days": round(float(subtask.get("approved_days") or 0), 2),
+                                "approved_hours": round(float(subtask.get("approved_hours") or 0), 2),
+                                "planned_days": round(float(subtask.get("planned_days") or 0), 2),
+                                "planned_hours": round(float(subtask.get("planned_hours") or 0), 2),
+                                "man_days": round(float(subtask.get("approved_days") or 0), 2),
+                                "man_hours": round(float(subtask.get("approved_hours") or 0), 2),
                                 "actual_hours": round(float(subtask.get("actual_hours") or 0), 2),
                                 "actual_days": _hours_to_days(subtask.get("actual_hours", 0)),
                                 "planned_start": _to_text(subtask.get("planned_start")),
@@ -866,8 +915,12 @@ def _load_nested_rows_from_canonical_db(db_path: Path, exports_db_path: Path | N
                             {
                                 "level": 6,
                                 "aspect": assignee_text,
-                                "man_days": round(float(subtask.get("man_days") or 0), 2),
-                                "man_hours": round(float(subtask.get("man_hours") or 0), 2),
+                                "approved_days": round(float(subtask.get("approved_days") or 0), 2),
+                                "approved_hours": round(float(subtask.get("approved_hours") or 0), 2),
+                                "planned_days": round(float(subtask.get("planned_days") or 0), 2),
+                                "planned_hours": round(float(subtask.get("planned_hours") or 0), 2),
+                                "man_days": round(float(subtask.get("approved_days") or 0), 2),
+                                "man_hours": round(float(subtask.get("approved_hours") or 0), 2),
                                 "actual_hours": round(float(subtask.get("actual_hours") or 0), 2),
                                 "actual_days": _hours_to_days(subtask.get("actual_hours", 0)),
                                 "planned_start": _to_text(subtask.get("planned_start")),
@@ -909,9 +962,19 @@ def _load_nested_rows(input_path: Path) -> list[dict]:
         raise ValueError("Nested view workbook has no header row.")
 
     found_headers = [_to_text(cell) for cell in header]
-    expected = [h.lower() for h in EXPECTED_HEADERS]
-    got = [h.lower() for h in found_headers[: len(EXPECTED_HEADERS)]]
-    if got != expected:
+    normalized_headers = [h.lower() for h in found_headers]
+    has_new_headers = normalized_headers[: len(EXPECTED_HEADERS)] == [h.lower() for h in EXPECTED_HEADERS]
+    old_headers = [
+        "aspect",
+        "man-days",
+        "man-hours",
+        "actual hours",
+        "actual days",
+        "planned start date",
+        "planned end date",
+    ]
+    has_old_headers = normalized_headers[: len(old_headers)] == old_headers
+    if not has_new_headers and not has_old_headers:
         wb.close()
         raise ValueError(
             "Nested view workbook headers do not match expected layout. "
@@ -931,15 +994,38 @@ def _load_nested_rows(input_path: Path) -> list[dict]:
             level = max(1, (leading_spaces // 2) + 1)
         aspect = _to_text(raw_aspect.lstrip(" "))
 
+        if has_new_headers:
+            approved_days = _to_number_or_blank(row[1] if len(row) > 1 else "")
+            approved_hours = _to_number_or_blank(row[2] if len(row) > 2 else "")
+            planned_days = _to_number_or_blank(row[3] if len(row) > 3 else "")
+            planned_hours = _to_number_or_blank(row[4] if len(row) > 4 else "")
+            actual_hours = _to_number_or_blank(row[5] if len(row) > 5 else "")
+            actual_days = _to_number_or_blank(row[6] if len(row) > 6 else "")
+            planned_start = _to_text(row[7] if len(row) > 7 else "")
+            planned_end = _to_text(row[8] if len(row) > 8 else "")
+        else:
+            approved_days = _to_number_or_blank(row[1] if len(row) > 1 else "")
+            approved_hours = _to_number_or_blank(row[2] if len(row) > 2 else "")
+            planned_days = approved_days
+            planned_hours = approved_hours
+            actual_hours = _to_number_or_blank(row[3] if len(row) > 3 else "")
+            actual_days = _to_number_or_blank(row[4] if len(row) > 4 else "")
+            planned_start = _to_text(row[5] if len(row) > 5 else "")
+            planned_end = _to_text(row[6] if len(row) > 6 else "")
+
         row_data = {
             "level": level,
             "aspect": aspect,
-            "man_days": _to_number_or_blank(row[1] if len(row) > 1 else ""),
-            "man_hours": _to_number_or_blank(row[2] if len(row) > 2 else ""),
-            "actual_hours": _to_number_or_blank(row[3] if len(row) > 3 else ""),
-            "actual_days": _to_number_or_blank(row[4] if len(row) > 4 else ""),
-            "planned_start": _to_text(row[5] if len(row) > 5 else ""),
-            "planned_end": _to_text(row[6] if len(row) > 6 else ""),
+            "approved_days": approved_days,
+            "approved_hours": approved_hours,
+            "planned_days": planned_days,
+            "planned_hours": planned_hours,
+            "man_days": approved_days,
+            "man_hours": approved_hours,
+            "actual_hours": actual_hours,
+            "actual_days": actual_days,
+            "planned_start": planned_start,
+            "planned_end": planned_end,
         }
         rows.append(row_data)
 
@@ -2483,7 +2569,11 @@ def _build_html(data: dict) -> str:
     thead th:nth-child(8),
     tbody td:nth-child(8),
     thead th:nth-child(9),
-    tbody td:nth-child(9) {{
+    tbody td:nth-child(9),
+    thead th:nth-child(10),
+    tbody td:nth-child(10),
+    thead th:nth-child(11),
+    tbody td:nth-child(11) {{
       width: var(--metric-col-width);
       min-width: var(--metric-col-width);
       white-space: nowrap;
@@ -3212,7 +3302,7 @@ def _build_html(data: dict) -> str:
       <p class="section-note">Search, project scoping, hierarchy controls, and view preferences.</p>
       <div class="toolbar">
         <div class="search-wrap">
-          <input class="search-input" type="text" id="search-input" placeholder="Search any column (aspect, man-days, man-hours, actual hours, actual days, delta hours, delta days, resource logged, planned dates)">
+          <input class="search-input" type="text" id="search-input" placeholder="Search any column (aspect, approved days, approved hours, planned days, planned hours, actual hours, actual days, delta hours, delta days, resource logged, planned dates)">
           <span class="search-meta" id="search-meta"></span>
         </div>
         <div class="project-filter" id="project-filter">
@@ -3556,19 +3646,21 @@ Total Leaves Taken = 0h</span>
       </div>
       <table>
         <caption class="section-note" style="caption-side:top;text-align:left;padding:8px 10px;">
-          Hierarchical work breakdown with planned vs actual effort and schedule context.
+          Hierarchical work breakdown with approved, planned, and actual effort plus schedule context.
         </caption>
         <thead>
           <tr>
             <th class="col-aspect" title="Hierarchy node label (project/category/epic/story/subtask).">Aspect<span class="col-resizer" id="aspect-col-resizer" role="separator" aria-orientation="vertical" aria-label="Resize Aspect column"></span></th>
             <th class="col-type" title="Work item type with semantic color coding.">Type</th>
             <th class="col-assignee" title="Assignee name where available at this level.">Assignee</th>
-            <th class="num" title="Planned effort in days.">Man-days</th>
+            <th class="num" title="Approved effort in days.">Approved Days</th>
+            <th class="num" title="Rolled-up subtask original estimates in days.">Planned Days</th>
             <th class="num" title="Actual logged effort converted to days.">Actual Days</th>
-            <th class="num" title="Planned days minus actual days.">Delta Days</th>
-            <th class="num" title="Planned effort in hours.">Man-hours</th>
+            <th class="num" title="Approved days minus actual days.">Delta Days</th>
+            <th class="num" title="Approved effort in hours.">Approved Hours</th>
+            <th class="num" title="Rolled-up subtask original estimates in hours.">Planned Hours</th>
             <th class="num" title="Actual logged effort in hours.">Actual Hours</th>
-            <th class="num" title="Planned hours minus actual hours.">Delta Hours</th>
+            <th class="num" title="Approved hours minus actual hours.">Delta Hours</th>
             <th class="col-resource" title="Distinct contributors who logged hours.">Resource Logged</th>
             <th class="col-date" title="Planned start date from source.">Planned Start Date</th>
             <th class="col-date" title="Planned end date from source.">Planned End Date</th>
@@ -3684,7 +3776,7 @@ Total Leaves Taken = 0h</span>
     const capacityProfileDetailsEl = document.getElementById("capacity-profile-details");
     const capacityProfileExpandedEl = document.getElementById("capacity-profile-expanded");
     const DATE_FILTER_WORK_TYPES = new Set(["rmi"]);
-    const WORK_ROW_TYPES = new Set(["subtask", "story"]);
+    const LEAF_WORK_ROW_TYPES = new Set(["subtask"]);
     const ACTUAL_HOURS_MODE_STORAGE_KEY = "actual-hours-mode:nested-view";
     const PLANNED_HOURS_SOURCE_STORAGE_KEY = "planned-hours-source:nested-view";
     const DEFAULT_ACTUAL_HOURS_MODE = "log_date";
@@ -6228,7 +6320,9 @@ Total Leaves Taken = 0h</span>
       }}
     }}
 
-    function initializeProjectFilter() {{
+    function refreshProjectFilterOptions(options) {{
+      const config = options && typeof options === "object" ? options : {{}};
+      const preserveSelection = config.preserveSelection !== false;
       const byKey = new Map();
       for (const row of allRows) {{
         const rowType = String(row && row.row_type || "");
@@ -6252,13 +6346,35 @@ Total Leaves Taken = 0h</span>
         }});
       }}
       allProjects.sort((left, right) => left.label.localeCompare(right.label));
+      const nextSelectedKeys = new Set();
+      if (preserveSelection && selectedProjectKeys.size) {{
+        for (const key of selectedProjectKeys) {{
+          if (allProjects.some((project) => project.key === key)) {{
+            nextSelectedKeys.add(key);
+          }}
+        }}
+      }}
+      if (!nextSelectedKeys.size) {{
+        for (const project of allProjects) {{
+          nextSelectedKeys.add(project.key);
+        }}
+      }} else {{
+        for (const project of allProjects) {{
+          if (!selectedProjectKeys.has(project.key)) {{
+            nextSelectedKeys.add(project.key);
+          }}
+        }}
+      }}
       selectedProjectKeys.clear();
-      for (const project of allProjects) {{
-        selectedProjectKeys.add(project.key);
+      for (const key of nextSelectedKeys) {{
+        selectedProjectKeys.add(key);
       }}
       renderProjectFilterOptions();
       updateProjectFilterSummary();
+    }}
 
+    function initializeProjectFilter() {{
+      refreshProjectFilterOptions({{ preserveSelection: false }});
       if (projectFilterToggle) {{
         projectFilterToggle.addEventListener("click", () => {{
           toggleProjectFilterMenu();
@@ -6830,17 +6946,14 @@ Total Leaves Taken = 0h</span>
           .filter(Boolean);
       }}
 
-      function hasWorkChildren(row) {{
+      function hasLeafWorkChildren(row) {{
         const childRows = getChildRows(row && row.id);
-        return childRows.some((child) => WORK_ROW_TYPES.has(String(child && child.row_type || "")));
+        return childRows.some((child) => LEAF_WORK_ROW_TYPES.has(String(child && child.row_type || "")));
       }}
 
       for (const row of allRows) {{
         const rowType = String(row && row.row_type || "");
-        if (!WORK_ROW_TYPES.has(rowType)) {{
-          continue;
-        }}
-        if (hasWorkChildren(row)) {{
+        if (!LEAF_WORK_ROW_TYPES.has(rowType)) {{
           continue;
         }}
         const jiraKey = resolveRowIssueKey(row);
@@ -6864,9 +6977,6 @@ Total Leaves Taken = 0h</span>
       for (const rowType of ["story", "rmi", "product", "project"]) {{
         for (const row of allRows) {{
           if (row.row_type !== rowType) {{
-            continue;
-          }}
-          if (!hasWorkChildren(row)) {{
             continue;
           }}
           const rolledHours = sumWorkHoursDescendants(row.id);
@@ -7115,7 +7225,7 @@ Total Leaves Taken = 0h</span>
         }}
         childrenByParent.get(row.parent_id).push(row.id);
       }}
-      function sumEpicHours(parentId) {{
+      function sumApprovedEpicHours(parentId) {{
         const childIds = childrenByParent.get(parentId) || [];
         let total = 0;
         for (const childId of childIds) {{
@@ -7126,21 +7236,46 @@ Total Leaves Taken = 0h</span>
           if (child.row_type === "rmi") {{
             total += toFiniteNumber(child.man_hours, 0);
           }}
-          total += sumEpicHours(childId);
+          total += sumApprovedEpicHours(childId);
+        }}
+        return total;
+      }}
+      function sumPlannedLeafHours(parentId) {{
+        const childIds = childrenByParent.get(parentId) || [];
+        let total = 0;
+        for (const childId of childIds) {{
+          const child = byId.get(childId);
+          if (!child) {{
+            continue;
+          }}
+          if (child.row_type === "subtask") {{
+            total += toFiniteNumber(child.planned_hours, 0);
+            continue;
+          }}
+          total += sumPlannedLeafHours(childId);
         }}
         return total;
       }}
       for (const row of rows) {{
-        if (row.row_type !== "project" && row.row_type !== "product") {{
+        if (row.row_type === "project" || row.row_type === "product") {{
+          const epicHours = roundHours(sumApprovedEpicHours(row.id));
+          row.man_hours = epicHours;
+          row.man_days = toHoursToDays(epicHours);
+          row.approved_hours = epicHours;
+          row.approved_days = toHoursToDays(epicHours);
+        }}
+        if (row.row_type !== "story" && row.row_type !== "rmi" && row.row_type !== "product" && row.row_type !== "project") {{
           continue;
         }}
-        const epicHours = roundHours(sumEpicHours(row.id));
-        row.man_hours = epicHours;
-        row.man_days = toHoursToDays(epicHours);
+        const plannedHours = roundHours(sumPlannedLeafHours(row.id));
+        row.planned_hours = plannedHours;
+        row.planned_days = toHoursToDays(plannedHours);
         const actualHours = Number(row.actual_hours);
         const hasActual = Number.isFinite(actualHours);
-        row.delta_hours = hasActual ? roundHours(epicHours - actualHours) : "";
-        row.delta_days = hasActual ? roundHours(row.man_days - row.actual_days) : "";
+        const approvedHours = Number(row.approved_hours);
+        const approvedDays = Number(row.approved_days);
+        row.delta_hours = hasActual && Number.isFinite(approvedHours) ? roundHours(approvedHours - actualHours) : "";
+        row.delta_days = hasActual && Number.isFinite(approvedDays) ? roundHours(approvedDays - row.actual_days) : "";
       }}
     }}
 
@@ -7527,7 +7662,7 @@ Total Leaves Taken = 0h</span>
             : "");
       const noEntryText = ((row.row_type === "rmi" || row.row_type === "story" || row.row_type === "subtask")
         && (isZeroMetric(row.man_days) || isZeroMetric(row.man_hours) || isZeroMetric(row.actual_hours)))
-        ? "no entry missing metrics zero man days man hours actual hours"
+        ? "no entry missing metrics zero approved days approved hours actual hours"
         : "";
       return [
         row.aspect || "",
@@ -7537,8 +7672,10 @@ Total Leaves Taken = 0h</span>
         row.assignee_name || "",
         row.jira_key || "",
         row.jira_url || "",
-        row.man_days === "" ? "" : String(row.man_days),
-        row.man_hours === "" ? "" : String(row.man_hours),
+        row.approved_days === "" ? "" : String(row.approved_days),
+        row.approved_hours === "" ? "" : String(row.approved_hours),
+        row.planned_days === "" ? "" : String(row.planned_days),
+        row.planned_hours === "" ? "" : String(row.planned_hours),
         row.actual_hours === "" ? "" : String(row.actual_hours),
         row.actual_days === "" ? "" : String(row.actual_days),
         row.delta_hours === "" ? "" : String(row.delta_hours),
@@ -7810,9 +7947,13 @@ Total Leaves Taken = 0h</span>
         const tdAssignee = document.createElement("td");
         tdAssignee.textContent = row.assignee_name || "";
 
-        const tdDays = document.createElement("td");
-        tdDays.className = "num";
-        tdDays.innerHTML = toMetricHtml(row.man_days);
+        const tdApprovedDays = document.createElement("td");
+        tdApprovedDays.className = "num";
+        tdApprovedDays.innerHTML = toMetricHtml(row.approved_days);
+
+        const tdPlannedDays = document.createElement("td");
+        tdPlannedDays.className = "num";
+        tdPlannedDays.innerHTML = toMetricHtml(row.planned_days);
 
         const tdActualDays = document.createElement("td");
         tdActualDays.className = "num";
@@ -7822,9 +7963,13 @@ Total Leaves Taken = 0h</span>
         tdDeltaDays.className = "num";
         tdDeltaDays.innerHTML = toDeltaHtml(row.delta_days);
 
-        const tdHours = document.createElement("td");
-        tdHours.className = "num";
-        tdHours.innerHTML = toMetricHtml(row.man_hours);
+        const tdApprovedHours = document.createElement("td");
+        tdApprovedHours.className = "num";
+        tdApprovedHours.innerHTML = toMetricHtml(row.approved_hours);
+
+        const tdPlannedHours = document.createElement("td");
+        tdPlannedHours.className = "num";
+        tdPlannedHours.innerHTML = toMetricHtml(row.planned_hours);
 
         const tdActual = document.createElement("td");
         tdActual.className = "num";
@@ -7849,10 +7994,12 @@ Total Leaves Taken = 0h</span>
         tr.appendChild(tdAspect);
         tr.appendChild(tdType);
         tr.appendChild(tdAssignee);
-        tr.appendChild(tdDays);
+        tr.appendChild(tdApprovedDays);
+        tr.appendChild(tdPlannedDays);
         tr.appendChild(tdActualDays);
         tr.appendChild(tdDeltaDays);
-        tr.appendChild(tdHours);
+        tr.appendChild(tdApprovedHours);
+        tr.appendChild(tdPlannedHours);
         tr.appendChild(tdActual);
         tr.appendChild(tdDeltaHours);
         tr.appendChild(tdResourceLogged);
@@ -7941,6 +8088,7 @@ Total Leaves Taken = 0h</span>
             reportData.generated_at = data.generated_at || reportData.generated_at;
             reportData.source_file = data.source_file || reportData.source_file;
             allRows = data.rows;
+            refreshProjectFilterOptions({{ preserveSelection: true }});
             if (document.getElementById("generated-at")) {{
               document.getElementById("generated-at").textContent = reportData.generated_at || "-";
             }}

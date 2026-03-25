@@ -63,8 +63,10 @@ PROJECT_NAME_BY_KEY = {
 
 HEADERS = [
     "Aspect",
-    "Man-days",
-    "Man-hours",
+    "Approved Days",
+    "Approved Hours",
+    "Planned Days",
+    "Planned Hours",
     "Actual Hours",
     "Actual Days",
     "Planned Start Date",
@@ -85,6 +87,8 @@ class IssueNode:
     story_key: str
     man_hours: float
     man_days: float
+    planned_hours: float
+    planned_days: float
     actual_hours: float
     planned_start: str
     planned_end: str
@@ -513,6 +517,8 @@ def _build_nodes(
             story_key="",
             man_hours=item["man_hours"],
             man_days=item["man_days"],
+            planned_hours=0.0,
+            planned_days=0.0,
             actual_hours=item["actual_hours"],
             planned_start=item["planned_start"],
             planned_end=item["planned_end"],
@@ -539,6 +545,8 @@ def _build_nodes(
             story_key=key,
             man_hours=item["man_hours"],
             man_days=item["man_days"],
+            planned_hours=0.0,
+            planned_days=0.0,
             actual_hours=item["actual_hours"],
             planned_start=item["planned_start"],
             planned_end=item["planned_end"],
@@ -574,6 +582,8 @@ def _build_nodes(
             story_key=parent_story_key,
             man_hours=item["man_hours"],
             man_days=item["man_days"],
+            planned_hours=item["man_hours"],
+            planned_days=item["man_days"],
             actual_hours=round(actual_hours, 2),
             planned_start=planned_start,
             planned_end=planned_end,
@@ -595,8 +605,10 @@ def _append_row(
     ws,
     outline_level: int,
     aspect: str,
-    man_days: float | str,
-    man_hours: float | str,
+    approved_days: float | str,
+    approved_hours: float | str,
+    planned_days: float | str,
+    planned_hours: float | str,
     actual_hours: float | str,
     actual_days: float | str,
     planned_start: str,
@@ -605,8 +617,10 @@ def _append_row(
     ws.append(
         [
             aspect,
-            _as_metric(man_days),
-            _as_metric(man_hours),
+            _as_metric(approved_days),
+            _as_metric(approved_hours),
+            _as_metric(planned_days),
+            _as_metric(planned_hours),
             _as_metric(actual_hours),
             _as_metric(actual_days),
             planned_start,
@@ -650,6 +664,8 @@ def _merge_date_bounds(values: list[str]) -> tuple[str, str]:
 def _aggregate_metrics(items: list[dict[str, object]]) -> dict[str, object]:
     man_days = round(sum(float(item.get("man_days", 0.0) or 0.0) for item in items), 2)
     man_hours = round(sum(float(item.get("man_hours", 0.0) or 0.0) for item in items), 2)
+    planned_days = round(sum(float(item.get("planned_days", 0.0) or 0.0) for item in items), 2)
+    planned_hours = round(sum(float(item.get("planned_hours", 0.0) or 0.0) for item in items), 2)
     actual_hours = round(sum(float(item.get("actual_hours", 0.0) or 0.0) for item in items), 2)
 
     starts = [_text_or_default(item.get("planned_start")) for item in items]
@@ -660,6 +676,8 @@ def _aggregate_metrics(items: list[dict[str, object]]) -> dict[str, object]:
     return {
         "man_days": man_days,
         "man_hours": man_hours,
+        "planned_days": planned_days,
+        "planned_hours": planned_hours,
         "actual_hours": actual_hours,
         "planned_start": planned_start,
         "planned_end": planned_end,
@@ -689,8 +707,10 @@ def _write_nested_view(
     ws.column_dimensions["C"].width = 12
     ws.column_dimensions["D"].width = 12
     ws.column_dimensions["E"].width = 12
-    ws.column_dimensions["F"].width = 20
-    ws.column_dimensions["G"].width = 20
+    ws.column_dimensions["F"].width = 12
+    ws.column_dimensions["G"].width = 12
+    ws.column_dimensions["H"].width = 20
+    ws.column_dimensions["I"].width = 20
 
     stories_by_epic: dict[str, list[IssueNode]] = {}
     for story in stories.values():
@@ -726,6 +746,8 @@ def _write_nested_view(
         story_metrics[story.key] = {
             "man_days": story.man_days,
             "man_hours": story.man_hours,
+            "planned_days": round(sum(float(subtask.planned_days or 0.0) for subtask in related_subtasks), 2),
+            "planned_hours": round(sum(float(subtask.planned_hours or 0.0) for subtask in related_subtasks), 2),
             "actual_hours": story.actual_hours,
             "planned_start": planned_start,
             "planned_end": planned_end,
@@ -763,6 +785,8 @@ def _write_nested_view(
                     story_key="",
                     man_hours=0.0,
                     man_days=0.0,
+                    planned_hours=0.0,
+                    planned_days=0.0,
                     actual_hours=0.0,
                     planned_start="",
                     planned_end="",
@@ -782,6 +806,8 @@ def _write_nested_view(
                 epic_display_metrics[epic.key] = {
                     "man_days": epic.man_days,
                     "man_hours": epic.man_hours,
+                    "planned_days": round(sum(float(metric.get("planned_days", 0.0) or 0.0) for metric in related_story_metrics), 2),
+                    "planned_hours": round(sum(float(metric.get("planned_hours", 0.0) or 0.0) for metric in related_story_metrics), 2),
                     "actual_hours": epic.actual_hours,
                     "planned_start": epic.planned_start or fallback_start,
                     "planned_end": epic.planned_end or fallback_end,
@@ -802,8 +828,10 @@ def _write_nested_view(
             ws,
             outline_level=1,
             aspect=f"{project_key} - {project_name}",
-            man_days=project_metric["man_days"],
-            man_hours=project_metric["man_hours"],
+            approved_days=project_metric["man_days"],
+            approved_hours=project_metric["man_hours"],
+            planned_days=project_metric["planned_days"],
+            planned_hours=project_metric["planned_hours"],
             actual_hours=project_metric["actual_hours"],
             actual_days=_hours_to_days(project_metric["actual_hours"]),
             planned_start=str(project_metric["planned_start"] or ""),
@@ -816,8 +844,10 @@ def _write_nested_view(
                 ws,
                 outline_level=2,
                 aspect=str(block["label"]),
-                man_days=block["metric"]["man_days"],
-                man_hours=block["metric"]["man_hours"],
+                approved_days=block["metric"]["man_days"],
+                approved_hours=block["metric"]["man_hours"],
+                planned_days=block["metric"]["planned_days"],
+                planned_hours=block["metric"]["planned_hours"],
                 actual_hours=block["metric"]["actual_hours"],
                 actual_days=_hours_to_days(block["metric"]["actual_hours"]),
                 planned_start=str(block["metric"]["planned_start"] or ""),
@@ -831,8 +861,10 @@ def _write_nested_view(
                     ws,
                     outline_level=3,
                     aspect=epic.summary,
-                    man_days=metrics.get("man_days", 0.0),
-                    man_hours=metrics.get("man_hours", 0.0),
+                    approved_days=metrics.get("man_days", 0.0),
+                    approved_hours=metrics.get("man_hours", 0.0),
+                    planned_days=metrics.get("planned_days", 0.0),
+                    planned_hours=metrics.get("planned_hours", 0.0),
                     actual_hours=metrics.get("actual_hours", 0.0),
                     actual_days=_hours_to_days(metrics.get("actual_hours", 0.0)),
                     planned_start=str(metrics.get("planned_start", "") or ""),
@@ -851,6 +883,8 @@ def _write_nested_view(
                         {
                             "man_days": story.man_days,
                             "man_hours": story.man_hours,
+                            "planned_days": story.planned_days,
+                            "planned_hours": story.planned_hours,
                             "actual_hours": story.actual_hours,
                             "planned_start": story.planned_start,
                             "planned_end": story.planned_end,
@@ -860,8 +894,10 @@ def _write_nested_view(
                         ws,
                         outline_level=4,
                         aspect=story.summary,
-                        man_days=story_metric["man_days"],
-                        man_hours=story_metric["man_hours"],
+                        approved_days=story_metric["man_days"],
+                        approved_hours=story_metric["man_hours"],
+                        planned_days=story_metric["planned_days"],
+                        planned_hours=story_metric["planned_hours"],
                         actual_hours=story_metric["actual_hours"],
                         actual_days=_hours_to_days(story_metric["actual_hours"]),
                         planned_start=str(story_metric["planned_start"] or ""),
@@ -876,8 +912,10 @@ def _write_nested_view(
                             ws,
                             outline_level=5,
                             aspect=subtask.summary,
-                            man_days=subtask.man_days,
-                            man_hours=subtask.man_hours,
+                            approved_days=subtask.man_days,
+                            approved_hours=subtask.man_hours,
+                            planned_days=subtask.planned_days,
+                            planned_hours=subtask.planned_hours,
                             actual_hours=subtask.actual_hours,
                             actual_days=_hours_to_days(subtask.actual_hours),
                             planned_start=subtask.planned_start,
@@ -889,8 +927,10 @@ def _write_nested_view(
                             ws,
                             outline_level=6,
                             aspect=subtask.assignee,
-                            man_days=subtask.man_days,
-                            man_hours=subtask.man_hours,
+                            approved_days=subtask.man_days,
+                            approved_hours=subtask.man_hours,
+                            planned_days=subtask.planned_days,
+                            planned_hours=subtask.planned_hours,
                             actual_hours=subtask.actual_hours,
                             actual_days=_hours_to_days(subtask.actual_hours),
                             planned_start=subtask.planned_start,
@@ -898,7 +938,7 @@ def _write_nested_view(
                         )
                         row_count += 1
 
-    ws.auto_filter.ref = f"A1:G{ws.max_row}"
+    ws.auto_filter.ref = f"A1:I{ws.max_row}"
     wb.save(output_path)
     return row_count
 

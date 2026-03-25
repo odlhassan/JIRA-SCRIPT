@@ -115,6 +115,10 @@ class ReportUiSmokeTests(unittest.TestCase):
             "Sum(Logged Hours in selected date range for subtasks with worklog dates in selected range)",
             html,
         )
+        self.assertIn("Approved Days", html)
+        self.assertIn("Approved Hours", html)
+        self.assertIn("Planned Days", html)
+        self.assertIn("Planned Hours", html)
 
     def test_nested_capacity_endpoints_present(self):
         payload = {
@@ -135,6 +139,37 @@ class ReportUiSmokeTests(unittest.TestCase):
         self.assertIn("refreshManagedFieldsFromApi", html)
         self.assertIn("evaluateManagedField", html)
         self.assertIn("leave_subtask_rows", html)
+
+    def test_nested_project_filter_refreshes_after_live_tree_reload(self):
+        payload = {
+            "generated_at": "2026-02-21 00:00 UTC",
+            "source_file": "nested view.xlsx",
+            "rows": [],
+            "capacity_profiles": [],
+            "leave_daily_rows": [],
+            "leave_subtask_rows": [],
+        }
+        html = build_nested_html(payload)
+        self.assertIn("function refreshProjectFilterOptions(options)", html)
+        self.assertIn("refreshProjectFilterOptions({ preserveSelection: false });", html)
+        self.assertIn("refreshProjectFilterOptions({ preserveSelection: true });", html)
+        self.assertIn('fetch("/api/nested-view/tree"', html)
+
+    def test_nested_view_actual_rollup_uses_subtask_leaves_only(self):
+        payload = {
+            "generated_at": "2026-02-21 00:00 UTC",
+            "source_file": "nested view.xlsx",
+            "rows": [],
+            "capacity_profiles": [],
+            "leave_daily_rows": [],
+            "leave_subtask_rows": [],
+        }
+        html = build_nested_html(payload)
+        self.assertIn('const LEAF_WORK_ROW_TYPES = new Set(["subtask"]);', html)
+        self.assertIn("function hasLeafWorkChildren(row)", html)
+        self.assertIn("function sumPlannedLeafHours(parentId)", html)
+        self.assertIn("row.planned_hours = plannedHours;", html)
+        self.assertNotIn('const WORK_ROW_TYPES = new Set(["subtask", "story"]);', html)
 
     def test_nested_date_filter_uses_active_selection_bounds(self):
         payload = {
@@ -1004,6 +1039,26 @@ class ReportUiSmokeTests(unittest.TestCase):
         self.assertIn("/api/planned-actual-table-view/export", html)
         self.assertIn("Fetch Queue", html)
         self.assertIn("Cancel and Rollback", html)
+
+    def test_delayed_epic_chain_gantt_page_controls_exist(self):
+        html_path = Path(__file__).resolve().parents[1] / "delayed_epic_chain_gantt_report.html"
+        self.assertTrue(html_path.exists())
+        html = html_path.read_text(encoding="utf-8")
+        self.assertIn('id="from-date"', html)
+        self.assertIn('id="to-date"', html)
+        self.assertIn('id="assignee-filter"', html)
+        self.assertIn('id="assignee-mode"', html)
+        self.assertIn('id="show-full-year"', html)
+        self.assertIn('id="week-width"', html)
+        self.assertIn('id="gantt-root"', html)
+        self.assertIn("/api/delayed-epic-chain-gantt/filter-options", html)
+        self.assertIn("/api/delayed-epic-chain-gantt/data", html)
+        self.assertIn("/api/delayed-epic-chain-gantt/ui-settings", html)
+        self.assertIn("/api/report-date-filter", html)
+        self.assertIn("range-box", html)
+        self.assertIn("week-cell", html)
+        self.assertIn("bar planned", html)
+        self.assertIn("bar actual", html)
 
     def test_executive_dashboard_page_controls_exist(self):
         html_path = Path(__file__).resolve().parents[1] / "executive_dashboard.html"

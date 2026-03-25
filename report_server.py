@@ -169,6 +169,15 @@ from planned_actual_table_view_service import (
     unpin_official_snapshot as pactv_unpin_official_snapshot,
     update_run_progress as pactv_update_run_progress,
 )
+from delayed_epic_chain_gantt_service import (
+    DEFAULT_ASSIGNEE_MODE as DELAYED_EPIC_DEFAULT_ASSIGNEE_MODE,
+    build_report_payload as delayed_epic_build_report_payload,
+    init_ui_settings_db as delayed_epic_init_ui_settings_db,
+    list_filter_options as delayed_epic_list_filter_options,
+    load_ui_settings as delayed_epic_load_ui_settings,
+    normalize_assignee_mode as delayed_epic_normalize_assignee_mode,
+    save_ui_settings as delayed_epic_save_ui_settings,
+)
 from jira_incremental_cache import (
     get_db_path as incremental_cache_db_path,
     init_db as incremental_cache_init_db,
@@ -203,6 +212,7 @@ REPORT_FILENAME_TO_ID: dict[str, str] = {
     "approved_vs_planned_hours_report.html": "planned_vs_dispensed",
     "planned_actual_table_view.html": "planned_actual_table_view",
     "original_estimates_hierarchy_report.html": "original_estimates_hierarchy",
+    "delayed_epic_chain_gantt_report.html": "delayed_epic_chain_gantt",
 }
 
 
@@ -268,6 +278,8 @@ REPORT_REFRESH_CHAINS: dict[str, list[str]] = {
     "planned_actual_table_view": [],
     # This report is API-driven and DB-backed.
     "original_estimates_hierarchy": [],
+    # This report is API-driven and DB-backed.
+    "delayed_epic_chain_gantt": [],
 }
 
 EPF_DEFAULT_RETENTION_RUNS = 5
@@ -316,7 +328,8 @@ STATIC_REPORT_NAV_ITEMS: list[dict[str, object]] = [
     {"page_key": CANONICAL_PVD_PAGE_KEY, "title": "Approved vs Planned Hours Report", "href": f"/{CANONICAL_PVD_HTML_FILE}", "icon": "analytics", "file": CANONICAL_PVD_HTML_FILE, "default_nav_order": 110, "page_type": "report"},
     {"page_key": "planned_actual_table_view", "title": "Planned vs Actual Table View", "href": "/planned_actual_table_view.html", "icon": "table_view", "file": "planned_actual_table_view.html", "default_nav_order": 120, "page_type": "report"},
     {"page_key": "original_estimates_hierarchy_report", "title": "Epic Estimate Report", "href": "/original_estimates_hierarchy_report.html", "icon": "schema", "file": "original_estimates_hierarchy_report.html", "default_nav_order": 130, "page_type": "report"},
-    {"page_key": "ipp_meeting_dashboard", "title": "IPP Meeting Dashboard", "href": "/ipp_meeting_dashboard.html", "icon": "groups", "file": "ipp_meeting_dashboard.html", "default_nav_order": 140, "page_type": "report"},
+    {"page_key": "delayed_epic_chain_gantt", "title": "Delayed Epic Chain Gantt", "href": "/delayed_epic_chain_gantt_report.html", "icon": "timeline", "file": "delayed_epic_chain_gantt_report.html", "default_nav_order": 140, "page_type": "report"},
+    {"page_key": "ipp_meeting_dashboard", "title": "IPP Meeting Dashboard", "href": "/ipp_meeting_dashboard.html", "icon": "groups", "file": "ipp_meeting_dashboard.html", "default_nav_order": 150, "page_type": "report"},
 ]
 
 STATIC_ADMIN_NAV_ITEMS: list[dict[str, object]] = [
@@ -4583,10 +4596,14 @@ def _canonical_compute_nested_actual_hours(
     return result
 
 
+def _canonical_is_nested_actual_leaf_issue_type(issue_type: object) -> bool:
+    """Nested view actuals roll up only from subtask and bug-subtask leaves."""
+    return _canonical_is_subtask_type(_to_text(issue_type))
+
+
 def _canonical_is_scoped_subtask_issue_type(issue_type: object) -> bool:
-    """True only for subtask issue types. Used for planned/actual hours; excludes Task and Bug (sub)task."""
-    value = _to_text(issue_type).lower()
-    return "sub-task" in value or "subtask" in value
+    """True only for subtask issue types used by scoped subtask APIs."""
+    return _canonical_is_nested_actual_leaf_issue_type(issue_type)
 
 
 def _canonical_compute_scoped_subtasks(
@@ -14204,6 +14221,9 @@ def _resolve_report_html_sources(base_dir: Path) -> dict[str, Path]:
         "original_estimates_hierarchy_report.html": _resolve_output_html_path(
             "JIRA_ORIGINAL_ESTIMATES_HIERARCHY_HTML_PATH", "original_estimates_hierarchy_report.html", base_dir
         ),
+        "delayed_epic_chain_gantt_report.html": _resolve_output_html_path(
+            "JIRA_DELAYED_EPIC_CHAIN_GANTT_HTML_PATH", "delayed_epic_chain_gantt_report.html", base_dir
+        ),
     }
 
 
@@ -21517,6 +21537,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
     _init_global_report_date_filter_db(capacity_paths["db_path"])
     _init_pvd_ui_settings_db(capacity_paths["db_path"])
     _init_original_estimates_db(capacity_paths["db_path"])
+    delayed_epic_init_ui_settings_db(capacity_paths["db_path"])
     _migrate_report_page_renames(capacity_paths["db_path"])
 
     @app.after_request
@@ -21530,6 +21551,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             or req_path.startswith(f"{CANONICAL_PVD_API_PREFIX}/")
             or req_path.startswith("/api/planned-actual-table-view/")
             or req_path.startswith("/api/original-estimates/")
+            or req_path.startswith("/api/delayed-epic-chain-gantt/")
             or req_path.endswith(".html")
             or req_path.endswith(".js")
             or req_path.endswith(".css")
@@ -23596,6 +23618,54 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 source_page=_to_text(payload.get("source_page")),
             )
             return jsonify({"ok": True, "filter": saved})
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+
+    @app.route("/api/delayed-epic-chain-gantt/filter-options", methods=["GET"])
+    def delayed_epic_chain_gantt_filter_options():
+        try:
+            latest = _load_latest_global_report_date_filter(capacity_paths["db_path"])
+            settings = delayed_epic_load_ui_settings(capacity_paths["db_path"])
+            filter_options = delayed_epic_list_filter_options(capacity_paths["db_path"])
+            return jsonify(
+                {
+                    "ok": True,
+                    "filter_options": filter_options,
+                    "global_date_filter": latest,
+                    "ui_settings": settings,
+                }
+            )
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 409
+
+    @app.route("/api/delayed-epic-chain-gantt/data", methods=["GET"])
+    def delayed_epic_chain_gantt_data():
+        try:
+            from_date, to_date = _resolve_effective_range_from_request(request.args, allow_global_fallback=True)
+            assignee_mode = delayed_epic_normalize_assignee_mode(request.args.get("assignee_mode"))
+            payload = delayed_epic_build_report_payload(
+                capacity_paths["db_path"],
+                from_date,
+                to_date,
+                assignee=_to_text(request.args.get("assignee")),
+                assignee_mode=assignee_mode,
+            )
+            return jsonify({"ok": True, **payload})
+        except ValueError as exc:
+            message = str(exc)
+            status_code = 409 if "No successful canonical refresh found" in message else 400
+            return jsonify({"ok": False, "error": message}), status_code
+
+    @app.route("/api/delayed-epic-chain-gantt/ui-settings", methods=["GET"])
+    def delayed_epic_chain_gantt_get_ui_settings():
+        return jsonify({"ok": True, "settings": delayed_epic_load_ui_settings(capacity_paths["db_path"])})
+
+    @app.route("/api/delayed-epic-chain-gantt/ui-settings", methods=["POST"])
+    def delayed_epic_chain_gantt_save_ui_settings():
+        payload = request.get_json(silent=True) or {}
+        try:
+            settings = delayed_epic_save_ui_settings(capacity_paths["db_path"], payload if isinstance(payload, dict) else {})
+            return jsonify({"ok": True, "settings": settings})
         except ValueError as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400
 

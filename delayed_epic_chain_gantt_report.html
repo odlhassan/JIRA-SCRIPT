@@ -1,0 +1,775 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Delayed Epic Chain Gantt</title>
+  <link rel="stylesheet" href="shared-nav.css">
+  <style>
+    :root {
+      --bg: #edf2f7;
+      --panel: #ffffff;
+      --line: #d7dee8;
+      --text: #18212b;
+      --muted: #5c6977;
+      --title: #17324d;
+      --accent: #215f8b;
+      --planned: #7fa7cc;
+      --actual: #0f7a5c;
+      --range: #d45b32;
+      --blocked: #d97706;
+      --leave: #8b5cf6;
+      --late: #475569;
+      --todo: #7c3aed;
+      --done: #0f766e;
+      --progress: #b45309;
+      --left-cols: 520px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      background:
+        radial-gradient(1000px 340px at 10% -10%, #d8e8f4 0%, transparent 60%),
+        linear-gradient(180deg, #f7fafc, var(--bg));
+      color: var(--text);
+    }
+    .page {
+      width: 100%;
+      padding: 18px;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      box-shadow: 0 14px 38px rgba(15, 23, 42, 0.06);
+      padding: 16px 18px;
+      margin-bottom: 14px;
+    }
+    .title-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: start;
+      flex-wrap: wrap;
+    }
+    h1 {
+      margin: 0 0 6px;
+      font-size: 1.55rem;
+      color: var(--title);
+    }
+    .meta {
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+    .controls {
+      margin-top: 14px;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+      align-items: end;
+    }
+    .control {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    .control label {
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: #324559;
+    }
+    .control input,
+    .control select {
+      min-height: 40px;
+      border: 1px solid #c0ccd8;
+      border-radius: 10px;
+      padding: 8px 11px;
+      font-size: 0.94rem;
+      background: #fff;
+      color: #142230;
+    }
+    .control input:focus,
+    .control select:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(33, 95, 139, 0.14);
+    }
+    .toggle-wrap {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 40px;
+      padding: 0 10px;
+      border: 1px solid #c0ccd8;
+      border-radius: 10px;
+      background: #fff;
+    }
+    .btn-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+    }
+    .btn {
+      min-height: 40px;
+      border-radius: 10px;
+      border: 1px solid #1c5f8d;
+      padding: 9px 14px;
+      background: #1c5f8d;
+      color: #fff;
+      cursor: pointer;
+      font-weight: 700;
+    }
+    .btn.alt {
+      background: #fff;
+      color: #1c5f8d;
+    }
+    .legend {
+      margin-top: 12px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .legend-pill,
+    .metric-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 5px 10px;
+      background: #f8fbfe;
+      font-size: 0.8rem;
+      color: #334155;
+    }
+    .legend-line {
+      width: 22px;
+      height: 8px;
+      border-radius: 999px;
+      display: inline-block;
+    }
+    .legend-line.planned { background: var(--planned); }
+    .legend-line.actual { background: var(--actual); }
+    .legend-line.range { border: 2px dotted var(--range); background: transparent; }
+    .status {
+      margin-top: 8px;
+      min-height: 22px;
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+    .gantt-shell {
+      overflow: auto;
+      border-radius: 14px;
+      border: 1px solid var(--line);
+      background: #fff;
+    }
+    .gantt-grid {
+      min-width: calc(var(--left-cols) + 1000px);
+    }
+    .grid-head,
+    .grid-row {
+      display: grid;
+      grid-template-columns: var(--left-cols) auto;
+    }
+    .head-left,
+    .row-left {
+      position: sticky;
+      left: 0;
+      z-index: 4;
+      background: #fff;
+      border-right: 1px solid var(--line);
+    }
+    .head-left {
+      padding: 12px 14px;
+      font-weight: 700;
+      color: #24415b;
+      background: linear-gradient(180deg, #f9fbfd, #f1f6fa);
+      border-bottom: 1px solid var(--line);
+    }
+    .row-left {
+      padding: 10px 14px;
+      border-bottom: 1px solid #ebf0f5;
+    }
+    .row-title {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 6px;
+    }
+    .row-title strong {
+      font-size: 0.96rem;
+      color: #142230;
+    }
+    .subline {
+      color: var(--muted);
+      font-size: 0.82rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      border-radius: 999px;
+      padding: 3px 8px;
+      font-size: 0.75rem;
+      font-weight: 700;
+    }
+    .badge.blocked { background: #fff4e5; color: #b45309; }
+    .badge.leave { background: #f3e8ff; color: #7c3aed; }
+    .badge.late { background: #e2e8f0; color: #334155; }
+    .badge.status { background: #ecfeff; color: #155e75; }
+    .timeline-wrap {
+      position: relative;
+      background: #fff;
+      border-bottom: 1px solid #ebf0f5;
+    }
+    .timeline-header {
+      position: sticky;
+      top: 0;
+      z-index: 3;
+      background: linear-gradient(180deg, #f9fbfd, #f1f6fa);
+      border-bottom: 1px solid var(--line);
+    }
+    .month-row {
+      position: relative;
+      height: 34px;
+      border-bottom: 1px solid var(--line);
+    }
+    .month-label {
+      position: absolute;
+      top: 7px;
+      transform: translateX(-50%);
+      font-size: 0.78rem;
+      color: #405264;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .week-row {
+      position: relative;
+      height: 34px;
+    }
+    .week-cell {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      border-right: 1px solid #ebf0f5;
+      font-size: 0.73rem;
+      color: #64748b;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(248, 250, 252, 0.7);
+    }
+    .month-border {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 2px;
+      background: #94a3b8;
+      opacity: 0.8;
+    }
+    .timeline-row {
+      position: relative;
+      height: 72px;
+      background:
+        linear-gradient(180deg, rgba(247, 250, 252, 0.35), rgba(247, 250, 252, 0.35)) 0 0 / 100% 100% no-repeat;
+    }
+    .week-grid-line {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 1px;
+      background: #edf2f7;
+    }
+    .range-box {
+      position: absolute;
+      top: 8px;
+      bottom: 8px;
+      border: 2px dotted var(--range);
+      border-radius: 12px;
+      background: rgba(212, 91, 50, 0.04);
+      z-index: 1;
+      pointer-events: none;
+    }
+    .bar {
+      position: absolute;
+      border-radius: 999px;
+      min-width: 8px;
+      z-index: 2;
+    }
+    .bar.planned {
+      top: 16px;
+      height: 12px;
+      background: linear-gradient(90deg, #99b8d6, var(--planned));
+    }
+    .bar.actual {
+      top: 38px;
+      height: 14px;
+      background: linear-gradient(90deg, #20a47f, var(--actual));
+      box-shadow: 0 8px 16px rgba(15, 122, 92, 0.18);
+    }
+    .status-icon {
+      position: absolute;
+      top: 31px;
+      transform: translateX(-50%);
+      z-index: 3;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: #fff;
+      border: 2px solid currentColor;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 8px 18px rgba(15, 23, 42, 0.12);
+    }
+    .status-icon.done { color: var(--done); }
+    .status-icon.progress { color: var(--progress); }
+    .status-icon.todo { color: var(--todo); }
+    .material-symbols-outlined {
+      font-size: 18px;
+      line-height: 1;
+    }
+    .empty {
+      padding: 30px 16px;
+      color: var(--muted);
+      text-align: center;
+    }
+    @media (max-width: 900px) {
+      :root { --left-cols: 360px; }
+      .page { padding: 10px; }
+      .controls { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <section class="panel">
+      <div class="title-row">
+        <div>
+          <h1>Delayed Epic Chain Gantt</h1>
+          <div class="meta">Approved epic plan dates vs actual execution dates, with predecessor-delay and leave-overlap attribution.</div>
+        </div>
+        <div class="meta" id="meta-summary">Loading...</div>
+      </div>
+      <div class="controls">
+        <div class="control">
+          <label for="from-date">Date Range From</label>
+          <input id="from-date" type="date">
+        </div>
+        <div class="control">
+          <label for="to-date">Date Range To</label>
+          <input id="to-date" type="date">
+        </div>
+        <div class="control">
+          <label for="assignee-filter">Filter by Assignee</label>
+          <select id="assignee-filter">
+            <option value="">All Assignees</option>
+          </select>
+        </div>
+        <div class="control">
+          <label for="assignee-mode">Assignee Of</label>
+          <select id="assignee-mode"></select>
+        </div>
+        <div class="control">
+          <label for="show-full-year">Calendar Scope</label>
+          <div class="toggle-wrap">
+            <input id="show-full-year" type="checkbox">
+            <span>Show full year</span>
+          </div>
+        </div>
+        <div class="control">
+          <label for="week-width">Week Bucket Width (px)</label>
+          <input id="week-width" type="number" min="60" max="220" step="5" value="100">
+        </div>
+      </div>
+      <div class="btn-row" style="margin-top:12px;">
+        <button class="btn" id="apply-btn" type="button">Apply</button>
+        <button class="btn alt" id="reset-btn" type="button">Reset to Year</button>
+      </div>
+      <div class="legend">
+        <span class="legend-pill"><span class="legend-line planned"></span>Planned approved dates</span>
+        <span class="legend-pill"><span class="legend-line actual"></span>Actual execution</span>
+        <span class="legend-pill"><span class="legend-line range"></span>Selected date range</span>
+      </div>
+      <div class="status" id="status-text"></div>
+    </section>
+    <section class="panel gantt-shell">
+      <div id="gantt-root" class="gantt-grid"></div>
+    </section>
+  </div>
+
+  <script>
+    const filterOptionsApi = "/api/delayed-epic-chain-gantt/filter-options";
+    const reportApi = "/api/delayed-epic-chain-gantt/data";
+    const uiSettingsApi = "/api/delayed-epic-chain-gantt/ui-settings";
+    const dateFilterApi = "/api/report-date-filter";
+
+    const els = {
+      from: document.getElementById("from-date"),
+      to: document.getElementById("to-date"),
+      assignee: document.getElementById("assignee-filter"),
+      mode: document.getElementById("assignee-mode"),
+      showFullYear: document.getElementById("show-full-year"),
+      weekWidth: document.getElementById("week-width"),
+      apply: document.getElementById("apply-btn"),
+      reset: document.getElementById("reset-btn"),
+      root: document.getElementById("gantt-root"),
+      status: document.getElementById("status-text"),
+      meta: document.getElementById("meta-summary"),
+    };
+
+    function escapeHtml(value) {
+      return String(value ?? "").replace(/[&<>\"']/g, (ch) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;",
+      }[ch] || ch));
+    }
+
+    function isoDate(d) {
+      return d.toISOString().slice(0, 10);
+    }
+
+    function parseIsoDate(value) {
+      const raw = String(value || "").trim();
+      if (!raw) return null;
+      const d = new Date(raw + "T00:00:00");
+      return Number.isNaN(d.getTime()) ? null : d;
+    }
+
+    function formatDate(value) {
+      const d = parseIsoDate(value);
+      if (!d) return "-";
+      return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "2-digit" });
+    }
+
+    function defaultYearRange() {
+      const now = new Date();
+      const year = now.getFullYear();
+      return {
+        from: `${year}-01-01`,
+        to: `${year}-12-31`,
+      };
+    }
+
+    async function loadFilterOptions() {
+      const resp = await fetch(filterOptionsApi, { cache: "no-store" });
+      const body = await resp.json();
+      if (!resp.ok || !body.ok) {
+        throw new Error(body.error || "Failed to load filter options.");
+      }
+      return body;
+    }
+
+    async function saveUiSettings() {
+      await fetch(uiSettingsApi, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          show_full_year: !!els.showFullYear.checked,
+          week_bucket_width_px: Number(els.weekWidth.value || 100),
+        }),
+      });
+    }
+
+    async function saveGlobalRange() {
+      await fetch(dateFilterApi, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          from_date: els.from.value,
+          to_date: els.to.value,
+          source_page: "delayed_epic_chain_gantt",
+        }),
+      });
+    }
+
+    function buildQuery() {
+      const params = new URLSearchParams();
+      if (els.from.value) params.set("from", els.from.value);
+      if (els.to.value) params.set("to", els.to.value);
+      if (els.assignee.value) params.set("assignee", els.assignee.value);
+      params.set("assignee_mode", els.mode.value || "subtask_assignee");
+      return params.toString();
+    }
+
+    function mondayOnOrBefore(dateValue) {
+      const d = new Date(dateValue.getTime());
+      const day = d.getDay();
+      const offset = day === 0 ? -6 : 1 - day;
+      d.setDate(d.getDate() + offset);
+      return d;
+    }
+
+    function sundayOnOrAfter(dateValue) {
+      const d = new Date(dateValue.getTime());
+      const day = d.getDay();
+      const offset = day === 0 ? 0 : 7 - day;
+      d.setDate(d.getDate() + offset);
+      return d;
+    }
+
+    function timelineBounds(fromIso, toIso, showFullYear) {
+      const fromDate = parseIsoDate(fromIso);
+      const toDate = parseIsoDate(toIso);
+      if (!fromDate || !toDate) return null;
+      if (showFullYear) {
+        const year = fromDate.getFullYear();
+        return {
+          start: mondayOnOrBefore(new Date(`${year}-01-01T00:00:00`)),
+          end: sundayOnOrAfter(new Date(`${year}-12-31T00:00:00`)),
+        };
+      }
+      return {
+        start: mondayOnOrBefore(fromDate),
+        end: sundayOnOrAfter(toDate),
+      };
+    }
+
+    function addDays(dateValue, days) {
+      const next = new Date(dateValue.getTime());
+      next.setDate(next.getDate() + days);
+      return next;
+    }
+
+    function diffDays(a, b) {
+      return Math.round((b.getTime() - a.getTime()) / 86400000);
+    }
+
+    function buildWeeks(startDate, endDate, weekWidth) {
+      const weeks = [];
+      let cursor = new Date(startDate.getTime());
+      let index = 0;
+      while (cursor <= endDate) {
+        const weekEnd = addDays(cursor, 6);
+        weeks.push({
+          index,
+          left: index * weekWidth,
+          width: weekWidth,
+          start: isoDate(cursor),
+          end: isoDate(weekEnd),
+          label: cursor.toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+        });
+        cursor = addDays(cursor, 7);
+        index += 1;
+      }
+      return weeks;
+    }
+
+    function buildMonthMarkers(weeks) {
+      const markers = [];
+      let lastMonth = "";
+      for (const week of weeks) {
+        const start = parseIsoDate(week.start);
+        const monthKey = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, "0")}`;
+        if (monthKey !== lastMonth) {
+          markers.push({
+            left: week.left,
+            label: start.toLocaleDateString(undefined, { month: "short", year: "numeric" }),
+          });
+          lastMonth = monthKey;
+        }
+      }
+      return markers;
+    }
+
+    function dayOffsetPx(baseDate, targetIso, weekWidth) {
+      const target = parseIsoDate(targetIso);
+      if (!target) return null;
+      return diffDays(baseDate, target) * (weekWidth / 7);
+    }
+
+    function statusClass(icon) {
+      if (icon === "check_circle") return "done";
+      if (icon === "hourglass_top") return "progress";
+      return "todo";
+    }
+
+    function causeBadge(cause) {
+      if (!cause) return "";
+      let cls = "late";
+      if (cause === "Previous Epic Delayed") cls = "blocked";
+      else if (cause === "Leave Overlap") cls = "leave";
+      return `<span class="badge ${cls}">${escapeHtml(cause)}</span>`;
+    }
+
+    function render(payload) {
+      const selected = payload.selected || {};
+      const settings = {
+        showFullYear: !!els.showFullYear.checked,
+        weekWidth: Math.max(60, Number(els.weekWidth.value || 100)),
+      };
+      const bounds = timelineBounds(selected.from_date, selected.to_date, settings.showFullYear);
+      if (!bounds) {
+        els.root.innerHTML = '<div class="empty">Date range is required.</div>';
+        return;
+      }
+      const weeks = buildWeeks(bounds.start, bounds.end, settings.weekWidth);
+      const monthMarkers = buildMonthMarkers(weeks);
+      const widthPx = Math.max(weeks.length * settings.weekWidth, 900);
+      const rows = Array.isArray(payload.rows) ? payload.rows : [];
+      const rangeLeft = dayOffsetPx(bounds.start, selected.from_date, settings.weekWidth);
+      const rangeRight = dayOffsetPx(bounds.start, selected.to_date, settings.weekWidth);
+      const rangeWidth = rangeLeft == null || rangeRight == null ? 0 : Math.max(10, (rangeRight - rangeLeft) + (settings.weekWidth / 7));
+
+      els.meta.textContent = `Rows: ${rows.length} | Generated: ${payload.meta?.generated_at_utc || "-"} | Timeline year: ${payload.meta?.timeline_year || "-"}`;
+
+      if (!rows.length) {
+        els.root.innerHTML = '<div class="empty">No delayed predecessor or impacted epics matched the current filters.</div>';
+        return;
+      }
+
+      const weekCells = weeks.map((week) =>
+        `<div class="week-cell" style="left:${week.left}px;width:${week.width}px;">${escapeHtml(week.label)}</div>`
+      ).join("");
+      const monthBorders = monthMarkers.map((month) =>
+        `<div class="month-border" style="left:${month.left}px;"></div><div class="month-label" style="left:${month.left + 10}px;">${escapeHtml(month.label)}</div>`
+      ).join("");
+      const weekLines = weeks.map((week) =>
+        `<div class="week-grid-line" style="left:${week.left}px;"></div>`
+      ).join("");
+
+      const rowHtml = rows.map((row) => {
+        const plannedLeft = dayOffsetPx(bounds.start, row.planned_start, settings.weekWidth);
+        const plannedRight = dayOffsetPx(bounds.start, row.planned_due, settings.weekWidth);
+        const actualLeft = dayOffsetPx(bounds.start, row.actual_start, settings.weekWidth);
+        const actualRight = dayOffsetPx(bounds.start, row.actual_complete_date, settings.weekWidth);
+        const plannedWidth = plannedLeft == null || plannedRight == null ? 0 : Math.max(10, (plannedRight - plannedLeft) + (settings.weekWidth / 7));
+        const actualWidth = actualLeft == null || actualRight == null ? 0 : Math.max(10, (actualRight - actualLeft) + (settings.weekWidth / 7));
+        const matchedNames = Array.isArray(row.matched_assignee_names) ? row.matched_assignee_names.join(", ") : "";
+        const blockingText = row.blocking_epic_key
+          ? `Blocked by ${row.blocking_epic_key}`
+          : "No blocking epic";
+        const blockingHtml = row.blocking_epic_key
+          ? `<a href="${escapeHtml(row.blocking_epic_url || "#")}" target="_blank" rel="noreferrer" class="badge blocked" title="${escapeHtml(blockingText)}">${escapeHtml(row.blocking_epic_key)}</a>`
+          : "";
+        const actualBar = actualLeft == null || actualWidth <= 0
+          ? ""
+          : `<div class="bar actual" style="left:${actualLeft}px;width:${actualWidth}px;" title="Actual ${escapeHtml(formatDate(row.actual_start))} to ${escapeHtml(formatDate(row.actual_complete_date))}"></div>
+             <div class="status-icon ${statusClass(row.status_icon)}" style="left:${actualLeft + actualWidth}px;" title="${escapeHtml(row.status || "")}">
+               <span class="material-symbols-outlined">${escapeHtml(row.status_icon || "help")}</span>
+             </div>`;
+        return `
+          <div class="grid-row">
+            <div class="row-left">
+              <div class="row-title">
+                <strong>${escapeHtml(row.epic_key || "")}</strong>
+                <span>${escapeHtml(row.epic_name || "")}</span>
+                ${causeBadge(row.delay_cause)}
+                <span class="badge status">${escapeHtml(row.status || "-")}</span>
+              </div>
+              <div class="subline">
+                <span>${escapeHtml(row.project_key || "-")}</span>
+                <span>${escapeHtml(row.assignee_mode || "-")}</span>
+                <span>${escapeHtml(matchedNames || "Unassigned")}</span>
+              </div>
+              <div class="subline" style="margin-top:4px;">
+                <span>Plan: ${escapeHtml(formatDate(row.planned_start))} to ${escapeHtml(formatDate(row.planned_due))}</span>
+                <span>Actual: ${escapeHtml(formatDate(row.actual_start))} to ${escapeHtml(formatDate(row.actual_complete_date))}</span>
+                ${blockingHtml}
+              </div>
+            </div>
+            <div class="timeline-wrap">
+              <div class="timeline-row" style="width:${widthPx}px;">
+                ${weekLines}
+                <div class="range-box" style="left:${rangeLeft}px;width:${rangeWidth}px;"></div>
+                <div class="bar planned" style="left:${plannedLeft}px;width:${plannedWidth}px;" title="Planned ${escapeHtml(formatDate(row.planned_start))} to ${escapeHtml(formatDate(row.planned_due))}"></div>
+                ${actualBar}
+              </div>
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      els.root.innerHTML = `
+        <div class="grid-head">
+          <div class="head-left">Epic Delay Chain</div>
+          <div class="timeline-header" style="width:${widthPx}px;">
+            <div class="month-row">${monthBorders}</div>
+            <div class="week-row">${weekCells}</div>
+          </div>
+        </div>
+        ${rowHtml}
+      `;
+    }
+
+    async function loadReport() {
+      els.status.textContent = "Loading report...";
+      const resp = await fetch(`${reportApi}?${buildQuery()}`, { cache: "no-store" });
+      const body = await resp.json();
+      if (!resp.ok || !body.ok) {
+        throw new Error(body.error || "Failed to load report data.");
+      }
+      render(body);
+      els.status.textContent = `Loaded ${body.meta?.row_count || 0} row(s).`;
+    }
+
+    async function initialize() {
+      try {
+        const setup = await loadFilterOptions();
+        const filterOptions = setup.filter_options || {};
+        const globalFilter = setup.global_date_filter || {};
+        const uiSettings = setup.ui_settings || {};
+        const yearDefaults = defaultYearRange();
+
+        els.from.value = globalFilter.from_date || yearDefaults.from;
+        els.to.value = globalFilter.to_date || yearDefaults.to;
+        els.showFullYear.checked = !!uiSettings.show_full_year;
+        els.weekWidth.value = String(uiSettings.week_bucket_width_px || 100);
+
+        const assigneeOptions = ['<option value="">All Assignees</option>'].concat(
+          (filterOptions.assignees || []).map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`)
+        );
+        els.assignee.innerHTML = assigneeOptions.join("");
+
+        els.mode.innerHTML = (filterOptions.assignee_modes || []).map((item) =>
+          `<option value="${escapeHtml(item.value)}">${escapeHtml(item.label)}</option>`
+        ).join("");
+        els.mode.value = filterOptions.default_assignee_mode || "subtask_assignee";
+
+        await loadReport();
+      } catch (error) {
+        els.status.textContent = String(error.message || error);
+        els.root.innerHTML = `<div class="empty">${escapeHtml(error.message || error)}</div>`;
+      }
+    }
+
+    els.apply.addEventListener("click", async () => {
+      try {
+        await saveGlobalRange();
+        await saveUiSettings();
+        await loadReport();
+      } catch (error) {
+        els.status.textContent = String(error.message || error);
+      }
+    });
+
+    els.reset.addEventListener("click", async () => {
+      const defaults = defaultYearRange();
+      els.from.value = defaults.from;
+      els.to.value = defaults.to;
+      els.assignee.value = "";
+      els.mode.value = "subtask_assignee";
+      els.showFullYear.checked = true;
+      els.weekWidth.value = "100";
+      try {
+        await saveGlobalRange();
+        await saveUiSettings();
+        await loadReport();
+      } catch (error) {
+        els.status.textContent = String(error.message || error);
+      }
+    });
+
+    initialize();
+  </script>
+  <script src="shared-nav.js"></script>
+</body>
+</html>

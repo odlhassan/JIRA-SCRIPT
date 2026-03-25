@@ -105,6 +105,8 @@ def _seed_canonical_run(db_path: Path, run_id: str = "canonical-test-run") -> st
             ("wl-ff-1", "FF-451", "2026-02-20", 5.0, "Fiona"),
             ("wl-ff-2", "FF-451", "2026-03-02", 7.0, "Fiona"),
             ("wl-3", "O2-SUB2", "2026-02-16", 4.0, "Bob"),
+            ("wl-story-1", "O2-ST1", "2026-02-18", 9.0, "Alice"),
+            ("wl-epic-1", "O2-EP1", "2026-02-19", 11.0, "Alice"),
         ]:
             conn.execute(
                 """
@@ -200,6 +202,8 @@ class ActualHoursAggregateApiTests(unittest.TestCase):
             self.assertEqual(legacy_payload.get("source_file"), "canonical_db")
             self.assertEqual(legacy_payload.get("mode"), "planned_dates")
             self.assertEqual(legacy_payload["subtask_hours_by_issue"].get("O2-SUB1"), 5.0)
+            self.assertIsNone(legacy_payload["subtask_hours_by_issue"].get("O2-ST1"))
+            self.assertIsNone(legacy_payload["subtask_hours_by_issue"].get("O2-EP1"))
             self.assertIsNone(legacy_payload["subtask_hours_by_issue"].get("O2-SUB2"))
             nested_ff_resp = client.get(
                 "/api/nested-view/actual-hours?from=2026-02-01&to=2026-02-28&mode=planned_dates&projects=FF"
@@ -217,6 +221,8 @@ class ActualHoursAggregateApiTests(unittest.TestCase):
             self.assertTrue(nested_log_payload.get("ok"))
             self.assertEqual(nested_log_payload.get("mode"), "log_date")
             self.assertEqual(nested_log_payload["subtask_hours_by_issue"].get("O2-SUB1"), 3.0)
+            self.assertIsNone(nested_log_payload["subtask_hours_by_issue"].get("O2-ST1"))
+            self.assertIsNone(nested_log_payload["subtask_hours_by_issue"].get("O2-EP1"))
             self.assertIsNone(nested_log_payload["subtask_hours_by_issue"].get("O2-SUB2"))
 
 
