@@ -3864,6 +3864,12 @@ Total Leaves Taken = 0h</span>
       return "subtask_estimates";
     }}
 
+    function resolveScopedSubtaskBasis(plannedHoursSource) {{
+      return normalizePlannedHoursSource(plannedHoursSource || selectedPlannedHoursSource || DEFAULT_PLANNED_HOURS_SOURCE) === "subtask_logs"
+        ? "log_date"
+        : "planned_dates";
+    }}
+
     function buildPlannedHoursInRangeParityKey() {{
       return buildPlannedHoursInRangeParityKeyFor({{
         dateFrom: selectedDateFrom,
@@ -5167,6 +5173,9 @@ Total Leaves Taken = 0h</span>
           return false;
         }}
         if (scorecardActualHoursMode === "planned_dates") {{
+          if (scorecardPlannedHoursSource === "subtask_logs") {{
+            return subtaskLoggedInRange(row);
+          }}
           return subtaskPlannedInRange(row, bounds);
         }}
         return subtaskLoggedInRange(row);
@@ -6522,7 +6531,8 @@ Total Leaves Taken = 0h</span>
           selectedDateFrom,
           selectedDateTo,
           selectedActualHoursMode,
-          selectedTeamAssignees
+          selectedTeamAssignees,
+          selectedPlannedHoursSource
         );
         applyFetchedActualHours(payload);
         rerender(true, {{ teamFilterLoading: true }});
@@ -6985,10 +6995,12 @@ Total Leaves Taken = 0h</span>
       }}
     }}
 
-    async function fetchActualHoursForDateRange(fromDate, toDate, mode, selectedAssigneesSet) {{
+    async function fetchActualHoursForDateRange(fromDate, toDate, mode, selectedAssigneesSet, plannedHoursSource) {{
       const fromParam = encodeURIComponent(String(fromDate || ""));
       const toParam = encodeURIComponent(String(toDate || ""));
       const modeParam = encodeURIComponent(String(mode || DEFAULT_ACTUAL_HOURS_MODE));
+      const scopeBasis = resolveScopedSubtaskBasis(plannedHoursSource);
+      const scopeBasisParam = encodeURIComponent(scopeBasis);
       const projectsParam = selectedProjectKeys.size
         ? ("&projects=" + encodeURIComponent(Array.from(selectedProjectKeys).sort().join(",")))
         : "";
@@ -7003,6 +7015,7 @@ Total Leaves Taken = 0h</span>
         + "?from=" + fromParam
         + "&to=" + toParam
         + "&mode=" + modeParam
+        + "&scope_basis=" + scopeBasisParam
         + projectsParam
         + assigneesParam
         + "&report=nested_view",
@@ -7070,11 +7083,23 @@ Total Leaves Taken = 0h</span>
       setDateApplyBusy(true);
       try {{
         if (hasNestedActualsApi) {{
-          const payload = await fetchActualHoursForDateRange(nextFrom, nextTo, nextMode, selectedTeamAssignees);
+          const payload = await fetchActualHoursForDateRange(
+            nextFrom,
+            nextTo,
+            nextMode,
+            selectedTeamAssignees,
+            nextPlannedHoursSource
+          );
           applyFetchedActualHours(payload);
           const logPayload = nextMode === "log_date"
             ? payload
-            : await fetchActualHoursForDateRange(nextFrom, nextTo, "log_date", selectedTeamAssignees);
+            : await fetchActualHoursForDateRange(
+                nextFrom,
+                nextTo,
+                "log_date",
+                selectedTeamAssignees,
+                nextPlannedHoursSource
+              );
           subtaskLogHoursByIssue = extractSubtaskHoursMap(logPayload);
         }} else {{
           applyOriginalMetricsToRows();

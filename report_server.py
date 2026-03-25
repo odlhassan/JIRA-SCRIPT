@@ -4566,12 +4566,20 @@ def _canonical_compute_actual_hours_aggregate(
     return result
 
 
+def _canonical_normalize_scoped_subtask_basis(scope_basis: object) -> str:
+    raw = _to_text(scope_basis).strip().lower()
+    if raw in {"log_date", "worklog_date", "worklogs", "subtask_logs"}:
+        return "log_date"
+    return "planned_dates"
+
+
 def _canonical_compute_nested_actual_hours(
     db_path: Path,
     run_id: str,
     from_date: date,
     to_date: date,
     mode: str = "log_date",
+    scope_basis: str = "planned_dates",
     selected_projects: set[str] | None = None,
     selected_assignees: set[str] | None = None,
 ) -> dict[str, dict[str, float]]:
@@ -4582,6 +4590,7 @@ def _canonical_compute_nested_actual_hours(
         from_date=from_date,
         to_date=to_date,
         actual_mode=("extended" if mode == "planned_dates" else "log_date"),
+        scope_basis=scope_basis,
         selected_projects=selected_projects,
         selected_assignees=selected_assignees,
         include_rows=True,
@@ -4612,6 +4621,7 @@ def _canonical_compute_scoped_subtasks(
     from_date: date,
     to_date: date,
     actual_mode: str,
+    scope_basis: str = "planned_dates",
     selected_projects: set[str] | None = None,
     selected_assignees: set[str] | None = None,
     *,
@@ -4628,6 +4638,7 @@ def _canonical_compute_scoped_subtasks(
     }
     run_id_text = _to_text(run_id)
     mode = "extended" if _to_text(actual_mode).lower() in {"extended", "planned_dates", "all"} else "log_date"
+    scope_mode = _canonical_normalize_scoped_subtask_basis(scope_basis)
     if not run_id_text:
         return result
     with sqlite3.connect(db_path) as conn:
@@ -4650,6 +4661,14 @@ def _canonical_compute_scoped_subtasks(
             (run_id_text,),
         ).fetchall()]
 
+    issue_keys_with_in_range_worklogs: set[str] = set()
+    for worklog in worklog_rows:
+        issue_key = _to_text(worklog.get("issue_key")).upper()
+        started_day = _parse_iso_date(_to_text(worklog.get("started_date")))
+        hours = float(worklog.get("hours_logged") or 0)
+        if issue_key and started_day is not None and hours > 0 and from_date <= started_day <= to_date:
+            issue_keys_with_in_range_worklogs.add(issue_key)
+
     filtered_rows: list[dict[str, object]] = []
     scoped_issue_keys: set[str] = set()
     for issue in issue_rows:
@@ -4666,10 +4685,14 @@ def _canonical_compute_scoped_subtasks(
         assignee = _to_text(issue.get("assignee"))
         if selected_assignees and assignee.lower() not in selected_assignees:
             continue
-        start_day = _parse_iso_date(_to_text(issue.get("start_date")))
-        due_day = _parse_iso_date(_to_text(issue.get("due_date")))
-        if not ((start_day and from_date <= start_day <= to_date) or (due_day and from_date <= due_day <= to_date)):
-            continue
+        if scope_mode == "log_date":
+            if issue_key not in issue_keys_with_in_range_worklogs:
+                continue
+        else:
+            start_day = _parse_iso_date(_to_text(issue.get("start_date")))
+            due_day = _parse_iso_date(_to_text(issue.get("due_date")))
+            if not ((start_day and from_date <= start_day <= to_date) or (due_day and from_date <= due_day <= to_date)):
+                continue
         filtered_rows.append(
             {
                 "issue_key": issue_key,
@@ -23930,6 +23953,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
     @app.route("/api/scoped-subtasks", methods=["GET"])
     def scoped_subtasks():
         mode = _to_text(request.args.get("mode")).lower() or "log_date"
+        scope_basis = _canonical_normalize_scoped_subtask_basis(request.args.get("scope_basis"))
         projects_raw = _to_text(request.args.get("projects"))
         assignees_raw = _to_text(request.args.get("assignees"))
         selected_projects = {
@@ -23967,6 +23991,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 from_date=from_date,
                 to_date=to_date,
                 actual_mode=("extended" if mode in {"planned_dates", "extended"} else "log_date"),
+                scope_basis=scope_basis,
                 selected_projects=selected_projects,
                 selected_assignees=selected_assignees,
                 include_rows=True,
@@ -23979,6 +24004,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 "from_date": from_date.isoformat(),
                 "to_date": to_date.isoformat(),
                 "mode": ("extended" if mode in {"planned_dates", "extended"} else "log_date"),
+                "scope_basis": scope_basis,
                 "rows": payload.get("rows") or [],
                 **(payload.get("summary") or {}),
             }
@@ -23987,6 +24013,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
     @app.route("/api/nested-view/actual-hours", methods=["GET"])
     def nested_view_actual_hours():
         mode = _to_text(request.args.get("mode")).lower() or "log_date"
+        scope_basis = _canonical_normalize_scoped_subtask_basis(request.args.get("scope_basis"))
         projects_raw = _to_text(request.args.get("projects"))
         assignees_raw = _to_text(request.args.get("assignees"))
         selected_projects = {
@@ -24027,6 +24054,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             from_date.isoformat(),
             to_date.isoformat(),
             mode,
+            scope_basis,
             ",".join(sorted(selected_projects or set())),
             ",".join(sorted(selected_assignees or set())),
             canonical_run_id,
@@ -24044,6 +24072,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                     from_date=from_date,
                     to_date=to_date,
                     mode=mode,
+                    scope_basis=scope_basis,
                     selected_projects=selected_projects,
                     selected_assignees=selected_assignees,
                 )
@@ -24057,6 +24086,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 "from_date": from_date.isoformat(),
                 "to_date": to_date.isoformat(),
                 "mode": mode,
+                "scope_basis": scope_basis,
                 "source_file": "canonical_db",
                 "subtask_hours_by_issue": cached.get("subtask_hours_by_issue", {}),
             }

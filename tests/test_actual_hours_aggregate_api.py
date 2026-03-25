@@ -105,6 +105,7 @@ def _seed_canonical_run(db_path: Path, run_id: str = "canonical-test-run") -> st
             ("wl-ff-1", "FF-451", "2026-02-20", 5.0, "Fiona"),
             ("wl-ff-2", "FF-451", "2026-03-02", 7.0, "Fiona"),
             ("wl-3", "O2-SUB2", "2026-02-16", 4.0, "Bob"),
+            ("wl-4", "O2-SUB2", "2026-03-03", 6.0, "Bob"),
             ("wl-story-1", "O2-ST1", "2026-02-18", 9.0, "Alice"),
             ("wl-epic-1", "O2-EP1", "2026-02-19", 11.0, "Alice"),
         ]:
@@ -224,6 +225,39 @@ class ActualHoursAggregateApiTests(unittest.TestCase):
             self.assertIsNone(nested_log_payload["subtask_hours_by_issue"].get("O2-ST1"))
             self.assertIsNone(nested_log_payload["subtask_hours_by_issue"].get("O2-EP1"))
             self.assertIsNone(nested_log_payload["subtask_hours_by_issue"].get("O2-SUB2"))
+
+            scoped_log_worklog_basis_resp = client.get(
+                "/api/scoped-subtasks?from=2026-03-01&to=2026-03-31&mode=log_date&scope_basis=log_date&projects=O2"
+            )
+            self.assertEqual(scoped_log_worklog_basis_resp.status_code, 200)
+            scoped_log_worklog_basis_payload = scoped_log_worklog_basis_resp.get_json() or {}
+            self.assertTrue(scoped_log_worklog_basis_payload.get("ok"))
+            self.assertEqual(scoped_log_worklog_basis_payload.get("scope_basis"), "log_date")
+            scoped_log_worklog_basis_rows = {
+                str(row.get("issue_key")): row for row in scoped_log_worklog_basis_payload.get("rows") or []
+            }
+            self.assertEqual(scoped_log_worklog_basis_rows["O2-SUB1"]["logged_hours"], 2.0)
+            self.assertEqual(scoped_log_worklog_basis_rows["O2-SUB2"]["logged_hours"], 6.0)
+
+            nested_log_worklog_basis_resp = client.get(
+                "/api/nested-view/actual-hours?from=2026-03-01&to=2026-03-31&mode=log_date&scope_basis=log_date"
+            )
+            self.assertEqual(nested_log_worklog_basis_resp.status_code, 200)
+            nested_log_worklog_basis_payload = nested_log_worklog_basis_resp.get_json() or {}
+            self.assertTrue(nested_log_worklog_basis_payload.get("ok"))
+            self.assertEqual(nested_log_worklog_basis_payload.get("scope_basis"), "log_date")
+            self.assertEqual(nested_log_worklog_basis_payload["subtask_hours_by_issue"].get("O2-SUB1"), 2.0)
+            self.assertEqual(nested_log_worklog_basis_payload["subtask_hours_by_issue"].get("O2-SUB2"), 6.0)
+
+            nested_ext_worklog_basis_resp = client.get(
+                "/api/nested-view/actual-hours?from=2026-03-01&to=2026-03-31&mode=planned_dates&scope_basis=log_date"
+            )
+            self.assertEqual(nested_ext_worklog_basis_resp.status_code, 200)
+            nested_ext_worklog_basis_payload = nested_ext_worklog_basis_resp.get_json() or {}
+            self.assertTrue(nested_ext_worklog_basis_payload.get("ok"))
+            self.assertEqual(nested_ext_worklog_basis_payload.get("scope_basis"), "log_date")
+            self.assertEqual(nested_ext_worklog_basis_payload["subtask_hours_by_issue"].get("O2-SUB1"), 5.0)
+            self.assertEqual(nested_ext_worklog_basis_payload["subtask_hours_by_issue"].get("O2-SUB2"), 10.0)
 
 
 if __name__ == "__main__":

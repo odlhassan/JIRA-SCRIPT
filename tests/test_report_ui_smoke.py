@@ -155,6 +155,23 @@ class ReportUiSmokeTests(unittest.TestCase):
         self.assertIn("refreshProjectFilterOptions({ preserveSelection: true });", html)
         self.assertIn('fetch("/api/nested-view/tree"', html)
 
+    def test_nested_subtask_logs_scope_uses_worklog_date_basis(self):
+        payload = {
+            "generated_at": "2026-02-21 00:00 UTC",
+            "source_file": "nested view.xlsx",
+            "rows": [],
+            "capacity_profiles": [],
+            "leave_daily_rows": [],
+            "leave_subtask_rows": [],
+        }
+        html = build_nested_html(payload)
+        self.assertIn("function resolveScopedSubtaskBasis(plannedHoursSource)", html)
+        self.assertIn('? \"log_date\"', html)
+        self.assertIn(': \"planned_dates\";', html)
+        self.assertIn('"&scope_basis=" + scopeBasisParam', html)
+        self.assertIn('if (scorecardPlannedHoursSource === "subtask_logs") {', html)
+        self.assertIn("return subtaskLoggedInRange(row);", html)
+
     def test_nested_view_actual_rollup_uses_subtask_leaves_only(self):
         payload = {
             "generated_at": "2026-02-21 00:00 UTC",
