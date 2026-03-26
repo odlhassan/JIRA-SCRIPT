@@ -19,6 +19,14 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from openpyxl import Workbook, load_workbook
+from canonical_report_data import (
+    build_assignee_hours_rows_from_canonical,
+    build_project_planned_hours_from_canonical,
+    build_planned_work_items_from_canonical,
+    build_rlt_leave_snapshot,
+    build_rlt_leaves_planned_rows_from_canonical,
+    resolve_canonical_run_id,
+)
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
@@ -724,6 +732,46 @@ def _load_leave_metrics(leave_report_path: Path, from_date: str, to_date: str, s
         "source": "unavailable",
     }
     if not leave_report_path.exists():
+        db_name = os.getenv("JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH", DEFAULT_CAPACITY_DB).strip() or DEFAULT_CAPACITY_DB
+        db_path = _resolve_path(db_name, Path(__file__).resolve().parent)
+        canonical_run_id = resolve_canonical_run_id(db_path, os.getenv("JIRA_CANONICAL_RUN_ID", "").strip())
+        if canonical_run_id:
+            snapshot = build_rlt_leave_snapshot(db_path, canonical_run_id, from_date, to_date)
+            daily_rows = list(snapshot.get("daily") or [])
+            planned_taken_daily: dict[str, float] = {}
+            unplanned_taken_daily: dict[str, float] = {}
+            planned_not_taken_daily: dict[str, float] = {}
+            for row in daily_rows:
+                iso_day = _to_text(row.get("period_day"))
+                if not iso_day:
+                    continue
+                try:
+                    day = date.fromisoformat(iso_day)
+                except ValueError:
+                    continue
+                if day < from_value or day > to_value:
+                    continue
+                planned_taken_daily[iso_day] = planned_taken_daily.get(iso_day, 0.0) + _to_float(row.get("planned_taken_hours"))
+                unplanned_taken_daily[iso_day] = unplanned_taken_daily.get(iso_day, 0.0) + _to_float(row.get("unplanned_taken_hours"))
+                planned_not_taken_daily[iso_day] = planned_not_taken_daily.get(iso_day, 0.0) + _to_float(row.get("planned_not_taken_hours"))
+            planned_taken = round(sum(planned_taken_daily.values()), 2)
+            unplanned_taken = round(sum(unplanned_taken_daily.values()), 2)
+            planned_not_taken = round(sum(planned_not_taken_daily.values()), 2)
+            taken_daily = dict(planned_taken_daily)
+            for iso_day, hours in unplanned_taken_daily.items():
+                taken_daily[iso_day] = taken_daily.get(iso_day, 0.0) + hours
+            out.update(
+                {
+                    "planned_taken_hours": planned_taken,
+                    "unplanned_taken_hours": unplanned_taken,
+                    "planned_not_taken_hours": planned_not_taken,
+                    "taken_hours": round(planned_taken + unplanned_taken, 2),
+                    "not_yet_taken_hours": planned_not_taken,
+                    "taken_days": _daily_hours_to_days(taken_daily, settings),
+                    "not_yet_taken_days": _daily_hours_to_days(planned_not_taken_daily, settings),
+                    "source": "canonical_db",
+                }
+            )
         return out
 
     wb = load_workbook(leave_report_path, read_only=True, data_only=True)
@@ -3279,15 +3327,25 @@ def _resolve_runtime_paths(base_dir: Path) -> dict:
 
 
 def _generate_outputs(paths: dict) -> dict:
-    rows = _load_worklog_rows(paths["input_path"])
+    canonical_run_id = resolve_canonical_run_id(paths["db_path"], os.getenv("JIRA_CANONICAL_RUN_ID", "").strip())
+    if canonical_run_id:
+        rows = build_assignee_hours_rows_from_canonical(paths["db_path"], canonical_run_id)
+        leave_snapshot = build_rlt_leave_snapshot(paths["db_path"], canonical_run_id)
+        leave_daily_rows = list(leave_snapshot.get("daily") or [])
+        leave_subtask_rows = list(leave_snapshot.get("raw_subtasks") or [])
+        project_planned_hours = build_project_planned_hours_from_canonical(paths["db_path"], canonical_run_id)
+        rlt_leaves_planned_rows = build_rlt_leaves_planned_rows_from_canonical(paths["db_path"], canonical_run_id)
+        planned_work_items = build_planned_work_items_from_canonical(paths["db_path"], canonical_run_id)
+    else:
+        rows = _load_worklog_rows(paths["input_path"])
+        leave_daily_rows = _load_leave_daily_rows(paths["leave_report_path"])
+        leave_subtask_rows = _load_leave_subtask_rows(paths["leave_report_path"])
+        project_planned_hours = _load_project_planned_hours_from_work_items(paths["work_items_path"])
+        rlt_leaves_planned_rows = _load_rlt_leaves_planned_rows_from_work_items(paths["work_items_path"])
+        planned_work_items = _load_planned_work_items_from_work_items(paths["work_items_path"])
     _write_summary_xlsx(rows, paths["summary_path"])
     summary_rows = _read_summary_xlsx(paths["summary_path"])
     capacity_profiles = _list_capacity_profiles(paths["db_path"])
-    leave_daily_rows = _load_leave_daily_rows(paths["leave_report_path"])
-    leave_subtask_rows = _load_leave_subtask_rows(paths["leave_report_path"])
-    project_planned_hours = _load_project_planned_hours_from_work_items(paths["work_items_path"])
-    rlt_leaves_planned_rows = _load_rlt_leaves_planned_rows_from_work_items(paths["work_items_path"])
-    planned_work_items = _load_planned_work_items_from_work_items(paths["work_items_path"])
     payload = _build_payload(
         summary_rows,
         capacity_profiles=capacity_profiles,

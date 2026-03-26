@@ -19,6 +19,12 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from canonical_report_data import build_canonical_dashboard_source_rows
+from dashboard_db_enrichment import (
+    apply_epics_management_ipp_fields,
+    load_epics_management_dashboard_meta,
+    normalize_issue_key,
+)
 from jira_client import (
     BASE_URL,
     build_dashboard_data,
@@ -28,7 +34,6 @@ from jira_client import (
     get_session,
     get_board_id,
 )
-from ipp_meeting_utils import normalize_issue_key
 
 load_dotenv()
 
@@ -1617,7 +1622,6 @@ def generate_html(data):
 def fetch_dashboard_data():
     """Build hierarchical dashboard data from generated export workbooks."""
     from openpyxl import load_workbook
-    from ipp_meeting_utils import load_ipp_planned_dates_by_key, normalize_issue_key
 
     script_dir = Path(__file__).resolve().parent
 
@@ -1896,26 +1900,18 @@ def fetch_dashboard_data():
         issue_type = as_text(item.get("issue_type")).lower()
         return ("subtask" in issue_type) or ("sub-task" in issue_type)
 
-    rows1 = read_rows(resolve_path("JIRA_EXPORT_XLSX_PATH", "1_jira_work_items_export.xlsx"))
-    rows2 = read_rows(resolve_path("JIRA_WORKLOG_XLSX_PATH", "2_jira_subtask_worklogs.xlsx"))
-    rows3 = read_rows(resolve_path("JIRA_SUBTASK_ROLLUP_XLSX_PATH", "3_jira_subtask_worklog_rollup.xlsx"))
     planner_db_path = resolve_path("JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH", "assignee_hours_capacity.db")
+    canonical_run_id = os.getenv("JIRA_CANONICAL_RUN_ID", "").strip()
+    rows1, rows2, rows3, resolved_canonical_run_id = build_canonical_dashboard_source_rows(planner_db_path, canonical_run_id)
+    if not rows1:
+        rows1 = read_rows(resolve_path("JIRA_EXPORT_XLSX_PATH", "1_jira_work_items_export.xlsx"))
+        rows2 = read_rows(resolve_path("JIRA_WORKLOG_XLSX_PATH", "2_jira_subtask_worklogs.xlsx"))
+        rows3 = read_rows(resolve_path("JIRA_SUBTASK_ROLLUP_XLSX_PATH", "3_jira_subtask_worklog_rollup.xlsx"))
+    source_file = "canonical_db" if rows1 and resolved_canonical_run_id else "legacy_exports"
     risk_settings = load_dashboard_risk_settings(planner_db_path)
     planner_epic_plan_by_key = load_epics_planner_epic_plan_by_key(planner_db_path)
     planner_story_dates_by_key = load_epics_planner_story_dates_by_key(planner_db_path)
-    ipp_planned_dates_by_key = load_ipp_planned_dates_by_key()
-
-    def apply_ipp_planned_dates(item: dict, epic_key: str):
-        normalized_epic_key = normalize_issue_key(epic_key)
-        if not normalized_epic_key:
-            return
-        ipp_dates = ipp_planned_dates_by_key.get(normalized_epic_key, {})
-        item["ipp_planned_start_date"] = normalize_date_text(
-            ipp_dates.get("planned_start") or item.get("ipp_planned_start_date")
-        )
-        item["ipp_planned_end_date"] = normalize_date_text(
-            ipp_dates.get("planned_end") or item.get("ipp_planned_end_date")
-        )
+    epics_management_ipp_meta = load_epics_management_dashboard_meta(planner_db_path)
 
     epics_map = {}
     stories_map = {}
@@ -1930,7 +1926,6 @@ def fetch_dashboard_data():
         if "epic" in issue_type:
             item = build_item(row, issue_type_raw or "Epic")
             item["epic_key"] = item["issue_key"]
-            apply_ipp_planned_dates(item, item["issue_key"])
             item["epic_key_legacy"] = item["issue_key"]
             item["epic_status"] = item["status"]
             item["subtask_hours_logged_total"] = item["total_hours_logged"]
@@ -1938,7 +1933,6 @@ def fetch_dashboard_data():
         elif issue_type == "story":
             item = build_item(row, "Story")
             item["epic_key"] = as_text(item["parent_issue_key"])
-            apply_ipp_planned_dates(item, item["epic_key"])
             stories_map[item["issue_key"]] = item
         elif issue_type == "bug subtask":
             item = build_item(row, "Bug Subtask")
@@ -2007,11 +2001,9 @@ def fetch_dashboard_data():
     for subtask in subtasks_map.values():
         story = stories_map.get(as_text(subtask.get("story_key")))
         subtask["epic_key"] = as_text(story.get("epic_key")) if story else ""
-        apply_ipp_planned_dates(subtask, subtask["epic_key"])
     for bug_subtask in bug_subtasks_map.values():
         story = stories_map.get(as_text(bug_subtask.get("story_key")))
         bug_subtask["epic_key"] = as_text(story.get("epic_key")) if story else ""
-        apply_ipp_planned_dates(bug_subtask, bug_subtask["epic_key"])
 
     # Story planned dates: prefer Epics Planner module story-sync dates when available.
     for story in stories_map.values():
@@ -2070,6 +2062,36 @@ def fetch_dashboard_data():
         item["planner_hours_match"] = hours_match
         item["planner_validation_status"] = planner_status
 
+    for item in epics_map.values():
+        epic_key = as_text(item.get("issue_key"))
+        apply_epics_management_ipp_fields(
+            item,
+            epic_key,
+            epics_management_ipp_meta,
+            jira_start_date=item.get("jira_start_date"),
+            jira_end_date=item.get("jira_end_date"),
+        )
+    for item in stories_map.values():
+        epic_key = as_text(item.get("epic_key"))
+        epic = epics_map.get(epic_key, {})
+        apply_epics_management_ipp_fields(
+            item,
+            epic_key,
+            epics_management_ipp_meta,
+            jira_start_date=epic.get("jira_start_date"),
+            jira_end_date=epic.get("jira_end_date"),
+        )
+    for item in list(subtasks_map.values()) + list(bug_subtasks_map.values()):
+        epic_key = as_text(item.get("epic_key"))
+        epic = epics_map.get(epic_key, {})
+        apply_epics_management_ipp_fields(
+            item,
+            epic_key,
+            epics_management_ipp_meta,
+            jira_start_date=epic.get("jira_start_date"),
+            jira_end_date=epic.get("jira_end_date"),
+        )
+
     apply_risk_rollup(epics_map, stories_map, subtasks_map, bug_subtasks_map, risk_settings)
 
     epics = sorted(epics_map.values(), key=lambda x: (x.get("project_key", ""), x.get("issue_key", "")))
@@ -2103,6 +2125,7 @@ def fetch_dashboard_data():
         },
         "risk_config": risk_settings,
         "projects": projects,
+        "source_file": source_file,
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
     }
 

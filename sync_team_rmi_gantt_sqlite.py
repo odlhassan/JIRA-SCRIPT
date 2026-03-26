@@ -10,6 +10,7 @@ from typing import Any
 
 from openpyxl import load_workbook
 
+from canonical_report_data import load_canonical_issues, resolve_canonical_run_id
 from jira_client import BASE_URL
 
 DEFAULT_WORK_ITEMS_XLSX = "1_jira_work_items_export.xlsx"
@@ -207,9 +208,47 @@ def _load_work_items_for_team_gantt(work_items_path: Path) -> tuple[dict[str, di
         wb.close()
 
 
+def _load_work_items_for_team_gantt_from_canonical(db_path: Path, run_id: str = "") -> tuple[dict[str, dict[str, str]], list[dict[str, Any]]]:
+    effective_run_id = resolve_canonical_run_id(db_path, run_id)
+    if not effective_run_id:
+        return {}, []
+    epics: dict[str, dict[str, str]] = {}
+    stories: list[dict[str, Any]] = []
+    for row in load_canonical_issues(db_path, effective_run_id):
+        issue_key = _to_text(row.get("issue_key")).upper()
+        issue_type = _to_text(row.get("issue_type")).lower()
+        if not issue_key:
+            continue
+        if "epic" in issue_type:
+            epics[issue_key] = {
+                "epic_name": _to_text(row.get("summary")) or issue_key,
+                "epic_url": _fallback_epic_url(issue_key),
+                "project_key": _to_text(row.get("project_key")).upper() or _extract_project_key(issue_key),
+            }
+            continue
+        if "story" not in issue_type:
+            continue
+        stories.append(
+            {
+                "issue_key": issue_key,
+                "assignee": _to_text(row.get("assignee")),
+                "epic_key": _to_text(row.get("epic_key")).upper() or _to_text(row.get("parent_issue_key")).upper(),
+                "planned_start": _to_iso_date(row.get("start_date")),
+                "planned_end": _to_iso_date(row.get("due_date")),
+                "planned_hours": _to_positive_float(row.get("original_estimate_hours")),
+                "project_key": _to_text(row.get("project_key")).upper() or _extract_project_key(issue_key),
+            }
+        )
+    return epics, stories
+
+
 def build_team_rmi_gantt_snapshot(work_items_path: Path, db_path: Path) -> dict[str, Any]:
     team_map = _load_team_map(db_path)
-    epics, stories = _load_work_items_for_team_gantt(work_items_path)
+    canonical_run_id = resolve_canonical_run_id(db_path, os.getenv("JIRA_CANONICAL_RUN_ID", "").strip())
+    if canonical_run_id:
+        epics, stories = _load_work_items_for_team_gantt_from_canonical(db_path, canonical_run_id)
+    else:
+        epics, stories = _load_work_items_for_team_gantt(work_items_path)
 
     total_story_rows = 0
     included_story_rows = 0

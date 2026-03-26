@@ -8,6 +8,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 
 from openpyxl import load_workbook
+from canonical_report_data import load_nested_rows_from_canonical, resolve_canonical_run_id
 
 DEFAULT_INPUT_XLSX = "nested view.xlsx"
 DEFAULT_OUTPUT_HTML = "planned_rmis_report.html"
@@ -32,6 +33,13 @@ def _to_number_or_blank(value: object):
         return round(float(value), 2)
     except (TypeError, ValueError):
         return ""
+
+
+def _to_float(value: object) -> float:
+    try:
+        return float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def _parse_to_iso_date(value: object) -> str:
@@ -209,6 +217,96 @@ def _load_payload(input_path: Path, work_items_path: Path) -> dict:
     }
 
 
+def _load_payload_from_canonical(db_path: Path, run_id: str = "") -> dict:
+    effective_run_id = resolve_canonical_run_id(db_path, run_id)
+    rows = load_nested_rows_from_canonical(db_path, effective_run_id)
+    if not rows:
+        return {}
+
+    payload_rows: list[dict] = []
+    for row in rows:
+        if _to_text(row.get("row_type")) != "project":
+            continue
+        payload_rows.append(
+            {
+                "id": row.get("id"),
+                "parent_id": row.get("parent_id"),
+                "level": row.get("level"),
+                "row_kind": "project",
+                "group_type": "",
+                "rmi_label": _to_text(row.get("aspect")),
+                "planned_hours": _to_number_or_blank(row.get("planned_hours")),
+                "actual_hours": _to_number_or_blank(row.get("actual_hours")),
+                "planned_start": _to_text(row.get("planned_start")),
+                "planned_end": _to_text(row.get("planned_end")),
+                "has_range": bool(_to_text(row.get("planned_start")) and _to_text(row.get("planned_end"))),
+                "start_ordinal": row.get("start_ordinal", ""),
+                "end_ordinal": row.get("end_ordinal", ""),
+                "project_key": _to_text(row.get("project_key")),
+            }
+        )
+        children = [
+            item for item in rows
+            if _to_text(item.get("row_type")) == "rmi" and _to_text(item.get("project_key")) == _to_text(row.get("project_key"))
+        ]
+        planned_children = [item for item in children if _to_text(item.get("planned_start")) and _to_text(item.get("planned_end"))]
+        unplanned_children = [item for item in children if item not in planned_children]
+        for group_type, group_label, source_children in (
+            ("planned", "Planned Epics", planned_children),
+            ("not_planned", "Not Planned Yet Epics", unplanned_children),
+        ):
+            group_id = max([int(r.get("id") or 0) for r in payload_rows] + [0]) + 1
+            payload_rows.append(
+                {
+                    "id": group_id,
+                    "parent_id": row.get("id"),
+                    "level": 2,
+                    "row_kind": "group",
+                    "group_type": group_type,
+                    "rmi_label": group_label,
+                    "planned_hours": round(sum(_to_float(item.get("approved_hours")) for item in source_children), 2),
+                    "actual_hours": round(sum(_to_float(item.get("actual_hours")) for item in source_children), 2),
+                    "planned_start": "",
+                    "planned_end": "",
+                    "has_range": False,
+                    "start_ordinal": "",
+                    "end_ordinal": "",
+                    "project_key": _to_text(row.get("project_key")),
+                }
+            )
+            next_id = group_id + 1
+            for item in source_children:
+                payload_rows.append(
+                    {
+                        "id": next_id,
+                        "parent_id": group_id,
+                        "level": 3,
+                        "row_kind": "epic",
+                        "group_type": group_type,
+                        "rmi_label": _to_text(item.get("aspect")),
+                        "jira_key": _to_text(item.get("jira_key")),
+                        "planned_hours": _to_number_or_blank(item.get("approved_hours")),
+                        "actual_hours": _to_number_or_blank(item.get("actual_hours")),
+                        "original_actual_hours": _to_number_or_blank(item.get("actual_hours")),
+                        "planned_start": _to_text(item.get("planned_start")),
+                        "planned_end": _to_text(item.get("planned_end")),
+                        "has_range": bool(_to_text(item.get("planned_start")) and _to_text(item.get("planned_end"))),
+                        "start_ordinal": item.get("start_ordinal", ""),
+                        "end_ordinal": item.get("end_ordinal", ""),
+                        "project_key": _to_text(item.get("project_key")),
+                    }
+                )
+                next_id += 1
+
+    today = datetime.now(timezone.utc).date()
+    return {
+        "rows": payload_rows,
+        "source_file": "canonical_db",
+        "default_from": date(today.year, 1, 1).isoformat(),
+        "default_to": today.isoformat(),
+    }
+
+
 def _build_html(payload: dict) -> str:
     data = json.dumps(payload, ensure_ascii=True)
     return """<!doctype html>
@@ -341,11 +439,16 @@ def main() -> None:
     input_name = os.getenv("JIRA_PLANNED_RMIS_INPUT_XLSX_PATH", DEFAULT_INPUT_XLSX).strip() or DEFAULT_INPUT_XLSX
     work_items_name = os.getenv("JIRA_EXPORT_XLSX_PATH", DEFAULT_WORK_ITEMS_XLSX).strip() or DEFAULT_WORK_ITEMS_XLSX
     output_name = os.getenv("JIRA_PLANNED_RMIS_HTML_PATH", DEFAULT_OUTPUT_HTML).strip() or DEFAULT_OUTPUT_HTML
+    db_name = os.getenv("JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH", "assignee_hours_capacity.db").strip() or "assignee_hours_capacity.db"
+    canonical_run_id = os.getenv("JIRA_CANONICAL_RUN_ID", "").strip()
     input_path = _resolve_path(input_name, base_dir)
     work_items_path = _resolve_path(work_items_name, base_dir)
-    if not input_path.exists():
-        raise FileNotFoundError(f"Nested view workbook not found: {input_path}")
-    payload = _load_payload(input_path, work_items_path)
+    db_path = _resolve_path(db_name, base_dir)
+    payload = _load_payload_from_canonical(db_path, canonical_run_id)
+    if not payload:
+        if not input_path.exists():
+            raise FileNotFoundError(f"Nested view workbook not found: {input_path}")
+        payload = _load_payload(input_path, work_items_path)
     payload["generated_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     output_path = _resolve_path(output_name, base_dir)
     output_path.write_text(_build_html(payload), encoding="utf-8")

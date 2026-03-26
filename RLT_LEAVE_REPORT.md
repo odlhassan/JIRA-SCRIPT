@@ -7,8 +7,8 @@
 
 ## Executive Summary
 - Planned Taken (hours): `646.50`
-- Unplanned Taken (hours): `169.00`
-- Planned Not Yet Taken (hours): `8.00`
+- Unplanned Taken (hours): `177.00`
+- Planned Not Yet Taken (hours): `16.00`
 - Planned Not Yet Taken (No Entry count): `9`
 - Defective subtasks listed: `25`
 - Clubbed leave subtasks: `13`
@@ -27,11 +27,11 @@
 | Muhammad Abbas | 8.00 | 8.00 | 0.00 | 7 | 0 |
 | Muhammad Abdullah | 0.00 | 13.00 | 0.00 | 0 | 0 |
 | Muhammad Ahmad Saleem | 0.00 | 21.00 | 0.00 | 0 | 0 |
-| Muhammad Imran Aslam | 6.50 | 0.00 | 8.00 | 0 | 0 |
+| Muhammad Imran Aslam | 6.50 | 0.00 | 16.00 | 0 | 0 |
 | Muhammad Usman Javed | 0.00 | 8.00 | 0.00 | 0 | 0 |
 | Muhammad Zeeshan Aslam | 0.00 | 8.00 | 0.00 | 0 | 0 |
 | Sarmad Sabir | 0.00 | 13.00 | 0.00 | 0 | 1 |
-| Taimur Zahid | 8.00 | 13.00 | 0.00 | 0 | 0 |
+| Taimur Zahid | 8.00 | 21.00 | 0.00 | 0 | 0 |
 | Waqar Rasheed | 48.00 | 0.00 | 0.00 | 0 | 0 |
 | Zeeshan Sarwar | 0.00 | 0.00 | 0.00 | 0 | 12 |
 

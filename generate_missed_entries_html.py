@@ -11,6 +11,8 @@ from pathlib import Path
 
 from openpyxl import load_workbook
 
+from canonical_report_data import load_canonical_issues, resolve_canonical_run_id
+
 DEFAULT_INPUT_XLSX = "1_jira_work_items_export.xlsx"
 DEFAULT_OUTPUT_HTML = "missed_entries.html"
 
@@ -139,6 +141,35 @@ def _load_rows(input_path: Path) -> tuple[list[dict], str, str]:
     default_from, default_to = _default_month_window()
 
     return rows, default_from, default_to
+
+
+def _load_rows_from_canonical_db(db_path: Path, run_id: str = "") -> tuple[list[dict], str, str]:
+    effective_run_id = resolve_canonical_run_id(db_path, run_id)
+    if not effective_run_id:
+        return [], *_default_month_window()
+
+    rows: list[dict] = []
+    jira_site = os.getenv("JIRA_SITE", "octopusdtlsupport").strip() or "octopusdtlsupport"
+    base_url = f"https://{jira_site}.atlassian.net"
+    for source in load_canonical_issues(db_path, effective_run_id):
+        issue_key = _to_text(source.get("issue_key")).upper()
+        if not issue_key:
+            continue
+        total_hours_logged = _to_float(source.get("total_hours_logged"))
+        rows.append(
+            {
+                "issue_key": issue_key,
+                "issue_type": _to_text(source.get("issue_type")) or "Unknown",
+                "assignee": _to_text(source.get("assignee")),
+                "summary": _to_text(source.get("summary")),
+                "jira_start_date": _normalize_date_text(source.get("start_date")),
+                "jira_due_date": _normalize_date_text(source.get("due_date")),
+                "original_estimate": round(_to_float(source.get("original_estimate_hours")), 2),
+                "resource_logged_hours": "Yes" if total_hours_logged > 0 else "No",
+                "jira_url": f"{base_url}/browse/{issue_key}",
+            }
+        )
+    return rows, *_default_month_window()
 
 
 def _build_html(payload: dict) -> str:
@@ -832,14 +863,21 @@ def main() -> None:
     base_dir = Path(__file__).resolve().parent
     input_name = os.getenv("JIRA_EXPORT_XLSX_PATH", DEFAULT_INPUT_XLSX).strip() or DEFAULT_INPUT_XLSX
     output_name = os.getenv("JIRA_MISSED_ENTRIES_HTML_PATH", DEFAULT_OUTPUT_HTML).strip() or DEFAULT_OUTPUT_HTML
+    db_name = os.getenv("JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH", "assignee_hours_capacity.db").strip() or "assignee_hours_capacity.db"
+    canonical_run_id = os.getenv("JIRA_CANONICAL_RUN_ID", "").strip()
 
     input_path = _resolve_path(input_name, base_dir)
     output_path = _resolve_path(output_name, base_dir)
+    db_path = _resolve_path(db_name, base_dir)
 
-    rows, default_from, default_to = _load_rows(input_path)
+    rows, default_from, default_to = _load_rows_from_canonical_db(db_path, canonical_run_id)
+    source_file = "canonical_db"
+    if not rows:
+        rows, default_from, default_to = _load_rows(input_path)
+        source_file = str(input_path)
     payload = {
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
-        "source_file": str(input_path),
+        "source_file": source_file,
         "rows": rows,
         "default_date_from": default_from,
         "default_date_to": default_to,
@@ -847,7 +885,7 @@ def main() -> None:
     html = _build_html(payload)
     output_path.write_text(html, encoding="utf-8")
 
-    print(f"Source workbook: {input_path}")
+    print(f"Source data: {source_file}")
     print(f"Rows loaded: {len(rows)}")
     print(f"HTML report written: {output_path}")
 

@@ -10,6 +10,8 @@ from pathlib import Path
 
 from openpyxl import load_workbook
 
+from canonical_report_data import load_canonical_actuals_by_issue, load_nested_rows_from_canonical, resolve_canonical_run_id
+
 REQUIRED_HEADERS = [
     "Aspect",
     "Man-days",
@@ -356,6 +358,67 @@ def _load_rows(input_path: Path, work_items_path: Path) -> list[dict]:
 
     wb.close()
     return _merge_subtask_assignee_rows(rows)
+
+
+def _load_rows_from_canonical(db_path: Path, run_id: str = "") -> list[dict]:
+    effective_run_id = resolve_canonical_run_id(db_path, run_id)
+    if not effective_run_id:
+        return []
+    nested_rows = load_nested_rows_from_canonical(db_path, effective_run_id)
+    actuals_by_issue = load_canonical_actuals_by_issue(db_path, effective_run_id)
+    rows: list[dict] = []
+    for row in nested_rows:
+        row_type = _to_text(row.get("row_type"))
+        if row_type not in {"project", "product", "rmi", "story", "subtask", "assignee"}:
+            continue
+        jira_key = _to_text(row.get("jira_key")).upper()
+        actual = actuals_by_issue.get(jira_key, {})
+        actual_start = _to_text(actual.get("first_worklog_date"))
+        actual_end = _to_text(actual.get("actual_complete_date") or actual.get("last_worklog_date"))
+        actual_start_ordinal = None
+        actual_end_ordinal = None
+        actual_duration_days = ""
+        if actual_start and actual_end:
+            try:
+                actual_start_date = date.fromisoformat(actual_start)
+                actual_end_date = date.fromisoformat(actual_end)
+                if actual_start_date <= actual_end_date:
+                    actual_start_ordinal = actual_start_date.toordinal()
+                    actual_end_ordinal = actual_end_date.toordinal()
+                    actual_duration_days = (actual_end_date - actual_start_date).days + 1
+            except ValueError:
+                pass
+        rows.append(
+            {
+                "id": row.get("id"),
+                "parent_id": row.get("parent_id"),
+                "level": row.get("level"),
+                "row_type": row_type,
+                "type_label": _type_label(row_type, _to_text(row.get("aspect"))),
+                "aspect": _to_text(row.get("aspect")),
+                "man_days": _to_number_or_blank(row.get("man_days") or row.get("approved_days")),
+                "man_hours": _to_number_or_blank(row.get("man_hours") or row.get("approved_hours")),
+                "actual_hours": _to_number_or_blank(row.get("actual_hours")),
+                "planned_start": _to_text(row.get("planned_start")),
+                "planned_end": _to_text(row.get("planned_end")),
+                "start_ordinal": row.get("start_ordinal"),
+                "end_ordinal": row.get("end_ordinal"),
+                "duration_days": row.get("duration_days") or "",
+                "has_range": bool(row.get("start_ordinal") and row.get("end_ordinal")),
+                "actual_start": actual_start,
+                "actual_end": actual_end,
+                "actual_start_ordinal": actual_start_ordinal,
+                "actual_end_ordinal": actual_end_ordinal,
+                "actual_duration_days": actual_duration_days,
+                "has_actual_range": bool(actual_start_ordinal and actual_end_ordinal),
+                "project_key": _to_text(row.get("project_key")),
+                "epic_name": "",
+                "story_name": "",
+                "jira_key": jira_key,
+                "assignee": _to_text(row.get("assignee")),
+            }
+        )
+    return rows
 
 
 def _merge_subtask_assignee_rows(rows: list[dict]) -> list[dict]:
@@ -1277,21 +1340,27 @@ def main() -> None:
     input_name = os.getenv("JIRA_NESTED_VIEW_XLSX_PATH", DEFAULT_INPUT_XLSX).strip() or DEFAULT_INPUT_XLSX
     output_name = os.getenv("JIRA_GANTT_HTML_PATH", DEFAULT_OUTPUT_HTML).strip() or DEFAULT_OUTPUT_HTML
     work_items_name = os.getenv("JIRA_EXPORT_XLSX_PATH", DEFAULT_WORK_ITEMS_XLSX).strip() or DEFAULT_WORK_ITEMS_XLSX
+    db_name = os.getenv("JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH", "assignee_hours_capacity.db").strip() or "assignee_hours_capacity.db"
+    canonical_run_id = os.getenv("JIRA_CANONICAL_RUN_ID", "").strip()
 
     input_path = _resolve_path(input_name, base_dir)
     output_path = _resolve_path(output_name, base_dir)
     work_items_path = _resolve_path(work_items_name, base_dir)
+    db_path = _resolve_path(db_name, base_dir)
 
-    rows = _load_rows(input_path, work_items_path)
+    rows = _load_rows_from_canonical(db_path, canonical_run_id)
+    source_file = "canonical_db"
+    if not rows:
+        rows = _load_rows(input_path, work_items_path)
+        source_file = str(input_path)
     data = {
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
-        "source_file": str(input_path),
+        "source_file": source_file,
         "rows": rows,
     }
     output_path.write_text(_build_html(data), encoding="utf-8")
 
-    print(f"Source workbook: {input_path}")
-    print(f"Work items workbook: {work_items_path}")
+    print(f"Source data: {source_file}")
     print(f"Rows loaded: {len(rows)}")
     print(f"Gantt chart report written: {output_path}")
 

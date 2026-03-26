@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from openpyxl import load_workbook
+from canonical_report_data import build_rlt_leave_snapshot, resolve_canonical_run_id
 
 DEFAULT_LEAVE_REPORT_INPUT_XLSX = "rlt_leave_report.xlsx"
 DEFAULT_OUTPUT_HTML = "leaves_planned_calendar.html"
@@ -300,6 +301,105 @@ def _load_calendar_data(
         wb.close()
 
 
+def _load_calendar_data_from_canonical(
+    db_path: Path,
+    run_id: str = "",
+) -> tuple[dict[str, int], dict[str, float], int, dict[str, list[dict[str, Any]]], dict[str, list[dict[str, Any]]], list[str]]:
+    effective_run_id = resolve_canonical_run_id(db_path, run_id)
+    if not effective_run_id:
+        return {}, {}, 0, {}, {}, []
+    snapshot = build_rlt_leave_snapshot(db_path, effective_run_id)
+    daily_rows = list(snapshot.get("daily") or [])
+    counts_by_date: dict[str, int] = {}
+    planned_hours_by_date: dict[str, float] = {}
+    planned_by_day_assignee: dict[tuple[str, str], float] = defaultdict(float)
+    for row in daily_rows:
+        iso = _parse_iso_day(row.get("period_day"))
+        if not iso:
+            continue
+        assignee = _to_text(row.get("assignee")) or "Unassigned"
+        planned = round(_to_float(row.get("planned_taken_hours")) + _to_float(row.get("planned_not_taken_hours")), 2)
+        if planned <= 0:
+            continue
+        counts_by_date[iso] = counts_by_date.get(iso, 0) + 1
+        planned_hours_by_date[iso] = round(planned_hours_by_date.get(iso, 0.0) + planned, 2)
+        planned_by_day_assignee[(iso, assignee)] = round(planned_by_day_assignee[(iso, assignee)] + planned, 2)
+
+    subtasks = list(snapshot.get("distributed_subtasks") or snapshot.get("raw_subtasks") or [])
+    worklogs = list(snapshot.get("worklogs_normalized") or [])
+    details_raw: dict[str, dict[tuple[str, str, str], dict[str, Any]]] = {}
+    mapped: dict[tuple[str, str], float] = defaultdict(float)
+    jira_base_url = _jira_base_url()
+    subtasks_by_issue_day: dict[tuple[str, str], dict[str, Any]] = {}
+    subtasks_by_issue: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for subtask in subtasks:
+        key = _to_text(subtask.get("issue_key")).upper()
+        if not key:
+            continue
+        subtasks_by_issue[key].append(subtask)
+        day = _to_text(subtask.get("planned_date_for_bucket")) or _to_text(subtask.get("start_date")) or _to_text(subtask.get("due_date"))
+        if day:
+            subtasks_by_issue_day[(key, day)] = subtask
+
+    for log in worklogs:
+        issue_key = _to_text(log.get("issue_key")).upper()
+        log_day = _to_text(log.get("started_date"))
+        subtask = subtasks_by_issue_day.get((issue_key, log_day))
+        if not subtask and issue_key in subtasks_by_issue:
+            subtask = subtasks_by_issue[issue_key][0]
+        if not subtask or _to_text(subtask.get("leave_classification")) != "Planned":
+            continue
+        _append_detail(
+            details_raw,
+            mapped,
+            iso=log_day,
+            assignee=_to_text(subtask.get("assignee")) or "Unassigned",
+            issue_key=issue_key,
+            estimate=_to_float(subtask.get("original_estimate_hours")) or None,
+            hours=_to_float(log.get("hours_logged")),
+            source="planned_taken_worklog",
+            jira_base_url=jira_base_url,
+        )
+
+    for subtask in subtasks:
+        if _to_text(subtask.get("leave_classification")) != "Planned":
+            continue
+        if _to_float(subtask.get("total_worklog_hours")) > 0:
+            continue
+        if _to_text(subtask.get("no_entry_flag")) == "Yes":
+            continue
+        iso = _to_text(subtask.get("planned_date_for_bucket"))
+        estimate = _to_float(subtask.get("original_estimate_hours"))
+        if not iso or estimate <= 0:
+            continue
+        _append_detail(
+            details_raw,
+            mapped,
+            iso=iso,
+            assignee=_to_text(subtask.get("assignee")) or "Unassigned",
+            issue_key=_to_text(subtask.get("issue_key")),
+            estimate=estimate,
+            hours=estimate,
+            source="planned_not_taken_bucket",
+            jira_base_url=jira_base_url,
+        )
+
+    details_by_date = {
+        iso: sorted(rows.values(), key=lambda x: (_to_text(x.get("assignee")).lower(), _to_text(x.get("issue_key")).lower(), _to_text(x.get("source"))))
+        for iso, rows in details_raw.items()
+    }
+    unmatched_by_date: dict[str, list[dict[str, Any]]] = {}
+    for (iso, assignee), daily_hours in planned_by_day_assignee.items():
+        residual = round(daily_hours - _to_float(mapped.get((iso, assignee))), 2)
+        if residual > EPSILON:
+            unmatched_by_date.setdefault(iso, []).append(
+                {"assignee": assignee, "hours_on_date": residual, "reason": "No issue-level mapping for this day"}
+            )
+    for iso in list(unmatched_by_date):
+        unmatched_by_date[iso] = sorted(unmatched_by_date[iso], key=lambda row: _to_text(row.get("assignee")).lower())
+    return counts_by_date, planned_hours_by_date, 0, details_by_date, unmatched_by_date, []
+
+
 def _resolve_date_range(counts: dict[str, int]) -> tuple[str, str]:
     min_day: date | None = None
     max_day: date | None = None
@@ -400,17 +500,24 @@ def main() -> None:
     base_dir = Path(__file__).resolve().parent
     leave_report_name = os.getenv("JIRA_LEAVE_REPORT_XLSX_PATH", DEFAULT_LEAVE_REPORT_INPUT_XLSX).strip() or DEFAULT_LEAVE_REPORT_INPUT_XLSX
     output_name = os.getenv("JIRA_LEAVES_CALENDAR_HTML_PATH", DEFAULT_OUTPUT_HTML).strip() or DEFAULT_OUTPUT_HTML
+    db_name = os.getenv("JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH", "assignee_hours_capacity.db").strip() or "assignee_hours_capacity.db"
+    canonical_run_id = os.getenv("JIRA_CANONICAL_RUN_ID", "").strip()
 
     leave_report_path = _resolve_path(leave_report_name, base_dir)
     output_path = _resolve_path(output_name, base_dir)
-    counts_by_date, planned_hours_by_date, skipped_invalid_dates, details_by_date, unmatched_by_date, warnings = _load_calendar_data(leave_report_path)
+    db_path = _resolve_path(db_name, base_dir)
+    counts_by_date, planned_hours_by_date, skipped_invalid_dates, details_by_date, unmatched_by_date, warnings = _load_calendar_data_from_canonical(db_path, canonical_run_id)
+    source_file = "canonical_db"
+    if not counts_by_date and not details_by_date:
+        counts_by_date, planned_hours_by_date, skipped_invalid_dates, details_by_date, unmatched_by_date, warnings = _load_calendar_data(leave_report_path)
+        source_file = str(leave_report_path)
     min_date, max_date = _resolve_date_range(counts_by_date)
     max_count = max(counts_by_date.values()) if counts_by_date else 0
     max_planned_hours = max(planned_hours_by_date.values()) if planned_hours_by_date else 0
 
     payload = {
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
-        "source_file": str(leave_report_path),
+        "source_file": source_file,
         "days_with_planned_leaves": len(counts_by_date),
         "skipped_invalid_dates": skipped_invalid_dates,
         "min_date": min_date,
@@ -426,7 +533,7 @@ def main() -> None:
     }
     output_path.write_text(_build_html(payload), encoding="utf-8")
 
-    print(f"Source workbook: {leave_report_path}")
+    print(f"Source data: {source_file}")
     print(f"Days with planned leaves: {len(counts_by_date)}")
     print(f"Skipped (invalid dates): {skipped_invalid_dates}")
     print(f"Calendar date range: {min_date} to {max_date}")

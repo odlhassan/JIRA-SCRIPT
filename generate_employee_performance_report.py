@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from openpyxl import load_workbook
+from canonical_report_data import build_rlt_leave_snapshot
 from generate_assignee_hours_report import _list_capacity_profiles
 from manage_fields_registry import load_manage_fields
 from report_entity_registry import load_report_entities
@@ -2244,17 +2245,17 @@ function renderHeaderPlanActualBreakdown(plannedRows, actualRows) {{
         const issueKey = String(row?.issue_key || "-").toUpperCase();
         const wi = workItemsByKey.get(issueKey) || {{}};
         const typeLabel = issueTypeLabel(wi.issue_type || wi.work_item_type || wi.jira_issue_type) || "-";
-        return `<tr><td class="issue-id">${{e(issueKey)}}<\/td><td>${{e(typeLabel)}}<\/td><td>${{n(row?.original_estimate_hours).toFixed(2)}}h<\/td><\/tr>`;
+        return `<tr><td class="issue-id">${{e(issueKey)}}</td><td>${{e(typeLabel)}}</td><td>${{n(row?.original_estimate_hours).toFixed(2)}}h</td></tr>`;
       }}).join("")
-    : '<tr><td colspan="3" class="empty">No subtasks in current scope.<\/td><\/tr>';
+    : '<tr><td colspan="3" class="empty">No subtasks in current scope.</td></tr>';
   const actualBodyHtml = actual.length
     ? actual.map((row) => {{
         const issueKey = String(row?.issue_key || "-").toUpperCase();
         const wi = workItemsByKey.get(issueKey) || {{}};
         const typeLabel = issueTypeLabel(wi.issue_type || wi.work_item_type || wi.jira_issue_type) || "-";
-        return `<tr><td class="issue-id">${{e(issueKey)}}<\/td><td>${{e(typeLabel)}}<\/td><td>${{n(row?.logged_hours).toFixed(2)}}h<\/td><\/tr>`;
+        return `<tr><td class="issue-id">${{e(issueKey)}}</td><td>${{e(typeLabel)}}</td><td>${{n(row?.logged_hours).toFixed(2)}}h</td></tr>`;
       }}).join("")
-    : '<tr><td colspan="3" class="empty">No logged subtasks in current scope.<\/td><\/tr>';
+    : '<tr><td colspan="3" class="empty">No logged subtasks in current scope.</td></tr>';
   headerPlanActualLastPlannedMeta = plannedMeta;
   headerPlanActualLastActualMeta = actualMeta;
   headerPlanActualLastPlannedBodyHtml = plannedBodyHtml;
@@ -5476,8 +5477,16 @@ def main() -> None:
         run_id = resolved_run_id
         work_items = _load_work_items_from_canonical_db(paths["db_path"], run_id)
         worklogs = _load_worklogs_from_canonical_db(paths["db_path"], run_id, work_items)
-        leave_rows = _load_unplanned_leave_rows(paths["leave_report_path"])
-        leave_issue_keys = _load_leave_issue_keys(paths["leave_report_path"])
+        leave_snapshot = build_rlt_leave_snapshot(paths["db_path"], run_id)
+        leave_rows = [
+            row for row in list(leave_snapshot.get("daily") or [])
+            if float(row.get("unplanned_taken_hours") or 0) > 0
+        ]
+        leave_issue_keys = {
+            _to_text(row.get("issue_key")).upper()
+            for row in list(leave_snapshot.get("raw_subtasks") or [])
+            if "unplanned" in _to_text(row.get("leave_classification")).lower()
+        }
     else:
         work_items = _load_work_items(paths["work_items_path"])
         worklogs = _load_worklogs(paths["worklog_path"], work_items)

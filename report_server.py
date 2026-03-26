@@ -35,6 +35,13 @@ from generate_assignee_hours_report import (
     _to_text,
     calculate_capacity_metrics,
 )
+from dashboard_db_enrichment import (
+    apply_epics_management_ipp_fields as dash_apply_epics_management_ipp_fields,
+    load_epics_management_dashboard_meta as dash_load_epics_management_dashboard_meta,
+    load_epics_planner_epic_plan_by_key as dash_load_planner_epic_plan_by_key,
+    load_epics_planner_story_dates_by_key as dash_load_planner_story_dates_by_key,
+    normalize_issue_key as dash_normalize_issue_key,
+)
 from generate_employee_performance_report import (
     DEFAULT_PERFORMANCE_SETTINGS,
     _delete_performance_team,
@@ -86,16 +93,8 @@ from report_entity_registry import (
     save_report_entity_global_settings,
 )
 from ipp_meeting_utils import (
-    fetch_jira_issue_planned_dates as ipp_fetch_jira_issue_planned_dates,
-    load_ipp_actual_and_remarks_by_key as ipp_load_actual_and_remarks,
-    load_ipp_issue_keys as ipp_load_issue_keys,
-    load_ipp_planned_dates_by_key as ipp_load_planned_dates_by_key,
-    normalize_issue_key as ipp_normalize_issue_key,
     resolve_jira_end_date_field_ids,
     resolve_jira_start_date_field_id,
-    yes_no_dates_altered as ipp_yes_no_dates_altered,
-    yes_no_in_ipp as ipp_yes_no_in_ipp,
-    yes_no_ipp_actual_matches_jira_end as ipp_yes_no_ipp_actual_matches_jira_end,
 )
 from jira_client import BASE_URL, extract_jira_key_from_url, get_session
 from jira_export_db import (
@@ -116,6 +115,9 @@ from jira_export_db import (
     upsert_subtask_worklog_rollup_by_keys as jira_export_upsert_rollup_by_keys,
     upsert_subtask_worklogs_by_keys as jira_export_upsert_worklogs_by_keys,
     upsert_work_items_by_keys as jira_export_upsert_work_items_by_keys,
+    write_subtask_worklog_rollup as jira_export_write_rollup,
+    write_subtask_worklogs as jira_export_write_worklogs,
+    write_work_items as jira_export_write_work_items,
 )
 from export_jira_subtask_worklogs import (
     _fetch_all_worklogs_for_issue as export_fetch_worklogs_for_issue,
@@ -667,255 +669,211 @@ def _dashboard_refresh_epic_work_item_row(
 def _dashboard_refresh_epic_impl(
     *,
     capacity_paths: dict,
-    session,
-    epic_norm: dict,
-    stories_norm: list[dict],
-    subtasks_norm: list[dict],
+    epic_key: str,
+    run_id: str = "",
 ) -> dict:
-    """Fetch worklogs, upsert jira_exports.db, build enriched epic/stories/subtasks with risk. Returns dict with epic, stories, subtasks, bug_subtasks."""
-    epic_key_val = _to_text(epic_norm.get("issue_key")).upper()
-    story_keys = {_to_text(s.get("issue_key")).upper() for s in stories_norm if _to_text(s.get("issue_key"))}
-    subtask_keys = {_to_text(t.get("issue_key")).upper() for t in subtasks_norm if _to_text(t.get("issue_key"))}
-    all_keys = {epic_key_val} | story_keys | subtask_keys
+    return _dashboard_build_epic_payload_from_db(
+        settings_db_path=Path(capacity_paths["db_path"]),
+        epic_key=epic_key,
+        run_id=run_id,
+    )
 
-    ipp_issue_keys = ipp_load_issue_keys()
-    ipp_planned = ipp_load_planned_dates_by_key()
-    ipp_actual = ipp_load_actual_and_remarks()
-    jira_epic_dates = ipp_fetch_jira_issue_planned_dates(session, BASE_URL, [epic_key_val])
 
-    def ipp_for_epic(ek: str):
-        ek = _to_text(ek).upper()
-        actual = ipp_actual.get(ek, {})
-        return {
-            "latest_ipp_meeting": ipp_yes_no_in_ipp(ek, ipp_issue_keys),
-            "jira_ipp_rmi_dates_altered": ipp_yes_no_dates_altered(ek, ipp_planned, jira_epic_dates),
-            "ipp_actual_date": actual.get("ipp_actual_date", ""),
-            "ipp_remarks": actual.get("ipp_remarks", ""),
-            "ipp_actual_date_matches_jira_end_date": ipp_yes_no_ipp_actual_matches_jira_end(ek, ipp_actual, jira_epic_dates),
-        }
+def _dashboard_apply_epic_planner_fields(epic_item: dict[str, object], planner_lookup: dict[str, dict[str, object]]) -> None:
+    planner = planner_lookup.get(dash_normalize_issue_key(epic_item.get("issue_key"))) or {}
+    has_planner_entry = bool(planner)
+    planner_start = _to_text(planner.get("planner_start_date"))
+    planner_end = _to_text(planner.get("planner_end_date"))
+    planner_hours = planner.get("planner_planned_hours")
+    planner_complete = bool(planner_start and planner_end and planner_hours is not None)
 
-    work_item_rows = []
-    epic_norm["epic_key"] = epic_key_val
-    work_item_rows.append(_dashboard_refresh_epic_work_item_row(epic_norm, "Epic", "", epic_key_val, 0.0, ipp_for_epic(epic_key_val)))
-    for s in stories_norm:
-        s["epic_key"] = epic_key_val
-        work_item_rows.append(_dashboard_refresh_epic_work_item_row(s, "Story", epic_key_val, epic_key_val, 0.0, ipp_for_epic(epic_key_val)))
+    jira_start = _to_text(epic_item.get("jira_start_date"))
+    jira_end = _to_text(epic_item.get("jira_end_date"))
+    jira_hours = float(epic_item.get("planned_hours_numeric") or 0.0)
+    jira_hours_available = _to_text(epic_item.get("original_estimate")) != ""
 
-    subtask_info = []
-    for t in subtasks_norm:
-        ik = _to_text(t.get("issue_key")).upper()
-        sk = _to_text(t.get("story_key")).upper()
-        subtask_info.append({
-            "issue_id": ik, "issue_key": ik, "summary": _to_text(t.get("summary")),
-            "issue_type": _to_text(t.get("issue_type_name")) or "Sub-task",
-            "assignee": _to_text(t.get("assignee")) or "Unassigned",
-            "parent_story_key": sk, "parent_epic_id": epic_key_val,
-        })
+    dates_match = "N/A"
+    if planner_complete and jira_start and jira_end:
+        dates_match = "Yes" if planner_start == jira_start and planner_end == jira_end else "No"
 
-    worklog_rows = []
-    canonical_run_id = _canonical_last_success_run_id(capacity_paths["db_path"])
-    if not canonical_run_id:
+    hours_match = "N/A"
+    if planner_complete and jira_hours_available:
+        hours_match = "Yes" if abs(float(planner_hours) - jira_hours) < 0.01 else "No"
+
+    if not has_planner_entry:
+        planner_status = "No Planner Entry"
+    elif not planner_complete:
+        planner_status = "Incomplete"
+    elif dates_match == "Yes" and hours_match == "Yes":
+        planner_status = "Matched"
+    else:
+        planner_status = "Mismatch"
+
+    epic_item["planner_has_entry"] = has_planner_entry
+    epic_item["planner_planned_start_date"] = planner_start
+    epic_item["planner_planned_end_date"] = planner_end
+    epic_item["planner_planned_hours"] = planner_hours
+    epic_item["planner_dates_match"] = dates_match
+    epic_item["planner_hours_match"] = hours_match
+    epic_item["planner_validation_status"] = planner_status
+
+
+def _dashboard_build_epic_payload_from_db(
+    *,
+    settings_db_path: Path,
+    epic_key: str,
+    run_id: str = "",
+) -> dict[str, object]:
+    target_epic_key = _to_text(epic_key).upper()
+    effective_run_id = _to_text(run_id) or _canonical_last_success_run_id(settings_db_path)
+    if not effective_run_id:
         raise _CanonicalMissingError("No successful canonical refresh found. Run the canonical refresh first.")
-    run_id_text = _to_text(canonical_run_id)
-    with sqlite3.connect(capacity_paths["db_path"]) as conn:
-        conn.row_factory = sqlite3.Row
-        for info in subtask_info:
-            issue_key = info["issue_id"]
-            issue_link = f"{BASE_URL}/browse/{issue_key}"
-            parent_story_key = info["parent_story_key"]
-            parent_story_link = f"{BASE_URL}/browse/{parent_story_key}" if parent_story_key else ""
-            parent_epic_id = info["parent_epic_id"]
-            parent_epic_key = _to_text(parent_epic_id).upper()
-            ipp_actual_data = ipp_actual.get(parent_epic_key, {})
-            rows = conn.execute(
-                """
-                SELECT started_utc, hours_logged, worklog_author
-                FROM canonical_worklogs
-                WHERE run_id = ? AND issue_key = ?
-                ORDER BY started_utc
-                """,
-                (run_id_text, issue_key),
-            ).fetchall()
-            for wl in rows:
-                started = _to_text(wl["started_utc"])
-                hours = float(wl["hours_logged"] or 0.0)
-                worklog_author = _to_text(wl["worklog_author"]) or "Unknown"
-                worklog_rows.append([
-                    issue_link, issue_key, info.get("summary", ""), info.get("issue_type", ""),
-                    parent_story_link, parent_story_key, parent_epic_id, info.get("assignee", "Unassigned"),
-                    ipp_yes_no_in_ipp(issue_key, ipp_issue_keys),
-                    ipp_yes_no_dates_altered(parent_epic_id, ipp_planned, jira_epic_dates),
-                    ipp_actual_data.get("ipp_actual_date", ""), ipp_actual_data.get("ipp_remarks", ""),
-                    ipp_yes_no_ipp_actual_matches_jira_end(parent_epic_key, ipp_actual, jira_epic_dates),
-                    started, hours, worklog_author,
-                ])
 
-    rollup_by_issue = defaultdict(lambda: {
-        "issue_link": "", "issue_id": "", "issue_title": "", "issue_type": "",
-        "parent_story_link": "", "parent_story_id": "", "parent_epic_id": "", "issue_assignee": "",
-        "actual_min_raw": "", "actual_max_raw": "", "total_hours": 0.0,
-    })
-    for row in worklog_rows:
-        issue_id = row[1]
-        g = rollup_by_issue[issue_id]
-        g["issue_link"] = row[0] or g["issue_link"]
-        g["issue_id"] = issue_id
-        g["issue_title"] = row[2] or g["issue_title"]
-        g["issue_type"] = row[3] or g["issue_type"]
-        g["parent_story_link"] = row[4] or g["parent_story_link"]
-        g["parent_story_id"] = row[5] or g["parent_story_id"]
-        g["parent_epic_id"] = row[6] or g["parent_epic_id"]
-        g["issue_assignee"] = row[7] or g["issue_assignee"]
-        ts_raw = row[13]
-        if ts_raw:
-            try:
-                ts_dt = datetime.fromisoformat(ts_raw.replace("Z", "+00:00"))
-            except Exception:
-                ts_dt = None
-            if ts_dt:
-                if not g["actual_min_raw"]:
-                    g["actual_min_raw"] = g["actual_max_raw"] = ts_raw
-                else:
-                    try:
-                        min_dt = datetime.fromisoformat(g["actual_min_raw"].replace("Z", "+00:00"))
-                        max_dt = datetime.fromisoformat(g["actual_max_raw"].replace("Z", "+00:00"))
-                        if ts_dt < min_dt:
-                            g["actual_min_raw"] = ts_raw
-                        if ts_dt > max_dt:
-                            g["actual_max_raw"] = ts_raw
-                    except Exception:
-                        pass
-        g["total_hours"] += float(row[14] or 0)
-
-    story_planned = {_to_text(s.get("issue_key")).upper(): (_to_text(s.get("planned_start")), _to_text(s.get("planned_due"))) for s in stories_norm}
-    rollup_rows = []
-    for issue_id in sorted(rollup_by_issue.keys()):
-        item = rollup_by_issue[issue_id]
-        parent_story_id = _to_text(item["parent_story_id"]).strip()
-        parent_epic_id = _to_text(item["parent_epic_id"]).strip()
-        planned_start, planned_end = story_planned.get(parent_story_id, ("", ""))
-        ipp_actual_data = ipp_actual.get(parent_epic_id.upper(), {})
-        rollup_rows.append([
-            item["issue_link"], item["issue_id"], item["issue_title"], item["issue_type"],
-            item["parent_story_link"], item["parent_story_id"], item["parent_epic_id"], item["issue_assignee"],
-            ipp_yes_no_in_ipp(item["issue_id"], ipp_issue_keys),
-            ipp_yes_no_dates_altered(parent_epic_id, ipp_planned, jira_epic_dates),
-            ipp_actual_data.get("ipp_actual_date", ""), ipp_actual_data.get("ipp_remarks", ""),
-            ipp_yes_no_ipp_actual_matches_jira_end(parent_epic_id.upper(), ipp_actual, jira_epic_dates),
-            planned_start, planned_end, item["actual_min_raw"], item["actual_max_raw"], round(item["total_hours"], 2),
-        ])
-
-    total_hours_by_subtask = {item["issue_id"]: item["total_hours"] for item in rollup_by_issue.values()}
-    for t in subtasks_norm:
-        ik = _to_text(t.get("issue_key")).upper()
-        th = total_hours_by_subtask.get(ik, 0.0)
-        work_item_rows.append(_dashboard_refresh_epic_work_item_row(
-            t, _to_text(t.get("issue_type_name")) or "Sub-task",
-            _to_text(t.get("story_key")).upper(), epic_key_val, th, ipp_for_epic(epic_key_val)
-        ))
-
-    export_conn = jira_export_db_connect()
-    try:
-        jira_export_db_ensure_schema(export_conn)
-        jira_export_upsert_work_items_by_keys(export_conn, work_item_rows, all_keys)
-        jira_export_upsert_worklogs_by_keys(export_conn, worklog_rows, subtask_keys)
-        jira_export_upsert_rollup_by_keys(export_conn, rollup_rows, subtask_keys)
-    finally:
-        export_conn.close()
-
-    planner_db_path = capacity_paths["db_path"]
-    risk_settings = dash_load_risk_settings(Path(planner_db_path))
-    ipp_planned_dates_by_key = ipp_load_planned_dates_by_key()
-
-    def normalize_date_txt(v):
-        if v is None or not str(v).strip():
-            return ""
-        return str(v).strip()[:10]
-
-    def apply_ipp_dates(item_dict: dict, ek: str):
-        ek_norm = ipp_normalize_issue_key(ek)
-        if not ek_norm:
-            return
-        ipp_dates = ipp_planned_dates_by_key.get(ek_norm, {})
-        item_dict["ipp_planned_start_date"] = normalize_date_txt(ipp_dates.get("planned_start") or item_dict.get("ipp_planned_start_date"))
-        item_dict["ipp_planned_end_date"] = normalize_date_txt(ipp_dates.get("planned_end") or item_dict.get("ipp_planned_end_date"))
-
+    planner_lookup = dash_load_planner_epic_plan_by_key(settings_db_path)
+    planner_story_lookup = dash_load_planner_story_dates_by_key(settings_db_path)
+    ipp_meta_lookup = dash_load_epics_management_dashboard_meta(settings_db_path)
+    risk_settings = dash_load_risk_settings(settings_db_path)
     today_utc = datetime.now(timezone.utc).date()
-    epics_map = {}
-    stories_map = {}
-    subtasks_map = {}
-    bug_subtasks_map = {}
 
-    def row_from_norm(n, total_hrs, parent_key_attr):
-        pk = _to_text(n.get(parent_key_attr)).upper()
-        ipp_vals = ipp_for_epic(epic_key_val)
-        return {
-            "issue_key": _to_text(n.get("issue_key")).upper(),
-            "jira_issue_type": _to_text(n.get("issue_type_name")) or "Epic",
-            "parent_issue_key": pk,
-            "summary": _to_text(n.get("summary")),
-            "assignee": _to_text(n.get("assignee")),
-            "project_key": _to_text(n.get("project_key")),
-            "jira_url": _to_text(n.get("jira_url")),
-            "start_date": _to_text(n.get("planned_start")),
-            "end_date": _to_text(n.get("planned_due")),
+    with sqlite3.connect(settings_db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        issue_rows = [
+            dict(row)
+            for row in conn.execute(
+                """
+                SELECT issue_key, project_key, issue_type, summary, status, assignee,
+                       start_date, due_date, original_estimate_hours, parent_issue_key,
+                       story_key, epic_key
+                FROM canonical_issues
+                WHERE run_id = ?
+                  AND (issue_key = ? OR epic_key = ?)
+                ORDER BY issue_key
+                """,
+                (effective_run_id, target_epic_key, target_epic_key),
+            ).fetchall()
+        ]
+        worklog_rows = [
+            dict(row)
+            for row in conn.execute(
+                """
+                SELECT issue_key, started_utc, started_date, hours_logged
+                FROM canonical_worklogs
+                WHERE run_id = ?
+                  AND issue_key IN (
+                      SELECT issue_key
+                      FROM canonical_issues
+                      WHERE run_id = ?
+                        AND (issue_key = ? OR epic_key = ?)
+                  )
+                ORDER BY started_utc ASC, issue_key ASC
+                """,
+                (effective_run_id, effective_run_id, target_epic_key, target_epic_key),
+            ).fetchall()
+        ]
+
+    if not issue_rows:
+        raise LookupError(f"Epic '{target_epic_key}' not found in canonical hierarchy.")
+
+    worklogs_by_issue: dict[str, list[dict[str, object]]] = defaultdict(list)
+    for row in worklog_rows:
+        worklogs_by_issue[_to_text(row.get("issue_key")).upper()].append(row)
+
+    epic_item: dict[str, object] | None = None
+    stories_map: dict[str, dict[str, object]] = {}
+    subtasks_map: dict[str, dict[str, object]] = {}
+    bug_subtasks_map: dict[str, dict[str, object]] = {}
+
+    for row in issue_rows:
+        issue_key = _to_text(row.get("issue_key")).upper()
+        issue_type_name = _to_text(row.get("issue_type"))
+        total_hours = round(
+            sum(float(item.get("hours_logged") or 0.0) for item in worklogs_by_issue.get(issue_key, [])),
+            2,
+        )
+        est_hours = float(row.get("original_estimate_hours") or 0.0)
+        dashboard_row = {
+            "issue_key": issue_key,
+            "jira_issue_type": issue_type_name,
+            "parent_issue_key": _to_text(row.get("parent_issue_key")).upper(),
+            "summary": _to_text(row.get("summary")),
+            "assignee": _to_text(row.get("assignee")) or "Unassigned",
+            "project_key": _to_text(row.get("project_key")).upper(),
+            "jira_url": f"{BASE_URL}/browse/{issue_key}",
+            "start_date": _to_text(row.get("start_date")),
+            "end_date": _to_text(row.get("due_date")),
             "actual_start_date": "",
             "actual_end_date": "",
-            "original_estimate": str(n.get("estimate_hours") or "") + "h" if n.get("estimate_hours") else "",
-            "total_hours_logged": total_hrs,
-            "status": _to_text(n.get("status")),
-            "Latest IPP Meeting": ipp_vals.get("latest_ipp_meeting", "No"),
-            "Jira IPP RMI Dates Altered": ipp_vals.get("jira_ipp_rmi_dates_altered", "No"),
-            "IPP Actual Date (Production Date)": ipp_vals.get("ipp_actual_date", ""),
-            "IPP Remarks": ipp_vals.get("ipp_remarks", ""),
-            "IPP Actual Date Matches Jira End Date": ipp_vals.get("ipp_actual_date_matches_jira_end_date", "No"),
+            "original_estimate": (f"{round(est_hours, 2):g}h" if est_hours > 0 else ""),
+            "total_hours_logged": total_hours,
+            "status": _to_text(row.get("status")),
         }
-
-    erow = row_from_norm(epic_norm, 0.0, "issue_key")
-    eitem = dash_build_item(erow, "Epic")
-    eitem["epic_key"] = epic_key_val
-    eitem["epic_key_legacy"] = epic_key_val
-    eitem["epic_status"] = eitem.get("status", "")
-    eitem["subtask_hours_logged_total"] = sum(total_hours_by_subtask.get(ik, 0) for ik in subtask_keys)
-    apply_ipp_dates(eitem, epic_key_val)
-    epics_map[epic_key_val] = eitem
-
-    for s in stories_norm:
-        sk = _to_text(s.get("issue_key")).upper()
-        srow = row_from_norm(s, 0.0, "epic_key")
-        srow["parent_issue_key"] = epic_key_val
-        sitem = dash_build_item(srow, "Story")
-        sitem["epic_key"] = epic_key_val
-        apply_ipp_dates(sitem, epic_key_val)
-        stories_map[sk] = sitem
-
-    for t in subtasks_norm:
-        tk = _to_text(t.get("issue_key")).upper()
-        thr = total_hours_by_subtask.get(tk, 0.0)
-        trow = row_from_norm(t, thr, "story_key")
-        trow["parent_issue_key"] = _to_text(t.get("story_key")).upper()
-        titem = dash_build_item(trow, _to_text(t.get("issue_type_name")) or "Sub-task")
-        titem["story_key"] = _to_text(t.get("story_key")).upper()
-        titem["epic_key"] = epic_key_val
-        apply_ipp_dates(titem, epic_key_val)
-        if "bug" in (t.get("issue_type_name") or "").lower():
-            bug_subtasks_map[tk] = titem
+        item_kind = "Epic" if _canonical_is_epic_type(issue_type_name) else ("Story" if "story" in issue_type_name.lower() else issue_type_name or "Sub-task")
+        item = dash_build_item(dashboard_row, item_kind)
+        if _canonical_is_epic_type(issue_type_name):
+            item["epic_key"] = issue_key
+            item["epic_key_legacy"] = issue_key
+            item["epic_status"] = item.get("status", "")
+            epic_item = item
+        elif _canonical_is_subtask_type(issue_type_name):
+            item["story_key"] = _to_text(row.get("story_key")).upper()
+            item["epic_key"] = _to_text(row.get("epic_key")).upper()
+            if "bug" in issue_type_name.lower():
+                bug_subtasks_map[issue_key] = item
+            else:
+                subtasks_map[issue_key] = item
         else:
-            subtasks_map[tk] = titem
+            item["epic_key"] = _to_text(row.get("epic_key")).upper()
+            planner_story = planner_story_lookup.get(dash_normalize_issue_key(issue_key)) or {}
+            item["planner_story_start_date"] = _to_text(planner_story.get("start_date"))
+            item["planner_story_end_date"] = _to_text(planner_story.get("due_date"))
+            item["planner_story_planned_hours"] = planner_story.get("estimate_hours")
+            stories_map[issue_key] = item
+
+    if not epic_item:
+        raise LookupError(f"Epic '{target_epic_key}' not found in canonical hierarchy.")
+
+    epic_item["subtask_hours_logged_total"] = round(
+        sum(float(item.get("total_hours_logged") or 0.0) for item in list(subtasks_map.values()) + list(bug_subtasks_map.values())),
+        2,
+    )
+    _dashboard_apply_epic_planner_fields(epic_item, planner_lookup)
+    dash_apply_epics_management_ipp_fields(
+        epic_item,
+        target_epic_key,
+        ipp_meta_lookup,
+        jira_start_date=epic_item.get("jira_start_date"),
+        jira_end_date=epic_item.get("jira_end_date"),
+    )
+
+    for story_item in stories_map.values():
+        dash_apply_epics_management_ipp_fields(
+            story_item,
+            target_epic_key,
+            ipp_meta_lookup,
+            jira_start_date=epic_item.get("jira_start_date"),
+            jira_end_date=epic_item.get("jira_end_date"),
+        )
+    for subtask_item in list(subtasks_map.values()) + list(bug_subtasks_map.values()):
+        dash_apply_epics_management_ipp_fields(
+            subtask_item,
+            target_epic_key,
+            ipp_meta_lookup,
+            jira_start_date=epic_item.get("jira_start_date"),
+            jira_end_date=epic_item.get("jira_end_date"),
+        )
 
     for item in list(subtasks_map.values()) + list(bug_subtasks_map.values()):
         dash_compute_self_risk(item, today_utc, risk_settings)
     for item in stories_map.values():
         dash_compute_self_risk(item, today_utc, risk_settings)
-    for item in epics_map.values():
-        dash_compute_self_risk(item, today_utc, risk_settings)
-    dash_apply_risk_rollup(epics_map, stories_map, subtasks_map, bug_subtasks_map, risk_settings)
+    dash_compute_self_risk(epic_item, today_utc, risk_settings)
+    dash_apply_risk_rollup({target_epic_key: epic_item}, stories_map, subtasks_map, bug_subtasks_map, risk_settings)
 
     return {
-        "epic": list(epics_map.values())[0] if epics_map else None,
-        "stories": list(stories_map.values()),
-        "subtasks": list(subtasks_map.values()),
-        "bug_subtasks": list(bug_subtasks_map.values()),
+        "epic": epic_item,
+        "stories": sorted(stories_map.values(), key=lambda item: _to_text(item.get("issue_key")).upper()),
+        "subtasks": sorted(subtasks_map.values(), key=lambda item: _to_text(item.get("issue_key")).upper()),
+        "bug_subtasks": sorted(bug_subtasks_map.values(), key=lambda item: _to_text(item.get("issue_key")).upper()),
     }
 
 
@@ -3192,9 +3150,12 @@ def _canonical_serialize_run(run_row: dict[str, object] | None) -> dict[str, obj
         managed_project_keys = []
     if not isinstance(managed_project_keys, list):
         managed_project_keys = []
+    summary = stats.get("summary") if isinstance(stats, dict) else {}
     return {
         "run_id": _to_text(row.get("run_id")),
         "scope_year": int(row.get("scope_year") or 0),
+        "scope_kind": _to_text((summary or {}).get("scope_kind")) or "full",
+        "scope_key": _to_text((summary or {}).get("scope_key")).upper(),
         "managed_project_keys": [str(item).strip().upper() for item in managed_project_keys if _to_text(item)],
         "status": _to_text(row.get("status")) or "unknown",
         "step": _to_text(row.get("progress_step")),
@@ -3350,6 +3311,213 @@ def _canonical_load_previous_base_rows(
                 if _to_text(row["issue_key"]).upper() not in exclude_worklogs
             )
     return issue_rows, link_rows, worklog_rows
+
+
+def _canonical_clone_run_snapshot_excluding_epic(
+    db_path: Path,
+    source_run_id: str,
+    target_run_id: str,
+    epic_key: str,
+) -> int:
+    source_run_id_text = _to_text(source_run_id)
+    target_run_id_text = _to_text(target_run_id)
+    epic_key_text = _to_text(epic_key).upper()
+    if not source_run_id_text or not target_run_id_text or not epic_key_text:
+        return 0
+    with sqlite3.connect(db_path) as conn:
+        subtree_issue_keys = {
+            _to_text(row[0]).upper()
+            for row in conn.execute(
+                """
+                SELECT issue_key
+                FROM canonical_issues
+                WHERE run_id = ?
+                  AND (issue_key = ? OR epic_key = ?)
+                """,
+                (source_run_id_text, epic_key_text, epic_key_text),
+            ).fetchall()
+            if _to_text(row[0])
+        }
+        conn.execute(
+            """
+            INSERT INTO canonical_issues(
+                run_id, issue_id, issue_key, project_key, issue_type, summary, status, assignee,
+                start_date, due_date, created_utc, updated_utc, resolved_stable_since_date,
+                original_estimate_hours, total_hours_logged, fix_type, parent_issue_key,
+                story_key, epic_key, raw_payload_json
+            )
+            SELECT ?, issue_id, issue_key, project_key, issue_type, summary, status, assignee,
+                   start_date, due_date, created_utc, updated_utc, resolved_stable_since_date,
+                   original_estimate_hours, total_hours_logged, fix_type, parent_issue_key,
+                   story_key, epic_key, raw_payload_json
+            FROM canonical_issues
+            WHERE run_id = ?
+              AND issue_key NOT IN (
+                  SELECT issue_key
+                  FROM canonical_issues
+                  WHERE run_id = ?
+                    AND (issue_key = ? OR epic_key = ?)
+              )
+            """,
+            (target_run_id_text, source_run_id_text, source_run_id_text, epic_key_text, epic_key_text),
+        )
+        conn.execute(
+            """
+            INSERT INTO canonical_issue_links(
+                run_id, issue_key, parent_issue_key, story_key, epic_key, hierarchy_level
+            )
+            SELECT ?, issue_key, parent_issue_key, story_key, epic_key, hierarchy_level
+            FROM canonical_issue_links
+            WHERE run_id = ?
+              AND issue_key NOT IN (
+                  SELECT issue_key
+                  FROM canonical_issues
+                  WHERE run_id = ?
+                    AND (issue_key = ? OR epic_key = ?)
+              )
+            """,
+            (target_run_id_text, source_run_id_text, source_run_id_text, epic_key_text, epic_key_text),
+        )
+        conn.execute(
+            """
+            INSERT INTO canonical_worklogs(
+                run_id, worklog_id, issue_key, project_key, worklog_author, issue_assignee,
+                started_utc, started_date, updated_utc, hours_logged
+            )
+            SELECT ?, worklog_id, issue_key, project_key, worklog_author, issue_assignee,
+                   started_utc, started_date, updated_utc, hours_logged
+            FROM canonical_worklogs
+            WHERE run_id = ?
+              AND issue_key NOT IN (
+                  SELECT issue_key
+                  FROM canonical_issues
+                  WHERE run_id = ?
+                    AND (issue_key = ? OR epic_key = ?)
+              )
+            """,
+            (target_run_id_text, source_run_id_text, source_run_id_text, epic_key_text, epic_key_text),
+        )
+        conn.execute(
+            """
+            INSERT INTO canonical_issue_scope_reasons(run_id, issue_key, reason, detail_text)
+            SELECT ?, issue_key, reason, detail_text
+            FROM canonical_issue_scope_reasons
+            WHERE run_id = ?
+              AND issue_key NOT IN (
+                  SELECT issue_key
+                  FROM canonical_issues
+                  WHERE run_id = ?
+                    AND (issue_key = ? OR epic_key = ?)
+              )
+            """,
+            (target_run_id_text, source_run_id_text, source_run_id_text, epic_key_text, epic_key_text),
+        )
+        conn.commit()
+    return len(subtree_issue_keys)
+
+
+def _canonical_insert_scope_rows(
+    db_path: Path,
+    run_id: str,
+    issue_rows: list[dict[str, object]],
+    link_rows: list[dict[str, object]],
+    worklog_rows: list[dict[str, object]],
+    reason_map: dict[str, set[str]] | None = None,
+) -> None:
+    run_id_text = _to_text(run_id)
+    with sqlite3.connect(db_path) as conn:
+        if issue_rows:
+            conn.executemany(
+                """
+                INSERT OR REPLACE INTO canonical_issues(
+                    run_id, issue_id, issue_key, project_key, issue_type, summary, status, assignee,
+                    start_date, due_date, created_utc, updated_utc, resolved_stable_since_date,
+                    original_estimate_hours, total_hours_logged, fix_type, parent_issue_key,
+                    story_key, epic_key, raw_payload_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        run_id_text,
+                        _to_text(row.get("issue_id")),
+                        _to_text(row.get("issue_key")).upper(),
+                        _to_text(row.get("project_key")).upper(),
+                        _to_text(row.get("issue_type")),
+                        _to_text(row.get("summary")),
+                        _to_text(row.get("status")),
+                        _to_text(row.get("assignee")),
+                        _to_text(row.get("start_date")),
+                        _to_text(row.get("due_date")),
+                        _to_text(row.get("created_utc")),
+                        _to_text(row.get("updated_utc")),
+                        _to_text(row.get("resolved_stable_since_date")),
+                        float(row.get("original_estimate_hours") or 0),
+                        float(row.get("total_hours_logged") or 0),
+                        _to_text(row.get("fix_type")),
+                        _to_text(row.get("parent_issue_key")).upper(),
+                        _to_text(row.get("story_key")).upper(),
+                        _to_text(row.get("epic_key")).upper(),
+                        _to_text(row.get("raw_payload_json")) or "{}",
+                    )
+                    for row in issue_rows
+                ],
+            )
+        if link_rows:
+            conn.executemany(
+                """
+                INSERT OR REPLACE INTO canonical_issue_links(
+                    run_id, issue_key, parent_issue_key, story_key, epic_key, hierarchy_level
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        run_id_text,
+                        _to_text(row.get("issue_key")).upper(),
+                        _to_text(row.get("parent_issue_key")).upper(),
+                        _to_text(row.get("story_key")).upper(),
+                        _to_text(row.get("epic_key")).upper(),
+                        _to_text(row.get("hierarchy_level")),
+                    )
+                    for row in link_rows
+                ],
+            )
+        if worklog_rows:
+            conn.executemany(
+                """
+                INSERT OR REPLACE INTO canonical_worklogs(
+                    run_id, worklog_id, issue_key, project_key, worklog_author, issue_assignee,
+                    started_utc, started_date, updated_utc, hours_logged
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        run_id_text,
+                        _to_text(row.get("worklog_id")),
+                        _to_text(row.get("issue_key")).upper(),
+                        _to_text(row.get("project_key")).upper(),
+                        _to_text(row.get("worklog_author")),
+                        _to_text(row.get("issue_assignee")),
+                        _to_text(row.get("started_utc")),
+                        _to_text(row.get("started_date")),
+                        _to_text(row.get("updated_utc")),
+                        float(row.get("hours_logged") or 0),
+                    )
+                    for row in worklog_rows
+                ],
+            )
+        reason_rows: list[tuple[str, str, str, str]] = []
+        for issue_key, reasons in (reason_map or {}).items():
+            for reason in sorted({_to_text(item) for item in (reasons or set()) if _to_text(item)}):
+                reason_rows.append((run_id_text, _to_text(issue_key).upper(), reason, ""))
+        if reason_rows:
+            conn.executemany(
+                """
+                INSERT OR REPLACE INTO canonical_issue_scope_reasons(run_id, issue_key, reason, detail_text)
+                VALUES (?, ?, ?, ?)
+                """,
+                reason_rows,
+            )
+        conn.commit()
 
 
 def _canonical_stage_catalog() -> list[tuple[str, str]]:
@@ -4421,11 +4589,21 @@ def _canonical_rebuild_compatibility_artifacts(db_path: Path, run_id: str, base_
                     nested_rows.append([f"      {subtask_key} - {_to_text(subtask.get('summary'))}", _round_hours(float(subtask.get("original_estimate_hours") or 0) / 8.0), _round_hours(float(subtask.get("original_estimate_hours") or 0)), _round_hours(float(subtask_actual.get("total_worklog_hours") or subtask.get("total_hours_logged") or 0)), _round_hours(float(subtask_actual.get("total_worklog_hours") or subtask.get("total_hours_logged") or 0) / 8.0), _to_text(subtask.get("start_date")), _to_text(subtask.get("due_date"))])
     _canonical_bridge_write_workbook("NestedView", nested_headers, nested_rows, outputs["nested_view"])
 
+    export_conn = jira_export_db_connect()
+    try:
+        jira_export_db_ensure_schema(export_conn)
+        jira_export_write_work_items(export_conn, work_items_rows)
+        jira_export_write_worklogs(export_conn, worklog_rows)
+        jira_export_write_rollup(export_conn, rollup_rows)
+    finally:
+        export_conn.close()
+
     return {
         "work_items_path": str(outputs["work_items"]),
         "worklogs_path": str(outputs["worklogs"]),
         "rollup_path": str(outputs["rollup"]),
         "nested_view_path": str(outputs["nested_view"]),
+        "jira_exports_db_path": str((db_path.parent / DEFAULT_EXPORTS_DB).resolve()),
         "work_items_rows": len(work_items_rows),
         "worklog_rows": len(worklog_rows),
         "rollup_rows": len(rollup_rows),
@@ -5332,6 +5510,251 @@ def _run_canonical_phase1_refresh(
             "status": "failed",
             "error": f"Canonical refresh failed: {exc}",
         }, 500
+
+
+def _canonical_run_scope(run_row: dict[str, object] | None) -> tuple[str, str]:
+    row = run_row or {}
+    try:
+        stats = json.loads(_to_text(row.get("stats_json")) or "{}")
+    except Exception:
+        stats = {}
+    summary = stats.get("summary") if isinstance(stats, dict) else {}
+    scope_kind = _to_text((summary or {}).get("scope_kind")) or "full"
+    scope_key = _to_text((summary or {}).get("scope_key")).upper()
+    return scope_kind, scope_key
+
+
+def _run_canonical_epic_scoped_refresh(
+    *,
+    db_path: Path,
+    run_id: str,
+    scope_year: int,
+    managed_project_keys: list[str],
+    epic_key: str,
+    trigger_source: str,
+) -> tuple[dict[str, object], int]:
+    started = time.perf_counter()
+    epic_key_text = _to_text(epic_key).upper()
+    managed_keys = sorted({_to_text(item).upper() for item in (managed_project_keys or []) if _to_text(item)})
+    previous_run_id = _canonical_last_success_run_id(db_path)
+    if not previous_run_id:
+        failure_stats = {
+            "mode": "epic",
+            "summary": {"scope_kind": "epic", "scope_key": epic_key_text},
+            "current_item": "Epic scoped refresh failed",
+            "current_detail": "No successful canonical refresh found. Run the canonical refresh first.",
+        }
+        _canonical_mark_run_status(
+            db_path,
+            run_id=run_id,
+            status="failed",
+            error_message="No successful canonical refresh found. Run the canonical refresh first.",
+            stats=failure_stats,
+            activate=False,
+        )
+        _canonical_update_progress_and_stats(db_path, run_id, "failed", 100, failure_stats)
+        return {"ok": False, "run_id": run_id, "status": "failed"}, 409
+
+    completed_stages: set[str] = set()
+    counts_by_stage: dict[str, dict[str, object]] = {}
+
+    def _build_stats(step: str, *, current_item: str = "", current_detail: str = "", failed_stage: str = "") -> dict[str, object]:
+        return {
+            "mode": "epic",
+            "effective_mode": "epic",
+            "summary": {
+                "mode": "epic",
+                "scope_kind": "epic",
+                "scope_key": epic_key_text,
+                "scope_year": int(scope_year or 0),
+            },
+            "current_item": current_item,
+            "current_detail": current_detail,
+            "stages": _canonical_stage_payload(step, completed_stages, failed_stage=failed_stage, counts_by_stage=counts_by_stage),
+            "items": [],
+        }
+
+    def _update(step: str, pct: int, *, current_item: str = "", current_detail: str = "", stage_counts: dict[str, object] | None = None) -> None:
+        if stage_counts is not None:
+            counts_by_stage[step] = dict(stage_counts)
+        _canonical_update_progress_and_stats(
+            db_path,
+            run_id,
+            step,
+            pct,
+            _build_stats(step, current_item=current_item, current_detail=current_detail),
+        )
+
+    def _cancel(step: str) -> tuple[dict[str, object], int]:
+        cancel_stats = _build_stats(
+            "canceled",
+            current_item="Epic scoped refresh canceled",
+            current_detail="Canceled at a safe checkpoint.",
+        )
+        _canonical_mark_run_status(
+            db_path,
+            run_id=run_id,
+            status="canceled",
+            error_message="",
+            stats=cancel_stats,
+            activate=False,
+        )
+        _canonical_update_progress_and_stats(db_path, run_id, "canceled", 100, cancel_stats)
+        return {"ok": True, "run_id": run_id, "status": "canceled", "step": step}, 200
+
+    try:
+        from_date, to_date = _canonical_year_bounds(scope_year)
+        if _canonical_is_cancel_requested(db_path, run_id):
+            return _cancel("loading_managed_project_scope")
+        _update(
+            "loading_managed_project_scope",
+            10,
+            current_item="Load epic scope",
+            current_detail=f"Refreshing epic {epic_key_text}",
+            stage_counts={"managed_project_count": len(managed_keys), "epic_key": epic_key_text},
+        )
+        session = get_session()
+        start_field_id = resolve_jira_start_date_field_id(session, BASE_URL, project_keys=managed_keys)
+        end_field_ids = resolve_jira_end_date_field_ids(session, BASE_URL, project_keys=managed_keys)
+        if "duedate" not in end_field_ids:
+            end_field_ids.append("duedate")
+        fix_type_field_id = export_resolve_fix_type_field_id(session)
+        issue_fields = _planned_vs_dispensed_issue_fields(start_field_id, end_field_ids)
+        for field_name in ("created", "updated", "aggregatetimespent", "timespent"):
+            if field_name not in issue_fields:
+                issue_fields.append(field_name)
+        completed_stages.add("loading_managed_project_scope")
+
+        if _canonical_is_cancel_requested(db_path, run_id):
+            return _cancel("discovering_issues")
+        _update("discovering_issues", 22, current_item="Fetch epic subtree from Jira")
+        epic_issues = _fetch_jira_issues_by_keys(session, [epic_key_text], issue_fields)
+        if not epic_issues:
+            raise LookupError(f"Epic '{epic_key_text}' was not found in Jira.")
+        story_issues = _fetch_story_issues_for_epics(session, [epic_key_text], issue_fields, set(managed_keys))
+        story_keys = [_to_text(item.get("key")).upper() for item in story_issues if _to_text(item.get("key"))]
+        subtask_issues = _fetch_subtask_issues_for_stories(session, story_keys, issue_fields, set(managed_keys))
+        detailed_issues = epic_issues + story_issues + subtask_issues
+        counts_by_stage["discovering_issues"] = {
+            "epics": len(epic_issues),
+            "stories": len(story_issues),
+            "subtasks": len(subtask_issues),
+        }
+        completed_stages.add("discovering_issues")
+
+        if _canonical_is_cancel_requested(db_path, run_id):
+            return _cancel("expanding_hierarchy")
+        _update("expanding_hierarchy", 36, current_item="Transform scoped subtree")
+        fetched_issue_rows, fetched_link_rows, issues_by_key = _canonical_transform_issue_rows(
+            detailed_issues,
+            start_field_id=start_field_id,
+            end_field_ids=end_field_ids,
+            fix_type_field_id=fix_type_field_id,
+            managed_project_keys=managed_keys,
+        )
+        fetched_issue_keys = sorted(issues_by_key.keys())
+        reason_map = {issue_key: {"epic_scoped_refresh"} for issue_key in fetched_issue_keys}
+        counts_by_stage["expanding_hierarchy"] = {"candidate_count": len(fetched_issue_keys)}
+        completed_stages.add("expanding_hierarchy")
+
+        if _canonical_is_cancel_requested(db_path, run_id):
+            return _cancel("fetching_worklogs")
+        _update("fetching_worklogs", 54, current_item="Fetch scoped worklogs")
+        worklogs_by_issue: dict[str, list[dict]] = {}
+        for issue_key_item in fetched_issue_keys:
+            worklogs_by_issue[issue_key_item] = export_fetch_worklogs_for_issue(session, issue_key_item)
+            if _canonical_is_cancel_requested(db_path, run_id):
+                return _cancel("fetching_worklogs")
+        fetched_worklog_rows = _canonical_transform_worklog_rows(
+            issues_by_key=issues_by_key,
+            worklogs_by_issue=worklogs_by_issue,
+            from_date=from_date,
+            to_date=to_date,
+        )
+        counts_by_stage["fetching_worklogs"] = {"worklog_count": len(fetched_worklog_rows)}
+        completed_stages.add("fetching_worklogs")
+
+        if _canonical_is_cancel_requested(db_path, run_id):
+            return _cancel("persisting_canonical_data")
+        _update("persisting_canonical_data", 76, current_item="Clone previous snapshot")
+        replaced_issue_count = _canonical_clone_run_snapshot_excluding_epic(
+            db_path=db_path,
+            source_run_id=previous_run_id,
+            target_run_id=run_id,
+            epic_key=epic_key_text,
+        )
+        _canonical_insert_scope_rows(
+            db_path=db_path,
+            run_id=run_id,
+            issue_rows=fetched_issue_rows,
+            link_rows=fetched_link_rows,
+            worklog_rows=fetched_worklog_rows,
+            reason_map=reason_map,
+        )
+        counts_by_stage["persisting_canonical_data"] = {
+            "replaced_issue_count": replaced_issue_count,
+            "persisted_issues": len(fetched_issue_rows),
+            "persisted_worklogs": len(fetched_worklog_rows),
+        }
+        completed_stages.add("persisting_canonical_data")
+
+        if _canonical_is_cancel_requested(db_path, run_id):
+            return _cancel("rebuilding_derived_data")
+        _update("rebuilding_derived_data", 90, current_item="Rebuild derived data")
+        derived_stats = _canonical_rebuild_derived_data(db_path=db_path, run_id=run_id)
+        counts_by_stage["rebuilding_derived_data"] = dict(derived_stats)
+        completed_stages.add("rebuilding_derived_data")
+
+        if _canonical_is_cancel_requested(db_path, run_id):
+            return _cancel("rebuilding_compatibility_artifacts")
+        _update("rebuilding_compatibility_artifacts", 96, current_item="Rebuild compatibility artifacts")
+        bridge_stats = _canonical_rebuild_compatibility_artifacts(
+            db_path=db_path,
+            run_id=run_id,
+            base_dir=db_path.parent,
+        )
+        counts_by_stage["rebuilding_compatibility_artifacts"] = dict(bridge_stats)
+        completed_stages.add("rebuilding_compatibility_artifacts")
+
+        duration_sec = round(time.perf_counter() - started, 2)
+        stats = {
+            **_build_stats("done", current_item="Epic scoped refresh completed", current_detail=f"Epic {epic_key_text} refreshed."),
+            "duration_sec": duration_sec,
+            "issue_count": len(fetched_issue_rows),
+            "worklog_count": len(fetched_worklog_rows),
+            "derived_rows": derived_stats,
+            "compatibility_artifacts": bridge_stats,
+        }
+        stats["stages"] = _canonical_stage_payload("done", completed_stages | {"done"}, counts_by_stage=counts_by_stage)
+        _canonical_mark_run_status(
+            db_path,
+            run_id=run_id,
+            status="success",
+            error_message="",
+            stats=stats,
+            activate=True,
+        )
+        _canonical_update_progress_and_stats(db_path, run_id, "done", 100, stats)
+        return {"ok": True, "run_id": run_id, "status": "success", "duration_sec": duration_sec}, 200
+    except Exception as exc:
+        current = _canonical_get_run(db_path, run_id) or {}
+        failed_stage = _to_text(current.get("progress_step")) or "failed"
+        failure_stats = _build_stats(
+            failed_stage,
+            current_item="Epic scoped refresh failed",
+            current_detail=str(exc),
+            failed_stage=failed_stage,
+        )
+        _canonical_mark_run_status(
+            db_path,
+            run_id=run_id,
+            status="failed",
+            error_message=f"Epic scoped refresh failed: {exc}",
+            stats=failure_stats,
+            activate=False,
+        )
+        _canonical_update_progress_and_stats(db_path, run_id, "failed", 100, failure_stats)
+        return {"ok": False, "run_id": run_id, "status": "failed", "error": str(exc)}, 500
 
 
 def _me_store_snapshot_rows(
@@ -19527,6 +19950,88 @@ def _executive_dashboard_phase_chain(settings_db_path: Path) -> list[dict[str, o
     return chain
 
 
+def _dashboard_release_phase_metadata(
+    settings_db_path: Path,
+    epic_keys: list[str] | set[str] | tuple[str, ...],
+) -> dict[str, dict[str, object]]:
+    requested_keys = [
+        _to_text(item).upper()
+        for item in (epic_keys or [])
+        if _to_text(item)
+    ]
+    ordered_keys: list[str] = []
+    seen_keys: set[str] = set()
+    for epic_key in requested_keys:
+        if epic_key in seen_keys:
+            continue
+        ordered_keys.append(epic_key)
+        seen_keys.add(epic_key)
+    if not ordered_keys:
+        return {}
+
+    canonical_run_id = _canonical_last_success_run_id(settings_db_path)
+    if not canonical_run_id:
+        raise _CanonicalMissingError("No successful canonical refresh found. Run the canonical refresh first.")
+
+    with sqlite3.connect(settings_db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        story_rows = [
+            dict(row)
+            for row in conn.execute(
+                """
+                SELECT issue_key, status
+                FROM canonical_issues
+                WHERE run_id = ?
+                  AND lower(issue_type) = 'story'
+                """,
+                (canonical_run_id,),
+            ).fetchall()
+        ]
+
+    stories_by_key = {
+        _to_text(row.get("issue_key")).upper(): row
+        for row in story_rows
+        if _to_text(row.get("issue_key"))
+    }
+    epics_management_rows = {
+        _to_text(item.get("epic_key")).upper(): item
+        for item in _load_epics_management_rows(settings_db_path)
+        if _to_text(item.get("epic_key"))
+    }
+    phase_chain = _executive_dashboard_phase_chain(settings_db_path)
+
+    result: dict[str, dict[str, object]] = {}
+    for epic_key in ordered_keys:
+        row = epics_management_rows.get(epic_key) or {}
+        plans = row.get("plans") if isinstance(row.get("plans"), dict) else {}
+        current_phase_names: list[str] = []
+        phase_statuses: list[str] = []
+        for phase in phase_chain:
+            plan_key = _to_text((phase or {}).get("key"))
+            if not plan_key:
+                continue
+            phase_label = _to_text((phase or {}).get("label")) or plan_key.replace("_", " ").title()
+            plan = plans.get(plan_key) if isinstance(plans, dict) else {}
+            story_key = _executive_dashboard_story_key_from_plan_url((plan or {}).get("jira_url")) if isinstance(plan, dict) else ""
+            if not story_key:
+                phase_statuses.append(f"{phase_label}: Missing")
+                continue
+            story = stories_by_key.get(story_key)
+            if not story:
+                phase_statuses.append(f"{phase_label}: Missing")
+                continue
+            story_status = _to_text(story.get("status")) or "Unknown"
+            phase_statuses.append(f"{phase_label}: {story_status}")
+            if not _is_resolved_status_text(story_status):
+                current_phase_names.append(phase_label)
+        result[epic_key] = {
+            "epic_key": epic_key,
+            "current_phase_names": current_phase_names,
+            "phase_statuses": " | ".join(phase_statuses),
+        }
+    return result
+
+
 def _executive_dashboard_latest_sealed_snapshot(settings_db_path: Path, epic_key: str, to_date: date) -> dict | None:
     for approved_at_utc in _load_epics_management_sealed_dates_for_epic(settings_db_path, epic_key):
         approved_day = _parse_iso_date(_to_text(approved_at_utc)[:10])
@@ -23253,6 +23758,124 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             "run": _canonical_serialize_run(run_row),
         }, 202
 
+    def _start_canonical_epic_refresh_async(
+        epic_key: str,
+        *,
+        scope_year: int,
+        trigger_source: str = "dashboard_epic_refresh_async",
+    ) -> tuple[dict[str, object], int]:
+        managed_project_keys = _managed_project_keys_all_active()
+        if not managed_project_keys:
+            return {
+                "ok": False,
+                "error": "No active managed projects found. Configure Managed Projects first.",
+            }, 400
+        epic_key_text = _to_text(epic_key).upper()
+        if not epic_key_text:
+            return {"ok": False, "error": "epic_key is required."}, 400
+
+        with canonical_jobs_lock:
+            active_runtime_run = _to_text(canonical_runtime_state.get("active_run_id"))
+            if active_runtime_run:
+                current = _canonical_get_run(capacity_paths["db_path"], active_runtime_run)
+                if current and _to_text(current.get("status")) == "running":
+                    return {
+                        "ok": False,
+                        "error": "Another canonical refresh is already running. Try again shortly.",
+                        "run": _canonical_serialize_run(current),
+                    }, 409
+                canonical_runtime_state["active_run_id"] = ""
+            db_running = _canonical_find_running_run(capacity_paths["db_path"])
+            if db_running:
+                canonical_runtime_state["active_run_id"] = _to_text(db_running.get("run_id"))
+                return {
+                    "ok": False,
+                    "error": "Another canonical refresh is already running. Try again shortly.",
+                    "run": _canonical_serialize_run(db_running),
+                }, 409
+            if not refresh_lock.acquire(blocking=False):
+                return {
+                    "ok": False,
+                    "error": "Another refresh is already running. Try again shortly.",
+                }, 409
+            run_id = f"canonical-epic-{int(time.time())}-{uuid.uuid4().hex[:8]}"
+            canonical_runtime_state["active_run_id"] = run_id
+
+        run_started_at = _canonical_now_utc()
+        initial_stats = {
+            "mode": "epic",
+            "effective_mode": "epic",
+            "summary": {
+                "mode": "epic",
+                "scope_kind": "epic",
+                "scope_key": epic_key_text,
+                "scope_year": int(scope_year or 0),
+            },
+            "current_item": "Queued",
+            "current_detail": f"Epic refresh queued for {epic_key_text}.",
+            "stages": _canonical_stage_payload("loading_managed_project_scope", set(), counts_by_stage={}),
+            "items": [],
+        }
+        with sqlite3.connect(capacity_paths["db_path"]) as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO canonical_refresh_runs(
+                    run_id, scope_year, managed_project_keys_json, started_at_utc, ended_at_utc,
+                    status, trigger_source, error_message, stats_json,
+                    progress_step, progress_pct, cancel_requested, updated_at_utc
+                ) VALUES (?, ?, ?, ?, NULL, 'running', ?, '', ?, 'queued', 1, 0, ?)
+                """,
+                (
+                    run_id,
+                    int(scope_year or 0),
+                    json.dumps(sorted(managed_project_keys), ensure_ascii=True),
+                    run_started_at,
+                    _to_text(trigger_source),
+                    json.dumps(initial_stats, ensure_ascii=True),
+                    run_started_at,
+                ),
+            )
+            conn.execute(
+                """
+                UPDATE canonical_refresh_state
+                SET active_run_id = ?, updated_at_utc = ?
+                WHERE id = 1
+                """,
+                (run_id, run_started_at),
+            )
+            conn.commit()
+
+        def _runner() -> None:
+            try:
+                _run_canonical_epic_scoped_refresh(
+                    db_path=capacity_paths["db_path"],
+                    run_id=run_id,
+                    scope_year=scope_year,
+                    managed_project_keys=managed_project_keys,
+                    epic_key=epic_key_text,
+                    trigger_source=trigger_source,
+                )
+            finally:
+                with canonical_jobs_lock:
+                    if _to_text(canonical_runtime_state.get("active_run_id")) == run_id:
+                        canonical_runtime_state["active_run_id"] = ""
+                try:
+                    refresh_lock.release()
+                except Exception:
+                    pass
+
+        threading.Thread(target=_runner, daemon=True).start()
+        run_row = _canonical_get_run(capacity_paths["db_path"], run_id)
+        return {
+            "ok": True,
+            "report": "canonical_refresh",
+            "mode": "epic",
+            "run_id": run_id,
+            "status": "running",
+            "epic_key": epic_key_text,
+            "run": _canonical_serialize_run(run_row),
+        }, 202
+
     @app.route("/api/canonical-refresh", methods=["POST"])
     def canonical_refresh_start():
         payload = request.get_json(silent=True) or {}
@@ -25737,6 +26360,28 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
     def list_capacity_profiles():
         return jsonify({"profiles": _list_capacity_profiles(capacity_paths["db_path"])})
 
+    @app.route("/api/dashboard/releases/phase-metadata", methods=["GET"])
+    def dashboard_release_phase_metadata():
+        try:
+            requested = request.args.getlist("epic_key")
+            if not requested:
+                requested = [
+                    item
+                    for item in _to_text(request.args.get("epic_keys")).split(",")
+                    if _to_text(item)
+                ]
+            metadata = _dashboard_release_phase_metadata(
+                settings_db_path=capacity_paths["db_path"],
+                epic_keys=requested,
+            )
+            return jsonify({"epics": list(metadata.values())})
+        except _CanonicalMissingError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 409
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"ok": False, "error": f"Failed to load release phase metadata: {exc}"}), 500
+
     @app.route("/api/capacity/assignee-count", methods=["GET"])
     def capacity_assignee_count():
         try:
@@ -25926,43 +26571,59 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
 
     @app.route("/api/dashboard/refresh-epic/<path:epic_key>", methods=["POST"])
     def dashboard_refresh_epic(epic_key: str):
-        """Refresh one epic subtree from Jira, update jira_exports.db, return enriched epic + stories + subtasks."""
         try:
             payload = request.get_json(silent=True) or {}
-            from_date, to_date, _ = _oeh_filters_from_payload(payload)
             key = _to_text(epic_key).strip().upper()
             if not key:
                 return jsonify({"ok": False, "error": "epic_key is required."}), 400
-            session = get_session()
-            epic_norm, stories_norm, subtasks_norm = _oeh_fetch_epic_subtree(
-                session, key, from_date, to_date
-            )
-        except LookupError as exc:
-            return jsonify({"ok": False, "error": str(exc)}), 404
+            from_date, _to_date, _ = _oeh_filters_from_payload(payload)
+            scope_year = int(from_date.year)
         except ValueError as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400
-        except _CanonicalMissingError as exc:
-            return jsonify({"ok": False, "error": str(exc)}), 409
         except Exception as exc:
             return jsonify({"ok": False, "error": f"Epic refresh failed: {exc}"}), 500
+        response, status_code = _start_canonical_epic_refresh_async(
+            key,
+            scope_year=scope_year,
+            trigger_source="dashboard_epic_refresh_async",
+        )
+        return jsonify(response), status_code
 
-        try:
-            result = _dashboard_refresh_epic_impl(
-                capacity_paths=capacity_paths,
-                session=session,
-                epic_norm=epic_norm,
-                stories_norm=stories_norm,
-                subtasks_norm=subtasks_norm,
+    @app.route("/api/dashboard/refresh-epic/<path:run_id>", methods=["GET"])
+    def dashboard_refresh_epic_status(run_id: str):
+        row = _canonical_get_run(capacity_paths["db_path"], _to_text(run_id))
+        if not row:
+            return jsonify({"ok": False, "error": "Run not found."}), 404
+        run = _canonical_serialize_run(row)
+        if run.get("scope_kind") != "epic":
+            return jsonify({"ok": False, "error": "Run is not an epic-scoped refresh."}), 409
+        body: dict[str, object] = {
+            "ok": True,
+            "run_id": run.get("run_id"),
+            "status": run.get("status"),
+            "progress_step": run.get("step"),
+            "progress_pct": run.get("progress"),
+            "epic_key": run.get("scope_key"),
+            "run": run,
+        }
+        if _to_text(run.get("status")) == "success":
+            try:
+                payload = _dashboard_refresh_epic_impl(
+                    capacity_paths=capacity_paths,
+                    epic_key=_to_text(run.get("scope_key")),
+                    run_id=_to_text(run.get("run_id")),
+                )
+            except Exception as exc:
+                return jsonify({"ok": False, "error": f"Epic refresh succeeded but payload rebuild failed: {exc}", "run": run}), 500
+            body.update(
+                {
+                    "epic": payload.get("epic"),
+                    "stories": payload.get("stories", []),
+                    "subtasks": payload.get("subtasks", []),
+                    "bug_subtasks": payload.get("bug_subtasks", []),
+                }
             )
-            return jsonify({
-                "ok": True,
-                "epic": result.get("epic"),
-                "stories": result.get("stories", []),
-                "subtasks": result.get("subtasks", []),
-                "bug_subtasks": result.get("bug_subtasks", []),
-            })
-        except Exception as exc:
-            return jsonify({"ok": False, "error": f"Epic refresh failed: {exc}"}), 500
+        return jsonify(body)
 
     _dashboard_refresh_runtime_state: dict = {"active_run_id": ""}
     _dashboard_refresh_lock = threading.Lock()

@@ -4,6 +4,7 @@ import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import report_server
 from report_server import create_report_server_app
@@ -95,6 +96,146 @@ def _seed_canonical_hierarchy(db_path: Path, run_id: str) -> None:
 
 
 class Group3CanonicalRefreshTests(unittest.TestCase):
+    def test_canonical_compatibility_rebuild_refreshes_jira_exports_status(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            _build_app(root)
+            db_path = root / "assignee_hours_capacity.db"
+            run_id = _seed_canonical_run(db_path)
+            with sqlite3.connect(db_path) as conn:
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO canonical_issues(
+                        run_id, issue_id, issue_key, project_key, issue_type, summary, status, assignee,
+                        start_date, due_date, created_utc, updated_utc, resolved_stable_since_date,
+                        original_estimate_hours, total_hours_logged, fix_type, parent_issue_key,
+                        story_key, epic_key, raw_payload_json
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        run_id,
+                        "314",
+                        "FF-314",
+                        "FF",
+                        "Epic",
+                        "Configurable Alarms and Sites, Notifications",
+                        "On Hold",
+                        "Muhammad Usman Javed",
+                        "2026-02-06",
+                        "2026-02-27",
+                        "2026-02-01T00:00:00+00:00",
+                        "2026-03-18T10:56:54.515+05:00",
+                        "",
+                        128.0,
+                        0.0,
+                        "",
+                        "",
+                        "FF-314",
+                        "FF-314",
+                        "{}",
+                    ),
+                )
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO canonical_issue_links(
+                        run_id, issue_key, parent_issue_key, story_key, epic_key, hierarchy_level
+                    ) VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (run_id, "FF-314", "", "", "FF-314", "epic"),
+                )
+                conn.commit()
+
+            exports_db_path = root / "jira_exports.db"
+            with sqlite3.connect(exports_db_path) as conn:
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS work_items (
+                        project_key TEXT,
+                        issue_key TEXT,
+                        work_item_id TEXT,
+                        work_item_type TEXT,
+                        jira_issue_type TEXT,
+                        fix_type TEXT,
+                        summary TEXT,
+                        status TEXT,
+                        start_date TEXT,
+                        end_date TEXT,
+                        actual_start_date TEXT,
+                        actual_end_date TEXT,
+                        original_estimate TEXT,
+                        original_estimate_hours REAL,
+                        assignee TEXT,
+                        total_hours_logged REAL,
+                        priority TEXT,
+                        parent_issue_key TEXT,
+                        parent_work_item_id TEXT,
+                        parent_jira_url TEXT,
+                        jira_url TEXT,
+                        latest_ipp_meeting TEXT,
+                        jira_ipp_rmi_dates_altered TEXT,
+                        ipp_actual_date TEXT,
+                        ipp_remarks TEXT,
+                        ipp_actual_date_matches_jira_end_date TEXT,
+                        created TEXT,
+                        updated TEXT
+                    )
+                    """
+                )
+                conn.execute(
+                    """
+                    INSERT INTO work_items(
+                        project_key, issue_key, work_item_id, work_item_type, jira_issue_type, fix_type, summary, status,
+                        start_date, end_date, actual_start_date, actual_end_date, original_estimate, original_estimate_hours,
+                        assignee, total_hours_logged, priority, parent_issue_key, parent_work_item_id, parent_jira_url,
+                        jira_url, latest_ipp_meeting, jira_ipp_rmi_dates_altered, ipp_actual_date, ipp_remarks,
+                        ipp_actual_date_matches_jira_end_date, created, updated
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        "FF",
+                        "FF-314",
+                        "FF-314",
+                        "Epic",
+                        "Epic",
+                        "",
+                        "Configurable Alarms and Sites, Notifications",
+                        "In-Progress",
+                        "2026-02-06",
+                        "2026-02-27",
+                        "",
+                        "",
+                        "128",
+                        128.0,
+                        "Muhammad Usman Javed",
+                        0.0,
+                        "",
+                        "",
+                        "",
+                        "",
+                        "https://octopusdtlsupport.atlassian.net/browse/FF-314",
+                        "",
+                        "",
+                        "",
+                        "",
+                        "",
+                        "2026-02-01T00:00:00+00:00",
+                        "2026-03-01T00:00:00+00:00",
+                    ),
+                )
+                conn.commit()
+
+            with patch.dict("os.environ", {"JIRA_EXPORTS_DB_PATH": str(exports_db_path)}, clear=False):
+                stats = report_server._canonical_rebuild_compatibility_artifacts(db_path, run_id, root)
+            self.assertEqual(int(stats.get("work_items_rows") or 0), 1)
+
+            with sqlite3.connect(exports_db_path) as conn:
+                row = conn.execute(
+                    "SELECT status FROM work_items WHERE issue_key = ?",
+                    ("FF-314",),
+                ).fetchone()
+            self.assertIsNotNone(row)
+            self.assertEqual(str(row[0] or ""), "On Hold")
+
     def test_planned_vs_dispensed_and_planned_actual_use_canonical_data(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             root = Path(td)

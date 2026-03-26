@@ -10,6 +10,14 @@ from typing import Any
 
 from openpyxl import Workbook, load_workbook
 
+from canonical_report_data import (
+    build_assignee_hours_rows_from_canonical,
+    build_epic_logged_hours_by_key_from_canonical,
+    build_rlt_leave_snapshot,
+    build_rnd_epics_from_canonical,
+    load_nested_rows_from_canonical,
+    resolve_canonical_run_id,
+)
 from generate_assignee_hours_report import (
     DEFAULT_CAPACITY_DB,
     DEFAULT_LEAVE_REPORT_INPUT_XLSX,
@@ -446,12 +454,55 @@ def _write_page1_dataset_xlsx(output_path: Path, dataset: dict[str, Any]) -> Non
 
 
 def _build_payload(paths: dict[str, Path]) -> dict[str, Any]:
-    epics = _load_epics(paths["work_items_path"])
-    subtask_logs = _load_subtask_worklogs_for_epics(paths["worklog_path"])
-    epic_logged_hours_by_key = aggregate_epic_logged_hours(subtask_logs)
-    worklog_rows = _load_assignee_worklog_rows(paths["assignee_hours_path"])
-    planned_epic_rows = _load_planned_epic_rows(paths["nested_view_path"])
-    project_actual_rows = _load_project_actual_rows(paths["nested_view_path"])
+    canonical_run_id = resolve_canonical_run_id(paths["capacity_db_path"], os.getenv("JIRA_CANONICAL_RUN_ID", "").strip())
+    if canonical_run_id:
+        epics = build_rnd_epics_from_canonical(paths["capacity_db_path"], canonical_run_id)
+        epic_logged_hours_by_key = build_epic_logged_hours_by_key_from_canonical(paths["capacity_db_path"], canonical_run_id)
+        worklog_rows = build_assignee_hours_rows_from_canonical(paths["capacity_db_path"], canonical_run_id)
+        nested_rows = load_nested_rows_from_canonical(paths["capacity_db_path"], canonical_run_id)
+        planned_epic_rows = [
+            {
+                "project_key": _to_text(row.get("project_key")).upper(),
+                "planned_start": _to_text(row.get("planned_start")),
+                "planned_end": _to_text(row.get("planned_end")),
+                "planned_hours": _to_float(row.get("approved_hours")),
+            }
+            for row in nested_rows
+            if _to_text(row.get("row_type")) == "rmi"
+        ]
+        project_actual_rows = [
+            {
+                "project_key": _to_text(row.get("project_key")).upper(),
+                "actual_hours": _to_float(row.get("actual_hours")),
+            }
+            for row in nested_rows
+            if _to_text(row.get("row_type")) == "project"
+        ]
+        leave_daily_rows = list(build_rlt_leave_snapshot(paths["capacity_db_path"], canonical_run_id).get("daily") or [])
+        source_files = {
+            "work_items": "canonical_db",
+            "subtask_worklogs": "canonical_db",
+            "assignee_hours": "canonical_db",
+            "leave_report": "canonical_db",
+            "capacity_db": str(paths["capacity_db_path"]),
+            "page1_dataset": str(paths["output_dataset_path"]),
+        }
+    else:
+        epics = _load_epics(paths["work_items_path"])
+        subtask_logs = _load_subtask_worklogs_for_epics(paths["worklog_path"])
+        epic_logged_hours_by_key = aggregate_epic_logged_hours(subtask_logs)
+        worklog_rows = _load_assignee_worklog_rows(paths["assignee_hours_path"])
+        planned_epic_rows = _load_planned_epic_rows(paths["nested_view_path"])
+        project_actual_rows = _load_project_actual_rows(paths["nested_view_path"])
+        leave_daily_rows = _load_leave_daily_rows(paths["leave_report_path"])
+        source_files = {
+            "work_items": str(paths["work_items_path"]),
+            "subtask_worklogs": str(paths["worklog_path"]),
+            "assignee_hours": str(paths["assignee_hours_path"]),
+            "leave_report": str(paths["leave_report_path"]),
+            "capacity_db": str(paths["capacity_db_path"]),
+            "page1_dataset": str(paths["output_dataset_path"]),
+        }
     default_from, default_to = _default_range(worklog_rows)
     defaults = {"from_date": default_from, "to_date": default_to}
     page1_dataset = _build_page1_dataset(epics, defaults, planned_epic_rows, project_actual_rows)
@@ -462,14 +513,7 @@ def _build_payload(paths: dict[str, Path]) -> dict[str, Any]:
     return {
         "department_name": "Research and Development (RnD)",
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
-        "source_files": {
-            "work_items": str(paths["work_items_path"]),
-            "subtask_worklogs": str(paths["worklog_path"]),
-            "assignee_hours": str(paths["assignee_hours_path"]),
-            "leave_report": str(paths["leave_report_path"]),
-            "capacity_db": str(paths["capacity_db_path"]),
-            "page1_dataset": str(paths["output_dataset_path"]),
-        },
+        "source_files": source_files,
         "defaults": defaults,
         "default_employee_count": default_employee_count,
         "epics": epics,
@@ -480,7 +524,7 @@ def _build_payload(paths: dict[str, Path]) -> dict[str, Any]:
         "page1_dataset": page1_dataset,
         "managed_project_display_names": managed_project_display_names,
         "capacity_profiles": _list_capacity_profiles(paths["capacity_db_path"]),
-        "leave_daily_rows": _load_leave_daily_rows(paths["leave_report_path"]),
+        "leave_daily_rows": leave_daily_rows,
     }
 
 
@@ -802,7 +846,6 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
 
 
 

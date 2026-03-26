@@ -997,6 +997,35 @@ class ReportUiSmokeTests(unittest.TestCase):
         self.assertIn("reason=planner_mismatch", html)
         self.assertNotIn("Alert: Jira planned dates differ from IPP meeting dates.", html)
 
+    def test_dashboard_template_releases_drawer_controls_exist(self):
+        template_path = Path(__file__).resolve().parents[1] / "dashboard_template.html"
+        html = template_path.read_text(encoding="utf-8")
+        self.assertIn('id="releases-drawer-open"', html)
+        self.assertIn('id="releases-drawer"', html)
+        self.assertIn('id="releases-drawer-overlay"', html)
+        self.assertIn('id="releases-drawer-resize-handle"', html)
+        self.assertIn('id="releases-from-month"', html)
+        self.assertIn('id="releases-to-month"', html)
+        self.assertIn('id="releases-epic-search"', html)
+        self.assertIn('id="releases-capacity-profile"', html)
+        self.assertIn('id="releases-calendar-grid"', html)
+        self.assertIn('id="releases-table-body"', html)
+        self.assertIn("Epic Name", html)
+        self.assertIn("Current Phase", html)
+        self.assertIn("/api/capacity/profiles", html)
+        self.assertIn("/api/dashboard/releases/phase-metadata", html)
+        self.assertIn("function startReleasesDrawerResize(event)", html)
+        self.assertIn("function renderReleasesDrawerContent()", html)
+        self.assertIn("cell.isToday ? 'is-today' : ''", html)
+        self.assertIn("Today", html)
+        self.assertIn("flex: 1 1 auto;", html)
+        self.assertIn("overflow-y: auto;", html)
+        self.assertIn("scrollbar-gutter: stable;", html)
+        self.assertIn("const EPIC_REFRESH_ENDPOINT_BASE = '/api/dashboard/refresh-epic';", html)
+        self.assertIn("epicRefreshRuns", html)
+        self.assertIn("await fetch(`${EPIC_REFRESH_ENDPOINT_BASE}/${encodeURIComponent(runId)}`", html)
+        self.assertIn("Run scoped colossal refresh for this epic", html)
+
     def test_planned_vs_dispensed_page_controls_exist(self):
         html_path = Path(__file__).resolve().parents[1] / "report_html" / "planned_vs_dispensed_report.html"
         self.assertTrue(html_path.exists())
