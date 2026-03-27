@@ -55,14 +55,18 @@ def _load_team_rmi_payload(db_path: Path) -> dict[str, Any]:
                 "source_file": str(db_path),
             }
 
-        rows = conn.execute(
-            """
-            SELECT team_name, epic_key, epic_name, epic_url, project_key,
+        columns = {
+            _to_text(r[1]).lower()
+            for r in conn.execute("PRAGMA table_info(team_rmi_gantt_items)").fetchall()
+        }
+        has_epic_status = "epic_status" in columns
+        select_sql = """
+            SELECT team_name, epic_key, epic_name, epic_url, {epic_status_sql} AS epic_status, project_key,
                    planned_start, planned_end, planned_hours, planned_man_days, story_count, is_unmapped_team, snapshot_utc
             FROM team_rmi_gantt_items
             ORDER BY lower(team_name), lower(epic_name), lower(epic_key)
-            """
-        ).fetchall()
+        """.format(epic_status_sql="epic_status" if has_epic_status else "''")
+        rows = conn.execute(select_sql).fetchall()
         items = []
         team_names: list[str] = []
         seen_teams: set[str] = set()
@@ -77,6 +81,7 @@ def _load_team_rmi_payload(db_path: Path) -> dict[str, Any]:
                     "epic_key": _to_text(row["epic_key"]),
                     "epic_name": _to_text(row["epic_name"]),
                     "epic_url": _to_text(row["epic_url"]),
+                    "epic_status": _to_text(row["epic_status"]),
                     "project_key": _to_text(row["project_key"]),
                     "planned_start": _to_text(row["planned_start"]),
                     "planned_end": _to_text(row["planned_end"]),
@@ -109,7 +114,7 @@ def _load_team_rmi_payload(db_path: Path) -> dict[str, Any]:
                     "excluded_missing_estimate": int(meta_row["excluded_missing_estimate"] or 0),
                 }
 
-        source_file = _to_text(snapshot_meta.get("source_work_items_path")) or str(db_path)
+        source_file = str(db_path)
         return {
             "team_names": team_names,
             "items": items,
@@ -185,12 +190,17 @@ def _build_html(data: dict[str, Any]) -> str:
       gap: 4px;
       min-width: 180px;
     }}
+    .control.compact {{
+      min-width: 44px;
+      align-self: end;
+    }}
     .control label {{
       font-size: 0.8rem;
       color: #314756;
       font-weight: 600;
     }}
-    .control input {{
+    .control input,
+    .control select {{
       border: 1px solid #b9cad5;
       border-radius: 8px;
       padding: 7px 9px;
@@ -198,7 +208,28 @@ def _build_html(data: dict[str, Any]) -> str:
       color: #102c3b;
       background: #fff;
     }}
-    .control input:focus {{
+    .control input:focus,
+    .control select:focus {{
+      outline: none;
+      border-color: #2a6274;
+      box-shadow: 0 0 0 2px rgba(42, 98, 116, 0.16);
+    }}
+    .nav-btn {{
+      border: 1px solid #b9cad5;
+      border-radius: 8px;
+      background: #fff;
+      color: #1f4658;
+      padding: 0;
+      width: 40px;
+      height: 39px;
+      font-size: 1rem;
+      line-height: 1;
+      cursor: pointer;
+    }}
+    .nav-btn:hover {{
+      background: #f5f9fc;
+    }}
+    .nav-btn:focus {{
       outline: none;
       border-color: #2a6274;
       box-shadow: 0 0 0 2px rgba(42, 98, 116, 0.16);
@@ -233,6 +264,31 @@ def _build_html(data: dict[str, Any]) -> str:
       border-radius: 999px;
       padding: 3px 8px;
       background: #f8fbff;
+    }}
+    .quick-filters {{
+      margin-top: 10px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }}
+    .quick-filter-btn {{
+      border: 1px solid #c3d4df;
+      background: #f8fbff;
+      color: #1f4658;
+      border-radius: 999px;
+      padding: 6px 10px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+      line-height: 1;
+    }}
+    .quick-filter-btn:hover {{
+      background: #eef6fb;
+    }}
+    .quick-filter-btn.active {{
+      border-color: #255f73;
+      background: #0f4c5c;
+      color: #fff;
     }}
     .chip-dot {{
       width: 10px;
@@ -407,9 +463,9 @@ def _build_html(data: dict[str, Any]) -> str:
       position: absolute;
       min-height: 66px;
       border-radius: 9px;
-      border: 1px solid rgba(15, 76, 92, 0.32);
-      background: linear-gradient(180deg, rgba(219, 238, 247, 0.82), rgba(233, 246, 253, 0.95));
-      box-shadow: 0 2px 8px rgba(16, 43, 58, 0.08);
+      border: 1px solid var(--card-border, rgba(15, 76, 92, 0.32));
+      background: linear-gradient(180deg, var(--card-bg-top, rgba(219, 238, 247, 0.82)), var(--card-bg-bottom, rgba(233, 246, 253, 0.95)));
+      box-shadow: inset 4px 0 0 var(--card-accent, #7cb6d1), 0 2px 8px rgba(16, 43, 58, 0.08);
       padding: 0;
       overflow: hidden;
     }}
@@ -441,6 +497,22 @@ def _build_html(data: dict[str, Any]) -> str:
       overflow: hidden;
       text-overflow: ellipsis;
     }}
+    .status-pill {{
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      margin-bottom: 5px;
+      padding: 2px 7px;
+      border-radius: 999px;
+      border: 1px solid var(--pill-border, #bfd3df);
+      background: var(--pill-bg, #edf5fa);
+      color: var(--pill-text, #1f4658);
+      font-size: 0.65rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      max-width: 100%;
+    }}
     .empty {{
       padding: 16px;
       color: #607282;
@@ -457,6 +529,14 @@ def _build_html(data: dict[str, Any]) -> str:
       <p class="meta">Included stories: <span id="included-stories"></span> / <span id="total-stories"></span> | Excluded: missing epic <span id="excluded-epic"></span>, missing dates <span id="excluded-dates"></span>, missing estimate <span id="excluded-estimate"></span></p>
       <div class="controls">
         <div class="control">
+          <label for="team-select">Team</label>
+          <select id="team-select"></select>
+        </div>
+        <div class="control compact">
+          <label for="shift-range-back">Shift</label>
+          <button class="nav-btn" type="button" id="shift-range-back" aria-label="Shift current date range to previous month">&#9664;</button>
+        </div>
+        <div class="control">
           <label for="from-date">From</label>
           <input type="date" id="from-date">
         </div>
@@ -464,8 +544,20 @@ def _build_html(data: dict[str, Any]) -> str:
           <label for="to-date">To</label>
           <input type="date" id="to-date">
         </div>
+        <div class="control compact">
+          <label for="shift-range-forward">Shift</label>
+          <button class="nav-btn" type="button" id="shift-range-forward" aria-label="Shift current date range to next month">&#9654;</button>
+        </div>
         <button class="btn alt" type="button" id="apply-range">Apply</button>
         <button class="btn" type="button" id="reset-range">Reset</button>
+      </div>
+      <div class="quick-filters" id="quick-filters">
+        <button class="quick-filter-btn" type="button" id="shortcut-this-year" data-range-preset="this-year">This Year</button>
+        <button class="quick-filter-btn" type="button" id="shortcut-this-month" data-range-preset="this-month">This Month</button>
+        <button class="quick-filter-btn" type="button" id="shortcut-previous-month" data-range-preset="previous-month">Previous Month</button>
+        <button class="quick-filter-btn" type="button" id="shortcut-this-quarter" data-range-preset="this-quarter">This Quarter</button>
+        <button class="quick-filter-btn" type="button" id="shortcut-this-week" data-range-preset="this-week">This Week</button>
+        <button class="quick-filter-btn" type="button" id="shortcut-last-week" data-range-preset="last-week">Last Week</button>
       </div>
       <div class="legend">
         <span class="legend-pill"><span class="chip-dot"></span>Mini cards show team workload by RMI estimates</span>
@@ -490,10 +582,14 @@ def _build_html(data: dict[str, Any]) -> str:
     const excludedEpicNode = document.getElementById("excluded-epic");
     const excludedDatesNode = document.getElementById("excluded-dates");
     const excludedEstimateNode = document.getElementById("excluded-estimate");
+    const teamSelect = document.getElementById("team-select");
+    const shiftRangeBackButton = document.getElementById("shift-range-back");
+    const shiftRangeForwardButton = document.getElementById("shift-range-forward");
     const fromInput = document.getElementById("from-date");
     const toInput = document.getElementById("to-date");
     const applyButton = document.getElementById("apply-range");
     const resetButton = document.getElementById("reset-range");
+    const quickFilterButtons = Array.from(document.querySelectorAll("[data-range-preset]"));
     const ganttRoot = document.getElementById("gantt-root");
 
     const DAY_MS = 86400000;
@@ -509,6 +605,15 @@ def _build_html(data: dict[str, Any]) -> str:
     excludedEpicNode.textContent = String(snapshotMeta.excluded_missing_epic || 0);
     excludedDatesNode.textContent = String(snapshotMeta.excluded_missing_dates || 0);
     excludedEstimateNode.textContent = String(snapshotMeta.excluded_missing_estimate || 0);
+
+    function syncTeamOptions() {{
+      const currentValue = String(teamSelect.value || "__all__");
+      const optionHtml = ['<option value="__all__">All teams</option>']
+        .concat(teamNames.map((teamName) => `<option value="${{safeText(teamName)}}">${{safeText(teamName)}}</option>`));
+      teamSelect.innerHTML = optionHtml.join("");
+      const canKeepCurrent = currentValue === "__all__" || teamNames.includes(currentValue);
+      teamSelect.value = canKeepCurrent ? currentValue : "__all__";
+    }}
 
     function parseIso(iso) {{
       if (!iso) return null;
@@ -528,12 +633,45 @@ def _build_html(data: dict[str, Any]) -> str:
       return new Date(d.getTime() + (days * DAY_MS));
     }}
 
+    function daysInMonth(year, monthIndex) {{
+      return new Date(year, monthIndex + 1, 0).getDate();
+    }}
+
+    function addMonths(d, months) {{
+      const year = d.getFullYear();
+      const month = d.getMonth();
+      const day = d.getDate();
+      const targetMonthIndex = month + months;
+      const targetYear = year + Math.floor(targetMonthIndex / 12);
+      const normalizedMonth = ((targetMonthIndex % 12) + 12) % 12;
+      const targetDay = Math.min(day, daysInMonth(targetYear, normalizedMonth));
+      return new Date(targetYear, normalizedMonth, targetDay);
+    }}
+
     function startOfMonth(d) {{
       return new Date(d.getFullYear(), d.getMonth(), 1);
     }}
 
     function endOfMonth(d) {{
       return new Date(d.getFullYear(), d.getMonth() + 1, 0);
+    }}
+
+    function startOfYear(d) {{
+      return new Date(d.getFullYear(), 0, 1);
+    }}
+
+    function endOfYear(d) {{
+      return new Date(d.getFullYear(), 11, 31);
+    }}
+
+    function startOfQuarter(d) {{
+      const quarterStartMonth = Math.floor(d.getMonth() / 3) * 3;
+      return new Date(d.getFullYear(), quarterStartMonth, 1);
+    }}
+
+    function endOfQuarter(d) {{
+      const quarterStartMonth = Math.floor(d.getMonth() / 3) * 3;
+      return new Date(d.getFullYear(), quarterStartMonth + 3, 0);
     }}
 
     function defaultRange() {{
@@ -636,11 +774,60 @@ def _build_html(data: dict[str, Any]) -> str:
       toInput.value = isoFromDate(to);
     }}
 
+    function setActiveQuickFilter(presetKey) {{
+      quickFilterButtons.forEach((button) => {{
+        button.classList.toggle("active", String(button.dataset.rangePreset || "") === String(presetKey || ""));
+      }});
+    }}
+
+    function clearActiveQuickFilter() {{
+      setActiveQuickFilter("");
+    }}
+
+    function resolvePresetRange(presetKey) {{
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      switch (presetKey) {{
+        case "this-year":
+          return {{ from: startOfYear(today), to: endOfYear(today) }};
+        case "this-month":
+          return {{ from: startOfMonth(today), to: endOfMonth(today) }};
+        case "previous-month": {{
+          const previousMonthDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+          return {{ from: startOfMonth(previousMonthDate), to: endOfMonth(previousMonthDate) }};
+        }}
+        case "this-quarter":
+          return {{ from: startOfQuarter(today), to: endOfQuarter(today) }};
+        case "this-week": {{
+          const from = weekStartFor(today);
+          return {{ from, to: addDays(from, 6) }};
+        }}
+        case "last-week": {{
+          const currentWeekStart = weekStartFor(today);
+          const from = addDays(currentWeekStart, -7);
+          return {{ from, to: addDays(from, 6) }};
+        }}
+        default:
+          return defaultRange();
+      }}
+    }}
+
+    function shiftCurrentRangeByMonths(monthOffset) {{
+      const currentRange = parseRangeFromInputs();
+      const shiftedFrom = addMonths(currentRange.from, monthOffset);
+      const shiftedTo = addMonths(currentRange.to, monthOffset);
+      injectInputs(shiftedFrom, shiftedTo);
+      clearActiveQuickFilter();
+      render();
+    }}
+
     function filteredItems(rangeFrom, rangeTo) {{
+      const selectedTeam = String(teamSelect.value || "__all__");
       return allItems.filter((item) => {{
         const start = parseIso(item.planned_start);
         const end = parseIso(item.planned_end);
         if (!start || !end || end < start) return false;
+        if (selectedTeam !== "__all__" && String(item.team_name || "") !== selectedTeam) return false;
         return overlap(start, end, rangeFrom, rangeTo);
       }});
     }}
@@ -707,6 +894,30 @@ def _build_html(data: dict[str, Any]) -> str:
         .replace(/'/g, "&#39;");
     }}
 
+    function normalizeStatus(status) {{
+      return String(status || "").trim().toLowerCase();
+    }}
+
+    function statusStyle(status) {{
+      const normalized = normalizeStatus(status);
+      if (!normalized) {{
+        return {{ accent: "#7cb6d1", border: "rgba(15, 76, 92, 0.32)", top: "rgba(219, 238, 247, 0.82)", bottom: "rgba(233, 246, 253, 0.95)", pillBg: "#edf5fa", pillBorder: "#bfd3df", pillText: "#1f4658", label: "Unknown" }};
+      }}
+      if (normalized.includes("done") || normalized.includes("resolved") || normalized.includes("closed") || normalized.includes("complete")) {{
+        return {{ accent: "#2f855a", border: "rgba(47, 133, 90, 0.34)", top: "rgba(220, 252, 231, 0.92)", bottom: "rgba(240, 253, 244, 0.98)", pillBg: "#dcfce7", pillBorder: "#86efac", pillText: "#166534", label: status }};
+      }}
+      if (normalized.includes("hold") || normalized.includes("block") || normalized.includes("stuck")) {{
+        return {{ accent: "#c05621", border: "rgba(192, 86, 33, 0.34)", top: "rgba(255, 237, 213, 0.95)", bottom: "rgba(255, 247, 237, 0.98)", pillBg: "#ffedd5", pillBorder: "#fdba74", pillText: "#9a3412", label: status }};
+      }}
+      if (normalized.includes("progress") || normalized.includes("process") || normalized.includes("development") || normalized.includes("review") || normalized.includes("testing")) {{
+        return {{ accent: "#2563eb", border: "rgba(37, 99, 235, 0.34)", top: "rgba(219, 234, 254, 0.95)", bottom: "rgba(239, 246, 255, 0.98)", pillBg: "#dbeafe", pillBorder: "#93c5fd", pillText: "#1d4ed8", label: status }};
+      }}
+      if (normalized.includes("todo") || normalized.includes("to do") || normalized.includes("queue") || normalized.includes("selected") || normalized.includes("backlog") || normalized.includes("open")) {{
+        return {{ accent: "#6b7280", border: "rgba(107, 114, 128, 0.34)", top: "rgba(243, 244, 246, 0.96)", bottom: "rgba(249, 250, 251, 0.98)", pillBg: "#f3f4f6", pillBorder: "#d1d5db", pillText: "#374151", label: status }};
+      }}
+      return {{ accent: "#7c3aed", border: "rgba(124, 58, 237, 0.30)", top: "rgba(243, 232, 255, 0.95)", bottom: "rgba(250, 245, 255, 0.98)", pillBg: "#ede9fe", pillBorder: "#c4b5fd", pillText: "#6d28d9", label: status }};
+    }}
+
     function render() {{
       const range = parseRangeFromInputs();
       injectInputs(range.from, range.to);
@@ -718,6 +929,10 @@ def _build_html(data: dict[str, Any]) -> str:
       const timelineWidth = Math.max(880, Math.floor(totalDays * DAY_PX));
       const months = buildMonths(range.from, range.to);
       const weeks = buildWeeks(range.from, range.to);
+      const selectedTeam = String(teamSelect.value || "__all__");
+      const visibleTeamNames = selectedTeam === "__all__"
+        ? teamNames
+        : teamNames.filter((teamName) => teamName === selectedTeam);
 
       if (!teamNames.length) {{
         ganttRoot.innerHTML = '<div class="empty">No team workload rows found in SQLite snapshot. Run sync_team_rmi_gantt_sqlite.py first.</div>';
@@ -736,7 +951,7 @@ def _build_html(data: dict[str, Any]) -> str:
         ? `<span class="current-week-band" style="left:${{currentWeek.leftPct}}%; width:${{currentWeek.widthPct}}%;"></span>`
         : "";
 
-      const laneRows = teamNames.map((teamName) => {{
+      const laneRows = visibleTeamNames.map((teamName) => {{
         const laneItems = visible.filter((item) => item.team_name === teamName);
         const stacked = stackCards(laneItems);
         const maxTrack = stacked.reduce((acc, item) => Math.max(acc, Number(item._track || 0)), -1);
@@ -776,10 +991,13 @@ def _build_html(data: dict[str, Any]) -> str:
           const plannedManDays = safeText(item.planned_man_days);
           const plannedStart = safeText(item.planned_start || "-");
           const plannedEnd = safeText(item.planned_end || "-");
+          const statusInfo = statusStyle(item.epic_status);
+          const statusLabel = safeText(statusInfo.label);
 
           cardsHtml += `
-            <article class="card" style="left:${{leftPx}}px; top:${{topPx}}px; width:${{widthPx}}px;" title="${{safeText(title)}}">
+            <article class="card" style="left:${{leftPx}}px; top:${{topPx}}px; width:${{widthPx}}px; --card-accent:${{statusInfo.accent}}; --card-border:${{statusInfo.border}}; --card-bg-top:${{statusInfo.top}}; --card-bg-bottom:${{statusInfo.bottom}}; --pill-bg:${{statusInfo.pillBg}}; --pill-border:${{statusInfo.pillBorder}}; --pill-text:${{statusInfo.pillText}};" title="${{safeText(title)}}">
               <a class="card-link" href="${{epicUrl}}" target="_blank" rel="noopener">
+                <div class="status-pill">${{statusLabel}}</div>
                 <div class="card-title">${{epicLabel}} - ${{epicName}}</div>
                 <div class="card-meta">Stories: ${{storyCount}} | Hours: ${{plannedHours}} | Man-days: ${{plannedManDays}}</div>
                 <div class="card-meta">Start: ${{plannedStart}} | End: ${{plannedEnd}}</div>
@@ -812,7 +1030,8 @@ def _build_html(data: dict[str, Any]) -> str:
         `;
       }}).join("");
 
-      ganttRoot.innerHTML = `
+      ganttRoot.innerHTML = laneRows
+        ? `
         <div class="grid" style="width: calc(var(--team-col) + ${{timelineWidth}}px);">
           <div class="grid-row head">
             <div class="cell team-cell">Team</div>
@@ -826,15 +1045,41 @@ def _build_html(data: dict[str, Any]) -> str:
           </div>
           ${{laneRows}}
         </div>
-      `;
+      `
+        : '<div class="empty">No team workload rows found for the current team/date filters.</div>';
     }}
 
+    syncTeamOptions();
     const defaults = defaultRange();
     injectInputs(defaults.from, defaults.to);
-    applyButton.addEventListener("click", render);
+    clearActiveQuickFilter();
+    applyButton.addEventListener("click", () => {{
+      clearActiveQuickFilter();
+      render();
+    }});
+    teamSelect.addEventListener("change", render);
+    fromInput.addEventListener("change", clearActiveQuickFilter);
+    toInput.addEventListener("change", clearActiveQuickFilter);
+    quickFilterButtons.forEach((button) => {{
+      button.addEventListener("click", () => {{
+        const presetKey = String(button.dataset.rangePreset || "");
+        const range = resolvePresetRange(presetKey);
+        setActiveQuickFilter(presetKey);
+        injectInputs(range.from, range.to);
+        render();
+      }});
+    }});
+    shiftRangeBackButton.addEventListener("click", () => {{
+      shiftCurrentRangeByMonths(-1);
+    }});
+    shiftRangeForwardButton.addEventListener("click", () => {{
+      shiftCurrentRangeByMonths(1);
+    }});
     resetButton.addEventListener("click", () => {{
+      teamSelect.value = "__all__";
       const d = defaultRange();
       injectInputs(d.from, d.to);
+      clearActiveQuickFilter();
       render();
     }});
     render();

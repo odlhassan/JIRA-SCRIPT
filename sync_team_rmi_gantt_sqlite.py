@@ -95,6 +95,7 @@ def _ensure_tables(conn: sqlite3.Connection) -> None:
             epic_key TEXT NOT NULL,
             epic_name TEXT NOT NULL,
             epic_url TEXT NOT NULL,
+            epic_status TEXT NOT NULL DEFAULT '',
             project_key TEXT NOT NULL,
             planned_start TEXT NOT NULL,
             planned_end TEXT NOT NULL,
@@ -107,6 +108,12 @@ def _ensure_tables(conn: sqlite3.Connection) -> None:
         )
         """
     )
+    columns = {
+        _to_text(row[1]).lower()
+        for row in conn.execute("PRAGMA table_info(team_rmi_gantt_items)").fetchall()
+    }
+    if "epic_status" not in columns:
+        conn.execute("ALTER TABLE team_rmi_gantt_items ADD COLUMN epic_status TEXT NOT NULL DEFAULT ''")
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS team_rmi_gantt_snapshot_meta (
@@ -170,6 +177,9 @@ def _load_work_items_for_team_gantt(work_items_path: Path) -> tuple[dict[str, di
         missing = [name for name in required if name not in idx]
         if missing:
             raise ValueError(f"Work items workbook missing required columns: {missing}")
+        status_idx = idx.get("status")
+        if status_idx is None:
+            status_idx = idx.get("jira_status")
 
         epics: dict[str, dict[str, str]] = {}
         stories: list[dict[str, Any]] = []
@@ -186,6 +196,7 @@ def _load_work_items_for_team_gantt(work_items_path: Path) -> tuple[dict[str, di
                 epics[issue_key] = {
                     "epic_name": epic_summary or issue_key,
                     "epic_url": epic_url or _fallback_epic_url(issue_key),
+                    "epic_status": _to_text(row[status_idx]) if status_idx is not None else "",
                     "project_key": project_key or "UNKNOWN",
                 }
                 continue
@@ -223,6 +234,7 @@ def _load_work_items_for_team_gantt_from_canonical(db_path: Path, run_id: str = 
             epics[issue_key] = {
                 "epic_name": _to_text(row.get("summary")) or issue_key,
                 "epic_url": _fallback_epic_url(issue_key),
+                "epic_status": _to_text(row.get("status")),
                 "project_key": _to_text(row.get("project_key")).upper() or _extract_project_key(issue_key),
             }
             continue
@@ -280,6 +292,7 @@ def build_team_rmi_gantt_snapshot(work_items_path: Path, db_path: Path) -> dict[
         epic = epics.get(epic_key, {})
         epic_name = _to_text(epic.get("epic_name")) or epic_key
         epic_url = _to_text(epic.get("epic_url")) or _fallback_epic_url(epic_key)
+        epic_status = _to_text(epic.get("epic_status"))
         project_key = _to_text(epic.get("project_key")) or _to_text(story.get("project_key")) or _extract_project_key(epic_key)
 
         key = (team_name, epic_key)
@@ -290,6 +303,7 @@ def build_team_rmi_gantt_snapshot(work_items_path: Path, db_path: Path) -> dict[
                 "epic_key": epic_key,
                 "epic_name": epic_name,
                 "epic_url": epic_url,
+                "epic_status": epic_status,
                 "project_key": project_key,
                 "planned_start": planned_start,
                 "planned_end": planned_end,
@@ -308,6 +322,8 @@ def build_team_rmi_gantt_snapshot(work_items_path: Path, db_path: Path) -> dict[
                 current["epic_url"] = epic_url
             if not _to_text(current.get("epic_name")) and epic_name:
                 current["epic_name"] = epic_name
+            if not _to_text(current.get("epic_status")) and epic_status:
+                current["epic_status"] = epic_status
 
         included_story_rows += 1
 
@@ -322,6 +338,7 @@ def build_team_rmi_gantt_snapshot(work_items_path: Path, db_path: Path) -> dict[
                 "epic_key": _to_text(item["epic_key"]),
                 "epic_name": _to_text(item["epic_name"]),
                 "epic_url": _to_text(item["epic_url"]),
+                "epic_status": _to_text(item.get("epic_status")),
                 "project_key": _to_text(item["project_key"]),
                 "planned_start": _to_text(item["planned_start"]),
                 "planned_end": _to_text(item["planned_end"]),
@@ -358,16 +375,17 @@ def write_team_rmi_gantt_snapshot(db_path: Path, snapshot: dict[str, Any]) -> No
                 conn.execute(
                     """
                     INSERT INTO team_rmi_gantt_items (
-                        team_name, epic_key, epic_name, epic_url, project_key,
+                        team_name, epic_key, epic_name, epic_url, epic_status, project_key,
                         planned_start, planned_end, planned_hours, planned_man_days, story_count,
                         is_unmapped_team, snapshot_utc
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         _to_text(item.get("team_name")),
                         _to_text(item.get("epic_key")),
                         _to_text(item.get("epic_name")),
                         _to_text(item.get("epic_url")),
+                        _to_text(item.get("epic_status")),
                         _to_text(item.get("project_key")),
                         _to_text(item.get("planned_start")),
                         _to_text(item.get("planned_end")),

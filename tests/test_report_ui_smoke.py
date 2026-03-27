@@ -258,6 +258,7 @@ class ReportUiSmokeTests(unittest.TestCase):
                     "epic_key": "P1-100",
                     "epic_name": "Epic Alpha",
                     "epic_url": "https://jira.example/browse/P1-100",
+                    "epic_status": "In Progress",
                     "project_key": "P1",
                     "planned_start": "2026-02-01",
                     "planned_end": "2026-02-20",
@@ -285,6 +286,27 @@ class ReportUiSmokeTests(unittest.TestCase):
         self.assertIn("Cards open Jira epic links", html)
         self.assertIn("target=\"_blank\"", html)
         self.assertIn("team_names", html)
+        self.assertIn("epic_status", html)
+        self.assertIn("status-pill", html)
+        self.assertIn("function statusStyle(status)", html)
+        self.assertIn("In Progress", html)
+        self.assertIn('id="shortcut-this-year"', html)
+        self.assertIn('id="shortcut-this-month"', html)
+        self.assertIn('id="shortcut-previous-month"', html)
+        self.assertIn('id="shortcut-this-quarter"', html)
+        self.assertIn('id="shortcut-this-week"', html)
+        self.assertIn('id="shortcut-last-week"', html)
+        self.assertIn('id="shift-range-back"', html)
+        self.assertIn('id="shift-range-forward"', html)
+        self.assertIn('data-range-preset="this-year"', html)
+        self.assertIn('data-range-preset="last-week"', html)
+        self.assertIn("function resolvePresetRange(presetKey)", html)
+        self.assertIn("function setActiveQuickFilter(presetKey)", html)
+        self.assertIn("function shiftCurrentRangeByMonths(monthOffset)", html)
+        self.assertIn("function addMonths(d, months)", html)
+        self.assertIn('shiftRangeBackButton.addEventListener("click"', html)
+        self.assertIn('shiftRangeForwardButton.addEventListener("click"', html)
+        self.assertIn("quickFilterButtons.forEach((button) => {", html)
 
     def test_employee_performance_controls_exist(self):
         payload = {
@@ -1019,8 +1041,18 @@ class ReportUiSmokeTests(unittest.TestCase):
         self.assertIn("cell.isToday ? 'is-today' : ''", html)
         self.assertIn("Today", html)
         self.assertIn("flex: 1 1 auto;", html)
-        self.assertIn("overflow-y: auto;", html)
+        self.assertIn("overflow-y: scroll;", html)
         self.assertIn("scrollbar-gutter: stable;", html)
+        self.assertIn("scrollbar-width: thin;", html)
+        self.assertIn("touch-action: pan-y;", html)
+        self.assertIn(".releases-drawer-body::-webkit-scrollbar {", html)
+        self.assertGreaterEqual(html.count("flex: 0 0 auto;"), 3)
+        self.assertIn(".releases-calendar-panel,\n        .releases-table-panel {\n            flex: 0 0 auto;", html)
+        self.assertIn("overflow: hidden;", html)
+        self.assertIn("min-height: 0;", html)
+        self.assertIn(".releases-table-scroll { overflow: visible; }", html)
+        self.assertIn("table-layout: fixed;", html)
+        self.assertIn("overflow-wrap: anywhere;", html)
         self.assertIn("const EPIC_REFRESH_ENDPOINT_BASE = '/api/dashboard/refresh-epic';", html)
         self.assertIn("epicRefreshRuns", html)
         self.assertIn("await fetch(`${EPIC_REFRESH_ENDPOINT_BASE}/${encodeURIComponent(runId)}`", html)

@@ -16007,7 +16007,7 @@ def _build_report_info_catalog(report_id: str) -> list[dict]:
                 "business_validations": ["Only stories with epic, valid date range, and positive estimate participate in lane load chips."],
                 "field_linkages": ["Visible RMIs", "Date range controls"],
                 "cross_report_linkages": ["gantt.timeline_window", "ipp.roadmap_geometry"],
-                "data_sources": ["1_jira_work_items_export.xlsx", "assignee_hours_capacity.db:performance_teams", "assignee_hours_capacity.db:team_rmi_gantt_items"],
+                "data_sources": ["assignee_hours_capacity.db:performance_teams", "assignee_hours_capacity.db:team_rmi_gantt_items", "assignee_hours_capacity.db:team_rmi_gantt_snapshot_meta"],
                 "leadership_interpretation": "Shows team-level delivery pressure and weekly workload concentration by epic.",
             }
         ],
