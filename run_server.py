@@ -3,11 +3,10 @@ from __future__ import annotations
 import argparse
 import os
 import socket
-import subprocess
-import sys
 from pathlib import Path
 
-from report_server import run_report_server, sync_report_html
+from report_server import clear_planned_vs_dispensed_cache_tables, run_report_server
+from run_html_only import rebuild_html_reports
 
 
 def _clear_cache_files(base_dir: Path) -> None:
@@ -19,6 +18,12 @@ def _clear_cache_files(base_dir: Path) -> None:
             print(f"[server] Cleared cache file: {file_path.name}")
         except OSError as exc:
             print(f"[server] Warning: failed to remove {file_path.name}: {exc}")
+
+
+def _clear_startup_caches(base_dir: Path) -> None:
+    _clear_cache_files(base_dir)
+    clear_planned_vs_dispensed_cache_tables(base_dir / "assignee_hours_capacity.db")
+    print("[server] Cleared planned-vs-dispensed cache tables.")
 
 
 def _port_is_available(host: str, port: int) -> bool:
@@ -44,22 +49,24 @@ def _resolve_server_port(host: str, requested_port: int) -> int:
 
     raise RuntimeError(f"[server] Port {requested_port} is busy. Choose a different --port.")
 
-
-def _run_planned_vs_dispensed_script(base_dir: Path) -> None:
-    script_path = base_dir / "generate_planned_vs_dispensed_report.py"
-    if not script_path.exists():
-        raise FileNotFoundError(f"Missing script: {script_path}")
-    print("[server] Running generate_planned_vs_dispensed_report.py")
-    result = subprocess.run([sys.executable, str(script_path)], cwd=str(base_dir))
-    if result.returncode != 0:
-        raise RuntimeError(
-            f"[server] planned_vs_dispensed generation failed with exit code {result.returncode}"
-        )
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Start report server without running data generation scripts."
+        description="Rebuild the latest report HTML and start the local report server."
+    )
+    parser.add_argument(
+        "--include-dashboard",
+        action="store_true",
+        help="Also rebuild dashboard.html via fetch_jira_dashboard.py (may call Jira APIs).",
+    )
+    parser.add_argument(
+        "--skip-phase-rmi-gantt",
+        action="store_true",
+        help="Skip generate_phase_rmi_gantt_html.py during the startup rebuild.",
+    )
+    parser.add_argument(
+        "--skip-ipp-dashboard",
+        action="store_true",
+        help="Skip generate_ipp_meeting_dashboard.py during the startup rebuild.",
     )
     parser.add_argument(
         "--report-html-dir",
@@ -80,27 +87,33 @@ def main() -> None:
     parser.add_argument(
         "--fresh",
         action="store_true",
-        help="Delete local sync cache/state files before starting the server.",
+        help="Deprecated compatibility flag. Startup is already fresh by default.",
+    )
+    parser.add_argument(
+        "--keep-cache",
+        action="store_true",
+        help="Preserve startup caches instead of clearing them before serving.",
     )
     parser.add_argument(
         "--no-sync",
         action="store_true",
-        help="Do not sync generated HTML files into report_html before starting the server.",
+        help="Skip the startup HTML rebuild and report_html sync; start the server only.",
     )
     args = parser.parse_args()
 
     base_dir = Path(__file__).resolve().parent
-    if args.fresh:
-        _clear_cache_files(base_dir)
+    if not args.keep_cache:
+        _clear_startup_caches(base_dir)
     if args.no_sync:
-        print("[server] Skipping report-html sync (--no-sync).")
+        print("[server] Skipping HTML rebuild + report-html sync (--no-sync).")
     else:
-        _run_planned_vs_dispensed_script(base_dir)
-        synced = sync_report_html(base_dir, args.report_html_dir)
-        if synced == 0:
-            print("[server] report-html sync completed: no files updated.")
-        else:
-            print(f"[server] report-html sync completed: {synced} file(s) updated.")
+        rebuild_html_reports(
+            base_dir,
+            args.report_html_dir,
+            include_dashboard=args.include_dashboard,
+            skip_phase_rmi_gantt=args.skip_phase_rmi_gantt,
+            skip_ipp_dashboard=args.skip_ipp_dashboard,
+        )
 
     port = _resolve_server_port(args.host, args.port)
 

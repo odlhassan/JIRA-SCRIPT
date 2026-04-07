@@ -1087,6 +1087,13 @@ def _build_payload(
     simple_scoring: list[dict] | None = None,
     managed_project_display_names: dict[str, str] | None = None,
 ) -> dict:
+    normalized_leave_issue_keys = sorted(
+        {
+            _to_text(issue_key).upper()
+            for issue_key in (leave_issue_keys or [])
+            if _to_text(issue_key)
+        }
+    )
     jira_browse_base = _to_text(os.getenv("JIRA_BROWSE_BASE"))
     if not jira_browse_base:
         jira_site = _to_text(os.getenv("JIRA_SITE")) or "octopusdtlsupport"
@@ -1110,7 +1117,7 @@ def _build_payload(
         "worklogs": worklogs,
         "work_items": work_items,
         "leave_rows": leave_rows,
-        "leave_issue_keys": leave_issue_keys or [],
+        "leave_issue_keys": normalized_leave_issue_keys,
         "teams": teams or [],
         "projects": project_keys,
         "project_display_names": project_display_names,
@@ -1322,6 +1329,15 @@ def _build_html(payload: dict) -> str:
     .metric-chip .metric-value.warn {{ color:#f59e0b; }}
     .metric-chip .material-symbols-outlined {{ font-size:15px; color:#93c5fd; font-variation-settings:"FILL" 1, "wght" 500, "GRAD" 0, "opsz" 20; }}
     .detail {{ padding:10px; overflow-y:auto; flex:1; min-height:0; }} .score-arena {{ margin-top:10px; }} .score-drill {{ padding:10px; }} .card {{ border:1px solid #314e7f; border-radius:10px; background:#12213d; padding:10px; }} .big {{ font-size:2rem; font-weight:900; line-height:1; }}
+    .assignee-refresh-block {{ display:flex; flex-direction:column; align-items:flex-end; gap:4px; }}
+    .assignee-refresh-btn {{ border:1px solid #4a6ea9; background:#163154; color:#eef4ff; border-radius:8px; font-weight:800; padding:6px 10px; cursor:pointer; display:inline-flex; align-items:center; gap:6px; }}
+    .assignee-refresh-btn:hover {{ background:#1a3a63; border-color:#7cb2ff; }}
+    .assignee-refresh-btn:disabled {{ opacity:.75; cursor:not-allowed; }}
+    .assignee-refresh-btn .material-symbols-outlined.spin {{ animation: assignee-refresh-spin .8s linear infinite; }}
+    .assignee-refresh-status {{ min-height:16px; font-size:.68rem; color:#9db1d8; text-align:right; }}
+    .assignee-refresh-status.is-error {{ color:#fda4af; }}
+    .assignee-refresh-status.is-success {{ color:#86efac; }}
+    @keyframes assignee-refresh-spin {{ to {{ transform:rotate(360deg); }} }}
     .tabs {{ display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }}
     .tab-btn {{ border:1px solid #3b5f91; background:#12284b; color:#e6efff; border-radius:999px; padding:4px 10px; font-size:.74rem; cursor:pointer; }}
     .tab-btn.active {{ border-color:#7cb2ff; box-shadow:inset 0 0 0 1px #7cb2ff; background:#173866; }}
@@ -2169,6 +2185,8 @@ let lastLeaderboardViewItems = [];
 let leaderboardActionStatusTimer = null;
 let scoreDrawerAssignee = "";
 let performanceSettingsReady = false;
+let assigneeRefreshState = {{ assignee: "", runId: "", status: "idle", label: "", detail: "" }};
+let assigneeRefreshPollTimer = null;
 function n(v) {{ const x = Number(v); return Number.isFinite(x) ? x : 0; }}
 function e(t) {{ return String(t ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }}
 function formatDate(iso) {{
@@ -4066,6 +4084,127 @@ function scoreSortValue(item, mode) {{
   const value = scoreNumber(item, mode);
   return Number.isFinite(value) ? value : Number.NEGATIVE_INFINITY;
 }}
+function setAssigneeRefreshState(nextState) {{
+  assigneeRefreshState = {{
+    assignee: String(nextState?.assignee || ""),
+    runId: String(nextState?.runId || ""),
+    status: String(nextState?.status || "idle"),
+    label: String(nextState?.label || ""),
+    detail: String(nextState?.detail || ""),
+  }};
+  if (lastLeaderboardViewItems.length) render(lastLeaderboardViewItems);
+}}
+function assigneeRefreshViewFor(name) {{
+  const assigneeName = String(name || "");
+  if (!assigneeName || assigneeRefreshState.assignee !== assigneeName) {{
+    return {{ assignee: assigneeName, runId: "", status: "idle", label: "", detail: "" }};
+  }}
+  return assigneeRefreshState;
+}}
+function pollAssigneeRefreshRun(runId, assigneeName) {{
+  if (!runId) return;
+  fetch(`/api/employee-performance/assignee-refresh/${{encodeURIComponent(runId)}}`)
+    .then((res) => res.json().then((data) => ({{ ok: res.ok, status: res.status, data }})))
+    .then((payload) => {{
+      const run = payload?.data?.run || {{}};
+      const status = String(run.status || "");
+      const stats = run.stats || {{}};
+      const detail = String(stats.current_detail || payload?.data?.error || run.error || "");
+      if (status === "running" || status === "queued") {{
+        setAssigneeRefreshState({{
+          assignee: assigneeName,
+          runId,
+          status: "running",
+          label: "Refreshing...",
+          detail: detail || "Refreshing canonical employee slice.",
+        }});
+        assigneeRefreshPollTimer = window.setTimeout(() => pollAssigneeRefreshRun(runId, assigneeName), 1200);
+        return;
+      }}
+      if (status === "success") {{
+        setAssigneeRefreshState({{
+          assignee: assigneeName,
+          runId,
+          status: "success",
+          label: "Refreshed",
+          detail: "Reloading with refreshed assignee data...",
+        }});
+        window.setTimeout(() => window.location.reload(), 700);
+        return;
+      }}
+      const errorMessage = String(payload?.data?.error || run.error || detail || "Assignee refresh failed.");
+      setAssigneeRefreshState({{
+        assignee: assigneeName,
+        runId,
+        status: "error",
+        label: "Refresh failed",
+        detail: errorMessage,
+      }});
+    }})
+    .catch((err) => {{
+      setAssigneeRefreshState({{
+        assignee: assigneeName,
+        runId,
+        status: "error",
+        label: "Refresh failed",
+        detail: String(err?.message || err || "Assignee refresh failed."),
+      }});
+    }});
+}}
+function startAssigneeDrilldownRefresh(assigneeName) {{
+  const name = String(assigneeName || "").trim();
+  if (!name) return;
+  const current = assigneeRefreshViewFor(name);
+  if (current.status === "running") return;
+  if (assigneeRefreshPollTimer) {{
+    window.clearTimeout(assigneeRefreshPollTimer);
+    assigneeRefreshPollTimer = null;
+  }}
+  setAssigneeRefreshState({{
+    assignee: name,
+    runId: "",
+    status: "running",
+    label: "Queued",
+    detail: "Preparing canonical assignee refresh...",
+  }});
+  fetch("/api/employee-performance/assignee-refresh", {{
+    method: "POST",
+    headers: {{ "Content-Type": "application/json" }},
+    body: JSON.stringify({{ assignee: name }}),
+  }})
+    .then((res) => res.json().then((data) => ({{ ok: res.ok, status: res.status, data }})))
+    .then((payload) => {{
+      if (!payload.ok || !payload?.data?.run_id) {{
+        const message = String(payload?.data?.error || `Refresh failed (${{payload.status}})`);
+        setAssigneeRefreshState({{
+          assignee: name,
+          runId: "",
+          status: "error",
+          label: "Refresh failed",
+          detail: message,
+        }});
+        return;
+      }}
+      const runId = String(payload.data.run_id || "");
+      setAssigneeRefreshState({{
+        assignee: name,
+        runId,
+        status: "running",
+        label: "Refreshing...",
+        detail: "Fetching employee subtree from Jira...",
+      }});
+      pollAssigneeRefreshRun(runId, name);
+    }})
+    .catch((err) => {{
+      setAssigneeRefreshState({{
+        assignee: name,
+        runId: "",
+        status: "error",
+        label: "Refresh failed",
+        detail: String(err?.message || err || "Assignee refresh failed."),
+      }});
+    }});
+}}
 function renderSettingsLoadingState() {{
   const loadingHtml = '<div class="empty" style="padding:10px;">Loading performance settings before calculating scores.</div>';
   const leaderboardEl = document.getElementById("leaderboard");
@@ -4814,7 +4953,13 @@ function render(items) {{
   const summaryScoreLabelHtml = activeScoringTab === "simple"
     ? `<button type="button" class="summary-score-trigger" id="summary-simple-score-trigger" aria-label="Open simple score details"><span class="score-label-text">${{e(activeBigLabel)}}</span><span class="material-symbols-outlined" aria-hidden="true">open_in_new</span></button>`
     : e(activeBigLabel);
-  const summaryHtml = `<div class="card"><div style="display:flex;justify-content:space-between;align-items:end;"><div><div class="sub">Assignee</div><div style="font-size:1.1rem;font-weight:800;">${{e(item.assignee)}}</div></div><div><div class="big" id="summary-big-score">${{activeBigScoreText}}</div><div class="score-label" id="summary-score-label">${{summaryScoreLabelHtml}}</div></div></div>${{summaryMetricsHtml}}${{rmiListHtml}}<div class="sub" id="summary-score-sub">${{activeBigSub}}</div><div class="discover"><span class="pill" style="border-color:${{healthColor}};">Health: ${{healthTag}}</span><span class="pill">Capacity Gap: ${{(n(item.employee_capacity_hours)-n(item.planned_hours_assigned)).toFixed(1)}}h</span><span class="pill">Missed Starts: ${{n(item.missed_start_ratio).toFixed(1)}}%</span><span class="pill">Missed Due Dates: ${{n(item.missed_due_date_ratio).toFixed(1)}}%</span></div></div>`;
+  const assigneeRefresh = assigneeRefreshViewFor(item.assignee);
+  const assigneeRefreshBusy = assigneeRefresh.status === "running";
+  const assigneeRefreshClass = assigneeRefresh.status === "error" ? "is-error" : (assigneeRefresh.status === "success" ? "is-success" : "");
+  const assigneeRefreshLabel = assigneeRefresh.label || "";
+  const assigneeRefreshDetail = assigneeRefresh.detail || "";
+  const assigneeRefreshHtml = `<div class="assignee-refresh-block"><button type="button" class="assignee-refresh-btn" id="assignee-detail-refresh-btn" data-assignee-refresh="${{e(item.assignee)}}" ${{assigneeRefreshBusy ? "disabled" : ""}}><span class="material-symbols-outlined${{assigneeRefreshBusy ? " spin" : ""}}" aria-hidden="true">refresh</span><span>Refresh</span></button><div class="assignee-refresh-status ${{assigneeRefreshClass}}" id="assignee-detail-refresh-status">${{e(assigneeRefreshLabel || assigneeRefreshDetail)}}</div></div>`;
+  const summaryHtml = `<div class="card"><div style="display:flex;justify-content:space-between;align-items:end;gap:12px;"><div><div class="sub">Assignee</div><div style="font-size:1.1rem;font-weight:800;">${{e(item.assignee)}}</div></div><div style="display:flex;align-items:end;gap:12px;">${{assigneeRefreshHtml}}<div><div class="big" id="summary-big-score">${{activeBigScoreText}}</div><div class="score-label" id="summary-score-label">${{summaryScoreLabelHtml}}</div></div></div></div>${{summaryMetricsHtml}}${{rmiListHtml}}<div class="sub" id="summary-score-sub">${{activeBigSub}}</div><div class="discover"><span class="pill" style="border-color:${{healthColor}};">Health: ${{healthTag}}</span><span class="pill">Capacity Gap: ${{(n(item.employee_capacity_hours)-n(item.planned_hours_assigned)).toFixed(1)}}h</span><span class="pill">Missed Starts: ${{n(item.missed_start_ratio).toFixed(1)}}%</span><span class="pill">Missed Due Dates: ${{n(item.missed_due_date_ratio).toFixed(1)}}%</span></div></div>`;
   const managedSectionHtml = `<div class="mini" style="margin:8px 0;"><h3>Managed Field Metrics - ${{e(item.assignee)}}</h3><div class="sub">Employee-only metrics within filters | Date: ${{e(activeFrom)}} to ${{e(activeTo)}} | Projects: ${{e(activeProjectsText)}}</div>${{managedHtml}}</div>`;
   const ssDetails = item.ss_subtask_details || [];
   function ssRowClass(row) {{
@@ -4978,6 +5123,12 @@ function render(items) {{
       const assigneeName = String(item.assignee || "");
       rmiListForAssignee = rmiListForAssignee === assigneeName ? "" : assigneeName;
       render(items);
+    }});
+  }}
+  const assigneeRefreshTrigger = detailHost.querySelector('[data-assignee-refresh]');
+  if (assigneeRefreshTrigger) {{
+    assigneeRefreshTrigger.addEventListener("click", () => {{
+      startAssigneeDrilldownRefresh(String(item.assignee || ""));
     }});
   }}
   const availabilityTrigger = detailHost.querySelector('[data-action="toggle-availability-breakdown"]');
@@ -5422,7 +5573,7 @@ def _resolve_runtime_paths(base_dir: Path) -> dict[str, Path]:
     leave_name = os.getenv("JIRA_LEAVE_REPORT_XLSX_PATH", DEFAULT_LEAVE_REPORT_INPUT_XLSX).strip() or DEFAULT_LEAVE_REPORT_INPUT_XLSX
     html_name = os.getenv("JIRA_EMPLOYEE_PERFORMANCE_HTML_PATH", DEFAULT_HTML_OUTPUT).strip() or DEFAULT_HTML_OUTPUT
     db_name = os.getenv("JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH", DEFAULT_CAPACITY_DB).strip() or DEFAULT_CAPACITY_DB
-    source_mode = _to_text(os.getenv("JIRA_EMP_PERF_INPUT_SOURCE", "db")).lower() or "db"
+    source_mode = _to_text(os.getenv("JIRA_EMP_PERF_INPUT_SOURCE", "auto")).lower() or "auto"
     run_id = _to_text(os.getenv("JIRA_EMP_PERF_RUN_ID"))
     canonical_run_id = _to_text(os.getenv("JIRA_EMP_PERF_CANONICAL_RUN_ID") or os.getenv("JIRA_CANONICAL_RUN_ID"))
     return {
@@ -5438,9 +5589,19 @@ def _resolve_runtime_paths(base_dir: Path) -> dict[str, Path]:
 
 
 def _resolve_employee_performance_source_mode(paths: dict[str, Path | str]) -> tuple[str, str]:
-    source_mode = _to_text(paths.get("source_mode")).lower() or "db"
+    source_mode = _to_text(paths.get("source_mode")).lower() or "auto"
     db_path_raw = paths.get("db_path")
     db_path = db_path_raw if isinstance(db_path_raw, Path) else Path(_to_text(db_path_raw))
+    if source_mode == "auto":
+        requested_canonical_run = _to_text(paths.get("canonical_run_id"))
+        canonical_run_id = _resolve_canonical_run_id(db_path, requested_canonical_run)
+        if canonical_run_id:
+            return "canonical_db", canonical_run_id
+        requested_run = _to_text(paths.get("run_id"))
+        run_id = _resolve_epf_run_id(db_path, requested_run)
+        if run_id:
+            return "db", run_id
+        return "xlsx", ""
     if source_mode == "db":
         requested_run = _to_text(paths.get("run_id"))
         run_id = _resolve_epf_run_id(db_path, requested_run)

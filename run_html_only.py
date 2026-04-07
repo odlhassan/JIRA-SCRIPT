@@ -17,6 +17,23 @@ from pathlib import Path
 
 from report_server import run_report_server, sync_report_html
 
+DEFAULT_HTML_ONLY_STEPS: list[tuple[str, str]] = [
+    # Keep leave workbook/html fresh before any report that embeds leave_daily_rows.
+    ("rlt-leave-report", "generate_rlt_leave_report.py"),
+    ("nested-view-html", "generate_nested_view_html.py"),
+    ("missed-entries-html", "generate_missed_entries_html.py"),
+    ("assignee-hours-html", "generate_assignee_hours_report.py"),
+    ("planned-vs-dispensed-html", "generate_planned_vs_dispensed_report.py"),
+    ("planned-actual-table-view-html", "generate_planned_actual_table_view.py"),
+    ("original-estimates-hierarchy-html", "generate_original_estimates_hierarchy_report.py"),
+    ("leaves-planned-calendar-html", "generate_leaves_planned_calendar_html.py"),
+    ("rnd-data-story-html", "generate_rnd_data_story.py"),
+    ("planned-rmis-html", "generate_planned_rmis_html.py"),
+    ("gantt-chart-html", "generate_gantt_chart_html.py"),
+    ("employee-performance-html", "generate_employee_performance_report.py"),
+    ("team-rmi-gantt-sqlite-sync", "sync_team_rmi_gantt_sqlite.py"),
+]
+
 
 def _run_step(step_name: str, script_name: str, base_dir: Path) -> None:
     script_path = base_dir / script_name
@@ -36,6 +53,52 @@ def _move_report_html(base_dir: Path, folder_raw: str) -> None:
         print("[report-html-sync] No report HTML files were found to move.")
     else:
         print(f"[report-html-sync] Total moved: {moved}")
+
+
+def build_html_only_steps(
+    *,
+    include_dashboard: bool = False,
+    skip_phase_rmi_gantt: bool = False,
+    skip_ipp_dashboard: bool = False,
+) -> list[tuple[str, str]]:
+    steps = list(DEFAULT_HTML_ONLY_STEPS)
+    if not skip_phase_rmi_gantt:
+        steps.append(("phase-rmi-gantt-html", "generate_phase_rmi_gantt_html.py"))
+    if not skip_ipp_dashboard:
+        steps.append(("ipp-meeting-dashboard", "generate_ipp_meeting_dashboard.py"))
+    if include_dashboard:
+        steps.append(("dashboard", "fetch_jira_dashboard.py"))
+    return steps
+
+
+def rebuild_html_reports(
+    base_dir: Path,
+    report_html_dir: str,
+    *,
+    include_dashboard: bool = False,
+    skip_phase_rmi_gantt: bool = False,
+    skip_ipp_dashboard: bool = False,
+) -> None:
+    print("Starting HTML-only rebuild pipeline")
+    if skip_ipp_dashboard:
+        print("[ipp-meeting-dashboard] Disabled by --skip-ipp-dashboard")
+    else:
+        print("[ipp-meeting-dashboard] Enabled (includes latest IPP roadmap/table UI changes)")
+
+    if skip_phase_rmi_gantt:
+        print("[phase-rmi-gantt-html] Skipped")
+    if skip_ipp_dashboard:
+        print("[ipp-meeting-dashboard] Skipped")
+
+    for step_name, script_name in build_html_only_steps(
+        include_dashboard=include_dashboard,
+        skip_phase_rmi_gantt=skip_phase_rmi_gantt,
+        skip_ipp_dashboard=skip_ipp_dashboard,
+    ):
+        _run_step(step_name, script_name, base_dir)
+
+    _move_report_html(base_dir, report_html_dir)
+    print("\nHTML-only rebuild completed.")
 
 
 def _serve_report_html(base_dir: Path, folder_raw: str, host: str, port: int) -> None:
@@ -86,47 +149,13 @@ def main() -> None:
     args = parser.parse_args()
 
     base_dir = Path(__file__).resolve().parent
-    print("Starting HTML-only rebuild pipeline")
-    if args.skip_ipp_dashboard:
-        print("[ipp-meeting-dashboard] Disabled by --skip-ipp-dashboard")
-    else:
-        print("[ipp-meeting-dashboard] Enabled (includes latest IPP roadmap/table UI changes)")
-
-    steps: list[tuple[str, str]] = [
-        # Keep leave workbook/html fresh before any report that embeds leave_daily_rows.
-        ("rlt-leave-report", "generate_rlt_leave_report.py"),
-        ("nested-view-html", "generate_nested_view_html.py"),
-        ("missed-entries-html", "generate_missed_entries_html.py"),
-        ("assignee-hours-html", "generate_assignee_hours_report.py"),
-        ("planned-vs-dispensed-html", "generate_planned_vs_dispensed_report.py"),
-        ("planned-actual-table-view-html", "generate_planned_actual_table_view.py"),
-        ("original-estimates-hierarchy-html", "generate_original_estimates_hierarchy_report.py"),
-        ("leaves-planned-calendar-html", "generate_leaves_planned_calendar_html.py"),
-        ("rnd-data-story-html", "generate_rnd_data_story.py"),
-        ("planned-rmis-html", "generate_planned_rmis_html.py"),
-        ("gantt-chart-html", "generate_gantt_chart_html.py"),
-        ("employee-performance-html", "generate_employee_performance_report.py"),
-        ("team-rmi-gantt-sqlite-sync", "sync_team_rmi_gantt_sqlite.py"),
-    ]
-
-    if not args.skip_phase_rmi_gantt:
-        steps.append(("phase-rmi-gantt-html", "generate_phase_rmi_gantt_html.py"))
-    else:
-        print("[phase-rmi-gantt-html] Skipped")
-
-    if not args.skip_ipp_dashboard:
-        steps.append(("ipp-meeting-dashboard", "generate_ipp_meeting_dashboard.py"))
-    else:
-        print("[ipp-meeting-dashboard] Skipped")
-
-    if args.include_dashboard:
-        steps.append(("dashboard", "fetch_jira_dashboard.py"))
-
-    for step_name, script_name in steps:
-        _run_step(step_name, script_name, base_dir)
-
-    _move_report_html(base_dir, args.report_html_dir)
-    print("\nHTML-only rebuild completed.")
+    rebuild_html_reports(
+        base_dir,
+        args.report_html_dir,
+        include_dashboard=args.include_dashboard,
+        skip_phase_rmi_gantt=args.skip_phase_rmi_gantt,
+        skip_ipp_dashboard=args.skip_ipp_dashboard,
+    )
 
     if args.no_server:
         print("Server startup skipped (--no-server).")

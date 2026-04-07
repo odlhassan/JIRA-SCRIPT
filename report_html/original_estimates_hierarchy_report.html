@@ -20,7 +20,6 @@
     .ctl select[multiple] { min-height:90px; }
     .btn { border:1px solid #255f73; border-radius:8px; background:#0f4c5c; color:#fff; font-size:.84rem; font-weight:700; padding:8px 10px; cursor:pointer; }
     .btn.alt { background:#fff; color:#255f73; }
-    .btn.fetch { border-color:#0f766e; background:#ecfeff; color:#0f766e; }
     .btn:disabled { opacity:.7; cursor:progress; }
     .status { font-size:.78rem; color:#475569; min-height:18px; }
     .page { max-width:1500px; margin:0 auto; padding:16px; display:grid; gap:12px; }
@@ -55,8 +54,6 @@
       color:#9f1239;
       box-shadow: inset 0 0 0 1px #fecdd3;
     }
-    .epic-refresh-btn { border:1px solid #c7d7e6; border-radius:8px; background:#f8fbff; color:#1e3a52; font-size:.75rem; padding:4px 8px; cursor:pointer; }
-    .epic-refresh-btn:disabled { opacity:.6; cursor:progress; }
     .empty { padding:18px; text-align:center; color:#64748b; }
   </style>
 </head>
@@ -72,7 +69,6 @@
       <div class="ctl search-anything"><label for="search-anything">Search Anything</label><input id="search-anything" type="text" placeholder="Search key, summary, assignee, status, project..."></div>
       <button id="apply-btn" class="btn" type="button">Apply</button>
       <button id="reset-btn" class="btn alt" type="button">Reset</button>
-      <button id="fetch-btn" class="btn fetch" type="button">Fetch Latest</button>
       <span id="status" class="status" aria-live="polite"></span>
     </div>
   </div>
@@ -106,7 +102,6 @@
     (function () {
       const $ = (id) => document.getElementById(id);
       const st = { epics: [], updatedAt: "", selectedProjects: [], searchTerm: "" };
-      const epicsBusy = new Set();
 
       function esc(v){
         return String(v == null ? "" : v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
@@ -169,9 +164,6 @@
         const assignee = txt(item && item.assignee) || "Unassigned";
         const jira = txt(item && item.jira_url);
         const iconName = kind === "epic" ? "bolt" : (kind === "story" ? "person" : "construction");
-        const refreshBtn = kind === "epic"
-          ? `<button type="button" class="epic-refresh-btn" data-refresh-epic="${esc(key)}" ${epicsBusy.has(key) ? "disabled" : ""}>${epicsBusy.has(key) ? "Refreshing..." : "Refresh Epic"}</button>`
-          : "";
         const jiraBtn = jira
           ? `<a class="jira-link" href="${esc(jira)}" target="_blank" rel="noopener noreferrer" title="Open in Jira">J</a>`
           : `<span class="jira-disabled" title="No Jira link">-</span>`;
@@ -186,7 +178,7 @@
               </div>
               <div>${jiraBtn}</div>
             </div>
-            <div class="item-meta"><span class="assignee">${esc(assignee)}</span><span class="jira-id">${esc(key)}</span>${refreshBtn}</div>
+            <div class="item-meta"><span class="assignee">${esc(assignee)}</span><span class="jira-id">${esc(key)}</span></div>
           </div>
         `;
       }
@@ -211,7 +203,7 @@
       function renderTable(){
         const body = $("table-body");
         if (!Array.isArray(st.epics) || !st.epics.length){
-          body.innerHTML = '<tr><td colspan="5" class="empty">No data for current filters. Click Fetch Latest to load Jira data.</td></tr>';
+          body.innerHTML = '<tr><td colspan="5" class="empty">No data for current filters or canonical refresh. Adjust filters or run Colossal Refresh, then Apply.</td></tr>';
           return;
         }
         const term = canonical(st.searchTerm);
@@ -283,67 +275,6 @@
         renderTable();
         setStatus("Loaded.", "ok");
       }
-      async function fetchLatestAll(){
-        $("fetch-btn").disabled = true;
-        try {
-          setStatus("Fetching latest from Jira...", "");
-          const res = await fetch("/api/original-estimates/refresh", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ from: $("from-date").value || "", to: $("to-date").value || "", projects: selectedValues("projects") }),
-          });
-          const data = await res.json();
-          if (!res.ok || !data.ok) throw new Error(data.error || "Failed to refresh.");
-          await loadFilterOptions();
-          await loadSummary();
-          setStatus("Fetched latest and saved.", "ok");
-        } catch (err){
-          setStatus(err.message || String(err), "err");
-        } finally {
-          $("fetch-btn").disabled = false;
-        }
-      }
-      async function refreshEpic(epicKey){
-        if (!txt(epicKey)) return;
-        epicsBusy.add(epicKey);
-        renderTable();
-        try {
-          setStatus("Refreshing epic " + epicKey + "...", "");
-          const res = await fetch(`/api/original-estimates/refresh-epic/${encodeURIComponent(epicKey)}?${summaryQuery()}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ from: $("from-date").value || "", to: $("to-date").value || "" }),
-          });
-          const data = await res.json();
-          if (!res.ok || !data.ok) throw new Error(data.error || "Epic refresh failed.");
-          await loadFilterOptions();
-          await loadSummary();
-          const stories = n(data && data.stats ? data.stats.stories : 0);
-          const subtasks = n(data && data.stats ? data.stats.subtasks : 0);
-          let visibleStories = 0;
-          let visibleSubtasks = 0;
-          const refreshedEpic = (st.epics || []).find((item)=>txt(item && item.issue_key).toUpperCase() === txt(epicKey).toUpperCase());
-          if (refreshedEpic){
-            const storyList = Array.isArray(refreshedEpic.stories) ? refreshedEpic.stories : [];
-            visibleStories = storyList.length;
-            visibleSubtasks = storyList.reduce((sum, story)=>sum + ((Array.isArray(story && story.subtasks) ? story.subtasks.length : 0)), 0);
-          }
-          const hiddenByFilters = (visibleStories < stories) || (visibleSubtasks < subtasks);
-          const filterNote = hiddenByFilters ? " (some are hidden by current filters)" : "";
-          setStatus(
-            "Epic refreshed: " + epicKey
-            + " (stories: " + stories + ", subtasks: " + subtasks
-            + "; visible: " + visibleStories + "/" + visibleSubtasks + ")"
-            + filterNote,
-            "ok"
-          );
-        } catch (err){
-          setStatus(err.message || String(err), "err");
-        } finally {
-          epicsBusy.delete(epicKey);
-          renderTable();
-        }
-      }
 
       $("apply-btn").addEventListener("click", async ()=>{ try { await loadSummary(); } catch (err) { setStatus(err.message || String(err), "err"); } });
       $("reset-btn").addEventListener("click", async ()=>{
@@ -357,15 +288,9 @@
           setStatus(err.message || String(err), "err");
         }
       });
-      $("fetch-btn").addEventListener("click", fetchLatestAll);
       $("search-anything").addEventListener("input", (e)=>{
         st.searchTerm = txt(e && e.target ? e.target.value : "");
         renderTable();
-      });
-      $("table-body").addEventListener("click", (e)=>{
-        const btn = e.target && e.target.closest ? e.target.closest("[data-refresh-epic]") : null;
-        if (!btn) return;
-        refreshEpic(txt(btn.getAttribute("data-refresh-epic")));
       });
 
       (async function init(){
@@ -381,6 +306,322 @@
   </script>
   <script src="/shared-date-filter.js"></script>
   <script src="/shared-nav.js"></script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

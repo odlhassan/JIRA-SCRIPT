@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 from openpyxl import Workbook
 
-from report_server import create_report_server_app
+from report_server import _resolve_capacity_runtime_paths, create_report_server_app
+
+OE_FIXTURE_RUN_ID = "test-original-estimates-run"
+CANON_STALE_AT = "2020-01-01T00:00:00+00:00"
 
 
 def _build_app(root: Path):
@@ -117,22 +120,118 @@ def _hierarchy_fixture():
     }
 
 
-def _make_issue(key: str, issue_type: str, summary: str, assignee: str, estimate_hours: float, start: str, due: str, project_key: str = "O2", parent_key: str = "", epic_link: str = ""):
-    fields = {
-        "summary": summary,
-        "status": {"name": "In Progress"},
-        "assignee": {"displayName": assignee},
-        "issuetype": {"name": issue_type},
-        "project": {"key": project_key, "name": project_key},
-        "timeoriginalestimate": int(estimate_hours * 3600),
-        "duedate": due,
-        "customfield_20000": start,
-    }
-    if parent_key:
-        fields["parent"] = {"key": parent_key}
-    if epic_link:
-        fields["customfield_10014"] = epic_link
-    return {"key": key, "fields": fields}
+def _seed_canonical_for_original_estimates(root: Path, hierarchy: dict, *, run_id: str = OE_FIXTURE_RUN_ID) -> None:
+    """Populate canonical_issues + last-success metadata so the OEH summary reads live hierarchy from SQLite."""
+    db_path = _resolve_capacity_runtime_paths(root)["db_path"]
+    rows: list[tuple] = []
+    for epic in hierarchy["epics"]:
+        ek = str(epic["issue_key"])
+        rows.append(
+            (
+                run_id,
+                "",
+                ek,
+                str(epic["project_key"]),
+                "Epic",
+                str(epic["summary"]),
+                str(epic["status"]),
+                str(epic["assignee"]),
+                str(epic["planned_start"]),
+                str(epic["planned_due"]),
+                "",
+                "",
+                "",
+                float(epic["estimate_hours"]),
+                0.0,
+                "",
+                "",
+                "",
+                ek,
+                "{}",
+            )
+        )
+    for story in hierarchy["stories"]:
+        sk = str(story["issue_key"])
+        ek = str(story["epic_key"])
+        rows.append(
+            (
+                run_id,
+                "",
+                sk,
+                str(story["project_key"]),
+                "Story",
+                str(story["summary"]),
+                str(story["status"]),
+                str(story["assignee"]),
+                str(story["planned_start"]),
+                str(story["planned_due"]),
+                "",
+                "",
+                "",
+                float(story["estimate_hours"]),
+                0.0,
+                "",
+                "",
+                sk,
+                ek,
+                "{}",
+            )
+        )
+    for sub in hierarchy["subtasks"]:
+        k = str(sub["issue_key"])
+        sk = str(sub["story_key"])
+        ek = str(sub["epic_key"])
+        rows.append(
+            (
+                run_id,
+                "",
+                k,
+                str(sub["project_key"]),
+                "Sub-task",
+                str(sub["summary"]),
+                str(sub["status"]),
+                str(sub["assignee"]),
+                str(sub["planned_start"]),
+                str(sub["planned_due"]),
+                "",
+                "",
+                "",
+                float(sub["estimate_hours"]),
+                0.0,
+                "",
+                "",
+                sk,
+                ek,
+                "{}",
+            )
+        )
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO canonical_refresh_runs(
+                run_id, scope_year, managed_project_keys_json, started_at_utc, ended_at_utc,
+                status, trigger_source, error_message, stats_json,
+                progress_step, progress_pct, cancel_requested, updated_at_utc
+            ) VALUES (?, 2026, '["O2"]', ?, ?, 'success', 'test', '', '{}', 'done', 100, 0, ?)
+            """,
+            (run_id, CANON_STALE_AT, CANON_STALE_AT, CANON_STALE_AT),
+        )
+        conn.execute(
+            "UPDATE canonical_refresh_state SET active_run_id=?, last_success_run_id=?, updated_at_utc=? WHERE id=1",
+            ("", run_id, CANON_STALE_AT),
+        )
+        conn.executemany(
+            """
+            INSERT OR REPLACE INTO canonical_issues(
+                run_id, issue_id, issue_key, project_key, issue_type, summary, status, assignee,
+                start_date, due_date, created_utc, updated_utc, resolved_stable_since_date,
+                original_estimate_hours, total_hours_logged, fix_type, parent_issue_key,
+                story_key, epic_key, raw_payload_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            rows,
+        )
+        conn.commit()
 
 
 class OriginalEstimatesApiTests(unittest.TestCase):
@@ -141,22 +240,20 @@ class OriginalEstimatesApiTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             root = Path(td)
             app = _build_app(root)
+            _seed_canonical_for_original_estimates(root, hierarchy)
             client = app.test_client()
-            with (
-                patch("report_server.get_session", return_value=object()),
-                patch("report_server._load_planned_vs_dispensed_hierarchy", return_value=hierarchy),
-            ):
-                refresh_resp = client.post(
-                    "/api/original-estimates/refresh",
-                    json={"from": "2026-02-01", "to": "2026-02-28", "projects": ["O2"]},
-                )
-                self.assertEqual(refresh_resp.status_code, 200)
-                self.assertTrue((refresh_resp.get_json() or {}).get("ok"))
+            refresh_resp = client.post(
+                "/api/original-estimates/refresh",
+                json={"from": "2026-02-01", "to": "2026-02-28", "projects": ["O2"]},
+            )
+            self.assertEqual(refresh_resp.status_code, 200)
+            self.assertTrue((refresh_resp.get_json() or {}).get("ok"))
 
             summary_resp = client.get("/api/original-estimates/summary?from=2026-02-01&to=2026-02-28&projects=O2")
             self.assertEqual(summary_resp.status_code, 200)
             summary = summary_resp.get_json() or {}
             self.assertTrue(summary.get("ok"))
+            self.assertEqual(summary.get("source"), "canonical_hierarchy")
             self.assertEqual(len(summary.get("epics") or []), 2)
             epic_one = next((item for item in (summary.get("epics") or []) if item.get("issue_key") == "O2-EP1"), None)
             self.assertIsNotNone(epic_one)
@@ -182,36 +279,25 @@ class OriginalEstimatesApiTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             root = Path(td)
             app = _build_app(root)
+            _seed_canonical_for_original_estimates(root, hierarchy)
             client = app.test_client()
 
-            with (
-                patch("report_server.get_session", return_value=object()),
-                patch("report_server._load_planned_vs_dispensed_hierarchy", return_value=hierarchy),
-            ):
-                refresh_resp = client.post(
-                    "/api/original-estimates/refresh",
-                    json={"from": "2026-02-01", "to": "2026-02-28", "projects": ["O2"]},
-                )
-                self.assertEqual(refresh_resp.status_code, 200)
+            refresh_resp = client.post(
+                "/api/original-estimates/refresh",
+                json={"from": "2026-02-01", "to": "2026-02-28", "projects": ["O2"]},
+            )
+            self.assertEqual(refresh_resp.status_code, 200)
 
-            epic_issue = _make_issue("O2-EP1", "Epic", "Epic One Updated", "Alice", 22.0, "2026-02-01", "2026-02-20")
-            story_issue = _make_issue("O2-ST1", "Story", "Story One Updated", "Alice", 9.0, "2026-02-02", "2026-02-12", parent_key="", epic_link="O2-EP1")
-            subtask_issue = _make_issue("O2-SUB1", "Sub-task", "Subtask One Updated", "Alice", 6.0, "2026-02-04", "2026-02-06", parent_key="O2-ST1")
+            before = client.get("/api/original-estimates/summary?from=2026-02-01&to=2026-02-28&projects=O2").get_json() or {}
+            epic_one_before = next((item for item in (before.get("epics") or []) if item.get("issue_key") == "O2-EP1"), None)
+            self.assertIsNotNone(epic_one_before)
 
-            with (
-                patch("report_server.get_session", return_value=object()),
-                patch("report_server.resolve_jira_start_date_field_id", return_value="customfield_20000"),
-                patch("report_server.resolve_jira_end_date_field_ids", return_value=["duedate"]),
-                patch("report_server._fetch_jira_issues_by_keys", return_value=[epic_issue]),
-                patch("report_server._fetch_story_issues_for_epics", return_value=[story_issue]),
-                patch("report_server._fetch_subtask_issues_for_stories", return_value=[subtask_issue]),
-            ):
-                epic_refresh = client.post(
-                    "/api/original-estimates/refresh-epic/O2-EP1",
-                    json={"from": "2026-02-01", "to": "2026-02-28"},
-                )
-                self.assertEqual(epic_refresh.status_code, 200)
-                self.assertTrue((epic_refresh.get_json() or {}).get("ok"))
+            epic_refresh = client.post(
+                "/api/original-estimates/refresh-epic/O2-EP1",
+                json={"from": "2026-02-01", "to": "2026-02-28"},
+            )
+            self.assertEqual(epic_refresh.status_code, 200)
+            self.assertTrue((epic_refresh.get_json() or {}).get("ok"))
 
             summary_resp = client.get("/api/original-estimates/summary?from=2026-02-01&to=2026-02-28&projects=O2")
             self.assertEqual(summary_resp.status_code, 200)
@@ -220,8 +306,8 @@ class OriginalEstimatesApiTests(unittest.TestCase):
             epic_two = next((item for item in (payload.get("epics") or []) if item.get("issue_key") == "O2-EP2"), None)
             self.assertIsNotNone(epic_one)
             self.assertIsNotNone(epic_two)
-            self.assertEqual(str(epic_one.get("summary")), "Epic One Updated")
-            self.assertEqual(float(epic_one.get("original_estimate_hours") or 0.0), 22.0)
+            self.assertEqual(str(epic_one.get("summary")), str(epic_one_before.get("summary")))
+            self.assertEqual(float(epic_one.get("original_estimate_hours") or 0.0), float(epic_one_before.get("original_estimate_hours") or 0.0))
             self.assertEqual(str(epic_two.get("summary")), "Epic Two")
 
 

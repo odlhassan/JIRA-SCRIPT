@@ -280,10 +280,15 @@ def build_rlt_leave_snapshot(
                 "timespent_hours": round(item.timespent_hours, 2),
                 "leave_type_raw": item.leave_type_raw,
                 "leave_classification": item.leave_classification,
+                "classification_source": item.classification_source,
                 "total_worklog_hours": round(item.total_worklog_hours, 2),
                 "planned_date_for_bucket": item.planned_date_for_bucket,
                 "clubbed_leave": item.clubbed_leave,
                 "no_entry_flag": item.no_entry_flag,
+                "verification_reference_date": item.verification_reference_date,
+                "created_after_leave_date_flag": item.created_after_leave_date_flag,
+                "created_after_leave_days": item.created_after_leave_days,
+                "verification_note": item.verification_note,
             }
             for item in subtasks
         ],
@@ -304,10 +309,15 @@ def build_rlt_leave_snapshot(
                 "timespent_hours": round(item.timespent_hours, 2),
                 "leave_type_raw": item.leave_type_raw,
                 "leave_classification": item.leave_classification,
+                "classification_source": item.classification_source,
                 "total_worklog_hours": round(item.total_worklog_hours, 2),
                 "planned_date_for_bucket": item.planned_date_for_bucket,
                 "clubbed_leave": item.clubbed_leave,
                 "no_entry_flag": item.no_entry_flag,
+                "verification_reference_date": item.verification_reference_date,
+                "created_after_leave_date_flag": item.created_after_leave_date_flag,
+                "created_after_leave_days": item.created_after_leave_days,
+                "verification_note": item.verification_note,
             }
             for item in distributed
         ],

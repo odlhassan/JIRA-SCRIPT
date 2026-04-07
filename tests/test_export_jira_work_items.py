@@ -36,6 +36,7 @@ class ExportJiraWorkItemsTests(unittest.TestCase):
                     "issuetype",
                     "parent",
                     "customfield_10014",
+                    "customfield_10584",
                     "created",
                     "updated",
                     "customfield_10211",
@@ -63,6 +64,7 @@ class ExportJiraWorkItemsTests(unittest.TestCase):
                 "issuetype": {"name": "Sub-task"},
                 "parent": {"key": "O2-1257"},
                 "customfield_10014": None,
+                "customfield_10584": None,
                 "created": "2026-02-27T09:00:00.000+0500",
                 "updated": "2026-03-09T13:12:50.004+0500",
                 "customfield_10211": None,
@@ -87,6 +89,7 @@ class ExportJiraWorkItemsTests(unittest.TestCase):
                     "issuetype",
                     "parent",
                     "customfield_10014",
+                    "customfield_10584",
                     "created",
                     "updated",
                     "customfield_10211",
@@ -94,6 +97,56 @@ class ExportJiraWorkItemsTests(unittest.TestCase):
                 start_date_field_id="customfield_10211",
                 end_date_field_ids=["customfield_10216", "duedate"],
                 fix_type_field_id="customfield_10115",
+            )
+        )
+
+    def test_payload_has_required_detail_fields_rejects_missing_leave_type_field_when_requested(self):
+        issue = {
+            "key": "RLT-249",
+            "fields": {
+                "project": {"key": "RLT"},
+                "summary": "24-March-2026",
+                "status": {"name": "Considered in Roadmap & Queued"},
+                "duedate": "2026-03-24",
+                "assignee": {"displayName": "Namra Zahid"},
+                "priority": {"name": "Medium"},
+                "timetracking": {},
+                "timeoriginalestimate": 28800,
+                "timespent": 28800,
+                "aggregatetimespent": 28800,
+                "issuetype": {"name": "Sub-task"},
+                "parent": {"key": "RLT-15"},
+                "customfield_10014": None,
+                "created": "2026-04-01T11:04:10.369+0500",
+                "updated": "2026-04-02T12:55:08.834+0500",
+                "customfield_10133": "2026-03-24",
+            },
+        }
+        self.assertFalse(
+            _payload_has_required_detail_fields(
+                issue,
+                detail_fields=[
+                    "project",
+                    "summary",
+                    "status",
+                    "duedate",
+                    "assignee",
+                    "priority",
+                    "timetracking",
+                    "timeoriginalestimate",
+                    "timespent",
+                    "aggregatetimespent",
+                    "issuetype",
+                    "parent",
+                    "customfield_10014",
+                    "customfield_10584",
+                    "created",
+                    "updated",
+                    "customfield_10133",
+                ],
+                start_date_field_id="customfield_10133",
+                end_date_field_ids=["duedate"],
+                fix_type_field_id=None,
             )
         )
 

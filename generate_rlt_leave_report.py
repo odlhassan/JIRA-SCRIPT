@@ -51,12 +51,11 @@ LEAVE_TYPE_FIELD = "customfield_10584"
 DEFAULT_STANDARD_HOURS_PER_DAY = 8.0
 DEFAULT_RAMADAN_HOURS_PER_DAY = 6.5
 
-PLANNED_KEYWORDS = ("planned", "annual", "casual", "considered in roadmap & queued")
-UNPLANNED_KEYWORDS = ("sick", "emergency", "unplanned")
 RLT_PIPELINE_NAME = "rlt_leave_report"
 DEFAULT_OVERLAP_MINUTES = 5
 DEFAULT_FORCE_FULL_SYNC_DAYS = 7
 DEFAULT_BOOTSTRAP_DAYS = 365
+LEAVE_VERIFICATION_TABLE = "rlt_leave_verification_rows"
 
 
 def _jira_issue_url(issue_key: str) -> str:
@@ -99,6 +98,11 @@ class SubtaskRow:
     planned_date_for_bucket: str
     clubbed_leave: str
     no_entry_flag: str
+    classification_source: str = ""
+    verification_reference_date: str = ""
+    created_after_leave_date_flag: str = "No"
+    created_after_leave_days: int = 0
+    verification_note: str = ""
 
 
 def _is_incremental_disabled(enable_incremental: bool) -> bool:
@@ -379,17 +383,40 @@ def leave_type_text(value: Any) -> str:
     return _to_text(value)
 
 
-def classify_leave(leave_type_raw: str, status: str, summary: str) -> str:
+def classify_leave_source(leave_type_raw: str) -> str:
+    leave_type_low = _to_text(leave_type_raw).lower()
+    if "unplanned" in leave_type_low:
+        return "leave_type"
+    if "planned" in leave_type_low:
+        return "leave_type"
+    if leave_type_low:
+        return "leave_type_unmapped"
+    return "leave_type_missing"
+
+
+def choose_verification_reference_date(start_date: str, due_date: str) -> str:
+    return _to_text(start_date) or _to_text(due_date)
+
+
+def compute_created_after_leave_date_check(
+    created: str,
+    start_date: str,
+    due_date: str,
+) -> tuple[str, int, str, str]:
+    reference_date = choose_verification_reference_date(start_date, due_date)
+    created_day = parse_iso_date(created)
+    reference_day = parse_iso_date(reference_date)
+    if not created_day or not reference_day or created_day <= reference_day:
+        return "No", 0, reference_date, ""
+    gap_days = (created_day - reference_day).days
+    return "Yes", gap_days, reference_date, f"Created {gap_days} day(s) after leave date."
+
+
+def classify_leave(leave_type_raw: str) -> str:
     leave_type_low = _to_text(leave_type_raw).lower()
     if "unplanned" in leave_type_low:
         return "Unplanned"
     if "planned" in leave_type_low:
-        return "Planned"
-
-    text = f"{_to_text(status)} {_to_text(summary)}".lower()
-    if any(token in text for token in UNPLANNED_KEYWORDS):
-        return "Unplanned"
-    if any(token in text for token in PLANNED_KEYWORDS):
         return "Planned"
     return "Unknown"
 
@@ -694,6 +721,11 @@ def _redistribute_continuous_leave_subtasks(
                     planned_date_for_bucket=day,
                     clubbed_leave=subtask.clubbed_leave,
                     no_entry_flag=subtask.no_entry_flag,
+                    classification_source=subtask.classification_source,
+                    verification_reference_date=day,
+                    created_after_leave_date_flag=subtask.created_after_leave_date_flag,
+                    created_after_leave_days=subtask.created_after_leave_days,
+                    verification_note=subtask.verification_note,
                 )
             )
     return out
@@ -756,6 +788,7 @@ def _compute_aggregates(
         lambda: {
             "planned_taken_hours": 0.0,
             "unplanned_taken_hours": 0.0,
+            "unknown_taken_hours": 0.0,
             "planned_not_taken_hours": 0.0,
             "planned_not_taken_no_entry_count": 0.0,
             "unknown_subtasks_count": 0.0,
@@ -765,6 +798,7 @@ def _compute_aggregates(
         lambda: {
             "planned_taken_hours": 0.0,
             "unplanned_taken_hours": 0.0,
+            "unknown_taken_hours": 0.0,
             "planned_not_taken_hours": 0.0,
         }
     )
@@ -772,6 +806,7 @@ def _compute_aggregates(
         lambda: {
             "planned_taken_hours": 0.0,
             "unplanned_taken_hours": 0.0,
+            "unknown_taken_hours": 0.0,
             "planned_not_taken_hours": 0.0,
             "_jira_issue_keys": set(),
             "_jira_issue_links": set(),
@@ -781,6 +816,7 @@ def _compute_aggregates(
         lambda: {
             "planned_taken_hours": 0.0,
             "unplanned_taken_hours": 0.0,
+            "unknown_taken_hours": 0.0,
             "planned_not_taken_hours": 0.0,
         }
     )
@@ -790,6 +826,7 @@ def _compute_aggregates(
     subtask_by_key = {s.issue_key: s for s in subtasks}
     assignee_planned_taken_daily: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
     assignee_unplanned_taken_daily: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
+    assignee_unknown_taken_daily: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
     assignee_planned_not_taken_daily: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
 
     for subtask in subtasks:
@@ -880,7 +917,7 @@ def _compute_aggregates(
             continue
         if not _in_date_window(log.started_date, from_date, to_date):
             continue
-        if subtask.leave_classification not in ("Planned", "Unplanned"):
+        if subtask.leave_classification not in ("Planned", "Unplanned", "Unknown"):
             continue
 
         assignee = subtask.assignee
@@ -894,7 +931,7 @@ def _compute_aggregates(
             assignee_planned_taken_daily[assignee][log.started_date] += log.hours_logged
             weekly[(assignee, week_key)]["planned_taken_hours"] += log.hours_logged
             monthly[(assignee, month_key)]["planned_taken_hours"] += log.hours_logged
-        else:
+        elif subtask.leave_classification == "Unplanned":
             by_assignee[assignee]["unplanned_taken_hours"] += log.hours_logged
             daily[(assignee, log.started_date)]["unplanned_taken_hours"] += log.hours_logged
             daily[(assignee, log.started_date)]["_jira_issue_keys"].add(log.issue_key)
@@ -902,35 +939,47 @@ def _compute_aggregates(
             assignee_unplanned_taken_daily[assignee][log.started_date] += log.hours_logged
             weekly[(assignee, week_key)]["unplanned_taken_hours"] += log.hours_logged
             monthly[(assignee, month_key)]["unplanned_taken_hours"] += log.hours_logged
+        else:
+            by_assignee[assignee]["unknown_taken_hours"] += log.hours_logged
+            daily[(assignee, log.started_date)]["unknown_taken_hours"] += log.hours_logged
+            daily[(assignee, log.started_date)]["_jira_issue_keys"].add(log.issue_key)
+            daily[(assignee, log.started_date)]["_jira_issue_links"].add(_jira_issue_url(log.issue_key))
+            assignee_unknown_taken_daily[assignee][log.started_date] += log.hours_logged
+            weekly[(assignee, week_key)]["unknown_taken_hours"] += log.hours_logged
+            monthly[(assignee, month_key)]["unknown_taken_hours"] += log.hours_logged
 
     assignee_summary = []
     for assignee, m in sorted(by_assignee.items(), key=lambda x: x[0].lower()):
         p = round(m["planned_taken_hours"], 2)
         u = round(m["unplanned_taken_hours"], 2)
+        x = round(m["unknown_taken_hours"], 2)
         f = round(m["planned_not_taken_hours"], 2)
         assignee_summary.append(
             {
                 "assignee": assignee,
                 "planned_taken_hours": p,
                 "unplanned_taken_hours": u,
+                "unknown_taken_hours": x,
                 "planned_not_taken_hours": f,
                 "planned_not_taken_no_entry_count": int(m["planned_not_taken_no_entry_count"]),
                 "unknown_subtasks_count": int(m["unknown_subtasks_count"]),
                 "planned_taken_days": _daily_hours_to_days(assignee_planned_taken_daily[assignee], day_hours_profile),
                 "unplanned_taken_days": _daily_hours_to_days(assignee_unplanned_taken_daily[assignee], day_hours_profile),
+                "unknown_taken_days": _daily_hours_to_days(assignee_unknown_taken_daily[assignee], day_hours_profile),
                 "planned_not_taken_days": _daily_hours_to_days(assignee_planned_not_taken_daily[assignee], day_hours_profile),
             }
         )
 
     weekly_rows = []
     for (assignee, period), m in sorted(weekly.items(), key=lambda x: (x[0][1], x[0][0].lower())):
-        total = m["planned_taken_hours"] + m["unplanned_taken_hours"] + m["planned_not_taken_hours"]
+        total = m["planned_taken_hours"] + m["unplanned_taken_hours"] + m["unknown_taken_hours"] + m["planned_not_taken_hours"]
         weekly_rows.append(
             {
                 "assignee": assignee,
                 "period_week": period,
                 "planned_taken_hours": round(m["planned_taken_hours"], 2),
                 "unplanned_taken_hours": round(m["unplanned_taken_hours"], 2),
+                "unknown_taken_hours": round(m["unknown_taken_hours"], 2),
                 "planned_not_taken_hours": round(m["planned_not_taken_hours"], 2),
                 "total_hours": round(total, 2),
             }
@@ -938,7 +987,7 @@ def _compute_aggregates(
 
     daily_rows = []
     for (assignee, period), m in sorted(daily.items(), key=lambda x: (x[0][1], x[0][0].lower())):
-        total = m["planned_taken_hours"] + m["unplanned_taken_hours"] + m["planned_not_taken_hours"]
+        total = m["planned_taken_hours"] + m["unplanned_taken_hours"] + m["unknown_taken_hours"] + m["planned_not_taken_hours"]
         issue_keys = sorted({_to_text(x).upper() for x in (m.get("_jira_issue_keys") or set()) if _to_text(x)})
         issue_links = sorted({_to_text(x) for x in (m.get("_jira_issue_links") or set()) if _to_text(x)})
         daily_rows.append(
@@ -947,6 +996,7 @@ def _compute_aggregates(
                 "period_day": period,
                 "planned_taken_hours": round(m["planned_taken_hours"], 2),
                 "unplanned_taken_hours": round(m["unplanned_taken_hours"], 2),
+                "unknown_taken_hours": round(m["unknown_taken_hours"], 2),
                 "planned_not_taken_hours": round(m["planned_not_taken_hours"], 2),
                 "total_hours": round(total, 2),
                 "jira_task_ids": ", ".join(issue_keys),
@@ -956,13 +1006,14 @@ def _compute_aggregates(
 
     monthly_rows = []
     for (assignee, period), m in sorted(monthly.items(), key=lambda x: (x[0][1], x[0][0].lower())):
-        total = m["planned_taken_hours"] + m["unplanned_taken_hours"] + m["planned_not_taken_hours"]
+        total = m["planned_taken_hours"] + m["unplanned_taken_hours"] + m["unknown_taken_hours"] + m["planned_not_taken_hours"]
         monthly_rows.append(
             {
                 "assignee": assignee,
                 "period_month": period,
                 "planned_taken_hours": round(m["planned_taken_hours"], 2),
                 "unplanned_taken_hours": round(m["unplanned_taken_hours"], 2),
+                "unknown_taken_hours": round(m["unknown_taken_hours"], 2),
                 "planned_not_taken_hours": round(m["planned_not_taken_hours"], 2),
                 "total_hours": round(total, 2),
             }
@@ -984,6 +1035,105 @@ def _sheet_append_rows(ws, headers: list[str], rows: list[dict[str, Any]]) -> No
         ws.append([row.get(col, "") for col in headers])
 
 
+def _verification_rows_from_subtasks(subtasks: list[SubtaskRow]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for subtask in subtasks:
+        if (
+            subtask.created_after_leave_date_flag != "Yes"
+            and subtask.classification_source == "leave_type"
+        ):
+            continue
+        rows.append(
+            {
+                "issue_key": subtask.issue_key,
+                "assignee": subtask.assignee,
+                "summary": subtask.summary,
+                "leave_type_raw": subtask.leave_type_raw or "No Entry",
+                "leave_classification": subtask.leave_classification,
+                "classification_source": subtask.classification_source or "leave_type_missing",
+                "created": subtask.created,
+                "verification_reference_date": subtask.verification_reference_date,
+                "created_after_leave_date_flag": subtask.created_after_leave_date_flag,
+                "created_after_leave_days": subtask.created_after_leave_days,
+                "verification_note": subtask.verification_note or "",
+            }
+        )
+    return rows
+
+
+def _init_leave_verification_table(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS {LEAVE_VERIFICATION_TABLE} (
+            report_run_id TEXT NOT NULL,
+            source_mode TEXT NOT NULL,
+            source_run_id TEXT NOT NULL,
+            issue_key TEXT NOT NULL,
+            assignee TEXT NOT NULL DEFAULT '',
+            summary TEXT NOT NULL DEFAULT '',
+            leave_type_raw TEXT NOT NULL DEFAULT '',
+            leave_classification TEXT NOT NULL DEFAULT '',
+            classification_source TEXT NOT NULL DEFAULT '',
+            created_utc TEXT NOT NULL DEFAULT '',
+            verification_reference_date TEXT NOT NULL DEFAULT '',
+            created_after_leave_date INTEGER NOT NULL DEFAULT 0,
+            created_after_leave_days INTEGER NOT NULL DEFAULT 0,
+            verification_note TEXT NOT NULL DEFAULT '',
+            PRIMARY KEY (report_run_id, issue_key)
+        )
+        """
+    )
+    conn.execute(
+        f"CREATE INDEX IF NOT EXISTS idx_{LEAVE_VERIFICATION_TABLE}_issue_key ON {LEAVE_VERIFICATION_TABLE}(issue_key)"
+    )
+    conn.commit()
+
+
+def _store_leave_verification_rows(
+    conn: sqlite3.Connection,
+    *,
+    report_run_id: str,
+    source_mode: str,
+    source_run_id: str,
+    subtasks: list[SubtaskRow],
+) -> None:
+    _init_leave_verification_table(conn)
+    conn.execute(f"DELETE FROM {LEAVE_VERIFICATION_TABLE} WHERE report_run_id = ?", (_to_text(report_run_id),))
+    rows = [
+        (
+            _to_text(report_run_id),
+            _to_text(source_mode),
+            _to_text(source_run_id),
+            subtask.issue_key,
+            subtask.assignee,
+            subtask.summary,
+            subtask.leave_type_raw,
+            subtask.leave_classification,
+            subtask.classification_source or "leave_type_missing",
+            subtask.created,
+            subtask.verification_reference_date,
+            1 if subtask.created_after_leave_date_flag == "Yes" else 0,
+            int(subtask.created_after_leave_days or 0),
+            subtask.verification_note or "",
+        )
+        for subtask in subtasks
+        if subtask.issue_key
+    ]
+    if rows:
+        conn.executemany(
+            f"""
+            INSERT OR REPLACE INTO {LEAVE_VERIFICATION_TABLE} (
+                report_run_id, source_mode, source_run_id, issue_key, assignee, summary,
+                leave_type_raw, leave_classification, classification_source, created_utc,
+                verification_reference_date, created_after_leave_date, created_after_leave_days,
+                verification_note
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            rows,
+        )
+    conn.commit()
+
+
 def _write_xlsx(
     output_path: Path,
     subtasks: list[SubtaskRow],
@@ -997,14 +1147,18 @@ def _write_xlsx(
     raw_headers = [
         "issue_key", "issue_id", "summary", "status", "assignee", "parent_task_key", "parent_task_assignee",
         "created", "updated", "start_date", "due_date", "original_estimate_hours", "timespent_hours",
-        "leave_type_raw", "leave_classification", "total_worklog_hours", "planned_date_for_bucket", "clubbed_leave", "no_entry_flag",
+        "leave_type_raw", "leave_classification", "classification_source", "total_worklog_hours", "planned_date_for_bucket",
+        "clubbed_leave", "no_entry_flag", "verification_reference_date", "created_after_leave_date_flag",
+        "created_after_leave_days", "verification_note",
     ]
     ws_raw.append(raw_headers)
     for s in subtasks:
         ws_raw.append([
             s.issue_key, s.issue_id, s.summary, s.status, s.assignee, s.parent_task_key, s.parent_task_assignee,
             s.created, s.updated, s.start_date, s.due_date, s.original_estimate_hours, s.timespent_hours,
-            s.leave_type_raw, s.leave_classification, s.total_worklog_hours, s.planned_date_for_bucket, s.clubbed_leave, s.no_entry_flag,
+            s.leave_type_raw, s.leave_classification, s.classification_source, s.total_worklog_hours, s.planned_date_for_bucket,
+            s.clubbed_leave, s.no_entry_flag, s.verification_reference_date, s.created_after_leave_date_flag,
+            s.created_after_leave_days, s.verification_note,
         ])
 
     ws_distributed = wb.create_sheet("Subtasks_Distributed")
@@ -1013,7 +1167,9 @@ def _write_xlsx(
         ws_distributed.append([
             s.issue_key, s.issue_id, s.summary, s.status, s.assignee, s.parent_task_key, s.parent_task_assignee,
             s.created, s.updated, s.start_date, s.due_date, s.original_estimate_hours, s.timespent_hours,
-            s.leave_type_raw, s.leave_classification, s.total_worklog_hours, s.planned_date_for_bucket, s.clubbed_leave, s.no_entry_flag,
+            s.leave_type_raw, s.leave_classification, s.classification_source, s.total_worklog_hours, s.planned_date_for_bucket,
+            s.clubbed_leave, s.no_entry_flag, s.verification_reference_date, s.created_after_leave_date_flag,
+            s.created_after_leave_days, s.verification_note,
         ])
 
     ws_worklogs = wb.create_sheet("Worklogs_Normalized")
@@ -1023,25 +1179,25 @@ def _write_xlsx(
 
     ws_assignee = wb.create_sheet("Assignee_Summary")
     _sheet_append_rows(ws_assignee, [
-        "assignee", "planned_taken_hours", "unplanned_taken_hours", "planned_not_taken_hours",
+        "assignee", "planned_taken_hours", "unplanned_taken_hours", "unknown_taken_hours", "planned_not_taken_hours",
         "planned_not_taken_no_entry_count", "unknown_subtasks_count", "planned_taken_days",
-        "unplanned_taken_days", "planned_not_taken_days",
+        "unplanned_taken_days", "unknown_taken_days", "planned_not_taken_days",
     ], aggregates["assignee_summary"])
 
     ws_daily = wb.create_sheet("Daily_Assignee")
     _sheet_append_rows(ws_daily, [
-        "assignee", "period_day", "planned_taken_hours", "unplanned_taken_hours", "planned_not_taken_hours", "total_hours",
+        "assignee", "period_day", "planned_taken_hours", "unplanned_taken_hours", "unknown_taken_hours", "planned_not_taken_hours", "total_hours",
         "jira_task_ids", "jira_task_links",
     ], aggregates["daily"])
 
     ws_weekly = wb.create_sheet("Weekly_Assignee")
     _sheet_append_rows(ws_weekly, [
-        "assignee", "period_week", "planned_taken_hours", "unplanned_taken_hours", "planned_not_taken_hours", "total_hours",
+        "assignee", "period_week", "planned_taken_hours", "unplanned_taken_hours", "unknown_taken_hours", "planned_not_taken_hours", "total_hours",
     ], aggregates["weekly"])
 
     ws_monthly = wb.create_sheet("Monthly_Assignee")
     _sheet_append_rows(ws_monthly, [
-        "assignee", "period_month", "planned_taken_hours", "unplanned_taken_hours", "planned_not_taken_hours", "total_hours",
+        "assignee", "period_month", "planned_taken_hours", "unplanned_taken_hours", "unknown_taken_hours", "planned_not_taken_hours", "total_hours",
     ], aggregates["monthly"])
 
     ws_defective = wb.create_sheet("Defective_NoEntry")
@@ -1053,6 +1209,13 @@ def _write_xlsx(
     _sheet_append_rows(ws_clubbed, [
         "issue_key", "assignee", "summary", "leave_classification", "status", "logged_hours", "estimate_hours", "start_date", "due_date",
     ], aggregates["clubbed"])
+
+    ws_verification = wb.create_sheet("Verification_Signals")
+    _sheet_append_rows(ws_verification, [
+        "issue_key", "assignee", "summary", "leave_type_raw", "leave_classification", "classification_source",
+        "created", "verification_reference_date", "created_after_leave_date_flag", "created_after_leave_days",
+        "verification_note",
+    ], _verification_rows_from_subtasks(subtasks))
 
     wb.save(output_path)
 
@@ -1067,6 +1230,7 @@ def _write_md(output_path: Path, project_key: str, project_name: str, from_date:
     summary = aggregates["assignee_summary"]
     total_planned_taken = round(sum(r["planned_taken_hours"] for r in summary), 2)
     total_unplanned_taken = round(sum(r["unplanned_taken_hours"] for r in summary), 2)
+    total_unknown_taken = round(sum(r.get("unknown_taken_hours", 0) for r in summary), 2)
     total_planned_not_taken = round(sum(r["planned_not_taken_hours"] for r in summary), 2)
     total_no_entry = int(sum(r["planned_not_taken_no_entry_count"] for r in summary))
 
@@ -1075,6 +1239,7 @@ def _write_md(output_path: Path, project_key: str, project_name: str, from_date:
             _to_text(r["assignee"]),
             f'{r["planned_taken_hours"]:.2f}',
             f'{r["unplanned_taken_hours"]:.2f}',
+            f'{r.get("unknown_taken_hours", 0):.2f}',
             f'{r["planned_not_taken_hours"]:.2f}',
             _to_text(r["planned_not_taken_no_entry_count"]),
             _to_text(r["unknown_subtasks_count"]),
@@ -1093,6 +1258,7 @@ def _write_md(output_path: Path, project_key: str, project_name: str, from_date:
         "## Executive Summary",
         f"- Planned Taken (hours): `{total_planned_taken:.2f}`",
         f"- Unplanned Taken (hours): `{total_unplanned_taken:.2f}`",
+        f"- Unknown Taken (hours): `{total_unknown_taken:.2f}`",
         f"- Planned Not Yet Taken (hours): `{total_planned_not_taken:.2f}`",
         f"- Planned Not Yet Taken (No Entry count): `{total_no_entry}`",
         f"- Defective subtasks listed: `{len(aggregates['defective'])}`",
@@ -1100,12 +1266,12 @@ def _write_md(output_path: Path, project_key: str, project_name: str, from_date:
         "",
         "## Assignee-wise Summary",
         _markdown_table([
-            "Assignee", "Planned Taken (h)", "Unplanned Taken (h)", "Planned Not Yet Taken (h)", "No Entry Count", "Unknown Count",
+            "Assignee", "Planned Taken (h)", "Unplanned Taken (h)", "Unknown Taken (h)", "Planned Not Yet Taken (h)", "No Entry Count", "Unknown Count",
         ], rows),
         "",
         "## Defective and No Entry",
         "- `No Entry` means planned leave subtask is missing planned date and/or original estimate while no hours are logged.",
-        "- Unknown classification subtasks are excluded from planned/unplanned totals.",
+        "- Unknown classification subtasks are shown separately and are not merged into planned/unplanned totals.",
         "",
         "## Clubbed Leave",
         "- Clubbed leave means one subtask represents more than one day (for example logged/estimated hours > 8 or multi-day date span).",
@@ -1140,6 +1306,7 @@ def _html_table(headers: list[str], rows: list[dict[str, Any]], table_id: str) -
 
 def _write_html(output_path: Path, project_key: str, project_name: str, from_date: str, to_date: str, subtasks: list[SubtaskRow], aggregates: dict[str, Any]) -> None:
     day_profile = _day_hours_profile_from_env()
+    verification_rows = _verification_rows_from_subtasks(subtasks)
     payload = {
         "subtasks": [s.__dict__ for s in subtasks],
         "assignee_summary": aggregates["assignee_summary"],
@@ -1148,15 +1315,17 @@ def _write_html(output_path: Path, project_key: str, project_name: str, from_dat
         "monthly": aggregates["monthly"],
         "defective": aggregates["defective"],
         "clubbed": aggregates["clubbed"],
+        "verification": verification_rows,
         "day_profile": day_profile,
     }
     payload_json = json.dumps(payload, default=_json_default)
 
     total_planned_taken = round(sum(r["planned_taken_hours"] for r in aggregates["assignee_summary"]), 2)
     total_unplanned_taken = round(sum(r["unplanned_taken_hours"] for r in aggregates["assignee_summary"]), 2)
-    total_taken = round(total_planned_taken + total_unplanned_taken, 2)
+    total_unknown_taken = round(sum(r.get("unknown_taken_hours", 0) for r in aggregates["assignee_summary"]), 2)
+    total_taken = round(total_planned_taken + total_unplanned_taken + total_unknown_taken, 2)
     total_taken_days = round(
-        sum(r.get("planned_taken_days", 0.0) + r.get("unplanned_taken_days", 0.0) for r in aggregates["assignee_summary"]),
+        sum(r.get("planned_taken_days", 0.0) + r.get("unplanned_taken_days", 0.0) + r.get("unknown_taken_days", 0.0) for r in aggregates["assignee_summary"]),
         2,
     )
     total_future = round(sum(r["planned_not_taken_hours"] for r in aggregates["assignee_summary"]), 2)
@@ -1166,6 +1335,7 @@ def _write_html(output_path: Path, project_key: str, project_name: str, from_dat
         "Assignee",
         "Planned Taken (h)",
         "Unplanned Taken (h)",
+        "Unknown Taken (h)",
         "Planned Not Yet Taken (h)",
         "No Entry Count",
         "Unknown Count",
@@ -1175,6 +1345,7 @@ def _write_html(output_path: Path, project_key: str, project_name: str, from_dat
             "Assignee": r["assignee"],
             "Planned Taken (h)": f'{r["planned_taken_hours"]:.2f}',
             "Unplanned Taken (h)": f'{r["unplanned_taken_hours"]:.2f}',
+            "Unknown Taken (h)": f'{r.get("unknown_taken_hours", 0):.2f}',
             "Planned Not Yet Taken (h)": f'{r["planned_not_taken_hours"]:.2f}',
             "No Entry Count": r["planned_not_taken_no_entry_count"],
             "Unknown Count": r["unknown_subtasks_count"],
@@ -1187,6 +1358,7 @@ def _write_html(output_path: Path, project_key: str, project_name: str, from_dat
             "Week": r["period_week"],
             "Planned Taken (h)": f'{r["planned_taken_hours"]:.2f}',
             "Unplanned Taken (h)": f'{r["unplanned_taken_hours"]:.2f}',
+            "Unknown Taken (h)": f'{r.get("unknown_taken_hours", 0):.2f}',
             "Future Planned (h)": f'{r["planned_not_taken_hours"]:.2f}',
             "Total (h)": f'{r["total_hours"]:.2f}',
         }
@@ -1198,6 +1370,7 @@ def _write_html(output_path: Path, project_key: str, project_name: str, from_dat
             "Day": r["period_day"],
             "Planned Taken (h)": f'{r["planned_taken_hours"]:.2f}',
             "Unplanned Taken (h)": f'{r["unplanned_taken_hours"]:.2f}',
+            "Unknown Taken (h)": f'{r.get("unknown_taken_hours", 0):.2f}',
             "Future Planned (h)": f'{r["planned_not_taken_hours"]:.2f}',
             "Total (h)": f'{r["total_hours"]:.2f}',
             "Jira Task Id": _to_text(r.get("jira_task_ids")),
@@ -1211,6 +1384,7 @@ def _write_html(output_path: Path, project_key: str, project_name: str, from_dat
             "Month": r["period_month"],
             "Planned Taken (h)": f'{r["planned_taken_hours"]:.2f}',
             "Unplanned Taken (h)": f'{r["unplanned_taken_hours"]:.2f}',
+            "Unknown Taken (h)": f'{r.get("unknown_taken_hours", 0):.2f}',
             "Future Planned (h)": f'{r["planned_not_taken_hours"]:.2f}',
             "Total (h)": f'{r["total_hours"]:.2f}',
         }
@@ -1357,9 +1531,10 @@ def _write_html(output_path: Path, project_key: str, project_name: str, from_dat
       <h1>{html.escape(project_key)} · {html.escape(project_name)}</h1>
       <div class="hero-meta">Window: <span id="window-label">{html.escape(from_date)} to {html.escape(to_date)}</span></div>
       <div class="stats">
-        <div class="stat total"><div class="k">Total Taken <span class="stat-info" tabindex="0">i<span class="stat-info-tip">Planned Taken + Unplanned Taken within selected date range. Days are derived from the configured day-hours profile.</span></span></div><div class="v" id="stat-total-taken-hours">{total_taken:.2f}h</div><div class="s" id="stat-total-taken-days">{total_taken_days:.2f}d</div></div>
+        <div class="stat total"><div class="k">Total Taken <span class="stat-info" tabindex="0">i<span class="stat-info-tip">Planned Taken + Unplanned Taken + Unknown Taken within selected date range. Days are derived from the configured day-hours profile.</span></span></div><div class="v" id="stat-total-taken-hours">{total_taken:.2f}h</div><div class="s" id="stat-total-taken-days">{total_taken_days:.2f}d</div></div>
         <div class="stat planned"><div class="k">Planned Taken <span class="stat-info" tabindex="0">i<span class="stat-info-tip">Logged leave hours classified as Planned within selected date range.</span></span></div><div class="v" id="stat-planned-taken-hours">{total_planned_taken:.2f}h</div></div>
         <div class="stat unplanned"><div class="k">Unplanned Taken <span class="stat-info" tabindex="0">i<span class="stat-info-tip">Logged leave hours classified as Unplanned within selected date range.</span></span></div><div class="v" id="stat-unplanned-taken-hours">{total_unplanned_taken:.2f}h</div></div>
+        <div class="stat warn"><div class="k">Unknown Taken <span class="stat-info" tabindex="0">i<span class="stat-info-tip">Logged leave hours where Leave Type is missing or unmapped. These hours are shown separately and do not count as planned or unplanned.</span></span></div><div class="v" id="stat-unknown-taken-hours">{total_unknown_taken:.2f}h</div></div>
         <div class="stat leaves"><div class="k">Total Leaves Planned <span class="stat-info" tabindex="0">i<span class="stat-info-tip">Planned Taken + Future Planned within selected date range.</span></span></div><div class="v" id="stat-total-planned-leaves-hours">0.00h</div></div>
         <div class="stat future"><div class="k">Future Planned <span class="stat-info" tabindex="0">i<span class="stat-info-tip">Planned leave hours not yet logged in the selected range.</span></span></div><div class="v" id="stat-future-hours">{total_future:.2f}h</div></div>
         <div class="stat warn"><div class="k">No Entry <span class="stat-info" tabindex="0">i<span class="stat-info-tip">Count of planned leave items missing required planned date and/or estimate metadata.</span></span></div><div class="v" id="stat-no-entry">{total_no_entry}</div></div>
@@ -1383,10 +1558,11 @@ def _write_html(output_path: Path, project_key: str, project_name: str, from_dat
           <button class="tab-btn" data-tab="weekly">Weekly</button>
           <button class="tab-btn" data-tab="monthly">Monthly</button>
         </div>
-        <div id="tab-daily" class="tab-pane active">{_html_table(list(daily_rows[0].keys()) if daily_rows else ["Assignee","Day","Planned Taken (h)","Unplanned Taken (h)","Future Planned (h)","Total (h)","Jira Task Id","Jira Task Link"], daily_rows, "daily-table")}</div>
-        <div id="tab-weekly" class="tab-pane">{_html_table(list(weekly_rows[0].keys()) if weekly_rows else ["Assignee","Week","Planned Taken (h)","Unplanned Taken (h)","Future Planned (h)","Total (h)"], weekly_rows, "weekly-table")}</div>
-        <div id="tab-monthly" class="tab-pane">{_html_table(list(monthly_rows[0].keys()) if monthly_rows else ["Assignee","Month","Planned Taken (h)","Unplanned Taken (h)","Future Planned (h)","Total (h)"], monthly_rows, "monthly-table")}</div>
+        <div id="tab-daily" class="tab-pane active">{_html_table(list(daily_rows[0].keys()) if daily_rows else ["Assignee","Day","Planned Taken (h)","Unplanned Taken (h)","Unknown Taken (h)","Future Planned (h)","Total (h)","Jira Task Id","Jira Task Link"], daily_rows, "daily-table")}</div>
+        <div id="tab-weekly" class="tab-pane">{_html_table(list(weekly_rows[0].keys()) if weekly_rows else ["Assignee","Week","Planned Taken (h)","Unplanned Taken (h)","Unknown Taken (h)","Future Planned (h)","Total (h)"], weekly_rows, "weekly-table")}</div>
+        <div id="tab-monthly" class="tab-pane">{_html_table(list(monthly_rows[0].keys()) if monthly_rows else ["Assignee","Month","Planned Taken (h)","Unplanned Taken (h)","Unknown Taken (h)","Future Planned (h)","Total (h)"], monthly_rows, "monthly-table")}</div>
       </section>
+      <section class="panel"><h2>Verification Signals</h2>{_html_table(["issue_key","assignee","summary","leave_type_raw","leave_classification","classification_source","created","verification_reference_date","created_after_leave_date_flag","created_after_leave_days","verification_note"], verification_rows, "verification-table")}</section>
       <section class="panel"><h2>Defective / No Entry</h2>{_html_table(["issue_key","assignee","summary","status","leave_classification","reason","planned_dates","original_estimate_hours"], aggregates['defective'], "defective-table")}</section>
       <section class="panel"><h2>Clubbed Leave Subtasks</h2>{_html_table(["issue_key","assignee","summary","leave_classification","status","logged_hours","estimate_hours","start_date","due_date"], aggregates['clubbed'], "clubbed-table")}</section>
     </div>
@@ -1403,6 +1579,7 @@ const statTotalTakenHoursEl=document.getElementById('stat-total-taken-hours');
 const statTotalTakenDaysEl=document.getElementById('stat-total-taken-days');
 const statPlannedTakenHoursEl=document.getElementById('stat-planned-taken-hours');
 const statUnplannedTakenHoursEl=document.getElementById('stat-unplanned-taken-hours');
+const statUnknownTakenHoursEl=document.getElementById('stat-unknown-taken-hours');
 const statTotalPlannedLeavesHoursEl=document.getElementById('stat-total-planned-leaves-hours');
 const statFutureHoursEl=document.getElementById('stat-future-hours');
 const statNoEntryEl=document.getElementById('stat-no-entry');
@@ -1413,6 +1590,7 @@ const weeklyData = Array.isArray(payload.weekly) ? payload.weekly : [];
 const monthlyData = Array.isArray(payload.monthly) ? payload.monthly : [];
 const defectiveData = Array.isArray(payload.defective) ? payload.defective : [];
 const clubbedData = Array.isArray(payload.clubbed) ? payload.clubbed : [];
+const verificationData = Array.isArray(payload.verification) ? payload.verification : [];
 const dayProfile = payload.day_profile || {{}};
 const subtaskByKey = new Map(subtasks.map((x) => [String(x.issue_key || '').toUpperCase(), x]));
 
@@ -1545,20 +1723,23 @@ function apply(){{
  const assigneeMap = new Map();
  for(const row of dailyFilteredRaw) {{
    const name = String(row.assignee || 'Unassigned');
-   const current = assigneeMap.get(name) || {{ planned: 0, unplanned: 0, future: 0 }};
+   const current = assigneeMap.get(name) || {{ planned: 0, unplanned: 0, unknown: 0, future: 0 }};
    current.planned += Number(row.planned_taken_hours || 0);
    current.unplanned += Number(row.unplanned_taken_hours || 0);
+   current.unknown += Number(row.unknown_taken_hours || 0);
    current.future += Number(row.planned_not_taken_hours || 0);
    assigneeMap.set(name, current);
  }}
  const assigneeRows = Array.from(assigneeMap.entries()).sort((x,y)=>x[0].localeCompare(y[0])).map(([name, v]) => {{
    const planned = Number(v.planned.toFixed(2));
    const unplanned = Number(v.unplanned.toFixed(2));
+   const unknown = Number(v.unknown.toFixed(2));
    const future = Number(v.future.toFixed(2));
    return {{
      "Assignee": name,
      "Planned Taken (h)": planned.toFixed(2),
      "Unplanned Taken (h)": unplanned.toFixed(2),
+     "Unknown Taken (h)": unknown.toFixed(2),
      "Planned Not Yet Taken (h)": future.toFixed(2),
      "No Entry Count": "0",
      "Unknown Count": "0",
@@ -1572,6 +1753,7 @@ const dailyRows = dailyFilteredRaw
     "Day": String(r.period_day || ''),
     "Planned Taken (h)": Number(r.planned_taken_hours || 0).toFixed(2),
     "Unplanned Taken (h)": Number(r.unplanned_taken_hours || 0).toFixed(2),
+    "Unknown Taken (h)": Number(r.unknown_taken_hours || 0).toFixed(2),
     "Future Planned (h)": Number(r.planned_not_taken_hours || 0).toFixed(2),
     "Total (h)": Number(r.total_hours || 0).toFixed(2),
     "Jira Task Id": String(r.jira_task_ids || ''),
@@ -1586,6 +1768,7 @@ const dailyRows = dailyFilteredRaw
      "Week": String(r.period_week || ''),
      "Planned Taken (h)": Number(r.planned_taken_hours || 0).toFixed(2),
      "Unplanned Taken (h)": Number(r.unplanned_taken_hours || 0).toFixed(2),
+     "Unknown Taken (h)": Number(r.unknown_taken_hours || 0).toFixed(2),
      "Future Planned (h)": Number(r.planned_not_taken_hours || 0).toFixed(2),
      "Total (h)": Number(r.total_hours || 0).toFixed(2),
    }}));
@@ -1598,6 +1781,7 @@ const dailyRows = dailyFilteredRaw
      "Month": String(r.period_month || ''),
      "Planned Taken (h)": Number(r.planned_taken_hours || 0).toFixed(2),
      "Unplanned Taken (h)": Number(r.unplanned_taken_hours || 0).toFixed(2),
+     "Unknown Taken (h)": Number(r.unknown_taken_hours || 0).toFixed(2),
      "Future Planned (h)": Number(r.planned_not_taken_hours || 0).toFixed(2),
      "Total (h)": Number(r.total_hours || 0).toFixed(2),
    }}));
@@ -1636,15 +1820,25 @@ const dailyRows = dailyFilteredRaw
    return true;
  }});
 
+ const verificationRows = verificationData.filter((row) => {{
+   const subtask = subtaskByKey.get(String(row.issue_key || '').toUpperCase()) || {{}};
+   if(a && String(row.assignee || subtask.assignee || '').toLowerCase() !== a) return false;
+   if(l && String(row.leave_classification || subtask.leave_classification || '').toLowerCase() !== l) return false;
+   if(s && !String(subtask.status || '').toLowerCase().includes(s) && !String(row.verification_note || '').toLowerCase().includes(s)) return false;
+   if(!inRangeSubtask(subtask)) return false;
+   return true;
+ }});
+
  const plannedTaken = dailyFilteredRaw.reduce((acc, row) => acc + Number(row.planned_taken_hours || 0), 0);
  const unplannedTaken = dailyFilteredRaw.reduce((acc, row) => acc + Number(row.unplanned_taken_hours || 0), 0);
+ const unknownTaken = dailyFilteredRaw.reduce((acc, row) => acc + Number(row.unknown_taken_hours || 0), 0);
  const futurePlanned = dailyFilteredRaw.reduce((acc, row) => acc + Number(row.planned_not_taken_hours || 0), 0);
  const totalPlannedLeaves = plannedTaken + futurePlanned;
- const totalTaken = plannedTaken + unplannedTaken;
+ const totalTaken = plannedTaken + unplannedTaken + unknownTaken;
  const takenByDay = new Map();
  for(const row of dailyFilteredRaw) {{
    const iso = String(row.period_day || '');
-   const hours = Number(row.planned_taken_hours || 0) + Number(row.unplanned_taken_hours || 0);
+   const hours = Number(row.planned_taken_hours || 0) + Number(row.unplanned_taken_hours || 0) + Number(row.unknown_taken_hours || 0);
    takenByDay.set(iso, Number(takenByDay.get(iso) || 0) + hours);
  }}
  let totalTakenDays = 0;
@@ -1658,14 +1852,16 @@ const dailyRows = dailyFilteredRaw
  statTotalTakenDaysEl.textContent = daysText(totalTakenDays);
  statPlannedTakenHoursEl.textContent = hoursText(plannedTaken);
  statUnplannedTakenHoursEl.textContent = hoursText(unplannedTaken);
+ statUnknownTakenHoursEl.textContent = hoursText(unknownTaken);
  statTotalPlannedLeavesHoursEl.textContent = hoursText(totalPlannedLeaves);
  statFutureHoursEl.textContent = hoursText(futurePlanned);
  statNoEntryEl.textContent = String(defectiveRows.filter((r)=>String(r.reason || '').includes('No Entry')).length);
 
- renderTable('assignee-table', ["Assignee","Planned Taken (h)","Unplanned Taken (h)","Planned Not Yet Taken (h)","No Entry Count","Unknown Count"], assigneeRows);
-renderTable('daily-table', ["Assignee","Day","Planned Taken (h)","Unplanned Taken (h)","Future Planned (h)","Total (h)","Jira Task Id","Jira Task Link"], dailyRows);
- renderTable('weekly-table', ["Assignee","Week","Planned Taken (h)","Unplanned Taken (h)","Future Planned (h)","Total (h)"], weeklyRows);
- renderTable('monthly-table', ["Assignee","Month","Planned Taken (h)","Unplanned Taken (h)","Future Planned (h)","Total (h)"], monthlyRows);
+ renderTable('assignee-table', ["Assignee","Planned Taken (h)","Unplanned Taken (h)","Unknown Taken (h)","Planned Not Yet Taken (h)","No Entry Count","Unknown Count"], assigneeRows);
+renderTable('daily-table', ["Assignee","Day","Planned Taken (h)","Unplanned Taken (h)","Unknown Taken (h)","Future Planned (h)","Total (h)","Jira Task Id","Jira Task Link"], dailyRows);
+ renderTable('weekly-table', ["Assignee","Week","Planned Taken (h)","Unplanned Taken (h)","Unknown Taken (h)","Future Planned (h)","Total (h)"], weeklyRows);
+ renderTable('monthly-table', ["Assignee","Month","Planned Taken (h)","Unplanned Taken (h)","Unknown Taken (h)","Future Planned (h)","Total (h)"], monthlyRows);
+ renderTable('verification-table', ["issue_key","assignee","summary","leave_type_raw","leave_classification","classification_source","created","verification_reference_date","created_after_leave_date_flag","created_after_leave_days","verification_note"], verificationRows);
  renderTable('defective-table', ["issue_key","assignee","summary","status","leave_classification","reason","planned_dates","original_estimate_hours"], defectiveRows);
  renderTable('clubbed-table', ["issue_key","assignee","summary","leave_classification","status","logged_hours","estimate_hours","start_date","due_date"], clubbedRows);
 }}
@@ -1701,7 +1897,13 @@ def _normalize_subtasks(issues: list[dict], task_assignee_by_key: dict[str, str]
         start_date, due_date = normalize_subtask_dates(start_date, due_date, summary)
         estimate_h = _seconds_to_hours(fields.get("timeoriginalestimate"))
         leave_raw = leave_type_text(fields.get(LEAVE_TYPE_FIELD))
-        classification = classify_leave(leave_raw, status, summary)
+        classification = classify_leave(leave_raw)
+        classification_source = classify_leave_source(leave_raw)
+        created_after_flag, created_after_days, verification_reference_date, verification_note = compute_created_after_leave_date_check(
+            _to_text(fields.get("created")),
+            start_date,
+            due_date,
+        )
         issue_worklogs = worklogs_by_issue.get(key, [])
         logged_h = round(sum(w.hours_logged for w in issue_worklogs), 2)
         out.append(
@@ -1725,6 +1927,11 @@ def _normalize_subtasks(issues: list[dict], task_assignee_by_key: dict[str, str]
                 planned_date_for_bucket=choose_planned_date(start_date, due_date),
                 clubbed_leave="Yes" if is_clubbed_leave(logged_h, estimate_h, start_date, due_date) else "No",
                 no_entry_flag="Yes" if is_defective_no_entry(classification, logged_h, estimate_h, start_date, due_date) else "No",
+                classification_source=classification_source,
+                verification_reference_date=verification_reference_date,
+                created_after_leave_date_flag=created_after_flag,
+                created_after_leave_days=created_after_days,
+                verification_note=verification_note,
             )
         )
     return sorted(out, key=lambda s: s.issue_key)
@@ -1800,10 +2007,16 @@ def _load_canonical_project_rows(
         fields = raw_payload.get("fields") if isinstance(raw_payload, dict) else {}
         fields = fields if isinstance(fields, dict) else {}
         leave_raw = leave_type_text(fields.get(LEAVE_TYPE_FIELD))
-        classification = classify_leave(leave_raw, _to_text(row["status"]), _to_text(row["summary"]))
         issue_key = _to_text(row["issue_key"]).upper()
         subtask_issue_keys.add(issue_key)
         start_date, due_date = normalize_subtask_dates(_to_text(row["start_date"]), _to_text(row["due_date"]), _to_text(row["summary"]))
+        classification = classify_leave(leave_raw)
+        classification_source = classify_leave_source(leave_raw)
+        created_after_flag, created_after_days, verification_reference_date, verification_note = compute_created_after_leave_date_check(
+            _to_text(row["created_utc"]),
+            start_date,
+            due_date,
+        )
         logged_h = round(_to_float_text(row["total_hours_logged"], 0.0), 2)
         subtasks.append(
             SubtaskRow(
@@ -1826,6 +2039,11 @@ def _load_canonical_project_rows(
                 planned_date_for_bucket=choose_planned_date(start_date, due_date),
                 clubbed_leave="No",
                 no_entry_flag="No",
+                classification_source=classification_source,
+                verification_reference_date=verification_reference_date,
+                created_after_leave_date_flag=created_after_flag,
+                created_after_leave_days=created_after_days,
+                verification_note=verification_note,
             )
         )
 
@@ -1859,6 +2077,11 @@ def _load_canonical_project_rows(
             planned_date_for_bucket=subtask.planned_date_for_bucket,
             clubbed_leave="Yes" if is_clubbed_leave(subtask.total_worklog_hours, subtask.original_estimate_hours, subtask.start_date, subtask.due_date) else "No",
             no_entry_flag="Yes" if is_defective_no_entry(subtask.leave_classification, subtask.total_worklog_hours, subtask.original_estimate_hours, subtask.start_date, subtask.due_date) else "No",
+            classification_source=subtask.classification_source,
+            verification_reference_date=subtask.verification_reference_date,
+            created_after_leave_date_flag=subtask.created_after_leave_date_flag,
+            created_after_leave_days=subtask.created_after_leave_days,
+            verification_note=subtask.verification_note,
         )
         subtasks[idx] = adjusted
 
@@ -1908,6 +2131,14 @@ def run_report_from_canonical(
     distributed_subtasks = _redistribute_continuous_leave_subtasks(subtasks, day_hours_profile)
     redistributed_worklogs = _redistribute_continuous_leave_worklogs(subtasks, all_worklogs, day_hours_profile)
     aggr = _compute_aggregates(subtasks, redistributed_worklogs, from_date, to_date, day_hours_profile)
+    with sqlite3.connect(canonical_db_path) as conn:
+        _store_leave_verification_rows(
+            conn,
+            report_run_id=_to_text(canonical_run_id) or uuid.uuid4().hex,
+            source_mode="canonical_db",
+            source_run_id=_to_text(canonical_run_id),
+            subtasks=subtasks,
+        )
 
     _write_xlsx(xlsx_out, subtasks, distributed_subtasks, redistributed_worklogs, aggr)
     _write_html(html_out, project_key, project_name, from_date, to_date, subtasks, aggr)
@@ -2087,6 +2318,13 @@ def run_report(
     distributed_subtasks = _redistribute_continuous_leave_subtasks(subtasks, day_hours_profile)
     redistributed_worklogs = _redistribute_continuous_leave_worklogs(subtasks, all_worklogs, day_hours_profile)
     aggr = _compute_aggregates(subtasks, redistributed_worklogs, from_date, to_date, day_hours_profile)
+    _store_leave_verification_rows(
+        conn,
+        report_run_id=run_id,
+        source_mode="jira",
+        source_run_id=run_id,
+        subtasks=subtasks,
+    )
 
     _write_xlsx(xlsx_out, subtasks, distributed_subtasks, redistributed_worklogs, aggr)
     _write_html(html_out, project_key, project_name, from_date, to_date, subtasks, aggr)

@@ -1506,6 +1506,49 @@ def _resolve_capacity_runtime_paths(base_dir: Path) -> dict[str, Path]:
     }
 
 
+def clear_planned_vs_dispensed_cache_tables(db_path: Path) -> None:
+    """Remove only the planned-vs-dispensed cache tables from the app DB."""
+    db_path = Path(db_path)
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS planned_vs_dispensed_cache (
+                cache_key TEXT PRIMARY KEY,
+                from_date TEXT NOT NULL,
+                to_date TEXT NOT NULL,
+                mode TEXT NOT NULL,
+                project_scope TEXT NOT NULL DEFAULT '',
+                payload_json TEXT NOT NULL,
+                fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS planned_vs_dispensed_response_cache (
+                cache_key TEXT PRIMARY KEY,
+                endpoint TEXT NOT NULL,
+                from_date TEXT NOT NULL,
+                to_date TEXT NOT NULL,
+                mode TEXT NOT NULL,
+                project_scope TEXT NOT NULL DEFAULT '',
+                statuses_scope TEXT NOT NULL DEFAULT '',
+                assignees_scope TEXT NOT NULL DEFAULT '',
+                project_key TEXT NOT NULL DEFAULT '',
+                payload_json TEXT NOT NULL,
+                fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+            """
+        )
+        conn.execute("DELETE FROM planned_vs_dispensed_cache")
+        conn.execute("DELETE FROM planned_vs_dispensed_response_cache")
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def _resolve_exports_db_path(base_dir: Path) -> Path:
     db_name = os.getenv("JIRA_EXPORTS_DB_PATH", DEFAULT_EXPORTS_DB).strip() or DEFAULT_EXPORTS_DB
     db_path = Path(db_name)
@@ -3178,6 +3221,106 @@ def _canonical_last_success_run_id(db_path: Path) -> str:
     return _to_text(row[0] if row else "")
 
 
+def _canonical_last_success_completed_at_utc(db_path: Path) -> str:
+    """Return best-effort completion time for the last successful canonical refresh run."""
+    run_id = _canonical_last_success_run_id(db_path)
+    if not run_id:
+        return ""
+    with sqlite3.connect(db_path) as conn:
+        row = conn.execute(
+            """
+            SELECT ended_at_utc, updated_at_utc
+            FROM canonical_refresh_runs
+            WHERE run_id = ?
+            """,
+            (run_id,),
+        ).fetchone()
+    if not row:
+        return ""
+    ended = _to_text(row[0])
+    updated = _to_text(row[1])
+    if ended:
+        return ended
+    return updated
+
+
+def _oeh_parse_iso_dt_for_compare(value: str) -> datetime | None:
+    raw = _to_text(value).strip()
+    if not raw:
+        return None
+    if raw.endswith("Z"):
+        raw = raw[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _oeh_oeh_row_is_newer_than_canonical(row: sqlite3.Row, canonical_completed_at: str) -> bool:
+    """True when an oeh_* snapshot row is strictly newer than last successful canonical completion."""
+    canon_dt = _oeh_parse_iso_dt_for_compare(canonical_completed_at)
+    if canon_dt is None:
+        return False
+    oeh_dt = _oeh_parse_iso_dt_for_compare(_to_text(row["updated_at_utc"]))
+    if oeh_dt is None:
+        return False
+    return oeh_dt > canon_dt
+
+
+def _oeh_epic_dict_from_hierarchy_item(item: dict[str, object]) -> dict[str, object]:
+    key = _to_text(item.get("issue_key")).upper()
+    return {
+        "issue_key": key,
+        "project_key": _to_text(item.get("project_key")).upper(),
+        "project_name": _to_text(item.get("project_name")),
+        "summary": _to_text(item.get("summary")),
+        "status": _to_text(item.get("status")),
+        "assignee": _to_text(item.get("assignee")) or "Unassigned",
+        "jira_url": _to_text(item.get("jira_url")) or _jira_browse_url(key),
+        "planned_start": _to_text(item.get("planned_start")),
+        "planned_due": _to_text(item.get("planned_due")),
+        "original_estimate_hours": _round_hours(float(item.get("estimate_hours") or 0.0)),
+    }
+
+
+def _oeh_story_dict_from_hierarchy_item(item: dict[str, object]) -> dict[str, object]:
+    key = _to_text(item.get("issue_key")).upper()
+    return {
+        "issue_key": key,
+        "epic_key": _to_text(item.get("epic_key")).upper(),
+        "project_key": _to_text(item.get("project_key")).upper(),
+        "project_name": _to_text(item.get("project_name")),
+        "summary": _to_text(item.get("summary")),
+        "status": _to_text(item.get("status")),
+        "assignee": _to_text(item.get("assignee")) or "Unassigned",
+        "jira_url": _to_text(item.get("jira_url")) or _jira_browse_url(key),
+        "planned_start": _to_text(item.get("planned_start")),
+        "planned_due": _to_text(item.get("planned_due")),
+        "original_estimate_hours": _round_hours(float(item.get("estimate_hours") or 0.0)),
+    }
+
+
+def _oeh_subtask_dict_from_hierarchy_item(item: dict[str, object]) -> dict[str, object]:
+    key = _to_text(item.get("issue_key")).upper()
+    return {
+        "issue_key": key,
+        "story_key": _to_text(item.get("story_key")).upper(),
+        "epic_key": _to_text(item.get("epic_key")).upper(),
+        "project_key": _to_text(item.get("project_key")).upper(),
+        "project_name": _to_text(item.get("project_name")),
+        "summary": _to_text(item.get("summary")),
+        "status": _to_text(item.get("status")),
+        "assignee": _to_text(item.get("assignee")) or "Unassigned",
+        "jira_url": _to_text(item.get("jira_url")) or _jira_browse_url(key),
+        "planned_start": _to_text(item.get("planned_start")),
+        "planned_due": _to_text(item.get("planned_due")),
+        "original_estimate_hours": _round_hours(float(item.get("estimate_hours") or 0.0)),
+    }
+
+
 def _canonical_normalize_mode(value: object) -> str:
     mode = _to_text(value).strip().lower()
     return "smart" if mode == "smart" else "full"
@@ -3313,6 +3456,46 @@ def _canonical_load_previous_base_rows(
     return issue_rows, link_rows, worklog_rows
 
 
+def _canonical_load_previous_assignee_scope(
+    db_path: Path,
+    run_id: str,
+    assignee_name: str,
+) -> dict[str, set[str]]:
+    run_id_text = _to_text(run_id)
+    assignee_text = _to_text(assignee_name)
+    result = {
+        "subtask_issue_keys": set(),
+        "story_keys": set(),
+        "epic_keys": set(),
+    }
+    if not run_id_text or not assignee_text:
+        return result
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            """
+            SELECT issue_key, issue_type, parent_issue_key, story_key, epic_key
+            FROM canonical_issues
+            WHERE run_id = ?
+              AND assignee = ?
+            """,
+            (run_id_text, assignee_text),
+        ).fetchall()
+    for row in rows:
+        issue_key = _to_text(row["issue_key"]).upper()
+        issue_type = _to_text(row["issue_type"])
+        if not issue_key or not _canonical_is_subtask_type(issue_type):
+            continue
+        result["subtask_issue_keys"].add(issue_key)
+        story_key = _to_text(row["story_key"]).upper() or _to_text(row["parent_issue_key"]).upper()
+        epic_key = _to_text(row["epic_key"]).upper()
+        if story_key:
+            result["story_keys"].add(story_key)
+        if epic_key:
+            result["epic_keys"].add(epic_key)
+    return result
+
+
 def _canonical_clone_run_snapshot_excluding_epic(
     db_path: Path,
     source_run_id: str,
@@ -3414,6 +3597,92 @@ def _canonical_clone_run_snapshot_excluding_epic(
         )
         conn.commit()
     return len(subtree_issue_keys)
+
+
+def _canonical_clone_run_snapshot_excluding_issue_keys(
+    db_path: Path,
+    source_run_id: str,
+    target_run_id: str,
+    excluded_issue_keys: set[str],
+) -> int:
+    source_run_id_text = _to_text(source_run_id)
+    target_run_id_text = _to_text(target_run_id)
+    excluded_keys = sorted({_to_text(item).upper() for item in (excluded_issue_keys or set()) if _to_text(item)})
+    if not source_run_id_text or not target_run_id_text:
+        return 0
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO canonical_issues(
+                run_id, issue_id, issue_key, project_key, issue_type, summary, status, assignee,
+                start_date, due_date, created_utc, updated_utc, resolved_stable_since_date,
+                original_estimate_hours, total_hours_logged, fix_type, parent_issue_key,
+                story_key, epic_key, raw_payload_json
+            )
+            SELECT ?, issue_id, issue_key, project_key, issue_type, summary, status, assignee,
+                   start_date, due_date, created_utc, updated_utc, resolved_stable_since_date,
+                   original_estimate_hours, total_hours_logged, fix_type, parent_issue_key,
+                   story_key, epic_key, raw_payload_json
+            FROM canonical_issues
+            WHERE run_id = ?
+            """,
+            (target_run_id_text, source_run_id_text),
+        )
+        conn.execute(
+            """
+            INSERT INTO canonical_issue_links(
+                run_id, issue_key, parent_issue_key, story_key, epic_key, hierarchy_level
+            )
+            SELECT ?, issue_key, parent_issue_key, story_key, epic_key, hierarchy_level
+            FROM canonical_issue_links
+            WHERE run_id = ?
+            """,
+            (target_run_id_text, source_run_id_text),
+        )
+        conn.execute(
+            """
+            INSERT INTO canonical_worklogs(
+                run_id, worklog_id, issue_key, project_key, worklog_author, issue_assignee,
+                started_utc, started_date, updated_utc, hours_logged
+            )
+            SELECT ?, worklog_id, issue_key, project_key, worklog_author, issue_assignee,
+                   started_utc, started_date, updated_utc, hours_logged
+            FROM canonical_worklogs
+            WHERE run_id = ?
+            """,
+            (target_run_id_text, source_run_id_text),
+        )
+        conn.execute(
+            """
+            INSERT INTO canonical_issue_scope_reasons(run_id, issue_key, reason, detail_text)
+            SELECT ?, issue_key, reason, detail_text
+            FROM canonical_issue_scope_reasons
+            WHERE run_id = ?
+            """,
+            (target_run_id_text, source_run_id_text),
+        )
+        for chunk_start in range(0, len(excluded_keys), 700):
+            chunk = excluded_keys[chunk_start:chunk_start + 700]
+            placeholders = ",".join("?" for _ in chunk)
+            params = (target_run_id_text, *chunk)
+            conn.execute(
+                f"DELETE FROM canonical_issue_scope_reasons WHERE run_id = ? AND issue_key IN ({placeholders})",
+                params,
+            )
+            conn.execute(
+                f"DELETE FROM canonical_worklogs WHERE run_id = ? AND issue_key IN ({placeholders})",
+                params,
+            )
+            conn.execute(
+                f"DELETE FROM canonical_issue_links WHERE run_id = ? AND issue_key IN ({placeholders})",
+                params,
+            )
+            conn.execute(
+                f"DELETE FROM canonical_issues WHERE run_id = ? AND issue_key IN ({placeholders})",
+                params,
+            )
+        conn.commit()
+    return len(excluded_keys)
 
 
 def _canonical_insert_scope_rows(
@@ -3671,6 +3940,7 @@ def _canonical_issue_fields(start_field_id: str, end_field_ids: list[str], fix_t
         "issuetype",
         "parent",
         "customfield_10014",
+        "customfield_10584",
         "created",
         "updated",
     ]
@@ -18963,6 +19233,16 @@ def _fetch_subtask_issues_for_stories(session, story_keys: list[str], fields: li
     return out
 
 
+def _fetch_subtask_issues_for_assignee(session, assignee_name: str, fields: list[str], project_keys: set[str] | None = None) -> list[dict]:
+    assignee_text = _to_text(assignee_name).strip()
+    if not assignee_text:
+        return []
+    project_clause = _project_jql_clause(project_keys or set())
+    prefix = f"{project_clause} AND " if project_clause else ""
+    jql = f'{prefix}issueType in subTaskIssueTypes() AND assignee = "{_jql_quote(assignee_text)}"'
+    return _fetch_jira_issues_for_jql(session, jql, fields)
+
+
 def _planned_vs_dispensed_issue_fields(start_field_id: str, end_field_ids: list[str]) -> list[str]:
     fields = [
         "summary",
@@ -19416,7 +19696,7 @@ def _sync_epic_plan_from_jira(
     if "duedate" not in end_field_ids:
         end_field_ids.append("duedate")
 
-    fields = ["issuetype", "parent", "customfield_10014", "timeoriginalestimate", "summary", "description", "status"]
+    fields = ["issuetype", "parent", "customfield_10014", "customfield_10584", "timeoriginalestimate", "summary", "description", "status"]
     if start_field_id:
         fields.append(start_field_id)
     for field_id in end_field_ids:
@@ -21858,9 +22138,46 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 "original_estimate_hours": _round_hours(float(row["original_estimate_hours"] or 0.0)),
             }
 
-        epics = [_epic_from_row(row) for row in epic_rows]
-        stories = [_story_from_row(row) for row in story_rows]
-        subtasks = [_subtask_from_row(row) for row in subtask_rows]
+        canonical_run_id = _canonical_last_success_run_id(capacity_paths["db_path"])
+        canonical_completed = _canonical_last_success_completed_at_utc(capacity_paths["db_path"])
+        snapshot_latest = _to_text(latest_row["latest"]) if latest_row and "latest" in latest_row.keys() else ""
+
+        if canonical_run_id:
+            hierarchy = _canonical_load_planned_vs_dispensed_hierarchy(
+                run_id=canonical_run_id,
+                from_date=from_date,
+                to_date=to_date,
+                mode="planned_dates",
+                selected_projects=selected_projects,
+            )
+            epics = [_oeh_epic_dict_from_hierarchy_item(item) for item in (hierarchy.get("epics") or [])]
+            stories = [_oeh_story_dict_from_hierarchy_item(item) for item in (hierarchy.get("stories") or [])]
+            subtasks = [_oeh_subtask_dict_from_hierarchy_item(item) for item in (hierarchy.get("subtasks") or [])]
+            epic_by_key = {_to_text(row["epic_key"]).upper(): row for row in epic_rows}
+            story_by_key = {_to_text(row["story_key"]).upper(): row for row in story_rows}
+            subtask_by_key = {_to_text(row["subtask_key"]).upper(): row for row in subtask_rows}
+            for idx, epic in enumerate(epics):
+                key = _to_text(epic.get("issue_key")).upper()
+                oeh_row = epic_by_key.get(key)
+                if oeh_row is not None and _oeh_oeh_row_is_newer_than_canonical(oeh_row, canonical_completed):
+                    epics[idx] = _epic_from_row(oeh_row)
+            for idx, story in enumerate(stories):
+                key = _to_text(story.get("issue_key")).upper()
+                oeh_row = story_by_key.get(key)
+                if oeh_row is not None and _oeh_oeh_row_is_newer_than_canonical(oeh_row, canonical_completed):
+                    stories[idx] = _story_from_row(oeh_row)
+            for idx, subtask in enumerate(subtasks):
+                key = _to_text(subtask.get("issue_key")).upper()
+                oeh_row = subtask_by_key.get(key)
+                if oeh_row is not None and _oeh_oeh_row_is_newer_than_canonical(oeh_row, canonical_completed):
+                    subtasks[idx] = _subtask_from_row(oeh_row)
+            updated_at_utc = canonical_completed or snapshot_latest
+        else:
+            epics = [_epic_from_row(row) for row in epic_rows]
+            stories = [_story_from_row(row) for row in story_rows]
+            subtasks = [_subtask_from_row(row) for row in subtask_rows]
+            updated_at_utc = snapshot_latest
+
         if selected_projects:
             allowed = {_to_text(item).upper() for item in selected_projects}
             epics = [item for item in epics if _to_text(item.get("project_key")).upper() in allowed]
@@ -21972,7 +22289,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 "assignees": assignees,
             },
             "selected_projects": sorted(selected_projects),
-            "updated_at_utc": _to_text(latest_row["latest"]) if latest_row and "latest" in latest_row.keys() else "",
+            "updated_at_utc": updated_at_utc,
             "epics": out_epics,
         }
 
@@ -23876,6 +24193,513 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             "run": _canonical_serialize_run(run_row),
         }, 202
 
+    def _run_canonical_assignee_scoped_refresh(
+        *,
+        db_path: Path,
+        run_id: str,
+        scope_year: int,
+        managed_project_keys: list[str],
+        assignee_name: str,
+        trigger_source: str = "employee_assignee_refresh_async",
+    ) -> tuple[dict[str, object], int]:
+        started = time.perf_counter()
+        run_started_at = _canonical_now_utc()
+        managed_keys = sorted({_to_text(item).upper() for item in (managed_project_keys or []) if _to_text(item)})
+        assignee_text = _to_text(assignee_name).strip()
+        previous_run_id = _canonical_last_success_run_id(db_path)
+        completed_stages: set[str] = set()
+        counts_by_stage: dict[str, dict[str, object]] = {}
+        if not assignee_text:
+            return {"ok": False, "error": "assignee is required."}, 400
+        if not previous_run_id:
+            return {"ok": False, "error": "No successful canonical refresh found. Run the canonical refresh first."}, 409
+
+        summary: dict[str, object] = {
+            "mode": "assignee",
+            "effective_mode": "assignee",
+            "scope_kind": "assignee",
+            "scope_key": assignee_text,
+            "previous_run_id": previous_run_id,
+            "current_assignee_subtasks": 0,
+            "previous_assignee_subtasks": 0,
+            "persisted_issues": 0,
+            "persisted_worklogs": 0,
+            "replaced_issue_count": 0,
+        }
+
+        def _build_stats(step: str, *, current_item: str = "", current_detail: str = "", failed_stage: str = "") -> dict[str, object]:
+            return {
+                "scope_year": int(scope_year or 0),
+                "managed_project_count": len(managed_keys),
+                "managed_project_keys": managed_keys,
+                "phase": "assignee_refresh",
+                "mode": "assignee",
+                "effective_mode": "assignee",
+                "summary": dict(summary),
+                "current_item": _to_text(current_item),
+                "current_detail": _to_text(current_detail),
+                "stages": _canonical_stage_payload(step, completed_stages, failed_stage=failed_stage, counts_by_stage=counts_by_stage),
+                "items": [],
+            }
+
+        with sqlite3.connect(db_path) as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO canonical_refresh_runs(
+                    run_id, scope_year, managed_project_keys_json, started_at_utc, ended_at_utc,
+                    status, trigger_source, error_message, stats_json,
+                    progress_step, progress_pct, cancel_requested, updated_at_utc
+                ) VALUES (?, ?, ?, ?, NULL, 'running', ?, '', ?, 'loading_managed_project_scope', 5, 0, ?)
+                """,
+                (
+                    run_id,
+                    int(scope_year or 0),
+                    json.dumps(managed_keys, ensure_ascii=True),
+                    run_started_at,
+                    _to_text(trigger_source),
+                    json.dumps(_build_stats("loading_managed_project_scope", current_item="Load assignee scope"), ensure_ascii=True),
+                    run_started_at,
+                ),
+            )
+            conn.execute(
+                """
+                UPDATE canonical_refresh_state
+                SET active_run_id = ?, updated_at_utc = ?
+                WHERE id = 1
+                """,
+                (run_id, run_started_at),
+            )
+            conn.commit()
+
+        def _update(step: str, pct: int, *, current_item: str = "", current_detail: str = "", stage_counts: dict[str, object] | None = None) -> None:
+            if stage_counts is not None:
+                counts_by_stage[step] = dict(stage_counts)
+            _canonical_update_progress_and_stats(
+                db_path,
+                run_id,
+                step,
+                pct,
+                _build_stats(step, current_item=current_item, current_detail=current_detail),
+            )
+
+        def _cancel(step: str) -> tuple[dict[str, object], int]:
+            cancel_stats = _build_stats(
+                "canceled",
+                current_item="Assignee scoped refresh canceled",
+                current_detail="Canceled at a safe checkpoint.",
+            )
+            _canonical_mark_run_status(
+                db_path,
+                run_id=run_id,
+                status="canceled",
+                error_message="",
+                stats=cancel_stats,
+                activate=False,
+            )
+            _canonical_update_progress_and_stats(db_path, run_id, "canceled", 100, cancel_stats)
+            return {"ok": True, "run_id": run_id, "status": "canceled", "step": step}, 200
+
+        try:
+            if _canonical_is_cancel_requested(db_path, run_id):
+                return _cancel("loading_managed_project_scope")
+            _update(
+                "loading_managed_project_scope",
+                10,
+                current_item="Load assignee scope",
+                current_detail=f"Refreshing employee {assignee_text}",
+                stage_counts={"assignee": assignee_text, "managed_project_count": len(managed_keys)},
+            )
+            session = get_session()
+            start_field_id = resolve_jira_start_date_field_id(session, BASE_URL, project_keys=managed_keys)
+            end_field_ids = resolve_jira_end_date_field_ids(session, BASE_URL, project_keys=managed_keys)
+            if "duedate" not in end_field_ids:
+                end_field_ids.append("duedate")
+            fix_type_field_id = export_resolve_fix_type_field_id(session)
+            issue_fields = _planned_vs_dispensed_issue_fields(start_field_id, end_field_ids)
+            for field_name in ("created", "updated", "aggregatetimespent", "timespent"):
+                if field_name not in issue_fields:
+                    issue_fields.append(field_name)
+            previous_scope = _canonical_load_previous_assignee_scope(db_path, previous_run_id, assignee_text)
+            previous_subtask_keys = set(previous_scope["subtask_issue_keys"])
+            completed_stages.add("loading_managed_project_scope")
+
+            if _canonical_is_cancel_requested(db_path, run_id):
+                return _cancel("discovering_issues")
+            _update("discovering_issues", 24, current_item="Fetch current assignee subtasks")
+            current_subtask_issues = _fetch_subtask_issues_for_assignee(session, assignee_text, issue_fields, set(managed_keys))
+            current_subtask_by_key = {
+                _to_text(item.get("key")).upper(): item
+                for item in current_subtask_issues
+                if _to_text(item.get("key"))
+            }
+            carry_forward_keys = sorted(previous_subtask_keys - set(current_subtask_by_key.keys()))
+            carry_forward_issues = _fetch_jira_issues_by_keys(session, carry_forward_keys, issue_fields)
+            fetched_subtask_by_key = dict(current_subtask_by_key)
+            for issue in carry_forward_issues:
+                issue_key = _to_text(issue.get("key")).upper()
+                if issue_key:
+                    fetched_subtask_by_key[issue_key] = issue
+            fetched_subtask_issues = [
+                issue
+                for issue in fetched_subtask_by_key.values()
+                if _canonical_is_subtask_type(_canonical_issue_type_name(issue))
+            ]
+            summary["current_assignee_subtasks"] = len(current_subtask_by_key)
+            summary["previous_assignee_subtasks"] = len(previous_subtask_keys)
+            counts_by_stage["discovering_issues"] = {
+                "current_assignee_subtasks": len(current_subtask_by_key),
+                "previous_assignee_subtasks": len(previous_subtask_keys),
+                "carried_forward_issue_keys": len(carry_forward_keys),
+                "fetched_subtasks": len(fetched_subtask_issues),
+            }
+            completed_stages.add("discovering_issues")
+
+            if _canonical_is_cancel_requested(db_path, run_id):
+                return _cancel("expanding_hierarchy")
+            impacted_story_keys = set(previous_scope["story_keys"])
+            impacted_epic_keys = set(previous_scope["epic_keys"])
+            for issue in fetched_subtask_issues:
+                parent_key = _to_text(((issue.get("fields") or {}).get("parent") or {}).get("key")).upper()
+                if parent_key:
+                    impacted_story_keys.add(parent_key)
+            _update(
+                "expanding_hierarchy",
+                42,
+                current_item="Fetch impacted parent hierarchy",
+                current_detail=f"{len(impacted_story_keys)} stories in scope",
+            )
+            fetched_story_issues = _fetch_jira_issues_by_keys(session, sorted(impacted_story_keys), issue_fields)
+            for story in fetched_story_issues:
+                story_fields = story.get("fields") or {}
+                parent_key = _to_text(((story_fields.get("parent") or {}).get("key"))).upper()
+                epic_candidate = _to_text(story_fields.get("customfield_10014")).upper()
+                if parent_key:
+                    impacted_epic_keys.add(parent_key)
+                if epic_candidate:
+                    impacted_epic_keys.add(epic_candidate)
+            fetched_epic_issues = _fetch_jira_issues_by_keys(session, sorted(impacted_epic_keys), issue_fields)
+            detailed_issues = fetched_epic_issues + fetched_story_issues + fetched_subtask_issues
+            fetched_issue_rows, fetched_link_rows, issues_by_key = _canonical_transform_issue_rows(
+                detailed_issues,
+                start_field_id=start_field_id,
+                end_field_ids=end_field_ids,
+                fix_type_field_id=fix_type_field_id,
+                managed_project_keys=managed_keys,
+            )
+            fetched_issue_keys = {str(key).upper() for key in issues_by_key.keys()}
+            reason_map: dict[str, set[str]] = defaultdict(set)
+            current_subtask_keys = set(current_subtask_by_key.keys())
+            for issue_key in fetched_issue_keys:
+                if issue_key in current_subtask_keys:
+                    reason_map[issue_key].add("assignee_current_subtask")
+                if issue_key in previous_subtask_keys:
+                    reason_map[issue_key].add("assignee_previous_subtask")
+                if issue_key in impacted_story_keys:
+                    reason_map[issue_key].add("assignee_parent_story")
+                if issue_key in impacted_epic_keys:
+                    reason_map[issue_key].add("assignee_parent_epic")
+            replaced_issue_keys = previous_subtask_keys | set(previous_scope["story_keys"]) | set(previous_scope["epic_keys"]) | fetched_issue_keys
+            counts_by_stage["expanding_hierarchy"] = {
+                "stories": len(fetched_story_issues),
+                "epics": len(fetched_epic_issues),
+                "transformed_issues": len(fetched_issue_rows),
+                "replaced_issue_count": len(replaced_issue_keys),
+            }
+            completed_stages.add("expanding_hierarchy")
+
+            if _canonical_is_cancel_requested(db_path, run_id):
+                return _cancel("fetching_worklogs")
+            _update("fetching_worklogs", 58, current_item="Fetch impacted worklogs")
+            from_date, to_date = _canonical_year_bounds(scope_year)
+            worklogs_by_issue: dict[str, list[dict]] = {}
+            for issue_key_item in sorted(fetched_issue_keys):
+                worklogs_by_issue[issue_key_item] = export_fetch_worklogs_for_issue(session, issue_key_item)
+                if _canonical_is_cancel_requested(db_path, run_id):
+                    return _cancel("fetching_worklogs")
+            fetched_worklog_rows = _canonical_transform_worklog_rows(
+                issues_by_key=issues_by_key,
+                worklogs_by_issue=worklogs_by_issue,
+                from_date=from_date,
+                to_date=to_date,
+            )
+            counts_by_stage["fetching_worklogs"] = {"worklog_count": len(fetched_worklog_rows)}
+            completed_stages.add("fetching_worklogs")
+
+            if _canonical_is_cancel_requested(db_path, run_id):
+                return _cancel("persisting_canonical_data")
+            _update("persisting_canonical_data", 76, current_item="Replace assignee slice in canonical snapshot")
+            replaced_issue_count = _canonical_clone_run_snapshot_excluding_issue_keys(
+                db_path=db_path,
+                source_run_id=previous_run_id,
+                target_run_id=run_id,
+                excluded_issue_keys=replaced_issue_keys,
+            )
+            _canonical_insert_scope_rows(
+                db_path=db_path,
+                run_id=run_id,
+                issue_rows=fetched_issue_rows,
+                link_rows=fetched_link_rows,
+                worklog_rows=fetched_worklog_rows,
+                reason_map=reason_map,
+            )
+            summary["persisted_issues"] = len(fetched_issue_rows)
+            summary["persisted_worklogs"] = len(fetched_worklog_rows)
+            summary["replaced_issue_count"] = replaced_issue_count
+            counts_by_stage["persisting_canonical_data"] = {
+                "replaced_issue_count": replaced_issue_count,
+                "persisted_issues": len(fetched_issue_rows),
+                "persisted_worklogs": len(fetched_worklog_rows),
+            }
+            completed_stages.add("persisting_canonical_data")
+
+            if _canonical_is_cancel_requested(db_path, run_id):
+                return _cancel("rebuilding_derived_data")
+            _update("rebuilding_derived_data", 88, current_item="Rebuild derived canonical tables")
+            derived_stats = _canonical_rebuild_derived_data(db_path=db_path, run_id=run_id)
+            counts_by_stage["rebuilding_derived_data"] = dict(derived_stats)
+            completed_stages.add("rebuilding_derived_data")
+
+            if _canonical_is_cancel_requested(db_path, run_id):
+                return _cancel("rebuilding_compatibility_artifacts")
+            _update("rebuilding_compatibility_artifacts", 94, current_item="Rebuild compatibility artifacts")
+            bridge_stats = _canonical_rebuild_compatibility_artifacts(
+                db_path=db_path,
+                run_id=run_id,
+                base_dir=db_path.parent,
+            )
+            counts_by_stage["rebuilding_compatibility_artifacts"] = dict(bridge_stats)
+            completed_stages.add("rebuilding_compatibility_artifacts")
+
+            if _canonical_is_cancel_requested(db_path, run_id):
+                return _cancel("generating_reports")
+            _update("generating_reports", 97, current_item="Regenerate employee performance outputs")
+            common_env = _canonical_group2_script_env(run_id)
+            cancel_check = lambda: _canonical_is_cancel_requested(db_path, run_id)
+            code, stdout, stderr = _run_script_interruptible(
+                "generate_rlt_leave_report.py",
+                base_dir,
+                env_overrides=common_env,
+                cancel_check=cancel_check,
+            )
+            if code == -1:
+                return _cancel("generating_reports")
+            if code != 0:
+                raise RuntimeError(_tail(stderr) or _tail(stdout) or "generate_rlt_leave_report.py failed")
+            code, stdout, stderr = _run_script_interruptible(
+                "generate_employee_performance_report.py",
+                base_dir,
+                env_overrides=common_env,
+                cancel_check=cancel_check,
+            )
+            if code == -1:
+                return _cancel("generating_reports")
+            if code != 0:
+                raise RuntimeError(_tail(stderr) or _tail(stdout) or "generate_employee_performance_report.py failed")
+            counts_by_stage["generating_reports"] = {"scripts": 2}
+            completed_stages.add("generating_reports")
+
+            if _canonical_is_cancel_requested(db_path, run_id):
+                return _cancel("syncing_report_html")
+            _update("syncing_report_html", 99, current_item="Sync refreshed HTML outputs")
+            sync_report_html(base_dir, folder_raw)
+            completed_stages.add("syncing_report_html")
+
+            duration_sec = round(time.perf_counter() - started, 2)
+            stats = {
+                **_build_stats("done", current_item="Assignee scoped refresh completed", current_detail=f"{assignee_text} refreshed."),
+                "duration_sec": duration_sec,
+                "canonical_run_id": run_id,
+                "derived_rows": derived_stats,
+                "compatibility_artifacts": bridge_stats,
+            }
+            stats["stages"] = _canonical_stage_payload("done", completed_stages | {"done"}, counts_by_stage=counts_by_stage)
+            _canonical_mark_run_status(
+                db_path,
+                run_id=run_id,
+                status="success",
+                error_message="",
+                stats=stats,
+                activate=True,
+            )
+            _canonical_update_progress_and_stats(db_path, run_id, "done", 100, stats)
+            return {
+                "ok": True,
+                "run_id": run_id,
+                "status": "success",
+                "scope_kind": "assignee",
+                "scope_key": assignee_text,
+                "canonical_run_id": run_id,
+                "duration_sec": duration_sec,
+            }, 200
+        except Exception as exc:
+            current = _canonical_get_run(db_path, run_id) or {}
+            failed_stage = _to_text(current.get("progress_step")) or "failed"
+            failure_stats = _build_stats(
+                failed_stage,
+                current_item="Assignee scoped refresh failed",
+                current_detail=str(exc),
+                failed_stage=failed_stage,
+            )
+            _canonical_mark_run_status(
+                db_path,
+                run_id=run_id,
+                status="failed",
+                error_message=str(exc),
+                stats=failure_stats,
+                activate=False,
+            )
+            _canonical_update_progress_and_stats(db_path, run_id, failed_stage, 100, failure_stats)
+            return {"ok": False, "run_id": run_id, "status": "failed", "error": str(exc)}, 500
+
+    def _start_canonical_assignee_refresh_async(
+        assignee_name: str,
+        *,
+        scope_year: int,
+        trigger_source: str = "employee_assignee_refresh_async",
+    ) -> tuple[dict[str, object], int]:
+        managed_project_keys = _managed_project_keys_all_active()
+        if not managed_project_keys:
+            return {
+                "ok": False,
+                "error": "No active managed projects found. Configure Managed Projects first.",
+            }, 400
+        assignee_text = _to_text(assignee_name).strip()
+        if not assignee_text:
+            return {"ok": False, "error": "assignee is required."}, 400
+        if not _canonical_last_success_run_id(capacity_paths["db_path"]):
+            return {
+                "ok": False,
+                "error": "No successful canonical refresh found. Run the canonical refresh first.",
+            }, 409
+
+        with canonical_jobs_lock:
+            active_runtime_run = _to_text(canonical_runtime_state.get("active_run_id"))
+            if active_runtime_run:
+                current = _canonical_get_run(capacity_paths["db_path"], active_runtime_run)
+                if current and _to_text(current.get("status")) == "running":
+                    return {
+                        "ok": False,
+                        "error": "Another canonical refresh is already running. Try again shortly.",
+                        "run": _canonical_serialize_run(current),
+                    }, 409
+                canonical_runtime_state["active_run_id"] = ""
+            db_running = _canonical_find_running_run(capacity_paths["db_path"])
+            if db_running:
+                canonical_runtime_state["active_run_id"] = _to_text(db_running.get("run_id"))
+                return {
+                    "ok": False,
+                    "error": "Another canonical refresh is already running. Try again shortly.",
+                    "run": _canonical_serialize_run(db_running),
+                }, 409
+            if not refresh_lock.acquire(blocking=False):
+                return {
+                    "ok": False,
+                    "error": "Another refresh is already running. Try again shortly.",
+                }, 409
+            run_id = f"canonical-assignee-{int(time.time())}-{uuid.uuid4().hex[:8]}"
+            canonical_runtime_state["active_run_id"] = run_id
+
+        run_started_at = _canonical_now_utc()
+        initial_stats = {
+            "mode": "assignee",
+            "effective_mode": "assignee",
+            "summary": {
+                "mode": "assignee",
+                "scope_kind": "assignee",
+                "scope_key": assignee_text,
+                "scope_year": int(scope_year or 0),
+            },
+            "current_item": "Queued",
+            "current_detail": f"Assignee refresh queued for {assignee_text}.",
+            "stages": _canonical_stage_payload("loading_managed_project_scope", set(), counts_by_stage={}),
+            "items": [],
+        }
+        with sqlite3.connect(capacity_paths["db_path"]) as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO canonical_refresh_runs(
+                    run_id, scope_year, managed_project_keys_json, started_at_utc, ended_at_utc,
+                    status, trigger_source, error_message, stats_json,
+                    progress_step, progress_pct, cancel_requested, updated_at_utc
+                ) VALUES (?, ?, ?, ?, NULL, 'running', ?, '', ?, 'queued', 1, 0, ?)
+                """,
+                (
+                    run_id,
+                    int(scope_year or 0),
+                    json.dumps(sorted(managed_project_keys), ensure_ascii=True),
+                    run_started_at,
+                    _to_text(trigger_source),
+                    json.dumps(initial_stats, ensure_ascii=True),
+                    run_started_at,
+                ),
+            )
+            conn.execute(
+                """
+                UPDATE canonical_refresh_state
+                SET active_run_id = ?, updated_at_utc = ?
+                WHERE id = 1
+                """,
+                (run_id, run_started_at),
+            )
+            conn.commit()
+
+        def _runner() -> None:
+            try:
+                _run_canonical_assignee_scoped_refresh(
+                    db_path=capacity_paths["db_path"],
+                    run_id=run_id,
+                    scope_year=scope_year,
+                    managed_project_keys=managed_project_keys,
+                    assignee_name=assignee_text,
+                    trigger_source=trigger_source,
+                )
+            finally:
+                with canonical_jobs_lock:
+                    if _to_text(canonical_runtime_state.get("active_run_id")) == run_id:
+                        canonical_runtime_state["active_run_id"] = ""
+                try:
+                    refresh_lock.release()
+                except Exception:
+                    pass
+
+        threading.Thread(target=_runner, daemon=True).start()
+        run_row = _canonical_get_run(capacity_paths["db_path"], run_id)
+        return {
+            "ok": True,
+            "report": "employee_performance",
+            "mode": "assignee",
+            "scope_kind": "assignee",
+            "scope_key": assignee_text,
+            "scope_year": int(scope_year or 0),
+            "run_id": run_id,
+            "status": "running",
+            "run": _canonical_serialize_run(run_row),
+        }, 202
+
+    @app.route("/api/employee-performance/assignee-refresh", methods=["POST"])
+    def employee_performance_assignee_refresh():
+        payload = request.get_json(silent=True) or {}
+        assignee_name = _to_text(payload.get("assignee"))
+        requested_scope_year = int(payload.get("scope_year") or 0)
+        latest_success = _canonical_get_run(
+            capacity_paths["db_path"],
+            _canonical_last_success_run_id(capacity_paths["db_path"]),
+        ) or {}
+        scope_year = requested_scope_year or int(latest_success.get("scope_year") or datetime.now(timezone.utc).year)
+        response, status_code = _start_canonical_assignee_refresh_async(
+            assignee_name,
+            scope_year=scope_year,
+            trigger_source="employee_assignee_refresh_async",
+        )
+        return jsonify(response), status_code
+
+    @app.route("/api/employee-performance/assignee-refresh/<path:run_id>", methods=["GET"])
+    def employee_performance_assignee_refresh_status(run_id: str):
+        row = _canonical_get_run(capacity_paths["db_path"], _to_text(run_id))
+        if not row:
+            return jsonify({"ok": False, "error": "Run not found."}), 404
+        return jsonify({"ok": True, "run": _canonical_serialize_run(row)})
+
     @app.route("/api/canonical-refresh", methods=["POST"])
     def canonical_refresh_start():
         payload = request.get_json(silent=True) or {}
@@ -24379,7 +25203,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 selected_assignees=selected_assignees,
             )
             summary["default_selected_projects"] = sorted(default_selected_projects)
-            summary["source"] = "snapshot_db"
+            summary["source"] = "canonical_hierarchy"
             return jsonify(summary)
         except ValueError as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400

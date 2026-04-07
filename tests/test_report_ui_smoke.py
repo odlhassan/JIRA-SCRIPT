@@ -346,6 +346,8 @@ class ReportUiSmokeTests(unittest.TestCase):
         self.assertIn('id="score-subtask-table-body"', html)
         self.assertIn("Actual Completed Date", html)
         self.assertIn("due-status-pill", html)
+        self.assertIn('id="assignee-detail-refresh-btn"', html)
+        self.assertIn("/api/employee-performance/assignee-refresh", html)
 
     def test_report_entities_formula_editor_controls_exist(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
@@ -1186,12 +1188,13 @@ class ReportUiSmokeTests(unittest.TestCase):
         self.assertIn('id="search-anything"', html)
         self.assertIn('id="apply-btn"', html)
         self.assertIn('id="reset-btn"', html)
-        self.assertIn('id="fetch-btn"', html)
+        self.assertNotIn('id="fetch-btn"', html)
         self.assertIn('id="table-body"', html)
         self.assertIn("/api/original-estimates/filter-options", html)
         self.assertIn("/api/original-estimates/summary", html)
-        self.assertIn("/api/original-estimates/refresh", html)
-        self.assertIn("/api/original-estimates/refresh-epic/", html)
+        self.assertNotIn("/api/original-estimates/refresh", html)
+        self.assertNotIn("refresh-epic", html)
+        self.assertNotIn("codex-refresh-widget", html)
 
 
 if __name__ == "__main__":

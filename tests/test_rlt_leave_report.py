@@ -1,20 +1,28 @@
 ﻿from __future__ import annotations
 
 import os
+import sqlite3
 import sys
+import tempfile
 import unittest
 from datetime import date
+from pathlib import Path
 from unittest.mock import patch
 
 from generate_rlt_leave_report import (
     DEFAULT_SOURCE,
+    LEAVE_VERIFICATION_TABLE,
     SubtaskRow,
     WorklogRow,
     _compute_aggregates,
     _parse_args,
     _redistribute_continuous_leave_subtasks,
     _redistribute_continuous_leave_worklogs,
+    _store_leave_verification_rows,
+    _write_html,
     classify_leave,
+    classify_leave_source,
+    compute_created_after_leave_date_check,
     infer_date_range_from_summary,
     is_clubbed_leave,
     is_defective_no_entry,
@@ -64,13 +72,71 @@ class RltLeaveReportTests(unittest.TestCase):
 
     def test_classification_precedence_leave_type_over_status(self):
         self.assertEqual(
-            classify_leave("Unplanned Leave", "Planned Leave", "planned leave"),
+            classify_leave("Unplanned Leave"),
             "Unplanned",
         )
 
-    def test_blank_type_fallback_mapping(self):
-        self.assertEqual(classify_leave("", "Sick Leave", "Leave"), "Unplanned")
-        self.assertEqual(classify_leave("", "Considered in Roadmap & Queued", "Annual leave"), "Planned")
+    def test_blank_type_is_unknown_even_when_status_suggests_leave_type(self):
+        self.assertEqual(classify_leave(""), "Unknown")
+        self.assertEqual(classify_leave_source(""), "leave_type_missing")
+
+    def test_created_after_leave_day_is_verification_signal_not_classification(self):
+        self.assertEqual(classify_leave(""), "Unknown")
+        self.assertEqual(
+            compute_created_after_leave_date_check(
+                "2026-04-01T11:04:10.369+0500",
+                "2026-03-24",
+                "2026-03-24",
+            ),
+            ("Yes", 8, "2026-03-24", "Created 8 day(s) after leave date."),
+        )
+
+    def test_store_leave_verification_rows_persists_secondary_signal(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = os.path.join(tmpdir, "leave.sqlite")
+            conn = sqlite3.connect(db_path)
+            try:
+                _store_leave_verification_rows(
+                    conn,
+                    report_run_id="run-1",
+                    source_mode="canonical_db",
+                    source_run_id="canonical-1",
+                    subtasks=[
+                        SubtaskRow(
+                            issue_key="RLT-249",
+                            issue_id="249",
+                            summary="24-March-2026",
+                            status="Considered in Roadmap & Queued",
+                            assignee="Namra Zahid",
+                            parent_task_key="RLT-15",
+                            parent_task_assignee="Namra Zahid",
+                            created="2026-04-01T11:04:10.369+0500",
+                            updated="2026-04-02T12:55:08.834+0500",
+                            start_date="2026-03-24",
+                            due_date="2026-03-24",
+                            original_estimate_hours=8.0,
+                            timespent_hours=8.0,
+                            leave_type_raw="",
+                            leave_classification="Unknown",
+                            total_worklog_hours=8.0,
+                            planned_date_for_bucket="2026-03-24",
+                            clubbed_leave="No",
+                            no_entry_flag="No",
+                            classification_source="leave_type_missing",
+                            verification_reference_date="2026-03-24",
+                            created_after_leave_date_flag="Yes",
+                            created_after_leave_days=8,
+                            verification_note="Created 8 day(s) after leave date.",
+                        )
+                    ],
+                )
+                row = conn.execute(
+                    f"SELECT leave_classification, classification_source, created_after_leave_date, created_after_leave_days FROM {LEAVE_VERIFICATION_TABLE} WHERE report_run_id = ? AND issue_key = ?",
+                    ("run-1", "RLT-249"),
+                ).fetchone()
+            finally:
+                conn.close()
+        self.assertEqual(row, ("Unknown", "leave_type_missing", 1, 8))
 
     def test_defective_no_entry_rule(self):
         self.assertTrue(is_defective_no_entry("Planned", 0.0, 0.0, "", ""))
@@ -210,6 +276,55 @@ class RltLeaveReportTests(unittest.TestCase):
         self.assertEqual(summary["planned_not_taken_hours"], 8.0)
         self.assertEqual(summary["planned_not_taken_no_entry_count"], 1)
         self.assertEqual(summary["unplanned_taken_hours"], 8.0)
+
+    def test_unknown_leave_type_stays_visible_in_aggregates_and_html(self):
+        subtasks = [
+            SubtaskRow(
+                issue_key="RLT-249",
+                issue_id="249",
+                summary="24-March-2026",
+                status="Considered in Roadmap & Queued",
+                assignee="Namra Zahid",
+                parent_task_key="RLT-15",
+                parent_task_assignee="Namra Zahid",
+                created="2026-04-01T11:04:10.369+0500",
+                updated="2026-04-02T12:55:08.834+0500",
+                start_date="2026-03-24",
+                due_date="2026-03-24",
+                original_estimate_hours=8.0,
+                timespent_hours=8.0,
+                leave_type_raw="",
+                leave_classification="Unknown",
+                total_worklog_hours=8.0,
+                planned_date_for_bucket="2026-03-24",
+                clubbed_leave="No",
+                no_entry_flag="No",
+                classification_source="leave_type_missing",
+                verification_reference_date="2026-03-24",
+                created_after_leave_date_flag="Yes",
+                created_after_leave_days=8,
+                verification_note="Created 8 day(s) after leave date.",
+            ),
+        ]
+        worklogs = [
+            WorklogRow(issue_key="RLT-249", started_raw="", started_date="2026-03-24", author="Namra Zahid", hours_logged=8.0),
+        ]
+
+        out = _compute_aggregates(subtasks, worklogs, "2026-03-01", "2026-03-31", self._profile())
+        summary = out["assignee_summary"][0]
+        self.assertEqual(summary["unknown_taken_hours"], 8.0)
+        self.assertEqual(summary["unknown_taken_days"], 1.0)
+        self.assertEqual(out["daily"][0]["total_hours"], 8.0)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            html_path = os.path.join(tmpdir, "rlt_leave_report.html")
+            _write_html(Path(html_path), "RLT", "RnD Leave Tracker", "2026-03-01", "2026-03-31", subtasks, out)
+            html_text = Path(html_path).read_text(encoding="utf-8")
+
+        self.assertIn("Unknown Taken (h)", html_text)
+        self.assertIn("const statUnknownTakenHoursEl=document.getElementById('stat-unknown-taken-hours');", html_text)
+        self.assertIn('current.unknown += Number(row.unknown_taken_hours || 0);', html_text)
+        self.assertIn('const totalTaken = plannedTaken + unplannedTaken + unknownTaken;', html_text)
 
     def test_redistribute_continuous_leave_even_split_weekdays(self):
         subtasks = [self._subtask(start_date="2026-01-05", due_date="2026-01-09", estimate=40.0)]

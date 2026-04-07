@@ -17,7 +17,7 @@ python init_epics_management_db.py
 # 3. (Optional) Regenerate IPP Meeting Dashboard HTML so static file has sealed_dates in RMI drawer
 python generate_ipp_meeting_dashboard.py
 
-# 4. Start the report server (default port 3000; runs planned_vs_dispensed + syncs report_html)
+# 4. Start the report server (default port 3000; rebuilds latest report HTML + syncs report_html)
 python run_server.py --port 3000
 
 # 5. Open in browser
@@ -28,7 +28,7 @@ python run_server.py --port 3000
 #    Home / reports list:
 #      http://127.0.0.1:3000/
 
-# Shortcut: server only, no sync (faster start; use if you only changed server code)
+# Shortcut: server only, no rebuild/sync (faster start; use if you only changed server code)
 python run_server.py --port 3000 --no-sync
 
 # Fresh start (clear cache/state then start)

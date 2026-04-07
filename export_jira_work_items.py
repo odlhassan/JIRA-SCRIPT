@@ -859,6 +859,7 @@ def main() -> None:
         "issuetype",
         "parent",
         "customfield_10014",
+        "customfield_10584",
         "created",
         "updated",
     ]

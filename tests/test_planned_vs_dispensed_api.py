@@ -68,6 +68,10 @@ def _seed_epic_planner_data(root: Path, epic_key: str, man_days: float | None, s
         conn.close()
 
 
+def _cache_db_path(root: Path) -> Path:
+    return root / "assignee_hours_capacity.db"
+
+
 class PlannedVsDispensedApiTests(unittest.TestCase):
     def test_summary_and_details_from_mocked_hierarchy(self):
         hierarchy = {
@@ -658,6 +662,106 @@ class PlannedVsDispensedApiTests(unittest.TestCase):
                 second_payload = second_resp.get_json()
                 self.assertTrue(second_payload.get("ok"))
                 self.assertEqual(second_payload.get("source"), "canonical_db")
+
+    def test_clear_planned_vs_dispensed_cache_tables_removes_only_cache_rows(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            db_path = _cache_db_path(root)
+            report_server.clear_planned_vs_dispensed_cache_tables(db_path)
+            with sqlite3.connect(db_path) as conn:
+                conn.execute("CREATE TABLE IF NOT EXISTS preserved_table (id INTEGER PRIMARY KEY, value TEXT)")
+                conn.execute("INSERT INTO preserved_table (value) VALUES ('keep')")
+                conn.execute(
+                    """
+                    INSERT INTO planned_vs_dispensed_cache (
+                        cache_key, from_date, to_date, mode, project_scope, payload_json, fetched_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+                    """,
+                    ("summary-cache", "2026-02-01", "2026-02-28", "log_date", "O2", '{"ok":true}'),
+                )
+                conn.execute(
+                    """
+                    INSERT INTO planned_vs_dispensed_response_cache (
+                        cache_key, endpoint, from_date, to_date, mode,
+                        project_scope, statuses_scope, assignees_scope, project_key,
+                        payload_json, fetched_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                    """,
+                    ("response-cache", "summary", "2026-02-01", "2026-02-28", "log_date", "O2", "", "", "", '{"ok":true}'),
+                )
+                conn.commit()
+
+            report_server.clear_planned_vs_dispensed_cache_tables(db_path)
+
+            with sqlite3.connect(db_path) as conn:
+                self.assertEqual(
+                    conn.execute("SELECT COUNT(*) FROM planned_vs_dispensed_cache").fetchone()[0],
+                    0,
+                )
+                self.assertEqual(
+                    conn.execute("SELECT COUNT(*) FROM planned_vs_dispensed_response_cache").fetchone()[0],
+                    0,
+                )
+                self.assertEqual(
+                    conn.execute("SELECT value FROM preserved_table").fetchone()[0],
+                    "keep",
+                )
+
+    def test_startup_cache_clear_forces_summary_recompute_after_restart(self):
+        hierarchy_first = {
+            "epics": [
+                {
+                    "issue_key": "O2-EP1",
+                    "project_key": "O2",
+                    "summary": "Epic One",
+                    "status": "In Progress",
+                    "assignee": "Alice",
+                    "estimate_hours": 10.0,
+                    "planned_start": "2026-02-01",
+                    "planned_due": "2026-02-10",
+                }
+            ],
+            "stories": [],
+            "subtasks": [],
+        }
+        hierarchy_second = {
+            "epics": [
+                {
+                    "issue_key": "O2-EP1",
+                    "project_key": "O2",
+                    "summary": "Epic One",
+                    "status": "In Progress",
+                    "assignee": "Alice",
+                    "estimate_hours": 20.0,
+                    "planned_start": "2026-02-01",
+                    "planned_due": "2026-02-10",
+                }
+            ],
+            "stories": [],
+            "subtasks": [],
+        }
+        query = "/api/planned-vs-dispensed/summary?from=2026-02-01&to=2026-02-28&mode=log_date&projects=O2"
+
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            app_first = _build_app(root)
+            client_first = app_first.test_client()
+            with patch("report_server._get_planned_vs_dispensed_hierarchy_cached", return_value=(hierarchy_first, "canonical_db")):
+                first_resp = client_first.get(query)
+                self.assertEqual(first_resp.status_code, 200)
+                first_payload = first_resp.get_json()
+                self.assertEqual(float(first_payload["rows"][0]["planned_epic_hours"]), 10.0)
+
+            report_server.clear_planned_vs_dispensed_cache_tables(_cache_db_path(root))
+
+            app_second = _build_app(root)
+            client_second = app_second.test_client()
+            with patch("report_server._get_planned_vs_dispensed_hierarchy_cached", return_value=(hierarchy_second, "canonical_db")) as mock_loader:
+                second_resp = client_second.get(query)
+                self.assertEqual(second_resp.status_code, 200)
+                second_payload = second_resp.get_json()
+                self.assertEqual(float(second_payload["rows"][0]["planned_epic_hours"]), 20.0)
+                self.assertEqual(mock_loader.call_count, 1)
 
     def test_refresh_flag_bypasses_cached_summary_response(self):
         hierarchy_first = {
