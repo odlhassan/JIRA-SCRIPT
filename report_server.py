@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal, ROUND_HALF_UP
 import io
 import html
 import json
@@ -11181,6 +11182,8 @@ def _epic_phases_settings_html() -> str:
     code { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:.8rem; }
     .pill { display:inline-flex; align-items:center; padding:2px 8px; border-radius:999px; font-size:.75rem; border:1px solid #cbd5e1; background:#fff; color:#334155; }
     .mono { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+    .phase-inline-input { min-width:200px; }
+    .phase-jira-toggle { display:inline-flex; align-items:center; gap:6px; white-space:nowrap; }
   </style>
 </head>
 <body>
@@ -11214,7 +11217,7 @@ def _epic_phases_settings_html() -> str:
           <button id="add-phase-btn" class="btn" type="button">Add Epic Phase</button>
           <button id="reload-btn" class="btn alt" type="button">Reload</button>
         </div>
-        <p class="hint">Default phases are locked for delete. Use up/down to reorder active phases.</p>
+        <p class="hint">Phase cells save independently. Edit a name and press Enter or leave the cell; Jira toggles, Lock, and Phase Role save immediately on change. Use up/down to reorder active phases.</p>
       </section>
     </div>
 
@@ -11231,6 +11234,9 @@ def _epic_phases_settings_html() -> str:
             <th>Epic Phase</th>
             <th>Key</th>
             <th>Jira URL</th>
+            <th>Phase Role</th>
+            <th>Formula</th>
+            <th>Lock</th>
             <th>Type</th>
             <th>Status</th>
             <th>Order</th>
@@ -11263,6 +11269,9 @@ def _epic_phases_settings_html() -> str:
 
     function esc(value) {
       return String(value == null ? "" : value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+    function escAttr(value) {
+      return String(value == null ? "" : value).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     }
     function setStatus(msg, kind) {
       statusEl.textContent = String(msg || "");
@@ -11344,8 +11353,25 @@ def _epic_phases_settings_html() -> str:
         const key = String(phase && phase.key || "").trim();
         const label = String(phase && (phase.label || phase.key) || "").trim();
         const isDefault = !!(phase && phase.is_default);
+        const isLocked = !!(phase && phase.is_locked);
         const isActive = !!(phase && phase.is_active);
         const jiraEnabled = !!(phase && phase.jira_link_enabled);
+        const phaseRole = String(phase && phase.phase_role || "most_likely_input").trim() || "most_likely_input";
+        const formulaRole = String(phase && phase.formula_role || "").trim();
+        const percent = phase && phase.estimate_percent != null ? Number(phase.estimate_percent) : null;
+        const fixed = phase && phase.fixed_man_days != null ? Number(phase.fixed_man_days) : null;
+        const roleOptions = [
+          { value: "most_likely_input", label: "Most Likely input" },
+          { value: "formula_managed", label: "Formula-managed" },
+          { value: "summary", label: "Summary" },
+        ];
+        const roleSelectHtml = '<select class="phase-inline-input" data-phase-role-input="' + escAttr(key) + '" data-phase-original-role="' + escAttr(phaseRole) + '" title="Changes save immediately">'
+          + roleOptions.map((opt) => '<option value="' + escAttr(opt.value) + '"' + (opt.value === phaseRole ? " selected" : "") + ">" + esc(opt.label) + "</option>").join("")
+          + "</select>";
+        const formulaBits = [];
+        if (formulaRole) formulaBits.push(formulaRole);
+        if (percent != null && Number.isFinite(percent)) formulaBits.push(String(percent) + "%");
+        if (fixed != null && Number.isFinite(fixed)) formulaBits.push(String(fixed) + " md");
         const orderIdx = activeOrder.indexOf(key);
         const canMoveUp = isActive && orderIdx > 0;
         const canMoveDown = isActive && orderIdx >= 0 && orderIdx < (activeOrder.length - 1);
@@ -11355,17 +11381,21 @@ def _epic_phases_settings_html() -> str:
             + '<button class="icon-btn" type="button" data-move-phase="' + esc(key) + '" data-move-dir="down" title="Move down"' + (canMoveDown ? "" : " disabled") + ">" + iconDownSvg() + "</button>"
             + "</div>"
           : '<span class="mono" style="color:#94a3b8;">-</span>';
+        const deleteButton = isLocked
+          ? '<button class="icon-btn danger" type="button" disabled title="Unlock this phase, then save, before deleting">' + iconTrashSvg() + "</button>"
+          : '<button class="icon-btn danger" type="button" data-delete-phase="' + esc(key) + '" data-delete-phase-label="' + esc(label) + '" title="Delete Epic Phase">' + iconTrashSvg() + "</button>";
         const actionHtml = isActive
-          ? (isDefault
-              ? '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;"><button class="btn alt small" type="button" data-rename-phase="' + esc(key) + '" data-rename-phase-label="' + esc(label) + '">Rename</button><span class="pill">Locked</span></div>'
-              : '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;"><button class="btn alt small" type="button" data-rename-phase="' + esc(key) + '" data-rename-phase-label="' + esc(label) + '">Rename</button><button class="icon-btn danger" type="button" data-delete-phase="' + esc(key) + '" data-delete-phase-label="' + esc(label) + '" title="Delete Epic Phase">' + iconTrashSvg() + "</button></div>")
-          : '<button class="btn alt small" type="button" data-restore-phase="' + esc(key) + '">Restore</button>';
+          ? '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">' + deleteButton + "</div>"
+          : '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;"><button class="btn alt small" type="button" data-restore-phase="' + esc(key) + '">Restore</button></div>';
         return ""
           + "<tr>"
           + "<td>" + (isActive ? String(orderIdx + 1) : "-") + "</td>"
-          + "<td>" + esc(label) + "</td>"
+          + '<td><input class="phase-inline-input" type="text" value="' + escAttr(label) + '" data-phase-label-input="' + escAttr(key) + '" data-phase-original-label="' + escAttr(label) + '" title="Press Enter or leave the field to save"></td>'
           + "<td><code>" + esc(key) + "</code></td>"
-          + "<td>" + (jiraEnabled ? "Enabled" : "Disabled") + "</td>"
+          + '<td><label class="phase-jira-toggle"><input type="checkbox" data-phase-jira-input="' + escAttr(key) + '"' + (jiraEnabled ? " checked" : "") + ' style="width:auto;"> Jira enabled</label></td>'
+          + "<td>" + roleSelectHtml + "</td>"
+          + "<td><code>" + esc(formulaBits.join(" | ") || "-") + "</code></td>"
+          + '<td><label class="phase-jira-toggle"><input type="checkbox" data-phase-lock-input="' + escAttr(key) + '"' + (isLocked ? " checked" : "") + ' style="width:auto;"> Locked</label></td>'
           + "<td>" + (isDefault ? "Default" : "Dynamic") + "</td>"
           + "<td>" + (isActive ? '<span class="pill">Active</span>' : '<span class="pill">Deleted</span>') + "</td>"
           + "<td>" + moveButtons + "</td>"
@@ -11373,7 +11403,7 @@ def _epic_phases_settings_html() -> str:
           + "</tr>";
       }).join("");
       const emptyLabel = activeTab === "deleted" ? "No deleted Epic Phases found." : "No active Epic Phases found.";
-      phasesTbodyEl.innerHTML = html || '<tr><td colspan="8" class="mono" style="color:#94a3b8;">' + emptyLabel + "</td></tr>";
+      phasesTbodyEl.innerHTML = html || '<tr><td colspan="11" class="mono" style="color:#94a3b8;">' + emptyLabel + "</td></tr>";
     }
     async function loadCatalog() {
       const resp = await fetch(PLAN_COLUMNS_API + "?include_inactive=1", { cache: "no-store" });
@@ -11384,8 +11414,13 @@ def _epic_phases_settings_html() -> str:
         label: String(item && (item.label || item.key) || "").trim(),
         jira_link_enabled: !!(item && item.jira_link_enabled),
         is_default: !!(item && item.is_default),
+        is_locked: !!(item && item.is_locked),
         is_active: !!(item && item.is_active),
         sort_order: Number(item && item.sort_order || 0),
+        phase_role: String(item && item.phase_role || "").trim(),
+        formula_role: String(item && item.formula_role || "").trim(),
+        estimate_percent: item && item.estimate_percent != null ? Number(item.estimate_percent) : null,
+        fixed_man_days: item && item.fixed_man_days != null ? Number(item.fixed_man_days) : null,
       })) : [];
       phaseCatalog.sort((a, b) => (a.sort_order - b.sort_order) || a.label.localeCompare(b.label) || a.key.localeCompare(b.key));
       renderPhasePositionOptions();
@@ -11405,7 +11440,7 @@ def _epic_phases_settings_html() -> str:
       const body = await resp.json().catch(() => ({}));
       if (!resp.ok) throw new Error(String(body.error || "Failed to add Epic Phase."));
       phaseNameEl.value = "";
-      phaseJiraEnabledEl.checked = false;
+      phaseJiraEnabledEl.checked = true;
       await loadCatalog();
       setStatus("Epic Phase added: " + label, "ok");
     }
@@ -11413,7 +11448,7 @@ def _epic_phases_settings_html() -> str:
       const key = String(columnKey || "").trim();
       if (!key) throw new Error("Epic Phase key is required.");
       const phase = phaseCatalog.find((item) => item.key === key);
-      if (phase && phase.is_default) throw new Error("Default Epic Phases cannot be deleted.");
+      if (phase && phase.is_locked) throw new Error("Locked Epic Phases cannot be deleted. Unlock and save this phase first.");
       const label = String(columnLabel || (phase && (phase.label || phase.key)) || key);
       if (!window.confirm('Delete Epic Phase "' + label + '"?')) return;
       const resp = await fetch(PLAN_COLUMNS_DELETE_API_BASE + "/" + encodeURIComponent(key), { method: "DELETE" });
@@ -11422,21 +11457,115 @@ def _epic_phases_settings_html() -> str:
       await loadCatalog();
       setStatus("Epic Phase deleted: " + label, "ok");
     }
-    async function renamePhase(columnKey, currentLabel) {
+    function replacePhaseInCatalog(updated) {
+      if (!updated || !updated.key) return;
+      const key = String(updated.key || "");
+      const index = phaseCatalog.findIndex((item) => String(item.key || "") === key);
+      const next = {
+        key,
+        label: String(updated.label || key),
+        jira_link_enabled: !!updated.jira_link_enabled,
+        is_default: !!updated.is_default,
+        is_locked: !!updated.is_locked,
+        is_active: !!updated.is_active,
+        sort_order: Number(updated.sort_order || 0),
+        phase_role: String(updated.phase_role || ""),
+        formula_role: String(updated.formula_role || ""),
+        estimate_percent: updated.estimate_percent != null ? Number(updated.estimate_percent) : null,
+        fixed_man_days: updated.fixed_man_days != null ? Number(updated.fixed_man_days) : null,
+      };
+      if (index >= 0) phaseCatalog[index] = Object.assign({}, phaseCatalog[index], next);
+      else phaseCatalog.push(next);
+    }
+    async function savePhasePatch(columnKey, patch, successMessage, rerender) {
       const key = String(columnKey || "").trim();
       if (!key) throw new Error("Epic Phase key is required.");
-      const current = String(currentLabel || "").trim();
-      const next = String(window.prompt("Rename Epic Phase:", current) || "").trim();
-      if (!next || next === current) return;
+      const payload = patch && typeof patch === "object" ? patch : {};
       const resp = await fetch(PLAN_COLUMNS_UPDATE_API_BASE + "/" + encodeURIComponent(key), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ label: next }),
+        body: JSON.stringify(payload),
       });
       const body = await resp.json().catch(() => ({}));
-      if (!resp.ok) throw new Error(String(body.error || "Failed to rename Epic Phase."));
-      await loadCatalog();
-      setStatus("Epic Phase renamed to: " + next + ". Changes are reflected in Epics Planner on reload.", "ok");
+      if (!resp.ok) throw new Error(String(body.error || "Failed to save Epic Phase."));
+      replacePhaseInCatalog(body.column || {});
+      if (rerender) {
+        renderPhasesTable();
+      }
+      setStatus(successMessage || "Epic Phase updated.", "ok");
+      return body.column || {};
+    }
+    async function savePhase(columnKey) {
+      const key = String(columnKey || "").trim();
+      if (!key) throw new Error("Epic Phase key is required.");
+      const labelInput = phasesTbodyEl.querySelector('[data-phase-label-input="' + key.replace(/"/g, '&quot;') + '"]');
+      const jiraInput = phasesTbodyEl.querySelector('[data-phase-jira-input="' + key.replace(/"/g, '&quot;') + '"]');
+      const lockInput = phasesTbodyEl.querySelector('[data-phase-lock-input="' + key.replace(/"/g, '&quot;') + '"]');
+      if (!labelInput) throw new Error("Epic Phase editor not found.");
+      const next = String(labelInput.value || "").trim();
+      if (!next) throw new Error("Epic Phase name is required.");
+      const jiraEnabled = !!(jiraInput && jiraInput.checked);
+      const locked = !!(lockInput && lockInput.checked);
+      await savePhasePatch(key, { label: next, jira_link_enabled: jiraEnabled, is_locked: locked }, "Epic Phase updated: " + next + ". Changes are reflected in Epics Planner on reload.", true);
+    }
+    async function savePhaseNameCell(inputEl) {
+      if (!inputEl) return;
+      const key = String(inputEl.getAttribute("data-phase-label-input") || "").trim();
+      const previous = String(inputEl.getAttribute("data-phase-original-label") || "").trim();
+      const next = String(inputEl.value || "").trim();
+      if (!key || next === previous) return;
+      if (!next) {
+        inputEl.value = previous;
+        throw new Error("Epic Phase name is required.");
+      }
+      inputEl.disabled = true;
+      try {
+        const updated = await savePhasePatch(key, { label: next }, "Epic Phase name saved: " + next + ".", false);
+        const savedLabel = String(updated.label || next);
+        inputEl.value = savedLabel;
+        inputEl.setAttribute("data-phase-original-label", savedLabel);
+        const phase = phaseCatalog.find((item) => item.key === key);
+        const deleteBtn = phasesTbodyEl.querySelector('[data-delete-phase="' + key.replace(/"/g, '&quot;') + '"]');
+        if (deleteBtn && phase) {
+          deleteBtn.setAttribute("data-delete-phase-label", String(phase.label || key));
+        }
+      } finally {
+        inputEl.disabled = false;
+      }
+    }
+    async function savePhaseToggleCell(inputEl, fieldName) {
+      if (!inputEl) return;
+      const attr = fieldName === "is_locked" ? "data-phase-lock-input" : "data-phase-jira-input";
+      const key = String(inputEl.getAttribute(attr) || "").trim();
+      if (!key) return;
+      inputEl.disabled = true;
+      try {
+        const patch = {};
+        patch[fieldName] = !!inputEl.checked;
+        const label = fieldName === "is_locked" ? "Phase lock saved." : "Phase Jira setting saved.";
+        await savePhasePatch(key, patch, label, fieldName === "is_locked");
+      } finally {
+        inputEl.disabled = false;
+      }
+    }
+    async function savePhaseRoleCell(selectEl) {
+      if (!selectEl) return;
+      const key = String(selectEl.getAttribute("data-phase-role-input") || "").trim();
+      if (!key) return;
+      const previous = String(selectEl.getAttribute("data-phase-original-role") || "").trim();
+      const next = String(selectEl.value || "").trim();
+      if (!next || next === previous) return;
+      selectEl.disabled = true;
+      try {
+        const updated = await savePhasePatch(key, { phase_role: next }, "Phase Role saved: " + next + ".", true);
+        const savedRole = String(updated.phase_role || next);
+        selectEl.setAttribute("data-phase-original-role", savedRole);
+      } catch (err) {
+        selectEl.value = previous;
+        throw err;
+      } finally {
+        selectEl.disabled = false;
+      }
     }
     async function restorePhase(columnKey) {
       const key = String(columnKey || "").trim();
@@ -11478,18 +11607,12 @@ def _epic_phases_settings_html() -> str:
     document.getElementById("add-phase-btn").addEventListener("click", () => {
       addPhase().catch((err) => setStatus(err.message || String(err), "err"));
     });
+    phaseJiraEnabledEl.checked = true;
     phaseNameEl.addEventListener("input", refreshRestoreHint);
     tabActiveEl.addEventListener("click", () => setActiveTab("active"));
     tabDeletedEl.addEventListener("click", () => setActiveTab("deleted"));
     phasesTbodyEl.addEventListener("click", (event) => {
       const target = event.target instanceof Element ? event.target : null;
-      const renameBtn = target ? target.closest("button[data-rename-phase]") : null;
-      if (renameBtn) {
-        const key = String(renameBtn.getAttribute("data-rename-phase") || "");
-        const label = String(renameBtn.getAttribute("data-rename-phase-label") || "");
-        renamePhase(key, label).catch((err) => setStatus(err.message || String(err), "err"));
-        return;
-      }
       const deleteBtn = target ? target.closest("button[data-delete-phase]") : null;
       if (deleteBtn) {
         const key = String(deleteBtn.getAttribute("data-delete-phase") || "");
@@ -11508,6 +11631,41 @@ def _epic_phases_settings_html() -> str:
         const key = String(moveBtn.getAttribute("data-move-phase") || "");
         const dir = String(moveBtn.getAttribute("data-move-dir") || "");
         movePhase(key, dir).catch((err) => setStatus(err.message || String(err), "err"));
+      }
+    });
+    phasesTbodyEl.addEventListener("focusout", (event) => {
+      const target = event.target instanceof Element ? event.target : null;
+      const input = target ? target.closest("input[data-phase-label-input]") : null;
+      if (!input) return;
+      savePhaseNameCell(input).catch((err) => setStatus(err.message || String(err), "err"));
+    });
+    phasesTbodyEl.addEventListener("keydown", (event) => {
+      const target = event.target instanceof Element ? event.target : null;
+      const input = target ? target.closest("input[data-phase-label-input]") : null;
+      if (!input) return;
+      if (event.key === "Enter") {
+        event.preventDefault();
+        savePhaseNameCell(input).catch((err) => setStatus(err.message || String(err), "err"));
+      } else if (event.key === "Escape") {
+        input.value = input.getAttribute("data-phase-original-label") || input.value;
+        input.blur();
+      }
+    });
+    phasesTbodyEl.addEventListener("change", (event) => {
+      const target = event.target instanceof Element ? event.target : null;
+      const jiraInput = target ? target.closest("input[data-phase-jira-input]") : null;
+      if (jiraInput) {
+        savePhaseToggleCell(jiraInput, "jira_link_enabled").catch((err) => setStatus(err.message || String(err), "err"));
+        return;
+      }
+      const lockInput = target ? target.closest("input[data-phase-lock-input]") : null;
+      if (lockInput) {
+        savePhaseToggleCell(lockInput, "is_locked").catch((err) => setStatus(err.message || String(err), "err"));
+        return;
+      }
+      const roleSelect = target ? target.closest("select[data-phase-role-input]") : null;
+      if (roleSelect) {
+        savePhaseRoleCell(roleSelect).catch((err) => setStatus(err.message || String(err), "err"));
       }
     });
 
@@ -12324,7 +12482,7 @@ def _epics_management_settings_html() -> str:
   <link rel="stylesheet" href="/shared-nav.css">
   <link rel="stylesheet" href="/material-symbols.css">
   <style>
-    :root { --bg:#f5f7fb; --card:#fff; --line:#d1d9e8; --text:#0f172a; --muted:#475569; --brand:#1d4ed8; --ok:#166534; --warn:#92400e; --head:#eff6ff; --sticky:#f8fbff; --plan:#eef4ff; --epics-static-min-width:1420px; --epics-plan-col-min-width:170px; --epics-table-min-width:2610px; }
+    :root { --bg:#f5f7fb; --card:#fff; --line:#d1d9e8; --text:#0f172a; --muted:#475569; --brand:#1d4ed8; --ok:#166534; --warn:#92400e; --head:#eff6ff; --sticky:#f8fbff; --plan:#eef4ff; --most-likely-bg:#ffedd5; --tk-budgeted-bg:#dcfce7; --phase-group-line:#64748b; --epics-static-min-width:1420px; --epics-plan-col-min-width:170px; --epics-table-min-width:2610px; }
     * { box-sizing:border-box; }
     body { margin:0; padding:0; background:linear-gradient(180deg,#f3f7ff,#f8fbff); color:var(--text); font-family:"Segoe UI",Tahoma,sans-serif; }
     .card { width:100%; max-width:none; margin:0; border:1px solid var(--line); border-left:none; border-right:none; border-radius:0; background:var(--card); padding:16px; }
@@ -12418,17 +12576,26 @@ def _epics_management_settings_html() -> str:
     .jira-edit { border-color:#cbd5e1; color:#334155; background:#fff; }
     .plan-cell { display:grid; gap:4px; }
     .plan-cell-actions { display:flex; justify-content:flex-end; gap:4px; }
-    .plan-btn { width:100%; border:1px solid #bfdbfe; background:var(--plan); color:#1e3a8a; border-radius:8px; text-align:left; padding:6px; cursor:pointer; min-height:42px; max-height:60px; overflow-y:auto; }
+    .plan-btn { width:100%; border:1px solid #fed7aa; background:var(--most-likely-bg); color:#000; border-radius:8px; text-align:left; padding:6px; cursor:pointer; min-height:42px; max-height:60px; overflow-y:auto; }
     .plan-empty { color:#475569; font-size:.76rem; }
     .plan-summary { font-size:.74rem; line-height:1.2; }
-    .plan-summary b { color:#1e3a8a; }
+    .plan-summary b { color:#000; }
     .plan-main { display:flex; align-items:center; gap:6px; justify-content:space-between; }
     .plan-toggle { width:18px; height:18px; border:1px solid #bfdbfe; border-radius:6px; background:#fff; color:#1e3a8a; font-size:12px; line-height:1; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; padding:0; }
     .plan-dates { margin-top:4px; }
     .plan-col-head { position:sticky; top:0; z-index:3; }
     .plan-col-head, .plan-col-cell { min-width:var(--epics-plan-col-min-width); width:var(--epics-plan-col-min-width); }
+    .plan-col-head.plan-layer-most-likely, .plan-col-cell.plan-layer-most-likely { background:var(--most-likely-bg) !important; color:#000; }
+    .plan-col-head.plan-layer-tk-budgeted, .plan-col-cell.plan-layer-tk-budgeted { background:var(--tk-budgeted-bg) !important; color:#000; }
+    .plan-col-head.plan-layer-summary, .plan-col-cell.plan-layer-summary { background:#dbeafe !important; color:#000; }
+    .plan-col-head.plan-pair-start, .plan-col-cell.plan-pair-start { border-left:3px solid var(--phase-group-line); }
+    .plan-col-head.plan-pair-end, .plan-col-cell.plan-pair-end { border-right:3px solid var(--phase-group-line); }
+    .plan-col-head.plan-layer-most-likely .plan-label,
+    .plan-col-head.plan-layer-tk-budgeted .plan-label,
+    .plan-col-head.plan-layer-summary .plan-label { color:#000; }
     .plan-col-head .plan-head-wrap { position:relative; min-height:20px; display:flex; align-items:center; justify-content:center; }
-    .plan-col-head .plan-label { pointer-events:none; }
+    .plan-col-head .plan-label { pointer-events:none; display:flex; flex-direction:column; gap:2px; align-items:center; text-align:center; line-height:1.1; }
+    .plan-col-head .plan-layer { color:#111827; font-size:.62rem; font-weight:700; }
     .plan-col-head .plan-head-actions { position:absolute; right:2px; top:50%; transform:translateY(-50%); display:flex; gap:3px; }
     .plan-col-head.dragging { opacity:.55; background:#dbeafe; }
     .plan-col-head.drop-target { outline:2px solid #2563eb; outline-offset:-2px; }
@@ -12465,7 +12632,8 @@ def _epics_management_settings_html() -> str:
     .epic-row.epic-sealed td select:disabled,
     .epic-row.epic-sealed td input:disabled { cursor:not-allowed; opacity:0.85; background:#f1f5f9; }
     .epic-row.epic-sealed [contenteditable="false"] { cursor:default; background:#f1f5f9; }
-    .plan-summary-readonly { padding:6px 8px; font-size:.78rem; color:var(--text); min-height:42px; }
+    .plan-summary-readonly { padding:6px 8px; font-size:.78rem; color:#000; min-height:42px; border-radius:8px; }
+    .plan-summary-readonly.tk-budgeted { background:var(--tk-budgeted-bg); border:1px solid #86efac; }
     .actions-cell { min-width:52px; }
     .actions-menu-wrap { position:relative; display:inline-block; }
     .actions-menu-btn { width:32px; height:32px; }
@@ -12595,8 +12763,8 @@ def _epics_management_settings_html() -> str:
     </div>
     <div class="modal-body">
       <div>
-        <label for="plan-mandays">Approved man-days</label>
-        <input id="plan-mandays" type="number" min="0" step="0.5" placeholder="e.g. 12" title="Leadership-approved man-days for this plan">
+        <label for="plan-mandays">Most Likely man-days</label>
+        <input id="plan-mandays" type="number" min="0" step="0.5" placeholder="e.g. 12" title="Most likely man-days for this phase">
       </div>
       <div>
         <label for="plan-start">Start Date</label>
@@ -12747,13 +12915,18 @@ def _epics_management_settings_html() -> str:
     const IPP_MEETING_PLANNED_OPTIONS = ["No", "Yes"];
     const DELIVERY_STATUS_OPTIONS = ["Late", "On-track", "Yet to start"];
     const DEFAULT_PLAN_COLUMNS = [
-      { key: "epic_plan", label: "Epic Plan", jira_link_enabled: false, is_default: true },
-      { key: "research_urs_plan", label: "Research/URS Plan", jira_link_enabled: true, is_default: true },
-      { key: "dds_plan", label: "DDS Plan", jira_link_enabled: true, is_default: true },
-      { key: "development_plan", label: "Development Plan", jira_link_enabled: true, is_default: true },
-      { key: "sqa_plan", label: "SQA Plan", jira_link_enabled: true, is_default: true },
-      { key: "user_manual_plan", label: "User Manual Plan", jira_link_enabled: true, is_default: true },
-      { key: "production_plan", label: "Production Plan", jira_link_enabled: true, is_default: true },
+      { key: "epic_plan", label: "Epic Plan", jira_link_enabled: false, is_default: true, phase_role: "summary", most_likely_enabled: false, tk_budgeted_enabled: true },
+      { key: "process_design", label: "Process Design", jira_link_enabled: false, is_default: true, phase_role: "most_likely_input", most_likely_enabled: true, tk_budgeted_enabled: true },
+      { key: "research_urs_plan", label: "R/URS", jira_link_enabled: true, is_default: true, phase_role: "most_likely_input", most_likely_enabled: true, tk_budgeted_enabled: true },
+      { key: "dds_plan", label: "R/DDS", jira_link_enabled: true, is_default: true, phase_role: "most_likely_input", most_likely_enabled: true, tk_budgeted_enabled: true },
+      { key: "development_plan", label: "Dev", jira_link_enabled: true, is_default: true, phase_role: "most_likely_input", most_likely_enabled: true, tk_budgeted_enabled: true },
+      { key: "qa_handover", label: "Handover", jira_link_enabled: false, is_default: true, phase_role: "formula_managed", most_likely_enabled: false, tk_budgeted_enabled: true },
+      { key: "sqa_plan", label: "SQA", jira_link_enabled: true, is_default: true, phase_role: "most_likely_input", most_likely_enabled: true, tk_budgeted_enabled: true },
+      { key: "bug_fixing", label: "Bug Fixing", jira_link_enabled: false, is_default: true, phase_role: "formula_managed", most_likely_enabled: false, tk_budgeted_enabled: true },
+      { key: "process_qa_testing", label: "Process QA Testing", jira_link_enabled: false, is_default: true, phase_role: "most_likely_input", most_likely_enabled: true, tk_budgeted_enabled: true },
+      { key: "user_manual_plan", label: "Doc / User Manual", jira_link_enabled: true, is_default: true, phase_role: "most_likely_input", most_likely_enabled: true, tk_budgeted_enabled: true },
+      { key: "regression_sqa_testing", label: "Regression SQA Testing", jira_link_enabled: false, is_default: true, phase_role: "most_likely_input", most_likely_enabled: true, tk_budgeted_enabled: true },
+      { key: "production_plan", label: "Release", jira_link_enabled: true, is_default: true, phase_role: "formula_managed", most_likely_enabled: false, tk_budgeted_enabled: true },
     ];
     const EPICS_STATIC_COL_MIN_WIDTH = 1420;
     const EPICS_PLAN_COL_MIN_WIDTH = 170;
@@ -12907,7 +13080,7 @@ def _epics_management_settings_html() -> str:
       return '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M9 3h6l1 2h4v2H4V5h4l1-2zm1 6h2v8h-2V9zm4 0h2v8h-2V9zM7 9h2v8H7V9z"/></svg>';
     }
     function applyPlanColumnLayout() {
-      const planCount = Math.max(PLAN_COLUMNS.length, 1);
+      const planCount = Math.max(planLayerColumns().length, 1);
       const viewportWidth = Math.max(window.innerWidth || 0, 1024);
       const availableForPlans = Math.max(viewportWidth - 240 - EPICS_STATIC_COL_MIN_WIDTH, EPICS_PLAN_COL_MIN_WIDTH * planCount);
       const computedPlanWidth = Math.max(
@@ -12918,15 +13091,63 @@ def _epics_management_settings_html() -> str:
       document.documentElement.style.setProperty("--epics-plan-col-min-width", String(computedPlanWidth) + "px");
       document.documentElement.style.setProperty("--epics-table-min-width", String(tableMinWidth) + "px");
     }
+    function normalizePlanColumnMeta(item) {
+      const key = String(item && item.key || "").trim();
+      const label = String(item && item.label || item && item.key || "").trim();
+      const phaseRole = String(item && item.phase_role || (key === "epic_plan" ? "summary" : "most_likely_input")).trim();
+      return {
+        key,
+        label,
+        jira_link_enabled: !!(item && item.jira_link_enabled),
+        is_default: !!(item && item.is_default),
+        is_locked: item && item.hasOwnProperty("is_locked") ? !!item.is_locked : !!(item && item.is_default),
+        is_active: item && item.hasOwnProperty("is_active") ? !!item.is_active : true,
+        sort_order: Number(item && item.sort_order || 0),
+        base_phase_key: String(item && item.base_phase_key || key).trim(),
+        base_phase_label: String(item && item.base_phase_label || label || key).trim(),
+        phase_role: phaseRole,
+        most_likely_enabled: item && item.hasOwnProperty("most_likely_enabled") ? !!item.most_likely_enabled : phaseRole !== "summary",
+        tk_budgeted_enabled: item && item.hasOwnProperty("tk_budgeted_enabled") ? !!item.tk_budgeted_enabled : true,
+        formula_role: String(item && item.formula_role || "").trim(),
+        estimate_percent: item && item.estimate_percent != null ? Number(item.estimate_percent) : null,
+        fixed_man_days: item && item.fixed_man_days != null ? Number(item.fixed_man_days) : null,
+      };
+    }
+    function planLayerColumns() {
+      const layers = [];
+      PLAN_COLUMNS.forEach((col) => {
+        if (!col || !col.key) return;
+        if (col.phase_role === "summary" || col.key === "epic_plan") {
+          layers.push({ col, layer: "summary" });
+          return;
+        }
+        if (col.most_likely_enabled) layers.push({ col, layer: "most_likely" });
+        if (col.tk_budgeted_enabled) layers.push({ col, layer: "tk_budgeted" });
+      });
+      return layers;
+    }
+    function planLayerCssClasses(planCol, layer) {
+      const activeLayer = String(layer || "");
+      const layerClass = activeLayer === "most_likely"
+        ? "plan-layer-most-likely"
+        : (activeLayer === "tk_budgeted" ? "plan-layer-tk-budgeted" : "plan-layer-summary");
+      const startsPhaseGroup = activeLayer === "summary" || activeLayer === "most_likely" || !planCol.most_likely_enabled;
+      const endsPhaseGroup = activeLayer === "summary" || activeLayer === "tk_budgeted" || !planCol.tk_budgeted_enabled;
+      return layerClass + (startsPhaseGroup ? " plan-pair-start" : "") + (endsPhaseGroup ? " plan-pair-end" : "");
+    }
+    function planLayerCount() {
+      return planLayerColumns().length;
+    }
     function renderManageColumnsTable() {
       if (!manageColumnsTbodyEl) return;
       const html = PLAN_COLUMNS.map((col, index) => {
         const key = String(col && col.key || "").trim();
         const label = String(col && col.label || key).trim();
         const isDefault = !!(col && col.is_default);
+        const isLocked = !!(col && col.is_locked);
         const jiraEnabled = !!(col && col.jira_link_enabled);
-        const actionHtml = isDefault
-          ? '<span style="display:inline-flex;align-items:center;gap:6px;"><button class="icon-btn danger" type="button" disabled title="Default column is locked">' + planColumnTrashIconSvg() + '</button><span class="muted">Locked</span></span>'
+        const actionHtml = isLocked
+          ? '<span style="display:inline-flex;align-items:center;gap:6px;"><button class="icon-btn danger" type="button" disabled title="Column is locked">' + planColumnTrashIconSvg() + '</button><span class="muted">Locked</span></span>'
           : '<button class="icon-btn danger" type="button" data-delete-plan-key="' + esc(key) + '" data-delete-plan-label="' + esc(label) + '" title="Delete column">' + planColumnTrashIconSvg() + "</button>";
         return ""
           + "<tr>"
@@ -12944,8 +13165,8 @@ def _epics_management_settings_html() -> str:
       const key = String(columnKey || "").trim();
       if (!key) throw new Error("Plan column key is required.");
       const column = PLAN_COLUMNS.find((item) => String(item && item.key || "") === key);
-      if (column && column.is_default) {
-        throw new Error("Default plan columns cannot be deleted.");
+      if (column && column.is_locked) {
+        throw new Error("Locked plan columns cannot be deleted. Unlock the phase in Epic Phases first.");
       }
       const label = String(columnLabel || (column && (column.label || column.key)) || key);
       if (!window.confirm('Delete plan column "' + label + '"? This removes it from Epics Planner.')) return;
@@ -13023,7 +13244,7 @@ def _epics_management_settings_html() -> str:
     function openPlanColumnDialog(insertPosition) {
       activePlanInsertPosition = Number(insertPosition) || (PLAN_COLUMNS.length + 1);
       planColumnNameEl.value = "";
-      planColumnJiraEnabledEl.checked = false;
+      planColumnJiraEnabledEl.checked = true;
       renderPlanColumnPositionOptions(activePlanInsertPosition);
       refreshPlanColumnRestoreHint();
       planColumnDialogEl.showModal();
@@ -13055,12 +13276,7 @@ def _epics_management_settings_html() -> str:
       const body = await resp.json().catch(() => ({}));
       if (!resp.ok) throw new Error(String(body.error || "Failed to reorder plan columns."));
       const cols = Array.isArray(body.columns) ? body.columns : [];
-      PLAN_COLUMNS = cols.map((item) => ({
-        key: String(item && item.key || "").trim(),
-        label: String(item && item.label || item && item.key || "").trim(),
-        jira_link_enabled: !!(item && item.jira_link_enabled),
-        is_default: !!(item && item.is_default),
-      })).filter((item) => item.key);
+      PLAN_COLUMNS = cols.map((item) => normalizePlanColumnMeta(item)).filter((item) => item.key);
       PLAN_JIRA_COLUMN_KEYS = new Set(
         PLAN_COLUMNS.filter((item) => item && item.jira_link_enabled).map((item) => item.key)
       );
@@ -13070,15 +13286,24 @@ def _epics_management_settings_html() -> str:
       renderTable();
     }
     function renderPlanHeaders() {
-      const planHeaders = PLAN_COLUMNS.map((col, idx) => {
-        const deleteBtn = !col.is_default
+      const planHeaders = planLayerColumns().map((layerItem) => {
+        const col = layerItem.col;
+        const idx = PLAN_COLUMNS.findIndex((item) => item && item.key === col.key);
+        const layer = layerItem.layer;
+        const layerLabel = layer === "most_likely" ? "Most Likely" : layer === "tk_budgeted" ? "TK Budgeted" : "Summary";
+        const deleteBtn = !col.is_locked
           ? '<button class="icon-btn danger" type="button" data-delete-plan-key="' + esc(col.key) + '" data-delete-plan-label="' + esc(col.label || col.key || "Plan") + '" title="Delete column">' + planColumnTrashIconSvg() + "</button>"
-          : '<button class="icon-btn danger" type="button" disabled title="Default column is locked">' + planColumnTrashIconSvg() + "</button>";
+          : '<button class="icon-btn danger" type="button" disabled title="Column is locked">' + planColumnTrashIconSvg() + "</button>";
         const insertBeforeBtn = '<button class="plan-insert-handle" type="button" data-insert-position="' + (idx + 1) + '" title="Add column here">+</button>';
         const insertAfterBtn = idx === PLAN_COLUMNS.length - 1
           ? '<button class="plan-insert-handle after" type="button" data-insert-position="' + (PLAN_COLUMNS.length + 1) + '" title="Add column here">+</button>'
           : "";
-        return '<th class="plan-col-head" draggable="true" data-plan-key="' + esc(col.key) + '" data-plan-index="' + idx + '"><div class="plan-head-wrap">' + insertBeforeBtn + '<span class="plan-label">' + esc(col.label || col.key || "Plan") + '</span><span class="plan-head-actions">' + deleteBtn + '</span>' + insertAfterBtn + "</div></th>";
+        const canManage = layer === "summary" || layer === "most_likely" || !col.most_likely_enabled;
+        return '<th class="plan-col-head ' + planLayerCssClasses(col, layer) + '" draggable="true" data-plan-key="' + esc(col.key) + '" data-plan-layer="' + esc(layer) + '" data-plan-index="' + idx + '"><div class="plan-head-wrap">'
+          + (canManage ? insertBeforeBtn : "")
+          + '<span class="plan-label"><span>' + esc(col.label || col.key || "Plan") + '</span><span class="plan-layer">' + esc(layerLabel) + '</span></span>'
+          + (canManage ? '<span class="plan-head-actions">' + deleteBtn + '</span>' + insertAfterBtn : "")
+          + "</div></th>";
       }).join("");
       headerRowEl.innerHTML = ""
         + "<th title=\\"Select epics to seal\\">Select</th>"
@@ -13194,13 +13419,8 @@ def _epics_management_settings_html() -> str:
       if (!resp.ok) throw new Error(String(body.error || "Failed to load plan columns."));
       const cols = Array.isArray(body.columns) ? body.columns : [];
       PLAN_COLUMNS = cols.length
-        ? cols.map((item) => ({
-            key: String(item && item.key || "").trim(),
-            label: String(item && item.label || item && item.key || "").trim(),
-            jira_link_enabled: !!(item && item.jira_link_enabled),
-            is_default: !!(item && item.is_default),
-          })).filter((item) => item.key)
-        : DEFAULT_PLAN_COLUMNS.slice();
+        ? cols.map((item) => normalizePlanColumnMeta(item)).filter((item) => item.key)
+        : DEFAULT_PLAN_COLUMNS.map((item) => normalizePlanColumnMeta(item));
       PLAN_JIRA_COLUMN_KEYS = new Set(
         PLAN_COLUMNS.filter((item) => item && item.jira_link_enabled).map((item) => item.key)
       );
@@ -13455,39 +13675,51 @@ def _epics_management_settings_html() -> str:
     const GROUP_TOTAL_PLAN_KEY = "epic_plan";
     function computeGroupManDaysTotals(rowIndexes) {
       const totals = {};
-      PLAN_COLUMNS.forEach((col) => { totals[col.key] = 0; });
+      PLAN_COLUMNS.forEach((col) => {
+        totals[col.key] = { most_likely: 0, tk_budgeted: 0, summary: 0 };
+      });
       for (const rowIndex of rowIndexes) {
         const row = rows[rowIndex];
         if (!row) continue;
         for (const col of PLAN_COLUMNS) {
           const plan = ((row.plans || {})[col.key]) || {};
-          const manDays = parseManDaysValue(plan.man_days);
-          if (manDays == null) continue;
-          totals[col.key] += manDays;
+          const mostLikely = parseManDaysValue(plan.most_likely_man_days);
+          const tkBudgeted = parseManDaysValue(plan.tk_budgeted_man_days != null && plan.tk_budgeted_man_days !== "" ? plan.tk_budgeted_man_days : plan.man_days);
+          if (mostLikely != null) totals[col.key].most_likely += mostLikely;
+          if (tkBudgeted != null) totals[col.key].tk_budgeted += tkBudgeted;
+          totals[col.key].summary = totals[col.key].tk_budgeted;
         }
       }
-      const overall = totals[GROUP_TOTAL_PLAN_KEY] || 0;
+      const overall = (totals[GROUP_TOTAL_PLAN_KEY] && totals[GROUP_TOTAL_PLAN_KEY].tk_budgeted) || 0;
       return { totals, overall };
     }
     function renderGroupPlanTotalCells(groupTotals) {
-      return PLAN_COLUMNS.map((col) => {
-        const total = groupTotals && groupTotals.totals ? groupTotals.totals[col.key] : 0;
-        return '<td class="plan-col-cell"><div class="group-plan-total"><b>' + esc(formatManDaysValue(total)) + '</b><span>md</span></div></td>';
+      return planLayerColumns().map((layerItem) => {
+        const col = layerItem.col;
+        const totals = groupTotals && groupTotals.totals ? groupTotals.totals[col.key] : null;
+        const total = totals ? (totals[layerItem.layer] || 0) : 0;
+        return '<td class="plan-col-cell ' + planLayerCssClasses(col, layerItem.layer) + '"><div class="group-plan-total"><b>' + esc(formatManDaysValue(total)) + '</b><span>md</span></div></td>';
       }).join("");
     }
     function planCellStateKey(rowIndex, planKey) {
       return String(rowIndex) + "::" + String(planKey || "");
     }
-    function planSummary(plan, rowIndex, planKey) {
-      const hasManDays = !(plan == null || plan.man_days == null || String(plan.man_days) === "");
+    function planSummary(plan, rowIndex, planKey, layer) {
+      const activeLayer = String(layer || "most_likely");
+      const manDaysValue = activeLayer === "most_likely"
+        ? (plan && plan.most_likely_man_days)
+        : (activeLayer === "summary"
+            ? (plan && plan.tk_approved_man_days != null && String(plan.tk_approved_man_days) !== "" ? plan.tk_approved_man_days : plan && plan.tk_budgeted_man_days)
+            : (plan && plan.tk_budgeted_man_days != null && String(plan.tk_budgeted_man_days) !== "" ? plan.tk_budgeted_man_days : plan && plan.man_days));
+      const hasManDays = !(plan == null || manDaysValue == null || String(manDaysValue) === "");
       if (!hasManDays) {
-        return '<span class="plan-empty">Set plan details</span>';
+        return '<span class="plan-empty">' + (activeLayer === "tk_budgeted" ? "Computed after Most Likely" : "Set plan details") + "</span>";
       }
-      const manDays = String(plan.man_days);
-      const startIso = toDateValue(plan && plan.start_date);
-      const dueIso = toDateValue(plan && plan.due_date);
+      const manDays = String(manDaysValue);
+      const startIso = toDateValue(activeLayer === "tk_budgeted" ? (plan && plan.tk_budgeted_start_date) : (plan && plan.start_date));
+      const dueIso = toDateValue(activeLayer === "tk_budgeted" ? (plan && plan.tk_budgeted_due_date) : (plan && plan.due_date));
       const hasAnyDate = !!(startIso || dueIso);
-      const stateKey = planCellStateKey(rowIndex, planKey);
+      const stateKey = planCellStateKey(rowIndex, planKey + "::" + activeLayer);
       const isExpanded = expandedPlanDetails.has(stateKey);
       const toggle = hasAnyDate
         ? '<button class="plan-toggle" type="button" data-plan-toggle="' + esc(stateKey) + '" aria-label="Toggle dates">' + (isExpanded ? "▾" : "▸") + "</button>"
@@ -13498,7 +13730,15 @@ def _epics_management_settings_html() -> str:
             + (dueIso ? '<div><b>Due:</b> ' + esc(formatDateDisplay(dueIso)) + "</div>" : "")
           + "</div>"
         : "";
-      return '<div class="plan-summary"><div class="plan-main"><div><b>Approved md:</b> ' + esc(manDays) + "</div>" + toggle + "</div>" + dates + "</div>";
+      if (activeLayer === "summary") {
+        const optimistic = plan && plan.optimistic_man_days != null ? plan.optimistic_man_days : "";
+        const pessimistic = plan && plan.pessimistic_man_days != null ? plan.pessimistic_man_days : "";
+        const calculated = plan && plan.calculated_man_days != null ? plan.calculated_man_days : "";
+        const mostLikely = plan && plan.most_likely_man_days != null ? plan.most_likely_man_days : "";
+        return '<div class="plan-summary"><div><b>Most Likely:</b> ' + esc(String(mostLikely)) + '</div><div><b>Optimistic:</b> ' + esc(String(optimistic)) + '</div><div><b>Pessimistic:</b> ' + esc(String(pessimistic)) + '</div><div><b>Calculated:</b> ' + esc(String(calculated)) + '</div><div class="plan-main"><div><b>TK Approved:</b> ' + esc(manDays) + "</div>" + toggle + "</div>" + dates + "</div>";
+      }
+      const label = activeLayer === "tk_budgeted" ? "TK Budgeted md" : "Most Likely md";
+      return '<div class="plan-summary"><div class="plan-main"><div><b>' + esc(label) + ":</b> " + esc(manDays) + "</div>" + toggle + "</div>" + dates + "</div>";
     }
     function isPlanJiraEnabled(planKey) {
       return PLAN_JIRA_COLUMN_KEYS.has(String(planKey || ""));
@@ -13512,19 +13752,20 @@ def _epics_management_settings_html() -> str:
         return "";
       }
     }
-    function renderPlanCell(rowIndex, planCol, row, effectivelySealed) {
+    function renderPlanLayerCell(rowIndex, planCol, row, effectivelySealed, layer) {
       const plan = (row.plans || {})[planCol.key] || {};
-      const summary = planSummary(plan, rowIndex, planCol.key);
-      if (effectivelySealed) {
-        return '<td class="plan-col-cell"><div class="plan-summary-readonly">' + summary + "</div></td>";
+      const summary = planSummary(plan, rowIndex, planCol.key, layer);
+      const cellClasses = "plan-col-cell " + planLayerCssClasses(planCol, layer);
+      if (layer === "summary" || layer === "tk_budgeted" || effectivelySealed) {
+        return '<td class="' + cellClasses + '"><div class="plan-summary-readonly ' + (layer === "tk_budgeted" ? "tk-budgeted" : "") + '">' + summary + "</div></td>";
       }
       if (!isPlanJiraEnabled(planCol.key)) {
-        return '<td class="plan-col-cell"><button class="plan-btn" type="button" data-row-index="' + rowIndex + '" data-plan-key="' + esc(planCol.key) + '">' + summary + "</button></td>";
+        return '<td class="' + cellClasses + '"><button class="plan-btn" type="button" data-row-index="' + rowIndex + '" data-plan-key="' + esc(planCol.key) + '">' + summary + "</button></td>";
       }
       const jiraUrl = planJiraUrl(plan);
       const hasJira = !!jiraUrl;
       return ''
-        + '<td class="plan-col-cell">'
+        + '<td class="' + cellClasses + '">'
         + '  <div class="plan-cell">'
         + '    <button class="plan-btn" type="button" data-row-index="' + rowIndex + '" data-plan-key="' + esc(planCol.key) + '">' + summary + "</button>"
         + '    <div class="plan-cell-actions">'
@@ -13533,6 +13774,16 @@ def _epics_management_settings_html() -> str:
         + "    </div>"
         + "  </div>"
         + "</td>";
+    }
+    function renderPlanCell(rowIndex, planCol, row, effectivelySealed) {
+      const cells = [];
+      if (planCol.phase_role === "summary" || planCol.key === "epic_plan") {
+        cells.push(renderPlanLayerCell(rowIndex, planCol, row, effectivelySealed, "summary"));
+      } else {
+        if (planCol.most_likely_enabled) cells.push(renderPlanLayerCell(rowIndex, planCol, row, effectivelySealed, "most_likely"));
+        if (planCol.tk_budgeted_enabled) cells.push(renderPlanLayerCell(rowIndex, planCol, row, true, "tk_budgeted"));
+      }
+      return cells.join("");
     }
     function setPlanJiraUrl(rowIndex, planKey) {
       const row = rows[rowIndex];
@@ -13546,9 +13797,13 @@ def _epics_management_settings_html() -> str:
       try {
         const valid = validateJiraUrl(next);
         row.plans[planKey] = {
+          most_likely_man_days: currentPlan.most_likely_man_days == null ? (currentPlan.man_days == null ? "" : currentPlan.man_days) : currentPlan.most_likely_man_days,
           man_days: currentPlan.man_days == null ? "" : currentPlan.man_days,
+          tk_budgeted_man_days: currentPlan.tk_budgeted_man_days == null ? "" : currentPlan.tk_budgeted_man_days,
           start_date: String(currentPlan.start_date || ""),
           due_date: String(currentPlan.due_date || ""),
+          tk_budgeted_start_date: String(currentPlan.tk_budgeted_start_date || currentPlan.start_date || ""),
+          tk_budgeted_due_date: String(currentPlan.tk_budgeted_due_date || currentPlan.due_date || ""),
           jira_url: valid,
         };
         const rowOverride = ensureRowOverride(row);
@@ -13692,10 +13947,8 @@ def _epics_management_settings_html() -> str:
         + '<span class="material-symbols-outlined">settings</span></button>'
         + '<div class="actions-menu-dropdown" role="menu">' + menuItems + '</div>'
         + '</div></td>';
-      /* When sealed, only these columns stay editable: Description, Originator, Priority, Plan Status */
       const sealedDisable = effectivelySealed;
-      const sealedAllowEdit = false; /* allowed columns never disabled by seal */
-      const ceAllowed = "true"; /* description & originator always editable */
+      const ceAllowed = effectivelySealed ? "false" : "true";
       return ""
         + '<tr class="epic-row' + altClass + sealedClass + '" data-row-index="' + rowIndex + '" data-epic-key="' + esc(epicKey) + '" data-project-node-key="' + esc(projectNodeKey(project)) + '" data-category-node-key="' + esc(categoryNodeKey(project, category)) + '" data-component-node-key="' + esc(componentNodeKey(project, category, component)) + '">'
         + '<td><input type="checkbox" class="epic-select-cb" data-row-index="' + rowIndex + '" data-epic-key="' + esc(epicKey) + '"' + checked + ' title="Select to seal"></td>'
@@ -13705,8 +13958,8 @@ def _epics_management_settings_html() -> str:
         + "<td>" + renderEpicCell(row, sealedDisable) + "</td>"
         + '<td class="description-cell"><div class="description-editor" contenteditable="' + ceAllowed + '" data-row-index="' + rowIndex + '" data-field="description">' + esc(row.description || "") + "</div></td>"
         + '<td contenteditable="' + ceAllowed + '" data-row-index="' + rowIndex + '" data-field="originator">' + esc(row.originator || "") + "</td>"
-        + "<td>" + renderPrioritySelect(normalizePriority(row.priority), rowIndex, sealedAllowEdit) + "</td>"
-        + "<td>" + renderPlanStatusSelect(normalizePlanStatus(row.plan_status), rowIndex, sealedAllowEdit) + "</td>"
+        + "<td>" + renderPrioritySelect(normalizePriority(row.priority), rowIndex, sealedDisable) + "</td>"
+        + "<td>" + renderPlanStatusSelect(normalizePlanStatus(row.plan_status), rowIndex, sealedDisable) + "</td>"
         + planTds
         + actionsCell
         + "</tr>";
@@ -13731,7 +13984,7 @@ def _epics_management_settings_html() -> str:
     }
     function renderDraftEpicRow() {
       const draft = ensureDraftEpicRow();
-      const planTds = PLAN_COLUMNS.map(() => '<td class="plan-col-cell"><span class="plan-empty">Draft</span></td>').join("");
+      const planTds = planLayerColumns().map((layerItem) => '<td class="plan-col-cell ' + planLayerCssClasses(layerItem.col, layerItem.layer) + '"><span class="plan-empty">Draft</span></td>').join("");
       return ""
         + '<tr class="draft-row">'
         + "<td></td>"
@@ -13848,7 +14101,7 @@ def _epics_management_settings_html() -> str:
 
       const html = [];
       if (!grouped.size) {
-        const totalCols = 12 + PLAN_COLUMNS.length;
+        const totalCols = 10 + planLayerCount();
         tbodyEl.innerHTML = '<tr><td colspan="' + totalCols + '" style="text-align:center;color:#64748b;padding:16px;">No epics found in database.</td></tr>';
         return;
       }
@@ -13877,7 +14130,7 @@ def _epics_management_settings_html() -> str:
           '<tr class="group-row project">'
           + '<td></td>'
           + '<td><div class="tree-line"><button class="tree-toggle" type="button" data-toggle-project="' + esc(pKey) + '">' + (pExpanded ? "-" : "+") + '</button><span class="tree-label-project">' + esc(project) + '</span><span class="tree-group-total">Total: ' + esc(formatManDaysValue(projectTotals.overall)) + ' md</span></div></td>'
-          + '<td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>'
+          + '<td></td><td></td><td></td><td></td><td></td><td></td><td></td>'
           + projectPlanTotalTds
           + '<td></td>'
           + '</tr>'
@@ -13895,7 +14148,7 @@ def _epics_management_settings_html() -> str:
             '<tr class="group-row category">'
             + '<td></td><td></td>'
             + '<td><div class="tree-line"><button class="tree-toggle" type="button" data-toggle-category="' + esc(cKey) + '">' + (cExpanded ? "-" : "+") + '</button><span class="tree-label-category">' + esc(category) + '</span><span class="tree-group-total">Total: ' + esc(formatManDaysValue(categoryTotals.overall)) + ' md</span></div></td>'
-            + '<td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>'
+            + '<td></td><td></td><td></td><td></td><td></td><td></td>'
             + categoryPlanTotalTds
             + '<td></td>'
             + '</tr>'
@@ -13911,7 +14164,7 @@ def _epics_management_settings_html() -> str:
               '<tr class="group-row component">'
               + '<td></td><td></td><td></td>'
               + '<td><div class="tree-line"><button class="tree-toggle" type="button" data-toggle-component="' + esc(compKey) + '">' + (compExpanded ? "-" : "+") + '</button><span class="tree-label-category">' + esc(component) + '</span><span class="tree-group-total">Total: ' + esc(formatManDaysValue(componentTotals.overall)) + ' md</span></div></td>'
-              + '<td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>'
+              + '<td></td><td></td><td></td><td></td><td></td>'
               + componentPlanTotalTds
               + '<td></td>'
               + '</tr>'
@@ -14288,7 +14541,10 @@ def _epics_management_settings_html() -> str:
     function payloadFromRow(row) {
       const plans = {};
       PLAN_COLUMNS.forEach((col) => {
-        plans[col.key] = Object.assign({ man_days: "", start_date: "", due_date: "", jira_url: "" }, (row.plans || {})[col.key] || {});
+        plans[col.key] = Object.assign(
+          { most_likely_man_days: "", man_days: "", tk_budgeted_man_days: "", start_date: "", due_date: "", tk_budgeted_start_date: "", tk_budgeted_due_date: "", jira_url: "" },
+          (row.plans || {})[col.key] || {}
+        );
       });
       return {
         epic_key: String(row.epic_key || row.id || "").toUpperCase(),
@@ -14500,7 +14756,7 @@ def _epics_management_settings_html() -> str:
       Object.keys(planJiraUrls).forEach((planKey) => {
         const existing = (basePlans[planKey] && typeof basePlans[planKey] === "object") ? basePlans[planKey] : {};
         plans[planKey] = Object.assign(
-          { man_days: "", start_date: "", due_date: "", jira_url: "" },
+          { most_likely_man_days: "", man_days: "", tk_budgeted_man_days: "", start_date: "", due_date: "", tk_budgeted_start_date: "", tk_budgeted_due_date: "", jira_url: "" },
           existing,
           { jira_url: planJiraUrls[planKey] },
         );
@@ -14509,7 +14765,7 @@ def _epics_management_settings_html() -> str:
         const jiraInput = dynamicPlanInputEls[planKey];
         const existing = (basePlans[planKey] && typeof basePlans[planKey] === "object") ? basePlans[planKey] : {};
         plans[planKey] = Object.assign(
-          { man_days: "", start_date: "", due_date: "", jira_url: "" },
+          { most_likely_man_days: "", man_days: "", tk_budgeted_man_days: "", start_date: "", due_date: "", tk_budgeted_start_date: "", tk_budgeted_due_date: "", jira_url: "" },
           existing,
           {
             jira_url: validateJiraUrl(jiraInput.value),
@@ -14566,11 +14822,15 @@ def _epics_management_settings_html() -> str:
       const row = rows[rowIndex];
       const planMeta = PLAN_COLUMNS.find((x) => x.key === planKey);
       if (!row || !planMeta) return;
+      if (!planMeta.most_likely_enabled || planMeta.phase_role === "summary" || planMeta.key === "epic_plan") {
+        setStatus((planMeta.label || "This phase") + " is computed and cannot be edited directly.", "warn");
+        return;
+      }
       activePlan = { rowIndex, planKey };
       const plan = ((row.plans || {})[planKey]) || {};
-      planTitleEl.textContent = "Edit " + planMeta.label;
+      planTitleEl.textContent = "Edit Most Likely " + planMeta.label;
       planContextEl.textContent = (row.project_name || row.project_key || "-") + " / " + (row.product_category || "-") + " / " + (row.component || "-") + " / " + (row.epic_name || row.epic_key || "-");
-      planMandaysEl.value = plan.man_days == null ? "" : String(plan.man_days);
+      planMandaysEl.value = plan.most_likely_man_days == null ? (plan.man_days == null ? "" : String(plan.man_days)) : String(plan.most_likely_man_days);
       planStartEl.value = toDateValue(plan.start_date);
       planDueEl.value = toDateValue(plan.due_date);
       planDialogEl.showModal();
@@ -14597,11 +14857,16 @@ def _epics_management_settings_html() -> str:
         return;
       }
       row.plans = row.plans || {};
+      const currentPlan = (row.plans || {})[activePlan.planKey] || {};
       row.plans[activePlan.planKey] = {
-        man_days: manDaysRaw === "" ? "" : manDays,
+        most_likely_man_days: manDaysRaw === "" ? "" : manDays,
+        man_days: currentPlan.man_days == null ? "" : currentPlan.man_days,
+        tk_budgeted_man_days: currentPlan.tk_budgeted_man_days == null ? "" : currentPlan.tk_budgeted_man_days,
         start_date: startDate,
         due_date: dueDate,
-        jira_url: String(((row.plans || {})[activePlan.planKey] || {}).jira_url || ""),
+        tk_budgeted_start_date: String(currentPlan.tk_budgeted_start_date || startDate || ""),
+        tk_budgeted_due_date: String(currentPlan.tk_budgeted_due_date || dueDate || ""),
+        jira_url: String(currentPlan.jira_url || ""),
       };
       const rowOverride = ensureRowOverride(row);
       rowOverride.plans = Object.assign({}, rowOverride.plans || {}, { [activePlan.planKey]: row.plans[activePlan.planKey] });
@@ -14616,7 +14881,17 @@ def _epics_management_settings_html() -> str:
       if (!row || !activePlan.planKey) return;
       const rowIndex = activePlan.rowIndex;
       row.plans = row.plans || {};
-      row.plans[activePlan.planKey] = { man_days: "", start_date: "", due_date: "", jira_url: "" };
+      const currentPlan = (row.plans || {})[activePlan.planKey] || {};
+      row.plans[activePlan.planKey] = {
+        most_likely_man_days: "",
+        man_days: currentPlan.man_days == null ? "" : currentPlan.man_days,
+        tk_budgeted_man_days: currentPlan.tk_budgeted_man_days == null ? "" : currentPlan.tk_budgeted_man_days,
+        start_date: "",
+        due_date: "",
+        tk_budgeted_start_date: "",
+        tk_budgeted_due_date: "",
+        jira_url: String(currentPlan.jira_url || ""),
+      };
       const rowOverride = ensureRowOverride(row);
       rowOverride.plans = Object.assign({}, rowOverride.plans || {}, { [activePlan.planKey]: row.plans[activePlan.planKey] });
       saveOverrides();
@@ -16864,13 +17139,66 @@ def _ipp_meeting_planned_for_epics_management(value: object) -> str:
 
 
 _EPICS_MANAGEMENT_DEFAULT_PLAN_COLUMNS: tuple[dict[str, object], ...] = (
-    {"key": "epic_plan", "label": "Epic Plan", "jira_link_enabled": False, "sort_order": 0},
-    {"key": "research_urs_plan", "label": "Research/URS Plan", "jira_link_enabled": True, "sort_order": 1},
-    {"key": "dds_plan", "label": "DDS Plan", "jira_link_enabled": True, "sort_order": 2},
-    {"key": "development_plan", "label": "Development Plan", "jira_link_enabled": True, "sort_order": 3},
-    {"key": "sqa_plan", "label": "SQA Plan", "jira_link_enabled": True, "sort_order": 4},
-    {"key": "user_manual_plan", "label": "User Manual Plan", "jira_link_enabled": True, "sort_order": 5},
-    {"key": "production_plan", "label": "Production Plan", "jira_link_enabled": True, "sort_order": 6},
+    {
+        "key": "epic_plan", "label": "Epic Plan", "jira_link_enabled": False, "sort_order": 0,
+        "base_phase_key": "epic", "base_phase_label": "Epic", "phase_role": "summary",
+        "most_likely_enabled": False, "tk_budgeted_enabled": True, "formula_role": "summary",
+    },
+    {
+        "key": "process_design", "label": "Process Design", "jira_link_enabled": False, "sort_order": 1,
+        "base_phase_key": "process_design", "base_phase_label": "Process Design", "phase_role": "most_likely_input",
+        "most_likely_enabled": True, "tk_budgeted_enabled": True, "formula_role": "direct",
+    },
+    {
+        "key": "research_urs_plan", "label": "R/URS", "jira_link_enabled": True, "sort_order": 2,
+        "base_phase_key": "research_urs", "base_phase_label": "R/URS", "phase_role": "most_likely_input",
+        "most_likely_enabled": True, "tk_budgeted_enabled": True, "formula_role": "percentage_if_input", "estimate_percent": 5.0,
+    },
+    {
+        "key": "dds_plan", "label": "R/DDS", "jira_link_enabled": True, "sort_order": 3,
+        "base_phase_key": "dds", "base_phase_label": "R/DDS", "phase_role": "most_likely_input",
+        "most_likely_enabled": True, "tk_budgeted_enabled": True, "formula_role": "percentage_if_input", "estimate_percent": 10.0,
+    },
+    {
+        "key": "development_plan", "label": "Dev", "jira_link_enabled": True, "sort_order": 4,
+        "base_phase_key": "development", "base_phase_label": "Dev", "phase_role": "most_likely_input",
+        "most_likely_enabled": True, "tk_budgeted_enabled": True, "formula_role": "dev_sqa_split",
+    },
+    {
+        "key": "qa_handover", "label": "Handover", "jira_link_enabled": False, "sort_order": 5,
+        "base_phase_key": "handover", "base_phase_label": "Handover", "phase_role": "formula_managed",
+        "most_likely_enabled": False, "tk_budgeted_enabled": True, "formula_role": "fixed_if_dev", "fixed_man_days": 0.5,
+    },
+    {
+        "key": "sqa_plan", "label": "SQA", "jira_link_enabled": True, "sort_order": 6,
+        "base_phase_key": "sqa", "base_phase_label": "SQA", "phase_role": "most_likely_input",
+        "most_likely_enabled": True, "tk_budgeted_enabled": True, "formula_role": "dev_sqa_split",
+    },
+    {
+        "key": "bug_fixing", "label": "Bug Fixing", "jira_link_enabled": False, "sort_order": 7,
+        "base_phase_key": "bug_fixing", "base_phase_label": "Bug Fixing", "phase_role": "formula_managed",
+        "most_likely_enabled": False, "tk_budgeted_enabled": True, "formula_role": "percentage_always", "estimate_percent": 15.0,
+    },
+    {
+        "key": "process_qa_testing", "label": "Process QA Testing", "jira_link_enabled": False, "sort_order": 8,
+        "base_phase_key": "process_qa_testing", "base_phase_label": "Process QA Testing", "phase_role": "most_likely_input",
+        "most_likely_enabled": True, "tk_budgeted_enabled": True, "formula_role": "direct",
+    },
+    {
+        "key": "user_manual_plan", "label": "Doc / User Manual", "jira_link_enabled": True, "sort_order": 9,
+        "base_phase_key": "doc_user_manual", "base_phase_label": "Doc / User Manual", "phase_role": "most_likely_input",
+        "most_likely_enabled": True, "tk_budgeted_enabled": True, "formula_role": "percentage_if_input", "estimate_percent": 5.0,
+    },
+    {
+        "key": "regression_sqa_testing", "label": "Regression SQA Testing", "jira_link_enabled": False, "sort_order": 10,
+        "base_phase_key": "regression_sqa_testing", "base_phase_label": "Regression SQA Testing", "phase_role": "most_likely_input",
+        "most_likely_enabled": True, "tk_budgeted_enabled": True, "formula_role": "percentage_if_input", "estimate_percent": 10.0,
+    },
+    {
+        "key": "production_plan", "label": "Release", "jira_link_enabled": True, "sort_order": 11,
+        "base_phase_key": "release", "base_phase_label": "Release", "phase_role": "formula_managed",
+        "most_likely_enabled": False, "tk_budgeted_enabled": True, "formula_role": "fixed_if_tk", "fixed_man_days": 2.0,
+    },
 )
 _EPICS_MANAGEMENT_LEGACY_PLAN_JSON_COLUMN_BY_KEY: dict[str, str] = {
     "epic_plan": "epic_plan_json",
@@ -16883,6 +17211,16 @@ _EPICS_MANAGEMENT_LEGACY_PLAN_JSON_COLUMN_BY_KEY: dict[str, str] = {
 }
 _EPICS_MANAGEMENT_DEFAULT_PLAN_KEYS = tuple(
     item["key"] for item in _EPICS_MANAGEMENT_DEFAULT_PLAN_COLUMNS if _to_text(item.get("key"))
+)
+_EPICS_MANAGEMENT_PHASE_META_BY_KEY: dict[str, dict[str, object]] = {
+    _to_text(item.get("key")): item
+    for item in _EPICS_MANAGEMENT_DEFAULT_PLAN_COLUMNS
+    if _to_text(item.get("key"))
+}
+_TK_INPUT_PHASE_KEYS: tuple[str, ...] = tuple(
+    _to_text(item.get("key"))
+    for item in _EPICS_MANAGEMENT_DEFAULT_PLAN_COLUMNS
+    if bool(item.get("most_likely_enabled")) and _to_text(item.get("key"))
 )
 _EPIC_KEY_PATTERN = re.compile(r"^[A-Z0-9]+-\d+$")
 _TMP_EPIC_KEY_PATTERN = re.compile(r"^TMP-\d{8}T\d{6}Z-[A-Z0-9]{6}$")
@@ -16963,12 +17301,16 @@ def _normalize_plan_column_label(value: object) -> str:
 
 
 def _normalize_plan_column_jira_enabled(value: object) -> int:
+    if value is None:
+        return 1
     if isinstance(value, bool):
         return 1 if value else 0
     text = _to_text(value).casefold()
     if text in {"1", "true", "yes", "y"}:
         return 1
-    return 0
+    if text in {"0", "false", "no", "n"}:
+        return 0
+    return 1
 
 
 def _normalize_plan_column_insert_position(value: object, total_count: int) -> int:
@@ -16989,9 +17331,30 @@ def _is_tmp_epic_key(value: object) -> bool:
 
 def _load_epics_plan_columns_from_conn(conn: sqlite3.Connection, include_inactive: bool = False) -> list[dict[str, object]]:
     where_sql = "" if include_inactive else "WHERE is_active = 1"
+    table_cols = {str(row[1]) for row in conn.execute("PRAGMA table_info(epics_management_plan_columns)").fetchall()}
+    optional_exprs = {
+        "base_phase_key": "base_phase_key" if "base_phase_key" in table_cols else "'' AS base_phase_key",
+        "base_phase_label": "base_phase_label" if "base_phase_label" in table_cols else "label AS base_phase_label",
+        "is_locked": "is_locked" if "is_locked" in table_cols else "is_default AS is_locked",
+        "phase_role": "phase_role" if "phase_role" in table_cols else "'most_likely_input' AS phase_role",
+        "most_likely_enabled": "most_likely_enabled" if "most_likely_enabled" in table_cols else "1 AS most_likely_enabled",
+        "tk_budgeted_enabled": "tk_budgeted_enabled" if "tk_budgeted_enabled" in table_cols else "1 AS tk_budgeted_enabled",
+        "formula_role": "formula_role" if "formula_role" in table_cols else "'' AS formula_role",
+        "estimate_percent": "estimate_percent" if "estimate_percent" in table_cols else "NULL AS estimate_percent",
+        "fixed_man_days": "fixed_man_days" if "fixed_man_days" in table_cols else "NULL AS fixed_man_days",
+    }
     rows = conn.execute(
         f"""
-        SELECT column_key, label, jira_link_enabled, is_default, is_active, sort_order
+        SELECT column_key, label, jira_link_enabled, is_default, is_active, sort_order,
+               {optional_exprs["is_locked"]},
+               {optional_exprs["base_phase_key"]},
+               {optional_exprs["base_phase_label"]},
+               {optional_exprs["phase_role"]},
+               {optional_exprs["most_likely_enabled"]},
+               {optional_exprs["tk_budgeted_enabled"]},
+               {optional_exprs["formula_role"]},
+               {optional_exprs["estimate_percent"]},
+               {optional_exprs["fixed_man_days"]}
         FROM epics_management_plan_columns
         {where_sql}
         ORDER BY sort_order ASC, lower(label) ASC, column_key ASC
@@ -17005,6 +17368,15 @@ def _load_epics_plan_columns_from_conn(conn: sqlite3.Connection, include_inactiv
             "is_default": bool(int(row[3] or 0)),
             "is_active": bool(int(row[4] or 0)),
             "sort_order": int(row[5] or 0),
+            "is_locked": bool(int(row[6] or 0)),
+            "base_phase_key": _to_text(row[7]) or _to_text(row[0]),
+            "base_phase_label": _to_text(row[8]) or _to_text(row[1]),
+            "phase_role": _to_text(row[9]) or "most_likely_input",
+            "most_likely_enabled": bool(int(row[10] or 0)),
+            "tk_budgeted_enabled": bool(int(row[11] or 0)),
+            "formula_role": _to_text(row[12]),
+            "estimate_percent": None if row[13] is None else float(row[13]),
+            "fixed_man_days": None if row[14] is None else float(row[14]),
         }
         for row in rows
     ]
@@ -17025,11 +17397,19 @@ def _seed_default_epics_plan_columns(conn: sqlite3.Connection) -> None:
         key = _to_text(col.get("key"))
         if not key:
             continue
+        base_phase_key = _to_text(col.get("base_phase_key")) or key
+        base_phase_label = _to_text(col.get("base_phase_label")) or _to_text(col.get("label"))
+        phase_role = _to_text(col.get("phase_role")) or "most_likely_input"
+        formula_role = _to_text(col.get("formula_role"))
+        estimate_percent = col.get("estimate_percent")
+        fixed_man_days = col.get("fixed_man_days")
         conn.execute(
             """
             INSERT OR IGNORE INTO epics_management_plan_columns (
-                column_key, label, jira_link_enabled, is_default, is_active, sort_order, created_at_utc, updated_at_utc
-            ) VALUES (?, ?, ?, 1, 1, ?, ?, ?)
+                column_key, label, jira_link_enabled, is_default, is_locked, is_active, sort_order, created_at_utc, updated_at_utc,
+                base_phase_key, base_phase_label, phase_role, most_likely_enabled, tk_budgeted_enabled,
+                formula_role, estimate_percent, fixed_man_days
+            ) VALUES (?, ?, ?, 1, 1, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 key,
@@ -17038,6 +17418,42 @@ def _seed_default_epics_plan_columns(conn: sqlite3.Connection) -> None:
                 int(col.get("sort_order") or 0),
                 now_utc,
                 now_utc,
+                base_phase_key,
+                base_phase_label,
+                phase_role,
+                1 if bool(col.get("most_likely_enabled")) else 0,
+                1 if bool(col.get("tk_budgeted_enabled")) else 0,
+                formula_role,
+                None if estimate_percent is None else float(estimate_percent),
+                None if fixed_man_days is None else float(fixed_man_days),
+            ),
+        )
+        conn.execute(
+            """
+            UPDATE epics_management_plan_columns
+            SET is_default=1,
+                updated_at_utc=?,
+                base_phase_key=?,
+                base_phase_label=?,
+                phase_role=?,
+                most_likely_enabled=?,
+                tk_budgeted_enabled=?,
+                formula_role=?,
+                estimate_percent=?,
+                fixed_man_days=?
+            WHERE column_key=?
+            """,
+            (
+                now_utc,
+                base_phase_key,
+                base_phase_label,
+                phase_role,
+                1 if bool(col.get("most_likely_enabled")) else 0,
+                1 if bool(col.get("tk_budgeted_enabled")) else 0,
+                formula_role,
+                None if estimate_percent is None else float(estimate_percent),
+                None if fixed_man_days is None else float(fixed_man_days),
+                key,
             ),
         )
 
@@ -17049,8 +17465,9 @@ def _backfill_legacy_epics_plan_values(conn: sqlite3.Connection, epics_columns: 
             continue
         conn.execute(
             f"""
-            INSERT OR IGNORE INTO epics_management_plan_values (epic_key, column_key, plan_json, created_at_utc, updated_at_utc)
+            INSERT OR IGNORE INTO epics_management_plan_values (epic_row_id, epic_key, column_key, plan_json, created_at_utc, updated_at_utc)
             SELECT
+                COALESCE(id, epic_key),
                 epic_key,
                 ?,
                 COALESCE(NULLIF(TRIM({legacy_col}), ''), '{{}}'),
@@ -17220,15 +17637,27 @@ def _update_epics_plan_column(settings_db_path: Path, column_key: str, payload: 
     raw = payload if isinstance(payload, dict) else {}
     has_label = "label" in raw
     has_jira_enabled = "jira_link_enabled" in raw
-    if not has_label and not has_jira_enabled:
-        raise ValueError("At least one field is required: label, jira_link_enabled.")
+    has_is_locked = "is_locked" in raw
+    has_phase_role = "phase_role" in raw
+    if not has_label and not has_jira_enabled and not has_is_locked and not has_phase_role:
+        raise ValueError("At least one field is required: label, jira_link_enabled, is_locked, phase_role.")
+
+    next_phase_role = None
+    if has_phase_role:
+        role_raw = _to_text(raw.get("phase_role")).strip().lower()
+        allowed_roles = ("most_likely_input", "formula_managed", "summary")
+        if role_raw not in allowed_roles:
+            raise ValueError(
+                "phase_role must be one of: " + ", ".join(allowed_roles) + "."
+            )
+        next_phase_role = role_raw
 
     conn = sqlite3.connect(settings_db_path)
     conn.row_factory = sqlite3.Row
     try:
         row = conn.execute(
             """
-            SELECT column_key, label, jira_link_enabled, is_default, is_active, sort_order
+            SELECT column_key, label, jira_link_enabled, is_default, is_active, sort_order, is_locked, phase_role
             FROM epics_management_plan_columns
             WHERE column_key=?
             """,
@@ -17255,14 +17684,21 @@ def _update_epics_plan_column(settings_db_path: Path, column_key: str, payload: 
         if has_jira_enabled:
             next_jira_enabled = _normalize_plan_column_jira_enabled(raw.get("jira_link_enabled"))
 
+        next_is_locked = int(row["is_locked"] if "is_locked" in row.keys() else 0)
+        if has_is_locked:
+            next_is_locked = 1 if raw.get("is_locked") else 0
+
+        current_phase_role = _to_text(row["phase_role"] if "phase_role" in row.keys() else "") or "most_likely_input"
+        final_phase_role = next_phase_role if has_phase_role else current_phase_role
+
         now_utc = _utc_now_iso()
         conn.execute(
             """
             UPDATE epics_management_plan_columns
-            SET label=?, jira_link_enabled=?, updated_at_utc=?
+            SET label=?, jira_link_enabled=?, is_locked=?, phase_role=?, updated_at_utc=?
             WHERE column_key=?
             """,
-            (next_label, next_jira_enabled, now_utc, key),
+            (next_label, next_jira_enabled, next_is_locked, final_phase_role, now_utc, key),
         )
         conn.commit()
         rows = _load_epics_plan_columns_from_conn(conn, include_inactive=True)
@@ -17287,7 +17723,7 @@ def _delete_epics_plan_column(settings_db_path: Path, column_key: str) -> list[d
     try:
         row = conn.execute(
             """
-            SELECT column_key, label, is_default, is_active
+            SELECT column_key, label, is_default, is_active, is_locked
             FROM epics_management_plan_columns
             WHERE column_key=?
             """,
@@ -17295,8 +17731,8 @@ def _delete_epics_plan_column(settings_db_path: Path, column_key: str) -> list[d
         ).fetchone()
         if not row:
             raise LookupError(f"Plan column '{key}' not found.")
-        if bool(int(row["is_default"] or 0)):
-            raise ValueError("Default plan columns cannot be deleted.")
+        if bool(int(row["is_locked"] or 0)):
+            raise ValueError("Locked plan columns cannot be deleted.")
         if not bool(int(row["is_active"] or 0)):
             return _load_epics_plan_columns_from_conn(conn, include_inactive=False)
 
@@ -17599,7 +18035,7 @@ def _ipp_meeting_planner_add_epic(
         # Prefill builder values from Epics Planner when the dropped epic has existing values there.
         planner_row = conn.execute(
             """
-            SELECT project_key, project_name, epic_name, delivery_status, remarks, actual_production_date, epic_plan_json
+            SELECT id, project_key, project_name, epic_name, delivery_status, remarks, actual_production_date, epic_plan_json
             FROM epics_management
             WHERE UPPER(epic_key) = ?
             LIMIT 1
@@ -17635,13 +18071,19 @@ def _ipp_meeting_planner_add_epic(
                 if not due_date_n:
                     due_date_n = _to_text(planner_epic_plan.get("due_date")).strip()
 
+        # Determine epic_row_id from epics_management (fall back to epic_key when absent)
+        epic_row_id_n = _to_text(planner_row["id"]).strip() if planner_row is not None and "id" in planner_row.keys() else ""
+        if not epic_row_id_n:
+            epic_row_id_n = epic_key_n
+
         conn.execute(
             """
             INSERT INTO ipp_meeting_epics (
-                meeting_id, epic_key, project_key, project_name, epic_name, display_order, include_on_dashboard,
+                meeting_id, epic_row_id, epic_key, project_key, project_name, epic_name, display_order, include_on_dashboard,
                 delivery_status, remarks_rich_text, start_date, due_date, actual_production_date
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(meeting_id, epic_key) DO UPDATE SET
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(meeting_id, epic_row_id) DO UPDATE SET
+                epic_key=excluded.epic_key,
                 project_key=excluded.project_key, project_name=excluded.project_name, epic_name=excluded.epic_name,
                 display_order=excluded.display_order, include_on_dashboard=excluded.include_on_dashboard,
                 delivery_status=excluded.delivery_status, remarks_rich_text=excluded.remarks_rich_text,
@@ -17649,6 +18091,7 @@ def _ipp_meeting_planner_add_epic(
             """,
             (
                 meeting_id,
+                epic_row_id_n,
                 epic_key_n,
                 project_key_n,
                 project_name_n,
@@ -17665,11 +18108,11 @@ def _ipp_meeting_planner_add_epic(
         conn.commit()
         row = conn.execute(
             """
-            SELECT meeting_id, epic_key, project_key, project_name, epic_name, display_order, include_on_dashboard,
+            SELECT meeting_id, epic_row_id, epic_key, project_key, project_name, epic_name, display_order, include_on_dashboard,
                    delivery_status, remarks_rich_text, start_date, due_date, actual_production_date
-            FROM ipp_meeting_epics WHERE meeting_id = ? AND epic_key = ?
+            FROM ipp_meeting_epics WHERE meeting_id = ? AND epic_row_id = ?
             """,
-            (meeting_id, epic_key_n),
+            (meeting_id, epic_row_id_n),
         ).fetchone()
         return dict(zip(row.keys(), row)) if row else None
     finally:
@@ -17816,7 +18259,8 @@ def _init_epics_management_db(settings_db_path: Path) -> None:
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS epics_management (
-                epic_key TEXT PRIMARY KEY,
+        id TEXT PRIMARY KEY,
+        epic_key TEXT NOT NULL,
                 project_key TEXT NOT NULL,
                 project_name TEXT NOT NULL,
                 product_category TEXT NOT NULL,
@@ -17837,7 +18281,8 @@ def _init_epics_management_db(settings_db_path: Path) -> None:
                 development_plan_json TEXT NOT NULL DEFAULT '{}',
                 sqa_plan_json TEXT NOT NULL DEFAULT '{}',
                 user_manual_plan_json TEXT NOT NULL DEFAULT '{}',
-                production_plan_json TEXT NOT NULL DEFAULT '{}'
+                production_plan_json TEXT NOT NULL DEFAULT '{}',
+                is_sealed INTEGER NOT NULL DEFAULT 0
             )
             """
         )
@@ -17845,7 +18290,8 @@ def _init_epics_management_db(settings_db_path: Path) -> None:
             """
             CREATE TABLE IF NOT EXISTS epics_management_story_sync (
                 story_key TEXT PRIMARY KEY,
-                epic_key TEXT NOT NULL,
+                epic_row_id TEXT NOT NULL DEFAULT '',
+                epic_key TEXT NOT NULL DEFAULT '',
                 project_key TEXT NOT NULL DEFAULT '',
                 story_name TEXT NOT NULL DEFAULT '',
                 story_status TEXT NOT NULL DEFAULT '',
@@ -17888,8 +18334,17 @@ def _init_epics_management_db(settings_db_path: Path) -> None:
                 label TEXT NOT NULL,
                 jira_link_enabled INTEGER NOT NULL DEFAULT 0,
                 is_default INTEGER NOT NULL DEFAULT 0,
+                is_locked INTEGER NOT NULL DEFAULT 0,
                 is_active INTEGER NOT NULL DEFAULT 1,
                 sort_order INTEGER NOT NULL DEFAULT 0,
+                base_phase_key TEXT NOT NULL DEFAULT '',
+                base_phase_label TEXT NOT NULL DEFAULT '',
+                phase_role TEXT NOT NULL DEFAULT 'most_likely_input',
+                most_likely_enabled INTEGER NOT NULL DEFAULT 1,
+                tk_budgeted_enabled INTEGER NOT NULL DEFAULT 1,
+                formula_role TEXT NOT NULL DEFAULT '',
+                estimate_percent REAL,
+                fixed_man_days REAL,
                 created_at_utc TEXT NOT NULL,
                 updated_at_utc TEXT NOT NULL
             )
@@ -17898,12 +18353,13 @@ def _init_epics_management_db(settings_db_path: Path) -> None:
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS epics_management_plan_values (
-                epic_key TEXT NOT NULL,
+            epic_row_id TEXT NOT NULL DEFAULT '',
+            epic_key TEXT NOT NULL DEFAULT '',
                 column_key TEXT NOT NULL,
                 plan_json TEXT NOT NULL DEFAULT '{}',
                 created_at_utc TEXT NOT NULL,
                 updated_at_utc TEXT NOT NULL,
-                PRIMARY KEY(epic_key, column_key)
+            PRIMARY KEY(epic_row_id, column_key)
             )
             """
         )
@@ -17920,17 +18376,27 @@ def _init_epics_management_db(settings_db_path: Path) -> None:
             """
         )
         conn.execute(
+          """
+          CREATE INDEX IF NOT EXISTS idx_epics_management_plan_values_epic_key
+          ON epics_management_plan_values(epic_key)
+          """
+        )
+        conn.execute(
             """
             CREATE TABLE IF NOT EXISTS epics_management_approved_dates (
-                epic_key TEXT NOT NULL,
+            epic_row_id TEXT NOT NULL DEFAULT '',
+            epic_key TEXT NOT NULL DEFAULT '',
                 approved_at_utc TEXT NOT NULL,
                 snapshot_json TEXT NOT NULL DEFAULT '{}',
-                PRIMARY KEY(epic_key, approved_at_utc)
+            PRIMARY KEY(epic_row_id, approved_at_utc)
             )
             """
         )
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_epics_management_approved_dates_utc ON epics_management_approved_dates(approved_at_utc)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_epics_management_approved_dates_epic_key ON epics_management_approved_dates(epic_key)"
         )
         conn.execute(
             """
@@ -17951,7 +18417,8 @@ def _init_epics_management_db(settings_db_path: Path) -> None:
             """
             CREATE TABLE IF NOT EXISTS ipp_meeting_epics (
                 meeting_id INTEGER NOT NULL,
-                epic_key TEXT NOT NULL,
+            epic_row_id TEXT NOT NULL DEFAULT '',
+            epic_key TEXT NOT NULL,
                 project_key TEXT NOT NULL,
                 project_name TEXT NOT NULL DEFAULT '',
                 epic_name TEXT NOT NULL DEFAULT '',
@@ -17962,17 +18429,22 @@ def _init_epics_management_db(settings_db_path: Path) -> None:
                 start_date TEXT NOT NULL DEFAULT '',
                 due_date TEXT NOT NULL DEFAULT '',
                 actual_production_date TEXT NOT NULL DEFAULT '',
-                PRIMARY KEY(meeting_id, epic_key)
+                PRIMARY KEY(meeting_id, epic_row_id)
             )
             """
         )
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_ipp_meeting_epics_meeting_id ON ipp_meeting_epics(meeting_id)"
         )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_ipp_meeting_epics_epic_key ON ipp_meeting_epics(epic_key)"
+        )
         columns = conn.execute("PRAGMA table_info(epics_management)").fetchall()
         names = {str(col[1]) for col in columns}
         col_defaults = {str(col[1]): col[4] for col in columns}
         needs_rebuild = (
+            "id" not in names
+            or
             "source_workbook" in names
             or "source_sheet" in names
             or ("created_at_utc" in names and col_defaults.get("created_at_utc") is None)
@@ -17981,7 +18453,8 @@ def _init_epics_management_db(settings_db_path: Path) -> None:
             conn.execute(
                 """
                 CREATE TABLE epics_management_v2 (
-                    epic_key TEXT PRIMARY KEY,
+                    id TEXT PRIMARY KEY,
+                    epic_key TEXT NOT NULL,
                     project_key TEXT NOT NULL,
                     project_name TEXT NOT NULL,
                     product_category TEXT NOT NULL,
@@ -18002,7 +18475,8 @@ def _init_epics_management_db(settings_db_path: Path) -> None:
                     development_plan_json TEXT NOT NULL DEFAULT '{}',
                     sqa_plan_json TEXT NOT NULL DEFAULT '{}',
                     user_manual_plan_json TEXT NOT NULL DEFAULT '{}',
-                    production_plan_json TEXT NOT NULL DEFAULT '{}'
+                    production_plan_json TEXT NOT NULL DEFAULT '{}',
+                    is_sealed INTEGER NOT NULL DEFAULT 0
                 )
                 """
             )
@@ -18013,12 +18487,14 @@ def _init_epics_management_db(settings_db_path: Path) -> None:
                 "development_plan_json", "sqa_plan_json", "production_plan_json",
             ]
             _v2_opt = {
+                "id": "epic_key",
                 "component": "''",
                 "plan_status": "'Not Planned Yet'",
                 "ipp_meeting_planned": "'No'",
                 "actual_production_date": "''",
                 "remarks": "''",
                 "user_manual_plan_json": "'{}'",
+                "is_sealed": "0",
             }
             select_exprs = list(_v2_cols)
             for col_name, fallback in _v2_opt.items():
@@ -18037,6 +18513,8 @@ def _init_epics_management_db(settings_db_path: Path) -> None:
             conn.execute("ALTER TABLE epics_management_v2 RENAME TO epics_management")
             columns = conn.execute("PRAGMA table_info(epics_management)").fetchall()
             names = {str(col[1]) for col in columns}
+        if "id" not in names:
+            raise RuntimeError("Failed to initialize epics_management.id column.")
         if "plan_status" not in names:
             conn.execute("ALTER TABLE epics_management ADD COLUMN plan_status TEXT NOT NULL DEFAULT 'Not Planned Yet'")
         if "ipp_meeting_planned" not in names:
@@ -18053,9 +18531,157 @@ def _init_epics_management_db(settings_db_path: Path) -> None:
             conn.execute("ALTER TABLE epics_management ADD COLUMN component TEXT NOT NULL DEFAULT ''")
         if "is_sealed" not in names:
             conn.execute("ALTER TABLE epics_management ADD COLUMN is_sealed INTEGER NOT NULL DEFAULT 0")
+        story_sync_cols = {str(col[1]) for col in conn.execute("PRAGMA table_info(epics_management_story_sync)").fetchall()}
+        if "epic_row_id" not in story_sync_cols:
+          conn.execute(
+            """
+            CREATE TABLE epics_management_story_sync_v2 (
+              story_key TEXT PRIMARY KEY,
+              epic_row_id TEXT NOT NULL DEFAULT '',
+              epic_key TEXT NOT NULL DEFAULT '',
+              project_key TEXT NOT NULL DEFAULT '',
+              story_name TEXT NOT NULL DEFAULT '',
+              story_status TEXT NOT NULL DEFAULT '',
+              jira_url TEXT NOT NULL DEFAULT '',
+              start_date TEXT NOT NULL DEFAULT '',
+              due_date TEXT NOT NULL DEFAULT '',
+              estimate_hours REAL NOT NULL DEFAULT 0,
+              payload_json TEXT NOT NULL DEFAULT '{}',
+              synced_at_utc TEXT NOT NULL DEFAULT ''
+            )
+            """
+          )
+          conn.execute(
+            """
+            INSERT INTO epics_management_story_sync_v2 (
+              story_key, epic_row_id, epic_key, project_key, story_name, story_status,
+              jira_url, start_date, due_date, estimate_hours, payload_json, synced_at_utc
+            )
+            SELECT s.story_key, COALESCE(em.id, s.epic_key), s.epic_key, s.project_key, s.story_name, s.story_status,
+                 s.jira_url, s.start_date, s.due_date, s.estimate_hours, s.payload_json, s.synced_at_utc
+            FROM epics_management_story_sync s
+            LEFT JOIN epics_management em ON UPPER(em.epic_key) = UPPER(s.epic_key)
+            """
+          )
+          conn.execute("DROP TABLE epics_management_story_sync")
+          conn.execute("ALTER TABLE epics_management_story_sync_v2 RENAME TO epics_management_story_sync")
+        plan_value_cols = {str(col[1]) for col in conn.execute("PRAGMA table_info(epics_management_plan_values)").fetchall()}
+        if "epic_row_id" not in plan_value_cols:
+          conn.execute(
+            """
+            CREATE TABLE epics_management_plan_values_v2 (
+              epic_row_id TEXT NOT NULL DEFAULT '',
+              epic_key TEXT NOT NULL DEFAULT '',
+              column_key TEXT NOT NULL,
+              plan_json TEXT NOT NULL DEFAULT '{}',
+              created_at_utc TEXT NOT NULL,
+              updated_at_utc TEXT NOT NULL,
+              PRIMARY KEY(epic_row_id, column_key)
+            )
+            """
+          )
+          conn.execute(
+            """
+            INSERT INTO epics_management_plan_values_v2 (
+              epic_row_id, epic_key, column_key, plan_json, created_at_utc, updated_at_utc
+            )
+            SELECT COALESCE(em.id, pv.epic_key), pv.epic_key, pv.column_key, pv.plan_json, pv.created_at_utc, pv.updated_at_utc
+            FROM epics_management_plan_values pv
+            LEFT JOIN epics_management em ON UPPER(em.epic_key) = UPPER(pv.epic_key)
+            """
+          )
+          conn.execute("DROP TABLE epics_management_plan_values")
+          conn.execute("ALTER TABLE epics_management_plan_values_v2 RENAME TO epics_management_plan_values")
+        approved_cols = {str(col[1]) for col in conn.execute("PRAGMA table_info(epics_management_approved_dates)").fetchall()}
+        if "epic_row_id" not in approved_cols:
+          conn.execute(
+            """
+            CREATE TABLE epics_management_approved_dates_v2 (
+              epic_row_id TEXT NOT NULL DEFAULT '',
+              epic_key TEXT NOT NULL DEFAULT '',
+              approved_at_utc TEXT NOT NULL,
+              snapshot_json TEXT NOT NULL DEFAULT '{}',
+              PRIMARY KEY(epic_row_id, approved_at_utc)
+            )
+            """
+          )
+          conn.execute(
+            """
+            INSERT INTO epics_management_approved_dates_v2 (
+              epic_row_id, epic_key, approved_at_utc, snapshot_json
+            )
+            SELECT COALESCE(em.id, ad.epic_key), ad.epic_key, ad.approved_at_utc, ad.snapshot_json
+            FROM epics_management_approved_dates ad
+            LEFT JOIN epics_management em ON UPPER(em.epic_key) = UPPER(ad.epic_key)
+            """
+          )
+          conn.execute("DROP TABLE epics_management_approved_dates")
+          conn.execute("ALTER TABLE epics_management_approved_dates_v2 RENAME TO epics_management_approved_dates")
+        ipp_meeting_epics_cols = {str(col[1]) for col in conn.execute("PRAGMA table_info(ipp_meeting_epics)").fetchall()}
+        if "epic_row_id" not in ipp_meeting_epics_cols:
+          conn.execute(
+            """
+            CREATE TABLE ipp_meeting_epics_v2 (
+              meeting_id INTEGER NOT NULL,
+              epic_row_id TEXT NOT NULL DEFAULT '',
+              epic_key TEXT NOT NULL,
+              project_key TEXT NOT NULL,
+              project_name TEXT NOT NULL DEFAULT '',
+              epic_name TEXT NOT NULL DEFAULT '',
+              display_order INTEGER NOT NULL DEFAULT 0,
+              include_on_dashboard INTEGER NOT NULL DEFAULT 1,
+              delivery_status TEXT NOT NULL DEFAULT 'Yet to start',
+              remarks_rich_text TEXT NOT NULL DEFAULT '',
+              start_date TEXT NOT NULL DEFAULT '',
+              due_date TEXT NOT NULL DEFAULT '',
+              actual_production_date TEXT NOT NULL DEFAULT '',
+              PRIMARY KEY(meeting_id, epic_row_id)
+            )
+            """
+          )
+          conn.execute(
+            """
+            INSERT INTO ipp_meeting_epics_v2 (
+              meeting_id, epic_row_id, epic_key, project_key, project_name, epic_name,
+              display_order, include_on_dashboard, delivery_status, remarks_rich_text,
+              start_date, due_date, actual_production_date
+            )
+            SELECT ime.meeting_id, COALESCE(em.id, ime.epic_key), ime.epic_key, ime.project_key, ime.project_name, ime.epic_name,
+                 ime.display_order, ime.include_on_dashboard, ime.delivery_status, ime.remarks_rich_text,
+                 ime.start_date, ime.due_date, ime.actual_production_date
+            FROM ipp_meeting_epics ime
+            LEFT JOIN epics_management em ON UPPER(em.epic_key) = UPPER(ime.epic_key)
+            """
+          )
+          conn.execute("DROP TABLE ipp_meeting_epics")
+          conn.execute("ALTER TABLE ipp_meeting_epics_v2 RENAME TO ipp_meeting_epics")
+        plan_column_names = {
+            str(col[1])
+            for col in conn.execute("PRAGMA table_info(epics_management_plan_columns)").fetchall()
+        }
+        plan_column_migrations = {
+            "is_locked": "INTEGER NOT NULL DEFAULT 0",
+            "base_phase_key": "TEXT NOT NULL DEFAULT ''",
+            "base_phase_label": "TEXT NOT NULL DEFAULT ''",
+            "phase_role": "TEXT NOT NULL DEFAULT 'most_likely_input'",
+            "most_likely_enabled": "INTEGER NOT NULL DEFAULT 1",
+            "tk_budgeted_enabled": "INTEGER NOT NULL DEFAULT 1",
+            "formula_role": "TEXT NOT NULL DEFAULT ''",
+            "estimate_percent": "REAL",
+            "fixed_man_days": "REAL",
+        }
+        for col_name, ddl in plan_column_migrations.items():
+            if col_name not in plan_column_names:
+                conn.execute(f"ALTER TABLE epics_management_plan_columns ADD COLUMN {col_name} {ddl}")
+                if col_name == "is_locked":
+                    conn.execute("UPDATE epics_management_plan_columns SET is_locked = COALESCE(is_default, 0)")
         _seed_default_epics_plan_columns(conn)
         _backfill_legacy_epics_plan_values(conn, names)
         _bootstrap_ipp_meetings_if_empty(conn)
+        # Indexes that depend on epic_row_id must be created after the migration block above.
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_epics_management_story_sync_epic_row_id ON epics_management_story_sync(epic_row_id)"
+        )
         conn.commit()
     finally:
         conn.close()
@@ -18082,62 +18708,70 @@ def _jira_adf_to_text(value: object) -> str:
     return ""
 
 
-def _upsert_epics_management_story_sync_rows(settings_db_path: Path, epic_key: str, rows: list[dict]) -> int:
-    _init_epics_management_db(settings_db_path)
-    normalized_epic_key = _normalize_epic_key(epic_key)
-    story_rows = [row for row in (rows or []) if _to_text(row.get("story_key"))]
-    conn = sqlite3.connect(settings_db_path)
-    try:
-        now_utc = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-        story_keys = sorted({_to_text(row.get("story_key")).upper() for row in story_rows if _to_text(row.get("story_key"))})
-        if story_keys:
-            placeholders = ",".join("?" for _ in story_keys)
-            conn.execute(
-                f"DELETE FROM epics_management_story_sync WHERE epic_key=? AND story_key NOT IN ({placeholders})",
-                [normalized_epic_key, *story_keys],
-            )
-        else:
-            conn.execute("DELETE FROM epics_management_story_sync WHERE epic_key=?", (normalized_epic_key,))
-        for row in story_rows:
-            story_key = _to_text(row.get("story_key")).upper()
-            if not story_key:
-                continue
-            conn.execute(
-                """
-                INSERT INTO epics_management_story_sync (
-                    story_key, epic_key, project_key, story_name, story_status, jira_url,
-                    start_date, due_date, estimate_hours, payload_json, synced_at_utc
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(story_key) DO UPDATE SET
-                    epic_key=excluded.epic_key,
-                    project_key=excluded.project_key,
-                    story_name=excluded.story_name,
-                    story_status=excluded.story_status,
-                    jira_url=excluded.jira_url,
-                    start_date=excluded.start_date,
-                    due_date=excluded.due_date,
-                    estimate_hours=excluded.estimate_hours,
-                    payload_json=excluded.payload_json,
-                    synced_at_utc=excluded.synced_at_utc
-                """,
-                (
-                    story_key,
-                    normalized_epic_key,
-                    _to_text(row.get("project_key")).upper(),
-                    _to_text(row.get("story_name")),
-                    _to_text(row.get("story_status")),
-                    _to_text(row.get("jira_url")),
-                    _to_text(row.get("start_date")),
-                    _to_text(row.get("due_date")),
-                    float(row.get("estimate_hours") or 0.0),
-                    _to_text(row.get("payload_json")) or "{}",
-                    now_utc,
-                ),
-            )
-        conn.commit()
-    finally:
-        conn.close()
-    return len(story_rows)
+def _upsert_epics_management_story_sync_rows(
+  settings_db_path: Path,
+  epic_row_id: str,
+  epic_key: str,
+  rows: list[dict],
+) -> int:
+  _init_epics_management_db(settings_db_path)
+  normalized_row_id = _normalize_epics_management_row_id(epic_row_id)
+  normalized_epic_key = _normalize_epic_key(epic_key)
+  story_rows = [row for row in (rows or []) if _to_text(row.get("story_key"))]
+  conn = sqlite3.connect(settings_db_path)
+  try:
+    now_utc = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    story_keys = sorted({_to_text(row.get("story_key")).upper() for row in story_rows if _to_text(row.get("story_key"))})
+    if story_keys:
+      placeholders = ",".join("?" for _ in story_keys)
+      conn.execute(
+        f"DELETE FROM epics_management_story_sync WHERE epic_row_id=? AND story_key NOT IN ({placeholders})",
+        [normalized_row_id, *story_keys],
+      )
+    else:
+      conn.execute("DELETE FROM epics_management_story_sync WHERE epic_row_id=?", (normalized_row_id,))
+    for row in story_rows:
+      story_key = _to_text(row.get("story_key")).upper()
+      if not story_key:
+        continue
+      conn.execute(
+        """
+        INSERT INTO epics_management_story_sync (
+          story_key, epic_row_id, epic_key, project_key, story_name, story_status, jira_url,
+          start_date, due_date, estimate_hours, payload_json, synced_at_utc
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(story_key) DO UPDATE SET
+          epic_row_id=excluded.epic_row_id,
+          epic_key=excluded.epic_key,
+          project_key=excluded.project_key,
+          story_name=excluded.story_name,
+          story_status=excluded.story_status,
+          jira_url=excluded.jira_url,
+          start_date=excluded.start_date,
+          due_date=excluded.due_date,
+          estimate_hours=excluded.estimate_hours,
+          payload_json=excluded.payload_json,
+          synced_at_utc=excluded.synced_at_utc
+        """,
+        (
+          story_key,
+          normalized_row_id,
+          normalized_epic_key,
+          _to_text(row.get("project_key")).upper(),
+          _to_text(row.get("story_name")),
+          _to_text(row.get("story_status")),
+          _to_text(row.get("jira_url")),
+          _to_text(row.get("start_date")),
+          _to_text(row.get("due_date")),
+          float(row.get("estimate_hours") or 0.0),
+          _to_text(row.get("payload_json")) or "{}",
+          now_utc,
+        ),
+      )
+    conn.commit()
+  finally:
+    conn.close()
+  return len(story_rows)
 
 
 def _normalize_epic_key(value: object) -> str:
@@ -18168,8 +18802,20 @@ def _plan_has_content_for_tmp_reuse(plan_value: object) -> bool:
         plan = _normalize_epics_management_plan(plan_value)
     except Exception:
         return True
-    if plan.get("man_days") not in ("", None):
-        return True
+    man_days = plan.get("man_days")
+    if man_days not in ("", None):
+        try:
+            if float(man_days) > 0:
+                return True
+        except (TypeError, ValueError):
+            return True
+    most_likely = plan.get("most_likely_man_days")
+    if most_likely not in ("", None):
+        try:
+            if float(most_likely) > 0:
+                return True
+        except (TypeError, ValueError):
+            return True
     if _to_text(plan.get("start_date")):
         return True
     if _to_text(plan.get("due_date")):
@@ -18260,585 +18906,667 @@ def _find_vacant_tmp_epic_key_for_reuse(conn: sqlite3.Connection, preferred_key:
 
 
 def _normalize_epics_management_plan(value: object) -> dict:
-    if isinstance(value, str):
-        raw = _to_text(value)
-        if not raw:
-            return {}
-        try:
-            value = json.loads(raw)
-        except Exception:
-            return {}
-    if not isinstance(value, dict):
-        return {}
-    man_days_raw = value.get("man_days")
-    man_days: object = ""
-    if man_days_raw not in (None, ""):
-        try:
-            parsed = float(man_days_raw)
-            if parsed < 0:
-                raise ValueError
-            man_days = round(parsed, 2)
-        except Exception:
-            raise ValueError("plan.man_days must be blank or a number >= 0.")
-    start_date = _to_text(value.get("start_date"))
-    due_date = _to_text(value.get("due_date"))
-    if start_date and not _parse_iso_date(start_date):
-        raise ValueError("plan.start_date must be ISO date YYYY-MM-DD.")
-    if due_date and not _parse_iso_date(due_date):
-        raise ValueError("plan.due_date must be ISO date YYYY-MM-DD.")
-    if start_date and due_date and start_date > due_date:
-        raise ValueError("plan.start_date cannot be after plan.due_date.")
-    jira_url = _to_text(value.get("jira_url"))
-    if jira_url and not re.match(r"^https?://", jira_url, re.IGNORECASE):
-        raise ValueError("plan.jira_url must start with http:// or https://")
-    return {
-        "man_days": man_days,
-        "start_date": start_date,
-        "due_date": due_date,
-        "jira_url": jira_url,
+  if isinstance(value, str):
+    raw = _to_text(value)
+    if not raw:
+      return {}
+    try:
+      value = json.loads(raw)
+    except Exception:
+      return {}
+  if not isinstance(value, dict):
+    return {}
+  has_most_likely_key = "most_likely_man_days" in value
+  most_likely_raw = value.get("most_likely_man_days")
+  if not has_most_likely_key and most_likely_raw in (None, ""):
+    most_likely_raw = value.get("man_days")
+  most_likely_man_days: object = ""
+  if most_likely_raw not in (None, ""):
+    try:
+      parsed = float(most_likely_raw)
+      if parsed < 0:
+        raise ValueError
+      most_likely_man_days = round(parsed, 2)
+    except Exception:
+      raise ValueError("plan.most_likely_man_days must be blank or a number >= 0.")
+  start_date = _to_text(value.get("start_date"))
+  due_date = _to_text(value.get("due_date"))
+  if start_date and not _parse_iso_date(start_date):
+    raise ValueError("plan.start_date must be ISO date YYYY-MM-DD.")
+  if due_date and not _parse_iso_date(due_date):
+    raise ValueError("plan.due_date must be ISO date YYYY-MM-DD.")
+  if start_date and due_date and start_date > due_date:
+    raise ValueError("plan.start_date cannot be after plan.due_date.")
+  jira_url = _to_text(value.get("jira_url"))
+  if jira_url and not re.match(r"^https?://", jira_url, re.IGNORECASE):
+    raise ValueError("plan.jira_url must start with http:// or https://")
+  tk_budgeted_raw = value.get("tk_budgeted_man_days")
+  tk_budgeted_man_days: object = ""
+  if tk_budgeted_raw not in (None, ""):
+    try:
+      parsed_tk = float(tk_budgeted_raw)
+      if parsed_tk < 0:
+        raise ValueError
+      tk_budgeted_man_days = round(parsed_tk, 2)
+    except Exception:
+      tk_budgeted_man_days = ""
+  return {
+    "most_likely_man_days": most_likely_man_days,
+    "man_days": tk_budgeted_man_days if tk_budgeted_man_days != "" else most_likely_man_days,
+    "tk_budgeted_man_days": tk_budgeted_man_days,
+    "start_date": start_date,
+    "due_date": due_date,
+    "tk_budgeted_start_date": _to_text(value.get("tk_budgeted_start_date")) or start_date,
+    "tk_budgeted_due_date": _to_text(value.get("tk_budgeted_due_date")) or due_date,
+    "jira_url": jira_url,
+  }
+
+
+def _normalize_epics_management_row_id(value: object) -> str:
+  text = _to_text(value).strip()
+  if not text:
+    raise ValueError("row id is required.")
+  return text
+
+
+def _generate_epics_management_row_id() -> str:
+  return "epic-row-" + uuid.uuid4().hex
+
+
+def _resolve_epics_management_row(rows: list[dict[str, object]], row_ref: object) -> dict[str, object]:
+  ref = _to_text(row_ref).strip()
+  if not ref:
+    raise LookupError("Epic row id is required.")
+  for row in rows:
+    if _to_text(row.get("id")).strip() == ref:
+      return row
+  ref_key = ref.upper()
+  matches = [row for row in rows if _to_text(row.get("epic_key")).upper() == ref_key]
+  if len(matches) == 1:
+    return matches[0]
+  if len(matches) > 1:
+    raise LookupError("Multiple epics match this identifier. Refresh and retry from the selected row.")
+  raise LookupError(f"Epic '{ref}' not found.")
+
+
+def _plan_number(value: object) -> float:
+  if value in (None, ""):
+    return 0.0
+  try:
+    parsed = float(value)
+  except Exception:
+    return 0.0
+  return parsed if parsed > 0 else 0.0
+
+
+def _plan_has_most_likely_input(plan: dict | None) -> bool:
+  if not isinstance(plan, dict):
+    return False
+  has_most_likely_key = "most_likely_man_days" in plan
+  value = plan.get("most_likely_man_days")
+  if not has_most_likely_key and value in (None, ""):
+    value = plan.get("man_days")
+  return value not in (None, "")
+
+
+def _round_plan_days(value: float) -> float:
+  try:
+    rounded = float(
+      Decimal(str(round(float(value or 0.0), 10))).quantize(
+        Decimal("0.01"),
+        rounding=ROUND_HALF_UP,
+      )
+    )
+  except Exception:
+    rounded = 0.0
+  return 0.0 if abs(rounded) < 0.005 else rounded
+
+
+def _compute_epics_management_tk_budgeted_plans(
+  plans: dict[str, dict],
+  plan_columns: list[dict[str, object]],
+) -> dict[str, dict]:
+  normalized: dict[str, dict] = {
+    _to_text(key): _normalize_epics_management_plan(value)
+    for key, value in (plans or {}).items()
+    if _to_text(key)
+  }
+  col_by_key = {_to_text(col.get("key")): col for col in plan_columns or [] if _to_text(col.get("key"))}
+  for key in col_by_key:
+    normalized.setdefault(key, _normalize_epics_management_plan({}))
+
+  input_total = 0.0
+  for key, col in col_by_key.items():
+    if key == "epic_plan":
+      continue
+    if not bool(col.get("most_likely_enabled")):
+      continue
+    input_total += _plan_number(normalized.get(key, {}).get("most_likely_man_days"))
+
+  optimistic = _round_plan_days(input_total * 0.5)
+  pessimistic = _round_plan_days(input_total * 1.1)
+  calculated = _round_plan_days((optimistic + (4 * input_total) + pessimistic) / 6.0) if input_total else 0.0
+  tk_approved = _round_plan_days(calculated / 2.0)
+
+  def set_tk(key: str, value: float, *, copy_dates_from: str | None = None) -> None:
+    if key not in normalized:
+      return
+    plan = dict(normalized.get(key) or {})
+    source_key = copy_dates_from or key
+    source = normalized.get(source_key) or {}
+    tk_value = _round_plan_days(value)
+    plan["tk_budgeted_man_days"] = tk_value
+    plan["man_days"] = tk_value
+    plan["tk_budgeted_start_date"] = _to_text(source.get("start_date"))
+    plan["tk_budgeted_due_date"] = _to_text(source.get("due_date"))
+    normalized[key] = plan
+
+  reserved = 0.0
+  for key, col in col_by_key.items():
+    if key in {"epic_plan", "development_plan", "sqa_plan"}:
+      continue
+    role = _to_text(col.get("formula_role"))
+    plan = normalized.get(key) or {}
+    next_value = 0.0
+    if role == "direct":
+      next_value = _plan_number(plan.get("most_likely_man_days"))
+    elif role == "percentage_if_input":
+      pct = float(col.get("estimate_percent") or 0.0)
+      next_value = tk_approved * (pct / 100.0) if _plan_has_most_likely_input(plan) else 0.0
+    elif role == "percentage_always":
+      pct = float(col.get("estimate_percent") or 0.0)
+      next_value = tk_approved * (pct / 100.0)
+    elif role == "fixed_if_dev":
+      next_value = float(col.get("fixed_man_days") or 0.0) if _plan_has_most_likely_input(normalized.get("development_plan")) else 0.0
+    elif role == "fixed_if_tk":
+      next_value = float(col.get("fixed_man_days") or 0.0) if tk_approved > 0 else 0.0
+    elif role == "passthrough":
+      next_value = _plan_number(plan.get("most_likely_man_days"))
+    else:
+      next_value = _plan_number(plan.get("most_likely_man_days"))
+    set_tk(key, next_value)
+    reserved += _round_plan_days(next_value)
+
+  remainder = max(0.0, tk_approved - reserved)
+  has_dev = _plan_has_most_likely_input(normalized.get("development_plan"))
+  has_sqa = _plan_has_most_likely_input(normalized.get("sqa_plan"))
+  if has_dev and has_sqa:
+    dev_value = remainder * 40.0 / 55.0
+    sqa_value = remainder * 15.0 / 55.0
+  elif has_sqa and not has_dev:
+    dev_value = 0.0
+    sqa_value = remainder
+  elif has_dev:
+    dev_value = remainder
+    sqa_value = 0.0
+  else:
+    dev_value = 0.0
+    sqa_value = 0.0
+  set_tk("development_plan", dev_value)
+  set_tk("sqa_plan", sqa_value)
+
+  non_epic_dates = [
+    (_to_text(plan.get("start_date")), _to_text(plan.get("due_date")))
+    for key, plan in normalized.items()
+    if key != "epic_plan" and isinstance(plan, dict)
+  ]
+  starts = sorted(start for start, _ in non_epic_dates if start)
+  dues = sorted(due for _, due in non_epic_dates if due)
+  epic_plan = dict(normalized.get("epic_plan") or {})
+  epic_plan.update(
+    {
+      "most_likely_man_days": _round_plan_days(input_total),
+      "tk_budgeted_man_days": tk_approved,
+      "man_days": tk_approved,
+      "optimistic_man_days": optimistic,
+      "pessimistic_man_days": pessimistic,
+      "calculated_man_days": calculated,
+      "tk_approved_man_days": tk_approved,
+      "start_date": starts[0] if starts else _to_text(epic_plan.get("start_date")),
+      "due_date": dues[-1] if dues else _to_text(epic_plan.get("due_date")),
     }
+  )
+  epic_plan["tk_budgeted_start_date"] = _to_text(epic_plan.get("start_date"))
+  epic_plan["tk_budgeted_due_date"] = _to_text(epic_plan.get("due_date"))
+  normalized["epic_plan"] = epic_plan
+  return normalized
 
 
 def _normalize_epics_management_payload(
-    payload: dict,
-    plan_columns: list[dict[str, object]],
-    require_all_fields: bool = True,
+  payload: dict,
+  plan_columns: list[dict[str, object]],
+  require_all_fields: bool = True,
 ) -> dict:
-    raw = payload or {}
-    epic_key = _normalize_epic_key(raw.get("epic_key"))
-    project_key = _to_text(raw.get("project_key")).upper() or _extract_project_key(epic_key)
-    if not project_key:
-        raise ValueError("project_key is required.")
-    project_name = _to_text(raw.get("project_name")) or project_key
-    product_category = _to_text(raw.get("product_category"))
-    component = _to_text(raw.get("component"))
-    epic_name = _to_text(raw.get("epic_name")) or epic_key
-    if require_all_fields and not epic_name:
-        raise ValueError("epic_name is required.")
-    description = _to_text(raw.get("description"))
-    originator = _to_text(raw.get("originator"))
-    priority = _priority_for_epics_management(raw.get("priority"))
-    plan_status = _plan_status_for_epics_management(raw.get("plan_status"))
-    ipp_meeting_planned = _ipp_meeting_planned_for_epics_management(raw.get("ipp_meeting_planned"))
-    actual_production_date = _to_text(raw.get("actual_production_date"))
-    if actual_production_date and not _parse_iso_date(actual_production_date):
-        raise ValueError("actual_production_date must be ISO date YYYY-MM-DD.")
-    delivery_status_raw = _to_text(raw.get("delivery_status")).strip()
-    delivery_status = delivery_status_raw if delivery_status_raw in ("Late", "On-track", "Yet to start") else "Yet to start"
-    remarks = _to_text(raw.get("remarks"))
-    jira_url = _to_text(raw.get("jira_url"))
-    if jira_url and not re.match(r"^https?://", jira_url, re.IGNORECASE):
-        raise ValueError("jira_url must start with http:// or https://")
+  raw = payload or {}
+  epic_key = _normalize_epic_key(raw.get("epic_key"))
+  project_key = _to_text(raw.get("project_key")).upper() or _extract_project_key(epic_key)
+  if not project_key:
+    raise ValueError("project_key is required.")
+  project_name = _to_text(raw.get("project_name")) or project_key
+  product_category = _to_text(raw.get("product_category"))
+  component = _to_text(raw.get("component"))
+  epic_name = _to_text(raw.get("epic_name")) or epic_key
+  if require_all_fields and not epic_name:
+    raise ValueError("epic_name is required.")
+  description = _to_text(raw.get("description"))
+  originator = _to_text(raw.get("originator"))
+  priority = _priority_for_epics_management(raw.get("priority"))
+  plan_status = _plan_status_for_epics_management(raw.get("plan_status"))
+  ipp_meeting_planned = _ipp_meeting_planned_for_epics_management(raw.get("ipp_meeting_planned"))
+  actual_production_date = _to_text(raw.get("actual_production_date"))
+  if actual_production_date and not _parse_iso_date(actual_production_date):
+    raise ValueError("actual_production_date must be ISO date YYYY-MM-DD.")
+  delivery_status_raw = _to_text(raw.get("delivery_status")).strip()
+  delivery_status = delivery_status_raw if delivery_status_raw in ("Late", "On-track", "Yet to start") else "Yet to start"
+  remarks = _to_text(raw.get("remarks"))
+  jira_url = _to_text(raw.get("jira_url"))
+  if jira_url and not re.match(r"^https?://", jira_url, re.IGNORECASE):
+    raise ValueError("jira_url must start with http:// or https://")
 
-    plans_in = raw.get("plans")
-    if not isinstance(plans_in, dict):
-        plans_in = {}
-    plan_columns_by_key = {
-        _to_text(col.get("key")): col
-        for col in (plan_columns or [])
-        if _to_text(col.get("key"))
-    }
-    unknown_keys = sorted(_to_text(key) for key in plans_in.keys() if _to_text(key) and _to_text(key) not in plan_columns_by_key)
-    if unknown_keys:
-        raise ValueError("Unknown plan column key(s): " + ", ".join(unknown_keys))
+  plans_in = raw.get("plans")
+  if not isinstance(plans_in, dict):
+    plans_in = {}
+  plan_columns_by_key = {
+    _to_text(col.get("key")): col
+    for col in (plan_columns or [])
+    if _to_text(col.get("key"))
+  }
+  unknown_keys = sorted(_to_text(key) for key in plans_in.keys() if _to_text(key) and _to_text(key) not in plan_columns_by_key)
+  if unknown_keys:
+    raise ValueError("Unknown plan column key(s): " + ", ".join(unknown_keys))
 
-    plans: dict[str, dict] = {}
-    for key, column_meta in plan_columns_by_key.items():
-        source_value = plans_in.get(key)
-        if source_value is None and key in _EPICS_MANAGEMENT_LEGACY_PLAN_JSON_COLUMN_BY_KEY:
-            source_value = raw.get(_EPICS_MANAGEMENT_LEGACY_PLAN_JSON_COLUMN_BY_KEY[key], {})
-        normalized_plan = _normalize_epics_management_plan(source_value)
-        if not bool(column_meta.get("jira_link_enabled")):
-            normalized_plan["jira_url"] = ""
-        plans[key] = normalized_plan
+  plans: dict[str, dict] = {}
+  for key, column_meta in plan_columns_by_key.items():
+    source_value = plans_in.get(key)
+    if source_value is None and key in _EPICS_MANAGEMENT_LEGACY_PLAN_JSON_COLUMN_BY_KEY:
+      source_value = raw.get(_EPICS_MANAGEMENT_LEGACY_PLAN_JSON_COLUMN_BY_KEY[key], {})
+    normalized_plan = _normalize_epics_management_plan(source_value)
+    if not bool(column_meta.get("jira_link_enabled")):
+      normalized_plan["jira_url"] = ""
+    plans[key] = normalized_plan
+  plans = _compute_epics_management_tk_budgeted_plans(plans, plan_columns or [])
 
-    return {
-        "epic_key": epic_key,
-        "project_key": project_key,
-        "project_name": project_name,
-        "product_category": product_category,
-        "component": component,
-        "epic_name": epic_name,
-        "description": description,
-        "originator": originator,
-        "priority": priority,
-        "plan_status": plan_status,
-        "ipp_meeting_planned": ipp_meeting_planned,
-        "actual_production_date": actual_production_date,
-        "delivery_status": delivery_status,
-        "remarks": remarks,
-        "jira_url": jira_url,
-        "plans": plans,
-    }
+  return {
+    "epic_key": epic_key,
+    "project_key": project_key,
+    "project_name": project_name,
+    "product_category": product_category,
+    "component": component,
+    "epic_name": epic_name,
+    "description": description,
+    "originator": originator,
+    "priority": priority,
+    "plan_status": plan_status,
+    "ipp_meeting_planned": ipp_meeting_planned,
+    "actual_production_date": actual_production_date,
+    "delivery_status": delivery_status,
+    "remarks": remarks,
+    "jira_url": jira_url,
+    "plans": plans,
+  }
 
 
 def _upsert_epics_plan_values_for_row(
-    conn: sqlite3.Connection,
-    epic_key: str,
-    plans: dict[str, dict],
+  conn: sqlite3.Connection,
+  epic_row_id: str,
+  epic_key: str,
+  plans: dict[str, dict],
 ) -> None:
-    normalized_epic_key = _normalize_epic_key(epic_key)
-    now_utc = _utc_now_iso()
-    valid_keys = {
-        _to_text(row[0])
-        for row in conn.execute(
-            "SELECT column_key FROM epics_management_plan_columns WHERE is_active = 1 OR is_default = 1"
-        ).fetchall()
-    }
-    for plan_key, plan_value in (plans or {}).items():
-        key = _to_text(plan_key)
-        if not key or key not in valid_keys:
-            continue
-        serialized = json.dumps(_normalize_epics_management_plan(plan_value), ensure_ascii=True)
-        conn.execute(
-            """
-            INSERT INTO epics_management_plan_values (epic_key, column_key, plan_json, created_at_utc, updated_at_utc)
-            VALUES (?, ?, ?, ?, ?)
-            ON CONFLICT(epic_key, column_key) DO UPDATE SET
-                plan_json=excluded.plan_json,
-                updated_at_utc=excluded.updated_at_utc
-            """,
-            (normalized_epic_key, key, serialized, now_utc, now_utc),
-        )
+  normalized_row_id = _normalize_epics_management_row_id(epic_row_id)
+  normalized_epic_key = _normalize_epic_key(epic_key)
+  now_utc = _utc_now_iso()
+  valid_keys = {
+    _to_text(row[0])
+    for row in conn.execute(
+      "SELECT column_key FROM epics_management_plan_columns WHERE is_active = 1 OR is_default = 1"
+    ).fetchall()
+  }
+  for plan_key, plan_value in (plans or {}).items():
+    key = _to_text(plan_key)
+    if not key or key not in valid_keys:
+      continue
+    serialized = json.dumps(_normalize_epics_management_plan(plan_value), ensure_ascii=True)
+    conn.execute(
+      """
+      INSERT INTO epics_management_plan_values (epic_row_id, epic_key, column_key, plan_json, created_at_utc, updated_at_utc)
+      VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(epic_row_id, column_key) DO UPDATE SET
+        epic_key=excluded.epic_key,
+        plan_json=excluded.plan_json,
+        updated_at_utc=excluded.updated_at_utc
+      """,
+      (normalized_row_id, normalized_epic_key, key, serialized, now_utc, now_utc),
+    )
 
 
 def _save_epics_management_row(settings_db_path: Path, payload: dict) -> dict[str, str]:
-    _init_epics_management_db(settings_db_path)
-    raw_payload = payload if isinstance(payload, dict) else {}
-    plan_columns = _load_epics_plan_columns(settings_db_path, include_inactive=False)
-    conn = sqlite3.connect(settings_db_path)
-    conn.row_factory = sqlite3.Row
-    try:
-        prepared_payload = dict(raw_payload)
-        epic_name_in = _to_text(prepared_payload.get("epic_name"))
-        if not epic_name_in:
-            raise ValueError("epic_name is required.")
-        user_supplied_epic_key = bool(_to_text(prepared_payload.get("epic_key")))
-        reuse_vacant_tmp_key = ""
-        if not user_supplied_epic_key:
-            reuse_vacant_tmp_key = _find_vacant_tmp_epic_key_for_reuse(conn)
-            if reuse_vacant_tmp_key:
-                prepared_payload["epic_key"] = reuse_vacant_tmp_key
-            else:
-                prepared_payload["epic_key"] = _generate_tmp_epic_key(conn)
-        project_key_in = _to_text(prepared_payload.get("project_key")).upper()
-        project_name_in = _to_text(prepared_payload.get("project_name"))
-        if not project_key_in:
-            prepared_payload["project_key"] = "ORPHAN"
-            prepared_payload["project_name"] = "Orphan"
-            if not _to_text(prepared_payload.get("product_category")):
-                prepared_payload["product_category"] = "Orphan"
-        elif not project_name_in:
-            prepared_payload["project_name"] = project_key_in
-
-        # Preserve meeting-related fields when Epics Planner UI omits them (they are edited in IPP Meeting Planner).
-        if user_supplied_epic_key and _to_text(prepared_payload.get("epic_key")):
-            key_upper = _to_text(prepared_payload.get("epic_key")).upper()
-            existing_row = conn.execute(
-                "SELECT ipp_meeting_planned, actual_production_date, delivery_status, remarks FROM epics_management WHERE UPPER(epic_key)=?",
-                (key_upper,),
-            ).fetchone()
-            if existing_row is not None:
-                for field in ("ipp_meeting_planned", "actual_production_date", "delivery_status", "remarks"):
-                    if prepared_payload.get(field) is None or (isinstance(prepared_payload.get(field), str) and prepared_payload.get(field).strip() == ""):
-                        prepared_payload[field] = existing_row[field] if existing_row[field] is not None else ""
-
-        row = _normalize_epics_management_payload(prepared_payload, plan_columns=plan_columns, require_all_fields=True)
-
-        if reuse_vacant_tmp_key:
-            legacy_plans = {
-                key: row["plans"].get(key, {})
-                for key in _EPICS_MANAGEMENT_DEFAULT_PLAN_KEYS
-            }
-            conn.execute(
-                """
-                UPDATE epics_management
-                SET project_key=?, project_name=?, product_category=?, component=?, epic_name=?,
-                    description=?, originator=?, priority=?, plan_status=?, ipp_meeting_planned=?,
-                    actual_production_date=?, delivery_status=?, remarks=?, jira_url=?,
-                    epic_plan_json=?, research_urs_plan_json=?, dds_plan_json=?,
-                    development_plan_json=?, sqa_plan_json=?, user_manual_plan_json=?, production_plan_json=?
-                WHERE epic_key=?
-                """,
-                (
-                    row["project_key"],
-                    row["project_name"],
-                    row["product_category"],
-                    row["component"],
-                    row["epic_name"],
-                    row["description"],
-                    row["originator"],
-                    row["priority"],
-                    row["plan_status"],
-                    row["ipp_meeting_planned"],
-                    row["actual_production_date"],
-                    row["delivery_status"],
-                    row["remarks"],
-                    row["jira_url"],
-                    json.dumps(legacy_plans["epic_plan"], ensure_ascii=True),
-                    json.dumps(legacy_plans["research_urs_plan"], ensure_ascii=True),
-                    json.dumps(legacy_plans["dds_plan"], ensure_ascii=True),
-                    json.dumps(legacy_plans["development_plan"], ensure_ascii=True),
-                    json.dumps(legacy_plans["sqa_plan"], ensure_ascii=True),
-                    json.dumps(legacy_plans["user_manual_plan"], ensure_ascii=True),
-                    json.dumps(legacy_plans["production_plan"], ensure_ascii=True),
-                    reuse_vacant_tmp_key,
-                ),
-            )
-            _upsert_epics_plan_values_for_row(conn, reuse_vacant_tmp_key, row["plans"])
-            conn.commit()
-        else:
-            for _attempt in range(5):
-                legacy_plans = {
-                    key: row["plans"].get(key, {})
-                    for key in _EPICS_MANAGEMENT_DEFAULT_PLAN_KEYS
-                }
-                try:
-                    conn.execute(
-                        """
-                        INSERT INTO epics_management (
-                            epic_key, project_key, project_name, product_category, component, epic_name,
-                            description, originator, priority, plan_status, ipp_meeting_planned, actual_production_date, delivery_status, remarks, jira_url,
-                            epic_plan_json, research_urs_plan_json, dds_plan_json,
-                            development_plan_json, sqa_plan_json, user_manual_plan_json, production_plan_json
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """,
-                        (
-                            row["epic_key"],
-                            row["project_key"],
-                            row["project_name"],
-                            row["product_category"],
-                            row["component"],
-                            row["epic_name"],
-                            row["description"],
-                            row["originator"],
-                            row["priority"],
-                            row["plan_status"],
-                            row["ipp_meeting_planned"],
-                            row["actual_production_date"],
-                            row["delivery_status"],
-                            row["remarks"],
-                            row["jira_url"],
-                            json.dumps(legacy_plans["epic_plan"], ensure_ascii=True),
-                            json.dumps(legacy_plans["research_urs_plan"], ensure_ascii=True),
-                            json.dumps(legacy_plans["dds_plan"], ensure_ascii=True),
-                            json.dumps(legacy_plans["development_plan"], ensure_ascii=True),
-                            json.dumps(legacy_plans["sqa_plan"], ensure_ascii=True),
-                            json.dumps(legacy_plans["user_manual_plan"], ensure_ascii=True),
-                            json.dumps(legacy_plans["production_plan"], ensure_ascii=True),
-                        ),
-                    )
-                    _upsert_epics_plan_values_for_row(conn, row["epic_key"], row["plans"])
-                    conn.commit()
-                    break
-                except sqlite3.IntegrityError:
-                    if not _is_tmp_epic_key(row.get("epic_key")):
-                        raise
-                    if user_supplied_epic_key:
-                        conflict_key = _to_text(row.get("epic_key")).upper()
-                        vacant_tmp_key = _find_vacant_tmp_epic_key_for_reuse(conn, preferred_key=conflict_key)
-                        raise _EpicCreateConflictError(
-                            _EPIC_ALREADY_EXISTS_MESSAGE,
-                            conflict_epic_key=conflict_key,
-                            vacant_tmp_key=vacant_tmp_key,
-                        )
-                    fallback_vacant = _find_vacant_tmp_epic_key_for_reuse(conn)
-                    if fallback_vacant:
-                        row["epic_key"] = fallback_vacant
-                    else:
-                        row["epic_key"] = _generate_tmp_epic_key(conn)
-            else:
-                raise ValueError("Failed to generate a unique temporary epic key.")
-    except _EpicCreateConflictError:
-        raise
-    except sqlite3.IntegrityError:
-        raise ValueError(_EPIC_ALREADY_EXISTS_MESSAGE)
-    finally:
-        conn.close()
-    matches = [r for r in _load_epics_management_rows(settings_db_path) if _to_text(r.get("epic_key")).upper() == row["epic_key"]]
-    if not matches:
-        raise RuntimeError("Failed to load saved epic.")
-    return matches[0]
-
-
-def _update_epics_management_row(settings_db_path: Path, epic_key: str, payload: dict) -> dict[str, str]:
-    _init_epics_management_db(settings_db_path)
-    key = _normalize_epic_key(epic_key)
-    existing = [r for r in _load_epics_management_rows(settings_db_path) if _to_text(r.get("epic_key")).upper() == key]
-    if not existing:
-        raise LookupError(f"Epic '{key}' not found.")
-    base = existing[0]
-    plan_columns = _load_epics_plan_columns(settings_db_path, include_inactive=False)
-    normalized = _normalize_epics_management_payload(
-        {
-            **base,
-            **(payload or {}),
-            "epic_key": key,
-            "plans": {
-                **(base.get("plans") or {}),
-                **((payload or {}).get("plans") or {}),
-            },
-        },
-        plan_columns=plan_columns,
-        require_all_fields=True,
-    )
-    updated_epic_key = key
-    jira_key_candidate = _to_text(extract_jira_key_from_url(normalized.get("jira_url"))).upper() if _to_text(normalized.get("jira_url")) else ""
-    if _is_tmp_epic_key(key) and jira_key_candidate and jira_key_candidate != key:
-        if not _EPIC_KEY_PATTERN.match(jira_key_candidate):
-            raise ValueError("Derived Jira key must look like ABC-123.")
-        updated_epic_key = jira_key_candidate
-    normalized["epic_key"] = updated_epic_key
-    conn = sqlite3.connect(settings_db_path)
-    try:
-        if updated_epic_key != key:
-            exists_target = conn.execute("SELECT 1 FROM epics_management WHERE epic_key=?", (updated_epic_key,)).fetchone()
-            if exists_target:
-                raise ValueError(_EPIC_ALREADY_EXISTS_MESSAGE)
-        legacy_plans = {
-            key_item: normalized["plans"].get(key_item, {})
-            for key_item in _EPICS_MANAGEMENT_DEFAULT_PLAN_KEYS
-        }
-        cur = conn.execute(
-            """
-            UPDATE epics_management
-            SET epic_key=?, project_key=?, project_name=?, product_category=?, component=?, epic_name=?,
-                description=?, originator=?, priority=?, plan_status=?, ipp_meeting_planned=?, actual_production_date=?, delivery_status=?, remarks=?, jira_url=?,
-                epic_plan_json=?, research_urs_plan_json=?, dds_plan_json=?,
-                development_plan_json=?, sqa_plan_json=?, user_manual_plan_json=?, production_plan_json=?
-            WHERE epic_key=?
-            """,
-            (
-                updated_epic_key,
-                normalized["project_key"],
-                normalized["project_name"],
-                normalized["product_category"],
-                normalized["component"],
-                normalized["epic_name"],
-                normalized["description"],
-                normalized["originator"],
-                normalized["priority"],
-                normalized["plan_status"],
-                normalized["ipp_meeting_planned"],
-                normalized["actual_production_date"],
-                normalized["delivery_status"],
-                normalized["remarks"],
-                normalized["jira_url"],
-                json.dumps(legacy_plans["epic_plan"], ensure_ascii=True),
-                json.dumps(legacy_plans["research_urs_plan"], ensure_ascii=True),
-                json.dumps(legacy_plans["dds_plan"], ensure_ascii=True),
-                json.dumps(legacy_plans["development_plan"], ensure_ascii=True),
-                json.dumps(legacy_plans["sqa_plan"], ensure_ascii=True),
-                json.dumps(legacy_plans["user_manual_plan"], ensure_ascii=True),
-                json.dumps(legacy_plans["production_plan"], ensure_ascii=True),
-                key,
-            ),
+  _init_epics_management_db(settings_db_path)
+  raw_payload = payload if isinstance(payload, dict) else {}
+  plan_columns = _load_epics_plan_columns(settings_db_path, include_inactive=False)
+  conn = sqlite3.connect(settings_db_path)
+  conn.row_factory = sqlite3.Row
+  try:
+    prepared_payload = dict(raw_payload)
+    epic_name_in = _to_text(prepared_payload.get("epic_name"))
+    if not epic_name_in:
+      raise ValueError("epic_name is required.")
+    requested_epic_key = _to_text(prepared_payload.get("epic_key")).upper()
+    if requested_epic_key:
+      existing = conn.execute(
+        "SELECT * FROM epics_management WHERE UPPER(epic_key) = ?",
+        (requested_epic_key,),
+      ).fetchone()
+      if existing:
+        vacant_tmp_key = ""
+        if _is_vacant_tmp_epic_row_for_reuse(conn, existing):
+          vacant_tmp_key = _to_text(existing["epic_key"]).upper()
+        raise _EpicCreateConflictError(
+          _EPIC_ALREADY_EXISTS_MESSAGE,
+          conflict_epic_key=requested_epic_key,
+          vacant_tmp_key=vacant_tmp_key,
         )
-        if updated_epic_key != key:
-            conn.execute(
-                "UPDATE epics_management_plan_values SET epic_key=?, updated_at_utc=? WHERE epic_key=?",
-                (updated_epic_key, _utc_now_iso(), key),
-            )
-            conn.execute(
-                "UPDATE epics_management_story_sync SET epic_key=?, synced_at_utc=? WHERE epic_key=?",
-                (updated_epic_key, _utc_now_iso(), key),
-            )
-        _upsert_epics_plan_values_for_row(conn, updated_epic_key, normalized["plans"])
-        conn.commit()
-        if cur.rowcount <= 0:
-            raise LookupError(f"Epic '{key}' not found.")
-    finally:
-        conn.close()
-    matches = [
-        r
-        for r in _load_epics_management_rows(settings_db_path)
-        if _to_text(r.get("epic_key")).upper() == updated_epic_key
-    ]
-    if not matches:
-        raise LookupError(f"Epic '{updated_epic_key}' not found.")
-    return matches[0]
+    if not _to_text(prepared_payload.get("epic_key")):
+      prepared_payload["epic_key"] = _generate_tmp_epic_key(conn)
+    project_key_in = _to_text(prepared_payload.get("project_key")).upper()
+    project_name_in = _to_text(prepared_payload.get("project_name"))
+    if not project_key_in:
+      prepared_payload["project_key"] = "ORPHAN"
+      prepared_payload["project_name"] = "Orphan"
+      if not _to_text(prepared_payload.get("product_category")):
+        prepared_payload["product_category"] = "Orphan"
+    elif not project_name_in:
+      prepared_payload["project_name"] = project_key_in
+
+    row = _normalize_epics_management_payload(prepared_payload, plan_columns=plan_columns, require_all_fields=True)
+    legacy_plans = {
+      key: row["plans"].get(key, {})
+      for key in _EPICS_MANAGEMENT_DEFAULT_PLAN_KEYS
+    }
+    row_id = _generate_epics_management_row_id()
+    conn.execute(
+      """
+      INSERT INTO epics_management (
+        id, epic_key, project_key, project_name, product_category, component, epic_name,
+        description, originator, priority, plan_status, ipp_meeting_planned, actual_production_date, delivery_status, remarks, jira_url,
+        epic_plan_json, research_urs_plan_json, dds_plan_json,
+        development_plan_json, sqa_plan_json, user_manual_plan_json, production_plan_json, is_sealed
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      """,
+      (
+        row_id,
+        row["epic_key"],
+        row["project_key"],
+        row["project_name"],
+        row["product_category"],
+        row["component"],
+        row["epic_name"],
+        row["description"],
+        row["originator"],
+        row["priority"],
+        row["plan_status"],
+        row["ipp_meeting_planned"],
+        row["actual_production_date"],
+        row["delivery_status"],
+        row["remarks"],
+        row["jira_url"],
+        json.dumps(legacy_plans["epic_plan"], ensure_ascii=True),
+        json.dumps(legacy_plans["research_urs_plan"], ensure_ascii=True),
+        json.dumps(legacy_plans["dds_plan"], ensure_ascii=True),
+        json.dumps(legacy_plans["development_plan"], ensure_ascii=True),
+        json.dumps(legacy_plans["sqa_plan"], ensure_ascii=True),
+        json.dumps(legacy_plans["user_manual_plan"], ensure_ascii=True),
+        json.dumps(legacy_plans["production_plan"], ensure_ascii=True),
+        0,
+      ),
+    )
+    _upsert_epics_plan_values_for_row(conn, row_id, row["epic_key"], row["plans"])
+    conn.commit()
+  finally:
+    conn.close()
+  matches = [r for r in _load_epics_management_rows(settings_db_path) if _to_text(r.get("id")) == row_id]
+  if not matches:
+    raise RuntimeError("Failed to load saved epic.")
+  return matches[0]
 
 
-def _delete_epics_management_row(settings_db_path: Path, epic_key: str) -> str:
-    _init_epics_management_db(settings_db_path)
-    key = _normalize_epic_key(epic_key)
-    existing = [
-        r
-        for r in _load_epics_management_rows(settings_db_path)
-        if _to_text(r.get("epic_key")).upper() == key
-    ]
-    if not existing:
-        raise LookupError(f"Epic '{key}' not found.")
-    conn = sqlite3.connect(settings_db_path)
-    try:
-        conn.execute("DELETE FROM epics_management_plan_values WHERE epic_key=?", (key,))
-        conn.execute("DELETE FROM epics_management_story_sync WHERE epic_key=?", (key,))
-        conn.execute("DELETE FROM epics_management WHERE epic_key=?", (key,))
-        conn.commit()
-    finally:
-        conn.close()
-    return key
+def _update_epics_management_row(settings_db_path: Path, row_ref: str, payload: dict) -> dict[str, str]:
+  _init_epics_management_db(settings_db_path)
+  base = _resolve_epics_management_row(_load_epics_management_rows(settings_db_path), row_ref)
+  row_id = _normalize_epics_management_row_id(base.get("id"))
+  current_epic_key = _normalize_epic_key(base.get("epic_key"))
+  if int(base.get("is_sealed") or 0):
+    raise PermissionError(f"Epic '{current_epic_key}' is sealed. Click RE-BUDGET before changing it.")
+  plan_columns = _load_epics_plan_columns(settings_db_path, include_inactive=False)
+  normalized = _normalize_epics_management_payload(
+    {
+      **base,
+      **(payload or {}),
+      "plans": {
+        **(base.get("plans") or {}),
+        **((payload or {}).get("plans") or {}),
+      },
+    },
+    plan_columns=plan_columns,
+    require_all_fields=True,
+  )
+  updated_epic_key = _normalize_epic_key(normalized.get("epic_key"))
+  jira_key_candidate = _to_text(extract_jira_key_from_url(normalized.get("jira_url"))).upper() if _to_text(normalized.get("jira_url")) else ""
+  if _is_tmp_epic_key(current_epic_key) and jira_key_candidate and jira_key_candidate != current_epic_key:
+    if not _EPIC_KEY_PATTERN.match(jira_key_candidate):
+      raise ValueError("Derived Jira key must look like ABC-123.")
+    updated_epic_key = jira_key_candidate
+  normalized["epic_key"] = updated_epic_key
+  conn = sqlite3.connect(settings_db_path)
+  try:
+    legacy_plans = {
+      key_item: normalized["plans"].get(key_item, {})
+      for key_item in _EPICS_MANAGEMENT_DEFAULT_PLAN_KEYS
+    }
+    now_utc = _utc_now_iso()
+    cur = conn.execute(
+      """
+      UPDATE epics_management
+      SET epic_key=?, project_key=?, project_name=?, product_category=?, component=?, epic_name=?,
+        description=?, originator=?, priority=?, plan_status=?, ipp_meeting_planned=?, actual_production_date=?, delivery_status=?, remarks=?, jira_url=?,
+        epic_plan_json=?, research_urs_plan_json=?, dds_plan_json=?,
+        development_plan_json=?, sqa_plan_json=?, user_manual_plan_json=?, production_plan_json=?
+      WHERE id=?
+      """,
+      (
+        updated_epic_key,
+        normalized["project_key"],
+        normalized["project_name"],
+        normalized["product_category"],
+        normalized["component"],
+        normalized["epic_name"],
+        normalized["description"],
+        normalized["originator"],
+        normalized["priority"],
+        normalized["plan_status"],
+        normalized["ipp_meeting_planned"],
+        normalized["actual_production_date"],
+        normalized["delivery_status"],
+        normalized["remarks"],
+        normalized["jira_url"],
+        json.dumps(legacy_plans["epic_plan"], ensure_ascii=True),
+        json.dumps(legacy_plans["research_urs_plan"], ensure_ascii=True),
+        json.dumps(legacy_plans["dds_plan"], ensure_ascii=True),
+        json.dumps(legacy_plans["development_plan"], ensure_ascii=True),
+        json.dumps(legacy_plans["sqa_plan"], ensure_ascii=True),
+        json.dumps(legacy_plans["user_manual_plan"], ensure_ascii=True),
+        json.dumps(legacy_plans["production_plan"], ensure_ascii=True),
+        row_id,
+      ),
+    )
+    conn.execute(
+      "UPDATE epics_management_plan_values SET epic_key=?, updated_at_utc=? WHERE epic_row_id=?",
+      (updated_epic_key, now_utc, row_id),
+    )
+    conn.execute(
+      "UPDATE epics_management_story_sync SET epic_key=?, synced_at_utc=? WHERE epic_row_id=?",
+      (updated_epic_key, now_utc, row_id),
+    )
+    conn.execute(
+      "UPDATE epics_management_approved_dates SET epic_key=? WHERE epic_row_id=?",
+      (updated_epic_key, row_id),
+    )
+    conn.execute(
+      "UPDATE ipp_meeting_epics SET epic_key=? WHERE epic_row_id=?",
+      (updated_epic_key, row_id),
+    )
+    _upsert_epics_plan_values_for_row(conn, row_id, updated_epic_key, normalized["plans"])
+    conn.commit()
+    if cur.rowcount <= 0:
+      raise LookupError(f"Epic '{row_ref}' not found.")
+  finally:
+    conn.close()
+  matches = [r for r in _load_epics_management_rows(settings_db_path) if _to_text(r.get("id")) == row_id]
+  if not matches:
+    raise LookupError(f"Epic '{row_id}' not found.")
+  return matches[0]
+
+
+def _delete_epics_management_row(settings_db_path: Path, row_ref: str) -> str:
+  _init_epics_management_db(settings_db_path)
+  existing = _resolve_epics_management_row(_load_epics_management_rows(settings_db_path), row_ref)
+  row_id = _normalize_epics_management_row_id(existing.get("id"))
+  if int(existing.get("is_sealed") or 0):
+    raise PermissionError(f"Epic '{existing.get('epic_key')}' is sealed. Click RE-BUDGET before deleting it.")
+  conn = sqlite3.connect(settings_db_path)
+  try:
+    conn.execute("DELETE FROM epics_management_plan_values WHERE epic_row_id=?", (row_id,))
+    conn.execute("DELETE FROM epics_management_story_sync WHERE epic_row_id=?", (row_id,))
+    conn.execute("DELETE FROM epics_management_approved_dates WHERE epic_row_id=?", (row_id,))
+    conn.execute("DELETE FROM ipp_meeting_epics WHERE epic_row_id=?", (row_id,))
+    conn.execute("DELETE FROM epics_management WHERE id=?", (row_id,))
+    conn.commit()
+  finally:
+    conn.close()
+  return row_id
 
 
 def _load_epics_management_rows(settings_db_path: Path) -> list[dict[str, str]]:
-    _init_epics_management_db(settings_db_path)
+  _init_epics_management_db(settings_db_path)
 
-    conn = None
-    try:
-        conn = sqlite3.connect(settings_db_path)
-        conn.row_factory = sqlite3.Row
-        table_exists = conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='epics_management'"
-        ).fetchone()
-        if not table_exists:
-            return []
-        columns = conn.execute("PRAGMA table_info(epics_management)").fetchall()
-        col_names = {str(c[1]) for c in columns}
-        delivery_status_col = "delivery_status" if "delivery_status" in col_names else "'' AS delivery_status"
-        is_sealed_col = "is_sealed" if "is_sealed" in col_names else "0 AS is_sealed"
-        rows = conn.execute(
-            f"""
-            SELECT
-                epic_key, project_key, project_name, product_category, component, epic_name,
-                description, originator, priority, plan_status, ipp_meeting_planned, actual_production_date, {delivery_status_col}, remarks, jira_url,
-                {is_sealed_col},
-                epic_plan_json, research_urs_plan_json, dds_plan_json,
-                development_plan_json, sqa_plan_json, user_manual_plan_json, production_plan_json
-            FROM epics_management
-            ORDER BY lower(project_name) ASC, lower(product_category) ASC, lower(component) ASC, lower(epic_name) ASC, epic_key ASC
-            """
-        ).fetchall()
-        plan_columns = _load_epics_plan_columns_from_conn(conn, include_inactive=False)
-        plan_keys = [_to_text(col.get("key")) for col in plan_columns if _to_text(col.get("key"))]
-        epic_keys = [_to_text(row["epic_key"]).upper() for row in rows if _to_text(row["epic_key"])]
-        plan_values_by_epic_key: dict[str, dict[str, dict]] = {}
-        if epic_keys and plan_keys:
-            epic_placeholders = ",".join("?" for _ in epic_keys)
-            key_placeholders = ",".join("?" for _ in plan_keys)
-            value_rows = conn.execute(
-                f"""
-                SELECT epic_key, column_key, plan_json
-                FROM epics_management_plan_values
-                WHERE epic_key IN ({epic_placeholders}) AND column_key IN ({key_placeholders})
-                """,
-                [*epic_keys, *plan_keys],
-            ).fetchall()
-            for value_row in value_rows:
-                key = _to_text(value_row["epic_key"]).upper()
-                column_key = _to_text(value_row["column_key"])
-                if not key or not column_key:
-                    continue
-                plan_values_by_epic_key.setdefault(key, {})[column_key] = value_row["plan_json"]
-    except Exception:
-        return []
-    finally:
-        if conn is not None:
-            try:
-                conn.close()
-            except Exception:
-                pass
-
-    def _safe_json_dict(text: object) -> dict:
-        raw = _to_text(text)
-        if not raw:
-            return {}
-        try:
-            parsed = json.loads(raw)
-            return parsed if isinstance(parsed, dict) else {}
-        except Exception:
-            return {}
-
-    out: list[dict[str, str]] = []
+  conn = None
+  try:
+    conn = sqlite3.connect(settings_db_path)
+    conn.row_factory = sqlite3.Row
+    table_exists = conn.execute(
+      "SELECT 1 FROM sqlite_master WHERE type='table' AND name='epics_management'"
+    ).fetchone()
+    if not table_exists:
+      return []
+    columns = conn.execute("PRAGMA table_info(epics_management)").fetchall()
+    col_names = {str(c[1]) for c in columns}
+    delivery_status_col = "delivery_status" if "delivery_status" in col_names else "'' AS delivery_status"
+    is_sealed_col = "is_sealed" if "is_sealed" in col_names else "0 AS is_sealed"
+    rows = conn.execute(
+      f"""
+      SELECT
+        id, epic_key, project_key, project_name, product_category, component, epic_name,
+        description, originator, priority, plan_status, ipp_meeting_planned, actual_production_date, {delivery_status_col}, remarks, jira_url,
+        {is_sealed_col},
+        epic_plan_json, research_urs_plan_json, dds_plan_json,
+        development_plan_json, sqa_plan_json, user_manual_plan_json, production_plan_json
+      FROM epics_management
+      ORDER BY lower(project_name) ASC, lower(product_category) ASC, lower(component) ASC, lower(epic_name) ASC, id ASC
+      """
+    ).fetchall()
+    plan_columns = _load_epics_plan_columns_from_conn(conn, include_inactive=False)
+    plan_keys = [_to_text(col.get("key")) for col in plan_columns if _to_text(col.get("key"))]
+    row_ids = [_to_text(row["id"]).strip() for row in rows if _to_text(row["id"]).strip()]
+    epic_keys = [_to_text(row["epic_key"]).upper() for row in rows if _to_text(row["epic_key"])]
+    row_ids_by_epic_key: dict[str, str | None] = {}
     for row in rows:
-        epic_key = _to_text(row["epic_key"]).upper()
-        per_epic_values = plan_values_by_epic_key.get(epic_key, {})
-        plans: dict[str, dict] = {}
-        for col in plan_columns:
-            plan_key = _to_text(col.get("key"))
-            if not plan_key:
-                continue
-            raw_plan = per_epic_values.get(plan_key)
-            if raw_plan is None:
-                legacy_col = _EPICS_MANAGEMENT_LEGACY_PLAN_JSON_COLUMN_BY_KEY.get(plan_key)
-                if legacy_col:
-                    raw_plan = row[legacy_col]
-            parsed = _safe_json_dict(raw_plan)
-            if not bool(col.get("jira_link_enabled")):
-                parsed["jira_url"] = ""
-            plans[plan_key] = parsed
-        epic_plan = plans.get("epic_plan") or {}
-        planned_due_date_epic = _to_text(epic_plan.get("due_date"))
-        try:
-            delivery_status_val = _to_text(row["delivery_status"]).strip()
-        except (KeyError, TypeError):
-            delivery_status_val = ""
-        if delivery_status_val not in ("Late", "On-track", "Yet to start"):
-            delivery_status_val = "Yet to start"
-        is_sealed = 0
-        try:
-            is_sealed = int(row["is_sealed"] or 0)
-        except (KeyError, TypeError, ValueError):
-            pass
-        out.append(
-            {
-                "id": epic_key,
-                "project_key": _to_text(row["project_key"]).upper(),
-                "project_name": _to_text(row["project_name"]) or _to_text(row["project_key"]).upper(),
-                "product_category": _to_text(row["product_category"]),
-                "component": _to_text(row["component"]),
-                "epic_key": epic_key,
-                "epic_name": _to_text(row["epic_name"]) or epic_key,
-                "description": _to_text(row["description"]),
-                "originator": _to_text(row["originator"]),
-                "priority": _priority_for_epics_management(row["priority"]),
-                "plan_status": _plan_status_for_epics_management(row["plan_status"]),
-                "ipp_meeting_planned": _ipp_meeting_planned_for_epics_management(row["ipp_meeting_planned"]),
-                "actual_production_date": _to_text(row["actual_production_date"]),
-                "delivery_status": delivery_status_val,
-                "planned_due_date_epic": planned_due_date_epic,
-                "remarks": _to_text(row["remarks"]),
-                "jira_url": _to_text(row["jira_url"]),
-                "plans": plans,
-                "is_sealed": is_sealed,
-            }
+      row_id = _to_text(row["id"]).strip()
+      epic_key = _to_text(row["epic_key"]).upper()
+      if not row_id or not epic_key:
+        continue
+      if epic_key in row_ids_by_epic_key and row_ids_by_epic_key[epic_key] != row_id:
+        row_ids_by_epic_key[epic_key] = None
+      else:
+        row_ids_by_epic_key[epic_key] = row_id
+    plan_values_by_row_id: dict[str, dict[str, dict]] = {}
+    if row_ids and plan_keys:
+      row_placeholders = ",".join("?" for _ in row_ids)
+      epic_placeholders = ",".join("?" for _ in epic_keys)
+      key_placeholders = ",".join("?" for _ in plan_keys)
+      value_rows = conn.execute(
+        f"""
+        SELECT epic_row_id, epic_key, column_key, plan_json
+        FROM epics_management_plan_values
+        WHERE (
+          epic_row_id IN ({row_placeholders})
+          OR (epic_row_id = '' AND epic_key IN ({epic_placeholders}))
         )
-    return out
+        AND column_key IN ({key_placeholders})
+        """,
+        [*row_ids, *epic_keys, *plan_keys],
+      ).fetchall()
+      for value_row in value_rows:
+        row_id = _to_text(value_row["epic_row_id"]).strip()
+        if not row_id:
+          row_id = row_ids_by_epic_key.get(_to_text(value_row["epic_key"]).upper()) or ""
+        column_key = _to_text(value_row["column_key"])
+        if not row_id or not column_key:
+          continue
+        plan_values_by_row_id.setdefault(row_id, {})[column_key] = value_row["plan_json"]
+  except Exception:
+    return []
+  finally:
+    if conn is not None:
+      try:
+        conn.close()
+      except Exception:
+        pass
 
+  def _safe_json_dict(text: object) -> dict:
+    raw = _to_text(text)
+    if not raw:
+      return {}
+    try:
+      parsed = json.loads(raw)
+      return parsed if isinstance(parsed, dict) else {}
+    except Exception:
+      return {}
 
-def _build_epics_management_snapshot_dict(
-    row: sqlite3.Row,
-    plan_columns: list[dict],
-    plan_values_by_epic_key: dict[str, dict[str, object]],
-    safe_json_dict: object,
-) -> dict:
-    """Build a single epic snapshot dict (same shape as one entry from _load_epics_management_rows)."""
+  out: list[dict[str, str]] = []
+  for row in rows:
+    row_id = _to_text(row["id"]).strip() or _to_text(row["epic_key"]).upper()
     epic_key = _to_text(row["epic_key"]).upper()
-    per_epic_values = plan_values_by_epic_key.get(epic_key, {})
+    per_epic_values = plan_values_by_row_id.get(row_id, {})
     plans: dict[str, dict] = {}
     for col in plan_columns:
-        plan_key = _to_text(col.get("key"))
-        if not plan_key:
-            continue
-        raw_plan = per_epic_values.get(plan_key)
-        if raw_plan is None:
-            legacy_col = _EPICS_MANAGEMENT_LEGACY_PLAN_JSON_COLUMN_BY_KEY.get(plan_key)
-            if legacy_col:
-                try:
-                    raw_plan = row[legacy_col]
-                except (IndexError, KeyError, TypeError):
-                    raw_plan = None
-        parsed = safe_json_dict(raw_plan)
-        if not bool(col.get("jira_link_enabled")):
-            parsed["jira_url"] = ""
-        plans[plan_key] = parsed
+      plan_key = _to_text(col.get("key"))
+      if not plan_key:
+        continue
+      raw_plan = per_epic_values.get(plan_key)
+      if raw_plan is None:
+        legacy_col = _EPICS_MANAGEMENT_LEGACY_PLAN_JSON_COLUMN_BY_KEY.get(plan_key)
+        if legacy_col:
+          raw_plan = row[legacy_col]
+      parsed = _safe_json_dict(raw_plan)
+      if not bool(col.get("jira_link_enabled")):
+        parsed["jira_url"] = ""
+      plans[plan_key] = parsed
+    plans = _compute_epics_management_tk_budgeted_plans(plans, plan_columns)
+    epic_plan = plans.get("epic_plan") or {}
+    planned_due_date_epic = _to_text(epic_plan.get("due_date"))
     try:
-        delivery_status_val = _to_text(row["delivery_status"]).strip()
+      delivery_status_val = _to_text(row["delivery_status"]).strip()
     except (KeyError, TypeError):
-        delivery_status_val = ""
+      delivery_status_val = ""
     if delivery_status_val not in ("Late", "On-track", "Yet to start"):
-        delivery_status_val = "Yet to start"
-    return {
-        "id": epic_key,
+      delivery_status_val = "Yet to start"
+    is_sealed = 0
+    try:
+      is_sealed = int(row["is_sealed"] or 0)
+    except (KeyError, TypeError, ValueError):
+      pass
+    out.append(
+      {
+        "id": row_id,
         "project_key": _to_text(row["project_key"]).upper(),
         "project_name": _to_text(row["project_name"]) or _to_text(row["project_key"]).upper(),
         "product_category": _to_text(row["product_category"]),
@@ -18852,125 +19580,208 @@ def _build_epics_management_snapshot_dict(
         "ipp_meeting_planned": _ipp_meeting_planned_for_epics_management(row["ipp_meeting_planned"]),
         "actual_production_date": _to_text(row["actual_production_date"]),
         "delivery_status": delivery_status_val,
+        "planned_due_date_epic": planned_due_date_epic,
         "remarks": _to_text(row["remarks"]),
         "jira_url": _to_text(row["jira_url"]),
         "plans": plans,
-    }
+        "is_sealed": is_sealed,
+      }
+    )
+  return out
+
+
+def _build_epics_management_snapshot_dict(
+  row: sqlite3.Row,
+  plan_columns: list[dict],
+  plan_values_by_row_id: dict[str, dict[str, object]],
+  safe_json_dict: object,
+) -> dict:
+  """Build a single epic snapshot dict (same shape as one entry from _load_epics_management_rows)."""
+  row_id = _to_text(row["id"]).strip() or _to_text(row["epic_key"]).upper()
+  epic_key = _to_text(row["epic_key"]).upper()
+  per_epic_values = plan_values_by_row_id.get(row_id, {})
+  plans: dict[str, dict] = {}
+  for col in plan_columns:
+    plan_key = _to_text(col.get("key"))
+    if not plan_key:
+      continue
+    raw_plan = per_epic_values.get(plan_key)
+    if raw_plan is None:
+      legacy_col = _EPICS_MANAGEMENT_LEGACY_PLAN_JSON_COLUMN_BY_KEY.get(plan_key)
+      if legacy_col:
+        try:
+          raw_plan = row[legacy_col]
+        except (IndexError, KeyError, TypeError):
+          raw_plan = None
+    parsed = safe_json_dict(raw_plan)
+    if not bool(col.get("jira_link_enabled")):
+      parsed["jira_url"] = ""
+    plans[plan_key] = parsed
+  plans = _compute_epics_management_tk_budgeted_plans(plans, plan_columns)
+  try:
+    delivery_status_val = _to_text(row["delivery_status"]).strip()
+  except (KeyError, TypeError):
+    delivery_status_val = ""
+  if delivery_status_val not in ("Late", "On-track", "Yet to start"):
+    delivery_status_val = "Yet to start"
+  return {
+    "id": row_id,
+    "project_key": _to_text(row["project_key"]).upper(),
+    "project_name": _to_text(row["project_name"]) or _to_text(row["project_key"]).upper(),
+    "product_category": _to_text(row["product_category"]),
+    "component": _to_text(row["component"]),
+    "epic_key": epic_key,
+    "epic_name": _to_text(row["epic_name"]) or epic_key,
+    "description": _to_text(row["description"]),
+    "originator": _to_text(row["originator"]),
+    "priority": _priority_for_epics_management(row["priority"]),
+    "plan_status": _plan_status_for_epics_management(row["plan_status"]),
+    "ipp_meeting_planned": _ipp_meeting_planned_for_epics_management(row["ipp_meeting_planned"]),
+    "actual_production_date": _to_text(row["actual_production_date"]),
+    "delivery_status": delivery_status_val,
+    "remarks": _to_text(row["remarks"]),
+    "jira_url": _to_text(row["jira_url"]),
+    "plans": plans,
+  }
 
 
 def _seal_epics_management_epics(settings_db_path: Path, epic_keys: list[str]) -> dict:
-    """Set is_sealed=1 for given epics and record snapshots in epics_management_approved_dates."""
-    _init_epics_management_db(settings_db_path)
-    normalized_keys = [_to_text(k).upper() for k in epic_keys if _to_text(k).strip()]
-    if not normalized_keys:
-        return {"sealed_count": 0, "approved_at_utc": "", "error": "No epic keys provided"}
+  """Set is_sealed=1 for given epics and record snapshots in epics_management_approved_dates."""
+  _init_epics_management_db(settings_db_path)
+  requested_refs = [_to_text(k).strip() for k in epic_keys if _to_text(k).strip()]
+  if not requested_refs:
+    return {"sealed_count": 0, "approved_at_utc": "", "error": "No epic keys provided"}
 
-    def _safe_json_dict(text: object) -> dict:
-        raw = _to_text(text)
-        if not raw:
-            return {}
-        try:
-            parsed = json.loads(raw)
-            return parsed if isinstance(parsed, dict) else {}
-        except Exception:
-            return {}
+  resolved_rows: list[dict[str, object]] = []
+  seen_row_ids: set[str] = set()
+  all_rows = _load_epics_management_rows(settings_db_path)
+  for ref in requested_refs:
+    row = _resolve_epics_management_row(all_rows, ref)
+    row_id = _normalize_epics_management_row_id(row.get("id"))
+    if row_id in seen_row_ids:
+      continue
+    seen_row_ids.add(row_id)
+    resolved_rows.append(row)
 
-    conn = sqlite3.connect(settings_db_path)
-    conn.row_factory = sqlite3.Row
+  normalized_row_ids = [_normalize_epics_management_row_id(row.get("id")) for row in resolved_rows]
+  normalized_keys = [_normalize_epic_key(row.get("epic_key")) for row in resolved_rows]
+
+  def _safe_json_dict(text: object) -> dict:
+    raw = _to_text(text)
+    if not raw:
+      return {}
     try:
-        columns = conn.execute("PRAGMA table_info(epics_management)").fetchall()
-        col_names = {str(c[1]) for c in columns}
-        delivery_status_col = "delivery_status" if "delivery_status" in col_names else "'' AS delivery_status"
-        is_sealed_col = "is_sealed" if "is_sealed" in col_names else "0 AS is_sealed"
-        placeholders = ",".join("?" for _ in normalized_keys)
-        rows = conn.execute(
-            f"""
-            SELECT
-                epic_key, project_key, project_name, product_category, component, epic_name,
-                description, originator, priority, plan_status, ipp_meeting_planned, actual_production_date, {delivery_status_col}, remarks, jira_url,
-                {is_sealed_col},
-                epic_plan_json, research_urs_plan_json, dds_plan_json,
-                development_plan_json, sqa_plan_json, user_manual_plan_json, production_plan_json
-            FROM epics_management
-            WHERE epic_key IN ({placeholders})
-            """,
-            normalized_keys,
-        ).fetchall()
-        plan_columns = _load_epics_plan_columns_from_conn(conn, include_inactive=False)
-        plan_keys = [_to_text(col.get("key")) for col in plan_columns if _to_text(col.get("key"))]
-        plan_values_by_epic_key: dict[str, dict[str, object]] = {}
-        if plan_keys:
-            key_placeholders = ",".join("?" for _ in plan_keys)
-            value_rows = conn.execute(
-                f"""
-                SELECT epic_key, column_key, plan_json
-                FROM epics_management_plan_values
-                WHERE epic_key IN ({placeholders}) AND column_key IN ({key_placeholders})
-                """,
-                [*normalized_keys, *plan_keys],
-            ).fetchall()
-            for value_row in value_rows:
-                key = _to_text(value_row["epic_key"]).upper()
-                column_key = _to_text(value_row["column_key"])
-                if not key or not column_key:
-                    continue
-                plan_values_by_epic_key.setdefault(key, {})[column_key] = value_row["plan_json"]
+      parsed = json.loads(raw)
+      return parsed if isinstance(parsed, dict) else {}
+    except Exception:
+      return {}
 
-        approved_at_utc = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-        for row in rows:
-            snapshot = _build_epics_management_snapshot_dict(
-                row, plan_columns, plan_values_by_epic_key, _safe_json_dict
-            )
-            conn.execute(
-                """
-                INSERT OR REPLACE INTO epics_management_approved_dates (epic_key, approved_at_utc, snapshot_json)
-                VALUES (?, ?, ?)
-                """,
-                (_to_text(row["epic_key"]).upper(), approved_at_utc, json.dumps(snapshot)),
-            )
-        conn.execute(
-            f"UPDATE epics_management SET is_sealed = 1 WHERE epic_key IN ({placeholders})",
-            normalized_keys,
+  conn = sqlite3.connect(settings_db_path)
+  conn.row_factory = sqlite3.Row
+  try:
+    columns = conn.execute("PRAGMA table_info(epics_management)").fetchall()
+    col_names = {str(c[1]) for c in columns}
+    delivery_status_col = "delivery_status" if "delivery_status" in col_names else "'' AS delivery_status"
+    is_sealed_col = "is_sealed" if "is_sealed" in col_names else "0 AS is_sealed"
+    placeholders = ",".join("?" for _ in normalized_row_ids)
+    rows = conn.execute(
+      f"""
+      SELECT
+        id, epic_key, project_key, project_name, product_category, component, epic_name,
+        description, originator, priority, plan_status, ipp_meeting_planned, actual_production_date, {delivery_status_col}, remarks, jira_url,
+        {is_sealed_col},
+        epic_plan_json, research_urs_plan_json, dds_plan_json,
+        development_plan_json, sqa_plan_json, user_manual_plan_json, production_plan_json
+      FROM epics_management
+      WHERE id IN ({placeholders})
+      """,
+      normalized_row_ids,
+    ).fetchall()
+    plan_columns = _load_epics_plan_columns_from_conn(conn, include_inactive=False)
+    plan_keys = [_to_text(col.get("key")) for col in plan_columns if _to_text(col.get("key"))]
+    plan_values_by_row_id: dict[str, dict[str, object]] = {}
+    if plan_keys:
+      row_placeholders = ",".join("?" for _ in normalized_row_ids)
+      key_placeholders = ",".join("?" for _ in plan_keys)
+      value_rows = conn.execute(
+        f"""
+        SELECT epic_row_id, epic_key, column_key, plan_json
+        FROM epics_management_plan_values
+        WHERE (
+          epic_row_id IN ({row_placeholders})
+          OR (epic_row_id = '' AND epic_key IN ({placeholders}))
         )
-        conn.commit()
-        return {"sealed_count": len(rows), "approved_at_utc": approved_at_utc}
-    finally:
-        conn.close()
+        AND column_key IN ({key_placeholders})
+        """,
+        [*normalized_row_ids, *normalized_keys, *plan_keys],
+      ).fetchall()
+      for value_row in value_rows:
+        value_row_id = _to_text(value_row["epic_row_id"]).strip()
+        if not value_row_id:
+          fallback_key = _to_text(value_row["epic_key"]).upper()
+          value_row_id = next((item_id for item_id, item_key in zip(normalized_row_ids, normalized_keys) if item_key == fallback_key), "")
+        column_key = _to_text(value_row["column_key"])
+        if not value_row_id or not column_key:
+          continue
+        plan_values_by_row_id.setdefault(value_row_id, {})[column_key] = value_row["plan_json"]
+
+    approved_at_utc = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    for row in rows:
+      snapshot = _build_epics_management_snapshot_dict(
+        row, plan_columns, plan_values_by_row_id, _safe_json_dict
+      )
+      row_id = _to_text(row["id"]).strip()
+      row_epic_key = _to_text(row["epic_key"]).upper()
+      _upsert_epics_plan_values_for_row(conn, row_id, row_epic_key, snapshot.get("plans") or {})
+      conn.execute(
+        """
+        INSERT OR REPLACE INTO epics_management_approved_dates (epic_row_id, epic_key, approved_at_utc, snapshot_json)
+        VALUES (?, ?, ?, ?)
+        """,
+        (row_id, row_epic_key, approved_at_utc, json.dumps(snapshot)),
+      )
+    conn.execute(
+      f"UPDATE epics_management SET is_sealed = 1 WHERE id IN ({placeholders})",
+      normalized_row_ids,
+    )
+    conn.commit()
+    return {"sealed_count": len(rows), "approved_at_utc": approved_at_utc}
+  finally:
+    conn.close()
 
 
-def _rebudget_epics_management_epic(settings_db_path: Path, epic_key: str) -> None:
-    """Set is_sealed=0 for the given epic. Raises LookupError if epic not found."""
-    _init_epics_management_db(settings_db_path)
-    normalized = _to_text(epic_key).upper()
-    if not normalized:
-        raise LookupError("Epic key is required")
-    conn = sqlite3.connect(settings_db_path)
-    try:
-        cur = conn.execute("UPDATE epics_management SET is_sealed = 0 WHERE epic_key = ?", (normalized,))
-        conn.commit()
-        if cur.rowcount == 0:
-            raise LookupError(f"Epic not found: {epic_key}")
-    finally:
-        conn.close()
+def _rebudget_epics_management_epic(settings_db_path: Path, row_ref: str) -> None:
+  """Set is_sealed=0 for the given epic. Raises LookupError if epic not found."""
+  _init_epics_management_db(settings_db_path)
+  resolved = _resolve_epics_management_row(_load_epics_management_rows(settings_db_path), row_ref)
+  row_id = _normalize_epics_management_row_id(resolved.get("id"))
+  conn = sqlite3.connect(settings_db_path)
+  try:
+    cur = conn.execute("UPDATE epics_management SET is_sealed = 0 WHERE id = ?", (row_id,))
+    conn.commit()
+    if cur.rowcount == 0:
+      raise LookupError(f"Epic not found: {row_ref}")
+  finally:
+    conn.close()
 
 
 def _load_epics_management_sealed_dates(settings_db_path: Path, limit: int = 50) -> list[str]:
-    """Return distinct approved_at_utc values, newest first."""
-    _init_epics_management_db(settings_db_path)
-    conn = sqlite3.connect(settings_db_path)
-    try:
-        rows = conn.execute(
-            """
-            SELECT DISTINCT approved_at_utc
-            FROM epics_management_approved_dates
-            ORDER BY approved_at_utc DESC
-            LIMIT ?
-            """,
-            (limit,),
-        ).fetchall()
-        return [_to_text(r[0]) for r in rows if _to_text(r[0])]
-    finally:
-        conn.close()
+  """Return distinct approved_at_utc values, newest first."""
+  _init_epics_management_db(settings_db_path)
+  conn = sqlite3.connect(settings_db_path)
+  try:
+    rows = conn.execute(
+      """
+      SELECT DISTINCT approved_at_utc
+      FROM epics_management_approved_dates
+      ORDER BY approved_at_utc DESC
+      LIMIT ?
+      """,
+      (limit,),
+    ).fetchall()
+    return [_to_text(r[0]) for r in rows if _to_text(r[0])]
+  finally:
+    conn.close()
 
 
 def _load_epics_management_snapshots_for_date(
@@ -19006,77 +19817,81 @@ def _load_epics_management_snapshots_for_date(
         conn.close()
 
 
-def _load_epics_management_sealed_dates_for_epic(settings_db_path: Path, epic_key: str) -> list[str]:
-    """Return approved_at_utc list for one epic (for IPP dashboard row)."""
-    _init_epics_management_db(settings_db_path)
-    normalized = _to_text(epic_key).upper()
-    if not normalized:
-        return []
-    conn = sqlite3.connect(settings_db_path)
-    try:
-        rows = conn.execute(
-            """
-            SELECT approved_at_utc
-            FROM epics_management_approved_dates
-            WHERE epic_key = ?
-            ORDER BY approved_at_utc DESC
-            """,
-            (normalized,),
-        ).fetchall()
-        return [_to_text(r[0]) for r in rows if _to_text(r[0])]
-    finally:
-        conn.close()
+def _load_epics_management_sealed_dates_for_epic(settings_db_path: Path, row_ref: str) -> list[str]:
+  """Return approved_at_utc list for one epic (for IPP dashboard row)."""
+  _init_epics_management_db(settings_db_path)
+  resolved = _resolve_epics_management_row(_load_epics_management_rows(settings_db_path), row_ref)
+  row_id = _normalize_epics_management_row_id(resolved.get("id"))
+  epic_key = _normalize_epic_key(resolved.get("epic_key"))
+  conn = sqlite3.connect(settings_db_path)
+  try:
+    rows = conn.execute(
+      """
+      SELECT approved_at_utc
+      FROM epics_management_approved_dates
+      WHERE epic_row_id = ? OR (epic_row_id = '' AND epic_key = ?)
+      ORDER BY approved_at_utc DESC
+      """,
+      (row_id, epic_key),
+    ).fetchall()
+    return [_to_text(r[0]) for r in rows if _to_text(r[0])]
+  finally:
+    conn.close()
 
 
 def _load_epics_management_snapshot_for_epic_date(
-    settings_db_path: Path, epic_key: str, approved_at_utc: str
+  settings_db_path: Path, row_ref: str, approved_at_utc: str
 ) -> dict | None:
-    """Return snapshot dict for one epic at one approved date, or None."""
-    _init_epics_management_db(settings_db_path)
-    normalized = _to_text(epic_key).upper()
-    approved_at_utc = _to_text(approved_at_utc).strip()
-    if not normalized or not approved_at_utc:
-        return None
-    conn = sqlite3.connect(settings_db_path)
+  """Return snapshot dict for one epic at one approved date, or None."""
+  _init_epics_management_db(settings_db_path)
+  resolved = _resolve_epics_management_row(_load_epics_management_rows(settings_db_path), row_ref)
+  row_id = _normalize_epics_management_row_id(resolved.get("id"))
+  epic_key = _normalize_epic_key(resolved.get("epic_key"))
+  approved_at_utc = _to_text(approved_at_utc).strip()
+  if not approved_at_utc:
+    return None
+  conn = sqlite3.connect(settings_db_path)
+  try:
+    row = conn.execute(
+      """
+      SELECT snapshot_json
+      FROM epics_management_approved_dates
+      WHERE (epic_row_id = ? OR (epic_row_id = '' AND epic_key = ?)) AND approved_at_utc = ?
+      """,
+      (row_id, epic_key, approved_at_utc),
+    ).fetchone()
+    if not row:
+      return None
+    raw = _to_text(row[0])
     try:
-        row = conn.execute(
-            """
-            SELECT snapshot_json
-            FROM epics_management_approved_dates
-            WHERE epic_key = ? AND approved_at_utc = ?
-            """,
-            (normalized, approved_at_utc),
-        ).fetchone()
-        if not row:
-            return None
-        raw = _to_text(row[0])
-        try:
-            return json.loads(raw) if raw else {}
-        except Exception:
-            return {}
-    finally:
-        conn.close()
+      return json.loads(raw) if raw else {}
+    except Exception:
+      return {}
+  finally:
+    conn.close()
 
 
 def _delete_epics_management_approved_date(
-    settings_db_path: Path, epic_key: str, approved_at_utc: str
+  settings_db_path: Path, row_ref: str, approved_at_utc: str
 ) -> bool:
-    """Delete one approved date record for an epic. Returns True if a row was deleted."""
-    _init_epics_management_db(settings_db_path)
-    normalized = _to_text(epic_key).upper()
-    approved_at_utc = _to_text(approved_at_utc).strip()
-    if not normalized or not approved_at_utc:
-        return False
-    conn = sqlite3.connect(settings_db_path)
-    try:
-        cur = conn.execute(
-            "DELETE FROM epics_management_approved_dates WHERE epic_key = ? AND approved_at_utc = ?",
-            (normalized, approved_at_utc),
-        )
-        conn.commit()
-        return cur.rowcount > 0
-    finally:
-        conn.close()
+  """Delete one approved date record for an epic. Returns True if a row was deleted."""
+  _init_epics_management_db(settings_db_path)
+  resolved = _resolve_epics_management_row(_load_epics_management_rows(settings_db_path), row_ref)
+  row_id = _normalize_epics_management_row_id(resolved.get("id"))
+  epic_key = _normalize_epic_key(resolved.get("epic_key"))
+  approved_at_utc = _to_text(approved_at_utc).strip()
+  if not approved_at_utc:
+    return False
+  conn = sqlite3.connect(settings_db_path)
+  try:
+    cur = conn.execute(
+      "DELETE FROM epics_management_approved_dates WHERE (epic_row_id = ? OR (epic_row_id = '' AND epic_key = ?)) AND approved_at_utc = ?",
+      (row_id, epic_key, approved_at_utc),
+    )
+    conn.commit()
+    return cur.rowcount > 0
+  finally:
+    conn.close()
 
 
 def _fetch_jira_issues_for_jql(session, jql: str, fields: list[str]) -> list[dict]:
@@ -19670,26 +20485,26 @@ def _story_sync_row_from_issue(
 
 def _sync_epic_plan_from_jira(
     settings_db_path: Path,
-    epic_key: str,
+    row_ref: str,
     jira_url_override: str = "",
     plan_jira_overrides: dict[str, str] | None = None,
 ) -> dict[str, str]:
-    key = _normalize_epic_key(epic_key)
-    existing_rows = [r for r in _load_epics_management_rows(settings_db_path) if _to_text(r.get("epic_key")).upper() == key]
-    if not existing_rows:
-        raise LookupError(f"Epic '{key}' not found.")
-    existing = existing_rows[0]
+    existing = _resolve_epics_management_row(_load_epics_management_rows(settings_db_path), row_ref)
+    row_id = _normalize_epics_management_row_id(existing.get("id"))
+    key = _normalize_epic_key(existing.get("epic_key"))
+    if int(existing.get("is_sealed") or 0):
+        raise PermissionError(f"Epic '{key}' is sealed. Click RE-BUDGET before syncing it.")
 
     jira_url = _to_text(jira_url_override) or _to_text(existing.get("jira_url"))
     if not jira_url:
         raise ValueError("Jira URL is required for sync.")
 
     jira_key_from_url = _to_text(extract_jira_key_from_url(jira_url)).upper()
-    effective_epic_key = jira_key_from_url or key
-    if effective_epic_key != key:
-        raise ValueError(f"Jira URL key '{effective_epic_key}' does not match epic '{key}'.")
+    effective_epic_key = jira_key_from_url or (key if _EPIC_KEY_PATTERN.match(key) else "")
+    if not effective_epic_key:
+        raise ValueError("Jira URL must include an epic key like /browse/O2-1234.")
 
-    project_key = _to_text(existing.get("project_key")).upper() or _extract_project_key(key)
+    project_key = _to_text(existing.get("project_key")).upper() or _extract_project_key(effective_epic_key)
     session = get_session()
     start_field_id = resolve_jira_start_date_field_id(session, BASE_URL, project_keys=[project_key] if project_key else None)
     end_field_ids = resolve_jira_end_date_field_ids(session, BASE_URL, project_keys=[project_key] if project_key else None)
@@ -19703,19 +20518,19 @@ def _sync_epic_plan_from_jira(
         if field_id not in fields:
             fields.append(field_id)
 
-    epic_issues = _fetch_jira_issues_for_jql(session, f'key in ("{key}")', fields)
+    epic_issues = _fetch_jira_issues_for_jql(session, f'key in ("{effective_epic_key}")', fields)
     if not epic_issues:
-        raise ValueError(f"Epic '{key}' was not found in Jira.")
+        raise ValueError(f"Epic '{effective_epic_key}' was not found in Jira.")
 
     children: list[dict] = []
     try:
         children = _fetch_jira_issues_for_jql(
             session,
-            f'(parent in ("{key}") OR customfield_10014 in ("{key}"))',
+            f'(parent in ("{effective_epic_key}") OR customfield_10014 in ("{effective_epic_key}"))',
             fields,
         )
     except Exception:
-        children = _fetch_jira_issues_for_jql(session, f'parent in ("{key}")', fields)
+        children = _fetch_jira_issues_for_jql(session, f'parent in ("{effective_epic_key}")', fields)
 
     epic_name_from_jira = ""
     epic_description_from_jira = ""
@@ -19729,23 +20544,23 @@ def _sync_epic_plan_from_jira(
 
     for issue in epic_issues:
         issue_fields = issue.get("fields", {}) or {}
-        if _to_text(issue.get("key")).upper() == key:
+        if _to_text(issue.get("key")).upper() == effective_epic_key:
             epic_name_from_jira = _to_text(issue_fields.get("summary")) or epic_name_from_jira
             epic_description_from_jira = _jira_adf_to_text(issue_fields.get("description")) or epic_description_from_jira
 
-    valid_epic_keys = {key}
+    valid_epic_keys = {effective_epic_key}
     for issue in children:
         issue_fields = issue.get("fields", {}) or {}
         linked_epic = _resolve_epic_key_for_story(issue_fields, valid_epic_keys)
-        if linked_epic != key:
-            continue
+        if linked_epic != effective_epic_key:
+          continue
         story_row = _story_sync_row_from_issue(
-            issue=issue,
-            epic_key=key,
-            project_key=project_key,
-            start_field_id=start_field_id,
-            end_field_ids=end_field_ids,
-            browse_base=browse_base,
+          issue=issue,
+          epic_key=effective_epic_key,
+          project_key=project_key,
+          start_field_id=start_field_id,
+          end_field_ids=end_field_ids,
+          browse_base=browse_base,
         )
         if story_row:
             story_rows_by_key[_to_text(story_row.get("story_key")).upper()] = story_row
@@ -19823,7 +20638,7 @@ def _sync_epic_plan_from_jira(
 
         story_row = _story_sync_row_from_issue(
             issue=issue,
-            epic_key=key,
+            epic_key=effective_epic_key,
             project_key=project_key,
             start_field_id=start_field_id,
             end_field_ids=end_field_ids,
@@ -19842,12 +20657,13 @@ def _sync_epic_plan_from_jira(
         update_payload["description"] = epic_description_from_jira
     updated_row = _update_epics_management_row(
         settings_db_path,
-        key,
+        row_id,
         update_payload,
     )
     synced_story_count = _upsert_epics_management_story_sync_rows(
         settings_db_path,
-        key,
+        row_id,
+        _to_text(updated_row.get("epic_key")),
         list(story_rows_by_key.values()),
     )
     updated_row["synced_story_count"] = synced_story_count
@@ -28196,18 +29012,15 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             row = _save_epics_management_row(capacity_paths["db_path"], payload)
             return jsonify({"row": row, "source": "epics_management_db"}), 201
         except _EpicCreateConflictError as exc:
-            return jsonify(
-                {
-                    "error": str(exc),
-                    "code": "epic_key_exists",
-                    "vacant_tmp_key": exc.vacant_tmp_key,
-                    "can_reuse_vacant_tmp_key": bool(exc.vacant_tmp_key),
-                }
-            ), 409
+            body = {
+                "error": str(exc),
+                "code": "epic_key_exists",
+                "vacant_tmp_key": exc.vacant_tmp_key,
+                "can_reuse_vacant_tmp_key": bool(exc.vacant_tmp_key),
+            }
+            return jsonify(body), 409
         except ValueError as exc:
-            message = str(exc)
-            status = 409 if "already exists" in message else 400
-            return jsonify({"error": message}), status
+            return jsonify({"error": str(exc)}), 400
         except Exception as exc:
             return jsonify({"error": f"Failed to create epic row: {exc}"}), 500
 
@@ -28219,6 +29032,8 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             return jsonify({"row": row, "source": "epics_management_db"})
         except LookupError as exc:
             return jsonify({"error": str(exc)}), 404
+        except PermissionError as exc:
+            return jsonify({"error": str(exc)}), 423
         except ValueError as exc:
             message = str(exc)
             status = 409 if "already exists" in message else 400
@@ -28233,6 +29048,8 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             return jsonify({"deleted": True, "epic_key": deleted_key, "source": "epics_management_db"})
         except LookupError as exc:
             return jsonify({"error": str(exc)}), 404
+        except PermissionError as exc:
+            return jsonify({"error": str(exc)}), 423
         except Exception as exc:
             return jsonify({"error": f"Failed to delete epic row: {exc}"}), 500
 
@@ -28255,7 +29072,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             plan_jira_links = plan_jira_links_raw if isinstance(plan_jira_links_raw, dict) else {}
             row = _sync_epic_plan_from_jira(
                 settings_db_path=capacity_paths["db_path"],
-                epic_key=epic_key,
+                row_ref=epic_key,
                 jira_url_override=jira_url,
                 plan_jira_overrides=plan_jira_links,
             )
@@ -28268,6 +29085,8 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             )
         except LookupError as exc:
             return jsonify({"error": str(exc)}), 404
+        except PermissionError as exc:
+            return jsonify({"error": str(exc)}), 423
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
         except Exception as exc:
