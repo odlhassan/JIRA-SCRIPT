@@ -1,6 +1,6 @@
 # Epics Planner — SEAL EPICS Guide
 
-This guide explains how to use the **SEAL EPICS** feature on the Epics Planner (Epics Management) page. Sealing records an **approved date** for selected epics and locks their planned dates until you choose to revise them.
+This guide explains how to use the **SEAL EPICS** feature on the Epics Planner (Epics Management) page. Sealing records an **approved date** for selected epics and locks every editable planner field until you choose to revise them.
 
 **Note:** Delivery Status, Remarks, and Actual Production Date are no longer edited on Epics Planner. They are managed per meeting in **IPP Meeting Planner** (Settings → IPP Meeting Planner) in the IPP Builder. The IPP Meeting Dashboard shows epics from the current Scheduled meeting and their per-meeting delivery status and remarks.
 
@@ -16,8 +16,9 @@ This guide explains how to use the **SEAL EPICS** feature on the Epics Planner (
 
 ## What sealing does
 
-- **Sealing** saves a snapshot of the selected epics (metadata, phases, man-days, dates, status) and marks them as **sealed**.
-- Sealed epics show a **lock icon** next to the epic name. Their planned dates are fixed until you **RE-BUDGET**.
+- **Sealing** recomputes the TK Budgeted values, saves a snapshot of the selected epics (metadata, phases, man-days, dates, status), and marks them as **sealed**.
+- Sealed epics show a **lock icon** next to the epic name. All editable values are fixed until you **RE-BUDGET**.
+- Backend save, delete, and Jira sync requests are rejected for sealed epics until **RE-BUDGET** is clicked.
 - Each time you click **SEAL IT**, the system records a new **approved date**. You can review what was sealed on any past date.
 - The list of **approved (sealed) dates** for each epic is visible in the **IPP Meeting Dashboard** → **RMI Details** drawer.
 
@@ -55,7 +56,7 @@ This guide explains how to use the **SEAL EPICS** feature on the Epics Planner (
 ## Revising a sealed epic (RE-BUDGET)
 
 - For a **sealed** epic, the **Actions** column shows a **RE-BUDGET** button (in addition to Edit, Save, Sync Jira Epic, Delete).
-- Click **RE-BUDGET** for that epic. The epic is **unsealed** (lock removed) so you can change dates and other plan data.
+- Click **RE-BUDGET** for that epic. The epic is **unsealed** (lock removed) so you can change Most Likely man-days, dates, Jira URLs, and other plan data.
 - After editing, you can **seal the epic again** by selecting it and using **SEAL EPICS** → **SEAL IT**. That creates a new approved date.
 
 ---
@@ -85,3 +86,4 @@ This guide explains how to use the **SEAL EPICS** feature on the Epics Planner (
 
 - **Approved dates** are stored in the system and are **not** yet used by the Approved vs Planned Hours report; that integration is planned for later.
 - Sealing does not change Jira; it only records the state in the Epics Planner database (`assignee_hours_capacity.db`).
+- The sealed snapshot stores the computed TK Budgeted layer. The live planner also keeps `man_days` aligned to `tk_budgeted_man_days` for compatibility with downstream reports.

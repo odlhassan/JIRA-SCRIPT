@@ -232,6 +232,7 @@ def main() -> None:
         {"name": "rnd-data-story-html", "type": "script", "script": "generate_rnd_data_story.py", "extra_args": None, "env": None},
         {"name": "planned-rmis-html", "type": "script", "script": "generate_planned_rmis_html.py", "extra_args": None, "env": None},
         {"name": "gantt-chart-html", "type": "script", "script": "generate_gantt_chart_html.py", "extra_args": None, "env": None},
+        {"name": "rmi-jira-gantt-html", "type": "script", "script": "generate_rmi_jira_gantt_html.py", "extra_args": None, "env": None},
         {"name": "planned-actual-table-view-html", "type": "script", "script": "generate_planned_actual_table_view.py", "extra_args": None, "env": None},
         {"name": "original-estimates-hierarchy-html", "type": "script", "script": "generate_original_estimates_hierarchy_report.py", "extra_args": None, "env": None},
     ]

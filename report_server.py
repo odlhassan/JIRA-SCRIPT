@@ -18,6 +18,7 @@ import threading
 import time
 import uuid
 from pathlib import Path
+from urllib.parse import unquote
 
 from flask import Flask, jsonify, redirect, request, send_file
 from openpyxl import Workbook, load_workbook
@@ -46,6 +47,7 @@ from dashboard_db_enrichment import (
 from generate_employee_performance_report import (
     DEFAULT_PERFORMANCE_SETTINGS,
     _delete_performance_team,
+    _enrich_performance_assignees_payload,
     _init_performance_settings_db,
     _load_leave_issue_keys as epf_load_leave_issue_keys,
     _list_performance_teams,
@@ -57,6 +59,7 @@ from generate_employee_performance_report import (
     _save_performance_settings,
     _save_performance_team,
     _update_performance_team,
+    _upsert_performance_resignation_record,
 )
 from generate_missed_entries_html import (
     DEFAULT_INPUT_XLSX as MISSED_ENTRIES_DEFAULT_INPUT_XLSX,
@@ -207,6 +210,7 @@ REPORT_FILENAME_TO_ID: dict[str, str] = {
     "planned_rmis_report.html": "planned_rmis",
     "gantt_chart_report.html": "gantt_chart",
     "phase_rmi_gantt_report.html": "phase_rmi_gantt",
+    "rmi_jira_gantt_report.html": "rmi_jira_gantt",
     "ipp_meeting_dashboard.html": "ipp_meeting_dashboard",
     "rlt_leave_report.html": "rlt_leave_report",
     "leaves_planned_calendar.html": "leaves_planned_calendar",
@@ -259,6 +263,10 @@ REPORT_REFRESH_CHAINS: dict[str, list[str]] = {
         "run_all_exports.py",
         "generate_phase_rmi_gantt_html.py",
     ],
+    "rmi_jira_gantt": [
+        "run_all_exports.py",
+        "generate_rmi_jira_gantt_html.py",
+    ],
     "ipp_meeting_dashboard": [
         "export_ipp_phase_breakdown.py",
         "generate_ipp_meeting_dashboard.py",
@@ -292,6 +300,7 @@ REPORT_REFRESH_DEFAULT_RETENTION_RUNS = 10
 REFRESH_WIDGET_MARKER = "codex-refresh-widget-v2"
 REFRESH_WIDGET_START = "<!-- codex-refresh-widget-start -->"
 REFRESH_WIDGET_END = "<!-- codex-refresh-widget-end -->"
+REPORT_IDS_WITHOUT_REFRESH_WIDGET = {"original_estimates_hierarchy"}
 INFO_DRAWER_MARKER = "codex-info-drawer-v1"
 INFO_DRAWER_START = "<!-- codex-info-drawer-start -->"
 INFO_DRAWER_END = "<!-- codex-info-drawer-end -->"
@@ -301,6 +310,10 @@ REPORT_ENTITIES_SETTINGS_ROUTE = "/settings/report-entities"
 MANAGE_FIELDS_SETTINGS_ROUTE = "/settings/manage-fields"
 PROJECTS_SETTINGS_ROUTE = "/settings/projects"
 EPICS_MANAGEMENT_SETTINGS_ROUTE = "/settings/epics-management"
+EPICS_MANAGEMENT_IMPORT_ROUTE = "/settings/epics-management/import"
+EPICS_MANAGEMENT_IMPORT_DEFAULT_XLSX = Path(
+    r"C:\Users\hmalik\OneDrive - Octopus Digital\Documents\00 - Documentation via Code\IPP Meeting Reports\Epic Estimates Approved Plan.xlsx"
+)
 IPP_MEETING_PLANNER_SETTINGS_ROUTE = "/settings/ipp-meeting-planner"
 EPICS_DROPDOWN_OPTIONS_SETTINGS_ROUTE = "/settings/epics-dropdown-options"
 EPIC_PHASES_SETTINGS_ROUTE = "/settings/epic-phases"
@@ -328,6 +341,7 @@ STATIC_REPORT_NAV_ITEMS: list[dict[str, object]] = [
     {"page_key": "rnd_data_story", "title": "RnD Data Story", "href": "/rnd_data_story.html", "icon": "auto_stories", "file": "rnd_data_story.html", "default_nav_order": 80, "page_type": "report"},
     {"page_key": "planned_rmis_report", "title": "Planned RMIs", "href": "/planned_rmis_report.html", "icon": "assignment_turned_in", "file": "planned_rmis_report.html", "default_nav_order": 90, "page_type": "report"},
     {"page_key": "phase_rmi_gantt_report", "title": "Phase RMI Gantt", "href": "/phase_rmi_gantt_report.html", "icon": "view_timeline", "file": "phase_rmi_gantt_report.html", "default_nav_order": 100, "page_type": "report"},
+    {"page_key": "rmi_jira_gantt_report", "title": "RMI Jira Gantt", "href": "/rmi_jira_gantt_report.html", "icon": "view_timeline", "file": "rmi_jira_gantt_report.html", "default_nav_order": 105, "page_type": "report"},
     {"page_key": CANONICAL_PVD_PAGE_KEY, "title": "Approved vs Planned Hours Report", "href": f"/{CANONICAL_PVD_HTML_FILE}", "icon": "analytics", "file": CANONICAL_PVD_HTML_FILE, "default_nav_order": 110, "page_type": "report"},
     {"page_key": "planned_actual_table_view", "title": "Planned vs Actual Table View", "href": "/planned_actual_table_view.html", "icon": "table_view", "file": "planned_actual_table_view.html", "default_nav_order": 120, "page_type": "report"},
     {"page_key": "original_estimates_hierarchy_report", "title": "Epic Estimate Report", "href": "/original_estimates_hierarchy_report.html", "icon": "schema", "file": "original_estimates_hierarchy_report.html", "default_nav_order": 130, "page_type": "report"},
@@ -345,6 +359,7 @@ STATIC_ADMIN_NAV_ITEMS: list[dict[str, object]] = [
     {"page_key": "epic_dropdowns", "title": "Epic Dropdowns", "href": EPICS_DROPDOWN_OPTIONS_SETTINGS_ROUTE, "icon": "arrow_drop_down_circle", "path": EPICS_DROPDOWN_OPTIONS_SETTINGS_ROUTE, "default_nav_order": 60, "page_type": "configuration"},
     {"page_key": "epic_phases", "title": "Epic Phases", "href": EPIC_PHASES_SETTINGS_ROUTE, "icon": "alt_route", "path": EPIC_PHASES_SETTINGS_ROUTE, "default_nav_order": 70, "page_type": "configuration"},
     {"page_key": "epics_planner", "title": "Epics Planner", "href": EPICS_MANAGEMENT_SETTINGS_ROUTE, "icon": "event_note", "path": EPICS_MANAGEMENT_SETTINGS_ROUTE, "default_nav_order": 80, "page_type": "configuration"},
+    {"page_key": "epics_planner_import", "title": "Epics Planner Import", "href": EPICS_MANAGEMENT_IMPORT_ROUTE, "icon": "upload_file", "path": EPICS_MANAGEMENT_IMPORT_ROUTE, "default_nav_order": 82, "page_type": "configuration"},
     {"page_key": "ipp_meeting_planner", "title": "IPP Meeting Planner", "href": IPP_MEETING_PLANNER_SETTINGS_ROUTE, "icon": "groups", "path": IPP_MEETING_PLANNER_SETTINGS_ROUTE, "default_nav_order": 85, "page_type": "configuration"},
     {"page_key": "page_categories", "title": "Page Categories", "href": PAGE_CATEGORIES_SETTINGS_ROUTE, "icon": "category", "path": PAGE_CATEGORIES_SETTINGS_ROUTE, "default_nav_order": 90, "page_type": "configuration"},
     {"page_key": "canonical_refresh_settings", "title": "Colossal Refresh", "href": CANONICAL_REFRESH_SETTINGS_ROUTE, "icon": "sync", "path": CANONICAL_REFRESH_SETTINGS_ROUTE, "default_nav_order": 100, "page_type": "configuration"},
@@ -367,6 +382,7 @@ def _settings_nav_items() -> list[tuple[str, str]]:
         ("Epic Dropdowns", EPICS_DROPDOWN_OPTIONS_SETTINGS_ROUTE),
         ("Epic Phases", EPIC_PHASES_SETTINGS_ROUTE),
         ("Epics Planner", EPICS_MANAGEMENT_SETTINGS_ROUTE),
+        ("Epics Planner Import", EPICS_MANAGEMENT_IMPORT_ROUTE),
     ]
 
 
@@ -6726,6 +6742,16 @@ def _performance_settings_html() -> str:
     body.drawer-open .drawer-backdrop { opacity:1; pointer-events:auto; }
     body.drawer-open .drawer { transform:translateX(0); }
     #team-assignees { min-height:160px; }
+    .resource-add-row { display:flex; flex-wrap:wrap; gap:8px; align-items:flex-end; margin-bottom:10px; }
+    .resource-add-row > div label { font-size:.78rem; }
+    .resource-add-row input { max-width:14rem; }
+    .resource-records-table { width:100%; border-collapse:collapse; font-size:.82rem; }
+    .resource-records-table th, .resource-records-table td { padding:6px 8px; border-bottom:1px solid #e2e8f0; text-align:left; vertical-align:middle; }
+    .resource-records-table th { color:#334155; font-weight:700; }
+    .resource-records-table input[type="date"] { max-width:11rem; }
+    .resource-records-table input[type="checkbox"] { width:auto; }
+    .res-name { font-weight:600; color:#0f172a; }
+    .res-badge { font-size:.72rem; font-weight:700; color:#9a3412; background:#ffedd5; border-radius:4px; padding:1px 6px; margin-left:6px; vertical-align:middle; }
     #status { margin-top:10px; min-height:1.2em; }
     #status.ok { color:var(--ok); } #status.err { color:var(--err); }
   </style>
@@ -6905,7 +6931,7 @@ def _performance_settings_html() -> str:
     </section>
     <section class="team-wrap">
       <h2 style="margin:0 0 8px;font-size:1rem;">Team Management</h2>
-      <p style="margin:0;color:var(--muted);font-size:.88rem;">Create quick teams by selecting assignees.</p>
+      <p style="margin:0;color:var(--muted);font-size:.88rem;">Create quick teams by selecting assignees. Resignation details below are stored for system record only and do not change performance scoring.</p>
       <div class="team-grid">
         <div>
           <label for="team-name">Team Name</label>
@@ -6928,6 +6954,29 @@ def _performance_settings_html() -> str:
         <div style="font-size:.86rem;font-weight:700;color:#334155;margin-bottom:4px;">Assignees Not in Any Team</div>
         <div class="team-list" id="team-unassigned-list"></div>
       </div>
+      <div style="margin-top:14px;padding-top:12px;border-top:1px dashed var(--line);">
+        <h3 style="margin:0 0 4px;font-size:.95rem;">Resigned resources (system record)</h3>
+        <p style="margin:0 0 10px;color:var(--muted);font-size:.82rem;">Mark who has resigned and optionally the last employment date. Use the row &quot;Add person…&quot; if someone no longer appears in the hours report but should stay on record.</p>
+        <div class="resource-add-row">
+          <div>
+            <label for="res-add-name">Add person (not in report)</label>
+            <input id="res-add-name" type="text" maxlength="200" placeholder="Full name" autocomplete="off">
+          </div>
+          <div>
+            <label for="res-add-date">Resignation date</label>
+            <input id="res-add-date" type="date">
+          </div>
+          <div>
+            <button class="btn" type="button" id="res-add-btn">Add record</button>
+          </div>
+        </div>
+        <div class="team-list" id="resource-records-wrap" style="max-height:320px;padding:0;overflow:auto;">
+          <table class="resource-records-table" id="resource-records-table" aria-label="Resignation records">
+            <thead><tr><th>Resource</th><th>Resigned</th><th>Date</th><th></th></tr></thead>
+            <tbody id="resource-records-tbody"></tbody>
+          </table>
+        </div>
+      </div>
     </section>
     <div id="status"></div>
   </main>
@@ -6946,6 +6995,7 @@ def _performance_settings_html() -> str:
     const API = "/api/performance/settings";
     const ASSIGNEES_API = "/api/performance/assignees";
     const TEAMS_API = "/api/performance/teams";
+    const RESOURCE_API = "/api/performance/resource-records";
     const statusEl = document.getElementById("status");
     const drawerEl = document.getElementById("field-drawer");
     const drawerBackdropEl = document.getElementById("field-drawer-backdrop");
@@ -6978,9 +7028,14 @@ def _performance_settings_html() -> str:
     const teamAssigneesEl = document.getElementById("team-assignees");
     const teamListEl = document.getElementById("team-list");
     const teamUnassignedListEl = document.getElementById("team-unassigned-list");
+    const resourceRecordsTbodyEl = document.getElementById("resource-records-tbody");
+    const resAddNameEl = document.getElementById("res-add-name");
+    const resAddDateEl = document.getElementById("res-add-date");
+    const resAddBtnEl = document.getElementById("res-add-btn");
     const saveTeamBtnEl = document.getElementById("create-team-btn");
     const cancelEditTeamBtnEl = document.getElementById("cancel-edit-team-btn");
     let allAssignees = [];
+    let resourceRecords = {};
     let loadedTeams = [];
     let editingOriginalTeamName = "";
     function setStatus(msg, kind) { statusEl.textContent = msg || ""; statusEl.className = kind || ""; }
@@ -7042,7 +7097,67 @@ def _performance_settings_html() -> str:
         teamUnassignedListEl.innerHTML = '<div style="color:#64748b;font-size:.85rem;">All assignees are mapped to teams.</div>';
         return;
       }
-      teamUnassignedListEl.innerHTML = unassigned.map((name) => '<div class="team-item"><div class="team-name">' + esc(name) + '</div></div>').join("");
+      teamUnassignedListEl.innerHTML = unassigned.map((name) => {
+        const rec = resourceRecords && resourceRecords[name] ? resourceRecords[name] : null;
+        const resigned = rec && rec.resigned;
+        const badge = resigned ? '<span class="res-badge" title="Marked resigned (system record)">Resigned</span>' : "";
+        return '<div class="team-item"><div class="team-name">' + esc(name) + badge + '</div></div>';
+      }).join("");
+    }
+    function renderResourceRecords() {
+      if (!resourceRecordsTbodyEl) return;
+      const names = Array.isArray(allAssignees) ? allAssignees.slice() : [];
+      if (!names.length) {
+        resourceRecordsTbodyEl.innerHTML = '<tr><td colspan="4" style="color:#64748b;padding:10px;">No assignees loaded. Ensure assignee hours report exists, then use Reload Teams.</td></tr>';
+        return;
+      }
+      resourceRecordsTbodyEl.innerHTML = names.map((name, idx) => {
+        const rec = resourceRecords && resourceRecords[name] ? resourceRecords[name] : { resigned: false, resignation_date: null };
+        const resigned = Boolean(rec.resigned);
+        const d = rec.resignation_date ? String(rec.resignation_date).slice(0, 10) : "";
+        const rid = "res-cb-" + idx;
+        const did = "res-dt-" + idx;
+        return '<tr data-res-enc="' + encodeURIComponent(name) + '"><td><span class="res-name">' + esc(name) + '</span></td>' +
+          '<td><input type="checkbox" class="res-cb" id="' + rid + '"' + (resigned ? " checked" : "") + ' aria-label="Resigned ' + esc(name) + '"></td>' +
+          '<td><input type="date" class="res-dt" id="' + did + '" value="' + esc(d) + '"' + (resigned ? "" : " disabled") + ' aria-label="Resignation date"></td>' +
+          '<td><button class="btn alt res-save" type="button">Save</button></td></tr>';
+      }).join("");
+      Array.from(resourceRecordsTbodyEl.querySelectorAll("tr")).forEach((tr) => {
+        let rowName = "";
+        try {
+          rowName = decodeURIComponent(String(tr.getAttribute("data-res-enc") || ""));
+        } catch (e) {
+          rowName = "";
+        }
+        const cb = tr.querySelector(".res-cb");
+        const dt = tr.querySelector(".res-dt");
+        if (cb && dt) {
+          cb.addEventListener("change", () => { dt.disabled = !cb.checked; if (!cb.checked) dt.value = ""; });
+        }
+        const saveBtn = tr.querySelector(".res-save");
+        if (saveBtn) {
+          saveBtn.addEventListener("click", async () => {
+            const resignedNow = cb ? cb.checked : false;
+            const dateVal = dt && dt.value ? String(dt.value).trim() : "";
+            try {
+              const response = await fetch(RESOURCE_API + "/" + encodeURIComponent(rowName), {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ resigned: resignedNow, resignation_date: dateVal || null }),
+              });
+              const data = await response.json();
+              if (!response.ok) throw new Error(data.error || "Failed to save record.");
+              const rec = data.record || {};
+              resourceRecords[rowName] = { resigned: Boolean(rec.resigned), resignation_date: rec.resignation_date || null };
+              setStatus("Saved resignation record for " + rowName + ".", "ok");
+              await loadAssignees();
+              await loadTeams();
+            } catch (err) {
+              setStatus(err.message || String(err), "err");
+            }
+          });
+        }
+      });
     }
     function startTeamEdit(teamName) {
       const targetName = String(teamName || "");
@@ -7135,11 +7250,18 @@ def _performance_settings_html() -> str:
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Failed to load assignees.");
       allAssignees = Array.isArray(data.assignees) ? data.assignees.map((name) => String(name || "")).filter(Boolean) : [];
+      resourceRecords = (data.resource_records && typeof data.resource_records === "object") ? data.resource_records : {};
       const retained = new Set(getSelectedAssignees());
-      teamAssigneesEl.innerHTML = allAssignees.map((name) => '<option value="' + esc(name) + '">' + esc(name) + '</option>').join("");
+      teamAssigneesEl.innerHTML = allAssignees.map((name) => {
+        const rec = resourceRecords[name];
+        const resigned = rec && rec.resigned;
+        const suffix = resigned ? " (resigned — record)" : "";
+        return '<option value="' + esc(name) + '" title="' + esc(name + suffix) + '">' + esc(name) + (resigned ? " — resigned" : "") + '</option>';
+      }).join("");
       Array.from(teamAssigneesEl.options).forEach((o) => { o.selected = retained.has(String(o.value || "")); });
       syncLeaderOptions(String(teamLeaderEl.value || ""));
       renderUnassignedAssignees();
+      renderResourceRecords();
     }
     function renderTeams(teams) {
       loadedTeams = Array.isArray(teams) ? teams : [];
@@ -7218,6 +7340,32 @@ def _performance_settings_html() -> str:
     teamAssigneesEl.addEventListener("change", () => {
       syncLeaderOptions(String(teamLeaderEl.value || ""));
     });
+    if (resAddBtnEl) {
+      resAddBtnEl.addEventListener("click", async () => {
+        const name = String(resAddNameEl && resAddNameEl.value ? resAddNameEl.value : "").trim();
+        const dateVal = resAddDateEl && resAddDateEl.value ? String(resAddDateEl.value).trim() : "";
+        if (!name) {
+          setStatus("Enter a name to add.", "err");
+          return;
+        }
+        try {
+          const response = await fetch(RESOURCE_API, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ assignee: name, resigned: true, resignation_date: dateVal || null }),
+          });
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error || "Failed to add record.");
+          if (resAddNameEl) resAddNameEl.value = "";
+          if (resAddDateEl) resAddDateEl.value = "";
+          setStatus("Added resignation record for " + name + ".", "ok");
+          await loadAssignees();
+          await loadTeams();
+        } catch (err) {
+          setStatus(err.message || String(err), "err");
+        }
+      });
+    }
     Promise.all([loadSettings(), loadAssignees(), loadTeams()]).catch((e) => setStatus(e.message || String(e), "err"));
   </script>
   <script src="/shared-nav.js"></script>
@@ -12472,6 +12620,199 @@ def _ipp_meeting_planner_settings_html() -> str:
 </html>""".replace("__SETTINGS_TOP_NAV__", _settings_top_nav_html(IPP_MEETING_PLANNER_SETTINGS_ROUTE))
 
 
+def _epics_management_import_html() -> str:
+    return """<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Epics Planner Import</title>
+  <link rel="stylesheet" href="/shared-nav.css">
+  <link rel="stylesheet" href="/material-symbols.css">
+  <style>
+    :root { --bg:#f5f7fb; --line:#d1d9e8; --text:#0f172a; --muted:#475569; --brand:#1d4ed8; --ok:#166534; --warn:#92400e; --danger:#b91c1c; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:#f5f7fb; color:var(--text); font-family:"Segoe UI",Tahoma,sans-serif; }
+    main { padding:18px; }
+    .top { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:14px; }
+    h1 { margin:0; font-size:1.45rem; font-weight:650; }
+    .btn { border:1px solid #1e40af; background:var(--brand); color:#fff; border-radius:8px; padding:8px 12px; cursor:pointer; text-decoration:none; font-size:.86rem; }
+    .btn.alt { border-color:var(--line); background:#fff; color:var(--text); }
+    .toolbar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; padding:12px; border:1px solid var(--line); background:#fff; border-radius:8px; margin-bottom:12px; }
+    .status { min-height:1.2em; color:var(--muted); font-size:.9rem; }
+    .status.ok { color:var(--ok); }
+    .status.warn { color:var(--warn); }
+    .summary { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:12px; }
+    .chip { border:1px solid var(--line); background:#fff; border-radius:999px; padding:5px 10px; font-size:.82rem; color:#334155; }
+    .table-wrap { border:1px solid var(--line); background:#fff; border-radius:8px; overflow:auto; max-height:72vh; }
+    table { border-collapse:separate; border-spacing:0; min-width:1900px; width:100%; }
+    th, td { border-bottom:1px solid #e2e8f0; border-right:1px solid #e2e8f0; padding:7px 8px; font-size:.78rem; text-align:left; vertical-align:top; }
+    th { position:sticky; top:0; z-index:2; background:#315f9f; color:#fff; text-transform:uppercase; letter-spacing:.03em; font-size:.68rem; }
+    td:last-child, th:last-child { border-right:none; }
+    input[type="text"], input[type="url"], input[type="date"], select, textarea { width:100%; border:1px solid #cbd5e1; border-radius:6px; padding:5px 6px; font:inherit; font-size:.78rem; background:#fff; }
+    textarea { min-height:54px; resize:vertical; }
+    .mono { font-family:Consolas,monospace; }
+    .muted { color:var(--muted); }
+    .warn { color:var(--warn); font-weight:600; }
+    .ok { color:var(--ok); font-weight:600; }
+    .phase-grid { display:grid; grid-template-columns:100px 70px 210px 104px 104px; gap:5px; align-items:center; min-width:520px; }
+    .phase-grid .head { font-weight:700; color:#334155; font-size:.72rem; }
+    .phase-name { font-weight:650; }
+    .row-warning { margin-top:4px; color:var(--warn); font-size:.75rem; }
+    .actions { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+    .existing { white-space:nowrap; }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="top">
+      <div>
+        <h1>Epics Planner Import</h1>
+        <div class="muted" style="margin-top:4px;">Review approved plan rows, Jira metadata, and phase suggestions before writing to Epics Planner.</div>
+      </div>
+      <div class="actions">
+        <a class="btn alt" href="/settings/epics-management">Back to Epics Planner</a>
+      </div>
+    </div>
+    <div class="toolbar">
+      <div style="flex:1;min-width:260px;">__SETTINGS_TOP_NAV__</div>
+      <button id="reload-btn" class="btn alt" type="button">Reload Preview</button>
+      <button id="enrich-jira-btn" class="btn alt" type="button">Enrich Jira Suggestions</button>
+      <button id="submit-btn" class="btn" type="button" disabled>Submit Included Rows</button>
+      <span id="status" class="status">Loading preview...</span>
+    </div>
+    <div id="summary" class="summary"></div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Include</th><th>Source</th><th>Project</th><th>Category / Component</th><th>Epic</th><th>Originator / Status</th><th>Totals</th><th>Phase Review</th><th>Existing</th>
+          </tr>
+        </thead>
+        <tbody id="rows-body"></tbody>
+      </table>
+    </div>
+  </main>
+  <script>
+    const PREVIEW_API = "/api/epics-management/import/preview?fetch_jira=0";
+    const JIRA_PREVIEW_API = "/api/epics-management/import/preview?fetch_jira=1";
+    const SUBMIT_API = "/api/epics-management/import/submit";
+    const PHASE_LABELS = { process_design:"Prc Design", research_urs_plan:"R/URS", dds_plan:"R/DDS", development_plan:"Dev", sqa_plan:"SQA", process_qa_testing:"Prc Test", user_manual_plan:"Doc", regression_sqa_testing:"Reg SQA", production_plan:"Release" };
+    let previewRows = [];
+    function esc(value) { return String(value == null ? "" : value).replace(/[&<>"']/g, (ch) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[ch])); }
+    function setStatus(message, cls) { const el = document.getElementById("status"); el.textContent = message || ""; el.className = "status " + (cls || ""); }
+    function rowBySourceId(sourceId) { return previewRows.find((row) => String(row.source_id || "") === String(sourceId || "")); }
+    function renderSummary(body) {
+      const rows = Array.isArray(body.rows) ? body.rows : [];
+      const warnings = rows.reduce((count, row) => count + (Array.isArray(row.warnings) ? row.warnings.length : 0), 0);
+      const existing = rows.filter((row) => row.existing && row.existing.exists).length;
+      const sealed = rows.filter((row) => row.existing && row.existing.is_sealed).length;
+      const jiraErrors = Array.isArray(body.jira_errors) ? body.jira_errors : [];
+      document.getElementById("summary").innerHTML = [
+        '<span class="chip">Rows: ' + esc(rows.length) + '</span>',
+        '<span class="chip">Existing: ' + esc(existing) + '</span>',
+        '<span class="chip">Sealed will re-budget: ' + esc(sealed) + '</span>',
+        '<span class="chip">Warnings: ' + esc(warnings) + '</span>',
+        '<span class="chip">Workbook: ' + esc(body.source_workbook || "") + '</span>',
+      ].join("") + (jiraErrors.length ? '<span class="chip warn">Jira: ' + esc(jiraErrors.join("; ")) + '</span>' : "");
+    }
+    function renderPhaseGrid(row) {
+      const phases = row.phases || {};
+      const suggestions = row.phase_suggestions || {};
+      const parts = ['<div class="phase-grid"><div class="head">Phase</div><div class="head">Days</div><div class="head">Jira URL</div><div class="head">Start</div><div class="head">Due</div>'];
+      Object.keys(PHASE_LABELS).forEach((key) => {
+        const value = phases[key];
+        if (value === "" || value == null) return;
+        const sug = suggestions[key] || {};
+        const accepted = !!sug.accepted;
+        parts.push('<div class="phase-name">' + esc(PHASE_LABELS[key]) + '</div>');
+        parts.push('<div class="mono">' + esc(value) + '</div>');
+        parts.push('<div><label style="display:flex;align-items:center;gap:5px;margin-bottom:3px;"><input type="checkbox" data-phase-accept="' + esc(key) + '" ' + (accepted ? "checked" : "") + ' style="width:auto;"> Accept</label><input type="url" data-phase-url="' + esc(key) + '" value="' + esc(sug.jira_url || "") + '" placeholder="Optional Jira URL"><div class="muted">' + esc(sug.summary || "") + '</div></div>');
+        parts.push('<input type="date" data-phase-start="' + esc(key) + '" value="' + esc(sug.start_date || "") + '">');
+        parts.push('<input type="date" data-phase-due="' + esc(key) + '" value="' + esc(sug.due_date || "") + '">');
+      });
+      parts.push("</div>");
+      return parts.join("");
+    }
+    function renderRows() {
+      const bodyEl = document.getElementById("rows-body");
+      if (!previewRows.length) {
+        bodyEl.innerHTML = '<tr><td colspan="9" class="muted" style="text-align:center;padding:18px;">No importable RMI rows found.</td></tr>';
+        return;
+      }
+      bodyEl.innerHTML = previewRows.map((row) => {
+        const warnings = Array.isArray(row.warnings) ? row.warnings : [];
+        const includeChecked = row.can_import ? "checked" : "";
+        const existing = row.existing || {};
+        return '<tr data-source-id="' + esc(row.source_id || "") + '">'
+          + '<td><input type="checkbox" data-include-row ' + includeChecked + ' ' + (row.can_import ? "" : "disabled") + '></td>'
+          + '<td><div class="mono">' + esc(row.sheet || "") + ":" + esc(row.row_number || "") + '</div><div class="muted">' + esc(row.work_status || "") + '</div></td>'
+          + '<td><input type="text" data-field="project_name" value="' + esc(row.project_name || "") + '"><input type="text" data-field="project_key" class="mono" value="' + esc(row.project_key || "") + '" style="margin-top:5px;"></td>'
+          + '<td><input type="text" data-field="category" value="' + esc(row.category || "") + '"><input type="text" data-field="component" value="' + esc(row.component || "") + '" style="margin-top:5px;"></td>'
+          + '<td><div class="mono">' + esc(row.epic_key || "") + '</div><input type="url" data-field="jira_url" value="' + esc(row.jira_url || "") + '" style="margin-top:5px;"><input type="text" data-field="epic_name" value="' + esc(row.epic_name || "") + '" style="margin-top:5px;"><textarea data-field="description" placeholder="Jira description">' + esc(row.description || "") + '</textarea></td>'
+          + '<td><input type="text" data-field="originator" value="' + esc(row.originator || "") + '"><div class="muted" style="margin-top:5px;">Plan: ' + esc(row.source_plan_status || "") + '</div><div class="muted">Work: ' + esc(row.work_status || "") + '</div></td>'
+          + '<td><div>Phase sum: <b class="mono">' + esc(row.phase_sum) + '</b></div><div>W total: <b class="mono">' + esc(row.man_days_total) + '</b></div><div class="' + (row.total_matches ? "ok" : "warn") + '">' + (row.total_matches ? "Total matches" : "Total mismatch") + '</div>' + warnings.map((w) => '<div class="row-warning">' + esc(w) + '</div>').join("") + '</td>'
+          + '<td>' + renderPhaseGrid(row) + '</td>'
+          + '<td class="existing">' + (existing.exists ? ('<b>Existing</b><br>' + esc(existing.epic_name || existing.epic_key || "") + '<br>' + (existing.is_sealed ? '<span class="warn">Sealed; will re-budget</span>' : '<span class="ok">Unsealed</span>')) : '<span class="ok">New row</span>') + '</td>'
+          + '</tr>';
+      }).join("");
+    }
+    async function loadPreview(options) {
+      const opts = options && typeof options === "object" ? options : {};
+      const withJira = !!opts.withJira;
+      setStatus(withJira ? "Loading Jira suggestions..." : "Loading workbook preview...", "");
+      document.getElementById("submit-btn").disabled = true;
+      const resp = await fetch(withJira ? JIRA_PREVIEW_API : PREVIEW_API, { cache: "no-store" });
+      const body = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(body.error || "Failed to load import preview.");
+      previewRows = Array.isArray(body.rows) ? body.rows : [];
+      renderSummary(body);
+      renderRows();
+      document.getElementById("submit-btn").disabled = previewRows.length === 0;
+      setStatus(withJira ? "Preview loaded with Jira suggestions." : "Workbook preview loaded. Use Enrich Jira Suggestions when you want phase link suggestions.", "ok");
+    }
+    function collectRows() {
+      return Array.from(document.querySelectorAll("tr[data-source-id]")).map((tr) => {
+        const sourceId = tr.getAttribute("data-source-id") || "";
+        const base = Object.assign({}, rowBySourceId(sourceId) || {});
+        ["project_name","project_key","category","component","jira_url","epic_name","description","originator"].forEach((field) => {
+          const el = tr.querySelector('[data-field="' + field + '"]');
+          if (el) base[field] = el.value || "";
+        });
+        const includeEl = tr.querySelector("[data-include-row]");
+        base.include = !!(includeEl && includeEl.checked && !includeEl.disabled);
+        const phaseReviews = {};
+        Object.keys(PHASE_LABELS).forEach((key) => {
+          const accept = tr.querySelector('[data-phase-accept="' + key + '"]');
+          const url = tr.querySelector('[data-phase-url="' + key + '"]');
+          const start = tr.querySelector('[data-phase-start="' + key + '"]');
+          const due = tr.querySelector('[data-phase-due="' + key + '"]');
+          phaseReviews[key] = { accepted: !!(accept && accept.checked), jira_url: url ? url.value : "", start_date: start ? start.value : "", due_date: due ? due.value : "" };
+        });
+        base.phase_reviews = phaseReviews;
+        return base;
+      });
+    }
+    async function submitRows() {
+      if (!window.confirm("Write included rows to the real Epics Planner database? A timestamped backup will be created first.")) return;
+      setStatus("Submitting import...", "");
+      document.getElementById("submit-btn").disabled = true;
+      const resp = await fetch(SUBMIT_API, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ rows: collectRows() }) });
+      const body = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(body.error || "Import submit failed.");
+      setStatus("Import complete. Inserted " + body.inserted + ", updated " + body.updated + ", failed " + body.failed + ". Backup: " + (body.backup_path || "not created"), body.failed ? "warn" : "ok");
+      await loadPreview();
+    }
+    document.getElementById("reload-btn").addEventListener("click", () => loadPreview().catch((err) => setStatus(err.message || String(err), "warn")));
+    document.getElementById("enrich-jira-btn").addEventListener("click", () => loadPreview({ withJira: true }).catch((err) => setStatus(err.message || String(err), "warn")));
+    document.getElementById("submit-btn").addEventListener("click", () => submitRows().catch((err) => { setStatus(err.message || String(err), "warn"); document.getElementById("submit-btn").disabled = false; }));
+    loadPreview().catch((err) => setStatus(err.message || String(err), "warn"));
+  </script>
+  <script src="/shared-nav.js"></script>
+</body>
+</html>""".replace("__SETTINGS_TOP_NAV__", _settings_top_nav_html(EPICS_MANAGEMENT_IMPORT_ROUTE))
+
+
 def _epics_management_settings_html() -> str:
     return """<!doctype html>
 <html lang="en">
@@ -12514,6 +12855,27 @@ def _epics_management_settings_html() -> str:
     #status.ok { color:var(--ok); }
     #status.warn { color:var(--warn); }
     .table-wrap { margin-top:12px; border:1px solid var(--line); border-radius:10px; overflow:auto; background:#fff; max-height:70vh; }
+    .executive-summary-wrap { margin-top:12px; border:1px solid var(--line); border-radius:8px; overflow:auto; background:#fff; max-width:620px; }
+    .executive-summary-table { border-collapse:collapse; min-width:520px; width:100%; }
+    .executive-summary-table th, .executive-summary-table td { border:1px solid #d9d9d9; padding:4px 7px; font-size:.82rem; line-height:1.2; background:#fff; color:#000; text-align:left; }
+    .executive-summary-table th { position:static; background:#fff; color:#000; font-size:.8rem; text-transform:none; letter-spacing:0; font-weight:700; }
+    .executive-summary-table th:nth-child(1), .executive-summary-table td:nth-child(1) { min-width:210px; width:210px; }
+    .executive-summary-table th:nth-child(n+2), .executive-summary-table td:nth-child(n+2) { min-width:90px; width:90px; text-align:right; }
+    .executive-summary-table tr.grand-total td { font-weight:700; background:#f3f6ff; }
+    .executive-summary-table td.summary-count-cell { cursor:pointer; color:#1e3a8a; text-decoration:underline; text-underline-offset:2px; font-weight:600; }
+    .executive-summary-table td.summary-count-cell:hover { background:#eef4ff; }
+    .executive-summary-table td.summary-count-cell:focus-visible { outline:2px solid #93c5fd; outline-offset:-2px; }
+    .summary-drawer-backdrop { position:fixed; inset:0; background:rgba(15,23,42,.35); opacity:0; pointer-events:none; transition:opacity .18s ease; z-index:80; }
+    .summary-drawer-backdrop.open { opacity:1; pointer-events:auto; }
+    .summary-drawer { position:fixed; top:0; right:0; height:100vh; width:min(760px, 92vw); background:#fff; border-left:1px solid #cbd5e1; box-shadow:-10px 0 24px rgba(15,23,42,.2); transform:translateX(100%); transition:transform .2s ease; z-index:81; display:flex; flex-direction:column; }
+    .summary-drawer.open { transform:translateX(0); }
+    .summary-drawer-head { display:flex; justify-content:space-between; align-items:flex-start; gap:10px; padding:14px 16px; border-bottom:1px solid #e2e8f0; }
+    .summary-drawer-title { margin:0; font-size:1rem; color:#0f172a; }
+    .summary-drawer-meta { margin-top:4px; color:#475569; font-size:.82rem; }
+    .summary-drawer-body { padding:12px 16px 16px; overflow:auto; }
+    .summary-drawer-table { width:100%; min-width:620px; border-collapse:collapse; }
+    .summary-drawer-table th, .summary-drawer-table td { border:1px solid #dbe3ef; padding:6px 8px; font-size:.8rem; text-align:left; vertical-align:top; background:#fff; color:#0f172a; }
+    .summary-drawer-table th { background:#f8fafc; position:sticky; top:0; z-index:1; }
     table { border-collapse:separate; border-spacing:0; min-width:var(--epics-table-min-width); width:max(100%, var(--epics-table-min-width)); }
     th, td { border-bottom:1px solid #e2e8f0; border-right:1px solid #e2e8f0; padding:5px 8px; font-size:.8rem; line-height:1.2; text-align:left; vertical-align:top; background:#fff; }
     th:last-child, td:last-child { border-right:none; }
@@ -12738,6 +13100,7 @@ def _epics_management_settings_html() -> str:
           <button id="add-epic-btn" class="btn" type="button">Add Epic</button>
           <button id="add-plan-column-btn" class="btn alt" type="button">Add Phase</button>
           <button id="manage-plan-columns-btn" class="btn alt" type="button">Manage Phases</button>
+          <a class="btn alt" href="/settings/epics-management/import">Import Approved Plan</a>
           <button id="seal-epics-btn" class="btn seal-btn" type="button" disabled title="Select epics to seal">SEAL EPICS</button>
           <button id="expand-all-btn" class="btn alt" type="button">Expand</button>
           <button id="collapse-all-btn" class="btn alt" type="button">Collapse</button>
@@ -12746,6 +13109,14 @@ def _epics_management_settings_html() -> str:
       </div>
       <div id="status"></div>
     </section>
+    <div class="executive-summary-wrap" aria-label="Executive summary report">
+      <table class="executive-summary-table">
+        <thead>
+          <tr><th>Product</th><th>Total Planned</th><th>Unplanned</th><th>Onhold</th></tr>
+        </thead>
+        <tbody id="executive-summary-tbody"></tbody>
+      </table>
+    </div>
     <div class="table-wrap">
       <table>
         <thead>
@@ -12755,6 +13126,25 @@ def _epics_management_settings_html() -> str:
       </table>
     </div>
   </main>
+
+  <div id="summary-drawer-backdrop" class="summary-drawer-backdrop" aria-hidden="true"></div>
+  <aside id="summary-epics-drawer" class="summary-drawer" aria-hidden="true" aria-label="Executive summary epic details">
+    <div class="summary-drawer-head">
+      <div>
+        <h2 id="summary-drawer-title" class="summary-drawer-title">Executive Summary Details</h2>
+        <div id="summary-drawer-meta" class="summary-drawer-meta"></div>
+      </div>
+      <button id="summary-drawer-close" class="btn alt small" type="button">Close</button>
+    </div>
+    <div class="summary-drawer-body">
+      <table class="summary-drawer-table">
+        <thead>
+          <tr><th>Epic Key</th><th>Epic</th><th>Product Categorization</th><th>Component</th><th>Plan Status</th><th>Delivery Status</th></tr>
+        </thead>
+        <tbody id="summary-drawer-tbody"></tbody>
+      </table>
+    </div>
+  </aside>
 
   <dialog id="plan-dialog">
     <div class="modal-head">
@@ -12946,6 +13336,7 @@ def _epics_management_settings_html() -> str:
 
     const headerRowEl = document.getElementById("epics-header-row");
     const tbodyEl = document.getElementById("epics-tbody");
+    const executiveSummaryTbodyEl = document.getElementById("executive-summary-tbody");
     const statusEl = document.getElementById("status");
     const planDialogEl = document.getElementById("plan-dialog");
     const planTitleEl = document.getElementById("plan-title");
@@ -12983,6 +13374,11 @@ def _epics_management_settings_html() -> str:
     const manageColumnsTbodyEl = document.getElementById("manage-columns-tbody");
     const epicsFilterProjectEl = document.getElementById("epics-filter-project");
     const epicsFilterSearchEl = document.getElementById("epics-filter-search");
+    const summaryDrawerEl = document.getElementById("summary-epics-drawer");
+    const summaryDrawerBackdropEl = document.getElementById("summary-drawer-backdrop");
+    const summaryDrawerTitleEl = document.getElementById("summary-drawer-title");
+    const summaryDrawerMetaEl = document.getElementById("summary-drawer-meta");
+    const summaryDrawerTbodyEl = document.getElementById("summary-drawer-tbody");
 
     const FILTER_PROJECT_STORAGE_KEY = "epics-management-filter-project";
     const DEFAULT_FILTER_PROJECT_KEY = "";
@@ -13059,6 +13455,115 @@ def _epics_management_settings_html() -> str:
     function setStatus(message, kind) {
       statusEl.textContent = String(message || "");
       statusEl.className = kind || "";
+    }
+    function executiveSummaryStatusBucket(row) {
+      const planStatus = String(row && row.plan_status || "").trim().toLowerCase();
+      const deliveryStatus = String(row && row.delivery_status || "").trim().toLowerCase();
+      if (planStatus.includes("hold") || deliveryStatus.includes("hold")) return "onhold";
+      if (planStatus === "planned") return "planned";
+      return "unplanned";
+    }
+    function executiveSummaryBucketLabel(bucket) {
+      if (bucket === "planned") return "Total Planned";
+      if (bucket === "unplanned") return "Unplanned";
+      if (bucket === "onhold") return "Onhold";
+      return "Unknown";
+    }
+    function executiveSummaryProductName(row) {
+      return String(row && (row.project_name || row.project_key) || "").trim() || "-";
+    }
+    function executiveSummaryMatchingRows(product, bucket) {
+      const normalizedBucket = String(bucket || "").trim().toLowerCase();
+      const normalizedProduct = String(product || "").trim();
+      const includeAllProducts = normalizedProduct === "__grand_total__";
+      return rows.filter((row) => {
+        if (executiveSummaryStatusBucket(row) !== normalizedBucket) return false;
+        if (includeAllProducts) return true;
+        return executiveSummaryProductName(row) === normalizedProduct;
+      });
+    }
+    function closeExecutiveSummaryDrawer() {
+      if (!summaryDrawerEl || !summaryDrawerBackdropEl) return;
+      summaryDrawerEl.classList.remove("open");
+      summaryDrawerBackdropEl.classList.remove("open");
+      summaryDrawerEl.setAttribute("aria-hidden", "true");
+      summaryDrawerBackdropEl.setAttribute("aria-hidden", "true");
+    }
+    function openExecutiveSummaryDrawer(product, bucket) {
+      if (!summaryDrawerEl || !summaryDrawerBackdropEl || !summaryDrawerTitleEl || !summaryDrawerMetaEl || !summaryDrawerTbodyEl) return;
+      const normalizedBucket = String(bucket || "").trim().toLowerCase();
+      if (!["planned", "unplanned", "onhold"].includes(normalizedBucket)) return;
+      const isGrandTotal = String(product || "").trim() === "__grand_total__";
+      const productLabel = isGrandTotal ? "Grand Total" : (String(product || "").trim() || "-");
+      const bucketLabel = executiveSummaryBucketLabel(normalizedBucket);
+      const matchedRows = executiveSummaryMatchingRows(product, normalizedBucket);
+      summaryDrawerTitleEl.textContent = productLabel + " - " + bucketLabel;
+      summaryDrawerMetaEl.textContent = "Showing " + matchedRows.length + " epic(s) considered in this summary count.";
+      if (matchedRows.length === 0) {
+        summaryDrawerTbodyEl.innerHTML = "<tr><td colspan='6' class='muted'>No epics found for this selection.</td></tr>";
+      } else {
+        summaryDrawerTbodyEl.innerHTML = matchedRows.map((row) => ""
+          + "<tr>"
+          + "<td>" + esc(row.epic_key || "-") + "</td>"
+          + "<td>" + esc(row.epic_name || "-") + "</td>"
+          + "<td>" + esc(displayBucketValue(row.product_category)) + "</td>"
+          + "<td>" + esc(displayBucketValue(row.component)) + "</td>"
+          + "<td>" + esc(row.plan_status || "-") + "</td>"
+          + "<td>" + esc(row.delivery_status || "-") + "</td>"
+          + "</tr>"
+        ).join("");
+      }
+      summaryDrawerEl.classList.add("open");
+      summaryDrawerBackdropEl.classList.add("open");
+      summaryDrawerEl.setAttribute("aria-hidden", "false");
+      summaryDrawerBackdropEl.setAttribute("aria-hidden", "false");
+    }
+    function executiveSummaryCountCellHtml(product, bucket, count) {
+      const productLabel = String(product || "").trim() === "__grand_total__" ? "Grand Total" : (String(product || "").trim() || "-");
+      const bucketLabel = executiveSummaryBucketLabel(bucket);
+      return '<td class="summary-count-cell" role="button" tabindex="0" data-summary-product="' + escAttr(product) + '" data-summary-bucket="' + escAttr(bucket) + '" aria-label="Show ' + escAttr(bucketLabel.toLowerCase()) + ' epics for ' + escAttr(productLabel) + '">' + esc(String(Number(count || 0))) + '</td>';
+    }
+    function renderExecutiveSummary() {
+      if (!executiveSummaryTbodyEl) return;
+      const preferredProducts = ["OmniConnect", "Fintech Fuel", "Digital Log", "Subscription", "OmniChat"];
+      const summary = new Map();
+      function ensure(product) {
+        const key = String(product || "").trim() || "-";
+        if (!summary.has(key)) summary.set(key, { product: key, planned: 0, unplanned: 0, onhold: 0 });
+        return summary.get(key);
+      }
+      preferredProducts.forEach((product) => ensure(product));
+      rows.forEach((row) => {
+        const item = ensure(String(row.project_name || row.project_key || "").trim());
+        const bucket = executiveSummaryStatusBucket(row);
+        item[bucket] = Number(item[bucket] || 0) + 1;
+      });
+      const preferred = preferredProducts.map((product) => ensure(product));
+      const preferredSet = new Set(preferredProducts.map((product) => product.toLowerCase()));
+      const extras = Array.from(summary.values())
+        .filter((item) => !preferredSet.has(String(item.product || "").toLowerCase()))
+        .sort((a, b) => String(a.product).localeCompare(String(b.product)));
+      const allRows = preferred.concat(extras);
+      const grandTotal = allRows.reduce((acc, item) => {
+        acc.planned += Number(item.planned || 0);
+        acc.unplanned += Number(item.unplanned || 0);
+        acc.onhold += Number(item.onhold || 0);
+        return acc;
+      }, { planned: 0, unplanned: 0, onhold: 0 });
+      executiveSummaryTbodyEl.innerHTML = allRows.map((item) => ""
+        + "<tr>"
+        + "<td>" + esc(item.product) + "</td>"
+        + executiveSummaryCountCellHtml(item.product, "planned", item.planned)
+        + executiveSummaryCountCellHtml(item.product, "unplanned", item.unplanned)
+        + executiveSummaryCountCellHtml(item.product, "onhold", item.onhold)
+        + "</tr>"
+      ).join("")
+      + '<tr class="grand-total">'
+      + "<td>Grand Total</td>"
+      + executiveSummaryCountCellHtml("__grand_total__", "planned", grandTotal.planned)
+      + executiveSummaryCountCellHtml("__grand_total__", "unplanned", grandTotal.unplanned)
+      + executiveSummaryCountCellHtml("__grand_total__", "onhold", grandTotal.onhold)
+      + "</tr>";
     }
     function setHeaderCollapsed(collapsed) {
       if (!plannerHeaderEl || !plannerHeaderToggleBtn) return;
@@ -13283,6 +13788,7 @@ def _epics_management_settings_html() -> str:
       renderPlanHeaders();
       renderDynamicPlanJiraFields();
       renderManageColumnsTable();
+      renderExecutiveSummary();
       renderTable();
     }
     function renderPlanHeaders() {
@@ -14077,6 +14583,7 @@ def _epics_management_settings_html() -> str:
     }
     function openDraftEpicRowAndFocus() {
       ensureDraftEpicRow();
+      renderExecutiveSummary();
       renderTable();
       const input = document.getElementById("draft-epic-name");
       if (input) input.focus();
@@ -14917,6 +15424,7 @@ def _epics_management_settings_html() -> str:
         originator: String(row.originator || ""),
         priority: normalizePriority(row.priority || "Low"),
         plan_status: normalizePlanStatus(row.plan_status || defaultPlanStatus()),
+        delivery_status: String(row.delivery_status || ""),
         planned_due_date_epic: normalizeIsoDateOrBlank(row.planned_due_date_epic || ""),
         jira_url: String(row.jira_url || ""),
         plans: (row.plans && typeof row.plans === "object") ? row.plans : {},
@@ -14941,6 +15449,7 @@ def _epics_management_settings_html() -> str:
           setStatus("Loaded " + rows.length + " epics. Deep-link epic not found: " + deepLinkEpicKey + ".", "warn");
         }
       }
+      renderExecutiveSummary();
       renderTable();
       jumpToDeepLinkedEpicIfNeeded();
       if (!deepLinkMissingWarningShown) {
@@ -14965,6 +15474,30 @@ def _epics_management_settings_html() -> str:
         renderTable();
       });
     }
+    if (executiveSummaryTbodyEl) {
+      executiveSummaryTbodyEl.addEventListener("click", (event) => {
+        const target = event.target instanceof Element ? event.target : null;
+        const cell = target ? target.closest("td.summary-count-cell") : null;
+        if (!cell) return;
+        const product = String(cell.getAttribute("data-summary-product") || "");
+        const bucket = String(cell.getAttribute("data-summary-bucket") || "");
+        openExecutiveSummaryDrawer(product, bucket);
+      });
+      executiveSummaryTbodyEl.addEventListener("keydown", (event) => {
+        const key = String(event.key || "");
+        if (key !== "Enter" && key !== " ") return;
+        const target = event.target instanceof Element ? event.target : null;
+        const cell = target ? target.closest("td.summary-count-cell") : null;
+        if (!cell) return;
+        event.preventDefault();
+        const product = String(cell.getAttribute("data-summary-product") || "");
+        const bucket = String(cell.getAttribute("data-summary-bucket") || "");
+        openExecutiveSummaryDrawer(product, bucket);
+      });
+    }
+    const summaryDrawerCloseBtn = document.getElementById("summary-drawer-close");
+    if (summaryDrawerCloseBtn) summaryDrawerCloseBtn.addEventListener("click", closeExecutiveSummaryDrawer);
+    if (summaryDrawerBackdropEl) summaryDrawerBackdropEl.addEventListener("click", closeExecutiveSummaryDrawer);
     window.addEventListener("resize", () => {
       applyPlanColumnLayout();
     });
@@ -15131,6 +15664,10 @@ def _epics_management_settings_html() -> str:
     });
     document.addEventListener("keydown", (event) => {
       if (event.key !== "Escape") return;
+      if (summaryDrawerEl && summaryDrawerEl.classList.contains("open")) {
+        closeExecutiveSummaryDrawer();
+        return;
+      }
       if (!draftEpicRow || draftEpicCreateInFlight) return;
       if (planDialogEl.open || epicDialogEl.open || planColumnDialogEl.open || manageColumnsDialogEl.open) return;
       draftEpicRow = null;
@@ -15190,6 +15727,9 @@ def _resolve_report_html_sources(base_dir: Path) -> dict[str, Path]:
         ),
         "phase_rmi_gantt_report.html": _resolve_output_html_path(
             "JIRA_PHASE_GANTT_HTML_PATH", "phase_rmi_gantt_report.html", base_dir
+        ),
+        "rmi_jira_gantt_report.html": _resolve_output_html_path(
+            "JIRA_RMI_GANTT_HTML_PATH", "rmi_jira_gantt_report.html", base_dir
         ),
         "ipp_meeting_dashboard.html": _resolve_output_html_path(
             "IPP_PHASE_DASHBOARD_HTML_PATH", "ipp_meeting_dashboard.html", base_dir
@@ -15427,6 +15967,8 @@ def _inject_refresh_ui(html: str, report_id: str) -> str:
         flags=re.S,
     )
     html = _inject_info_drawer_ui(html, report_id)
+    if report_id in REPORT_IDS_WITHOUT_REFRESH_WIDGET:
+        return html
     if REFRESH_WIDGET_MARKER in html:
         return html
     snippet = f"""
@@ -19763,6 +20305,434 @@ def _rebudget_epics_management_epic(settings_db_path: Path, row_ref: str) -> Non
       raise LookupError(f"Epic not found: {row_ref}")
   finally:
     conn.close()
+
+
+_EPICS_IMPORT_PHASES = [
+  {"excel_header": "Prc Design", "plan_key": "process_design", "label": "Prc Design", "aliases": ["process design", "prc design"]},
+  {"excel_header": "R/URS", "plan_key": "research_urs_plan", "label": "R/URS", "aliases": ["r/urs", "urs", "research"]},
+  {"excel_header": "R/DDS", "plan_key": "dds_plan", "label": "R/DDS", "aliases": ["r/dds", "dds", "design document"]},
+  {"excel_header": "Dev", "plan_key": "development_plan", "label": "Dev", "aliases": ["dev", "development"]},
+  {"excel_header": "SQA", "plan_key": "sqa_plan", "label": "SQA", "aliases": ["sqa", "qa", "testing"]},
+  {"excel_header": "Prc Test", "plan_key": "process_qa_testing", "label": "Prc Test", "aliases": ["process qa", "prc test", "process testing"]},
+  {"excel_header": "Doc", "plan_key": "user_manual_plan", "label": "Doc", "aliases": ["doc", "documentation", "manual", "user manual"]},
+  {"excel_header": "Reg SQA", "plan_key": "regression_sqa_testing", "label": "Reg SQA", "aliases": ["reg sqa", "regression", "regression sqa"]},
+  {"excel_header": "Release", "plan_key": "production_plan", "label": "Release", "aliases": ["release", "production", "prod"]},
+]
+_EPICS_IMPORT_PHASE_BY_HEADER = {item["excel_header"].casefold(): item for item in _EPICS_IMPORT_PHASES}
+
+
+def _epics_import_workbook_path() -> Path:
+  raw = _to_text(os.getenv("EPICS_PLANNER_IMPORT_XLSX_PATH")).strip()
+  return Path(raw) if raw else EPICS_MANAGEMENT_IMPORT_DEFAULT_XLSX
+
+
+def _excel_date_to_iso(value: object) -> str:
+  if isinstance(value, datetime):
+    return value.date().isoformat()
+  if isinstance(value, date):
+    return value.isoformat()
+  parsed = _parse_iso_date(_to_text(value))
+  return parsed.isoformat() if parsed else ""
+
+
+def _excel_number_or_blank(value: object) -> object:
+  if value in (None, ""):
+    return ""
+  if isinstance(value, bool):
+    return ""
+  try:
+    parsed = float(value)
+  except (TypeError, ValueError):
+    return ""
+  if parsed < 0:
+    return ""
+  rounded = _round_plan_days(parsed)
+  return int(rounded) if float(rounded).is_integer() else rounded
+
+
+def _find_header_col(headers: dict[str, int], *names: str) -> int:
+  wanted = {name.casefold() for name in names}
+  for header, col_idx in headers.items():
+    if header.casefold() in wanted:
+      return col_idx
+  return 0
+
+
+def _merged_parent_value(ws, row_idx: int, col_idx: int) -> object:
+  value = ws.cell(row_idx, col_idx).value
+  if value not in (None, ""):
+    return value
+  for merged in ws.merged_cells.ranges:
+    if merged.min_row <= row_idx <= merged.max_row and merged.min_col <= col_idx <= merged.max_col:
+      return ws.cell(merged.min_row, merged.min_col).value
+  return value
+
+
+def _epics_import_rnd_phase_columns(ws) -> tuple[dict[str, int], int]:
+  rnd_range = None
+  for merged in ws.merged_cells.ranges:
+    if merged.min_row <= 1 <= merged.max_row:
+      label = _to_text(ws.cell(merged.min_row, merged.min_col).value).strip().casefold()
+      if label == "rnd most likely":
+        rnd_range = merged
+        break
+  if rnd_range is None:
+    for col_idx in range(1, ws.max_column + 1):
+      if _to_text(ws.cell(1, col_idx).value).strip().casefold() == "rnd most likely":
+        rnd_range = type("_Range", (), {"min_col": col_idx, "max_col": ws.max_column})()
+        break
+  if rnd_range is None:
+    raise ValueError(f"Sheet '{ws.title}' is missing the RnD Most likely header group.")
+
+  phase_cols: dict[str, int] = {}
+  total_col = 0
+  for col_idx in range(rnd_range.min_col, rnd_range.max_col + 1):
+    header = _to_text(ws.cell(2, col_idx).value).strip()
+    if header.casefold() == "man days":
+      total_col = col_idx
+      continue
+    phase = _EPICS_IMPORT_PHASE_BY_HEADER.get(header.casefold())
+    if phase:
+      phase_cols[_to_text(phase["plan_key"])] = col_idx
+  missing = [_to_text(item["excel_header"]) for item in _EPICS_IMPORT_PHASES if _to_text(item["plan_key"]) not in phase_cols]
+  if missing:
+    raise ValueError(f"Sheet '{ws.title}' is missing RnD Most likely phase column(s): {', '.join(missing)}.")
+  if not total_col:
+    raise ValueError(f"Sheet '{ws.title}' is missing the Man Days total column in RnD Most likely.")
+  return phase_cols, total_col
+
+
+def _extract_epics_import_rows_from_workbook(workbook_path: Path) -> list[dict[str, object]]:
+  path = Path(workbook_path)
+  if not path.exists():
+    raise FileNotFoundError(f"Source workbook not found: {path}")
+  wb = load_workbook(path, data_only=True, read_only=False)
+  try:
+    rows: list[dict[str, object]] = []
+    for ws in wb.worksheets:
+      if "RMI" not in ws.title.upper():
+        continue
+      project_name = re.sub(r"\s*RMI\s*", "", ws.title, flags=re.IGNORECASE).strip() or ws.title
+      headers = {
+        _to_text(ws.cell(2, col_idx).value).strip(): col_idx
+        for col_idx in range(1, ws.max_column + 1)
+        if _to_text(ws.cell(2, col_idx).value).strip()
+      }
+      category_col = _find_header_col(headers, "Category")
+      component_col = _find_header_col(headers, "Components", "Component")
+      roadmap_col = _find_header_col(headers, "Road Map Items", "Roadmap Items")
+      jira_col = _find_header_col(headers, "Jira ID", "JIRA ID")
+      originator_col = _find_header_col(headers, "Originator")
+      plan_status_col = _find_header_col(headers, "Plan Status")
+      work_status_col = _find_header_col(headers, "Work Status")
+      phase_cols, total_col = _epics_import_rnd_phase_columns(ws)
+      current_category = ""
+      current_component = ""
+      for row_idx in range(3, ws.max_row + 1):
+        category_value = _to_text(_merged_parent_value(ws, row_idx, category_col)).strip() if category_col else ""
+        component_value = _to_text(_merged_parent_value(ws, row_idx, component_col)).strip() if component_col else ""
+        if category_value:
+          current_category = category_value
+        if component_value:
+          current_component = component_value
+        jira_url = _to_text(ws.cell(row_idx, jira_col).value).strip() if jira_col else ""
+        roadmap_item = _to_text(ws.cell(row_idx, roadmap_col).value).strip() if roadmap_col else ""
+        phase_values: dict[str, object] = {}
+        for phase in _EPICS_IMPORT_PHASES:
+          plan_key = _to_text(phase["plan_key"])
+          phase_values[plan_key] = _excel_number_or_blank(ws.cell(row_idx, phase_cols[plan_key]).value)
+        has_phase_value = any(value != "" for value in phase_values.values())
+        if not jira_url and not roadmap_item and not has_phase_value:
+          continue
+        epic_key = _to_text(extract_jira_key_from_url(jira_url)).upper() if jira_url else ""
+        total_value = _excel_number_or_blank(ws.cell(row_idx, total_col).value)
+        phase_total = _round_plan_days(sum(float(value) for value in phase_values.values() if value != ""))
+        total_matches = True
+        if total_value != "":
+          total_matches = abs(float(total_value) - phase_total) < 0.01
+        source_dates = {
+          "start_date": _excel_date_to_iso(ws.cell(row_idx, _find_header_col(headers, "Start Date")).value) if _find_header_col(headers, "Start Date") else "",
+          "dev_end": _excel_date_to_iso(ws.cell(row_idx, _find_header_col(headers, "Dev End")).value) if _find_header_col(headers, "Dev End") else "",
+          "sqa_ho": _excel_date_to_iso(ws.cell(row_idx, _find_header_col(headers, "SQA HO")).value) if _find_header_col(headers, "SQA HO") else "",
+          "prod_date": _excel_date_to_iso(ws.cell(row_idx, _find_header_col(headers, "Prod Date")).value) if _find_header_col(headers, "Prod Date") else "",
+        }
+        rows.append({
+          "source_id": f"{ws.title}:{row_idx}",
+          "sheet": ws.title,
+          "row_number": row_idx,
+          "project_name": project_name,
+          "project_key": _extract_project_key(epic_key) if epic_key else "",
+          "category": current_category,
+          "component": current_component,
+          "roadmap_item": roadmap_item,
+          "jira_url": jira_url,
+          "epic_key": epic_key,
+          "originator": _to_text(ws.cell(row_idx, originator_col).value).strip() if originator_col else "",
+          "source_plan_status": _to_text(ws.cell(row_idx, plan_status_col).value).strip() if plan_status_col else "",
+          "work_status": _to_text(ws.cell(row_idx, work_status_col).value).strip() if work_status_col else "",
+          "phases": phase_values,
+          "man_days_total": total_value,
+          "phase_sum": phase_total,
+          "total_matches": total_matches,
+          "source_dates": source_dates,
+          "warnings": [] if total_matches else [f"Phase total {phase_total} differs from Man Days {total_value}."],
+          "can_import": bool(epic_key and jira_url),
+        })
+    return rows
+  finally:
+    try:
+      wb.close()
+    except Exception:
+      pass
+
+
+def _map_import_issue(issue: dict, start_field_id: str, end_field_ids: list[str]) -> dict[str, object]:
+  fields = issue.get("fields", {}) or {}
+  start_iso, due_iso, estimate_hours = _extract_issue_plan_metrics(fields, start_field_id, end_field_ids)
+  key = _to_text(issue.get("key")).upper()
+  return {
+    "key": key,
+    "summary": _to_text(fields.get("summary")),
+    "description": _jira_adf_to_text(fields.get("description")),
+    "issue_type": _to_text((fields.get("issuetype") or {}).get("name")),
+    "status": _to_text((fields.get("status") or {}).get("name")),
+    "jira_url": _jira_browse_url(key) if key else "",
+    "start_date": start_iso,
+    "due_date": due_iso,
+    "estimate_hours": estimate_hours,
+    "estimate_man_days": _round_plan_days(estimate_hours / 8.0) if estimate_hours else 0.0,
+  }
+
+
+def _score_phase_issue(phase: dict[str, object], issue: dict[str, object]) -> int:
+  text = " ".join([_to_text(issue.get("summary")), _to_text(issue.get("issue_type")), _to_text(issue.get("status"))]).casefold()
+  score = 0
+  for alias in phase.get("aliases") or []:
+    alias_text = _to_text(alias).casefold()
+    if alias_text and alias_text in text:
+      score += 20 + len(alias_text)
+  label = _to_text(phase.get("label")).casefold()
+  if label and label in text:
+    score += 15
+  return score
+
+
+def _suggest_import_phase_links(row: dict[str, object], child_issues: list[dict[str, object]]) -> dict[str, dict[str, object]]:
+  suggestions: dict[str, dict[str, object]] = {}
+  used: set[str] = set()
+  for phase in _EPICS_IMPORT_PHASES:
+    plan_key = _to_text(phase["plan_key"])
+    if (row.get("phases") or {}).get(plan_key) == "":
+      continue
+    scored = sorted(
+      (
+        (_score_phase_issue(phase, issue), _to_text(issue.get("key")), issue)
+        for issue in child_issues
+        if _to_text(issue.get("key")) not in used
+      ),
+      key=lambda item: (item[0], item[1]),
+      reverse=True,
+    )
+    if not scored or scored[0][0] <= 0:
+      suggestions[plan_key] = {"accepted": False, "jira_url": "", "start_date": "", "due_date": "", "issue_key": "", "summary": "", "score": 0}
+      continue
+    _, issue_key, issue = scored[0]
+    used.add(issue_key)
+    suggestions[plan_key] = {
+      "accepted": True,
+      "jira_url": _to_text(issue.get("jira_url")),
+      "start_date": _to_text(issue.get("start_date")),
+      "due_date": _to_text(issue.get("due_date")),
+      "issue_key": issue_key,
+      "summary": _to_text(issue.get("summary")),
+      "score": scored[0][0],
+    }
+  return suggestions
+
+
+def _build_epics_import_preview(settings_db_path: Path, workbook_path: Path, fetch_jira: bool = True) -> dict[str, object]:
+  source_rows = _extract_epics_import_rows_from_workbook(workbook_path)
+  existing_by_key = {
+    _to_text(row.get("epic_key")).upper(): row
+    for row in _load_epics_management_rows(settings_db_path)
+    if _to_text(row.get("epic_key"))
+  }
+  jira_by_key: dict[str, dict[str, object]] = {}
+  child_by_epic: dict[str, list[dict[str, object]]] = {}
+  jira_errors: list[str] = []
+  if fetch_jira:
+    epic_keys = sorted({_to_text(row.get("epic_key")).upper() for row in source_rows if _to_text(row.get("epic_key"))})
+    if epic_keys:
+      try:
+        session = get_session()
+        project_keys = {_extract_project_key(key) for key in epic_keys if key}
+        start_field_id = resolve_jira_start_date_field_id(session, BASE_URL, project_keys=sorted(project_keys) if project_keys else None)
+        end_field_ids = resolve_jira_end_date_field_ids(session, BASE_URL, project_keys=sorted(project_keys) if project_keys else None)
+        if "duedate" not in end_field_ids:
+          end_field_ids.append("duedate")
+        fields = ["summary", "description", "issuetype", "status", "parent", "customfield_10014", "timeoriginalestimate"]
+        if start_field_id:
+          fields.append(start_field_id)
+        for field_id in end_field_ids:
+          if field_id not in fields:
+            fields.append(field_id)
+        for issue in _fetch_jira_issues_by_keys(session, epic_keys, fields):
+          mapped = _map_import_issue(issue, start_field_id, end_field_ids)
+          if mapped.get("key"):
+            jira_by_key[_to_text(mapped.get("key")).upper()] = mapped
+        children = _fetch_story_issues_for_epics(session, epic_keys, fields, project_keys=project_keys)
+        story_keys = [_to_text(issue.get("key")).upper() for issue in children if _to_text(issue.get("key"))]
+        children.extend(_fetch_subtask_issues_for_stories(session, story_keys, fields, project_keys=project_keys))
+        valid_epic_keys = set(epic_keys)
+        for issue in children:
+          fields_raw = issue.get("fields", {}) or {}
+          epic_key = _resolve_epic_key_for_story(fields_raw, valid_epic_keys)
+          if not epic_key:
+            parent = fields_raw.get("parent") or {}
+            parent_key = _to_text(parent.get("key")).upper()
+            for child in children:
+              if _to_text(child.get("key")).upper() == parent_key:
+                epic_key = _resolve_epic_key_for_story(child.get("fields", {}) or {}, valid_epic_keys)
+                break
+          if not epic_key:
+            continue
+          child_by_epic.setdefault(epic_key, []).append(_map_import_issue(issue, start_field_id, end_field_ids))
+      except Exception as exc:
+        jira_errors.append(str(exc))
+
+  preview_rows: list[dict[str, object]] = []
+  for row in source_rows:
+    epic_key = _to_text(row.get("epic_key")).upper()
+    jira_meta = jira_by_key.get(epic_key, {})
+    existing = existing_by_key.get(epic_key, {})
+    row_out = dict(row)
+    if not epic_key:
+      row_out.setdefault("warnings", []).append("Missing or invalid Jira URL; row cannot be imported.")
+    if fetch_jira and not jira_meta and epic_key:
+      row_out.setdefault("warnings", []).append("Jira epic metadata was not fetched for this row.")
+    row_out["jira"] = jira_meta
+    row_out["epic_name"] = _to_text(jira_meta.get("summary")) or _to_text(row.get("roadmap_item")) or epic_key
+    row_out["description"] = _to_text(jira_meta.get("description"))
+    row_out["existing"] = {
+      "exists": bool(existing),
+      "id": _to_text(existing.get("id")),
+      "epic_key": _to_text(existing.get("epic_key")),
+      "epic_name": _to_text(existing.get("epic_name")),
+      "is_sealed": int(existing.get("is_sealed") or 0) if existing else 0,
+      "plan_status": _to_text(existing.get("plan_status")),
+    }
+    children = child_by_epic.get(epic_key, [])
+    row_out["child_issues"] = children
+    row_out["phase_suggestions"] = _suggest_import_phase_links(row_out, children)
+    preview_rows.append(row_out)
+  return {
+    "source_workbook": str(Path(workbook_path)),
+    "rows": preview_rows,
+    "phase_columns": _EPICS_IMPORT_PHASES,
+    "jira_errors": jira_errors,
+    "row_count": len(preview_rows),
+  }
+
+
+def _backup_epics_management_db(settings_db_path: Path) -> str:
+  source = Path(settings_db_path)
+  stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+  backup_path = source.with_name(f"{source.stem}.epics-import-{stamp}{source.suffix}.bak")
+  shutil.copy2(source, backup_path)
+  return str(backup_path)
+
+
+def _normalize_import_phase_review(value: object) -> dict[str, object]:
+  if not isinstance(value, dict):
+    return {}
+  accepted = bool(value.get("accepted"))
+  return {
+    "accepted": accepted,
+    "jira_url": _to_text(value.get("jira_url")) if accepted else "",
+    "start_date": _excel_date_to_iso(value.get("start_date")) if accepted else "",
+    "due_date": _excel_date_to_iso(value.get("due_date")) if accepted else "",
+  }
+
+
+def _submit_epics_import_mapping(settings_db_path: Path, payload: dict) -> dict[str, object]:
+  rows_in = payload.get("rows") if isinstance(payload, dict) else []
+  if not isinstance(rows_in, list):
+    raise ValueError("rows must be an array.")
+  existing_by_key = {
+    _to_text(row.get("epic_key")).upper(): row
+    for row in _load_epics_management_rows(settings_db_path)
+    if _to_text(row.get("epic_key"))
+  }
+  plan_columns = _load_epics_plan_columns(settings_db_path, include_inactive=False)
+  jira_enabled = {_to_text(col.get("key")) for col in plan_columns if bool(col.get("jira_link_enabled"))}
+  results = {"inserted": 0, "updated": 0, "skipped": 0, "failed": 0, "rebudgeted": 0, "backup_path": "", "rows": []}
+  importable_rows = [row for row in rows_in if isinstance(row, dict) and bool(row.get("include", True))]
+  if importable_rows:
+    results["backup_path"] = _backup_epics_management_db(settings_db_path)
+  processed: set[str] = set()
+  for raw_row in rows_in:
+    if not isinstance(raw_row, dict):
+      results["skipped"] += 1
+      continue
+    source_id = _to_text(raw_row.get("source_id"))
+    if not bool(raw_row.get("include", True)):
+      results["skipped"] += 1
+      results["rows"].append({"source_id": source_id, "status": "skipped", "message": "Excluded in mapping review."})
+      continue
+    epic_key = _to_text(raw_row.get("epic_key")).upper()
+    try:
+      if not epic_key or not _EPIC_KEY_PATTERN.match(epic_key):
+        raise ValueError("Valid epic_key is required.")
+      if epic_key in processed:
+        raise ValueError(f"Duplicate import row for {epic_key}.")
+      processed.add(epic_key)
+      phases = raw_row.get("phases") if isinstance(raw_row.get("phases"), dict) else {}
+      phase_reviews = raw_row.get("phase_reviews") if isinstance(raw_row.get("phase_reviews"), dict) else {}
+      plans: dict[str, dict[str, object]] = {}
+      for phase in _EPICS_IMPORT_PHASES:
+        plan_key = _to_text(phase["plan_key"])
+        phase_value = _excel_number_or_blank(phases.get(plan_key))
+        if phase_value == "":
+          continue
+        review = _normalize_import_phase_review(phase_reviews.get(plan_key))
+        plan_payload = {"most_likely_man_days": phase_value, "man_days": phase_value}
+        if _to_text(review.get("start_date")):
+          plan_payload["start_date"] = _to_text(review.get("start_date"))
+        if _to_text(review.get("due_date")):
+          plan_payload["due_date"] = _to_text(review.get("due_date"))
+        if plan_key in jira_enabled and _to_text(review.get("jira_url")):
+          plan_payload["jira_url"] = _to_text(review.get("jira_url"))
+        plans[plan_key] = plan_payload
+      payload_row = {
+        "epic_key": epic_key,
+        "project_key": _to_text(raw_row.get("project_key")).upper() or _extract_project_key(epic_key),
+        "project_name": _to_text(raw_row.get("project_name")) or _extract_project_key(epic_key),
+        "product_category": _to_text(raw_row.get("category")),
+        "component": _to_text(raw_row.get("component")),
+        "epic_name": _to_text(raw_row.get("epic_name")) or epic_key,
+        "description": _to_text(raw_row.get("description")),
+        "originator": _to_text(raw_row.get("originator")),
+        "priority": "High",
+        "plan_status": "Planned",
+        "jira_url": _to_text(raw_row.get("jira_url")),
+        "plans": plans,
+      }
+      existing = existing_by_key.get(epic_key)
+      if existing:
+        if int(existing.get("is_sealed") or 0):
+          _rebudget_epics_management_epic(settings_db_path, _to_text(existing.get("id")) or epic_key)
+          results["rebudgeted"] += 1
+        _update_epics_management_row(settings_db_path, _to_text(existing.get("id")) or epic_key, payload_row)
+        results["updated"] += 1
+        results["rows"].append({"source_id": source_id, "epic_key": epic_key, "status": "updated"})
+      else:
+        _save_epics_management_row(settings_db_path, payload_row)
+        results["inserted"] += 1
+        results["rows"].append({"source_id": source_id, "epic_key": epic_key, "status": "inserted"})
+    except Exception as exc:
+      results["failed"] += 1
+      results["rows"].append({"source_id": source_id, "epic_key": epic_key, "status": "failed", "message": str(exc)})
+  return results
 
 
 def _load_epics_management_sealed_dates(settings_db_path: Path, limit: int = 50) -> list[str]:
@@ -24440,7 +25410,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                         "canonical_run_id": canonical_run_id,
                     }
                 )
-            if report_id in {"executive_dashboard", "planned_rmis", "gantt_chart", "phase_rmi_gantt", "planned_vs_dispensed", "planned_actual_table_view", "original_estimates_hierarchy"}:
+            if report_id in {"executive_dashboard", "planned_rmis", "gantt_chart", "phase_rmi_gantt", "rmi_jira_gantt", "planned_vs_dispensed", "planned_actual_table_view", "original_estimates_hierarchy"}:
                 canonical_run_id = _canonical_last_success_run_id(capacity_paths["db_path"])
                 if not canonical_run_id:
                     return jsonify(
@@ -24462,8 +25432,10 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                     script_plan = ["generate_planned_rmis_html.py"]
                 elif report_id == "gantt_chart":
                     script_plan = ["generate_gantt_chart_html.py"]
-                else:
+                elif report_id == "phase_rmi_gantt":
                     script_plan = ["generate_phase_rmi_gantt_html.py"]
+                else:
+                    script_plan = ["generate_rmi_jira_gantt_html.py"]
                 for script_name in script_plan:
                     code, stdout, stderr = _run_script(script_name, base_dir)
                     step_data = {
@@ -28596,8 +29568,44 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
 
     @app.route("/api/performance/assignees", methods=["GET"])
     def list_performance_assignees():
-        assignees = _list_assignees_from_summary(capacity_paths["summary_path"])
-        return jsonify({"assignees": assignees})
+        summary = _list_assignees_from_summary(capacity_paths["summary_path"])
+        payload = _enrich_performance_assignees_payload(summary, capacity_paths["db_path"])
+        return jsonify(payload)
+
+    @app.route("/api/performance/resource-records", methods=["POST"])
+    def add_performance_resource_record():
+        """Add a resignation record for someone not in the current hours summary (system record)."""
+        try:
+            body = request.get_json(silent=True) or {}
+            assignee = body.get("assignee")
+            resigned = body.get("resigned", True)
+            resignation_date = body.get("resignation_date")
+            saved = _upsert_performance_resignation_record(
+                capacity_paths["db_path"],
+                assignee,
+                bool(resigned),
+                resignation_date,
+            )
+            return jsonify({"record": saved})
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+
+    @app.route("/api/performance/resource-records/<path:assignee_name>", methods=["PUT"])
+    def upsert_performance_resource_record(assignee_name: str):
+        try:
+            name = unquote(assignee_name)
+            body = request.get_json(silent=True) or {}
+            resigned = body.get("resigned", False)
+            resignation_date = body.get("resignation_date")
+            saved = _upsert_performance_resignation_record(
+                capacity_paths["db_path"],
+                name,
+                bool(resigned),
+                resignation_date,
+            )
+            return jsonify({"record": saved})
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
 
     @app.route("/api/performance/teams", methods=["GET"])
     def list_performance_teams():
@@ -29092,6 +30100,36 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         except Exception as exc:
             return jsonify({"error": f"Failed to sync epic from Jira: {exc}"}), 500
 
+    @app.route("/api/epics-management/import/preview", methods=["GET"])
+    def epics_management_import_preview_api():
+        try:
+            fetch_jira = _to_text(request.args.get("fetch_jira", "1")).lower() not in {"0", "false", "no", "n"}
+            workbook_raw = _to_text(request.args.get("workbook"))
+            workbook_path = Path(workbook_raw) if workbook_raw else _epics_import_workbook_path()
+            preview = _build_epics_import_preview(
+                settings_db_path=capacity_paths["db_path"],
+                workbook_path=workbook_path,
+                fetch_jira=fetch_jira,
+            )
+            return jsonify({**preview, "source": "epics_management_import"})
+        except FileNotFoundError as exc:
+            return jsonify({"error": str(exc)}), 404
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"error": f"Failed to build import preview: {exc}"}), 500
+
+    @app.route("/api/epics-management/import/submit", methods=["POST"])
+    def epics_management_import_submit_api():
+        try:
+            payload = request.get_json(silent=True) or {}
+            result = _submit_epics_import_mapping(capacity_paths["db_path"], payload)
+            return jsonify({**result, "source": "epics_management_import"})
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"error": f"Failed to submit import mapping: {exc}"}), 500
+
     @app.route("/api/epics-management/seal", methods=["POST"])
     def seal_epics_management_api():
         try:
@@ -29364,6 +30402,10 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
     @app.route(EPIC_PHASES_SETTINGS_ROUTE, methods=["GET"])
     def epic_phases_settings():
         return _epic_phases_settings_html()
+
+    @app.route(EPICS_MANAGEMENT_IMPORT_ROUTE, methods=["GET"])
+    def epics_management_import_settings():
+        return _epics_management_import_html()
 
     @app.route(EPICS_MANAGEMENT_SETTINGS_ROUTE, methods=["GET"])
     def epics_management_settings():

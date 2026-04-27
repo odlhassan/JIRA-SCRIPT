@@ -16,6 +16,49 @@ from openpyxl import Workbook
 from report_server import create_report_server_app
 
 
+def _write_minimal_assignee_workbook(root: Path) -> None:
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["project_key", "worklog_date", "period_day", "period_week", "period_month", "issue_assignee", "hours_logged"])
+    ws.append(["O2", "2026-02-01", "2026-02-01", "2026-W05", "2026-02", "Alice", 1.0])
+    wb.save(root / "assignee_hours_report.xlsx")
+
+
+def _write_epics_import_source(path: Path, *, total_override: float | None = None) -> None:
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "OmniConnect RMI"
+    headers = [
+        "Sr #", "Category", "Components", "Road Map Items", "Jira ID", "Originator",
+        "Value", "Priority", "Priority", "Priority", "Priority", "Plan Status", "Work Status",
+        "Prc Design", "R/URS", "R/DDS", "Dev", "SQA", "Prc Test", "Doc", "Reg SQA", "Release",
+        "Man Days", "Optimistic (50%)", "Pessimistic (10%)", "Est Formula", "TK's TARGET",
+        "Start Date", "Dev End", "SQA HO", "Prod Date",
+        "Prc Design", "R/URS (5%)", "R/DDS (10%)", "Dev (40%)", "Handover", "SQA (15%)",
+        "Bug Fixing (15%)", "Prc Test", "Doc (5%)", "Reg SQA (10%)", "Release",
+    ]
+    ws.merge_cells("A1:D1")
+    ws["A1"] = "OmniConnect Roadmap Items"
+    ws.merge_cells("N1:W1")
+    ws["N1"] = "RnD Most likely"
+    ws.merge_cells("X1:AP1")
+    ws["X1"] = "TK Budgeted"
+    ws.append(headers)
+    phase_values = [1, 2, 3, 4, 5, 6, 7, 8, 9]
+    ws.append([
+        1, "Input", "Streaming", "Streaming Epic", "https://octopusdtlsupport.atlassian.net/browse/O2-321",
+        "RnD", None, None, None, None, None, "Plan", "Ready",
+        *phase_values, total_override if total_override is not None else sum(phase_values),
+    ])
+    ws.append([
+        2, None, None, "Streaming child without Jira", None,
+        "Imp Team", None, None, None, None, None, "UnPlan", "Blocked",
+    ])
+    ws.merge_cells("B3:B4")
+    ws.merge_cells("C3:C4")
+    wb.save(path)
+
+
 class ReportUiSmokeTests(unittest.TestCase):
     def test_assignee_header_and_drawer_controls_exist(self):
         payload = {
@@ -457,11 +500,22 @@ class ReportUiSmokeTests(unittest.TestCase):
             self.assertIn('id="phase-position"', epic_phases_html)
             self.assertIn('id="phase-jira-enabled"', epic_phases_html)
             self.assertIn('id="add-phase-btn"', epic_phases_html)
+            self.assertIn("Phase Role", epic_phases_html)
+            self.assertIn("Formula", epic_phases_html)
+            self.assertIn("Lock", epic_phases_html)
+            self.assertIn("data-phase-lock-input", epic_phases_html)
+            self.assertIn("Formula-managed", epic_phases_html)
             self.assertIn('id="tab-active"', epic_phases_html)
             self.assertIn('id="tab-deleted"', epic_phases_html)
             self.assertIn('id="phases-tbody"', epic_phases_html)
             self.assertIn("/api/epics-management/plan-columns", epic_phases_html)
-            self.assertIn('data-rename-phase', epic_phases_html)
+            self.assertIn('data-phase-label-input', epic_phases_html)
+            self.assertIn('data-phase-original-label', epic_phases_html)
+            self.assertIn('data-phase-jira-input', epic_phases_html)
+            self.assertIn("savePhaseNameCell", epic_phases_html)
+            self.assertIn("savePhaseToggleCell", epic_phases_html)
+            self.assertIn("Press Enter or leave the field to save", epic_phases_html)
+            self.assertIn("phaseJiraEnabledEl.checked = true;", epic_phases_html)
             self.assertIn("/api/epics-management/plan-columns/order", epic_phases_html)
             self.assertIn("/restore", epic_phases_html)
 
@@ -472,10 +526,25 @@ class ReportUiSmokeTests(unittest.TestCase):
             self.assertIn("Quick add epic", epics_html)
             self.assertIn("<kbd>Shift</kbd>", epics_html)
             self.assertIn('id="epics-tbody"', epics_html)
+            self.assertIn('id="executive-summary-tbody"', epics_html)
+            self.assertIn("Total Planned", epics_html)
+            self.assertIn("Unplanned", epics_html)
+            self.assertIn("Onhold", epics_html)
+            self.assertIn('class="executive-summary-table"', epics_html)
+            self.assertIn("renderExecutiveSummary", epics_html)
             self.assertIn("Project/Product Categorization/Component groups", epics_html)
             self.assertIn('id="seal-epics-btn"', epics_html)
             self.assertIn("Manage sealed budgets", epics_html)
             self.assertIn("User Manual Plan", epics_html)
+            self.assertIn("Most Likely", epics_html)
+            self.assertIn("TK Budgeted", epics_html)
+            self.assertIn("TK Approved", epics_html)
+            self.assertIn("plan-layer-most-likely", epics_html)
+            self.assertIn("plan-layer-tk-budgeted", epics_html)
+            self.assertIn("plan-pair-start", epics_html)
+            self.assertIn("plan-pair-end", epics_html)
+            self.assertIn("--most-likely-bg:#ffedd5", epics_html)
+            self.assertIn("--tk-budgeted-bg:#dcfce7", epics_html)
             self.assertIn('id="plan-dialog"', epics_html)
             self.assertIn('id="add-epic-btn"', epics_html)
             self.assertIn('id="add-plan-column-btn"', epics_html)
@@ -542,6 +611,36 @@ class ReportUiSmokeTests(unittest.TestCase):
             seeded = {str(item.get("key")) for item in columns_body.get("columns", [])}
             self.assertIn("epic_plan", seeded)
             self.assertIn("production_plan", seeded)
+            self.assertIn("process_design", seeded)
+            self.assertIn("regression_sqa_testing", seeded)
+            research_col = next(item for item in columns_body.get("columns", []) if str(item.get("key")) == "research_urs_plan")
+            self.assertEqual(research_col.get("label"), "R/URS")
+            self.assertTrue(research_col.get("most_likely_enabled"))
+            self.assertTrue(research_col.get("tk_budgeted_enabled"))
+            self.assertTrue(research_col.get("is_locked"))
+            self.assertEqual(research_col.get("formula_role"), "percentage_if_input")
+            handover_col = next(item for item in columns_body.get("columns", []) if str(item.get("key")) == "qa_handover")
+            self.assertEqual(handover_col.get("phase_role"), "formula_managed")
+            self.assertFalse(handover_col.get("most_likely_enabled"))
+
+            rename_default_resp = client.put(
+                "/api/epics-management/plan-columns/research_urs_plan",
+                json={"label": "Discovery URS", "jira_link_enabled": True},
+            )
+            self.assertEqual(rename_default_resp.status_code, 200)
+            columns_after_default_rename = client.get("/api/epics-management/plan-columns")
+            self.assertEqual(columns_after_default_rename.status_code, 200)
+            renamed_default = next(
+                item
+                for item in columns_after_default_rename.get_json().get("columns", [])
+                if str(item.get("key")) == "research_urs_plan"
+            )
+            self.assertEqual(renamed_default.get("label"), "Discovery URS")
+            restore_default_name_resp = client.put(
+                "/api/epics-management/plan-columns/research_urs_plan",
+                json={"label": "R/URS", "jira_link_enabled": True, "is_locked": True},
+            )
+            self.assertEqual(restore_default_name_resp.status_code, 200)
 
             add_column_resp = client.post(
                 "/api/epics-management/plan-columns",
@@ -568,10 +667,15 @@ class ReportUiSmokeTests(unittest.TestCase):
                         "research_urs_plan",
                         "epic_plan",
                         security_key,
+                        "process_design",
                         "dds_plan",
                         "development_plan",
+                        "qa_handover",
                         "sqa_plan",
+                        "bug_fixing",
+                        "process_qa_testing",
                         "user_manual_plan",
+                        "regression_sqa_testing",
                         "production_plan",
                     ]
                 },
@@ -585,10 +689,15 @@ class ReportUiSmokeTests(unittest.TestCase):
                     "research_urs_plan",
                     "epic_plan",
                     security_key,
+                    "process_design",
                     "dds_plan",
                     "development_plan",
+                    "qa_handover",
                     "sqa_plan",
+                    "bug_fixing",
+                    "process_qa_testing",
                     "user_manual_plan",
+                    "regression_sqa_testing",
                     "production_plan",
                 ],
             )
@@ -631,6 +740,8 @@ class ReportUiSmokeTests(unittest.TestCase):
             )
             self.assertEqual(create_resp.status_code, 201)
             create_body = create_resp.get_json()
+            created_row_id = create_body["row"]["id"]
+            self.assertTrue(created_row_id, "Row must have an id")
             self.assertEqual(create_body["row"]["epic_key"], "O2-999")
             self.assertEqual(create_body["row"]["priority"], "High")
             self.assertEqual(create_body["row"]["ipp_meeting_planned"], "Yes")
@@ -646,10 +757,21 @@ class ReportUiSmokeTests(unittest.TestCase):
                 create_body["row"]["plans"][security_key]["jira_url"],
                 "https://jira.example.com/browse/O2-1205",
             )
+            self.assertEqual(create_body["row"]["plans"]["research_urs_plan"]["most_likely_man_days"], 2.0)
+            self.assertEqual(create_body["row"]["plans"]["research_urs_plan"]["tk_budgeted_man_days"], 0.08)
+            self.assertEqual(create_body["row"]["plans"]["research_urs_plan"]["man_days"], 0.08)
+            self.assertEqual(create_body["row"]["plans"]["research_urs_plan"]["tk_budgeted_start_date"], "2026-02-01")
+            self.assertEqual(create_body["row"]["plans"]["research_urs_plan"]["tk_budgeted_due_date"], "2026-02-03")
+            self.assertEqual(create_body["row"]["plans"][security_key]["most_likely_man_days"], 1.5)
             self.assertEqual(create_body["row"]["plans"][security_key]["man_days"], 1.5)
+            self.assertEqual(create_body["row"]["plans"]["epic_plan"]["most_likely_man_days"], 3.5)
+            self.assertEqual(create_body["row"]["plans"]["epic_plan"]["optimistic_man_days"], 1.75)
+            self.assertEqual(create_body["row"]["plans"]["epic_plan"]["pessimistic_man_days"], 3.85)
+            self.assertEqual(create_body["row"]["plans"]["epic_plan"]["calculated_man_days"], 3.27)
+            self.assertEqual(create_body["row"]["plans"]["epic_plan"]["tk_approved_man_days"], 1.64)
 
             update_resp = client.put(
-                "/api/epics-management/rows/O2-999",
+                f"/api/epics-management/rows/{created_row_id}",
                 json={
                     "description": "Updated epic",
                     "priority": "Highest",
@@ -666,12 +788,14 @@ class ReportUiSmokeTests(unittest.TestCase):
             self.assertEqual(update_body["row"]["description"], "Updated epic")
             self.assertEqual(update_body["row"]["priority"], "Highest")
             self.assertEqual(update_body["row"]["ipp_meeting_planned"], "No")
-            self.assertEqual(update_body["row"]["plans"]["epic_plan"]["man_days"], 10)
+            self.assertEqual(update_body["row"]["plans"]["epic_plan"]["most_likely_man_days"], 4.0)
+            self.assertEqual(update_body["row"]["plans"]["epic_plan"]["tk_approved_man_days"], 1.87)
             self.assertEqual(
                 update_body["row"]["plans"]["dds_plan"]["jira_url"],
                 "https://jira.example.com/browse/O2-1201",
             )
-            self.assertEqual(update_body["row"]["plans"][security_key]["man_days"], 2)
+            self.assertEqual(update_body["row"]["plans"][security_key]["most_likely_man_days"], 2.0)
+            self.assertEqual(update_body["row"]["plans"][security_key]["man_days"], 2.0)
 
             planner_columns_after_rename = client.get("/api/epics-management/plan-columns")
             self.assertEqual(planner_columns_after_rename.status_code, 200)
@@ -720,6 +844,368 @@ class ReportUiSmokeTests(unittest.TestCase):
 
             delete_default_resp = client.delete("/api/epics-management/plan-columns/epic_plan")
             self.assertEqual(delete_default_resp.status_code, 400)
+
+            default_jira_resp = client.post(
+                "/api/epics-management/plan-columns",
+                json={"label": "Auto Jira Default Plan"},
+            )
+            self.assertEqual(default_jira_resp.status_code, 201)
+            default_jira_column = (default_jira_resp.get_json() or {}).get("column") or {}
+            self.assertTrue(bool(default_jira_column.get("jira_link_enabled")))
+
+            locked_dynamic_resp = client.put(
+                f"/api/epics-management/plan-columns/{delete_candidate_key}",
+                json={"label": "Deprecation Plan", "is_locked": True},
+            )
+            self.assertEqual(locked_dynamic_resp.status_code, 200)
+            self.assertTrue(bool((locked_dynamic_resp.get_json() or {}).get("column", {}).get("is_locked")))
+            delete_locked_resp = client.delete(f"/api/epics-management/plan-columns/{delete_candidate_key}")
+            self.assertEqual(delete_locked_resp.status_code, 400)
+
+            unlock_dynamic_resp = client.put(
+                f"/api/epics-management/plan-columns/{delete_candidate_key}",
+                json={"label": "Deprecation Plan", "is_locked": False},
+            )
+            self.assertEqual(unlock_dynamic_resp.status_code, 200)
+            self.assertFalse(bool((unlock_dynamic_resp.get_json() or {}).get("column", {}).get("is_locked")))
+            delete_unlocked_resp = client.delete(f"/api/epics-management/plan-columns/{delete_candidate_key}")
+            self.assertEqual(delete_unlocked_resp.status_code, 200)
+
+            unlock_default_resp = client.put(
+                "/api/epics-management/plan-columns/epic_plan",
+                json={"label": "Epic Plan", "is_locked": False},
+            )
+            self.assertEqual(unlock_default_resp.status_code, 200)
+            self.assertFalse(bool((unlock_default_resp.get_json() or {}).get("column", {}).get("is_locked")))
+            delete_unlocked_default_resp = client.delete("/api/epics-management/plan-columns/epic_plan")
+            self.assertEqual(delete_unlocked_default_resp.status_code, 200)
+            restore_default_resp = client.post("/api/epics-management/plan-columns/epic_plan/restore")
+            self.assertEqual(restore_default_resp.status_code, 200)
+            relock_default_resp = client.put(
+                "/api/epics-management/plan-columns/epic_plan",
+                json={"label": "Epic Plan", "is_locked": True},
+            )
+            self.assertEqual(relock_default_resp.status_code, 200)
+            self.assertTrue(bool((relock_default_resp.get_json() or {}).get("column", {}).get("is_locked")))
+
+    def test_epics_import_preview_parses_work_status_and_rnd_phase_group(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            (root / "report_html").mkdir(parents=True, exist_ok=True)
+            (root / "report_html" / "dashboard.html").write_text("<html><body>ok</body></html>", encoding="utf-8")
+            _write_minimal_assignee_workbook(root)
+            source_path = root / "Epic Estimates Approved Plan.xlsx"
+            _write_epics_import_source(source_path, total_override=99)
+            app = create_report_server_app(base_dir=root, folder_raw="report_html")
+            client = app.test_client()
+
+            preview_resp = client.get(f"/api/epics-management/import/preview?fetch_jira=0&workbook={source_path}")
+            self.assertEqual(preview_resp.status_code, 200)
+            body = preview_resp.get_json()
+            rows = body["rows"]
+            self.assertEqual(len(rows), 2)
+            row = rows[0]
+            self.assertEqual(row["project_name"], "OmniConnect")
+            self.assertEqual(row["work_status"], "Ready")
+            self.assertEqual(row["category"], "Input")
+            self.assertEqual(row["component"], "Streaming")
+            self.assertEqual(row["phases"]["process_design"], 1)
+            self.assertEqual(row["phases"]["research_urs_plan"], 2)
+            self.assertEqual(row["phases"]["production_plan"], 9)
+            self.assertEqual(row["phase_sum"], 45.0)
+            self.assertEqual(row["man_days_total"], 99)
+            self.assertFalse(row["total_matches"])
+            self.assertIn("Phase total 45.0 differs from Man Days 99", row["warnings"][0])
+            self.assertFalse(rows[1]["can_import"])
+
+            page_resp = client.get("/settings/epics-management/import")
+            self.assertEqual(page_resp.status_code, 200)
+            page_html = page_resp.get_data(as_text=True)
+            self.assertIn("Epics Planner Import", page_html)
+            self.assertIn("/api/epics-management/import/preview", page_html)
+            self.assertIn("Work:", page_html)
+
+    @patch("report_server._fetch_jira_issues_for_jql")
+    @patch("report_server.resolve_jira_end_date_field_ids")
+    @patch("report_server.resolve_jira_start_date_field_id")
+    @patch("report_server.get_session")
+    def test_epics_import_preview_fetches_jira_and_suggests_phase_links(
+        self,
+        mock_get_session,
+        mock_start_field,
+        mock_end_fields,
+        mock_fetch_jql,
+    ):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            (root / "report_html").mkdir(parents=True, exist_ok=True)
+            (root / "report_html" / "dashboard.html").write_text("<html><body>ok</body></html>", encoding="utf-8")
+            _write_minimal_assignee_workbook(root)
+            source_path = root / "Epic Estimates Approved Plan.xlsx"
+            _write_epics_import_source(source_path)
+            app = create_report_server_app(base_dir=root, folder_raw="report_html")
+            client = app.test_client()
+
+            mock_get_session.return_value = object()
+            mock_start_field.return_value = "customfield_start"
+            mock_end_fields.return_value = ["customfield_end"]
+            mock_fetch_jql.side_effect = [
+                [
+                    {
+                        "key": "O2-321",
+                        "fields": {
+                            "summary": "Jira Epic Summary",
+                            "description": {"content": [{"content": [{"text": "Jira description"}]}]},
+                            "issuetype": {"name": "Epic"},
+                            "status": {"name": "In Progress"},
+                            "customfield_start": "2026-05-01",
+                            "customfield_end": "2026-05-31",
+                            "timeoriginalestimate": 28800,
+                        },
+                    }
+                ],
+                [
+                    {
+                        "key": "O2-401",
+                        "fields": {
+                            "summary": "Development build story",
+                            "issuetype": {"name": "Story"},
+                            "status": {"name": "To Do"},
+                            "customfield_10014": "O2-321",
+                            "customfield_start": "2026-05-03",
+                            "customfield_end": "2026-05-10",
+                            "timeoriginalestimate": 57600,
+                        },
+                    },
+                    {
+                        "key": "O2-402",
+                        "fields": {
+                            "summary": "SQA validation story",
+                            "issuetype": {"name": "Story"},
+                            "status": {"name": "To Do"},
+                            "customfield_10014": "O2-321",
+                            "customfield_start": "2026-05-11",
+                            "customfield_end": "2026-05-12",
+                            "timeoriginalestimate": 14400,
+                        },
+                    },
+                ],
+                [],
+            ]
+
+            preview_resp = client.get(f"/api/epics-management/import/preview?workbook={source_path}")
+            self.assertEqual(preview_resp.status_code, 200)
+            row = preview_resp.get_json()["rows"][0]
+            self.assertEqual(row["epic_name"], "Jira Epic Summary")
+            self.assertIn("Jira description", row["description"])
+            dev_suggestion = row["phase_suggestions"]["development_plan"]
+            self.assertTrue(dev_suggestion["accepted"])
+            self.assertEqual(dev_suggestion["issue_key"], "O2-401")
+            self.assertEqual(dev_suggestion["jira_url"], "https://octopusdtlsupport.atlassian.net/browse/O2-401")
+            self.assertEqual(dev_suggestion["start_date"], "2026-05-03")
+
+    def test_epics_import_submit_backs_up_rebudgets_and_writes_rows(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            (root / "report_html").mkdir(parents=True, exist_ok=True)
+            (root / "report_html" / "dashboard.html").write_text("<html><body>ok</body></html>", encoding="utf-8")
+            _write_minimal_assignee_workbook(root)
+            app = create_report_server_app(base_dir=root, folder_raw="report_html")
+            client = app.test_client()
+
+            create_existing = client.post(
+                "/api/epics-management/rows",
+                json={
+                    "epic_key": "O2-321",
+                    "project_key": "O2",
+                    "project_name": "Old Project",
+                    "product_category": "Old",
+                    "component": "Old Component",
+                    "epic_name": "Old Epic",
+                    "priority": "Low",
+                    "plan_status": "Not Planned Yet",
+                    "jira_url": "https://octopusdtlsupport.atlassian.net/browse/O2-321",
+                    "plans": {},
+                },
+            )
+            self.assertEqual(create_existing.status_code, 201)
+            seal_resp = client.post("/api/epics-management/seal", json={"epic_keys": ["O2-321"]})
+            self.assertEqual(seal_resp.status_code, 200)
+
+            submit_resp = client.post(
+                "/api/epics-management/import/submit",
+                json={
+                    "rows": [
+                        {
+                            "include": True,
+                            "source_id": "OmniConnect RMI:3",
+                            "epic_key": "O2-321",
+                            "project_key": "O2",
+                            "project_name": "OmniConnect",
+                            "category": "Input",
+                            "component": "Streaming",
+                            "jira_url": "https://octopusdtlsupport.atlassian.net/browse/O2-321",
+                            "epic_name": "Jira Epic Summary",
+                            "description": "Jira description",
+                            "originator": "RnD",
+                            "phases": {
+                                "process_design": 1,
+                                "research_urs_plan": 2,
+                                "dds_plan": 3,
+                                "development_plan": 4,
+                                "sqa_plan": 5,
+                                "process_qa_testing": 6,
+                                "user_manual_plan": 7,
+                                "regression_sqa_testing": 8,
+                                "production_plan": 9,
+                            },
+                            "phase_reviews": {
+                                "development_plan": {
+                                    "accepted": True,
+                                    "jira_url": "https://octopusdtlsupport.atlassian.net/browse/O2-401",
+                                    "start_date": "2026-05-03",
+                                    "due_date": "2026-05-10",
+                                },
+                                "sqa_plan": {
+                                    "accepted": False,
+                                    "jira_url": "https://octopusdtlsupport.atlassian.net/browse/O2-402",
+                                    "start_date": "2026-05-11",
+                                    "due_date": "2026-05-12",
+                                },
+                            },
+                        },
+                        {
+                            "include": True,
+                            "source_id": "Fintech Fuel RMI:22",
+                            "epic_key": "FF-541",
+                            "project_key": "FF",
+                            "project_name": "Fintech Fuel",
+                            "category": "Administration",
+                            "component": "URM",
+                            "jira_url": "https://octopusdtlsupport.atlassian.net/browse/FF-541",
+                            "epic_name": "New FF Epic",
+                            "description": "New description",
+                            "originator": "PGL",
+                            "phases": {"development_plan": 6, "sqa_plan": 3},
+                            "phase_reviews": {},
+                        },
+                    ]
+                },
+            )
+            self.assertEqual(submit_resp.status_code, 200)
+            body = submit_resp.get_json()
+            self.assertEqual(body["updated"], 1)
+            self.assertEqual(body["inserted"], 1)
+            self.assertEqual(body["rebudgeted"], 1)
+            self.assertTrue(Path(body["backup_path"]).exists())
+
+            rows_resp = client.get("/api/epics-management/rows")
+            self.assertEqual(rows_resp.status_code, 200)
+            rows = {row["epic_key"]: row for row in rows_resp.get_json()["rows"]}
+            updated = rows["O2-321"]
+            self.assertEqual(updated["project_name"], "OmniConnect")
+            self.assertEqual(updated["product_category"], "Input")
+            self.assertEqual(updated["component"], "Streaming")
+            self.assertEqual(updated["originator"], "RnD")
+            self.assertEqual(updated["priority"], "High")
+            self.assertEqual(updated["plan_status"], "Planned")
+            self.assertEqual(updated["is_sealed"], 0)
+            self.assertEqual(updated["plans"]["development_plan"]["most_likely_man_days"], 4.0)
+            self.assertEqual(updated["plans"]["development_plan"]["jira_url"], "https://octopusdtlsupport.atlassian.net/browse/O2-401")
+            self.assertEqual(updated["plans"]["development_plan"]["start_date"], "2026-05-03")
+            self.assertEqual(updated["plans"]["sqa_plan"]["most_likely_man_days"], 5.0)
+            self.assertEqual(updated["plans"]["sqa_plan"]["jira_url"], "")
+            self.assertIn("FF-541", rows)
+
+    def test_epics_management_seal_blocks_updates_until_rebudget(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            (root / "report_html").mkdir(parents=True, exist_ok=True)
+            (root / "report_html" / "dashboard.html").write_text("<html><body>ok</body></html>", encoding="utf-8")
+            wb = Workbook()
+            ws = wb.active
+            ws.append(["project_key", "worklog_date", "period_day", "period_week", "period_month", "issue_assignee", "hours_logged"])
+            ws.append(["O2", "2026-02-01", "2026-02-01", "2026-W05", "2026-02", "Alice", 1.0])
+            wb.save(root / "assignee_hours_report.xlsx")
+            app = create_report_server_app(base_dir=root, folder_raw="report_html")
+            client = app.test_client()
+
+            create_resp = client.post(
+                "/api/epics-management/rows",
+                json={
+                    "epic_key": "O2-555",
+                    "project_key": "O2",
+                    "project_name": "O2 Project",
+                    "product_category": "Core",
+                    "epic_name": "Seal Protected Epic",
+                    "jira_url": "https://jira.example.com/browse/O2-555",
+                    "plans": {
+                        "development_plan": {
+                            "man_days": 8,
+                            "start_date": "2026-02-01",
+                            "due_date": "2026-02-10",
+                        }
+                    },
+                },
+            )
+            self.assertEqual(create_resp.status_code, 201)
+
+            seal_resp = client.post("/api/epics-management/seal", json={"epic_keys": ["O2-555"]})
+            self.assertEqual(seal_resp.status_code, 200)
+            seal_body = seal_resp.get_json() or {}
+            self.assertEqual(seal_body.get("sealed_count"), 1)
+
+            rows_after_seal = client.get("/api/epics-management/rows").get_json()["rows"]
+            sealed_row = next(item for item in rows_after_seal if item["epic_key"] == "O2-555")
+            self.assertEqual(sealed_row["is_sealed"], 1)
+            self.assertEqual(sealed_row["plans"]["development_plan"]["most_likely_man_days"], 8.0)
+            self.assertEqual(sealed_row["plans"]["development_plan"]["tk_budgeted_start_date"], "2026-02-01")
+            self.assertEqual(sealed_row["plans"]["epic_plan"]["tk_approved_man_days"], 3.74)
+
+            update_resp = client.put("/api/epics-management/rows/O2-555", json={"description": "Blocked"})
+            self.assertEqual(update_resp.status_code, 423)
+
+            delete_resp = client.delete("/api/epics-management/rows/O2-555")
+            self.assertEqual(delete_resp.status_code, 423)
+
+            sync_resp = client.post(
+                "/api/epics-management/rows/O2-555/sync-jira-plan",
+                json={"jira_url": "https://jira.example.com/browse/O2-555"},
+            )
+            self.assertEqual(sync_resp.status_code, 423)
+
+            rebudget_resp = client.post("/api/epics-management/rows/O2-555/re-budget")
+            self.assertEqual(rebudget_resp.status_code, 200)
+
+            update_after_rebudget = client.put("/api/epics-management/rows/O2-555", json={"description": "Unlocked"})
+            self.assertEqual(update_after_rebudget.status_code, 200)
+            self.assertEqual(update_after_rebudget.get_json()["row"]["description"], "Unlocked")
+
+            delete_after_rebudget = client.delete("/api/epics-management/rows/O2-555")
+            self.assertEqual(delete_after_rebudget.status_code, 200)
+
+    def test_reference_tk_estimates_folder_contains_expected_files(self):
+        root = Path(__file__).resolve().parents[1] / "Reference TK Estimates Folder"
+        expected = [
+            root / "extract_rmi_jira_to_sqlite.py",
+            root / "generate_rmi_gantt_html.py",
+            root / "run_rmi_pipeline.py",
+            root / "populate_ipp_from_jira.py",
+            root / "tk_approved_for_ipp.py",
+            root / "tests" / "test_extract_rmi_jira_to_sqlite.py",
+            root / "tests" / "test_generate_rmi_gantt_html.py",
+            root / "tests" / "test_run_rmi_pipeline.py",
+            root / "IPP Meeting Reports" / "Epic Estimates Approved Plan.xlsx",
+            root / "IPP Meeting Reports" / "Epic Estimates Approved Plan - backup before bug fixing update.xlsx",
+            root / "IPP Meeting Reports" / "Epic Estimates Approved Plan - backup before handover update.xlsx",
+            root / "IPP Meeting Reports" / "Epic Estimates Approved Plan.codex-copy.xlsx",
+            root / "IPP Meeting Reports" / "rmi_jira_extract.db",
+            root / "IPP Meeting Reports" / "rmi_jira_gantt.html",
+            root / "IPP Meeting Reports" / "rmi_jira_gantt.backup.html",
+            root / "IPP Meeting Reports" / "RMI Jira Gantt Report Documentation.md",
+        ]
+        missing = [str(path.relative_to(root)) for path in expected if not path.is_file()]
+        self.assertEqual(missing, [])
 
     def test_epics_dropdown_options_api(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
@@ -976,10 +1462,16 @@ class ReportUiSmokeTests(unittest.TestCase):
             self.assertEqual(body["synced_story_count"], 2)
             self.assertEqual(body["row"]["epic_name"], "Jira Epic Summary")
             self.assertIn("Epic desc from Jira", body["row"]["description"])
-            self.assertEqual(body["row"]["plans"]["research_urs_plan"]["man_days"], 0.5)
+            self.assertEqual(body["row"]["plans"]["research_urs_plan"]["most_likely_man_days"], 0.5)
+            self.assertEqual(body["row"]["plans"]["research_urs_plan"]["man_days"], 0.02)
+            self.assertEqual(body["row"]["plans"]["research_urs_plan"]["tk_budgeted_man_days"], 0.02)
             self.assertEqual(body["row"]["plans"]["research_urs_plan"]["start_date"], "2026-02-01")
             self.assertEqual(body["row"]["plans"]["research_urs_plan"]["due_date"], "2026-02-12")
-            self.assertEqual(body["row"]["plans"]["dds_plan"]["man_days"], 0.25)
+            self.assertEqual(body["row"]["plans"]["research_urs_plan"]["tk_budgeted_start_date"], "2026-02-01")
+            self.assertEqual(body["row"]["plans"]["research_urs_plan"]["tk_budgeted_due_date"], "2026-02-12")
+            self.assertEqual(body["row"]["plans"]["dds_plan"]["most_likely_man_days"], 0.25)
+            self.assertEqual(body["row"]["plans"]["dds_plan"]["man_days"], 0.04)
+            self.assertEqual(body["row"]["plans"]["dds_plan"]["tk_budgeted_man_days"], 0.04)
             self.assertEqual(body["row"]["plans"]["dds_plan"]["start_date"], "2026-02-05")
             self.assertEqual(body["row"]["plans"]["dds_plan"]["due_date"], "2026-02-25")
 
@@ -1059,6 +1551,20 @@ class ReportUiSmokeTests(unittest.TestCase):
         self.assertIn("epicRefreshRuns", html)
         self.assertIn("await fetch(`${EPIC_REFRESH_ENDPOINT_BASE}/${encodeURIComponent(runId)}`", html)
         self.assertIn("Run scoped colossal refresh for this epic", html)
+
+    def test_dashboard_template_does_not_include_colossal_refresh_launcher(self):
+        template_path = Path(__file__).resolve().parents[1] / "dashboard_template.html"
+        html_path = Path(__file__).resolve().parents[1] / "report_html" / "dashboard.html"
+        template_html = template_path.read_text(encoding="utf-8")
+        report_html = html_path.read_text(encoding="utf-8")
+        for html in (template_html, report_html):
+            self.assertNotIn('id="dashboard-refresh-trigger"', html)
+            self.assertNotIn('id="dashboard-refresh-dropdown"', html)
+            self.assertNotIn('id="dashboard-refresh-cancel"', html)
+            self.assertNotIn('id="dashboard-refresh-progress-wrap"', html)
+            self.assertNotIn('id="dashboard-refresh-resume-banner"', html)
+            self.assertNotIn('initializeDashboardRefreshPanel()', html)
+            self.assertNotIn("startRefresh(mode, resume)", html)
 
     def test_planned_vs_dispensed_page_controls_exist(self):
         html_path = Path(__file__).resolve().parents[1] / "report_html" / "planned_vs_dispensed_report.html"

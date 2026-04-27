@@ -30,6 +30,7 @@ DEFAULT_HTML_ONLY_STEPS: list[tuple[str, str]] = [
     ("rnd-data-story-html", "generate_rnd_data_story.py"),
     ("planned-rmis-html", "generate_planned_rmis_html.py"),
     ("gantt-chart-html", "generate_gantt_chart_html.py"),
+    ("rmi-jira-gantt-html", "generate_rmi_jira_gantt_html.py"),
     ("employee-performance-html", "generate_employee_performance_report.py"),
     ("team-rmi-gantt-sqlite-sync", "sync_team_rmi_gantt_sqlite.py"),
 ]

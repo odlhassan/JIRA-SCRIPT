@@ -1,0 +1,32 @@
+---
+description: Project workspace root and primary URLs for the JIRA SCRIPT report server
+alwaysApply: true
+---
+
+# Workspace Location
+
+- The project root is `E:\JIRA SCRIPT`. Always operate from this path on Windows (PowerShell). Quote it as `"E:\JIRA SCRIPT"` because of the space.
+- The primary entry point is `report_server.py`; default local server runs at `http://127.0.0.1:3000`.
+- Server PIDs for ports 3000–3006 are tracked in files named `.codex_run_server_<port>_pid` in the project root.
+
+# Key Pages
+
+- Epics Planner UI: `http://127.0.0.1:3000/settings/epics-management`
+- Epics Planner Import: `http://127.0.0.1:3000/settings/epics-management/import`
+- Rows API: `/api/epics-management/rows`
+- Projects API: `/api/projects?include_inactive=0`
+
+# Databases
+
+- Settings/epics DB: `assignee_hours_capacity.db` (also `epics_management.db`).
+- Jira sync cache: `jira_sync_cache.db`.
+
+When the user says "the project", "the app", "localhost", or names a route without a host, assume this workspace and these defaults unless they say otherwise.
+
+# Stability check before new work (GitHub)
+
+Before starting work on a **new requirement** for this project:
+
+1. **Ask the user** whether the current project is stable.
+2. If the user says **yes** — **push the codebase to GitHub** (commit if needed per repo norms, then push) **before** continuing with the new requirement.
+3. If the user says **no** — **do not push** to GitHub before working; proceed without a push unless the user explicitly asks to push.

@@ -819,6 +819,59 @@ class EmployeePerformanceReportTests(unittest.TestCase):
             self.assertEqual(del_resp.status_code, 200)
             self.assertTrue(del_resp.get_json()["deleted"])
 
+    def test_performance_resource_resignation_records_api(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            tdp = Path(td)
+            (tdp / "report_html").mkdir(parents=True, exist_ok=True)
+            (tdp / "report_html" / "dashboard.html").write_text("<html><body>ok</body></html>", encoding="utf-8")
+
+            wb = Workbook()
+            ws = wb.active
+            ws.append(["project_key", "worklog_date", "period_day", "period_week", "period_month", "issue_assignee", "hours_logged"])
+            ws.append(["O2", "2026-02-01", "2026-02-01", "2026-W05", "2026-02", "Alice", 2.0])
+            ws.append(["O2", "2026-02-02", "2026-02-02", "2026-W05", "2026-02", "Bob", 3.0])
+            wb.save(tdp / "assignee_hours_report.xlsx")
+
+            app = create_report_server_app(base_dir=tdp, folder_raw="report_html")
+            client = app.test_client()
+
+            assignees_resp = client.get("/api/performance/assignees")
+            self.assertEqual(assignees_resp.status_code, 200)
+            body = assignees_resp.get_json() or {}
+            self.assertIn("Alice", body["assignees"])
+            self.assertIn("resource_records", body)
+            self.assertFalse(body["resource_records"]["Alice"]["resigned"])
+
+            put_resp = client.put(
+                "/api/performance/resource-records/Alice",
+                json={"resigned": True, "resignation_date": "2026-03-15"},
+            )
+            self.assertEqual(put_resp.status_code, 200)
+            rec = (put_resp.get_json() or {}).get("record") or {}
+            self.assertTrue(rec.get("resigned"))
+            self.assertEqual(rec.get("resignation_date"), "2026-03-15")
+
+            body2 = client.get("/api/performance/assignees").get_json() or {}
+            self.assertTrue(body2["resource_records"]["Alice"]["resigned"])
+            self.assertEqual(body2["resource_records"]["Alice"]["resignation_date"], "2026-03-15")
+
+            clear_resp = client.put(
+                "/api/performance/resource-records/Alice",
+                json={"resigned": False, "resignation_date": None},
+            )
+            self.assertEqual(clear_resp.status_code, 200)
+            body3 = client.get("/api/performance/assignees").get_json() or {}
+            self.assertFalse(body3["resource_records"]["Alice"]["resigned"])
+
+            post_resp = client.post(
+                "/api/performance/resource-records",
+                json={"assignee": "Former Only", "resigned": True, "resignation_date": "2025-12-01"},
+            )
+            self.assertEqual(post_resp.status_code, 200)
+            body4 = client.get("/api/performance/assignees").get_json() or {}
+            self.assertIn("Former Only", body4["assignees"])
+            self.assertTrue(body4["resource_records"]["Former Only"]["resigned"])
+
     def test_employee_refresh_cancel_marks_running_run(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             tdp = Path(td)

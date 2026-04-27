@@ -40,3 +40,5 @@ Each info item contains:
 - `docs/report-user-guide/screens/09-phase-rmi-gantt-report.md`
 - `docs/report-user-guide/screens/10-rlt-leave-report.md`
 - `docs/report-user-guide/screens/11-rnd-data-story-report.md`
+- `docs/report-user-guide/screens/12-epics-planner-tk-estimates.md`
+- `docs/report-user-guide/screens/13-rmi-jira-gantt-report.md`

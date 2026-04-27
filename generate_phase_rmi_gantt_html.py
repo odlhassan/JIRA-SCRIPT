@@ -676,9 +676,7 @@ def _build_html(data: dict[str, Any]) -> str:
 
     function defaultRange() {{
       const today = new Date();
-      const prevMonthStart = startOfMonth(new Date(today.getFullYear(), today.getMonth() - 1, 1));
-      const nextMonthEnd = endOfMonth(new Date(today.getFullYear(), today.getMonth() + 1, 1));
-      return {{ from: prevMonthStart, to: nextMonthEnd }};
+      return {{ from: startOfYear(today), to: endOfYear(today) }};
     }}
 
     function overlap(aStart, aEnd, bStart, bEnd) {{

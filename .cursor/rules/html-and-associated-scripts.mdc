@@ -1,0 +1,23 @@
+---
+description: When changing HTML, always update linked or embedded scripting and keep localhost serving the latest build
+alwaysApply: true
+---
+
+# HTML changes require associated script updates and localhost readiness
+
+## Associated scripting (required)
+
+Whenever you change **any HTML** in this project (static `.html`, templates read by generators, inline HTML strings in Python/JS, or report output):
+
+1. **Identify and update** every file that behavior depends on: linked or embedded **JavaScript**, **CSS** that targets new structure, **Python generators** that produce or wrap that HTML, **tests** that assert on DOM or output, and **server routes** that serve or sync those files.
+2. **Do not** update only the HTML and leave selectors, event handlers, `shared-*.js`, or generator templates inconsistent — treat HTML + its scripting surface as one unit of work.
+
+## Live localhost (required)
+
+After the change, ensure the user can see it on **live localhost** by following project norms:
+
+- Restart or run the report server as documented (e.g. `python run_server.py` from `"E:\JIRA SCRIPT"`; default `http://127.0.0.1:3000`).
+- If HTML is **generated**, re-run the relevant generator so source output is current; server startup syncs into `report_html/` per `report_server.py`.
+- If **shared assets** changed, edit the canonical source used by `_sync_report_html` / asset sync so a server restart picks them up.
+
+Combine this rule with **experience-latest-changes** and **AGENTS.md** “How to test locally” so every task ends with verifiable localhost steps.

@@ -14,7 +14,6 @@
     "planned_vs_dispensed_report.html": "approved_vs_planned_hours_report",
     "approved_vs_planned_hours_report.html": "approved_vs_planned_hours_report"
   };
-
   function currentPageKey() {
     var file = String((window.location.pathname || "").split("/").pop() || "").toLowerCase();
     return FILE_TO_PAGE_KEY[file] || file || "unknown_report";

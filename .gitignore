@@ -24,3 +24,14 @@ jira_sync_cache.db
 jira_sync_cache.db-shm
 jira_sync_cache.db-wal
 jira_exports.db
+
+# Local tooling / logs
+.codex_run_server_*_pid
+__server.*.log
+.playwright-mcp/
+epics_management.db
+*.db.bak
+report_server.py.*.bak
+report_server.py.rowid-backup
+__check_*.py
+__check_*.js

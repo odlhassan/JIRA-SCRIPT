@@ -168,6 +168,8 @@ class TeamRmiGanttSyncTests(unittest.TestCase):
             self.assertIn("Unmapped Team", html)
             self.assertIn("Cards open Jira epic links", html)
             self.assertIn("href=", html)
+            self.assertIn("function defaultRange()", html)
+            self.assertIn("return { from: startOfYear(today), to: endOfYear(today) };", html)
 
     def test_loader_handles_missing_snapshot_tables(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:

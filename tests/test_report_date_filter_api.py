@@ -192,12 +192,36 @@ class ReportDateFilterApiTests(unittest.TestCase):
             sleep(1.1)
             (root / "dashboard.html").write_text("<html><body>new dashboard</body></html>", encoding="utf-8")
 
-            resp = client.get("/dashboard.html")
+            with patch("report_server._try_refresh_dashboard_html_from_db", return_value=None):
+                resp = client.get("/dashboard.html")
             self.assertEqual(resp.status_code, 200)
             html = resp.get_data(as_text=True)
             self.assertIn("new dashboard", html)
             self.assertIn("no-store", resp.headers.get("Cache-Control", ""))
             self.assertIn("new dashboard", report_dashboard.read_text(encoding="utf-8"))
+
+    def test_dashboard_html_rebuilds_from_live_db_before_serving(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            app = _build_app(root)
+            client = app.test_client()
+            report_dashboard = root / "report_html" / "dashboard.html"
+            root_dashboard = root / "dashboard.html"
+            report_dashboard.write_text("<html><body>stale published</body></html>", encoding="utf-8")
+            root_dashboard.write_text("<html><body>stale source</body></html>", encoding="utf-8")
+
+            with (
+                patch("report_server.dash_fetch_dashboard_data", return_value={"epics": [], "stories": [], "subtasks": [], "bug_subtasks": [], "projects": [], "orphans": {}, "generated_at": "2026-02-28 12:00 UTC"}),
+                patch("report_server.dash_generate_dashboard_html", return_value="<html><body>fresh from db</body></html>"),
+            ):
+                resp = client.get("/dashboard.html")
+
+            self.assertEqual(resp.status_code, 200)
+            html = resp.get_data(as_text=True)
+            self.assertIn("fresh from db", html)
+            self.assertNotIn("stale published", html)
+            self.assertIn("fresh from db", report_dashboard.read_text(encoding="utf-8"))
+            self.assertIn("fresh from db", root_dashboard.read_text(encoding="utf-8"))
 
     def test_employee_performance_html_promotes_newer_root_source_before_serving(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
@@ -226,7 +250,8 @@ class ReportDateFilterApiTests(unittest.TestCase):
             report_dashboard = root / "report_html" / "dashboard.html"
             report_dashboard.write_text("<html><body>current published</body></html>", encoding="utf-8")
 
-            resp = client.get("/dashboard.html")
+            with patch("report_server._try_refresh_dashboard_html_from_db", return_value=None):
+                resp = client.get("/dashboard.html")
             self.assertEqual(resp.status_code, 200)
             html = resp.get_data(as_text=True)
             self.assertIn("current published", html)
@@ -238,7 +263,8 @@ class ReportDateFilterApiTests(unittest.TestCase):
             app = _build_app(root)
             client = app.test_client()
 
-            resp = client.get("/dashboard.html")
+            with patch("report_server._try_refresh_dashboard_html_from_db", return_value=None):
+                resp = client.get("/dashboard.html")
             self.assertEqual(resp.status_code, 200)
             self.assertIn("ok", resp.get_data(as_text=True))
             self.assertIn("no-store", resp.headers.get("Cache-Control", ""))

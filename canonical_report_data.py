@@ -49,12 +49,30 @@ def resolve_canonical_run_id(db_path: Path, run_id: str = "") -> str:
         return ""
     try:
         with sqlite3.connect(db_path) as conn:
-            row = conn.execute(
-                "SELECT last_success_run_id FROM canonical_refresh_state WHERE id = 1"
-            ).fetchone()
+            try:
+                row = conn.execute(
+                    "SELECT last_success_run_id FROM canonical_refresh_state WHERE id = 1"
+                ).fetchone()
+                state_run_id = _to_text(row[0] if row else "")
+                if state_run_id:
+                    return state_run_id
+            except sqlite3.Error:
+                pass
+
+            # Fallback: if refresh state is stale/missing, use latest run_id present in canonical tables.
+            for table in ("canonical_issues", "canonical_worklogs"):
+                try:
+                    fallback_row = conn.execute(
+                        f"SELECT run_id FROM {table} WHERE run_id IS NOT NULL AND trim(run_id) <> '' ORDER BY rowid DESC LIMIT 1"
+                    ).fetchone()
+                except sqlite3.Error:
+                    continue
+                fallback_run_id = _to_text(fallback_row[0] if fallback_row else "")
+                if fallback_run_id:
+                    return fallback_run_id
     except sqlite3.Error:
         return ""
-    return _to_text(row[0] if row else "")
+    return ""
 
 
 def load_canonical_issues(db_path: Path, run_id: str = "") -> list[dict[str, Any]]:

@@ -179,6 +179,15 @@ def _init_performance_settings_db(db_path: Path) -> None:
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS performance_resource_resignations (
+                assignee_name TEXT PRIMARY KEY,
+                resignation_date TEXT,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
         team_cols = [str(row[1]).lower() for row in conn.execute("PRAGMA table_info(performance_teams)").fetchall()]
         if "team_leader" not in team_cols:
             conn.execute("ALTER TABLE performance_teams ADD COLUMN team_leader TEXT NOT NULL DEFAULT ''")
@@ -251,6 +260,107 @@ def _init_performance_settings_db(db_path: Path) -> None:
                 ),
             )
         conn.commit()
+
+
+def _is_unassigned_placeholder(name: str) -> bool:
+    n = _to_text(name).lower()
+    return n == "unassigned"
+
+
+def _merged_performance_assignee_names(summary_names: list[str], db_path: Path) -> list[str]:
+    """Names from assignee hours summary (except Unassigned) plus any resignation records (e.g. former staff not in latest export)."""
+    _init_performance_settings_db(db_path)
+    base = [n for n in summary_names if _to_text(n) and not _is_unassigned_placeholder(n)]
+    extra: list[str] = []
+    with sqlite3.connect(db_path) as conn:
+        rows = conn.execute("SELECT assignee_name FROM performance_resource_resignations").fetchall()
+        extra = [_to_text(r[0]) for r in rows if _to_text(r[0]) and not _is_unassigned_placeholder(_to_text(r[0]))]
+    return sorted(set(base) | set(extra), key=lambda s: s.casefold())
+
+
+def _load_performance_resource_resignation_map(db_path: Path, names: list[str]) -> dict[str, dict[str, Any]]:
+    """For each name: resigned = row exists, resignation_date = optional ISO date."""
+    if not names:
+        return {}
+    _init_performance_settings_db(db_path)
+    out: dict[str, dict[str, Any]] = {}
+    with sqlite3.connect(db_path) as conn:
+        for name in names:
+            row = conn.execute(
+                "SELECT resignation_date FROM performance_resource_resignations WHERE assignee_name = ?",
+                (name,),
+            ).fetchone()
+            if row:
+                d = _to_text(row[0]) or None
+                out[name] = {"resigned": True, "resignation_date": d}
+            else:
+                out[name] = {"resigned": False, "resignation_date": None}
+    return out
+
+
+def _enrich_performance_assignees_payload(summary_names: list[str], db_path: Path) -> dict[str, Any]:
+    merged = _merged_performance_assignee_names(summary_names, db_path)
+    records = _load_performance_resource_resignation_map(db_path, merged)
+    return {"assignees": merged, "resource_records": records}
+
+
+def _normalize_assignee_for_resignation_record(value: Any) -> str:
+    name = _to_text(value)
+    if not name:
+        raise ValueError("Assignee name is required.")
+    if _is_unassigned_placeholder(name):
+        raise ValueError("Cannot record resignation for Unassigned.")
+    if len(name) > 200:
+        raise ValueError("Assignee name is too long.")
+    return name
+
+
+def _upsert_performance_resignation_record(
+    db_path: Path,
+    assignee: Any,
+    resigned: bool,
+    resignation_date: Any,
+) -> dict[str, Any]:
+    """System record only: a row means resigned; optional resignation_date (YYYY-MM-DD). Clearing resigned removes the row."""
+    name = _normalize_assignee_for_resignation_record(assignee)
+    resigned_bool = bool(resigned)
+    updated_at = datetime.now(timezone.utc).isoformat()
+    _init_performance_settings_db(db_path)
+    if not resigned_bool:
+        with sqlite3.connect(db_path) as conn:
+            conn.execute("DELETE FROM performance_resource_resignations WHERE assignee_name = ?", (name,))
+            conn.commit()
+        return {
+            "assignee": name,
+            "resigned": False,
+            "resignation_date": None,
+            "updated_at": updated_at,
+        }
+    date_norm: str | None = None
+    raw_date = _to_text(resignation_date)
+    if raw_date:
+        parsed = _parse_iso_date(raw_date)
+        if not parsed:
+            raise ValueError("Invalid resignation date (use YYYY-MM-DD).")
+        date_norm = parsed
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO performance_resource_resignations (assignee_name, resignation_date, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(assignee_name) DO UPDATE SET
+              resignation_date = excluded.resignation_date,
+              updated_at = excluded.updated_at
+            """,
+            (name, date_norm, updated_at),
+        )
+        conn.commit()
+    return {
+        "assignee": name,
+        "resigned": True,
+        "resignation_date": date_norm,
+        "updated_at": updated_at,
+    }
 
 
 def _load_managed_project_display_names(db_path: Path) -> dict[str, str]:
