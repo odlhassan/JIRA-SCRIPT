@@ -2842,6 +2842,39 @@ def render_html(data: dict[str, Any]) -> str:
       <div class="subtext" style="margin-top:4px">Epics Planner DB: {db_path_text} | Canonical DB: {canonical_db_text} | Run: {run_id_text}</div>
     </header>""")
 
+    # Metric grid
+    parts.append('    <section class="metric-grid" id="metric-grid"></section>')
+
+    # Product summary grid
+    parts.append('    <section class="product-summary-grid" id="product-summary-grid"></section>')
+
+    # TK Month filter toolbar
+    parts.append(f"""
+    <div class="tk-month-toolbar" role="group" aria-label="TK Approved month filter">
+      <label class="tk-month-toggle" for="tk-start-month-enabled">
+        <input id="tk-start-month-enabled" class="tk-month-toggle-input" type="checkbox">
+        <span class="tk-month-toggle-track"><span class="tk-month-toggle-thumb"></span></span>
+        <span class="tk-month-toggle-text">For epics started in</span>
+      </label>
+      <label class="tk-month-toggle" for="tk-month-enabled">
+        <input id="tk-month-enabled" class="tk-month-toggle-input" type="checkbox">
+        <span class="tk-month-toggle-track"><span class="tk-month-toggle-thumb"></span></span>
+        <span class="tk-month-toggle-text">For epics delivered in</span>
+      </label>
+      <label class="tk-month-toggle" for="tk-through-month-enabled">
+        <input id="tk-through-month-enabled" class="tk-month-toggle-input" type="checkbox">
+        <span class="tk-month-toggle-track"><span class="tk-month-toggle-thumb"></span></span>
+        <span class="tk-month-toggle-text">Any Work Done Through</span>
+      </label>
+      <select id="tk-analysis-month-select" class="tk-month-select" aria-label="Target analysis month">{month_options}</select>
+      <label class="tk-month-toggle" for="tk-jira-only-enabled">
+        <input id="tk-jira-only-enabled" class="tk-month-toggle-input" type="checkbox" checked>
+        <span class="tk-month-toggle-track"><span class="tk-month-toggle-thumb"></span></span>
+        <span class="tk-month-toggle-text">Only Jira Populated Epics</span>
+      </label>
+      <span class="tk-month-status" data-tk-month-status></span>
+    </div>""")
+
     # Capacity Calculator
     parts.append(f"""
     <div class="capacity-calculator" role="group" aria-label="Capacity calculator">
@@ -2894,39 +2927,6 @@ def render_html(data: dict[str, Any]) -> str:
           <div class="metric-meta">Capacity minus leaves</div>
         </section>
       </div>
-    </div>""")
-
-    # Metric grid
-    parts.append('    <section class="metric-grid" id="metric-grid"></section>')
-
-    # Product summary grid
-    parts.append('    <section class="product-summary-grid" id="product-summary-grid"></section>')
-
-    # TK Month filter toolbar
-    parts.append(f"""
-    <div class="tk-month-toolbar" role="group" aria-label="TK Approved month filter">
-      <label class="tk-month-toggle" for="tk-start-month-enabled">
-        <input id="tk-start-month-enabled" class="tk-month-toggle-input" type="checkbox">
-        <span class="tk-month-toggle-track"><span class="tk-month-toggle-thumb"></span></span>
-        <span class="tk-month-toggle-text">For epics started in</span>
-      </label>
-      <label class="tk-month-toggle" for="tk-month-enabled">
-        <input id="tk-month-enabled" class="tk-month-toggle-input" type="checkbox">
-        <span class="tk-month-toggle-track"><span class="tk-month-toggle-thumb"></span></span>
-        <span class="tk-month-toggle-text">For epics delivered in</span>
-      </label>
-      <label class="tk-month-toggle" for="tk-through-month-enabled">
-        <input id="tk-through-month-enabled" class="tk-month-toggle-input" type="checkbox">
-        <span class="tk-month-toggle-track"><span class="tk-month-toggle-thumb"></span></span>
-        <span class="tk-month-toggle-text">Any Work Done Through</span>
-      </label>
-      <select id="tk-analysis-month-select" class="tk-month-select" aria-label="Target analysis month">{month_options}</select>
-      <label class="tk-month-toggle" for="tk-jira-only-enabled">
-        <input id="tk-jira-only-enabled" class="tk-month-toggle-input" type="checkbox" checked>
-        <span class="tk-month-toggle-track"><span class="tk-month-toggle-thumb"></span></span>
-        <span class="tk-month-toggle-text">Only Jira Populated Epics</span>
-      </label>
-      <span class="tk-month-status" data-tk-month-status></span>
     </div>""")
 
     # Month Story Analysis panel
