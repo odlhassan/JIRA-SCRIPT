@@ -899,7 +899,15 @@ class ReportUiSmokeTests(unittest.TestCase):
             app = create_report_server_app(base_dir=root, folder_raw="report_html")
             client = app.test_client()
 
-            preview_resp = client.get(f"/api/epics-management/import/preview?fetch_jira=0&workbook={source_path}")
+            with source_path.open("rb") as handle:
+                upload_resp = client.post(
+                    "/api/epics-management/import/upload",
+                    data={"workbook": (handle, source_path.name)},
+                    content_type="multipart/form-data",
+                )
+            self.assertEqual(upload_resp.status_code, 200)
+            upload_token = upload_resp.get_json()["upload_token"]
+            preview_resp = client.get(f"/api/epics-management/import/preview?fetch_jira=0&upload_token={upload_token}")
             self.assertEqual(preview_resp.status_code, 200)
             body = preview_resp.get_json()
             rows = body["rows"]
@@ -922,6 +930,7 @@ class ReportUiSmokeTests(unittest.TestCase):
             self.assertEqual(page_resp.status_code, 200)
             page_html = page_resp.get_data(as_text=True)
             self.assertIn("Epics Planner Import", page_html)
+            self.assertIn("/api/epics-management/import/upload", page_html)
             self.assertIn("/api/epics-management/import/preview", page_html)
             self.assertIn("Work:", page_html)
 
@@ -993,7 +1002,15 @@ class ReportUiSmokeTests(unittest.TestCase):
                 [],
             ]
 
-            preview_resp = client.get(f"/api/epics-management/import/preview?workbook={source_path}")
+            with source_path.open("rb") as handle:
+                upload_resp = client.post(
+                    "/api/epics-management/import/upload",
+                    data={"workbook": (handle, source_path.name)},
+                    content_type="multipart/form-data",
+                )
+            self.assertEqual(upload_resp.status_code, 200)
+            upload_token = upload_resp.get_json()["upload_token"]
+            preview_resp = client.get(f"/api/epics-management/import/preview?upload_token={upload_token}")
             self.assertEqual(preview_resp.status_code, 200)
             row = preview_resp.get_json()["rows"][0]
             self.assertEqual(row["epic_name"], "Jira Epic Summary")
@@ -1031,10 +1048,21 @@ class ReportUiSmokeTests(unittest.TestCase):
             self.assertEqual(create_existing.status_code, 201)
             seal_resp = client.post("/api/epics-management/seal", json={"epic_keys": ["O2-321"]})
             self.assertEqual(seal_resp.status_code, 200)
+            source_path = root / "Epic Estimates Approved Plan.xlsx"
+            _write_epics_import_source(source_path)
+            with source_path.open("rb") as handle:
+                upload_resp = client.post(
+                    "/api/epics-management/import/upload",
+                    data={"workbook": (handle, source_path.name)},
+                    content_type="multipart/form-data",
+                )
+            self.assertEqual(upload_resp.status_code, 200)
+            upload_token = upload_resp.get_json()["upload_token"]
 
             submit_resp = client.post(
                 "/api/epics-management/import/submit",
                 json={
+                    "upload_token": upload_token,
                     "rows": [
                         {
                             "include": True,
@@ -1110,12 +1138,64 @@ class ReportUiSmokeTests(unittest.TestCase):
             self.assertEqual(updated["priority"], "High")
             self.assertEqual(updated["plan_status"], "Planned")
             self.assertEqual(updated["is_sealed"], 0)
+            self.assertEqual(updated["is_tk_epic"], 1)
             self.assertEqual(updated["plans"]["development_plan"]["most_likely_man_days"], 4.0)
             self.assertEqual(updated["plans"]["development_plan"]["jira_url"], "https://octopusdtlsupport.atlassian.net/browse/O2-401")
             self.assertEqual(updated["plans"]["development_plan"]["start_date"], "2026-05-03")
             self.assertEqual(updated["plans"]["sqa_plan"]["most_likely_man_days"], 5.0)
             self.assertEqual(updated["plans"]["sqa_plan"]["jira_url"], "")
             self.assertIn("FF-541", rows)
+            self.assertEqual(rows["FF-541"]["is_tk_epic"], 1)
+
+    def test_epics_import_preview_and_submit_require_upload_token(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            (root / "report_html").mkdir(parents=True, exist_ok=True)
+            (root / "report_html" / "dashboard.html").write_text("<html><body>ok</body></html>", encoding="utf-8")
+            _write_minimal_assignee_workbook(root)
+            app = create_report_server_app(base_dir=root, folder_raw="report_html")
+            client = app.test_client()
+
+            preview_resp = client.get("/api/epics-management/import/preview?fetch_jira=0")
+            self.assertEqual(preview_resp.status_code, 400)
+            self.assertIn("upload_token", (preview_resp.get_json() or {}).get("error", ""))
+
+            submit_resp = client.post("/api/epics-management/import/submit", json={"rows": []})
+            self.assertEqual(submit_resp.status_code, 400)
+            self.assertIn("upload_token", (submit_resp.get_json() or {}).get("error", ""))
+
+    def test_epics_management_tk_flag_toggle_api(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            (root / "report_html").mkdir(parents=True, exist_ok=True)
+            (root / "report_html" / "dashboard.html").write_text("<html><body>ok</body></html>", encoding="utf-8")
+            _write_minimal_assignee_workbook(root)
+            app = create_report_server_app(base_dir=root, folder_raw="report_html")
+            client = app.test_client()
+            create_resp = client.post(
+                "/api/epics-management/rows",
+                json={
+                    "epic_key": "O2-777",
+                    "project_key": "O2",
+                    "project_name": "OmniConnect",
+                    "product_category": "Input",
+                    "component": "Streaming",
+                    "epic_name": "TK Toggle Epic",
+                    "priority": "Low",
+                    "plan_status": "Planned",
+                    "jira_url": "https://octopusdtlsupport.atlassian.net/browse/O2-777",
+                    "plans": {},
+                },
+            )
+            self.assertEqual(create_resp.status_code, 201)
+
+            mark_resp = client.post("/api/epics-management/rows/O2-777/tk-flag", json={"is_tk_epic": True})
+            self.assertEqual(mark_resp.status_code, 200)
+            self.assertEqual((mark_resp.get_json() or {}).get("row", {}).get("is_tk_epic"), 1)
+
+            unmark_resp = client.post("/api/epics-management/rows/O2-777/tk-flag", json={"is_tk_epic": False})
+            self.assertEqual(unmark_resp.status_code, 200)
+            self.assertEqual((unmark_resp.get_json() or {}).get("row", {}).get("is_tk_epic"), 0)
 
     def test_epics_management_seal_blocks_updates_until_rebudget(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:

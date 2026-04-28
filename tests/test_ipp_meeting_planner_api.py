@@ -53,6 +53,47 @@ def _create_capacity_db_with_epics(db_path: Path) -> None:
 
 
 class IppMeetingPlannerApiTests(unittest.TestCase):
+    def test_init_epics_management_db_adds_and_backfills_is_tk_epic(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            db_path = root / "assignee_hours_capacity.db"
+            _init_epics_management_db(db_path)
+            conn = sqlite3.connect(db_path)
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO epics_management (
+                        id, epic_key, project_key, project_name, product_category, component, epic_name,
+                        description, originator, priority, plan_status, ipp_meeting_planned, actual_production_date, delivery_status, remarks, jira_url,
+                        epic_plan_json, research_urs_plan_json, dds_plan_json, development_plan_json, sqa_plan_json, user_manual_plan_json, production_plan_json, is_sealed
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, '', '', 'Low', 'Planned', 'No', '', 'Yet to start', '', '', '{}', '{}', '{}', '{}', '{}', '{}', '{}', 0)
+                    """,
+                    ("row-1", "O2-100", "O2", "O2 Project", "Payments", "", "Test Epic"),
+                )
+                conn.execute(
+                    """
+                    INSERT INTO epics_management_story_sync (
+                        story_key, epic_row_id, epic_key, project_key, story_name, story_status, jira_url, start_date, due_date, estimate_hours, payload_json, synced_at_utc
+                    ) VALUES (?, ?, ?, ?, '', '', '', '', '', 0, '{}', '')
+                    """,
+                    ("O2-101", "row-1", "O2-100", "O2"),
+                )
+                conn.execute("DELETE FROM epics_management_meta WHERE meta_key='is_tk_epic_backfilled'")
+                conn.commit()
+            finally:
+                conn.close()
+
+            _init_epics_management_db(db_path)
+
+            conn = sqlite3.connect(db_path)
+            try:
+                cols = [row[1] for row in conn.execute("PRAGMA table_info(epics_management)").fetchall()]
+                self.assertIn("is_tk_epic", cols)
+                val = conn.execute("SELECT is_tk_epic FROM epics_management WHERE id='row-1'").fetchone()
+                self.assertEqual(int(val[0]), 1)
+            finally:
+                conn.close()
+
     def test_current_meeting_exists_after_bootstrap(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             root = Path(td)

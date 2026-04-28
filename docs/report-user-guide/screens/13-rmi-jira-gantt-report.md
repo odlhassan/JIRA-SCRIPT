@@ -88,6 +88,11 @@ the canonical `assignee_hours_capacity.db`:
   the canonical DB. `rlt_employees` from the RLT Jira snapshot is still
   available for other filters but is not the source of month-level total
   planned leave in global scope.
+- The capacity selector is a two-level dropdown: **Teams** with nested
+  **Members**. Selection is member-centric (deduped globally), supports
+  **Select all**, **Clear selection**, team-level toggle, and member-level
+  toggle. Parent team checkboxes show an indeterminate state when only some
+  members are selected.
 
 ## Related Code
 
@@ -102,6 +107,9 @@ the canonical `assignee_hours_capacity.db`:
   planned leave totals from `rlt_leave_report.xlsx` (not RLT Jira
   `build_rlt_leave_snapshot` month aggregates) and org headcount from
   `assignee_capacity_settings` for the month.
+- 2026-04-28: Upgraded Capacity Calculator Team filter to a two-level
+  Team→Members dropdown with member-level selection, team indeterminate states,
+  and bulk controls (Select all / Clear selection).
 - 2026-04-27: Restored full executive summary card row matching the
   `IPP Meeting Reports/rmi_jira_gantt.html` reference (Total # of RMI Epics,
   Optimistic / Most Likely / Pessimistic / Calculated, TK Approved hero,

@@ -123,6 +123,7 @@ def _seed_planner_row(db_path: Path) -> None:
             "ipp_meeting_planned": "Yes",
             "jira_url": "https://example.atlassian.net/browse/O2-321",
             "remarks": "Held for next IPP — scope TBD.",
+            "is_tk_epic": 1,
             "plans": {
                 "research_urs_plan": {"most_likely_man_days": 2, "start_date": "2026-02-01", "due_date": "2026-02-03", "jira_url": "https://example.atlassian.net/browse/O2-401"},
                 "dds_plan": {"most_likely_man_days": 4, "start_date": "2026-02-04", "due_date": "2026-02-06"},
@@ -292,6 +293,33 @@ class RmiJiraGanttReportTests(unittest.TestCase):
             else:
                 os.environ["JIRA_RMI_GANTT_CANONICAL_DB_PATH"] = old
 
+    def test_load_report_data_excludes_non_tk_epics(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            db_path = Path(td) / "assignee_hours_capacity.db"
+            _seed_planner_row(db_path)
+            _save_epics_management_row(
+                db_path,
+                {
+                    "epic_key": "O2-999",
+                    "project_key": "O2",
+                    "project_name": "OmniConnect",
+                    "product_category": "Input",
+                    "component": "Streaming",
+                    "epic_name": "Non TK Epic",
+                    "priority": "High",
+                    "plan_status": "Planned",
+                    "jira_url": "https://example.atlassian.net/browse/O2-999",
+                    "is_tk_epic": 0,
+                    "plans": {"epic_plan": {"most_likely_man_days": 2}},
+                },
+            )
+            _seed_canonical_tables(db_path)
+            data = load_report_data(db_path)
+
+        jira_ids = {str(epic.get("jira_id") or "") for epic in data["epics"]}
+        self.assertIn("O2-321", jira_ids)
+        self.assertNotIn("O2-999", jira_ids)
+
     def test_render_html_contains_report_controls_and_no_excel_source_text(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             db_path = Path(td) / "assignee_hours_capacity.db"
@@ -302,11 +330,19 @@ class RmiJiraGanttReportTests(unittest.TestCase):
         html = render_html(data)
 
         self.assertIn("RMI Jira Gantt", html)
+        self.assertIn("Showing TK Epics only.", html)
         self.assertIn("Generated at", html)
         self.assertIn("Epics Planner (SQLite) joined with canonical Jira issues/worklogs.", html)
         self.assertIn("Epics Planner DB:", html)
         self.assertIn("Canonical DB:", html)
         self.assertIn("Capacity Calculator", html)
+        self.assertIn("Search teams or members", html)
+        self.assertIn("capacity-ms-team-cb", html)
+        self.assertIn("capacity-ms-member-cb", html)
+        self.assertIn("capacity-ms-team-group", html)
+        self.assertIn("selectedMembers", html)
+        self.assertIn("cb.indeterminate = selectedCount > 0 && selectedCount < members.length", html)
+        self.assertIn("Select all (", html)
         self.assertIn("Month Story Analysis", html)
         self.assertIn("data-month-analysis-included-list", html)
         self.assertIn("data-month-analysis-excluded-list", html)

@@ -264,7 +264,7 @@ def load_report_data(db_path: Path, run_id: str = "") -> dict[str, Any]:
         "descendants_by_story": {},
         "worklogs_by_issue": {},
     }
-    planner_rows = _load_epics_management_rows(planner_db)
+    planner_rows = [row for row in _load_epics_management_rows(planner_db) if int(row.get("is_tk_epic") or 0) == 1]
     epic_records: list[dict[str, Any]] = []
 
     for row in planner_rows:
@@ -797,6 +797,11 @@ h2 { margin:0 0 10px; font-size:1.2rem; font-weight:700; }
 .capacity-ms-item input { margin-top:3px; accent-color:#0f766e; cursor:pointer; flex-shrink:0; }
 .capacity-ms-item-text { flex:1; line-height:1.35; }
 .capacity-ms-item-all { border-bottom:1px solid rgba(200,214,228,.65); margin-bottom:2px; padding-bottom:10px; }
+.capacity-ms-team-group { border-bottom:1px solid rgba(200,214,228,.45); }
+.capacity-ms-team-group:last-child { border-bottom:none; }
+.capacity-ms-team-row { font-weight:700; }
+.capacity-ms-members { padding:0 0 6px 0; }
+.capacity-ms-member-row { padding-left:32px; font-weight:500; }
 .capacity-ms-hidden { display:none !important; }
 .capacity-ms-actions { padding:6px 10px 8px; border-top:1px solid rgba(200,214,228,.75); background:#fafcff; }
 .capacity-ms-link {
@@ -1367,8 +1372,9 @@ _REPORT_JS = """
   var rltEmployees = capacitySource.rlt_employees || [];
   var teams = capacitySource.teams || [];
   var capacityProfiles = capacitySource.capacity_profiles || [];
-  var capacityTeamAll = true;
-  var capacityTeamSelected = new Set();
+  var capacityAllMembers = new Set();
+  var selectedMembers = new Set();
+  var teamMemberMap = Object.create(null);
 
   function parseIsoDateToLocal(s) {
     s = String(s || "").trim();
@@ -1402,7 +1408,7 @@ _REPORT_JS = """
   }
 
   function isGlobalCapacityScope() {
-    return capacityTeamAll && capacityTeamSelected.size === 0 && activeProduct === "all";
+    return isAllMembersSelected() && activeProduct === "all";
   }
 
   /* Searchable multi-select team filter */
@@ -1421,45 +1427,125 @@ _REPORT_JS = """
     var clearBtn = document.getElementById("capacity-team-ms-clear");
     if (!root || !trigger || !panel || !list || !labelEl) return;
 
+    function listFromSet(setObj) {
+      var out = [];
+      setObj.forEach(function (v) { out.push(v); });
+      out.sort(function (a, b) { return String(a).localeCompare(String(b)); });
+      return out;
+    }
+
+    function isAllSelectedNow() {
+      return capacityAllMembers.size > 0 && selectedMembers.size === capacityAllMembers.size;
+    }
+
+    function selectAllMembers() {
+      selectedMembers.clear();
+      capacityAllMembers.forEach(function (m) { selectedMembers.add(m); });
+    }
+
+    function clearAllMembers() {
+      selectedMembers.clear();
+    }
+
+    function membersForTeam(teamName) {
+      return teamMemberMap[teamName] || [];
+    }
+
+    function refreshCheckboxStates() {
+      list.querySelectorAll(".capacity-ms-member-cb").forEach(function (cb) {
+        cb.checked = selectedMembers.has(cb.value);
+      });
+      list.querySelectorAll(".capacity-ms-team-cb").forEach(function (cb) {
+        var tn = cb.getAttribute("data-team-name") || "";
+        var members = membersForTeam(tn);
+        var selectedCount = 0;
+        members.forEach(function (m) {
+          if (selectedMembers.has(m)) selectedCount += 1;
+        });
+        cb.indeterminate = selectedCount > 0 && selectedCount < members.length;
+        cb.checked = members.length > 0 && selectedCount === members.length;
+      });
+      if (allCb) {
+        allCb.indeterminate = selectedMembers.size > 0 && !isAllSelectedNow();
+        allCb.checked = isAllSelectedNow();
+      }
+    }
+
     (function setAllEmpLabel() {
       var msel = document.getElementById("tk-month-select");
       var m = msel ? msel.value : "";
       var p = findCapacityProfileForMonth(m);
       var n = p ? Math.max(0, Math.round(Number(p.employee_count) || 0)) : rltEmployees.length;
-      if (allText) allText.textContent = "All Employees (" + n + ")";
+      if (allText) allText.textContent = "Select all (" + n + ")";
     })();
 
     teams.forEach(function (t) {
-      var lab = document.createElement("label");
-      lab.className = "capacity-ms-item";
-      lab.setAttribute("data-team-name", t.team_name);
-      lab.innerHTML = '<input type="checkbox" class="capacity-ms-cb" value="' + escAttr(t.team_name) + '" />'
-        + '<span class="capacity-ms-item-text">' + escAttr(t.team_name) + " (" + t.assignees.length + ")</span>";
-      list.appendChild(lab);
+      var teamName = String(t.team_name || "").trim();
+      if (!teamName) return;
+      var members = [];
+      var seen = Object.create(null);
+      (t.assignees || []).forEach(function (a) {
+        var mn = String(a || "").trim();
+        if (!mn || seen[mn]) return;
+        seen[mn] = true;
+        members.push(mn);
+      });
+      members.sort(function (a, b) { return a.localeCompare(b); });
+      teamMemberMap[teamName] = members;
+      members.forEach(function (m) { capacityAllMembers.add(m); });
+
+      var group = document.createElement("div");
+      group.className = "capacity-ms-team-group";
+      group.setAttribute("data-team-name", teamName);
+      group.setAttribute("data-search", (teamName + " " + members.join(" ")).toLowerCase());
+      var teamRow = document.createElement("label");
+      teamRow.className = "capacity-ms-item capacity-ms-team-row";
+      teamRow.innerHTML = '<input type="checkbox" class="capacity-ms-team-cb" data-team-name="' + escAttr(teamName) + '" />'
+        + '<span class="capacity-ms-item-text">' + escAttr(teamName) + " (" + members.length + ")</span>";
+      group.appendChild(teamRow);
+      var membersWrap = document.createElement("div");
+      membersWrap.className = "capacity-ms-members";
+      members.forEach(function (m) {
+        var memberRow = document.createElement("label");
+        memberRow.className = "capacity-ms-item capacity-ms-member-row";
+        memberRow.setAttribute("data-team-name", teamName);
+        memberRow.setAttribute("data-member-name", m);
+        memberRow.innerHTML = '<input type="checkbox" class="capacity-ms-member-cb" value="' + escAttr(m) + '" data-team-name="' + escAttr(teamName) + '" />'
+          + '<span class="capacity-ms-item-text">' + escAttr(m) + "</span>";
+        membersWrap.appendChild(memberRow);
+      });
+      group.appendChild(membersWrap);
+      list.appendChild(group);
     });
+    selectAllMembers();
 
     function updateTriggerLabel() {
-      if (capacityTeamAll || capacityTeamSelected.size === 0) {
+      if (isAllSelectedNow()) {
         labelEl.textContent = "All Employees";
         return;
       }
-      var names = [];
-      capacityTeamSelected.forEach(function (n) { names.push(n); });
-      names.sort();
-      if (names.length === 1) labelEl.textContent = names[0];
-      else labelEl.textContent = names.length + " teams selected";
+      if (selectedMembers.size === 0) {
+        labelEl.textContent = "No members selected";
+        return;
+      }
+      if (selectedMembers.size === 1) {
+        var one = listFromSet(selectedMembers);
+        labelEl.textContent = one.length ? one[0] : "1 member selected";
+        return;
+      }
+      labelEl.textContent = selectedMembers.size + " members selected";
     }
 
     function applySearchFilter() {
       var q = (search && search.value ? search.value : "").trim().toLowerCase();
       var allRow = list.querySelector(".capacity-ms-item-all");
       if (allRow) {
-        var hitAll = !q || "all employees".indexOf(q) >= 0 || "all".indexOf(q) === 0;
+        var hitAll = !q || "select all".indexOf(q) >= 0 || "all".indexOf(q) === 0;
         allRow.classList.toggle("capacity-ms-hidden", !hitAll);
       }
-      list.querySelectorAll(".capacity-ms-item:not(.capacity-ms-item-all)").forEach(function (row) {
-        var name = (row.getAttribute("data-team-name") || "").toLowerCase();
-        row.classList.toggle("capacity-ms-hidden", q.length > 0 && name.indexOf(q) < 0);
+      list.querySelectorAll(".capacity-ms-team-group").forEach(function (group) {
+        var haystack = String(group.getAttribute("data-search") || "");
+        group.classList.toggle("capacity-ms-hidden", q.length > 0 && haystack.indexOf(q) < 0);
       });
     }
 
@@ -1499,26 +1585,19 @@ _REPORT_JS = """
       var t = e.target;
       if (!t || t.type !== "checkbox") return;
       if (t.classList.contains("capacity-ms-all")) {
-        if (t.checked) {
-          capacityTeamAll = true;
-          capacityTeamSelected.clear();
-          list.querySelectorAll(".capacity-ms-cb").forEach(function (cb) { cb.checked = false; });
-        } else if (capacityTeamSelected.size === 0) {
-          t.checked = true;
-        }
-      } else if (t.classList.contains("capacity-ms-cb")) {
-        if (t.checked) {
-          capacityTeamAll = false;
-          capacityTeamSelected.add(t.value);
-          if (allCb) allCb.checked = false;
-        } else {
-          capacityTeamSelected.delete(t.value);
-          if (capacityTeamSelected.size === 0) {
-            capacityTeamAll = true;
-            if (allCb) allCb.checked = true;
-          }
-        }
+        if (t.checked) selectAllMembers();
+        else clearAllMembers();
+      } else if (t.classList.contains("capacity-ms-team-cb")) {
+        var teamName = t.getAttribute("data-team-name") || "";
+        membersForTeam(teamName).forEach(function (m) {
+          if (t.checked) selectedMembers.add(m);
+          else selectedMembers.delete(m);
+        });
+      } else if (t.classList.contains("capacity-ms-member-cb")) {
+        if (t.checked) selectedMembers.add(t.value);
+        else selectedMembers.delete(t.value);
       }
+      refreshCheckboxStates();
       updateTriggerLabel();
       renderCapacity();
       renderMetrics();
@@ -1527,31 +1606,47 @@ _REPORT_JS = """
     if (clearBtn) {
       clearBtn.addEventListener("click", function (e) {
         e.stopPropagation();
-        capacityTeamAll = true;
-        capacityTeamSelected.clear();
-        list.querySelectorAll(".capacity-ms-cb").forEach(function (cb) { cb.checked = false; });
-        if (allCb) allCb.checked = true;
+        clearAllMembers();
+        refreshCheckboxStates();
         updateTriggerLabel();
         renderCapacity();
         renderMetrics();
       });
     }
 
+    refreshCheckboxStates();
     updateTriggerLabel();
   })();
 
+  function isAllMembersSelected() {
+    return capacityAllMembers.size > 0 && selectedMembers.size === capacityAllMembers.size;
+  }
+
+  function selectedTeamNames() {
+    var out = [];
+    teams.forEach(function (t) {
+      var tn = String((t && t.team_name) || "");
+      if (!tn) return;
+      var members = teamMemberMap[tn] || [];
+      var hasSelected = false;
+      for (var i = 0; i < members.length; i++) {
+        if (selectedMembers.has(members[i])) {
+          hasSelected = true;
+          break;
+        }
+      }
+      if (hasSelected) out.push(tn);
+    });
+    out.sort();
+    return out;
+  }
+
   function scopedCapacityAssignees() {
-    /* Specific team(s): union of assignees (deduped). Takes priority over product scope. */
-    if (!capacityTeamAll && capacityTeamSelected.size > 0) {
-      var seen = Object.create(null);
+    /* Member selection is the source of truth; members are deduped globally. */
+    if (!isAllMembersSelected()) {
       var out = [];
-      teams.forEach(function (t) {
-        if (!capacityTeamSelected.has(t.team_name)) return;
-        (t.assignees || []).forEach(function (a) {
-          var key = String(a);
-          if (!seen[key]) { seen[key] = true; out.push(a); }
-        });
-      });
+      selectedMembers.forEach(function (m) { out.push(m); });
+      out.sort();
       return out;
     }
     if (activeProduct !== "all") {
@@ -1591,7 +1686,7 @@ _REPORT_JS = """
     var allText = document.getElementById("capacity-team-ms-all-text");
     if (allText) {
       var nLab = prof ? Math.max(0, Math.round(Number(prof.employee_count) || 0)) : rltEmployees.length;
-      allText.textContent = "All Employees (" + nLab + ")";
+      allText.textContent = "Select all (" + nLab + ")";
     }
 
     var empEl = document.getElementById("capacity-employees-val");
@@ -2095,23 +2190,23 @@ _REPORT_JS = """
       return parts.join("");
     }
 
-    if (!capacityTeamAll && capacityTeamSelected.size > 0) {
-      var st = [];
-      capacityTeamSelected.forEach(function (t) { st.push(t); });
-      st.sort();
+    if (!isAllMembersSelected()) {
+      var st = selectedTeamNames();
       var inc = considered.map(function (name) {
-        var onTeam = (atMap[name] || []).filter(function (x) { return capacityTeamSelected.has(x); });
-        return { name: name, note: onTeam.length ? "On team(s): " + onTeam.join(", ") : "Included via team filter" };
+        var onTeam = (atMap[name] || []).filter(function (x) { return st.indexOf(x) >= 0; });
+        return { name: name, note: onTeam.length ? "Selected via team(s): " + onTeam.join(", ") : "Selected in team/member filter" };
       });
       parts.push('<div class="drawer-employee-section"><h3>Considered for this headcount</h3>');
-      parts.push('<p class="drawer-prose">Union of assignees in: ' + escHtml(st.join(", ")) + '.</p>');
+      parts.push('<p class="drawer-prose">Selected members'
+        + (st.length ? ' across team(s): ' + escHtml(st.join(", ")) : '.')
+        + '</p>');
       parts.push(rowTable(inc));
       parts.push('</div>');
 
       var ex = [];
       universe.forEach(function (name) {
         if (!consSet[normEmp(name)]) {
-          ex.push({ name: name, note: "Not a member of the selected team(s): " + st.join(", ") });
+          ex.push({ name: name, note: "Not selected in the team/member filter" });
         }
       });
       parts.push('<div class="drawer-employee-section"><h3>Not considered</h3>');
@@ -2742,6 +2837,7 @@ def render_html(data: dict[str, Any]) -> str:
     parts.append(f"""
     <header>
       <h1>RMI Jira Gantt</h1>
+      <div class="subtext"><strong>Showing TK Epics only.</strong></div>
       <div class="subtext">Generated at {generated_at} from Epics Planner (SQLite) joined with canonical Jira issues/worklogs.</div>
       <div class="subtext" style="margin-top:4px">Epics Planner DB: {db_path_text} | Canonical DB: {canonical_db_text} | Run: {run_id_text}</div>
     </header>""")
@@ -2761,12 +2857,12 @@ def render_html(data: dict[str, Any]) -> str:
             </button>
             <div class="capacity-ms-panel" id="capacity-team-ms-panel" hidden>
               <div class="capacity-ms-search-wrap">
-                <input type="search" class="capacity-ms-search" id="capacity-team-ms-search" placeholder="Search teams…" autocomplete="off" aria-label="Search teams" />
+                <input type="search" class="capacity-ms-search" id="capacity-team-ms-search" placeholder="Search teams or members…" autocomplete="off" aria-label="Search teams or members" />
               </div>
               <div class="capacity-ms-list" id="capacity-team-ms-list" role="listbox" aria-multiselectable="true">
                 <label class="capacity-ms-item capacity-ms-item-all" id="capacity-team-ms-all-label" data-team-name="__all__">
                   <input type="checkbox" class="capacity-ms-all" id="capacity-team-ms-all" checked />
-                  <span class="capacity-ms-item-text" id="capacity-team-ms-all-text">All Employees</span>
+                  <span class="capacity-ms-item-text" id="capacity-team-ms-all-text">Select all</span>
                 </label>
               </div>
               <div class="capacity-ms-actions">

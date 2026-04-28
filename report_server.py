@@ -311,9 +311,7 @@ MANAGE_FIELDS_SETTINGS_ROUTE = "/settings/manage-fields"
 PROJECTS_SETTINGS_ROUTE = "/settings/projects"
 EPICS_MANAGEMENT_SETTINGS_ROUTE = "/settings/epics-management"
 EPICS_MANAGEMENT_IMPORT_ROUTE = "/settings/epics-management/import"
-EPICS_MANAGEMENT_IMPORT_DEFAULT_XLSX = Path(
-    r"C:\Users\hmalik\OneDrive - Octopus Digital\Documents\00 - Documentation via Code\IPP Meeting Reports\Epic Estimates Approved Plan.xlsx"
-)
+EPICS_IMPORT_UPLOADS_SUBDIR = "jira_script_epics_import_uploads"
 IPP_MEETING_PLANNER_SETTINGS_ROUTE = "/settings/ipp-meeting-planner"
 EPICS_DROPDOWN_OPTIONS_SETTINGS_ROUTE = "/settings/epics-dropdown-options"
 EPIC_PHASES_SETTINGS_ROUTE = "/settings/epic-phases"
@@ -12676,12 +12674,15 @@ def _epics_management_import_html() -> str:
     </div>
     <div class="toolbar">
       <div style="flex:1;min-width:260px;">__SETTINGS_TOP_NAV__</div>
+      <input id="workbook-file" type="file" accept=".xlsx,.xlsm" />
+      <button id="upload-btn" class="btn alt" type="button">Upload Workbook</button>
       <button id="reload-btn" class="btn alt" type="button">Reload Preview</button>
       <button id="enrich-jira-btn" class="btn alt" type="button">Enrich Jira Suggestions</button>
       <button id="submit-btn" class="btn" type="button" disabled>Submit Included Rows</button>
-      <span id="status" class="status">Loading preview...</span>
+      <span id="status" class="status">Upload a workbook to start preview.</span>
     </div>
     <div id="summary" class="summary"></div>
+    <div id="submit-result" class="submit-result" style="display:none;margin-bottom:12px;padding:10px;border:1px solid var(--line);border-radius:8px;background:#fff;"></div>
     <div class="table-wrap">
       <table>
         <thead>
@@ -12694,11 +12695,12 @@ def _epics_management_import_html() -> str:
     </div>
   </main>
   <script>
-    const PREVIEW_API = "/api/epics-management/import/preview?fetch_jira=0";
-    const JIRA_PREVIEW_API = "/api/epics-management/import/preview?fetch_jira=1";
+    const PREVIEW_API = "/api/epics-management/import/preview";
+    const UPLOAD_API = "/api/epics-management/import/upload";
     const SUBMIT_API = "/api/epics-management/import/submit";
     const PHASE_LABELS = { process_design:"Prc Design", research_urs_plan:"R/URS", dds_plan:"R/DDS", development_plan:"Dev", sqa_plan:"SQA", process_qa_testing:"Prc Test", user_manual_plan:"Doc", regression_sqa_testing:"Reg SQA", production_plan:"Release" };
     let previewRows = [];
+    let uploadToken = "";
     function esc(value) { return String(value == null ? "" : value).replace(/[&<>"']/g, (ch) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[ch])); }
     function setStatus(message, cls) { const el = document.getElementById("status"); el.textContent = message || ""; el.className = "status " + (cls || ""); }
     function rowBySourceId(sourceId) { return previewRows.find((row) => String(row.source_id || "") === String(sourceId || "")); }
@@ -12757,12 +12759,38 @@ def _epics_management_import_html() -> str:
           + '</tr>';
       }).join("");
     }
+    function previewUrl(withJira) {
+      return PREVIEW_API + "?fetch_jira=" + (withJira ? "1" : "0") + "&upload_token=" + encodeURIComponent(uploadToken || "");
+    }
+    async function uploadWorkbook() {
+      const fileEl = document.getElementById("workbook-file");
+      const file = (fileEl && fileEl.files && fileEl.files[0]) || null;
+      if (!file) {
+        throw new Error("Please select an Excel workbook file first.");
+      }
+      setStatus("Uploading workbook...", "");
+      const form = new FormData();
+      form.append("workbook", file);
+      const resp = await fetch(UPLOAD_API, { method: "POST", body: form });
+      const body = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(body.error || "Workbook upload failed.");
+      uploadToken = String(body.upload_token || "");
+      if (!uploadToken) throw new Error("Upload token missing from server response.");
+      await loadPreview();
+    }
     async function loadPreview(options) {
       const opts = options && typeof options === "object" ? options : {};
       const withJira = !!opts.withJira;
+      if (!uploadToken) {
+        previewRows = [];
+        renderSummary({ rows: [], source_workbook: "" });
+        renderRows();
+        document.getElementById("submit-btn").disabled = true;
+        throw new Error("Upload a workbook first.");
+      }
       setStatus(withJira ? "Loading Jira suggestions..." : "Loading workbook preview...", "");
       document.getElementById("submit-btn").disabled = true;
-      const resp = await fetch(withJira ? JIRA_PREVIEW_API : PREVIEW_API, { cache: "no-store" });
+      const resp = await fetch(previewUrl(withJira), { cache: "no-store" });
       const body = await resp.json().catch(() => ({}));
       if (!resp.ok) throw new Error(body.error || "Failed to load import preview.");
       previewRows = Array.isArray(body.rows) ? body.rows : [];
@@ -12797,16 +12825,47 @@ def _epics_management_import_html() -> str:
       if (!window.confirm("Write included rows to the real Epics Planner database? A timestamped backup will be created first.")) return;
       setStatus("Submitting import...", "");
       document.getElementById("submit-btn").disabled = true;
-      const resp = await fetch(SUBMIT_API, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ rows: collectRows() }) });
+      const resp = await fetch(SUBMIT_API, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ upload_token: uploadToken, rows: collectRows() }) });
       const body = await resp.json().catch(() => ({}));
       if (!resp.ok) throw new Error(body.error || "Import submit failed.");
-      setStatus("Import complete. Inserted " + body.inserted + ", updated " + body.updated + ", failed " + body.failed + ". Backup: " + (body.backup_path || "not created"), body.failed ? "warn" : "ok");
-      await loadPreview();
+      uploadToken = "";
+      previewRows = [];
+      renderSummary({ rows: [], source_workbook: "" });
+      renderRows();
+      const fileEl = document.getElementById("workbook-file");
+      if (fileEl) fileEl.value = "";
+      const resultRows = Array.isArray(body.rows) ? body.rows : [];
+      const failedRows = resultRows.filter((r) => String(r && r.status) === "failed");
+      const skippedRows = resultRows.filter((r) => String(r && r.status) === "skipped");
+      const resultEl = document.getElementById("submit-result");
+      const parts = [];
+      parts.push('<div><b>Import complete.</b> Inserted ' + esc(body.inserted) + ', updated ' + esc(body.updated) + ', failed ' + esc(body.failed) + ', skipped ' + esc(body.skipped || 0) + ', re-budgeted ' + esc(body.rebudgeted || 0) + '.</div>');
+      parts.push('<div class="muted" style="margin-top:4px;">Backup: ' + esc(body.backup_path || "not created") + '</div>');
+      if (failedRows.length) {
+        parts.push('<div style="margin-top:8px;"><b class="warn">Failed rows (' + esc(failedRows.length) + '):</b></div>');
+        parts.push('<table style="margin-top:4px;width:100%;border-collapse:collapse;"><thead><tr><th style="text-align:left;border-bottom:1px solid var(--line);padding:4px 6px;">Source</th><th style="text-align:left;border-bottom:1px solid var(--line);padding:4px 6px;">Epic Key</th><th style="text-align:left;border-bottom:1px solid var(--line);padding:4px 6px;">Reason</th></tr></thead><tbody>');
+        failedRows.forEach((r) => {
+          parts.push('<tr><td class="mono" style="padding:4px 6px;border-bottom:1px solid #f1f5f9;">' + esc(r.source_id || "") + '</td><td class="mono" style="padding:4px 6px;border-bottom:1px solid #f1f5f9;">' + esc(r.epic_key || "") + '</td><td style="padding:4px 6px;border-bottom:1px solid #f1f5f9;color:var(--danger);">' + esc(r.message || "Unknown error") + '</td></tr>');
+        });
+        parts.push('</tbody></table>');
+      }
+      if (skippedRows.length) {
+        parts.push('<div class="muted" style="margin-top:8px;">' + esc(skippedRows.length) + ' row(s) skipped.</div>');
+      }
+      parts.push('<div class="muted" style="margin-top:8px;">Upload another workbook to import again.</div>');
+      resultEl.innerHTML = parts.join("");
+      resultEl.style.display = "block";
+      setStatus("Import complete. Inserted " + body.inserted + ", updated " + body.updated + ", failed " + body.failed + ". Backup: " + (body.backup_path || "not created") + (failedRows.length ? " (see failed rows below)." : "."), body.failed ? "warn" : "ok");
     }
+    document.getElementById("upload-btn").addEventListener("click", () => uploadWorkbook().catch((err) => setStatus(err.message || String(err), "warn")));
+    document.getElementById("workbook-file").addEventListener("change", () => {
+      uploadToken = "";
+      document.getElementById("submit-btn").disabled = true;
+      setStatus("Workbook selected. Click Upload Workbook to load preview.", "");
+    });
     document.getElementById("reload-btn").addEventListener("click", () => loadPreview().catch((err) => setStatus(err.message || String(err), "warn")));
     document.getElementById("enrich-jira-btn").addEventListener("click", () => loadPreview({ withJira: true }).catch((err) => setStatus(err.message || String(err), "warn")));
     document.getElementById("submit-btn").addEventListener("click", () => submitRows().catch((err) => { setStatus(err.message || String(err), "warn"); document.getElementById("submit-btn").disabled = false; }));
-    loadPreview().catch((err) => setStatus(err.message || String(err), "warn"));
   </script>
   <script src="/shared-nav.js"></script>
 </body>
@@ -12919,6 +12978,7 @@ def _epics_management_settings_html() -> str:
     .tree-title { display:block; max-width:260px; white-space:normal; line-height:1.15; }
     .tree-epic-name-wrap { display:inline-flex; align-items:center; gap:6px; flex-wrap:wrap; max-width:100%; }
     .tree-epic-name-wrap .tree-title { display:inline; max-width:240px; white-space:normal; }
+    .tk-epic-badge { display:inline-flex; align-items:center; border:1px solid #1e40af; color:#1e3a8a; background:#dbeafe; border-radius:999px; padding:1px 7px; font-size:.66rem; font-weight:700; letter-spacing:.03em; }
     .tree-actions { display:flex; gap:4px; flex-wrap:wrap; margin-top:2px; }
     .tree.tree-epic-cell .tree-actions { position:absolute; top:0; right:0; margin-top:0; flex-wrap:nowrap; }
     .tree-toggle { border:1px solid #cbd5e1; background:#fff; color:#334155; border-radius:6px; width:20px; height:20px; line-height:1; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; }
@@ -13299,6 +13359,7 @@ def _epics_management_settings_html() -> str:
     const PLAN_COLUMNS_ORDER_API = "/api/epics-management/plan-columns/order";
     const PROJECTS_API = "/api/projects?include_inactive=0";
     const OPTIONS_API = "/api/epics-management/dropdown-options";
+    const TK_FLAG_API_SUFFIX = "/tk-flag";
     const STORAGE_KEY = "epics-management-overrides-v1";
     const PRIORITY_OPTIONS = ["Low", "Medium", "High", "Highest"];
     let PLAN_STATUS_OPTIONS = ["Planned", "Not Planned Yet"];
@@ -14416,9 +14477,10 @@ def _epics_management_settings_html() -> str:
       const showLock = !!effectivelySealed;
       const lockTitle = "Sealed – cannot be modified until RE-BUDGET is clicked.";
       const lockHtml = showLock ? '<span class="material-symbols-outlined epic-seal-lock" title="' + esc(lockTitle) + '" aria-label="Sealed">lock</span>' : '';
+      const tkBadge = row.is_tk_epic ? '<span class="tk-epic-badge" title="Marked as TK Epic">TK</span>' : '';
       return ''
         + '<div class="tree tree-epic-cell">'
-        + '  <div class="tree-line tree-epic"><span class="tree-epic-name-wrap"><span class="tree-title">' + esc(row.epic_name || row.epic_key || "-") + '</span>' + lockHtml + '</span></div>'
+        + '  <div class="tree-line tree-epic"><span class="tree-epic-name-wrap"><span class="tree-title">' + esc(row.epic_name || row.epic_key || "-") + '</span>' + tkBadge + lockHtml + '</span></div>'
         + '  <div class="tree-actions">'
         + '    <a class="jira-open ' + (hasJira ? "" : "disabled") + '" href="' + esc(hasJira ? row.jira_url : "#") + '" target="_blank" rel="noopener noreferrer" title="' + (hasJira ? "Open Jira link" : "No Jira link set") + '">J</a>'
         + '    <button class="jira-edit" type="button" data-row-index="' + esc(row._row_index) + '" title="Set Jira link">E</button>'
@@ -14442,11 +14504,12 @@ def _epics_management_settings_html() -> str:
       const sealedClass = effectivelySealed ? " epic-sealed" : "";
       const rebudgetItem = effectivelySealed ? '<button type="button" role="menuitem" class="actions-menu-item" data-rebudget-row="' + rowIndex + '" title="Unlock for this session to revise">RE-BUDGET</button>' : '';
       const manageSealedItem = '<button type="button" role="menuitem" class="actions-menu-item" data-manage-sealed-row="' + rowIndex + '">Manage sealed budgets</button>';
+      const tkToggleItem = '<button type="button" role="menuitem" class="actions-menu-item" data-toggle-tk-row="' + rowIndex + '">' + (row.is_tk_epic ? "Unmark TK Epic" : "Mark as TK Epic") + '</button>';
       const editItem = effectivelySealed ? '' : '<button type="button" role="menuitem" class="actions-menu-item" data-edit-row="' + rowIndex + '">Edit</button>';
       const saveItem = effectivelySealed ? '' : '<button type="button" role="menuitem" class="actions-menu-item" data-save-row="' + rowIndex + '">Save</button>';
       const syncItem = effectivelySealed ? '' : '<button type="button" role="menuitem" class="actions-menu-item" data-sync-epic-row="' + rowIndex + '">Sync Jira Epic</button>';
       const deleteItem = effectivelySealed ? '' : '<button type="button" role="menuitem" class="actions-menu-item actions-menu-item-danger" data-delete-epic-row="' + rowIndex + '" title="Delete epic from Epics Planner">Delete</button>';
-      const menuItems = rebudgetItem + manageSealedItem + editItem + saveItem + syncItem + deleteItem;
+      const menuItems = rebudgetItem + manageSealedItem + tkToggleItem + editItem + saveItem + syncItem + deleteItem;
       const actionsCell = '<td class="actions-cell">'
         + '<div class="actions-menu-wrap">'
         + '<button type="button" class="icon-btn actions-menu-btn" data-row-index="' + rowIndex + '" aria-haspopup="true" aria-expanded="false" title="Actions">'
@@ -14919,6 +14982,13 @@ def _epics_management_settings_html() -> str:
           loadManageSealedDates(epicKey);
         });
       });
+      Array.from(tbodyEl.querySelectorAll("button[data-toggle-tk-row]")).forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const rowIndex = Number(btn.getAttribute("data-toggle-tk-row"));
+          closeActionsMenuForRow(rowIndex);
+          toggleTkEpicFlag(rowIndex).catch((err) => setStatus(err.message || String(err), "warn"));
+        });
+      });
       tbodyEl.addEventListener("change", (evt) => {
         const cb = evt.target;
         if (!cb || !cb.classList || !cb.classList.contains("epic-select-cb")) return;
@@ -15089,6 +15159,23 @@ def _epics_management_settings_html() -> str:
       if (opts.render !== false) renderTable();
       const message = String(opts.successMessage || "").trim() || ("Saved " + (savedRow.epic_key || savedRow.id || "epic") + " to database.");
       setStatus(message, "ok");
+    }
+    async function toggleTkEpicFlag(rowIndex) {
+      const row = rows[rowIndex];
+      if (!row) throw new Error("Row not found.");
+      const key = String(row.epic_key || row.id || "").trim().toUpperCase();
+      if (!key) throw new Error("Epic key is required.");
+      const nextFlag = row.is_tk_epic ? 0 : 1;
+      const resp = await fetch(API + "/" + encodeURIComponent(key) + TK_FLAG_API_SUFFIX, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ is_tk_epic: nextFlag }),
+      });
+      const body = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(String(body.error || "Failed to update TK Epic flag."));
+      rows[rowIndex] = mergeRow(body.row || row);
+      renderTable();
+      setStatus(nextFlag ? ("Marked " + key + " as TK Epic.") : ("Unmarked " + key + " as TK Epic."), "ok");
     }
     function queueAutoPersist(rowIndex, successMessage) {
       const index = Number(rowIndex);
@@ -18824,7 +18911,16 @@ def _init_epics_management_db(settings_db_path: Path) -> None:
                 sqa_plan_json TEXT NOT NULL DEFAULT '{}',
                 user_manual_plan_json TEXT NOT NULL DEFAULT '{}',
                 production_plan_json TEXT NOT NULL DEFAULT '{}',
-                is_sealed INTEGER NOT NULL DEFAULT 0
+                is_sealed INTEGER NOT NULL DEFAULT 0,
+                is_tk_epic INTEGER NOT NULL DEFAULT 0
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS epics_management_meta (
+                meta_key TEXT PRIMARY KEY,
+                meta_value TEXT NOT NULL DEFAULT ''
             )
             """
         )
@@ -19018,7 +19114,8 @@ def _init_epics_management_db(settings_db_path: Path) -> None:
                     sqa_plan_json TEXT NOT NULL DEFAULT '{}',
                     user_manual_plan_json TEXT NOT NULL DEFAULT '{}',
                     production_plan_json TEXT NOT NULL DEFAULT '{}',
-                    is_sealed INTEGER NOT NULL DEFAULT 0
+                    is_sealed INTEGER NOT NULL DEFAULT 0,
+                    is_tk_epic INTEGER NOT NULL DEFAULT 0
                 )
                 """
             )
@@ -19037,6 +19134,7 @@ def _init_epics_management_db(settings_db_path: Path) -> None:
                 "remarks": "''",
                 "user_manual_plan_json": "'{}'",
                 "is_sealed": "0",
+                "is_tk_epic": "0",
             }
             select_exprs = list(_v2_cols)
             for col_name, fallback in _v2_opt.items():
@@ -19073,6 +19171,34 @@ def _init_epics_management_db(settings_db_path: Path) -> None:
             conn.execute("ALTER TABLE epics_management ADD COLUMN component TEXT NOT NULL DEFAULT ''")
         if "is_sealed" not in names:
             conn.execute("ALTER TABLE epics_management ADD COLUMN is_sealed INTEGER NOT NULL DEFAULT 0")
+        if "is_tk_epic" not in names:
+            conn.execute("ALTER TABLE epics_management ADD COLUMN is_tk_epic INTEGER NOT NULL DEFAULT 0")
+        backfill_key = "is_tk_epic_backfilled"
+        backfill_row = conn.execute(
+            "SELECT meta_value FROM epics_management_meta WHERE meta_key=?",
+            (backfill_key,),
+        ).fetchone()
+        backfilled = _to_text(backfill_row[0] if backfill_row else "").strip()
+        if backfilled != "1":
+            sync_epic_keys = [
+                _to_text(row[0]).upper()
+                for row in conn.execute(
+                    "SELECT DISTINCT epic_key FROM epics_management_story_sync WHERE TRIM(epic_key) <> ''"
+                ).fetchall()
+                if _to_text(row[0])
+            ]
+            if sync_epic_keys:
+                placeholders = ",".join("?" for _ in sync_epic_keys)
+                conn.execute(
+                    f"UPDATE epics_management SET is_tk_epic = 1 WHERE UPPER(epic_key) IN ({placeholders})",
+                    sync_epic_keys,
+                )
+            else:
+                conn.execute("UPDATE epics_management SET is_tk_epic = 1")
+            conn.execute(
+                "INSERT OR REPLACE INTO epics_management_meta(meta_key, meta_value) VALUES(?, '1')",
+                (backfill_key,),
+            )
         story_sync_cols = {str(col[1]) for col in conn.execute("PRAGMA table_info(epics_management_story_sync)").fetchall()}
         if "epic_row_id" not in story_sync_cols:
           conn.execute(
@@ -19702,6 +19828,8 @@ def _normalize_epics_management_payload(
   delivery_status = delivery_status_raw if delivery_status_raw in ("Late", "On-track", "Yet to start") else "Yet to start"
   remarks = _to_text(raw.get("remarks"))
   jira_url = _to_text(raw.get("jira_url"))
+  is_tk_epic_raw = _to_text(raw.get("is_tk_epic")).strip().lower()
+  is_tk_epic = 1 if is_tk_epic_raw in {"1", "true", "yes", "y", "on"} else 0
   if jira_url and not re.match(r"^https?://", jira_url, re.IGNORECASE):
     raise ValueError("jira_url must start with http:// or https://")
 
@@ -19744,6 +19872,7 @@ def _normalize_epics_management_payload(
     "delivery_status": delivery_status,
     "remarks": remarks,
     "jira_url": jira_url,
+    "is_tk_epic": is_tk_epic,
     "plans": plans,
   }
 
@@ -19831,8 +19960,8 @@ def _save_epics_management_row(settings_db_path: Path, payload: dict) -> dict[st
         id, epic_key, project_key, project_name, product_category, component, epic_name,
         description, originator, priority, plan_status, ipp_meeting_planned, actual_production_date, delivery_status, remarks, jira_url,
         epic_plan_json, research_urs_plan_json, dds_plan_json,
-        development_plan_json, sqa_plan_json, user_manual_plan_json, production_plan_json, is_sealed
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        development_plan_json, sqa_plan_json, user_manual_plan_json, production_plan_json, is_sealed, is_tk_epic
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       """,
       (
         row_id,
@@ -19859,6 +19988,7 @@ def _save_epics_management_row(settings_db_path: Path, payload: dict) -> dict[st
         json.dumps(legacy_plans["user_manual_plan"], ensure_ascii=True),
         json.dumps(legacy_plans["production_plan"], ensure_ascii=True),
         0,
+        row["is_tk_epic"],
       ),
     )
     _upsert_epics_plan_values_for_row(conn, row_id, row["epic_key"], row["plans"])
@@ -19911,7 +20041,7 @@ def _update_epics_management_row(settings_db_path: Path, row_ref: str, payload: 
       SET epic_key=?, project_key=?, project_name=?, product_category=?, component=?, epic_name=?,
         description=?, originator=?, priority=?, plan_status=?, ipp_meeting_planned=?, actual_production_date=?, delivery_status=?, remarks=?, jira_url=?,
         epic_plan_json=?, research_urs_plan_json=?, dds_plan_json=?,
-        development_plan_json=?, sqa_plan_json=?, user_manual_plan_json=?, production_plan_json=?
+        development_plan_json=?, sqa_plan_json=?, user_manual_plan_json=?, production_plan_json=?, is_tk_epic=?
       WHERE id=?
       """,
       (
@@ -19937,6 +20067,7 @@ def _update_epics_management_row(settings_db_path: Path, row_ref: str, payload: 
         json.dumps(legacy_plans["sqa_plan"], ensure_ascii=True),
         json.dumps(legacy_plans["user_manual_plan"], ensure_ascii=True),
         json.dumps(legacy_plans["production_plan"], ensure_ascii=True),
+        normalized["is_tk_epic"],
         row_id,
       ),
     )
@@ -20003,12 +20134,13 @@ def _load_epics_management_rows(settings_db_path: Path) -> list[dict[str, str]]:
     col_names = {str(c[1]) for c in columns}
     delivery_status_col = "delivery_status" if "delivery_status" in col_names else "'' AS delivery_status"
     is_sealed_col = "is_sealed" if "is_sealed" in col_names else "0 AS is_sealed"
+    is_tk_epic_col = "is_tk_epic" if "is_tk_epic" in col_names else "0 AS is_tk_epic"
     rows = conn.execute(
       f"""
       SELECT
         id, epic_key, project_key, project_name, product_category, component, epic_name,
         description, originator, priority, plan_status, ipp_meeting_planned, actual_production_date, {delivery_status_col}, remarks, jira_url,
-        {is_sealed_col},
+        {is_sealed_col}, {is_tk_epic_col},
         epic_plan_json, research_urs_plan_json, dds_plan_json,
         development_plan_json, sqa_plan_json, user_manual_plan_json, production_plan_json
       FROM epics_management
@@ -20102,10 +20234,15 @@ def _load_epics_management_rows(settings_db_path: Path) -> list[dict[str, str]]:
     if delivery_status_val not in ("Late", "On-track", "Yet to start"):
       delivery_status_val = "Yet to start"
     is_sealed = 0
+    is_tk_epic = 0
     try:
       is_sealed = int(row["is_sealed"] or 0)
     except (KeyError, TypeError, ValueError):
       pass
+    try:
+      is_tk_epic = 1 if int(row["is_tk_epic"] or 0) else 0
+    except (KeyError, TypeError, ValueError):
+      is_tk_epic = 0
     out.append(
       {
         "id": row_id,
@@ -20127,6 +20264,7 @@ def _load_epics_management_rows(settings_db_path: Path) -> list[dict[str, str]]:
         "jira_url": _to_text(row["jira_url"]),
         "plans": plans,
         "is_sealed": is_sealed,
+        "is_tk_epic": is_tk_epic,
       }
     )
   return out
@@ -20307,6 +20445,24 @@ def _rebudget_epics_management_epic(settings_db_path: Path, row_ref: str) -> Non
     conn.close()
 
 
+def _set_epics_management_tk_flag(settings_db_path: Path, row_ref: str, is_tk_epic: bool) -> dict[str, str]:
+  _init_epics_management_db(settings_db_path)
+  existing = _resolve_epics_management_row(_load_epics_management_rows(settings_db_path), row_ref)
+  row_id = _normalize_epics_management_row_id(existing.get("id"))
+  conn = sqlite3.connect(settings_db_path)
+  try:
+    cur = conn.execute(
+      "UPDATE epics_management SET is_tk_epic = ? WHERE id = ?",
+      (1 if is_tk_epic else 0, row_id),
+    )
+    conn.commit()
+    if cur.rowcount == 0:
+      raise LookupError(f"Epic '{row_ref}' not found.")
+  finally:
+    conn.close()
+  return _resolve_epics_management_row(_load_epics_management_rows(settings_db_path), row_id)
+
+
 _EPICS_IMPORT_PHASES = [
   {"excel_header": "Prc Design", "plan_key": "process_design", "label": "Prc Design", "aliases": ["process design", "prc design"]},
   {"excel_header": "R/URS", "plan_key": "research_urs_plan", "label": "R/URS", "aliases": ["r/urs", "urs", "research"]},
@@ -20321,9 +20477,46 @@ _EPICS_IMPORT_PHASES = [
 _EPICS_IMPORT_PHASE_BY_HEADER = {item["excel_header"].casefold(): item for item in _EPICS_IMPORT_PHASES}
 
 
-def _epics_import_workbook_path() -> Path:
-  raw = _to_text(os.getenv("EPICS_PLANNER_IMPORT_XLSX_PATH")).strip()
-  return Path(raw) if raw else EPICS_MANAGEMENT_IMPORT_DEFAULT_XLSX
+def _epics_import_uploads_dir() -> Path:
+  path = Path(tempfile.gettempdir()) / EPICS_IMPORT_UPLOADS_SUBDIR
+  path.mkdir(parents=True, exist_ok=True)
+  return path
+
+
+def _save_epics_import_upload(uploaded_file) -> dict[str, str]:
+  if uploaded_file is None:
+    raise ValueError("Workbook file is required.")
+  filename = _to_text(getattr(uploaded_file, "filename", "")).strip()
+  if not filename:
+    raise ValueError("Workbook filename is required.")
+  suffix = Path(filename).suffix.lower()
+  if suffix not in {".xlsx", ".xlsm"}:
+    raise ValueError("Only .xlsx or .xlsm workbook files are supported.")
+  token = uuid.uuid4().hex
+  target = _epics_import_uploads_dir() / f"{token}{suffix}"
+  uploaded_file.save(str(target))
+  return {"upload_token": token, "filename": filename, "path": str(target)}
+
+
+def _resolve_epics_import_upload_path(upload_token: str) -> Path:
+  token = _to_text(upload_token).strip().lower()
+  if not re.fullmatch(r"[0-9a-f]{32}", token):
+    raise ValueError("upload_token is missing or invalid. Please upload a workbook first.")
+  matches = sorted(_epics_import_uploads_dir().glob(f"{token}.*"))
+  if not matches:
+    raise FileNotFoundError("Uploaded workbook token was not found. Please upload again.")
+  return matches[0]
+
+
+def _cleanup_epics_import_upload(upload_token: str) -> None:
+  token = _to_text(upload_token).strip().lower()
+  if not token:
+    return
+  for path in _epics_import_uploads_dir().glob(f"{token}.*"):
+    try:
+      path.unlink(missing_ok=True)
+    except Exception:
+      pass
 
 
 def _excel_date_to_iso(value: object) -> str:
@@ -20715,6 +20908,7 @@ def _submit_epics_import_mapping(settings_db_path: Path, payload: dict) -> dict[
         "priority": "High",
         "plan_status": "Planned",
         "jira_url": _to_text(raw_row.get("jira_url")),
+        "is_tk_epic": 1,
         "plans": plans,
       }
       existing = existing_by_key.get(epic_key)
@@ -30100,12 +30294,23 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         except Exception as exc:
             return jsonify({"error": f"Failed to sync epic from Jira: {exc}"}), 500
 
+    @app.route("/api/epics-management/import/upload", methods=["POST"])
+    def epics_management_import_upload_api():
+        try:
+            uploaded = request.files.get("workbook")
+            payload = _save_epics_import_upload(uploaded)
+            return jsonify({"upload_token": payload["upload_token"], "filename": payload["filename"]})
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"error": f"Failed to upload workbook: {exc}"}), 500
+
     @app.route("/api/epics-management/import/preview", methods=["GET"])
     def epics_management_import_preview_api():
         try:
             fetch_jira = _to_text(request.args.get("fetch_jira", "1")).lower() not in {"0", "false", "no", "n"}
-            workbook_raw = _to_text(request.args.get("workbook"))
-            workbook_path = Path(workbook_raw) if workbook_raw else _epics_import_workbook_path()
+            upload_token = _to_text(request.args.get("upload_token"))
+            workbook_path = _resolve_epics_import_upload_path(upload_token)
             preview = _build_epics_import_preview(
                 settings_db_path=capacity_paths["db_path"],
                 workbook_path=workbook_path,
@@ -30123,12 +30328,36 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
     def epics_management_import_submit_api():
         try:
             payload = request.get_json(silent=True) or {}
+            upload_token = _to_text(payload.get("upload_token"))
+            _resolve_epics_import_upload_path(upload_token)
             result = _submit_epics_import_mapping(capacity_paths["db_path"], payload)
+            _cleanup_epics_import_upload(upload_token)
             return jsonify({**result, "source": "epics_management_import"})
+        except FileNotFoundError as exc:
+            return jsonify({"error": str(exc)}), 404
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
         except Exception as exc:
             return jsonify({"error": f"Failed to submit import mapping: {exc}"}), 500
+
+    @app.route("/api/epics-management/rows/<path:epic_key>/tk-flag", methods=["POST"])
+    def update_epics_management_row_tk_flag_api(epic_key: str):
+        try:
+            payload = request.get_json(silent=True) or {}
+            if "is_tk_epic" not in payload:
+                return jsonify({"error": "is_tk_epic is required."}), 400
+            row = _set_epics_management_tk_flag(
+                capacity_paths["db_path"],
+                epic_key,
+                bool(payload.get("is_tk_epic")),
+            )
+            return jsonify({"row": row, "source": "epics_management_db"})
+        except LookupError as exc:
+            return jsonify({"error": str(exc)}), 404
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"error": f"Failed to update TK flag: {exc}"}), 500
 
     @app.route("/api/epics-management/seal", methods=["POST"])
     def seal_epics_management_api():
