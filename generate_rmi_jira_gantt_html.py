@@ -1671,6 +1671,13 @@ _REPORT_JS = """
     return total;
   }
 
+  function monthToggleState() {
+    var started = document.getElementById("tk-start-month-enabled") && document.getElementById("tk-start-month-enabled").checked;
+    var delivered = document.getElementById("tk-month-enabled") && document.getElementById("tk-month-enabled").checked;
+    var through = document.getElementById("tk-through-month-enabled") && document.getElementById("tk-through-month-enabled").checked;
+    return { started: started, delivered: delivered, through: through, anyToggle: started || delivered || through };
+  }
+
   function renderCapacity() {
     var monthEl = document.getElementById("tk-month-select");
     var month = monthEl ? monthEl.value : "";
@@ -1708,6 +1715,46 @@ _REPORT_JS = """
     var availEl = document.getElementById("availability-value");
     if (capEl)   { capEl.textContent = fmtSec(capacity);     capEl.dataset.seconds = String(capacity); }
     if (availEl) { availEl.textContent = fmtSec(availability); availEl.dataset.seconds = String(availability); }
+
+    var tkApprovedCard = document.getElementById("capacity-tk-approved-card");
+    var idleCard = document.getElementById("capacity-idle-card");
+    var tkApprovedEl = document.getElementById("capacity-tk-approved-value");
+    var idleEl = document.getElementById("capacity-idle-value");
+    var tkApprovedMeta = document.getElementById("capacity-tk-approved-meta");
+    var idleMeta = document.getElementById("capacity-idle-meta");
+    var analysisMonthEl = document.getElementById("tk-analysis-month-select");
+    var selectedMonth = analysisMonthEl ? analysisMonthEl.value : month;
+    var tState = monthToggleState();
+    if (!tState.anyToggle) {
+      if (tkApprovedCard) tkApprovedCard.hidden = true;
+      if (idleCard) idleCard.hidden = true;
+      return;
+    }
+    var se = scopedEpics();
+    var matched = se.filter(function (e) {
+      var s = String(e.start_date || "").slice(0,7);
+      var d = String(e.due_date || "").slice(0,7);
+      return (tState.started && s === selectedMonth)
+        || (tState.delivered && d === selectedMonth)
+        || (tState.through && s && d && s <= selectedMonth && selectedMonth <= d);
+    });
+    var tkApprovedSec = matched.reduce(function (n, e) { return n + Number(e.tk_approved_seconds || 0); }, 0);
+    var idleSec = availability - tkApprovedSec;
+    if (tkApprovedEl) {
+      tkApprovedEl.textContent = fmtSec(tkApprovedSec);
+      tkApprovedEl.dataset.seconds = String(tkApprovedSec);
+    }
+    if (idleEl) {
+      idleEl.textContent = fmtSec(idleSec);
+      idleEl.dataset.seconds = String(idleSec);
+    }
+    if (tkApprovedMeta) tkApprovedMeta.textContent = "TK approved for " + monthName(selectedMonth) + " with active month toggles";
+    if (idleMeta) {
+      var idleDesc = idleSec < 0 ? "TK approved exceeds total availability for selected month" : "Availability minus TK approved for selected month";
+      idleMeta.textContent = idleDesc;
+    }
+    if (tkApprovedCard) tkApprovedCard.hidden = false;
+    if (idleCard) idleCard.hidden = false;
   }
 
   /* ── Month analysis ───────────────────────────────────────────────── */
@@ -1896,11 +1943,12 @@ _REPORT_JS = """
     var monthEl = analysisMonthEl || document.getElementById("tk-month-select");
     if (!monthEl) return;
     var month = monthEl.value;
-    var started  = document.getElementById("tk-start-month-enabled") && document.getElementById("tk-start-month-enabled").checked;
-    var delivered = document.getElementById("tk-month-enabled") && document.getElementById("tk-month-enabled").checked;
-    var through  = document.getElementById("tk-through-month-enabled") && document.getElementById("tk-through-month-enabled").checked;
+    var tState = monthToggleState();
+    var started = tState.started;
+    var delivered = tState.delivered;
+    var through = tState.through;
     var jiraOnly = document.getElementById("tk-jira-only-enabled") && document.getElementById("tk-jira-only-enabled").checked;
-    var anyToggle = started || delivered || through;
+    var anyToggle = tState.anyToggle;
 
     if (analysisMonthEl) analysisMonthEl.disabled = !anyToggle;
     var panel = document.getElementById("tk-month-analysis");
@@ -2040,6 +2088,7 @@ _REPORT_JS = """
     });
 
     renderMetrics();
+    renderCapacity();
     renderMonthAnalysis();
     renderGantt();
   }
@@ -2426,7 +2475,7 @@ _REPORT_JS = """
   if (analysisMonthSel) analysisMonthSel.addEventListener("change", function () { syncMonthSelectors(analysisMonthSel); });
   ["tk-start-month-enabled","tk-month-enabled","tk-through-month-enabled","tk-jira-only-enabled"].forEach(function (id) {
     var el = document.getElementById(id);
-    if (el) el.addEventListener("change", function () { renderMonthAnalysis(); });
+    if (el) el.addEventListener("change", function () { renderCapacity(); renderMonthAnalysis(); });
   });
 
   /* ── RMI Estimation & Scheduling (IPP reference layout) ─────────── */
@@ -2925,6 +2974,16 @@ def render_html(data: dict[str, Any]) -> str:
           <div class="metric-label">Total Availability</div>
           <div class="metric-value-wrap"><span class="metric-value duration-value" id="availability-value" data-seconds="0">0 h</span></div>
           <div class="metric-meta">Capacity minus leaves</div>
+        </section>
+        <section class="metric-card metric-card-indigo capacity-result-card" id="capacity-tk-approved-card" hidden>
+          <div class="metric-label">TK Approved (Month)</div>
+          <div class="metric-value-wrap"><span class="metric-value duration-value" id="capacity-tk-approved-value" data-seconds="0">0 h</span></div>
+          <div class="metric-meta" id="capacity-tk-approved-meta">Based on month filter toggle scope</div>
+        </section>
+        <section class="metric-card metric-card-cyan capacity-result-card" id="capacity-idle-card" hidden>
+          <div class="metric-label">Idle Hours/Days (Month)</div>
+          <div class="metric-value-wrap"><span class="metric-value duration-value" id="capacity-idle-value" data-seconds="0">0 h</span></div>
+          <div class="metric-meta" id="capacity-idle-meta">Availability minus TK Approved for selected month</div>
         </section>
       </div>
     </div>""")
