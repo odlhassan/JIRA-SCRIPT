@@ -309,28 +309,72 @@ def _resolve_epic_key(
 
 def _load_jira_rows_by_epic_from_db(
     exports_db_path: Path,
-) -> tuple[dict[str, dict[str, object]], dict[str, list[dict[str, object]]]]:
-    """Load Jira epics and stories grouped by epic from jira_exports.db work_items table. No Excel."""
+) -> tuple[
+    dict[str, dict[str, object]],
+    dict[str, list[dict[str, object]]],
+    dict[str, dict[str, object]],
+    dict[str, str],
+]:
+    """Load Jira work items from jira_exports.db work_items table. No Excel.
+
+    Returns:
+        epic_rows: dict keyed by epic key with epic-level metadata
+        stories_by_epic: dict keyed by parent epic key with linked Story/Subtask rows
+        rows_by_key: dict keyed by ANY work-item key (epic/story/subtask/bug subtask)
+            with normalized fields used to backfill dates for non-epic items added
+            directly to an IPP meeting via the Work List.
+        parent_by_key: dict mapping any work-item key to its immediate parent issue key
+            (used to walk the Story → Epic chain when a child item has no own dates).
+    """
     epic_rows: dict[str, dict[str, object]] = {}
     stories_by_epic: dict[str, list[dict[str, object]]] = {}
+    rows_by_key: dict[str, dict[str, object]] = {}
+    parent_by_key: dict[str, str] = {}
     if not exports_db_path.exists():
-        return epic_rows, stories_by_epic
+        return epic_rows, stories_by_epic, rows_by_key, parent_by_key
     conn = exports_db_connect()
     try:
         work_items = read_work_items_db(conn)
     finally:
         conn.close()
     if not work_items:
-        return epic_rows, stories_by_epic
+        return epic_rows, stories_by_epic, rows_by_key, parent_by_key
 
     type_by_key: dict[str, str] = {}
-    parent_by_key: dict[str, str] = {}
     for w in work_items:
         key = _as_text(w.get("issue_key")).upper()
         if not key:
             continue
         type_by_key[key] = _as_text(w.get("jira_issue_type") or w.get("work_item_type"))
         parent_by_key[key] = _as_text(w.get("parent_issue_key")).upper()
+
+    for w in work_items:
+        item_key = _as_text(w.get("issue_key")).upper()
+        if not item_key:
+            continue
+        estimate_for_row = _to_float(w.get("original_estimate_hours"))
+        logged_for_row = _to_float(w.get("total_hours_logged"))
+        progress_for_row = None
+        if estimate_for_row and estimate_for_row > 0 and logged_for_row is not None:
+            progress_for_row = round(min(100.0, (logged_for_row / estimate_for_row) * 100.0), 2)
+        rows_by_key[item_key] = {
+            "issue_key": item_key,
+            "issue_type": _as_text(w.get("jira_issue_type") or w.get("work_item_type")),
+            "project_key": _as_text(w.get("project_key")).upper(),
+            "summary": _as_text(w.get("summary")),
+            "status": _as_text(w.get("status")),
+            "assignee": _as_text(w.get("assignee")),
+            "jira_url": _as_text(w.get("jira_url")),
+            "start_date": _as_text(w.get("start_date")),
+            "end_date": _as_text(w.get("end_date")),
+            "actual_end_date": _as_text(w.get("actual_end_date")),
+            "ipp_actual_date": _as_text(w.get("ipp_actual_date")),
+            "ipp_remarks": _as_text(w.get("ipp_remarks")),
+            "parent_issue_key": _as_text(w.get("parent_issue_key")).upper(),
+            "original_estimate_hours": estimate_for_row,
+            "total_hours_logged": logged_for_row,
+            "progress_pct": progress_for_row,
+        }
 
     for w in work_items:
         issue_key = _as_text(w.get("issue_key")).upper()
@@ -396,7 +440,54 @@ def _load_jira_rows_by_epic_from_db(
                 _as_text(item.get("story_key")),
             ),
         )
-    return epic_rows, stories_by_epic
+    return epic_rows, stories_by_epic, rows_by_key, parent_by_key
+
+
+def _resolve_dates_with_inheritance(
+    item_key: str,
+    rows_by_key: dict[str, dict[str, object]],
+    parent_by_key: dict[str, str],
+    max_depth: int = 3,
+) -> tuple[str, str, str, str]:
+    """Resolve (start, end, actual_end, source_key) for a Jira work item.
+
+    If the item itself has both start and end populated, those are returned.
+    Otherwise, walk the parent chain (Subtask → Story → Epic) up to max_depth
+    levels and inherit any missing date from the nearest ancestor that has it.
+    Returns the key of the row from which dates were ultimately taken so the
+    caller can flag inherited values.
+    """
+    item_key = _as_text(item_key).upper()
+    own = rows_by_key.get(item_key) or {}
+    own_start = _as_text(own.get("start_date"))
+    own_end = _as_text(own.get("end_date"))
+    own_actual = _as_text(own.get("actual_end_date"))
+    if own_start and own_end:
+        return own_start, own_end, own_actual, item_key
+
+    start, end, actual = own_start, own_end, own_actual
+    source_key = item_key
+    visited = {item_key}
+    cur = parent_by_key.get(item_key, "")
+    depth = 0
+    while cur and cur not in visited and depth < max_depth:
+        visited.add(cur)
+        parent_row = rows_by_key.get(cur) or {}
+        if not start:
+            start = _as_text(parent_row.get("start_date"))
+            if start:
+                source_key = cur
+        if not end:
+            end = _as_text(parent_row.get("end_date"))
+            if end and source_key == item_key:
+                source_key = cur
+        if not actual:
+            actual = _as_text(parent_row.get("actual_end_date"))
+        if start and end:
+            break
+        cur = parent_by_key.get(cur, "")
+        depth += 1
+    return start, end, actual, source_key
 
 
 def _phase_record_from_plan(phase_name: str, plan: dict[str, object]) -> dict[str, object]:
@@ -441,32 +532,110 @@ def _build_records(
     selected_epics: list[dict[str, object]],
     jira_rows_by_epic: dict[str, dict[str, object]],
     jira_stories_by_epic: dict[str, list[dict[str, object]]],
+    jira_rows_by_key: dict[str, dict[str, object]] | None = None,
+    jira_parent_by_key: dict[str, str] | None = None,
 ) -> list[dict[str, object]]:
+    rows_by_key = jira_rows_by_key or {}
+    parent_by_key = jira_parent_by_key or {}
     records: list[dict[str, object]] = []
     for i, epic in enumerate(selected_epics, start=1):
         epic_key = _as_text(epic.get("epic_key")).upper()
-        jira = jira_rows_by_epic.get(epic_key, {})
+        item_kind = _as_text(epic.get("item_kind")).lower() or "jira"
+        issue_type = _as_text(epic.get("issue_type")).lower() or "epic"
+        if item_kind == "custom":
+            record_kind = "custom"
+        elif issue_type and issue_type != "epic":
+            record_kind = "jira_non_epic"
+        else:
+            record_kind = "epic"
+
         plans = epic.get("plans") if isinstance(epic.get("plans"), dict) else {}
         epic_plan = plans.get("epic_plan") if isinstance(plans.get("epic_plan"), dict) else {}
 
+        # Epic-source dates from epics_management.epic_plan_json (already overridden by
+        # ipp_meeting_epics.start_date/due_date for custom items via the loader).
         db_epic_start_iso = _as_text(epic_plan.get("start_date"))
         db_epic_end_iso = _as_text(epic_plan.get("due_date"))
-        jira_epic_start_iso = _as_text(jira.get("start_date"))
-        jira_epic_end_iso = _as_text(jira.get("end_date"))
-        epic_start_iso = db_epic_start_iso or jira_epic_start_iso
-        epic_end_iso = db_epic_end_iso or jira_epic_end_iso
-        # Actual Production Date: prefer Epics Planner DB (actual_production_date), then Jira work_items
-        epic_actual_iso = _as_text(epic.get("actual_production_date")) or _as_text(jira.get("ipp_actual_date")) or _as_text(jira.get("actual_end_date"))
-        db_epic_mandays = _to_number(epic_plan.get("man_days"))
-        db_epic_planned_hours = round(db_epic_mandays * 8.0, 4) if db_epic_mandays is not None else None
 
+        jira = jira_rows_by_epic.get(epic_key, {}) if record_kind == "epic" else {}
+        # For epic records: use the existing epic-level Jira row.
+        # For jira_non_epic: pull from the all-keys lookup with parent inheritance.
+        jira_epic_start_iso = ""
+        jira_epic_end_iso = ""
+        non_epic_row: dict[str, object] = {}
+        date_source_key = epic_key
+        if record_kind == "epic":
+            jira_epic_start_iso = _as_text(jira.get("start_date"))
+            jira_epic_end_iso = _as_text(jira.get("end_date"))
+            epic_start_iso = db_epic_start_iso or jira_epic_start_iso
+            epic_end_iso = db_epic_end_iso or jira_epic_end_iso
+            epic_actual_iso = (
+                _as_text(epic.get("actual_production_date"))
+                or _as_text(jira.get("ipp_actual_date"))
+                or _as_text(jira.get("actual_end_date"))
+            )
+        elif record_kind == "jira_non_epic":
+            non_epic_row = rows_by_key.get(epic_key, {})
+            resolved_start, resolved_end, resolved_actual, date_source_key = (
+                _resolve_dates_with_inheritance(epic_key, rows_by_key, parent_by_key)
+            )
+            jira_epic_start_iso = resolved_start
+            jira_epic_end_iso = resolved_end
+            # Per spec: keep Epic-specific (DB)/(Jira Excel) columns blank for non-epics.
+            db_epic_start_iso = ""
+            db_epic_end_iso = ""
+            jira_epic_start_iso_for_columns = ""  # used below
+            epic_start_iso = resolved_start
+            epic_end_iso = resolved_end
+            epic_actual_iso = (
+                _as_text(epic.get("actual_production_date"))
+                or _as_text(non_epic_row.get("actual_end_date"))
+                or resolved_actual
+            )
+        else:  # custom
+            epic_start_iso = db_epic_start_iso
+            epic_end_iso = db_epic_end_iso
+            epic_actual_iso = _as_text(epic.get("actual_production_date"))
+            # Per spec: blank Epic-specific columns for custom items too.
+            db_epic_start_iso = ""
+            db_epic_end_iso = ""
+
+        # Phase plans: only epics have a real Epics Planner phase breakdown.
         phases = []
-        for phase_name in PHASE_NAMES:
-            plan_key = PLAN_KEY_BY_PHASE.get(phase_name, "")
-            plan = plans.get(plan_key) if plan_key and isinstance(plans.get(plan_key), dict) else {}
-            phases.append(_phase_record_from_plan(phase_name, plan))
+        if record_kind == "epic":
+            for phase_name in PHASE_NAMES:
+                plan_key = PLAN_KEY_BY_PHASE.get(phase_name, "")
+                plan = plans.get(plan_key) if plan_key and isinstance(plans.get(plan_key), dict) else {}
+                phases.append(_phase_record_from_plan(phase_name, plan))
+        else:
+            for phase_name in PHASE_NAMES:
+                phases.append(_phase_record_from_plan(phase_name, {}))
+        has_phase_plan = record_kind == "epic" and any(p.get("state") == "planned" for p in phases)
 
         total_mandays = sum((p.get("mandays_num") or 0.0) for p in phases)
+
+        # Mandays / planned hours sourcing.
+        if record_kind == "epic":
+            db_epic_mandays = _to_number(epic_plan.get("man_days"))
+            db_epic_planned_hours = round(db_epic_mandays * 8.0, 4) if db_epic_mandays is not None else None
+            jira_original_estimate_hours = jira.get("original_estimate_hours")
+            jira_total_hours_logged = jira.get("total_hours_logged")
+            jira_progress_pct = jira.get("progress_pct")
+        elif record_kind == "jira_non_epic":
+            jira_original_estimate_hours = non_epic_row.get("original_estimate_hours")
+            jira_total_hours_logged = non_epic_row.get("total_hours_logged")
+            jira_progress_pct = non_epic_row.get("progress_pct")
+            # Derive man_days = original_estimate_hours / 8 for non-epics.
+            est_hours = _to_float(jira_original_estimate_hours)
+            db_epic_mandays = round(est_hours / 8.0, 4) if est_hours and est_hours > 0 else None
+            db_epic_planned_hours = est_hours if est_hours and est_hours > 0 else None
+        else:  # custom
+            db_epic_mandays = _to_number(epic_plan.get("man_days"))
+            db_epic_planned_hours = round(db_epic_mandays * 8.0, 4) if db_epic_mandays is not None else None
+            jira_original_estimate_hours = None
+            jira_total_hours_logged = None
+            jira_progress_pct = None
+
         epic_start_date = _parse_iso_date(epic_start_iso)
         epic_end_date = _parse_iso_date(epic_end_iso)
         epic_actual_date = _parse_iso_date(epic_actual_iso)
@@ -475,16 +644,44 @@ def _build_records(
         product = _as_text(epic.get("product_category")) or _as_text(epic.get("project_name")) or "Unmapped"
         component = _as_text(epic.get("component", "")).strip()
         remarks = _as_text(epic.get("remarks"))
-        jira_link = _as_text(epic.get("jira_url")) or _as_text(jira.get("jira_url")) or _normalize_jira_link(epic_key)
+
+        # Status / assignee / Jira link sourcing varies by record_kind.
+        if record_kind == "epic":
+            jira_status_text = _as_text(jira.get("status"))
+            jira_assignee_text = _as_text(jira.get("assignee"))
+            jira_link = _as_text(epic.get("jira_url")) or _as_text(jira.get("jira_url")) or _normalize_jira_link(epic_key)
+        elif record_kind == "jira_non_epic":
+            jira_status_text = _as_text(non_epic_row.get("status"))
+            jira_assignee_text = (
+                _as_text(epic.get("assignee_text"))
+                or _as_text(non_epic_row.get("assignee"))
+            )
+            jira_link = _as_text(epic.get("jira_url")) or _as_text(non_epic_row.get("jira_url")) or _normalize_jira_link(epic_key)
+        else:  # custom
+            jira_status_text = ""
+            jira_assignee_text = _as_text(epic.get("assignee_text"))
+            jira_link = ""  # custom items have no Jira link
 
         source_sheet = _as_text(epic.get("_record_source")) or "Epics Planner DB"
-        story_rows = jira_stories_by_epic.get(epic_key, [])
+        story_rows = jira_stories_by_epic.get(epic_key, []) if record_kind == "epic" else []
 
         delivery_status = _normalize_delivery_status(epic.get("delivery_status"))
+        # Determine parent_key for visual nesting in the Gantt: only meaningful
+        # for jira_non_epic items where the parent is itself in the meeting/dashboard.
+        parent_key_value = ""
+        if record_kind == "jira_non_epic":
+            parent_key_value = _as_text(non_epic_row.get("parent_issue_key")).upper()
         records.append(
             {
                 "source_sheet": source_sheet,
                 "row_number": i,
+                "record_kind": record_kind,
+                "issue_type": issue_type,
+                "item_kind": item_kind,
+                "source_tag": _as_text(epic.get("source_tag")).lower(),
+                "parent_key": parent_key_value,
+                "date_inherited_from": date_source_key if (record_kind == "jira_non_epic" and date_source_key != epic_key) else "",
+                "has_phase_plan": has_phase_plan,
                 "base": {
                     "Product": product,
                     "Epic/RMI": epic_key,
@@ -493,9 +690,12 @@ def _build_records(
                     "Epic Planned End Date": epic_end_iso,
                     "Epic Planned Start Date (DB)": db_epic_start_iso,
                     "Epic Planned End Date (DB)": db_epic_end_iso,
-                    "Epic Planned Start Date (Jira Excel)": jira_epic_start_iso,
-                    "Epic Planned End Date (Jira Excel)": jira_epic_end_iso,
-                    "Epic Actual Date (Production Date)": epic_actual_iso,
+                    "Epic Planned Start Date (Jira Excel)": jira_epic_start_iso if record_kind == "epic" else "",
+                    "Epic Planned End Date (Jira Excel)": jira_epic_end_iso if record_kind == "epic" else "",
+                    "Item Planned Start Date": epic_start_iso if record_kind != "epic" else "",
+                    "Item Planned End Date": epic_end_iso if record_kind != "epic" else "",
+                    "Epic Actual Date (Production Date)": epic_actual_iso if record_kind == "epic" else "",
+                    "Item Actual End Date": epic_actual_iso if record_kind == "jira_non_epic" else "",
                     "Remarks": remarks,
                 },
                 "delivery_status": delivery_status,
@@ -505,14 +705,14 @@ def _build_records(
                 "epic_start_date": epic_start_date,
                 "epic_end_date": epic_end_date,
                 "epic_actual_date": epic_actual_date,
-                "jira_status": _as_text(jira.get("status")),
-                "jira_assignee": _as_text(jira.get("assignee")),
+                "jira_status": jira_status_text,
+                "jira_assignee": jira_assignee_text,
                 "db_epic_planned_mandays": db_epic_mandays,
                 "db_epic_planned_hours": db_epic_planned_hours,
-                "jira_original_estimate_hours": jira.get("original_estimate_hours"),
-                "jira_total_hours_logged": jira.get("total_hours_logged"),
-                "jira_progress_pct": jira.get("progress_pct"),
-                "epic_name": _as_text(epic.get("epic_name")) or _as_text(jira.get("summary")),
+                "jira_original_estimate_hours": jira_original_estimate_hours,
+                "jira_total_hours_logged": jira_total_hours_logged,
+                "jira_progress_pct": jira_progress_pct,
+                "epic_name": _as_text(epic.get("epic_name")) or _as_text(jira.get("summary")) or _as_text(non_epic_row.get("summary")),
                 "project_name": _as_text(epic.get("project_name")),
                 "product_category": _as_text(epic.get("product_category", "")).strip(),
                 "component": component,
@@ -555,6 +755,13 @@ def _rows_for_payload(records: list[dict[str, object]]) -> list[dict[str, object
             {
                 "source_sheet": r["source_sheet"],
                 "row_number": r["row_number"],
+                "record_kind": r.get("record_kind", "epic"),
+                "issue_type": r.get("issue_type", "epic"),
+                "item_kind": r.get("item_kind", "jira"),
+                "source_tag": r.get("source_tag", ""),
+                "parent_key": r.get("parent_key", ""),
+                "date_inherited_from": r.get("date_inherited_from", ""),
+                "has_phase_plan": bool(r.get("has_phase_plan", False)),
                 "product": r["base"]["Product"],
                 "epic_rmi": r["base"]["Epic/RMI"],
                 "epic_name": r.get("epic_name", ""),
@@ -571,7 +778,10 @@ def _rows_for_payload(records: list[dict[str, object]]) -> list[dict[str, object
                 "epic_planned_end_date_db": r["base"]["Epic Planned End Date (DB)"],
                 "epic_planned_start_date_jira": r["base"]["Epic Planned Start Date (Jira Excel)"],
                 "epic_planned_end_date_jira": r["base"]["Epic Planned End Date (Jira Excel)"],
+                "item_planned_start_date": r["base"].get("Item Planned Start Date", ""),
+                "item_planned_end_date": r["base"].get("Item Planned End Date", ""),
                 "epic_actual_date": r["base"]["Epic Actual Date (Production Date)"],
+                "item_actual_end_date": r["base"].get("Item Actual End Date", ""),
                 "remarks": r["base"]["Remarks"],
                 "computed_total_mandays": round(r["total_mandays"], 4),
                 "jira_status": r.get("jira_status", ""),
@@ -651,10 +861,10 @@ def build_payload_from_sources(base_dir: Path) -> dict[str, object]:
     if meeting_epics is not None and len(meeting_epics) > 0:
         selected_epics = meeting_epics
 
-    jira_rows, jira_stories = _load_jira_rows_by_epic_from_db(exports_db_path)
+    jira_rows, jira_stories, jira_rows_by_key, jira_parent_by_key = _load_jira_rows_by_epic_from_db(exports_db_path)
     epics_to_render = selected_epics
 
-    records = _build_records(epics_to_render, jira_rows, jira_stories)
+    records = _build_records(epics_to_render, jira_rows, jira_stories, jira_rows_by_key, jira_parent_by_key)
     rows = _rows_for_payload(records)
     for row in rows:
         epic_key = _as_text(row.get("epic_rmi")).strip().upper()

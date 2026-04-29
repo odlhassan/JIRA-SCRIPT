@@ -308,5 +308,182 @@ class IppMeetingDashboardMergeTests(unittest.TestCase):
             self.assertEqual(rows, [])
 
 
+def _make_meeting_epic(
+    *,
+    epic_key,
+    epic_name,
+    project_key="O2",
+    project_name="O2 Project",
+    item_kind="jira",
+    issue_type="epic",
+    source_tag="epics_planner",
+    assignee_text="",
+    plans=None,
+    actual_production_date="",
+):
+    return {
+        "epic_key": epic_key,
+        "project_key": project_key,
+        "project_name": project_name,
+        "product_category": "",
+        "component": "",
+        "epic_name": epic_name,
+        "description": "",
+        "remarks": "",
+        "originator": "",
+        "priority": "",
+        "plan_status": "",
+        "jira_url": "",
+        "ipp_meeting_planned": "Yes",
+        "actual_production_date": actual_production_date,
+        "delivery_status": "Yet to start",
+        "plans": plans or {"epic_plan": {}},
+        "_record_source": "IPP Meeting Planner",
+        "item_kind": item_kind,
+        "issue_type": issue_type,
+        "source_tag": source_tag,
+        "assignee_text": assignee_text,
+    }
+
+
+class IppMeetingDashboardWorkListTests(unittest.TestCase):
+    """Tests for non-epic Work List items + custom items added directly to a meeting."""
+
+    def test_jira_story_added_directly_pulls_dates_from_work_items(self):
+        meeting_epics = [
+            _make_meeting_epic(
+                epic_key="O2-1111",
+                epic_name="Direct Story",
+                issue_type="story",
+                source_tag="jira",
+                plans={"epic_plan": {}},
+            )
+        ]
+        rows_by_key = {
+            "O2-1111": {
+                "issue_key": "O2-1111",
+                "issue_type": "Story",
+                "summary": "Direct Story",
+                "status": "In Progress",
+                "assignee": "Alice",
+                "jira_url": "https://jira.example.com/browse/O2-1111",
+                "start_date": "2026-04-01",
+                "end_date": "2026-04-10",
+                "actual_end_date": "",
+                "parent_issue_key": "O2-111",
+                "original_estimate_hours": 16.0,
+                "total_hours_logged": 4.0,
+                "progress_pct": 25.0,
+            }
+        }
+        records = dashboard_gen._build_records(meeting_epics, {}, {}, rows_by_key, {"O2-1111": "O2-111"})
+        rows = dashboard_gen._rows_for_payload(records)
+        self.assertEqual(len(rows), 1)
+        r = rows[0]
+        self.assertEqual(r["record_kind"], "jira_non_epic")
+        self.assertEqual(r["epic_planned_start_date"], "2026-04-01")
+        self.assertEqual(r["epic_planned_end_date"], "2026-04-10")
+        # Epic-specific (DB) and (Jira Excel) columns must be blank for non-epics.
+        self.assertEqual(r["epic_planned_start_date_db"], "")
+        self.assertEqual(r["epic_planned_end_date_db"], "")
+        self.assertEqual(r["epic_planned_start_date_jira"], "")
+        self.assertEqual(r["epic_planned_end_date_jira"], "")
+        # Item-level columns populated.
+        self.assertEqual(r["item_planned_start_date"], "2026-04-01")
+        self.assertEqual(r["item_planned_end_date"], "2026-04-10")
+        # man_days = original_estimate_hours / 8 = 2.0
+        self.assertEqual(r["db_epic_planned_mandays"], 2.0)
+        self.assertEqual(r["epic_planned_hours_db"], 16.0)
+        self.assertEqual(r["jira_status"], "In Progress")
+        self.assertEqual(r["jira_assignee"], "Alice")
+        self.assertEqual(r["parent_key"], "O2-111")
+        # Gantt-relevant flag.
+        # has_valid_epic_plan from internal record; surfaced as roadmap.valid in payload row.
+        self.assertTrue(r["roadmap"]["valid"])
+        # Phase plan must be marked absent for non-epic Jira items.
+        self.assertFalse(r["has_phase_plan"])
+
+    def test_subtask_with_empty_dates_inherits_from_parent_story(self):
+        meeting_epics = [
+            _make_meeting_epic(
+                epic_key="O2-2222",
+                epic_name="Empty-Dates Subtask",
+                issue_type="subtask",
+                source_tag="jira",
+            )
+        ]
+        rows_by_key = {
+            "O2-2222": {
+                "issue_key": "O2-2222",
+                "issue_type": "Sub-task",
+                "summary": "Empty-Dates Subtask",
+                "status": "To Do",
+                "assignee": "Bob",
+                "jira_url": "",
+                "start_date": "",
+                "end_date": "",
+                "actual_end_date": "",
+                "parent_issue_key": "O2-1111",
+                "original_estimate_hours": 4.0,
+                "total_hours_logged": None,
+                "progress_pct": None,
+            },
+            "O2-1111": {
+                "issue_key": "O2-1111",
+                "issue_type": "Story",
+                "summary": "Parent Story",
+                "status": "In Progress",
+                "assignee": "Alice",
+                "jira_url": "",
+                "start_date": "2026-05-01",
+                "end_date": "2026-05-08",
+                "actual_end_date": "",
+                "parent_issue_key": "O2-111",
+                "original_estimate_hours": None,
+                "total_hours_logged": None,
+                "progress_pct": None,
+            },
+        }
+        parent_by_key = {"O2-2222": "O2-1111", "O2-1111": "O2-111"}
+        records = dashboard_gen._build_records(meeting_epics, {}, {}, rows_by_key, parent_by_key)
+        rows = dashboard_gen._rows_for_payload(records)
+        r = rows[0]
+        self.assertEqual(r["record_kind"], "jira_non_epic")
+        # Inherited from parent Story.
+        self.assertEqual(r["epic_planned_start_date"], "2026-05-01")
+        self.assertEqual(r["epic_planned_end_date"], "2026-05-08")
+        self.assertEqual(r["item_planned_start_date"], "2026-05-01")
+        self.assertEqual(r["item_planned_end_date"], "2026-05-08")
+        self.assertEqual(r["date_inherited_from"], "O2-1111")
+        self.assertTrue(r["roadmap"]["valid"])
+
+    def test_custom_item_uses_assignee_text_and_blank_jira_link(self):
+        meeting_epics = [
+            _make_meeting_epic(
+                epic_key="CUSTOM-9-1",
+                epic_name="Chairperson note",
+                item_kind="custom",
+                issue_type="custom",
+                source_tag="custom",
+                assignee_text="Aniqa",
+                plans={"epic_plan": {"start_date": "2026-06-01", "due_date": "2026-06-05", "man_days": 1}},
+            )
+        ]
+        records = dashboard_gen._build_records(meeting_epics, {}, {}, {}, {})
+        rows = dashboard_gen._rows_for_payload(records)
+        r = rows[0]
+        self.assertEqual(r["record_kind"], "custom")
+        self.assertEqual(r["jira_link"], "")
+        self.assertEqual(r["jira_assignee"], "Aniqa")
+        self.assertEqual(r["epic_planned_start_date"], "2026-06-01")
+        self.assertEqual(r["epic_planned_end_date"], "2026-06-05")
+        self.assertEqual(r["epic_planned_start_date_db"], "")
+        self.assertEqual(r["epic_planned_end_date_db"], "")
+        self.assertEqual(r["item_planned_start_date"], "2026-06-01")
+        self.assertEqual(r["item_planned_end_date"], "2026-06-05")
+        self.assertTrue(r["roadmap"]["valid"])
+        self.assertFalse(r["has_phase_plan"])
+
+
 if __name__ == "__main__":
     unittest.main()

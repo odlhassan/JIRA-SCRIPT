@@ -1315,6 +1315,28 @@
         .roadmap-delivery-icon.late { color: #dc2626; }
         .roadmap-delivery-icon.on-track { color: #16a34a; }
         .roadmap-delivery-icon.yet-to-start { color: #1d4ed8; }
+        /* Work List record kind icons + chips inside Gantt rows. */
+        .roadmap-label { display: flex; align-items: center; gap: 6px; min-width: 0; }
+        .roadmap-label-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1 1 auto; min-width: 0; }
+        .wl-row-icon { font-size: 1rem; vertical-align: middle; flex: 0 0 auto; }
+        .wl-row-icon.wl-icon-epic { color: #7c3aed; }
+        .wl-row-icon.wl-icon-story { color: #2563eb; }
+        .wl-row-icon.wl-icon-subtask { color: #16a34a; }
+        .wl-row-icon.wl-icon-bug { color: #dc2626; }
+        .wl-row-icon.wl-icon-custom { color: #475569; }
+        .wl-row-chip {
+            display: inline-flex; align-items: center; padding: 0 6px; height: 18px;
+            border-radius: 9px; font-size: 10px; font-weight: 600; letter-spacing: 0.02em;
+            text-transform: uppercase; flex: 0 0 auto; line-height: 1;
+        }
+        .wl-row-chip.wl-chip-custom { background: #e2e8f0; color: #334155; border: 1px solid #cbd5e1; }
+        .wl-row-chip.wl-chip-jira { background: #ede9fe; color: #5b21b6; border: 1px solid #c4b5fd; }
+        /* Visually nest child rows (Story/Subtask/Bug subtask) under a parent in the meeting. */
+        .roadmap-row.is-nested .roadmap-label { padding-left: 20px; position: relative; }
+        .roadmap-row.is-nested .roadmap-label::before {
+            content: "↳"; position: absolute; left: 4px; top: 50%; transform: translateY(-50%);
+            color: #94a3b8; font-size: 12px; font-weight: 600;
+        }
         .hero-with-help { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
         .ipp-categorization-wrap {
             display: inline-flex; align-items: center; gap: 0;
@@ -2936,6 +2958,59 @@ function renderProductRoadmap(rows) {
         if (s === "on-track") return "check_circle";
         return "schedule";
     }
+    // Map record kind / issue type to a Material Symbols icon + colour class.
+    // Epic = bolt (purple), Story = person (blue), Subtask = handyman (green),
+    // Bug subtask = bug_report (red), Custom = flag (slate).
+    function recordKindMeta(row) {
+        const itemKind = asText(row && row.item_kind).toLowerCase();
+        const issueType = asText(row && row.issue_type).toLowerCase();
+        if (itemKind === "custom" || issueType === "custom") {
+            return { icon: "flag", cls: "wl-icon-custom", label: "Custom" };
+        }
+        if (issueType === "story") {
+            return { icon: "person", cls: "wl-icon-story", label: "Story" };
+        }
+        if (issueType === "subtask") {
+            return { icon: "handyman", cls: "wl-icon-subtask", label: "Subtask" };
+        }
+        if (issueType === "bug_subtask") {
+            return { icon: "bug_report", cls: "wl-icon-bug", label: "Bug subtask" };
+        }
+        return { icon: "bolt", cls: "wl-icon-epic", label: "Epic" };
+    }
+    function recordKindIconHtml(row) {
+        const meta = recordKindMeta(row);
+        return `<span class="material-symbols-outlined wl-row-icon ${esc(meta.cls)}" aria-label="${esc(meta.label)}" title="${esc(meta.label)}">${esc(meta.icon)}</span>`;
+    }
+    function recordKindChipHtml(row) {
+        const itemKind = asText(row && row.item_kind).toLowerCase();
+        const issueType = asText(row && row.issue_type).toLowerCase();
+        if (itemKind === "custom" || issueType === "custom") {
+            return `<span class="wl-row-chip wl-chip-custom">Custom</span>`;
+        }
+        if (issueType && issueType !== "epic") {
+            return `<span class="wl-row-chip wl-chip-jira">Jira-tracked</span>`;
+        }
+        return "";
+    }
+    function recordRowClasses(row, knownKeys) {
+        const itemKind = asText(row && row.item_kind).toLowerCase();
+        const issueType = asText(row && row.issue_type).toLowerCase();
+        const classes = [];
+        if (itemKind === "custom" || issueType === "custom") {
+            classes.push("record-kind-custom");
+        } else if (issueType && issueType !== "epic") {
+            classes.push("record-kind-jira-non-epic", "record-kind-" + issueType.replace(/_/g, "-"));
+        } else {
+            classes.push("record-kind-epic");
+        }
+        // Nest under parent visually if the parent is itself in the meeting.
+        const parentKey = asText(row && row.parent_key).toUpperCase();
+        if (parentKey && knownKeys && knownKeys.has(parentKey)) {
+            classes.push("is-nested");
+        }
+        return classes.join(" ");
+    }
     const renderRoadmapRow = (row, rowIndex) => {
         const roadmap = getRoadmapBySource(row);
         const rmiText = asText(row.epic_name) || asText(row.epic_rmi) || "(No RMI)";
@@ -2948,12 +3023,16 @@ function renderProductRoadmap(rows) {
         const manDaysHtml = getManDaysCellHtml(row);
         const progress = getRmiProgressStatus(row);
         const progressChipHtml = `${deliveryIconHtml}<span class="roadmap-progress-chip ${esc(progress.chipClass)}">${esc(progress.label)}</span>`;
+        const recordKindClasses = recordRowClasses(row, window.__ipp_known_row_keys || new Set());
+        const kindIconHtml = recordKindIconHtml(row);
+        const kindChipHtml = recordKindChipHtml(row);
+        const labelInnerHtml = `${kindIconHtml}<span class="roadmap-label-text">${esc(rmiText)}</span>${kindChipHtml}`;
 
         if (!roadmap.valid || !Number.isFinite(Number(roadmap.bar_left_pct)) || !Number.isFinite(Number(roadmap.bar_width_pct))) {
             return `
-                <div class="roadmap-row is-clickable ${statusClass} ${deliveryClass}${selectedClass}" data-row-index="${rowIndex}" tabindex="0" role="button" aria-label="Open details for ${esc(rmiText)}">
+                <div class="roadmap-row is-clickable ${statusClass} ${deliveryClass} ${recordKindClasses}${selectedClass}" data-row-index="${rowIndex}" tabindex="0" role="button" aria-label="Open details for ${esc(rmiText)}">
                     <div class="roadmap-product roadmap-product-child" aria-hidden="true"></div>
-                    <div class="roadmap-label">${esc(rmiText)}</div>
+                    <div class="roadmap-label">${labelInnerHtml}</div>
                     <div class="roadmap-status-cell">${progressChipHtml}</div>
                     <div class="roadmap-mandays">${manDaysHtml}</div>
                     <div class="roadmap-track"><span class="roadmap-empty">NO PLAN</span></div>
@@ -2969,9 +3048,9 @@ function renderProductRoadmap(rows) {
             : "";
 
         return `
-            <div class="roadmap-row is-clickable ${statusClass} ${deliveryClass}${selectedClass}" data-row-index="${rowIndex}" tabindex="0" role="button" aria-label="Open details for ${esc(rmiText)}">
+            <div class="roadmap-row is-clickable ${statusClass} ${deliveryClass} ${recordKindClasses}${selectedClass}" data-row-index="${rowIndex}" tabindex="0" role="button" aria-label="Open details for ${esc(rmiText)}">
                 <div class="roadmap-product roadmap-product-child" aria-hidden="true"></div>
-                <div class="roadmap-label">${esc(rmiText)}</div>
+                <div class="roadmap-label">${labelInnerHtml}</div>
                 <div class="roadmap-status-cell">${progressChipHtml}</div>
                 <div class="roadmap-mandays">${manDaysHtml}</div>
                 <div class="roadmap-track">
@@ -2989,6 +3068,11 @@ function renderProductRoadmap(rows) {
     };
 
     let groupsHtml;
+    // Build the set of row keys present so child rows (Story / Subtask / Bug subtask)
+    // can be visually nested under a parent that is also in the meeting.
+    window.__ipp_known_row_keys = new Set(
+        (rows || []).map((row) => asText(row && row.epic_rmi).toUpperCase()).filter(Boolean)
+    );
     if (!showCategorization) {
         const flatByProject = new Map();
         rows.forEach((row, rowIndex) => {

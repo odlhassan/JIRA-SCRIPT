@@ -300,7 +300,7 @@ REPORT_REFRESH_DEFAULT_RETENTION_RUNS = 10
 REFRESH_WIDGET_MARKER = "codex-refresh-widget-v2"
 REFRESH_WIDGET_START = "<!-- codex-refresh-widget-start -->"
 REFRESH_WIDGET_END = "<!-- codex-refresh-widget-end -->"
-REPORT_IDS_WITHOUT_REFRESH_WIDGET = {"original_estimates_hierarchy"}
+REPORT_IDS_WITHOUT_REFRESH_WIDGET = {"original_estimates_hierarchy", "ipp_meeting_dashboard"}
 INFO_DRAWER_MARKER = "codex-info-drawer-v1"
 INFO_DRAWER_START = "<!-- codex-info-drawer-start -->"
 INFO_DRAWER_END = "<!-- codex-info-drawer-end -->"
@@ -17930,7 +17930,10 @@ def _materialize_refresh_widgets(report_dir: Path) -> None:
 
         try:
             html_path.write_text(updated, encoding="utf-8")
-            print(f"[report-html-sync] Added refresh widget: {html_path.name}")
+            if report_id in REPORT_IDS_WITHOUT_REFRESH_WIDGET:
+                print(f"[report-html-sync] Synced (no refresh widget): {html_path.name}")
+            else:
+                print(f"[report-html-sync] Added refresh widget: {html_path.name}")
         except OSError as exc:
             # On Windows, a browser/preview process may briefly lock report files.
             # Skip the single file and keep the server startup running.
