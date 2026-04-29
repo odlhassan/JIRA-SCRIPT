@@ -372,6 +372,35 @@ def _compute_roadmap_axis(records: list[dict[str, object]]) -> dict[str, object]
 
 def _compute_phase_geometry_for_record(record: dict[str, object], global_max_mandays: float) -> dict[str, object]:
     phases_by_name = {p["name"]: p for p in record["phases"]}
+    ordered_phase_names = [str(p.get("name") or "").strip() for p in record["phases"] if str(p.get("name") or "").strip()]
+    if not ordered_phase_names:
+        ordered_phase_names = [phase_name for phase_name, _ in PHASE_COLUMNS]
+    phase_extra_keys = (
+        "plan_key",
+        "date_source",
+        "jira_url",
+        "linked_issue_key",
+        "linked_issue_status",
+        "linked_issue_assignee",
+        "linked_issue_start_date",
+        "linked_issue_end_date",
+        "linked_issue_actual_end_date",
+        "linked_issue_planned_hours",
+        "linked_issue_logged_hours",
+        "linked_issue_progress_pct",
+    )
+
+    def _phase_payload_base(p: dict[str, object]) -> dict[str, object]:
+        payload = {
+            "state": p["state"], "state_label": p["state_label"], "warning": p["warning"],
+            "start_iso": p["start_iso"], "end_iso": p["end_iso"],
+            "mandays_text": p["mandays_text"], "mandays_num": p["mandays_num"], "raw": p["raw"],
+        }
+        for key in phase_extra_keys:
+            if key in p:
+                payload[key] = p.get(key)
+        return payload
+
     drawable = [
         p for p in record["phases"]
         if isinstance(p.get("start_date"), date)
@@ -381,12 +410,10 @@ def _compute_phase_geometry_for_record(record: dict[str, object], global_max_man
 
     if not drawable:
         empty_phases = {}
-        for phase_name, _ in PHASE_COLUMNS:
+        for phase_name in ordered_phase_names:
             p = phases_by_name[phase_name]
             empty_phases[phase_name] = {
-                "state": p["state"], "state_label": p["state_label"], "warning": p["warning"],
-                "start_iso": p["start_iso"], "end_iso": p["end_iso"],
-                "mandays_text": p["mandays_text"], "mandays_num": p["mandays_num"], "raw": p["raw"],
+                **_phase_payload_base(p),
                 "valid": False, "bar_left_pct": "", "bar_width_pct": "", "bar_thickness_px": "",
                 "bar_top_offset_px": "", "start_label": "-", "end_label": "-",
                 "bar_label": f"{p['mandays_text']} md" if p["mandays_text"] else "-", "show_no_bar": True,
@@ -421,7 +448,7 @@ def _compute_phase_geometry_for_record(record: dict[str, object], global_max_man
         today_left_pct = round(_clamp_percent(((today - axis_start).days / max(1, axis_span_days - 1)) * 100.0), 4)
 
     out_phases: dict[str, dict[str, object]] = {}
-    for phase_name, _ in PHASE_COLUMNS:
+    for phase_name in ordered_phase_names:
         p = phases_by_name[phase_name]
         is_valid = (
             isinstance(p.get("start_date"), date)
@@ -429,9 +456,7 @@ def _compute_phase_geometry_for_record(record: dict[str, object], global_max_man
             and p["start_date"] <= p["end_date"]
         )
         phase_payload = {
-            "state": p["state"], "state_label": p["state_label"], "warning": p["warning"],
-            "start_iso": p["start_iso"], "end_iso": p["end_iso"],
-            "mandays_text": p["mandays_text"], "mandays_num": p["mandays_num"], "raw": p["raw"],
+            **_phase_payload_base(p),
             "valid": is_valid, "bar_left_pct": "", "bar_width_pct": "", "bar_thickness_px": "", "bar_top_offset_px": "",
             "start_label": "-", "end_label": "-", "bar_label": f"{p['mandays_text']} md" if p["mandays_text"] else "-",
             "show_no_bar": not is_valid,

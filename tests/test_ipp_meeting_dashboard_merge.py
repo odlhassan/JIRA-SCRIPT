@@ -307,6 +307,106 @@ class IppMeetingDashboardMergeTests(unittest.TestCase):
             self.assertEqual(payload.get("selection_mode"), "selected_only")
             self.assertEqual(rows, [])
 
+    def test_phase_jira_link_resolves_dates_from_work_items(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            db_path = root / "assignee_hours_capacity.db"
+            exports_db_path = root / "jira_exports.db"
+
+            from report_server import _init_epics_management_db
+
+            _init_epics_management_db(db_path)
+            conn = sqlite3.connect(db_path)
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO epics_management (
+                        id, epic_key, project_key, project_name, product_category, component, epic_name,
+                        description, originator, priority, plan_status, ipp_meeting_planned, actual_production_date, delivery_status, remarks, jira_url,
+                        epic_plan_json, research_urs_plan_json, dds_plan_json, development_plan_json, sqa_plan_json, user_manual_plan_json, production_plan_json, is_sealed
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, '', '', 'High', 'Planned', 'Yes', '', 'Yet to start', '', ?, '{}', '{}', '{}', '{}', '{}', '{}', '{}', 0)
+                    """,
+                    (
+                        "row-phase",
+                        "O2-999",
+                        "O2",
+                        "O2 Project",
+                        "Payments",
+                        "Scheduling",
+                        "Phase Jira Epic",
+                        "https://jira.example.com/browse/O2-999",
+                    ),
+                )
+                now = "2026-04-01T00:00:00+00:00"
+                conn.execute(
+                    """
+                    INSERT INTO epics_management_plan_values (
+                        epic_row_id, epic_key, column_key, plan_json, created_at_utc, updated_at_utc
+                    ) VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        "row-phase",
+                        "O2-999",
+                        "development_plan",
+                        json.dumps({
+                            "most_likely_man_days": 2,
+                            "man_days": 2,
+                            "start_date": "",
+                            "due_date": "",
+                            "jira_url": "https://jira.example.com/browse/O2-444",
+                        }),
+                        now,
+                        now,
+                    ),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            exports_db_path.parent.mkdir(parents=True, exist_ok=True)
+            conn = sqlite3.connect(str(exports_db_path))
+            conn.row_factory = sqlite3.Row
+            try:
+                ensure_schema(conn)
+                write_work_items(
+                    conn,
+                    [
+                        _work_item_row(
+                            "O2", "O2-999", "1", "Epic", "Epic", "Phase Jira Epic", "In Progress",
+                            "2026-05-01", "2026-05-10", "", 40.0, "Alice", 4.0,
+                            "", "https://jira.example.com/browse/O2-999", "", "",
+                        ),
+                        _work_item_row(
+                            "O2", "O2-444", "2", "Story", "Story", "Development", "To Do",
+                            "2026-05-03", "2026-05-06", "", 16.0, "Bob", 8.0,
+                            "O2-999", "https://jira.example.com/browse/O2-444", "", "",
+                        ),
+                    ],
+                )
+            finally:
+                conn.close()
+
+            env = {
+                "JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH": str(db_path),
+                "JIRA_EXPORTS_DB_PATH": str(exports_db_path),
+            }
+            with patch.dict(os.environ, env, clear=False):
+                payload = dashboard_gen.build_payload_from_sources(base_dir=root)
+
+            rows = payload.get("rows") or []
+            by_key = {str(item.get("epic_rmi") or "").upper(): item for item in rows}
+            row = by_key["O2-999"]
+            phase_values = list((row.get("phase_data") or {}).values())
+            development = next(item for item in phase_values if item.get("plan_key") == "development_plan")
+            self.assertEqual(development.get("jira_url"), "https://jira.example.com/browse/O2-444")
+            self.assertEqual(development.get("linked_issue_key"), "O2-444")
+            self.assertEqual(development.get("start"), "2026-05-03")
+            self.assertEqual(development.get("end"), "2026-05-06")
+            self.assertEqual(development.get("date_source"), "jira")
+            self.assertEqual(development.get("linked_issue_status"), "To Do")
+            self.assertEqual(development.get("linked_issue_assignee"), "Bob")
+            self.assertTrue(row.get("mini_gantt", {}).get("has_dated_phases"))
+
 
 def _make_meeting_epic(
     *,

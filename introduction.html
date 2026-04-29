@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EPR Tool - Introduction</title>
+  <link rel="stylesheet" href="/shared-nav.css">
+  <link rel="stylesheet" href="/material-symbols.css">
+  <style>
+    :root {
+      --bg: #f4f7fc;
+      --panel: #ffffff;
+      --line: #d8e3f0;
+      --ink: #0f172a;
+      --text: #1f2a37;
+      --muted: #4b5565;
+      --brand: #1d4ed8;
+      --brand-soft: #dbeafe;
+      --teal-soft: #dbfdf4;
+      --teal-line: #8de9cf;
+      --violet-soft: #f1ebff;
+      --violet-line: #d5c4ff;
+      --shadow: 0 14px 36px rgba(15, 23, 42, 0.1);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(760px 280px at 3% -8%, #dce9ff 0%, transparent 70%),
+        radial-gradient(780px 280px at 100% -12%, #e8dcff 0%, transparent 70%),
+        var(--bg);
+    }
+
+    .page {
+      width: 100%;
+      max-width: none;
+      margin: 0;
+      padding: 28px 28px 42px;
+    }
+
+    .hero {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      box-shadow: var(--shadow);
+      margin-bottom: 24px;
+      padding: 30px;
+      display: grid;
+      grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.65fr);
+      gap: 24px;
+      align-items: start;
+    }
+
+    .hero-label {
+      margin: 0 0 10px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      border: 1px solid #bed7ff;
+      border-radius: 999px;
+      background: #eef4ff;
+      color: #214aa3;
+      font-size: 0.74rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      padding: 7px 12px;
+    }
+
+    .hero h1 {
+      margin: 0;
+      font-size: 2.25rem;
+      line-height: 1.13;
+      letter-spacing: -0.01em;
+      color: var(--ink);
+    }
+
+    .hero h1 .sub {
+      display: block;
+      font-size: 1.06rem;
+      font-weight: 600;
+      margin-top: 10px;
+      color: #334155;
+    }
+
+    .context {
+      margin: 14px 0 0;
+      color: #334155;
+      font-size: 1.03rem;
+      line-height: 1.72;
+      max-width: 820px;
+    }
+
+    .badge {
+      margin-top: 16px;
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      border: 1px solid var(--teal-line);
+      background: var(--teal-soft);
+      color: #0f766e;
+      border-radius: 999px;
+      padding: 8px 13px;
+      font-size: 0.79rem;
+      font-weight: 700;
+    }
+
+    .hero-meta {
+      border: 1px solid #d5e4fb;
+      border-radius: 18px;
+      background: linear-gradient(180deg, #f8fbff, #edf4ff);
+      padding: 16px 16px 14px;
+    }
+
+    .hero-meta h3 {
+      margin: 0 0 10px;
+      font-size: 0.95rem;
+      color: #1e3a8a;
+      letter-spacing: 0.01em;
+    }
+
+    .hero-meta ul {
+      margin: 0;
+      padding-left: 18px;
+      display: grid;
+      gap: 8px;
+      font-size: 0.87rem;
+      color: #334155;
+      line-height: 1.42;
+    }
+
+    .model {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      padding: 24px;
+      box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+    }
+
+    .model-head {
+      margin-bottom: 14px;
+    }
+
+    .model h2 {
+      margin: 0 0 7px;
+      font-size: 1.42rem;
+      color: var(--ink);
+      letter-spacing: -0.01em;
+    }
+
+    .model p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+
+    .columns {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr) minmax(0, 2.1fr);
+      gap: 16px;
+      align-items: start;
+    }
+
+    .col-insights .feat-list {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    @media (max-width: 1280px) {
+      .columns {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.6fr);
+      }
+    }
+
+    @media (max-width: 1080px) {
+      .columns {
+        grid-template-columns: 1fr 1fr;
+      }
+      .col-insights {
+        grid-column: 1 / -1;
+      }
+    }
+
+    .column {
+      --col-accent: #1d4ed8;
+      --col-accent-soft: #e6efff;
+      --col-tint-from: #ffffff;
+      --col-tint-to: #f7faff;
+      position: relative;
+      background: linear-gradient(180deg, var(--col-tint-from), var(--col-tint-to));
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 18px 16px 16px;
+      min-height: 310px;
+      transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+      overflow: hidden;
+    }
+
+    .column::before {
+      content: "";
+      position: absolute;
+      inset: 0 0 auto 0;
+      height: 4px;
+      background: linear-gradient(90deg, var(--col-accent), transparent 90%);
+      opacity: 0.85;
+    }
+
+    .column.col-jira      { --col-accent: #1d4ed8; --col-accent-soft: #e3edff; --col-tint-from: #ffffff; --col-tint-to: #f4f8ff; }
+    .column.col-enrich    { --col-accent: #0e9488; --col-accent-soft: #d6f5ee; --col-tint-from: #ffffff; --col-tint-to: #f3fdfa; }
+    .column.col-insights  { --col-accent: #6d28d9; --col-accent-soft: #ece1ff; --col-tint-from: #ffffff; --col-tint-to: #faf6ff; }
+
+    .column:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 14px 28px rgba(15, 23, 42, 0.10);
+      border-color: color-mix(in srgb, var(--col-accent) 35%, var(--line));
+    }
+
+    .col-head {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 4px;
+    }
+
+    .col-head h3 {
+      margin: 0;
+      font-size: 1.05rem;
+      color: var(--ink);
+      letter-spacing: 0.005em;
+    }
+
+    .col-head .col-icon {
+      flex: 0 0 auto;
+      width: 36px;
+      height: 36px;
+      border-radius: 12px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--col-accent-soft);
+      color: var(--col-accent);
+      border: 1px solid color-mix(in srgb, var(--col-accent) 25%, transparent);
+    }
+
+    .col-head .col-icon .material-symbols-outlined {
+      font-size: 20px;
+    }
+
+    .col-tag {
+      margin: 0 0 12px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--col-accent);
+      background: var(--col-accent-soft);
+      border-radius: 999px;
+      padding: 4px 10px;
+    }
+
+    .feat-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: grid;
+      gap: 8px;
+    }
+
+    .feat-list li {
+      display: grid;
+      grid-template-columns: 30px 1fr;
+      align-items: start;
+      gap: 10px;
+      padding: 9px 10px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.7);
+      border: 1px solid color-mix(in srgb, var(--col-accent) 14%, var(--line));
+      transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+    }
+
+    .feat-list li:hover {
+      background: #ffffff;
+      border-color: color-mix(in srgb, var(--col-accent) 38%, var(--line));
+      transform: translateX(2px);
+    }
+
+    .feat-list .feat-ic {
+      width: 28px;
+      height: 28px;
+      border-radius: 9px;
+      background: var(--col-accent-soft);
+      color: var(--col-accent);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 28px;
+    }
+
+    .feat-list .feat-ic .material-symbols-outlined {
+      font-size: 17px;
+    }
+
+    .feat-list .feat-body {
+      min-width: 0;
+      color: #334155;
+      font-size: 0.9rem;
+      line-height: 1.42;
+    }
+
+    .feat-list .feat-body strong {
+      display: block;
+      font-size: 0.92rem;
+      color: var(--ink);
+      font-weight: 700;
+      letter-spacing: 0.005em;
+      margin-bottom: 1px;
+    }
+
+    .flow-note {
+      margin-top: 16px;
+      border: 1px dashed #b3c7f6;
+      background: linear-gradient(180deg, #eef4ff, #e7efff);
+      border-radius: 14px;
+      padding: 13px 14px;
+      color: #21408a;
+      font-size: 0.91rem;
+      line-height: 1.5;
+    }
+
+    .flow-strip {
+      margin-top: 16px;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .flow-chip {
+      border: 1px solid #d5e1f2;
+      border-radius: 12px;
+      background: #ffffff;
+      padding: 10px 11px;
+      font-size: 0.8rem;
+      color: #334155;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .flow-chip strong {
+      color: #1e3a8a;
+      font-weight: 700;
+    }
+
+    .flow-chip .material-symbols-outlined {
+      color: #64748b;
+      font-size: 1rem;
+    }
+
+    .page-footer {
+      margin-top: 18px;
+      font-size: 0.79rem;
+      color: #64748b;
+      text-align: right;
+    }
+
+    @media (max-width: 980px) {
+      .page { padding: 18px 16px 26px; }
+
+      .hero {
+        grid-template-columns: 1fr;
+        padding: 20px;
+        border-radius: 18px;
+      }
+
+      .hero h1 { font-size: 1.9rem; }
+
+      .model {
+        padding: 18px;
+        border-radius: 16px;
+      }
+
+      .columns {
+        grid-template-columns: 1fr;
+      }
+
+      .col-insights .feat-list {
+        grid-template-columns: 1fr;
+      }
+
+      .column { min-height: auto; }
+      .flow-strip { grid-template-columns: 1fr; }
+      .page-footer { text-align: left; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="hero">
+      <div>
+        <p class="hero-label">
+          <span class="material-symbols-outlined" aria-hidden="true">auto_awesome</span>
+          Executive Reporting Experience
+        </p>
+        <h1>
+          EPR Tool
+          <span class="sub">Employee Performance Reporting Tool</span>
+        </h1>
+        <p class="context">
+          EPR Tool is a corporate reporting platform handcrafted and tailored for Octopus Digital's reporting requirements.
+          It converts operational Jira records into leadership-ready planning, performance, and delivery intelligence.
+        </p>
+        <div class="badge">
+          <span class="material-symbols-outlined" aria-hidden="true">business_center</span>
+          Octopus Digital Reporting Framework
+        </div>
+      </div>
+      <aside class="hero-meta" aria-label="Chairperson value summary">
+        <h3>Leadership Value</h3>
+        <ul>
+          <li><strong>Move from activity tracking to decision intelligence:</strong> leadership sees delivery confidence, financial posture, and execution risk in one narrative instead of fragmented Jira views.</li>
+          <li><strong>Act before failure, not after escalation:</strong> EPR surfaces pre-failure signals, hidden slippage patterns, and capacity pressure early enough for corrective action.</li>
+          <li><strong>Challenge assumptions with evidence:</strong> plan versions, budget movement, leave-adjusted productivity, and phase diagnostics make trade-off decisions auditable and defensible.</li>
+          <li><strong>Run governance reviews at strategic altitude:</strong> discussions shift from ticket-level noise to outcomes, intervention options, and expected business impact.</li>
+        </ul>
+      </aside>
+    </section>
+
+    <section class="model">
+      <div class="model-head">
+        <h2>How EPR Tool transforms delivery data into decision-ready insights</h2>
+        <p>The model below clarifies what starts in Jira, what EPR orchestrates, and what business outcomes the reports enable.</p>
+      </div>
+      <div class="columns">
+        <article class="column col-jira">
+          <div class="col-head">
+            <span class="col-icon" aria-hidden="true"><span class="material-symbols-outlined">database</span></span>
+            <h3>Jira Input</h3>
+          </div>
+          <span class="col-tag">Source signals</span>
+          <ul class="feat-list">
+            <li>
+              <span class="feat-ic" aria-hidden="true"><span class="material-symbols-outlined">map</span></span>
+              <div class="feat-body"><strong>Roadmap inventory</strong>List of roadmap items with planning baselines and current work status.</div>
+            </li>
+            <li>
+              <span class="feat-ic" aria-hidden="true"><span class="material-symbols-outlined">view_timeline</span></span>
+              <div class="feat-body"><strong>Phase planning</strong>Phases of roadmap items with phase-level planning context.</div>
+            </li>
+            <li>
+              <span class="feat-ic" aria-hidden="true"><span class="material-symbols-outlined">schedule</span></span>
+              <div class="feat-body"><strong>Daily activity logs</strong>Resource activities mapped with planned effort and actual hour logs.</div>
+            </li>
+            <li>
+              <span class="feat-ic" aria-hidden="true"><span class="material-symbols-outlined">beach_access</span></span>
+              <div class="feat-body"><strong>Leave records</strong>Employee leave records that influence execution availability.</div>
+            </li>
+            <li>
+              <span class="feat-ic" aria-hidden="true"><span class="material-symbols-outlined">category</span></span>
+              <div class="feat-body"><strong>Components &amp; tags</strong>Components and categorization of roadmap items for portfolio slicing.</div>
+            </li>
+          </ul>
+        </article>
+
+        <article class="column col-enrich">
+          <div class="col-head">
+            <span class="col-icon" aria-hidden="true"><span class="material-symbols-outlined">tune</span></span>
+            <h3>EPR Enrichment</h3>
+          </div>
+          <span class="col-tag">Orchestrated intelligence</span>
+          <ul class="feat-list">
+            <li>
+              <span class="feat-ic" aria-hidden="true"><span class="material-symbols-outlined">hourglass_top</span></span>
+              <div class="feat-body"><strong>Roadmap-level hours</strong>Hours logged per roadmap item, derived from underlying subtask execution.</div>
+            </li>
+            <li>
+              <span class="feat-ic" aria-hidden="true"><span class="material-symbols-outlined">groups</span></span>
+              <div class="feat-body"><strong>Capacity &amp; availability</strong>Employee capacity and true availability after leave and calendar constraints.</div>
+            </li>
+            <li>
+              <span class="feat-ic" aria-hidden="true"><span class="material-symbols-outlined">calendar_month</span></span>
+              <div class="feat-body"><strong>Ramadan &amp; holiday calendar</strong>Calendar-aware context to normalize delivery expectations.</div>
+            </li>
+            <li>
+              <span class="feat-ic" aria-hidden="true"><span class="material-symbols-outlined">balance</span></span>
+              <div class="feat-body"><strong>Idle vs overload</strong>Idle-time and overloading detection to balance utilization decisions.</div>
+            </li>
+            <li>
+              <span class="feat-ic" aria-hidden="true"><span class="material-symbols-outlined">troubleshoot</span></span>
+              <div class="feat-body"><strong>Roadmap diagnostics</strong>Root-cause visibility on why an epic got late.</div>
+            </li>
+            <li>
+              <span class="feat-ic" aria-hidden="true"><span class="material-symbols-outlined">crisis_alert</span></span>
+              <div class="feat-body"><strong>Pre-failure indicators</strong>Early signals to detect epic delivery breakdown risk before timeline breach.</div>
+            </li>
+            <li>
+              <span class="feat-ic" aria-hidden="true"><span class="material-symbols-outlined">history</span></span>
+              <div class="feat-body"><strong>Plan versioning</strong>Roadmap planning continuity and version trail of commitment changes.</div>
+            </li>
+            <li>
+              <span class="feat-ic" aria-hidden="true"><span class="material-symbols-outlined">payments</span></span>
+              <div class="feat-body"><strong>Budget intelligence</strong>Approved budget vs budget revisions over time vs actual spent analysis.</div>
+            </li>
+          </ul>
+        </article>
+
+        <article class="column col-insights">
+          <div class="col-head">
+            <span class="col-icon" aria-hidden="true"><span class="material-symbols-outlined">insights</span></span>
+            <h3>EPR Output / Insights</h3>
+          </div>
+          <span class="col-tag">Leadership questions answered</span>
+          <ul class="feat-list">
+            <li>
+              <span class="feat-ic" aria-hidden="true"><span class="material-symbols-outlined">trending_up</span></span>
+              <div class="feat-body"><strong>Where are we slipping?</strong>Which roadmap items are on-track, at-risk, or slipping - and which phase is causing the delay?</div>
+            </li>
+            <li>
+              <span class="feat-ic" aria-hidden="true"><span class="material-symbols-outlined">scale</span></span>
+              <div class="feat-body"><strong>Are we balancing talent?</strong>Where are we underutilizing people, and where are critical teams overloaded?</div>
+            </li>
+            <li>
+              <span class="feat-ic" aria-hidden="true"><span class="material-symbols-outlined">event_available</span></span>
+              <div class="feat-body"><strong>Calendar vs planning?</strong>How much delivery variance comes from leaves, Ramadan/holidays, or planning quality?</div>
+            </li>
+            <li>
+              <span class="feat-ic" aria-hidden="true"><span class="material-symbols-outlined">savings</span></span>
+              <div class="feat-body"><strong>Is the spend rational?</strong>Which epics are financially inefficient because budget changes outpace delivery progress?</div>
+            </li>
+            <li>
+              <span class="feat-ic" aria-hidden="true"><span class="material-symbols-outlined">priority_high</span></span>
+              <div class="feat-body"><strong>What should we approve now?</strong>Re-sequencing, reallocation, descoping, or timeline reset - which is the right call?</div>
+            </li>
+            <li>
+              <span class="feat-ic" aria-hidden="true"><span class="material-symbols-outlined">history_toggle_off</span></span>
+              <div class="feat-body"><strong>Are we learning?</strong>How has each roadmap commitment evolved across versions - improving or repeating planning errors?</div>
+            </li>
+            <li>
+              <span class="feat-ic" aria-hidden="true"><span class="material-symbols-outlined">workspace_premium</span></span>
+              <div class="feat-body"><strong>Who are our top performers?</strong>Which employees consistently deliver on time with high productivity and minimal rework or penalty load?</div>
+            </li>
+            <li>
+              <span class="feat-ic" aria-hidden="true"><span class="material-symbols-outlined">speed</span></span>
+              <div class="feat-body"><strong>Productivity &amp; utilization?</strong>How does each employee's logged effort compare against capacity, planned hours, and team benchmarks?</div>
+            </li>
+            <li>
+              <span class="feat-ic" aria-hidden="true"><span class="material-symbols-outlined">event_busy</span></span>
+              <div class="feat-body"><strong>Discipline &amp; missed entries?</strong>Who has data-quality gaps such as missed worklog entries, late updates, or incomplete time tracking?</div>
+            </li>
+            <li>
+              <span class="feat-ic" aria-hidden="true"><span class="material-symbols-outlined">report</span></span>
+              <div class="feat-body"><strong>Penalty exposure?</strong>Which contributors carry the highest weighted penalty from delays, overruns, bugs, or unplanned leaves?</div>
+            </li>
+            <li>
+              <span class="feat-ic" aria-hidden="true"><span class="material-symbols-outlined">diversity_3</span></span>
+              <div class="feat-body"><strong>Team accountability mix?</strong>How is performance distributed across teams - where is concentration risk, and where is delivery resilient?</div>
+            </li>
+          </ul>
+        </article>
+      </div>
+      <div class="flow-note">
+        EPR Tool creates a single narrative from raw Jira activity to business insight so planning, execution, and governance teams can act on the same source of truth.
+      </div>
+      <div class="flow-strip" aria-label="Data flow summary">
+        <div class="flow-chip"><strong>Source</strong> Jira Records <span class="material-symbols-outlined" aria-hidden="true">arrow_forward</span></div>
+        <div class="flow-chip"><strong>Orchestration</strong> EPR Intelligence <span class="material-symbols-outlined" aria-hidden="true">arrow_forward</span></div>
+        <div class="flow-chip"><strong>Outcome</strong> Leadership Actions <span class="material-symbols-outlined" aria-hidden="true">north_east</span></div>
+      </div>
+    </section>
+    <p class="page-footer">EPR Tool - Employee Performance Reporting Tool</p>
+  </main>
+  <script src="/shared-nav.js"></script>
+</body>
+</html>

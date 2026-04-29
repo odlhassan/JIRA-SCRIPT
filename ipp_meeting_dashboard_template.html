@@ -460,22 +460,26 @@
         }
         .mini-gantt {
             --phase-col: 130px;
-            --planned-col: 110px;
+            --planned-col: 86px;
             --timeline-col: 520px;
             border: 1px solid #d6e5ea;
             background: #f8fcfd;
-            border-radius: 9px;
-            padding: 0.45rem 0.5rem;
-            margin-top: 0.45rem;
+            border-radius: 8px;
+            padding: 0.45rem 0.55rem;
+            margin-top: 0.5rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.04);
         }
         .mini-gantt-axis {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            font-size: 0.68rem;
+            font-size: 0.65rem;
             font-weight: 700;
-            color: #2d5b68;
+            color: #1e4a59;
             margin-bottom: 0.35rem;
+            padding: 0.15rem 0.3rem;
+            background: #eef5f7;
+            border-radius: 5px;
         }
         .mini-gantt-empty {
             font-size: 0.7rem;
@@ -485,7 +489,7 @@
         }
         .mini-gantt-grid {
             display: grid;
-            gap: 0.28rem;
+            gap: 0;
         }
         .mini-gantt-scroll {
             overflow-x: auto;
@@ -499,23 +503,25 @@
         .mini-gantt-weeks {
             display: grid;
             grid-template-columns: var(--phase-col) var(--planned-col) var(--timeline-col);
-            gap: 0.4rem;
+            gap: 0.35rem;
             align-items: center;
-            margin-bottom: 0.25rem;
+            margin-bottom: 0.2rem;
         }
         .mini-gantt-header-row {
             display: grid;
             grid-template-columns: var(--phase-col) var(--planned-col) var(--timeline-col);
-            gap: 0.4rem;
+            gap: 0.35rem;
             align-items: center;
-            margin-bottom: 0.18rem;
+            margin-bottom: 0;
+            padding: 0.22rem 0.08rem;
+            border-bottom: 1.5px solid #c8dde4;
         }
         .mini-gantt-col-title {
-            font-size: 0.62rem;
+            font-size: 0.6rem;
             font-weight: 800;
             text-transform: uppercase;
-            letter-spacing: 0.05em;
-            color: #365766;
+            letter-spacing: 0.06em;
+            color: #1e4a59;
         }
         .mini-gantt-col-title.planned {
             text-align: left;
@@ -529,10 +535,10 @@
         }
         .mini-gantt-weeks-track {
             position: relative;
-            height: 16px;
-            border: 1px solid #d9e5e9;
+            height: 18px;
+            border: 1px solid #cddce2;
             border-radius: 6px;
-            background: #fdfefe;
+            background: #f5f9fa;
             overflow: hidden;
         }
         .mini-gantt-week-tick {
@@ -581,8 +587,23 @@
         .mini-gantt-row {
             display: grid;
             grid-template-columns: var(--phase-col) var(--planned-col) var(--timeline-col);
-            gap: 0.4rem;
+            gap: 0.35rem;
             align-items: center;
+            padding: 0.2rem 0.08rem;
+            border-bottom: 1px solid #ecf2f5;
+            transition: background 0.12s ease;
+        }
+        .mini-gantt-row:last-child {
+            border-bottom: none;
+        }
+        .mini-gantt-row:hover {
+            background: rgba(14, 116, 144, 0.05);
+        }
+        .mini-gantt-grid .mini-gantt-row:nth-child(even) {
+            background: rgba(240, 248, 250, 0.55);
+        }
+        .mini-gantt-grid .mini-gantt-row:nth-child(even):hover {
+            background: rgba(14, 116, 144, 0.07);
         }
         .mini-gantt-weeks .mini-gantt-weeks-spacer:first-child,
         .mini-gantt-header-row .mini-gantt-col-title:first-child,
@@ -590,16 +611,16 @@
             position: sticky;
             left: 0;
             z-index: 5;
-            background: #ffffff;
+            background: inherit;
             box-sizing: border-box;
         }
         .mini-gantt-weeks .mini-gantt-weeks-spacer:nth-child(2),
         .mini-gantt-header-row .mini-gantt-col-title:nth-child(2),
         .mini-gantt-row .mini-gantt-status-cell {
             position: sticky;
-            left: calc(var(--phase-col) + 0.4rem);
+            left: calc(var(--phase-col) + 0.35rem);
             z-index: 5;
-            background: #ffffff;
+            background: inherit;
             box-sizing: border-box;
         }
         .mini-gantt-header-row .mini-gantt-col-title:first-child,
@@ -621,12 +642,13 @@
         }
         .mini-gantt-phase-cell {
             min-width: 0;
-            font-size: 0.67rem;
-            color: #334155;
+            font-size: 0.66rem;
+            color: #1e293b;
             font-weight: 700;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
+            letter-spacing: 0.01em;
         }
         .mini-gantt-status-cell {
             min-width: 0;
@@ -636,8 +658,8 @@
         }
         .mini-gantt-track {
             position: relative;
-            height: 30px;
-            border-radius: 7px;
+            height: 24px;
+            border-radius: 6px;
             border: 1px solid #d9e5e9;
             background: #ffffff;
             overflow: hidden;
@@ -657,44 +679,51 @@
             transform: translateY(-50%);
             border-radius: 999px;
             background: linear-gradient(90deg, #0e7490 0%, #0284c7 100%);
-            box-shadow: 0 1px 2px rgba(2, 132, 199, 0.22);
-            overflow: visible;
+            box-shadow: 0 1px 2px rgba(2, 132, 199, 0.25);
+            overflow: hidden;
+            transition: box-shadow 0.15s ease;
+            min-width: 4px;
+        }
+        .mini-gantt-row:hover .mini-gantt-bar {
+            box-shadow: 0 1px 4px rgba(2, 132, 199, 0.4);
         }
         .mini-gantt-bar-text {
-            position: absolute;
-            top: -14px;
-            left: 50%;
-            transform: translateX(-50%);
-            display: inline-block;
-            font-size: 0.58rem;
-            font-weight: 800;
-            color: #0f172a;
-            letter-spacing: 0.01em;
-            white-space: nowrap;
-            background: rgba(255, 255, 255, 0.95);
-            border-radius: 4px;
-            padding: 0 0.16rem;
-            line-height: 1.15;
-            pointer-events: none;
+            display: none;
         }
+        .mini-gantt-bar-inline {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 0.54rem;
+            font-weight: 700;
+            color: #ffffff;
+            white-space: nowrap;
+            padding: 0 4px;
+            pointer-events: none;
+            letter-spacing: 0.01em;
+            text-shadow: 0 1px 1px rgba(0,0,0,0.18);
+        }
+        .mini-gantt-bar-inline.start { left: 0; }
+        .mini-gantt-bar-inline.end { right: 0; }
         .mini-gantt-date-label {
             position: absolute;
             top: 50%;
             transform: translateY(-50%);
-            font-size: 0.58rem;
-            color: #334155;
-            font-weight: 800;
+            font-size: 0.55rem;
+            color: #475569;
+            font-weight: 700;
             white-space: nowrap;
-            background: rgba(255, 255, 255, 0.95);
-            border-radius: 4px;
-            padding: 0 0.14rem;
+            background: rgba(255, 255, 255, 0.92);
+            border-radius: 3px;
+            padding: 0 0.18rem;
             pointer-events: none;
+            line-height: 1.1;
         }
         .mini-gantt-date-start {
-            transform: translate(calc(-100% - 4px), -50%);
+            transform: translate(calc(-100% - 3px), -50%);
         }
         .mini-gantt-date-end {
-            transform: translate(4px, -50%);
+            transform: translate(3px, -50%);
         }
         .mini-gantt-track-empty {
             display: inline-flex;
@@ -702,26 +731,33 @@
             justify-content: center;
             width: 100%;
             height: 100%;
-            font-size: 0.66rem;
-            color: #94a3b8;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.02em;
+            font-size: 0.7rem;
+            color: #cbd5e1;
+            font-weight: 600;
+            background: repeating-linear-gradient(
+                -45deg,
+                transparent,
+                transparent 4px,
+                rgba(0,0,0,0.018) 4px,
+                rgba(0,0,0,0.018) 8px
+            );
         }
         .badge {
             display: inline-block;
             border-radius: 999px;
-            padding: 0.13rem 0.43rem;
-            font-size: 0.69rem;
+            padding: 0.1rem 0.42rem;
+            font-size: 0.6rem;
             font-weight: 700;
             border: 1px solid transparent;
             text-transform: lowercase;
+            letter-spacing: 0.02em;
+            white-space: nowrap;
         }
-        .badge.planned { background: var(--planned-bg); color: var(--planned-ink); }
-        .badge.skipped { background: var(--skipped-bg); color: var(--skipped-ink); }
-        .badge.not_planned { background: var(--not-bg); color: var(--not-ink); }
+        .badge.planned { background: var(--planned-bg); color: var(--planned-ink); border-color: rgba(22,101,52,0.15); }
+        .badge.skipped { background: var(--skipped-bg); color: var(--skipped-ink); border-color: rgba(30,64,175,0.12); }
+        .badge.not_planned { background: var(--not-bg); color: var(--not-ink); border-color: rgba(146,64,14,0.12); }
         .badge.no_entry { background: #fff; color: var(--entry-ink); border-color: #fecdd3; }
-        .badge.invalid { background: var(--invalid-bg); color: var(--invalid-ink); }
+        .badge.invalid { background: var(--invalid-bg); color: var(--invalid-ink); border-color: rgba(153,27,27,0.12); }
         .link {
             color: #0f5f8b;
             font-weight: 700;
@@ -1438,6 +1474,8 @@
             top: 0;
             right: 0;
             width: 50vw;
+            min-width: 360px;
+            max-width: 95vw;
             height: 100vh;
             background: #ffffff;
             border-left: 1px solid #d7e7ee;
@@ -1447,6 +1485,46 @@
             z-index: 20001;
             display: flex;
             flex-direction: column;
+        }
+        #rmi-drawer.is-resizing {
+            transition: none;
+            user-select: none;
+        }
+        #rmi-drawer-resize-handle {
+            position: absolute;
+            top: 0;
+            left: -4px;
+            width: 8px;
+            height: 100%;
+            cursor: col-resize;
+            z-index: 5;
+            background: transparent;
+            transition: background 0.15s ease;
+        }
+        #rmi-drawer-resize-handle:hover,
+        #rmi-drawer.is-resizing #rmi-drawer-resize-handle {
+            background: rgba(14, 116, 144, 0.18);
+        }
+        #rmi-drawer-resize-handle::after {
+            content: "";
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 2px;
+            height: 36px;
+            background: #94a3b8;
+            border-radius: 1px;
+            opacity: 0;
+            transition: opacity 0.15s ease;
+        }
+        #rmi-drawer-resize-handle:hover::after,
+        #rmi-drawer.is-resizing #rmi-drawer-resize-handle::after {
+            opacity: 1;
+        }
+        body.rmi-drawer-resizing {
+            cursor: col-resize !important;
+            user-select: none;
         }
         #rmi-drawer.is-open {
             transform: translateX(0);
@@ -2229,6 +2307,7 @@
 </div>
 <div id="rmi-drawer-backdrop"></div>
 <aside id="rmi-drawer" aria-hidden="true">
+    <div id="rmi-drawer-resize-handle" role="separator" aria-orientation="vertical" aria-label="Resize details panel" tabindex="0"></div>
     <div class="rmi-drawer-header">
         <h3>RMI details</h3>
         <button class="rmi-drawer-close" id="rmi-drawer-close" type="button"><span class="material-symbols-outlined" aria-hidden="true">close</span>Close</button>
@@ -2849,7 +2928,7 @@ function renderPhaseInsights(rows) {
         .map((row) => ({
             product: asText(row.product) || "Unmapped",
             rmi: asText(row.epic_name) || asText(row.epic_rmi) || "(No RMI)",
-            md: Number(row.computed_total_mandays) || 0,
+            md: Number(row.computed_total_mandays) || Number(row.db_epic_planned_mandays) || 0,
         }))
         .sort((a, b) => b.md - a.md)
         .slice(0, 10);
@@ -3057,7 +3136,7 @@ function renderProductRoadmap(rows) {
                     <div class="roadmap-track-grid">${weekTicksHtml}</div>
                     ${todayTrackHtml}
                     <span class="roadmap-bar" style="left:${pctStyle(roadmap.bar_left_pct)}%; width:${pctStyle(roadmap.bar_width_pct)}%;">
-                        <span class="roadmap-bar-text">${esc(formatMandays(row.computed_total_mandays || 0))} md</span>
+                        <span class="roadmap-bar-text">${esc(formatMandays(row.computed_total_mandays || row.db_epic_planned_mandays || 0))} md</span>
                     </span>
                     <span class="roadmap-date-label roadmap-date-start" style="left:${pctStyle(roadmap.bar_left_pct)}%;">${esc(formatDisplayDate(getPlannedStartBySource(row)))}</span>
                     <span class="roadmap-date-label roadmap-date-end" style="left:${pctStyle(Number(roadmap.bar_left_pct || 0) + Number(roadmap.bar_width_pct || 0))}% ;">${esc(formatDisplayDate(getPlannedEndBySource(row)))}</span>
@@ -3277,7 +3356,7 @@ function renderMiniGantt(row) {
                 <div class="mini-gantt-row">
                     <div class="mini-gantt-phase-cell">${esc(phaseName)}</div>
                     <div class="mini-gantt-status-cell"><span class="badge ${esc(badgeClass)}">${esc(badgeText)}</span></div>
-                    <div class="mini-gantt-track"><span class="mini-gantt-track-empty">no bar</span></div>
+                    <div class="mini-gantt-track"><span class="mini-gantt-track-empty">—</span></div>
                 </div>
             `;
         }
@@ -3289,11 +3368,25 @@ function renderMiniGantt(row) {
                 <div class="mini-gantt-track">
                     <div class="mini-gantt-track-grid">${weekTicksHtml}</div>
                     ${todayTrackHtml}
-                    <span class="mini-gantt-bar" style="left:${pctStyle(phase.bar_left_pct)}%; width:${pctStyle(phase.bar_width_pct)}%; height:${esc(phase.bar_thickness_px)}px; top:${esc(phase.bar_top_offset_px)}px;">
-                        <span class="mini-gantt-bar-text">${esc(asText(phase.bar_label) || "-")}</span>
-                    </span>
-                    <span class="mini-gantt-date-label mini-gantt-date-start" style="left:${pctStyle(phase.bar_left_pct)}%;">${esc(formatDisplayDate(phase.start_label))}</span>
-                    <span class="mini-gantt-date-label mini-gantt-date-end" style="left:${pctStyle(Number(phase.bar_left_pct || 0) + Number(phase.bar_width_pct || 0))}% ;">${esc(formatDisplayDate(phase.end_label))}</span>
+                    ${(() => {
+                        const left = Number(phase.bar_left_pct) || 0;
+                        const width = Number(phase.bar_width_pct) || 0;
+                        const right = left + width;
+                        const startTxt = esc(formatDisplayDate(phase.start_label));
+                        const endTxt = esc(formatDisplayDate(phase.end_label));
+                        const wideEnough = width >= 22;
+                        const startOk = left >= 12;
+                        const endOk = right <= 88;
+                        const barInner = wideEnough
+                            ? `<span class="mini-gantt-bar-inline start">${startTxt}</span><span class="mini-gantt-bar-inline end">${endTxt}</span>`
+                            : "";
+                        const startOutside = (!wideEnough && startOk) ? `<span class="mini-gantt-date-label mini-gantt-date-start" style="left:${pctStyle(left)}%;">${startTxt}</span>` : "";
+                        const endOutside = (!wideEnough && endOk) ? `<span class="mini-gantt-date-label mini-gantt-date-end" style="left:${pctStyle(right)}%;">${endTxt}</span>` : "";
+                        return `
+                            <span class="mini-gantt-bar" style="left:${pctStyle(left)}%; width:${pctStyle(width)}%; height:${esc(phase.bar_thickness_px)}px; top:${esc(phase.bar_top_offset_px)}px;">${barInner}</span>
+                            ${startOutside}${endOutside}
+                        `;
+                    })()}
                 </div>
             </div>
         `;
@@ -3371,8 +3464,65 @@ function buildRmiDetailsHtml(row) {
     const remarksText = formatRemarksText(row.remarks);
 
     const phasesObj = row.mini_gantt?.phases || {};
+    const getPhasePayload = (phase) => phasesObj[phase] || row.phase_data?.[phase] || {};
+    const phaseJiraRows = phaseNames.map((phase) => {
+        const p = getPhasePayload(phase);
+        const jiraUrl = asText(p.jira_url);
+        const linkedKey = asText(p.linked_issue_key);
+        return {
+            phase,
+            jiraUrl,
+            linkedKey,
+            status: asText(p.linked_issue_status),
+            assignee: asText(p.linked_issue_assignee),
+            start: asText(p.linked_issue_start_date || p.start_iso || p.start),
+            end: asText(p.linked_issue_end_date || p.end_iso || p.end),
+            plannedHours: p.linked_issue_planned_hours,
+            loggedHours: p.linked_issue_logged_hours,
+            progress: p.linked_issue_progress_pct,
+        };
+    }).filter((item) => item.jiraUrl || item.linkedKey);
+    const phaseJiraLinksHtml = phaseJiraRows.length ? `
+        <div class="simple-table-wrap">
+            <table class="simple-table">
+                <thead>
+                    <tr>
+                        <th>Phase</th>
+                        <th>Jira</th>
+                        <th>Status</th>
+                        <th>Assignee</th>
+                        <th>Planned Hours</th>
+                        <th>Actual Hours</th>
+                        <th>Progress</th>
+                        <th>Start</th>
+                        <th>End</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${phaseJiraRows.map((item) => {
+                        const jiraCell = item.jiraUrl && item.jiraUrl.startsWith("http")
+                            ? `<a class="link" href="${esc(item.jiraUrl)}" target="_blank" rel="noopener">${esc(item.linkedKey || item.jiraUrl)}</a>`
+                            : esc(item.linkedKey || item.jiraUrl || "-");
+                        return `
+                            <tr>
+                                <td>${esc(item.phase)}</td>
+                                <td>${jiraCell}</td>
+                                <td>${esc(item.status || "-")}</td>
+                                <td>${esc(item.assignee || "-")}</td>
+                                <td>${esc(Number.isFinite(Number(item.plannedHours)) ? `${formatMandays(item.plannedHours)} h` : "-")}</td>
+                                <td>${esc(Number.isFinite(Number(item.loggedHours)) ? `${formatMandays(item.loggedHours)} h` : "-")}</td>
+                                <td>${esc(formatPercent(item.progress))}</td>
+                                <td>${esc(formatDisplayDate(item.start))}</td>
+                                <td>${esc(formatDisplayDate(item.end))}</td>
+                            </tr>
+                        `;
+                    }).join("")}
+                </tbody>
+            </table>
+        </div>
+    ` : '<div class="muted">No phase Jira links found for this RMI.</div>';
     const phaseMdItems = phaseNames.map((phase) => {
-        const p = phasesObj[phase] || row.phase_data?.[phase] || {};
+        const p = getPhasePayload(phase);
         const mdLabel = asText(p.mandays_text || p.mandays) || "-";
         const badgeClass = asText(p.state || "");
         return `
@@ -3384,13 +3534,19 @@ function buildRmiDetailsHtml(row) {
     }).join("");
 
     const phaseCards = phaseNames.map((phase) => {
-        const p = phasesObj[phase] || row.phase_data?.[phase] || {};
+        const p = getPhasePayload(phase);
+        const phaseJiraUrl = asText(p.jira_url);
+        const phaseJiraLink = phaseJiraUrl && phaseJiraUrl.startsWith("http")
+            ? `<a class="link" href="${esc(phaseJiraUrl)}" target="_blank" rel="noopener">${esc(asText(p.linked_issue_key) || phaseJiraUrl)}</a>`
+            : esc(asText(p.linked_issue_key) || phaseJiraUrl || "-");
         return `
             <article class="phase-card">
                 <h4>${esc(phase)} <span class="badge ${esc(asText(p.state || ""))}">${esc(stateBadgeText(p))}</span></h4>
                 <div><strong>Start:</strong> ${esc(formatDisplayDate(p.start_iso || p.start))}</div>
                 <div><strong>End:</strong> ${esc(formatDisplayDate(p.end_iso || p.end))}</div>
                 <div><strong>Man-days:</strong> ${esc(asText(p.mandays_text || p.mandays) || "-")}</div>
+                <div><strong>Jira:</strong> ${phaseJiraLink}</div>
+                <div><strong>Linked Status:</strong> ${esc(asText(p.linked_issue_status) || "-")}</div>
                 <div><strong>Raw:</strong> ${esc(asText(p.raw) || "-")}</div>
                 <div><strong>Warning:</strong> ${esc(asText(p.warning) || "-")}</div>
             </article>
@@ -3491,6 +3647,8 @@ function buildRmiDetailsHtml(row) {
                 : "<p class=\"muted\">No sealed dates recorded for this RMI.</p>"}
         </section>
         ${renderMiniGantt(row)}
+        <h3>Phase Jira Links</h3>
+        ${phaseJiraLinksHtml}
         <h3>Stories</h3>
         ${storiesHtml}
         <h3>Phase Man-days</h3>
@@ -3517,6 +3675,80 @@ function renderDrawer() {
     }
     content.innerHTML = buildRmiDetailsHtml(row);
     autoScrollMiniGanttToToday(content);
+}
+
+function initDrawerResize() {
+    const drawer = document.getElementById("rmi-drawer");
+    const handle = document.getElementById("rmi-drawer-resize-handle");
+    if (!drawer || !handle) return;
+
+    const STORAGE_KEY = "ipp_rmi_drawer_width_px";
+    const MIN_WIDTH = 360;
+    const getMaxWidth = () => Math.max(MIN_WIDTH, Math.floor(window.innerWidth * 0.95));
+
+    const applyWidth = (px) => {
+        const clamped = Math.max(MIN_WIDTH, Math.min(getMaxWidth(), Math.round(px)));
+        drawer.style.width = clamped + "px";
+        return clamped;
+    };
+
+    try {
+        const saved = parseInt(window.localStorage.getItem(STORAGE_KEY) || "", 10);
+        if (Number.isFinite(saved) && saved > 0) applyWidth(saved);
+    } catch (e) { /* ignore */ }
+
+    let dragging = false;
+
+    const onMouseMove = (event) => {
+        if (!dragging) return;
+        const newWidth = window.innerWidth - event.clientX;
+        applyWidth(newWidth);
+    };
+
+    const onMouseUp = () => {
+        if (!dragging) return;
+        dragging = false;
+        drawer.classList.remove("is-resizing");
+        document.body.classList.remove("rmi-drawer-resizing");
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+        try {
+            const w = parseFloat(getComputedStyle(drawer).width);
+            if (Number.isFinite(w)) window.localStorage.setItem(STORAGE_KEY, String(Math.round(w)));
+        } catch (e) { /* ignore */ }
+    };
+
+    handle.addEventListener("mousedown", (event) => {
+        event.preventDefault();
+        dragging = true;
+        drawer.classList.add("is-resizing");
+        document.body.classList.add("rmi-drawer-resizing");
+        document.addEventListener("mousemove", onMouseMove);
+        document.addEventListener("mouseup", onMouseUp);
+    });
+
+    handle.addEventListener("dblclick", () => {
+        applyWidth(Math.floor(window.innerWidth * 0.5));
+        try { window.localStorage.removeItem(STORAGE_KEY); } catch (e) { /* ignore */ }
+    });
+
+    handle.addEventListener("keydown", (event) => {
+        const step = event.shiftKey ? 60 : 20;
+        const current = parseFloat(getComputedStyle(drawer).width) || 0;
+        if (event.key === "ArrowLeft") {
+            event.preventDefault();
+            applyWidth(current + step);
+        } else if (event.key === "ArrowRight") {
+            event.preventDefault();
+            applyWidth(current - step);
+        }
+    });
+}
+
+if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initDrawerResize);
+} else {
+    initDrawerResize();
 }
 
 function autoScrollMiniGanttToToday(contentNode) {
@@ -3777,4 +4009,3 @@ try {
 <script src="shared-nav.js" defer></script>
 </body>
 </html>
-

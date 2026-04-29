@@ -13716,9 +13716,9 @@ def _epics_management_settings_html() -> str:
       { key: "research_urs_plan", label: "R/URS", jira_link_enabled: true, is_default: true, phase_role: "most_likely_input", most_likely_enabled: true, tk_budgeted_enabled: true },
       { key: "dds_plan", label: "R/DDS", jira_link_enabled: true, is_default: true, phase_role: "most_likely_input", most_likely_enabled: true, tk_budgeted_enabled: true },
       { key: "development_plan", label: "Dev", jira_link_enabled: true, is_default: true, phase_role: "most_likely_input", most_likely_enabled: true, tk_budgeted_enabled: true },
-      { key: "qa_handover", label: "Handover", jira_link_enabled: false, is_default: true, phase_role: "formula_managed", most_likely_enabled: false, tk_budgeted_enabled: true },
+      { key: "qa_handover", label: "Handover", jira_link_enabled: true, is_default: true, phase_role: "formula_managed", most_likely_enabled: false, tk_budgeted_enabled: true },
       { key: "sqa_plan", label: "SQA", jira_link_enabled: true, is_default: true, phase_role: "most_likely_input", most_likely_enabled: true, tk_budgeted_enabled: true },
-      { key: "bug_fixing", label: "Bug Fixing", jira_link_enabled: false, is_default: true, phase_role: "formula_managed", most_likely_enabled: false, tk_budgeted_enabled: true },
+      { key: "bug_fixing", label: "Bug Fixing", jira_link_enabled: true, is_default: true, phase_role: "formula_managed", most_likely_enabled: false, tk_budgeted_enabled: true },
       { key: "process_qa_testing", label: "Process QA Testing", jira_link_enabled: false, is_default: true, phase_role: "most_likely_input", most_likely_enabled: true, tk_budgeted_enabled: true },
       { key: "user_manual_plan", label: "Doc / User Manual", jira_link_enabled: true, is_default: true, phase_role: "most_likely_input", most_likely_enabled: true, tk_budgeted_enabled: true },
       { key: "regression_sqa_testing", label: "Regression SQA Testing", jira_link_enabled: false, is_default: true, phase_role: "most_likely_input", most_likely_enabled: true, tk_budgeted_enabled: true },
@@ -13737,7 +13737,7 @@ def _epics_management_settings_html() -> str:
     ]);
     let PLAN_COLUMNS = DEFAULT_PLAN_COLUMNS.slice();
     let PLAN_JIRA_COLUMN_KEYS = new Set(
-      PLAN_COLUMNS.filter((item) => STATIC_PLAN_JIRA_INPUT_KEYS.has(item.key)).map((item) => item.key)
+      PLAN_COLUMNS.filter((item) => item && item.jira_link_enabled).map((item) => item.key)
     );
 
     const headerRowEl = document.getElementById("epics-header-row");
@@ -14664,36 +14664,49 @@ def _epics_management_settings_html() -> str:
         return "";
       }
     }
-    function renderPlanLayerCell(rowIndex, planCol, row, effectivelySealed, layer) {
+    function renderPlanLayerCell(rowIndex, planCol, row, effectivelySealed, layer, rowEffectivelySealed) {
       const plan = (row.plans || {})[planCol.key] || {};
       const summary = planSummary(plan, rowIndex, planCol.key, layer);
       const cellClasses = "plan-col-cell " + planLayerCssClasses(planCol, layer);
+      const jiraUrl = planJiraUrl(plan);
+      const hasJira = !!jiraUrl;
+      const isFormulaJiraCell = layer === "tk_budgeted" && !planCol.most_likely_enabled && isPlanJiraEnabled(planCol.key);
+      const jiraActions = isPlanJiraEnabled(planCol.key)
+        ? '<div class="plan-cell-actions">'
+          + '<a class="jira-open ' + (hasJira ? "" : "disabled") + '" href="' + esc(hasJira ? jiraUrl : "#") + '" target="_blank" rel="noopener noreferrer" title="' + (hasJira ? "Open Jira link" : "No Jira link set") + '">J</a>'
+          + (rowEffectivelySealed ? '' : '<button class="jira-edit plan-jira-edit" type="button" data-row-index="' + rowIndex + '" data-plan-key="' + esc(planCol.key) + '" title="Set Jira link">E</button>')
+          + "</div>"
+        : "";
       if (layer === "summary" || layer === "tk_budgeted" || effectivelySealed) {
+        if (isFormulaJiraCell) {
+          return ''
+            + '<td class="' + cellClasses + '">'
+            + '  <div class="plan-cell readonly">'
+            + '    <div class="plan-summary-readonly tk-budgeted">' + summary + "</div>"
+            + jiraActions
+            + "  </div>"
+            + "</td>";
+        }
         return '<td class="' + cellClasses + '"><div class="plan-summary-readonly ' + (layer === "tk_budgeted" ? "tk-budgeted" : "") + '">' + summary + "</div></td>";
       }
       if (!isPlanJiraEnabled(planCol.key)) {
         return '<td class="' + cellClasses + '"><button class="plan-btn" type="button" data-row-index="' + rowIndex + '" data-plan-key="' + esc(planCol.key) + '">' + summary + "</button></td>";
       }
-      const jiraUrl = planJiraUrl(plan);
-      const hasJira = !!jiraUrl;
       return ''
         + '<td class="' + cellClasses + '">'
         + '  <div class="plan-cell">'
         + '    <button class="plan-btn" type="button" data-row-index="' + rowIndex + '" data-plan-key="' + esc(planCol.key) + '">' + summary + "</button>"
-        + '    <div class="plan-cell-actions">'
-        + '      <a class="jira-open ' + (hasJira ? "" : "disabled") + '" href="' + esc(hasJira ? jiraUrl : "#") + '" target="_blank" rel="noopener noreferrer" title="' + (hasJira ? "Open Jira link" : "No Jira link set") + '">J</a>'
-        + '      <button class="jira-edit plan-jira-edit" type="button" data-row-index="' + rowIndex + '" data-plan-key="' + esc(planCol.key) + '" title="Set Jira link">E</button>'
-        + "    </div>"
+        + jiraActions
         + "  </div>"
         + "</td>";
     }
     function renderPlanCell(rowIndex, planCol, row, effectivelySealed) {
       const cells = [];
       if (planCol.phase_role === "summary" || planCol.key === "epic_plan") {
-        cells.push(renderPlanLayerCell(rowIndex, planCol, row, effectivelySealed, "summary"));
+        cells.push(renderPlanLayerCell(rowIndex, planCol, row, effectivelySealed, "summary", effectivelySealed));
       } else {
-        if (planCol.most_likely_enabled) cells.push(renderPlanLayerCell(rowIndex, planCol, row, effectivelySealed, "most_likely"));
-        if (planCol.tk_budgeted_enabled) cells.push(renderPlanLayerCell(rowIndex, planCol, row, true, "tk_budgeted"));
+        if (planCol.most_likely_enabled) cells.push(renderPlanLayerCell(rowIndex, planCol, row, effectivelySealed, "most_likely", effectivelySealed));
+        if (planCol.tk_budgeted_enabled) cells.push(renderPlanLayerCell(rowIndex, planCol, row, true, "tk_budgeted", effectivelySealed));
       }
       return cells.join("");
     }
@@ -18143,7 +18156,7 @@ _EPICS_MANAGEMENT_DEFAULT_PLAN_COLUMNS: tuple[dict[str, object], ...] = (
         "most_likely_enabled": True, "tk_budgeted_enabled": True, "formula_role": "dev_sqa_split",
     },
     {
-        "key": "qa_handover", "label": "Handover", "jira_link_enabled": False, "sort_order": 5,
+        "key": "qa_handover", "label": "Handover", "jira_link_enabled": True, "sort_order": 5,
         "base_phase_key": "handover", "base_phase_label": "Handover", "phase_role": "formula_managed",
         "most_likely_enabled": False, "tk_budgeted_enabled": True, "formula_role": "fixed_if_dev", "fixed_man_days": 0.5,
     },
@@ -18153,7 +18166,7 @@ _EPICS_MANAGEMENT_DEFAULT_PLAN_COLUMNS: tuple[dict[str, object], ...] = (
         "most_likely_enabled": True, "tk_budgeted_enabled": True, "formula_role": "dev_sqa_split",
     },
     {
-        "key": "bug_fixing", "label": "Bug Fixing", "jira_link_enabled": False, "sort_order": 7,
+        "key": "bug_fixing", "label": "Bug Fixing", "jira_link_enabled": True, "sort_order": 7,
         "base_phase_key": "bug_fixing", "base_phase_label": "Bug Fixing", "phase_role": "formula_managed",
         "most_likely_enabled": False, "tk_budgeted_enabled": True, "formula_role": "percentage_always", "estimate_percent": 15.0,
     },
@@ -18434,6 +18447,31 @@ def _seed_default_epics_plan_columns(conn: sqlite3.Connection) -> None:
                 key,
             ),
         )
+
+
+def _enable_default_phase_jira_links_once(conn: sqlite3.Connection) -> None:
+    migration_key = "formula_phase_jira_links_enabled_v1"
+    row = conn.execute(
+        "SELECT meta_value FROM epics_management_meta WHERE meta_key=?",
+        (migration_key,),
+    ).fetchone()
+    if _to_text(row[0] if row else "").strip() == "1":
+        return
+    now_utc = _utc_now_iso()
+    conn.execute(
+        """
+        UPDATE epics_management_plan_columns
+        SET jira_link_enabled = 1,
+            updated_at_utc = ?
+        WHERE is_default = 1
+          AND column_key IN ('qa_handover', 'bug_fixing', 'production_plan')
+        """,
+        (now_utc,),
+    )
+    conn.execute(
+        "INSERT OR REPLACE INTO epics_management_meta(meta_key, meta_value) VALUES(?, '1')",
+        (migration_key,),
+    )
 
 
 def _backfill_legacy_epics_plan_values(conn: sqlite3.Connection, epics_columns: set[str]) -> None:
@@ -20007,6 +20045,7 @@ def _init_epics_management_db(settings_db_path: Path) -> None:
                 if col_name == "is_locked":
                     conn.execute("UPDATE epics_management_plan_columns SET is_locked = COALESCE(is_default, 0)")
         _seed_default_epics_plan_columns(conn)
+        _enable_default_phase_jira_links_once(conn)
         _backfill_legacy_epics_plan_values(conn, names)
         _bootstrap_ipp_meetings_if_empty(conn)
         # Indexes that depend on epic_row_id must be created after the migration block above.

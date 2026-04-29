@@ -622,6 +622,11 @@ class ReportUiSmokeTests(unittest.TestCase):
             handover_col = next(item for item in columns_body.get("columns", []) if str(item.get("key")) == "qa_handover")
             self.assertEqual(handover_col.get("phase_role"), "formula_managed")
             self.assertFalse(handover_col.get("most_likely_enabled"))
+            self.assertTrue(handover_col.get("jira_link_enabled"))
+            bug_fixing_col = next(item for item in columns_body.get("columns", []) if str(item.get("key")) == "bug_fixing")
+            self.assertTrue(bug_fixing_col.get("jira_link_enabled"))
+            production_col = next(item for item in columns_body.get("columns", []) if str(item.get("key")) == "production_plan")
+            self.assertTrue(production_col.get("jira_link_enabled"))
 
             rename_default_resp = client.put(
                 "/api/epics-management/plan-columns/research_urs_plan",

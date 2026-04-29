@@ -106,6 +106,56 @@ class IppMeetingPlannerApiTests(unittest.TestCase):
             self.assertEqual(meeting.get("status"), "Scheduled")
             self.assertIn("id", meeting)
 
+    def test_formula_phase_jira_link_defaults_migrate_once(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            db_path = root / "assignee_hours_capacity.db"
+            _init_epics_management_db(db_path)
+            conn = sqlite3.connect(db_path)
+            try:
+                conn.execute(
+                    """
+                    UPDATE epics_management_plan_columns
+                    SET jira_link_enabled = 0
+                    WHERE column_key IN ('qa_handover', 'bug_fixing', 'production_plan')
+                    """
+                )
+                conn.execute(
+                    "DELETE FROM epics_management_meta WHERE meta_key='formula_phase_jira_links_enabled_v1'"
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            _init_epics_management_db(db_path)
+            conn = sqlite3.connect(db_path)
+            try:
+                enabled = {
+                    row[0]: int(row[1])
+                    for row in conn.execute(
+                        """
+                        SELECT column_key, jira_link_enabled
+                        FROM epics_management_plan_columns
+                        WHERE column_key IN ('qa_handover', 'bug_fixing', 'production_plan')
+                        """
+                    ).fetchall()
+                }
+                self.assertEqual(enabled, {"qa_handover": 1, "bug_fixing": 1, "production_plan": 1})
+                conn.execute("UPDATE epics_management_plan_columns SET jira_link_enabled = 0 WHERE column_key='bug_fixing'")
+                conn.commit()
+            finally:
+                conn.close()
+
+            _init_epics_management_db(db_path)
+            conn = sqlite3.connect(db_path)
+            try:
+                bug_fixing = conn.execute(
+                    "SELECT jira_link_enabled FROM epics_management_plan_columns WHERE column_key='bug_fixing'"
+                ).fetchone()
+                self.assertEqual(int(bug_fixing[0]), 0)
+            finally:
+                conn.close()
+
     def test_list_meetings_includes_scheduled(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             root = Path(td)

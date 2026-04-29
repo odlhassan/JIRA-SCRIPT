@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sqlite3
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -15,7 +16,6 @@ from jira_export_db import get_exports_db_path
 from jira_export_db import read_work_items as read_work_items_db
 
 from export_ipp_phase_breakdown import (
-    PHASE_COLUMNS,
     SMALL_MIN_WIDTH_PCT,
     _clamp_percent,
     _compute_phase_geometry_for_record,
@@ -28,16 +28,25 @@ from export_ipp_phase_breakdown import (
 DEFAULT_HTML_OUTPUT = "ipp_meeting_dashboard.html"
 DEFAULT_TEMPLATE = "ipp_meeting_dashboard_template.html"
 DEFAULT_SETTINGS_DB = "assignee_hours_capacity.db"
-PHASE_NAMES = ["Research/URS", "DDS", "Development", "SQA", "User Manual", "Production"]
-
-PLAN_KEY_BY_PHASE = {
-    "Research/URS": "research_urs_plan",
-    "DDS": "dds_plan",
-    "Development": "development_plan",
-    "SQA": "sqa_plan",
-    "User Manual": "",
-    "Production": "production_plan",
+ISSUE_KEY_RE = re.compile(r"\b([A-Za-z][A-Za-z0-9]+-\d+)\b")
+LEGACY_PLAN_JSON_COLUMN_BY_KEY = {
+    "epic_plan": "epic_plan_json",
+    "research_urs_plan": "research_urs_plan_json",
+    "dds_plan": "dds_plan_json",
+    "development_plan": "development_plan_json",
+    "sqa_plan": "sqa_plan_json",
+    "user_manual_plan": "user_manual_plan_json",
+    "production_plan": "production_plan_json",
 }
+FALLBACK_PLAN_COLUMNS = [
+    {"key": "epic_plan", "label": "Epic Plan", "jira_link_enabled": False, "phase_role": "summary"},
+    {"key": "research_urs_plan", "label": "Research/URS", "jira_link_enabled": True, "phase_role": "most_likely_input"},
+    {"key": "dds_plan", "label": "DDS", "jira_link_enabled": True, "phase_role": "most_likely_input"},
+    {"key": "development_plan", "label": "Development", "jira_link_enabled": True, "phase_role": "most_likely_input"},
+    {"key": "sqa_plan", "label": "SQA", "jira_link_enabled": True, "phase_role": "most_likely_input"},
+    {"key": "user_manual_plan", "label": "User Manual", "jira_link_enabled": True, "phase_role": "most_likely_input"},
+    {"key": "production_plan", "label": "Production", "jira_link_enabled": True, "phase_role": "formula_managed"},
+]
 
 
 def _as_text(value: object) -> str:
@@ -89,6 +98,140 @@ def _safe_json_dict(value: object) -> dict[str, object]:
     return parsed if isinstance(parsed, dict) else {}
 
 
+def _extract_issue_key(value: object) -> str:
+    match = ISSUE_KEY_RE.search(_as_text(value))
+    return match.group(1).upper() if match else ""
+
+
+def _phase_plan_columns(settings_db_path: Path | None = None) -> list[dict[str, object]]:
+    if settings_db_path is not None:
+        try:
+            from report_server import _load_epics_plan_columns
+
+            columns = _load_epics_plan_columns(settings_db_path, include_inactive=False)
+        except Exception:
+            columns = []
+        if columns:
+            out = []
+            for col in columns:
+                key = _as_text(col.get("key"))
+                if not key:
+                    continue
+                normalized = dict(col)
+                normalized["key"] = key
+                normalized["label"] = _as_text(col.get("label")) or key.replace("_", " ").title()
+                normalized["jira_link_enabled"] = bool(col.get("jira_link_enabled"))
+                normalized["phase_role"] = _as_text(col.get("phase_role")) or ("summary" if key == "epic_plan" else "most_likely_input")
+                out.append(normalized)
+            if out:
+                return out
+    return [dict(item) for item in FALLBACK_PLAN_COLUMNS]
+
+
+def _normalize_plans_for_dashboard(
+    plans: dict[str, dict[str, object]],
+    plan_columns: list[dict[str, object]],
+) -> dict[str, dict[str, object]]:
+    return plans
+
+
+def _load_plan_values_for_rows(
+    conn: sqlite3.Connection,
+    em_rows: list[sqlite3.Row],
+    plan_columns: list[dict[str, object]],
+) -> dict[str, dict[str, dict[str, object]]]:
+    if not em_rows:
+        return {}
+
+    column_keys = [_as_text(col.get("key")) for col in plan_columns if _as_text(col.get("key"))]
+    if "epic_plan" not in column_keys:
+        column_keys = ["epic_plan", *column_keys]
+    row_ids_by_epic_key = {}
+    row_ids: list[str] = []
+    epic_keys: list[str] = []
+    for row in em_rows:
+        keys = row.keys()
+        epic_key = _as_text(row["epic_key"]).upper()
+        row_id = _as_text(row["id"]) if "id" in keys else ""
+        if not row_id:
+            row_id = epic_key
+        if row_id:
+            row_ids.append(row_id)
+        if epic_key:
+            epic_keys.append(epic_key)
+            row_ids_by_epic_key[epic_key] = row_id
+
+    values_by_row_id: dict[str, dict[str, str]] = {}
+    values_by_epic_key: dict[str, dict[str, str]] = {}
+    table_exists = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='epics_management_plan_values'"
+    ).fetchone()
+    if table_exists and (row_ids or epic_keys) and column_keys:
+        ref_parts = []
+        params: list[str] = []
+        if row_ids:
+            ref_parts.append("epic_row_id IN (" + ",".join("?" for _ in row_ids) + ")")
+            params.extend(row_ids)
+        if epic_keys:
+            ref_parts.append("UPPER(epic_key) IN (" + ",".join("?" for _ in epic_keys) + ")")
+            params.extend(epic_keys)
+        column_sql = "column_key IN (" + ",".join("?" for _ in column_keys) + ")"
+        params.extend(column_keys)
+        value_rows = conn.execute(
+            f"""
+            SELECT epic_row_id, epic_key, column_key, plan_json
+            FROM epics_management_plan_values
+            WHERE ({' OR '.join(ref_parts)}) AND {column_sql}
+            """,
+            params,
+        ).fetchall()
+        for value_row in value_rows:
+            row_id = _as_text(value_row["epic_row_id"])
+            epic_key = _as_text(value_row["epic_key"]).upper()
+            column_key = _as_text(value_row["column_key"])
+            plan_json = _as_text(value_row["plan_json"])
+            if row_id and column_key:
+                values_by_row_id.setdefault(row_id, {})[column_key] = plan_json
+            if epic_key and column_key:
+                values_by_epic_key.setdefault(epic_key, {})[column_key] = plan_json
+
+    plan_columns_by_key = {_as_text(col.get("key")): col for col in plan_columns if _as_text(col.get("key"))}
+    if "epic_plan" not in plan_columns_by_key:
+        plan_columns_by_key["epic_plan"] = {
+            "key": "epic_plan",
+            "label": "Epic Plan",
+            "jira_link_enabled": False,
+            "phase_role": "summary",
+        }
+
+    out: dict[str, dict[str, dict[str, object]]] = {}
+    for row in em_rows:
+        keys = row.keys()
+        epic_key = _as_text(row["epic_key"]).upper()
+        row_id = _as_text(row["id"]) if "id" in keys else ""
+        if not row_id:
+            row_id = row_ids_by_epic_key.get(epic_key) or epic_key
+        row_values = values_by_row_id.get(row_id, {})
+        epic_values = values_by_epic_key.get(epic_key, {})
+        plans: dict[str, dict[str, object]] = {}
+        for plan_key, column_meta in plan_columns_by_key.items():
+            if not plan_key:
+                continue
+            raw_plan = row_values.get(plan_key)
+            if raw_plan is None:
+                raw_plan = epic_values.get(plan_key)
+            if raw_plan is None:
+                legacy_col = LEGACY_PLAN_JSON_COLUMN_BY_KEY.get(plan_key)
+                if legacy_col and legacy_col in keys:
+                    raw_plan = row[legacy_col]
+            parsed = _safe_json_dict(raw_plan)
+            if not bool(column_meta.get("jira_link_enabled")):
+                parsed["jira_url"] = ""
+            plans[plan_key] = parsed
+        out[epic_key] = _normalize_plans_for_dashboard(plans, list(plan_columns_by_key.values()))
+    return out
+
+
 def _load_sealed_dates_for_epic(settings_db_path: Path, epic_key: str) -> list[str]:
     """Return approved_at_utc list for one epic (from epics_management_approved_dates)."""
     epic_key = _as_text(epic_key).strip().upper()
@@ -113,7 +256,10 @@ def _load_sealed_dates_for_epic(settings_db_path: Path, epic_key: str) -> list[s
         return []
 
 
-def _load_current_ipp_meeting_epics(settings_db_path: Path) -> tuple[list[dict[str, object]] | None, int | None]:
+def _load_current_ipp_meeting_epics(
+    settings_db_path: Path,
+    plan_columns: list[dict[str, object]],
+) -> tuple[list[dict[str, object]] | None, int | None]:
     """Load epics for the current Scheduled IPP meeting (include_on_dashboard=1). Returns (epics_list or None, meeting_id or None)."""
     if not settings_db_path.exists():
         return None, None
@@ -156,14 +302,15 @@ def _load_current_ipp_meeting_epics(settings_db_path: Path) -> tuple[list[dict[s
         placeholders = ",".join("?" for _ in epic_keys)
         em_rows = conn.execute(
             f"""
-            SELECT epic_key, project_key, project_name, product_category, component, epic_name, description,
+            SELECT id, epic_key, project_key, project_name, product_category, component, epic_name, description,
                    originator, priority, plan_status, jira_url,
-                   epic_plan_json, research_urs_plan_json, dds_plan_json, development_plan_json, sqa_plan_json, production_plan_json
+                   epic_plan_json, research_urs_plan_json, dds_plan_json, development_plan_json, sqa_plan_json, user_manual_plan_json, production_plan_json
             FROM epics_management
             WHERE UPPER(epic_key) IN ({placeholders})
             """,
             epic_keys,
         ).fetchall()
+        plans_by_key = _load_plan_values_for_rows(conn, em_rows, plan_columns)
     finally:
         conn.close()
 
@@ -172,14 +319,7 @@ def _load_current_ipp_meeting_epics(settings_db_path: Path) -> tuple[list[dict[s
     for r in rows:
         epic_key = _as_text(r["epic_key"]).upper()
         em = em_by_key.get(epic_key, {})
-        plans = {
-            "epic_plan": _safe_json_dict(em.get("epic_plan_json")),
-            "research_urs_plan": _safe_json_dict(em.get("research_urs_plan_json")),
-            "dds_plan": _safe_json_dict(em.get("dds_plan_json")),
-            "development_plan": _safe_json_dict(em.get("development_plan_json")),
-            "sqa_plan": _safe_json_dict(em.get("sqa_plan_json")),
-            "production_plan": _safe_json_dict(em.get("production_plan_json")),
-        }
+        plans = plans_by_key.get(epic_key, {})
         epic_plan = plans.get("epic_plan") or {}
         selected.append({
             "epic_key": epic_key,
@@ -207,7 +347,10 @@ def _load_current_ipp_meeting_epics(settings_db_path: Path) -> tuple[list[dict[s
     return selected, meeting_id
 
 
-def _load_epics_from_db(db_path: Path) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+def _load_epics_from_db(
+    db_path: Path,
+    plan_columns: list[dict[str, object]],
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
     if not db_path.exists():
         return [], []
     conn = sqlite3.connect(db_path)
@@ -229,15 +372,16 @@ def _load_epics_from_db(db_path: Path) -> tuple[list[dict[str, object]], list[di
         rows = conn.execute(
             f"""
             SELECT
-                epic_key, project_key, project_name, product_category, {component_col}, epic_name,
+                id, epic_key, project_key, project_name, product_category, {component_col}, epic_name,
                 description, {remarks_select}, originator, priority, plan_status, ipp_meeting_planned, jira_url,
                 {actual_production_select}, {delivery_status_select},
                 epic_plan_json, research_urs_plan_json, dds_plan_json,
-                development_plan_json, sqa_plan_json, production_plan_json
+                development_plan_json, sqa_plan_json, user_manual_plan_json, production_plan_json
             FROM epics_management
             ORDER BY lower(project_name) ASC, lower(product_category) ASC, lower(component) ASC, lower(epic_name) ASC, epic_key ASC
             """
         ).fetchall()
+        plans_by_key = _load_plan_values_for_rows(conn, rows, plan_columns)
     finally:
         conn.close()
 
@@ -264,14 +408,7 @@ def _load_epics_from_db(db_path: Path) -> tuple[list[dict[str, object]], list[di
             "ipp_meeting_planned": _normalize_yes_no(row["ipp_meeting_planned"]),
             "actual_production_date": _as_text(row["actual_production_date"]),
             "delivery_status": _normalize_delivery_status(row["delivery_status"] if "delivery_status" in row.keys() else "Yet to start"),
-            "plans": {
-                "epic_plan": _safe_json_dict(row["epic_plan_json"]),
-                "research_urs_plan": _safe_json_dict(row["research_urs_plan_json"]),
-                "dds_plan": _safe_json_dict(row["dds_plan_json"]),
-                "development_plan": _safe_json_dict(row["development_plan_json"]),
-                "sqa_plan": _safe_json_dict(row["sqa_plan_json"]),
-                "production_plan": _safe_json_dict(row["production_plan_json"]),
-            },
+            "plans": plans_by_key.get(_as_text(row["epic_key"]).upper(), {}),
         }
         all_rows.append(item)
         if item["ipp_meeting_planned"] == "Yes":
@@ -490,17 +627,38 @@ def _resolve_dates_with_inheritance(
     return start, end, actual, source_key
 
 
-def _phase_record_from_plan(phase_name: str, plan: dict[str, object]) -> dict[str, object]:
-    start_iso = _as_text(plan.get("start_date"))
-    end_iso = _as_text(plan.get("due_date"))
+def _phase_record_from_plan(
+    phase_name: str,
+    plan_key: str,
+    plan: dict[str, object],
+    linked_issue: dict[str, object] | None = None,
+) -> dict[str, object]:
+    linked_issue = linked_issue or {}
+    plan_start_iso = _as_text(plan.get("start_date"))
+    plan_end_iso = _as_text(plan.get("due_date"))
+    linked_start_iso = _as_text(linked_issue.get("start_date"))
+    linked_end_iso = _as_text(linked_issue.get("end_date"))
+    start_iso = plan_start_iso or linked_start_iso
+    end_iso = plan_end_iso or linked_end_iso
+    date_source = "planner"
+    if (not plan_start_iso or not plan_end_iso) and (linked_start_iso or linked_end_iso):
+        date_source = "jira"
     start_date = _parse_iso_date(start_iso)
     end_date = _parse_iso_date(end_iso)
     mandays_num = _to_number(plan.get("man_days"))
+    if mandays_num is None:
+        mandays_num = _to_number(plan.get("tk_budgeted_man_days"))
+    if mandays_num is None:
+        linked_hours = _to_float(linked_issue.get("original_estimate_hours"))
+        if linked_hours is not None:
+            mandays_num = round(linked_hours / 8.0, 4)
     mandays_text = "" if mandays_num is None else str(mandays_num).rstrip("0").rstrip(".")
+    jira_url = _as_text(plan.get("jira_url"))
+    linked_issue_key = _as_text(linked_issue.get("issue_key")).upper() or _extract_issue_key(jira_url)
 
     warning = ""
     state = "no_entry"
-    if start_iso or end_iso or mandays_text:
+    if start_iso or end_iso or mandays_text or jira_url:
         if start_date and end_date and start_date <= end_date:
             state = "planned"
         else:
@@ -515,6 +673,7 @@ def _phase_record_from_plan(phase_name: str, plan: dict[str, object]) -> dict[st
 
     return {
         "name": phase_name,
+        "plan_key": plan_key,
         "state": state,
         "state_label": state.replace("_", " "),
         "warning": warning,
@@ -525,6 +684,17 @@ def _phase_record_from_plan(phase_name: str, plan: dict[str, object]) -> dict[st
         "mandays_text": mandays_text,
         "mandays_num": mandays_num,
         "raw": raw,
+        "date_source": date_source if (start_iso or end_iso) else "",
+        "jira_url": jira_url,
+        "linked_issue_key": linked_issue_key,
+        "linked_issue_status": _as_text(linked_issue.get("status")),
+        "linked_issue_assignee": _as_text(linked_issue.get("assignee")),
+        "linked_issue_start_date": linked_start_iso,
+        "linked_issue_end_date": linked_end_iso,
+        "linked_issue_actual_end_date": _as_text(linked_issue.get("actual_end_date")),
+        "linked_issue_planned_hours": linked_issue.get("original_estimate_hours"),
+        "linked_issue_logged_hours": linked_issue.get("total_hours_logged"),
+        "linked_issue_progress_pct": linked_issue.get("progress_pct"),
     }
 
 
@@ -534,9 +704,11 @@ def _build_records(
     jira_stories_by_epic: dict[str, list[dict[str, object]]],
     jira_rows_by_key: dict[str, dict[str, object]] | None = None,
     jira_parent_by_key: dict[str, str] | None = None,
+    plan_columns: list[dict[str, object]] | None = None,
 ) -> list[dict[str, object]]:
     rows_by_key = jira_rows_by_key or {}
     parent_by_key = jira_parent_by_key or {}
+    active_plan_columns = plan_columns or FALLBACK_PLAN_COLUMNS
     records: list[dict[str, object]] = []
     for i, epic in enumerate(selected_epics, start=1):
         epic_key = _as_text(epic.get("epic_key")).upper()
@@ -603,13 +775,22 @@ def _build_records(
         # Phase plans: only epics have a real Epics Planner phase breakdown.
         phases = []
         if record_kind == "epic":
-            for phase_name in PHASE_NAMES:
-                plan_key = PLAN_KEY_BY_PHASE.get(phase_name, "")
+            for plan_col in active_plan_columns:
+                plan_key = _as_text(plan_col.get("key"))
+                if not plan_key or plan_key == "epic_plan":
+                    continue
+                phase_name = _as_text(plan_col.get("label")) or plan_key.replace("_", " ").title()
                 plan = plans.get(plan_key) if plan_key and isinstance(plans.get(plan_key), dict) else {}
-                phases.append(_phase_record_from_plan(phase_name, plan))
+                linked_key = _extract_issue_key(plan.get("jira_url") if isinstance(plan, dict) else "")
+                linked_issue = rows_by_key.get(linked_key, {}) if linked_key else {}
+                phases.append(_phase_record_from_plan(phase_name, plan_key, plan, linked_issue))
         else:
-            for phase_name in PHASE_NAMES:
-                phases.append(_phase_record_from_plan(phase_name, {}))
+            for plan_col in active_plan_columns:
+                plan_key = _as_text(plan_col.get("key"))
+                if not plan_key or plan_key == "epic_plan":
+                    continue
+                phase_name = _as_text(plan_col.get("label")) or plan_key.replace("_", " ").title()
+                phases.append(_phase_record_from_plan(phase_name, plan_key, {}))
         has_phase_plan = record_kind == "epic" and any(p.get("state") == "planned" for p in phases)
 
         total_mandays = sum((p.get("mandays_num") or 0.0) for p in phases)
@@ -635,6 +816,11 @@ def _build_records(
             jira_original_estimate_hours = None
             jira_total_hours_logged = None
             jira_progress_pct = None
+
+        # For non-epics, phases are empty so total_mandays is 0.
+        # Fall back to db_epic_mandays (derived from original_estimate_hours).
+        if total_mandays == 0 and db_epic_mandays is not None and db_epic_mandays > 0:
+            total_mandays = db_epic_mandays
 
         epic_start_date = _parse_iso_date(epic_start_iso)
         epic_end_date = _parse_iso_date(epic_end_iso)
@@ -794,12 +980,24 @@ def _rows_for_payload(records: list[dict[str, object]]) -> list[dict[str, object
                 "jira_progress_pct": r.get("jira_progress_pct"),
                 "phase_data": {
                     p["name"]: {
+                        "plan_key": p.get("plan_key", ""),
                         "start": p["start_iso"],
                         "end": p["end_iso"],
                         "mandays": p["mandays_text"],
                         "raw": p["raw"],
                         "state": p["state"],
                         "warning": p["warning"],
+                        "date_source": p.get("date_source", ""),
+                        "jira_url": p.get("jira_url", ""),
+                        "linked_issue_key": p.get("linked_issue_key", ""),
+                        "linked_issue_status": p.get("linked_issue_status", ""),
+                        "linked_issue_assignee": p.get("linked_issue_assignee", ""),
+                        "linked_issue_start_date": p.get("linked_issue_start_date", ""),
+                        "linked_issue_end_date": p.get("linked_issue_end_date", ""),
+                        "linked_issue_actual_end_date": p.get("linked_issue_actual_end_date", ""),
+                        "linked_issue_planned_hours": p.get("linked_issue_planned_hours"),
+                        "linked_issue_logged_hours": p.get("linked_issue_logged_hours"),
+                        "linked_issue_progress_pct": p.get("linked_issue_progress_pct"),
                     }
                     for p in r["phases"]
                 },
@@ -837,13 +1035,19 @@ def _build_payload(
     rows: list[dict[str, object]],
     settings_db_path: Path,
     work_items_source_label: str,
+    plan_columns: list[dict[str, object]] | None = None,
 ) -> dict[str, object]:
+    phase_names = [
+        _as_text(col.get("label")) or _as_text(col.get("key")).replace("_", " ").title()
+        for col in (plan_columns or FALLBACK_PLAN_COLUMNS)
+        if _as_text(col.get("key")) and _as_text(col.get("key")) != "epic_plan"
+    ]
     return {
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
         "source_workbook": work_items_source_label,
         "source_sheet": "Epics Planner DB + Jira work_items (database)",
         "settings_db_path": str(settings_db_path),
-        "phase_names": [name for name, _ in PHASE_COLUMNS],
+        "phase_names": phase_names,
         "rows": rows,
     }
 
@@ -855,22 +1059,23 @@ def build_payload_from_sources(base_dir: Path) -> dict[str, object]:
 
     from report_server import _init_epics_management_db
     _init_epics_management_db(settings_db_path)
+    plan_columns = _phase_plan_columns(settings_db_path)
 
-    meeting_epics, current_ipp_meeting_id = _load_current_ipp_meeting_epics(settings_db_path)
-    selected_epics, all_epics = _load_epics_from_db(settings_db_path)
+    meeting_epics, current_ipp_meeting_id = _load_current_ipp_meeting_epics(settings_db_path, plan_columns)
+    selected_epics, all_epics = _load_epics_from_db(settings_db_path, plan_columns)
     if meeting_epics is not None and len(meeting_epics) > 0:
         selected_epics = meeting_epics
 
     jira_rows, jira_stories, jira_rows_by_key, jira_parent_by_key = _load_jira_rows_by_epic_from_db(exports_db_path)
     epics_to_render = selected_epics
 
-    records = _build_records(epics_to_render, jira_rows, jira_stories, jira_rows_by_key, jira_parent_by_key)
+    records = _build_records(epics_to_render, jira_rows, jira_stories, jira_rows_by_key, jira_parent_by_key, plan_columns)
     rows = _rows_for_payload(records)
     for row in rows:
         epic_key = _as_text(row.get("epic_rmi")).strip().upper()
         row["sealed_dates"] = _load_sealed_dates_for_epic(settings_db_path, epic_key) if epic_key else []
     work_items_source_label = str(exports_db_path) + " (work_items)"
-    payload = _build_payload(rows, settings_db_path, work_items_source_label)
+    payload = _build_payload(rows, settings_db_path, work_items_source_label, plan_columns)
     payload["selection_mode"] = "ipp_meeting_planner" if (meeting_epics is not None and len(meeting_epics) > 0) else "selected_only"
     payload["selected_epics_count"] = len(selected_epics)
     payload["total_epics_count"] = len(all_epics)
