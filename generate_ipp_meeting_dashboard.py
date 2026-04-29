@@ -661,6 +661,8 @@ def _phase_record_from_plan(
     if start_iso or end_iso or mandays_text or jira_url:
         if start_date and end_date and start_date <= end_date:
             state = "planned"
+        elif jira_url and not start_iso and not end_iso:
+            state = "linked"
         else:
             state = "invalid"
             warning = "missing_or_invalid_date_range"

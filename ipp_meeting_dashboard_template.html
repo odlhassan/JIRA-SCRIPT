@@ -758,6 +758,7 @@
         .badge.not_planned { background: var(--not-bg); color: var(--not-ink); border-color: rgba(146,64,14,0.12); }
         .badge.no_entry { background: #fff; color: var(--entry-ink); border-color: #fecdd3; }
         .badge.invalid { background: var(--invalid-bg); color: var(--invalid-ink); border-color: rgba(153,27,27,0.12); }
+        .badge.linked { background: #dbeafe; color: #1e40af; border-color: rgba(30,64,175,0.18); }
         .link {
             color: #0f5f8b;
             font-weight: 700;
@@ -2916,7 +2917,7 @@ function renderPhaseInsights(rows) {
             const state = asText(phase.state).toLowerCase();
             const md = Number(phase.mandays);
             if (Number.isFinite(md)) stats.totalMd += md;
-            if (state === "planned" || state === "skipped" || state === "not_started") stats.planned += 1;
+            if (state === "planned" || state === "skipped" || state === "not_started" || state === "linked") stats.planned += 1;
             if (state === "completed") stats.completed += 1;
             if (state === "invalid" || state === "entry_issue") stats.invalid += 1;
             if (phase.show_no_bar || !phase.valid) stats.noBar += 1;
