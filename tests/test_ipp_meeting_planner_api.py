@@ -16,6 +16,8 @@ from report_server import (
     _ipp_meeting_planner_add_epic,
     _ipp_meeting_planner_get_meeting_with_epics,
     _ipp_meeting_planner_remove_epic,
+    _ipp_meeting_planner_search_work_items,
+    _ipp_meeting_planner_add_custom_item,
 )
 
 
@@ -245,8 +247,95 @@ class IppMeetingPlannerApiTests(unittest.TestCase):
                 self.assertEqual(r.status_code, 200)
                 self.assertIn(b"IPP Meeting Planner", r.data)
                 self.assertIn(b"IPP Builder", r.data)
-                self.assertIn(b"Epic List", r.data)
+                self.assertIn(b"Work List", r.data)
                 self.assertIn(b"History", r.data)
+
+    def test_search_work_items_returns_epics_planner_epic(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            db_path = root / "assignee_hours_capacity.db"
+            _create_capacity_db_with_epics(db_path)
+            data = _ipp_meeting_planner_search_work_items(db_path, query="O2-100")
+            self.assertGreaterEqual(data.get("total_seen", 0), 1)
+            keys = [it["key"] for it in data.get("items") or []]
+            self.assertIn("O2-100", keys)
+            for item in data["items"]:
+                if item["key"] == "O2-100":
+                    self.assertEqual(item["issue_type"], "epic")
+                    self.assertTrue(item["in_epics_planner"])
+                    self.assertIn(item["source_tag"], ("epics_planner", "tk"))
+
+    def test_search_work_items_filters_by_type_and_source(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            db_path = root / "assignee_hours_capacity.db"
+            _create_capacity_db_with_epics(db_path)
+            # Asking for stories only must not include the epic
+            data = _ipp_meeting_planner_search_work_items(db_path, query="O2", types=["story"])
+            keys = [it["key"] for it in data.get("items") or []]
+            self.assertNotIn("O2-100", keys)
+            # Asking for epics_planner source includes the epic
+            data2 = _ipp_meeting_planner_search_work_items(db_path, query="O2", sources=["epics_planner", "tk"])
+            keys2 = [it["key"] for it in data2.get("items") or []]
+            self.assertIn("O2-100", keys2)
+
+    def test_search_work_items_excludes_keys(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            db_path = root / "assignee_hours_capacity.db"
+            _create_capacity_db_with_epics(db_path)
+            data = _ipp_meeting_planner_search_work_items(db_path, query="O2", exclude_keys=["O2-100"])
+            keys = [it["key"] for it in data.get("items") or []]
+            self.assertNotIn("O2-100", keys)
+
+    def test_add_custom_item_creates_row_with_custom_kind(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            db_path = root / "assignee_hours_capacity.db"
+            _init_epics_management_db(db_path)
+            meeting = _ipp_meeting_planner_get_current_meeting(db_path)
+            self.assertIsNotNone(meeting)
+            row = _ipp_meeting_planner_add_custom_item(
+                db_path,
+                meeting["id"],
+                title="Chairperson follow-up",
+                assignee_text="Ali Qumail",
+                start_date="2026-05-01",
+                due_date="2026-05-15",
+                delivery_status="On-track",
+                remarks_rich_text="<p>Tracked manually</p>",
+            )
+            self.assertIsNotNone(row)
+            self.assertEqual(row.get("item_kind"), "custom")
+            self.assertEqual(row.get("issue_type"), "custom")
+            self.assertEqual(row.get("source_tag"), "custom")
+            self.assertEqual(row.get("epic_name"), "Chairperson follow-up")
+            self.assertEqual(row.get("assignee_text"), "Ali Qumail")
+            self.assertTrue(str(row.get("epic_key", "")).startswith("CUSTOM-"))
+            data = _ipp_meeting_planner_get_meeting_with_epics(db_path, meeting["id"])
+            self.assertIsNotNone(data)
+            epics = data.get("epics") or []
+            self.assertEqual(len(epics), 1)
+            self.assertEqual(epics[0]["item_kind"], "custom")
+
+    def test_meeting_date_save_endpoint_returns_updated(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            (root / "report_html").mkdir(parents=True, exist_ok=True)
+            (root / "report_html" / "dashboard.html").write_text("<html><body>ok</body></html>", encoding="utf-8")
+            app = create_report_server_app(base_dir=root, folder_raw="report_html")
+            db_path = root / "assignee_hours_capacity.db"
+            _init_epics_management_db(db_path)
+            meeting = _ipp_meeting_planner_get_current_meeting(db_path)
+            self.assertIsNotNone(meeting)
+            with app.test_client() as client:
+                r = client.patch(
+                    "/api/ipp-meeting-planner/meetings/{0}".format(meeting["id"]),
+                    json={"meeting_date": "2026-05-12"},
+                )
+                self.assertEqual(r.status_code, 200)
+                data = r.get_json()
+                self.assertEqual(data.get("meeting_date"), "2026-05-12")
 
 
 if __name__ == "__main__":

@@ -11851,7 +11851,15 @@ def _ipp_meeting_planner_settings_html() -> str:
     .ipp-history { grid-column:1 / -1; background:var(--card); border:1px solid var(--line); border-radius:8px; padding:12px; }
     .ipp-header { display:flex; align-items:center; gap:12px; margin-bottom:12px; flex-wrap:wrap; }
     .ipp-header label { font-weight:600; }
-    .ipp-header input[type="text"] { padding:6px 8px; border:1px solid var(--line); border-radius:6px; }
+    .ipp-header input[type="text"], .ipp-header input[type="date"] { padding:6px 8px; border:1px solid var(--line); border-radius:6px; font:inherit; }
+    /* Toast */
+    #ipp-toast-host { position:fixed; top:18px; right:18px; z-index:2000; display:flex; flex-direction:column; gap:8px; pointer-events:none; }
+    .ipp-toast { pointer-events:auto; min-width:240px; max-width:380px; padding:10px 14px; border-radius:8px; box-shadow:0 6px 20px rgba(15,23,42,0.18); font-size:0.88rem; color:#fff; background:#0f172a; opacity:0; transform:translateY(-6px); transition:opacity .18s ease, transform .18s ease; display:flex; align-items:center; gap:8px; }
+    .ipp-toast.show { opacity:1; transform:translateY(0); }
+    .ipp-toast.success { background:#15803d; }
+    .ipp-toast.error { background:#b91c1c; }
+    .ipp-toast.info { background:#1d4ed8; }
+    .ipp-toast .material-symbols-outlined { font-size:1.05rem; }
     .ipp-builder-canvas {
       min-height: 220px;
       border: 2px dashed #cbd5e1;
@@ -11917,23 +11925,57 @@ def _ipp_meeting_planner_settings_html() -> str:
     .delivery-status-chip.status-yet { color:#334155; border-color:#cbd5e1; background:#f8fafc; }
     .delivery-status-chip.status-ontrack { color:#166534; border-color:#86efac; background:#f0fdf4; }
     .delivery-status-chip.status-late { color:#b91c1c; border-color:#fecaca; background:#fef2f2; }
-    .ipp-epic-list-filters { display:flex; gap:8px; margin-bottom:10px; flex-wrap:wrap; }
-    .ipp-epic-list-filters input, .ipp-epic-list-filters select { padding:6px 8px; border:1px solid var(--line); border-radius:6px; }
-    .ipp-epic-item { padding:8px 10px; border:1px solid var(--line); border-radius:6px; margin-bottom:6px; cursor:grab; background:#fff; }
+    .ipp-epic-list-filters { display:flex; gap:8px; margin-bottom:10px; flex-wrap:wrap; align-items:center; }
+    .ipp-epic-list-filters input, .ipp-epic-list-filters select { padding:6px 8px; border:1px solid var(--line); border-radius:6px; font:inherit; }
+    .ipp-epic-list-filters input[type="text"] { flex:1 1 220px; min-width:160px; }
+    .wl-chips-row { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; align-items:center; }
+    .wl-chips-row .wl-chips-label { font-size:0.78rem; color:var(--muted); margin-right:4px; }
+    .wl-filter-chip { display:inline-flex; align-items:center; gap:4px; padding:3px 9px; border-radius:999px; border:1px solid #cbd5e1; background:#fff; font-size:0.76rem; color:#334155; cursor:pointer; user-select:none; }
+    .wl-filter-chip .material-symbols-outlined { font-size:0.95rem; line-height:1; }
+    .wl-filter-chip:hover { background:#f1f5f9; }
+    .wl-filter-chip.active { background:#1d4ed8; color:#fff; border-color:#1d4ed8; }
+    .ipp-epic-item { padding:8px 10px; border:1px solid var(--line); border-radius:6px; margin-bottom:6px; cursor:grab; background:#fff; display:flex; align-items:flex-start; gap:8px; }
     .ipp-epic-item:hover { background:#f1f5f9; }
     .ipp-epic-item.dragging { opacity:0.6; }
+    .ipp-epic-item .wl-icon { flex:0 0 auto; width:22px; height:22px; display:inline-flex; align-items:center; justify-content:center; border-radius:4px; }
+    .ipp-epic-item .wl-icon .material-symbols-outlined { font-size:1.1rem; line-height:1; }
+    .wl-icon-epic { background:#f3e8ff; color:#7e22ce; }
+    .wl-icon-story { background:#dbeafe; color:#1d4ed8; }
+    .wl-icon-subtask { background:#dcfce7; color:#15803d; }
+    .wl-icon-bug { background:#fee2e2; color:#b91c1c; }
+    .wl-icon-custom { background:#f1f5f9; color:#475569; }
+    .ipp-epic-item .wl-body { flex:1 1 auto; min-width:0; }
+    .ipp-epic-item .wl-title { font-size:0.85rem; font-weight:600; color:#0f172a; word-break:break-word; }
+    .ipp-epic-item .wl-meta { font-size:0.74rem; color:#64748b; margin-top:2px; display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+    .wl-source-chip { display:inline-flex; align-items:center; padding:1px 7px; border-radius:999px; font-size:0.7rem; font-weight:600; border:1px solid; }
+    .wl-source-epics_planner { color:#7e22ce; border-color:#e9d5ff; background:#faf5ff; }
+    .wl-source-tk { color:#a16207; border-color:#fde68a; background:#fef9c3; }
+    .wl-source-jira { color:#1e40af; border-color:#bfdbfe; background:#eff6ff; }
+    .wl-source-custom { color:#475569; border-color:#cbd5e1; background:#f1f5f9; }
+    #ipp-epic-list-container { max-height:54vh; overflow-y:auto; }
+    .wl-load-more { width:100%; margin-top:6px; padding:7px 10px; border:1px dashed #cbd5e1; border-radius:6px; background:#fbfdff; color:#1d4ed8; font-size:0.82rem; cursor:pointer; }
+    .wl-load-more:hover { background:#eff6ff; }
+    .wl-empty-hint { font-size:0.82rem; color:#64748b; padding:8px 4px; }
     .ipp-history table { width:100%; border-collapse:collapse; }
     .ipp-history th, .ipp-history td { padding:8px; text-align:left; border-bottom:1px solid var(--line); }
     .ipp-history th { background:#f8fafc; font-weight:600; }
     .btn { padding:6px 12px; border-radius:6px; border:1px solid var(--line); background:#fff; cursor:pointer; font-size:0.85rem; }
     .btn.primary { background:var(--brand); color:#fff; border-color:var(--brand); }
+    .btn.ghost { background:transparent; }
     .modal-backdrop { position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:1000; display:none; align-items:center; justify-content:center; }
     .modal-backdrop.open { display:flex; }
-    .modal { background:#fff; border-radius:8px; padding:16px; max-width:600px; max-height:80vh; overflow:auto; }
+    .modal { background:#fff; border-radius:8px; padding:16px; max-width:600px; max-height:80vh; overflow:auto; min-width:340px; }
+    .modal h3 { margin:0 0 10px; }
+    .modal .form-row { display:grid; grid-template-columns:130px 1fr; gap:8px; align-items:center; margin-bottom:8px; }
+    .modal .form-row.full { grid-template-columns:1fr; }
+    .modal .form-row label { font-size:0.82rem; color:#334155; font-weight:600; }
+    .modal .form-row input, .modal .form-row select, .modal .form-row textarea { width:100%; padding:6px 8px; border:1px solid var(--line); border-radius:6px; font:inherit; font-size:0.85rem; }
+    .modal .form-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:10px; }
     #status { margin-top:8px; font-size:0.85rem; color:var(--muted); }
   </style>
 </head>
 <body>
+  <div id="ipp-toast-host" aria-live="polite"></div>
   <div class="settings-wrap">
     <div class="settings-top-nav">""" + _settings_top_nav_html(IPP_MEETING_PLANNER_SETTINGS_ROUTE) + """</div>
     <h1>IPP Meeting Planner</h1>
@@ -11943,19 +11985,36 @@ def _ipp_meeting_planner_settings_html() -> str:
         <h2>IPP Builder</h2>
         <div class="ipp-header">
           <label for="ipp-meeting-date">Meeting Date</label>
-          <input type="text" id="ipp-meeting-date" placeholder="DD-MMM-YY">
+          <input type="date" id="ipp-meeting-date">
           <button type="button" class="btn primary" id="ipp-save-date-btn">Save Date</button>
         </div>
-        <div id="ipp-builder-accordions" class="ipp-builder-canvas" data-drop-hint="Drag epics here to build the current IPP meeting."></div>
+        <div id="ipp-builder-accordions" class="ipp-builder-canvas" data-drop-hint="Drag work items here to build the current IPP meeting."></div>
       </div>
       <div class="ipp-epic-list">
-        <h2>Epic List</h2>
-        <p class="ipp-epic-list-hint muted" style="margin:0 0 10px 0; font-size:0.85rem;">All epics created in Epics Planner are listed below. Drag an epic into the IPP Builder to include it in the meeting.</p>
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap;">
+          <h2 style="margin:0;">Work List</h2>
+          <button type="button" class="btn" id="ipp-add-custom-btn"><span class="material-symbols-outlined" style="font-size:1rem; vertical-align:-3px;">add</span> Add custom item</button>
+        </div>
+        <p class="ipp-epic-list-hint muted" style="margin:6px 0 10px 0; font-size:0.82rem;">Search across the system. Results include Epics from Epics Planner, TK epics, Jira epics, stories, subtasks and bug subtasks. Drag a row into the IPP Builder to include it in the meeting.</p>
         <div class="ipp-epic-list-filters">
-          <input type="text" id="ipp-epic-search" placeholder="Search epics...">
+          <input type="text" id="ipp-epic-search" placeholder="Search by key or title (min 2 chars)...">
           <select id="ipp-epic-project-filter"><option value="">All projects</option></select>
         </div>
+        <div class="wl-chips-row" id="wl-type-chips">
+          <span class="wl-chips-label">Type:</span>
+          <button type="button" class="wl-filter-chip" data-type-chip="epic"><span class="material-symbols-outlined" style="color:#7e22ce;">bolt</span> Epic</button>
+          <button type="button" class="wl-filter-chip" data-type-chip="story"><span class="material-symbols-outlined" style="color:#1d4ed8;">person</span> Story</button>
+          <button type="button" class="wl-filter-chip" data-type-chip="subtask"><span class="material-symbols-outlined" style="color:#15803d;">handyman</span> Subtask</button>
+          <button type="button" class="wl-filter-chip" data-type-chip="bug_subtask"><span class="material-symbols-outlined" style="color:#b91c1c;">bug_report</span> Bug subtask</button>
+        </div>
+        <div class="wl-chips-row" id="wl-source-chips">
+          <span class="wl-chips-label">Source:</span>
+          <button type="button" class="wl-filter-chip" data-source-chip="epics_planner">Epics Planner</button>
+          <button type="button" class="wl-filter-chip" data-source-chip="tk">TK</button>
+          <button type="button" class="wl-filter-chip" data-source-chip="jira">Jira</button>
+        </div>
         <div id="ipp-epic-list-container"></div>
+        <button type="button" class="wl-load-more" id="wl-load-more-btn" style="display:none;">Load more</button>
       </div>
       <div class="ipp-history">
         <h2>History</h2>
@@ -11973,19 +12032,71 @@ def _ipp_meeting_planner_settings_html() -> str:
       <button type="button" class="btn" id="ipp-history-modal-close">Close</button>
     </div>
   </div>
+  <div class="modal-backdrop" id="ipp-custom-modal">
+    <div class="modal">
+      <h3>Add Custom Item</h3>
+      <p class="muted" style="margin:0 0 10px; font-size:0.8rem;">Use this for chairperson-requested items that are not tracked in Jira. The item is added only to this meeting.</p>
+      <div class="form-row"><label for="ipp-custom-title">Title <span style="color:#b91c1c;">*</span></label><input type="text" id="ipp-custom-title" maxlength="240" placeholder="e.g. Chairperson follow-up on FAT escalation"></div>
+      <div class="form-row"><label for="ipp-custom-owner">Owner</label><input type="text" id="ipp-custom-owner" maxlength="120" placeholder="Free text (e.g. Ali Qumail)"></div>
+      <div class="form-row"><label for="ipp-custom-start">Start date</label><input type="date" id="ipp-custom-start"></div>
+      <div class="form-row"><label for="ipp-custom-due">Due date</label><input type="date" id="ipp-custom-due"></div>
+      <div class="form-row"><label for="ipp-custom-status">Delivery status</label>
+        <select id="ipp-custom-status">
+          <option value="Yet to start">Yet to start</option>
+          <option value="On-track">On-track</option>
+          <option value="Late">Late</option>
+        </select>
+      </div>
+      <div class="form-row full"><label for="ipp-custom-remarks">Remarks</label><textarea id="ipp-custom-remarks" rows="3" placeholder="Optional context"></textarea></div>
+      <div class="form-actions">
+        <button type="button" class="btn ghost" id="ipp-custom-cancel">Cancel</button>
+        <button type="button" class="btn primary" id="ipp-custom-save">Add to meeting</button>
+      </div>
+    </div>
+  </div>
   <script>
     const API_CURRENT = "/api/ipp-meeting-planner/current";
     const API_MEETINGS = "/api/ipp-meeting-planner/meetings";
-    const API_EPICS = "/api/epics-management/rows";
+    const API_WORKITEM_SEARCH = "/api/ipp-meeting-planner/work-items/search";
     let currentMeetingId = null;
     let currentData = null;
-    let allEpics = [];
     let builderDropzoneBound = false;
     let builderDragState = { sourceCard: null, externalData: null };
+    // Work List state
+    const wlState = {
+      activeTypes: new Set(),
+      activeSources: new Set(),
+      query: "",
+      project: "",
+      offset: 0,
+      pageSize: 25,
+      items: [],
+      hasMore: false,
+      searchToken: 0,
+      debounceTimer: null,
+    };
 
     function setStatus(msg, type) {
       const el = document.getElementById("status");
       if (el) el.textContent = msg || "";
+    }
+
+    function showToast(message, kind) {
+      const host = document.getElementById("ipp-toast-host");
+      if (!host) return;
+      const variant = (kind === "success" || kind === "error" || kind === "info") ? kind : "info";
+      const iconMap = { success: "check_circle", error: "error", info: "info" };
+      const node = document.createElement("div");
+      node.className = "ipp-toast " + variant;
+      node.innerHTML = '<span class="material-symbols-outlined">' + iconMap[variant] + '</span><span></span>';
+      node.lastChild.textContent = String(message || "");
+      host.appendChild(node);
+      // Force reflow then animate in.
+      requestAnimationFrame(() => node.classList.add("show"));
+      setTimeout(() => {
+        node.classList.remove("show");
+        setTimeout(() => { try { host.removeChild(node); } catch (_) {} }, 220);
+      }, variant === "error" ? 4500 : 2400);
     }
 
     function formatIsoToDisplay(value) {
@@ -12030,8 +12141,11 @@ def _ipp_meeting_planner_settings_html() -> str:
         currentData = await fetchCurrent();
         if (!currentData) { setStatus("No scheduled meeting. Create one by completing a previous meeting."); return; }
         currentMeetingId = currentData.id;
-        document.getElementById("ipp-meeting-date").value = formatIsoToDisplay(currentData.meeting_date || currentData.intended_date || "");
+        const isoDate = String(currentData.meeting_date || currentData.intended_date || "").trim().slice(0, 10);
+        document.getElementById("ipp-meeting-date").value = /^\\d{4}-\\d{2}-\\d{2}$/.test(isoDate) ? isoDate : "";
         renderBuilderAccordions(currentData.epics || []);
+        // Refresh Work List so already-selected items are excluded.
+        triggerWorkListSearch(true);
         setStatus("Loaded current meeting.");
       } catch (e) {
         setStatus(e.message || "Error loading meeting");
@@ -12183,10 +12297,35 @@ def _ipp_meeting_planner_settings_html() -> str:
       const remarksRaw = String(ep.remarks_rich_text || "");
       const remarksEncoded = encodeURIComponent(remarksRaw);
       const epicPlannerHref = "/settings/epics-management?epic_key=" + encodeURIComponent(String(ep.epic_key || ""));
+      const itemKind = String(ep.item_kind || "jira").toLowerCase();
+      const issueType = String(ep.issue_type || "epic").toLowerCase();
+      const sourceTag = String(ep.source_tag || "").toLowerCase();
+      const ico = workListIconForType(issueType);
+      // Source chips (Custom takes precedence)
+      let chipsHtml = "";
+      if (itemKind === "custom" || sourceTag === "custom") {
+        chipsHtml = '<span class="wl-source-chip wl-source-custom">Custom</span>';
+      } else {
+        const parts = [];
+        if (sourceTag === "epics_planner") parts.push('<span class="wl-source-chip wl-source-epics_planner">Epics Planner</span>');
+        else if (sourceTag === "tk") parts.push('<span class="wl-source-chip wl-source-tk">TK</span>');
+        else parts.push('<span class="wl-source-chip wl-source-jira">Jira</span>');
+        chipsHtml = parts.join(" ");
+      }
+      const openLinkHtml = (itemKind === "custom") ? "" : `<a class="btn" href="${epicPlannerHref}">Open in Epics Planner</a>`;
+      const ownerHtml = (itemKind === "custom")
+        ? `<label>Owner</label><input type="text" data-field="assignee_text" value="${escapeHtml(String(ep.assignee_text || ""))}" placeholder="Free text">`
+        + `<label>Start Date</label><input type="date" data-field="start_date" value="${escapeHtml(String(ep.start_date || "").trim().slice(0, 10))}">`
+        + `<label>Due Date</label><input type="date" data-field="due_date" value="${escapeHtml(String(ep.due_date || "").trim().slice(0, 10))}">`
+        : "";
       return `
-      <div class="ipp-epic-card" data-epic-key="${escapeHtml(ep.epic_key)}">
+      <div class="ipp-epic-card" data-epic-key="${escapeHtml(ep.epic_key)}" data-item-kind="${escapeHtml(itemKind)}" data-issue-type="${escapeHtml(issueType)}">
         <button type="button" class="ipp-epic-card-head" aria-expanded="false">
-          <div class="card-title">${escapeHtml(ep.epic_name || ep.epic_key)}</div>
+          <div class="card-title" style="display:flex; align-items:center; gap:8px;">
+            <span class="wl-icon ${ico.cls}" style="flex:0 0 auto;"><span class="material-symbols-outlined">${ico.icon}</span></span>
+            <span style="word-break:break-word;">${escapeHtml(ep.epic_name || ep.epic_key)}</span>
+            ${chipsHtml}
+          </div>
           <div class="ipp-epic-card-summary">
             <span class="ipp-summary-date">Start: <b>${escapeHtml(startDisplay)}</b></span>
             <span class="ipp-summary-date">End: <b>${escapeHtml(dueDisplay)}</b></span>
@@ -12196,6 +12335,7 @@ def _ipp_meeting_planner_settings_html() -> str:
         </button>
         <div class="ipp-epic-card-body">
           <div class="card-fields">
+            ${ownerHtml}
             <label>Delivery Status</label>
             <select data-field="delivery_status"><option value="Yet to start" ${deliveryStatus === "Yet to start" ? "selected" : ""}>Yet to start</option><option value="On-track" ${deliveryStatus === "On-track" ? "selected" : ""}>On-track</option><option value="Late" ${deliveryStatus === "Late" ? "selected" : ""}>Late</option></select>
             <label>Actual Production Date</label>
@@ -12221,7 +12361,7 @@ def _ipp_meeting_planner_settings_html() -> str:
             </div>
           </div>
           <div class="ipp-epic-actions">
-            <a class="btn" href="${epicPlannerHref}">Open in Epics Planner</a>
+            ${openLinkHtml}
             <button type="button" class="btn" data-remove-epic>Remove</button>
           </div>
         </div>
@@ -12349,6 +12489,9 @@ def _ipp_meeting_planner_settings_html() -> str:
                 project_key: payload.project_key || "ORPHAN",
                 project_name: payload.project_name || payload.project_key || "ORPHAN",
                 epic_name: payload.epic_name || payload.epic_key,
+                issue_type: payload.issue_type || "epic",
+                source_tag: payload.source_tag || "",
+                item_kind: "jira",
               }),
             }
           );
@@ -12429,41 +12572,85 @@ def _ipp_meeting_planner_settings_html() -> str:
     }
 
     async function loadEpicList() {
+      // Initialise Work List: load distinct project keys, blank state.
       try {
-        const r = await fetch(API_EPICS);
-        if (!r.ok) throw new Error("Failed to load epics");
-        const data = await r.json();
-        allEpics = data.rows || [];
-        const projects = [...new Set(allEpics.map((e) => e.project_key).filter(Boolean))].sort();
-        const sel = document.getElementById("ipp-epic-project-filter");
-        sel.innerHTML = "<option value=''>All projects</option>" + projects.map((p) => "<option value='" + escapeHtml(p) + "'>" + escapeHtml(p) + "</option>").join("");
-        filterAndRenderEpicList();
-      } catch (e) {
-        setStatus(e.message || "Error loading epics");
+        const r = await fetch("/api/epics-management/rows");
+        if (r.ok) {
+          const data = await r.json();
+          const projects = [...new Set((data.rows || []).map((e) => e.project_key).filter(Boolean))].sort();
+          const sel = document.getElementById("ipp-epic-project-filter");
+          sel.innerHTML = "<option value=''>All projects</option>" + projects.map((p) => "<option value='" + escapeHtml(p) + "'>" + escapeHtml(p) + "</option>").join("");
+        }
+      } catch (_) { /* tolerate */ }
+      renderWorkListEmptyState("Type at least 2 characters or apply a filter to search across all work items.");
+    }
+
+    function renderWorkListEmptyState(message) {
+      const container = document.getElementById("ipp-epic-list-container");
+      container.innerHTML = '<div class="wl-empty-hint">' + escapeHtml(message) + '</div>';
+      document.getElementById("wl-load-more-btn").style.display = "none";
+    }
+
+    function workListIconForType(type) {
+      switch ((type || "").toLowerCase()) {
+        case "epic": return { cls: "wl-icon-epic", icon: "bolt" };
+        case "story": return { cls: "wl-icon-story", icon: "person" };
+        case "subtask": return { cls: "wl-icon-subtask", icon: "handyman" };
+        case "bug_subtask": return { cls: "wl-icon-bug", icon: "bug_report" };
+        case "custom": return { cls: "wl-icon-custom", icon: "flag" };
+        default: return { cls: "wl-icon-story", icon: "task_alt" };
       }
     }
 
-    function filterAndRenderEpicList() {
-      const q = (document.getElementById("ipp-epic-search").value || "").toLowerCase();
-      const proj = (document.getElementById("ipp-epic-project-filter").value || "").toUpperCase();
-      let list = allEpics.filter((e) => {
-        if (proj && (e.project_key || "").toUpperCase() !== proj) return false;
-        if (q) {
-          const s = [e.epic_key, e.epic_name, e.project_name, e.description].filter(Boolean).join(" ").toLowerCase();
-          if (!s.includes(q)) return false;
-        }
-        return true;
-      });
-      const container = document.getElementById("ipp-epic-list-container");
-      if (list.length === 0) {
-        const msg = allEpics.length === 0
-          ? "No epics in the system. Create epics in <strong>Epics Planner</strong> (Settings) to see them here."
-          : "No epics match the current search or project filter.";
-        container.innerHTML = "<p class='muted' style='margin:0; font-size:0.85rem;'>" + msg + "</p>";
+    function workListSourceChipHtml(item) {
+      const chips = [];
+      if (item.source_tag === "epics_planner") {
+        chips.push('<span class="wl-source-chip wl-source-epics_planner">Epics Planner</span>');
+      } else if (item.source_tag === "tk") {
+        chips.push('<span class="wl-source-chip wl-source-tk">TK</span>');
+      } else if (item.source_tag === "custom") {
+        chips.push('<span class="wl-source-chip wl-source-custom">Custom</span>');
       } else {
-        container.innerHTML = list.map((e) => `<div class="ipp-epic-item" draggable="true" data-epic-key="${escapeHtml(e.epic_key)}" data-project-key="${escapeHtml(e.project_key || "")}" data-project-name="${escapeHtml(e.project_name || "")}" data-epic-name="${escapeHtml(e.epic_name || e.epic_key || "")}">${escapeHtml(e.epic_name || e.epic_key)} (${escapeHtml(e.project_key || "")})</div>`).join("");
+        chips.push('<span class="wl-source-chip wl-source-jira">Jira</span>');
       }
-      container.querySelectorAll(".ipp-epic-item").forEach((item) => {
+      if (item.is_tk_epic && item.source_tag !== "tk") {
+        chips.push('<span class="wl-source-chip wl-source-tk">TK</span>');
+      }
+      return chips.join(" ");
+    }
+
+    function renderWorkListItems(append) {
+      const container = document.getElementById("ipp-epic-list-container");
+      const html = (wlState.items || []).map((it) => {
+        const ico = workListIconForType(it.issue_type);
+        const projTxt = it.project_key ? (" \u00B7 " + escapeHtml(it.project_key)) : "";
+        const status = it.status ? (" \u00B7 " + escapeHtml(it.status)) : "";
+        return '<div class="ipp-epic-item" draggable="true"' +
+          ' data-epic-key="' + escapeHtml(it.key) + '"' +
+          ' data-project-key="' + escapeHtml(it.project_key || "") + '"' +
+          ' data-project-name="' + escapeHtml(it.project_name || it.project_key || "") + '"' +
+          ' data-epic-name="' + escapeHtml(it.summary || it.key) + '"' +
+          ' data-issue-type="' + escapeHtml(it.issue_type || "") + '"' +
+          ' data-source-tag="' + escapeHtml(it.source_tag || "") + '">' +
+          '<span class="wl-icon ' + ico.cls + '"><span class="material-symbols-outlined">' + ico.icon + '</span></span>' +
+          '<div class="wl-body">' +
+            '<div class="wl-title">' + escapeHtml(it.key) + ' \u2014 ' + escapeHtml(it.summary || "") + '</div>' +
+            '<div class="wl-meta">' + workListSourceChipHtml(it) + projTxt + status + '</div>' +
+          '</div>' +
+          '</div>';
+      }).join("");
+      if (!append) {
+        container.innerHTML = html || '<div class="wl-empty-hint">No matching work items.</div>';
+      } else {
+        container.insertAdjacentHTML("beforeend", html);
+      }
+      attachWorkListDragHandlers(container);
+      document.getElementById("wl-load-more-btn").style.display = wlState.hasMore ? "" : "none";
+    }
+
+    function attachWorkListDragHandlers(container) {
+      container.querySelectorAll(".ipp-epic-item:not([data-wl-bound])").forEach((item) => {
+        item.setAttribute("data-wl-bound", "1");
         item.addEventListener("dragstart", (ev) => {
           builderDragState.sourceCard = null;
           builderDragState.externalData = {
@@ -12471,20 +12658,85 @@ def _ipp_meeting_planner_settings_html() -> str:
             project_key: item.getAttribute("data-project-key"),
             project_name: item.getAttribute("data-project-name"),
             epic_name: item.getAttribute("data-epic-name"),
+            issue_type: item.getAttribute("data-issue-type"),
+            source_tag: item.getAttribute("data-source-tag"),
           };
           if (ev.dataTransfer) {
             ev.dataTransfer.effectAllowed = "copy";
             ev.dataTransfer.setData("text/plain", JSON.stringify(builderDragState.externalData));
           }
-          ev.target.classList.add("dragging");
-          setStatus("Drag epic over a project block; blue line shows insertion point.");
+          item.classList.add("dragging");
+          setStatus("Drag work item over a project block; blue line shows insertion point.");
         });
-        item.addEventListener("dragend", (ev) => {
-          ev.target.classList.remove("dragging");
+        item.addEventListener("dragend", () => {
+          item.classList.remove("dragging");
           builderDragState.externalData = null;
           clearBuilderDropHints();
         });
       });
+    }
+
+    function selectedEpicKeysInBuilder() {
+      const keys = [];
+      document.querySelectorAll("#ipp-builder-accordions .ipp-epic-card").forEach((c) => {
+        const k = c.getAttribute("data-epic-key");
+        if (k) keys.push(k);
+      });
+      return keys;
+    }
+
+    async function performWorkListSearch(append) {
+      const token = ++wlState.searchToken;
+      const params = new URLSearchParams();
+      if (wlState.query) params.set("q", wlState.query);
+      if (wlState.project) params.set("project", wlState.project);
+      if (wlState.activeTypes.size) params.set("types_csv", [...wlState.activeTypes].join(","));
+      if (wlState.activeSources.size) params.set("sources_csv", [...wlState.activeSources].join(","));
+      params.set("limit", String(wlState.pageSize));
+      params.set("offset", String(wlState.offset));
+      const exclude = selectedEpicKeysInBuilder();
+      if (exclude.length) params.set("exclude_csv", exclude.join(","));
+      let data;
+      try {
+        const r = await fetch(API_WORKITEM_SEARCH + "?" + params.toString());
+        if (!r.ok) throw new Error("Search failed");
+        data = await r.json();
+      } catch (e) {
+        if (token !== wlState.searchToken) return;
+        renderWorkListEmptyState(e.message || "Search failed");
+        return;
+      }
+      if (token !== wlState.searchToken) return;
+      const items = data.items || [];
+      if (append) {
+        wlState.items = wlState.items.concat(items);
+      } else {
+        wlState.items = items;
+      }
+      wlState.hasMore = !!data.has_more;
+      if (!wlState.items.length && data.guidance) {
+        renderWorkListEmptyState(data.guidance);
+        return;
+      }
+      renderWorkListItems(append);
+    }
+
+    function triggerWorkListSearch(force) {
+      const hasFilter = wlState.activeTypes.size || wlState.activeSources.size || wlState.project;
+      if (!force && (!wlState.query || wlState.query.length < 2) && !hasFilter) {
+        renderWorkListEmptyState("Type at least 2 characters or apply a filter to search across all work items.");
+        wlState.items = [];
+        wlState.offset = 0;
+        wlState.hasMore = false;
+        return;
+      }
+      wlState.offset = 0;
+      performWorkListSearch(false);
+    }
+
+    function debounceSearch() {
+      if (wlState.debounceTimer) clearTimeout(wlState.debounceTimer);
+      wlState.debounceTimer = setTimeout(() => triggerWorkListSearch(false), 300);
     }
 
     function bindBuilderDropzone() {
@@ -12556,14 +12808,89 @@ def _ipp_meeting_planner_settings_html() -> str:
         if (!raw) return;
         const d = JSON.parse(raw);
         if (!currentMeetingId || !d.epic_key) return;
-        const r = await fetch(API_MEETINGS + "/" + currentMeetingId + "/epics", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ epic_key: d.epic_key, project_key: d.project_key || "ORPHAN", project_name: d.project_name || d.project_key, epic_name: d.epic_name || d.epic_key }) });
+        const r = await fetch(API_MEETINGS + "/" + currentMeetingId + "/epics", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ epic_key: d.epic_key, project_key: d.project_key || "ORPHAN", project_name: d.project_name || d.project_key, epic_name: d.epic_name || d.epic_key, issue_type: d.issue_type || "epic", source_tag: d.source_tag || "", item_kind: "jira" }) });
         if (r.ok) { loadCurrent(); setStatus("Epic added"); }
         else setStatus((await r.json()).error || "Add failed");
       });
     }
 
-    document.getElementById("ipp-epic-search").oninput = filterAndRenderEpicList;
-    document.getElementById("ipp-epic-project-filter").onchange = filterAndRenderEpicList;
+    document.getElementById("ipp-epic-search").oninput = (e) => {
+      wlState.query = (e.target.value || "").trim();
+      debounceSearch();
+    };
+    document.getElementById("ipp-epic-project-filter").onchange = (e) => {
+      wlState.project = (e.target.value || "").toUpperCase();
+      triggerWorkListSearch(false);
+    };
+    document.querySelectorAll("#wl-type-chips [data-type-chip]").forEach((btn) => {
+      btn.onclick = () => {
+        const t = btn.getAttribute("data-type-chip");
+        if (wlState.activeTypes.has(t)) wlState.activeTypes.delete(t);
+        else wlState.activeTypes.add(t);
+        btn.classList.toggle("active");
+        triggerWorkListSearch(false);
+      };
+    });
+    document.querySelectorAll("#wl-source-chips [data-source-chip]").forEach((btn) => {
+      btn.onclick = () => {
+        const s = btn.getAttribute("data-source-chip");
+        if (wlState.activeSources.has(s)) wlState.activeSources.delete(s);
+        else wlState.activeSources.add(s);
+        btn.classList.toggle("active");
+        triggerWorkListSearch(false);
+      };
+    });
+    document.getElementById("wl-load-more-btn").onclick = () => {
+      wlState.offset += wlState.pageSize;
+      performWorkListSearch(true);
+    };
+
+    // Custom item modal
+    function openCustomModal() {
+      document.getElementById("ipp-custom-title").value = "";
+      document.getElementById("ipp-custom-owner").value = "";
+      document.getElementById("ipp-custom-start").value = "";
+      document.getElementById("ipp-custom-due").value = "";
+      document.getElementById("ipp-custom-status").value = "Yet to start";
+      document.getElementById("ipp-custom-remarks").value = "";
+      document.getElementById("ipp-custom-modal").classList.add("open");
+      setTimeout(() => document.getElementById("ipp-custom-title").focus(), 50);
+    }
+    function closeCustomModal() {
+      document.getElementById("ipp-custom-modal").classList.remove("open");
+    }
+    document.getElementById("ipp-add-custom-btn").onclick = openCustomModal;
+    document.getElementById("ipp-custom-cancel").onclick = closeCustomModal;
+    document.getElementById("ipp-custom-save").onclick = async () => {
+      if (!currentMeetingId) { showToast("No active meeting to add to.", "error"); return; }
+      const title = (document.getElementById("ipp-custom-title").value || "").trim();
+      if (!title) { showToast("Title is required.", "error"); return; }
+      const payload = {
+        title,
+        assignee_text: (document.getElementById("ipp-custom-owner").value || "").trim(),
+        start_date: (document.getElementById("ipp-custom-start").value || "").trim().slice(0, 10),
+        due_date: (document.getElementById("ipp-custom-due").value || "").trim().slice(0, 10),
+        delivery_status: document.getElementById("ipp-custom-status").value,
+        remarks_rich_text: (document.getElementById("ipp-custom-remarks").value || "").trim(),
+      };
+      try {
+        const r = await fetch(API_MEETINGS + "/" + currentMeetingId + "/custom-items", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!r.ok) {
+          const data = await r.json().catch(() => ({}));
+          showToast(data.error || "Failed to add custom item.", "error");
+          return;
+        }
+        closeCustomModal();
+        showToast("Custom item added.", "success");
+        await loadCurrent();
+      } catch (e) {
+        showToast(e.message || "Failed", "error");
+      }
+    };
 
     async function loadHistory() {
       try {
@@ -12595,16 +12922,33 @@ def _ipp_meeting_planner_settings_html() -> str:
     document.getElementById("ipp-history-modal-close").onclick = () => document.getElementById("ipp-history-modal").classList.remove("open");
 
     document.getElementById("ipp-save-date-btn").onclick = async () => {
-      const rawDateVal = document.getElementById("ipp-meeting-date").value;
-      const dateVal = parseDisplayToIso(rawDateVal);
-      if (dateVal === null) {
-        setStatus("Invalid meeting date format. Use DD-MMM-YY (example: 13-Mar-26).");
+      const dateInput = document.getElementById("ipp-meeting-date");
+      const dateVal = (dateInput.value || "").trim().slice(0, 10);
+      if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(dateVal)) {
+        showToast("Pick a valid meeting date.", "error");
         return;
       }
-      if (!currentMeetingId) return;
-      const r = await fetch(API_MEETINGS + "/" + currentMeetingId, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ meeting_date: dateVal }) });
-      if (r.ok) { document.getElementById("ipp-meeting-date").value = formatIsoToDisplay(dateVal); setStatus("Date saved"); }
-      else setStatus((await r.json()).error || "Failed");
+      if (!currentMeetingId) {
+        showToast("No active meeting to update.", "error");
+        return;
+      }
+      try {
+        const r = await fetch(API_MEETINGS + "/" + currentMeetingId, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ meeting_date: dateVal }),
+        });
+        if (!r.ok) {
+          const data = await r.json().catch(() => ({}));
+          showToast(data.error || "Failed to save.", "error");
+          return;
+        }
+        showToast("Meeting date saved.", "success");
+        // Refresh history immediately so the new date is visible.
+        await loadHistory();
+      } catch (e) {
+        showToast(e.message || "Failed to save.", "error");
+      }
     };
 
     (async () => {
@@ -18539,6 +18883,7 @@ def _ipp_meeting_planner_get_meeting_with_epics(settings_db_path: Path, meeting_
             """
             SELECT e.meeting_id, e.epic_key, e.project_key, e.project_name, e.epic_name, e.display_order, e.include_on_dashboard,
                    e.delivery_status, e.remarks_rich_text, e.start_date, e.due_date, e.actual_production_date,
+                   e.item_kind, e.issue_type, e.source_tag, e.assignee_text,
                    em.epic_plan_json, em.remarks, em.delivery_status AS planner_delivery_status
             FROM ipp_meeting_epics e
             LEFT JOIN epics_management em ON UPPER(em.epic_key) = UPPER(e.epic_key)
@@ -18582,6 +18927,16 @@ def _ipp_meeting_planner_get_meeting_with_epics(settings_db_path: Path, meeting_
             item["due_date"] = due_date_val
             item["remarks_rich_text"] = remarks_val
             item["delivery_status"] = delivery_status_val
+            # Normalize new metadata columns (defaults for legacy rows).
+            item_kind_val = _to_text(item.get("item_kind")).strip().lower() or "jira"
+            issue_type_val = _to_text(item.get("issue_type")).strip().lower() or ("custom" if item_kind_val == "custom" else "epic")
+            source_tag_val = _to_text(item.get("source_tag")).strip().lower()
+            if not source_tag_val:
+                source_tag_val = "custom" if item_kind_val == "custom" else "epics_planner"
+            item["item_kind"] = item_kind_val
+            item["issue_type"] = issue_type_val
+            item["source_tag"] = source_tag_val
+            item["assignee_text"] = _to_text(item.get("assignee_text"))
             item.pop("epic_plan_json", None)
             item.pop("remarks", None)
             item.pop("planner_delivery_status", None)
@@ -18646,6 +19001,10 @@ def _ipp_meeting_planner_add_epic(
     start_date: str = "",
     due_date: str = "",
     actual_production_date: str = "",
+    item_kind: str = "jira",
+    issue_type: str = "epic",
+    source_tag: str = "",
+    assignee_text: str = "",
 ) -> dict | None:
     _init_epics_management_db(settings_db_path)
     epic_key_n = _to_text(epic_key).strip().upper()
@@ -18707,18 +19066,36 @@ def _ipp_meeting_planner_add_epic(
         if not epic_row_id_n:
             epic_row_id_n = epic_key_n
 
+        # Normalize work-item metadata columns
+        item_kind_n = _to_text(item_kind).strip().lower() or "jira"
+        if item_kind_n not in ("jira", "custom"):
+            item_kind_n = "jira"
+        issue_type_n = _to_text(issue_type).strip().lower()
+        valid_issue_types = ("epic", "story", "subtask", "bug_subtask", "custom")
+        if issue_type_n not in valid_issue_types:
+            issue_type_n = "custom" if item_kind_n == "custom" else "epic"
+        source_tag_n = _to_text(source_tag).strip().lower()
+        valid_source_tags = ("epics_planner", "tk", "jira", "custom")
+        if source_tag_n not in valid_source_tags:
+            source_tag_n = "custom" if item_kind_n == "custom" else (
+                "epics_planner" if planner_row is not None else "jira"
+            )
+        assignee_text_n = _to_text(assignee_text).strip()
+
         conn.execute(
             """
             INSERT INTO ipp_meeting_epics (
                 meeting_id, epic_row_id, epic_key, project_key, project_name, epic_name, display_order, include_on_dashboard,
-                delivery_status, remarks_rich_text, start_date, due_date, actual_production_date
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                delivery_status, remarks_rich_text, start_date, due_date, actual_production_date,
+                item_kind, issue_type, source_tag, assignee_text
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(meeting_id, epic_row_id) DO UPDATE SET
                 epic_key=excluded.epic_key,
                 project_key=excluded.project_key, project_name=excluded.project_name, epic_name=excluded.epic_name,
                 display_order=excluded.display_order, include_on_dashboard=excluded.include_on_dashboard,
                 delivery_status=excluded.delivery_status, remarks_rich_text=excluded.remarks_rich_text,
-                start_date=excluded.start_date, due_date=excluded.due_date, actual_production_date=excluded.actual_production_date
+                start_date=excluded.start_date, due_date=excluded.due_date, actual_production_date=excluded.actual_production_date,
+                item_kind=excluded.item_kind, issue_type=excluded.issue_type, source_tag=excluded.source_tag, assignee_text=excluded.assignee_text
             """,
             (
                 meeting_id,
@@ -18734,13 +19111,18 @@ def _ipp_meeting_planner_add_epic(
                 start_date_n,
                 due_date_n,
                 actual_production_date_n,
+                item_kind_n,
+                issue_type_n,
+                source_tag_n,
+                assignee_text_n,
             ),
         )
         conn.commit()
         row = conn.execute(
             """
             SELECT meeting_id, epic_row_id, epic_key, project_key, project_name, epic_name, display_order, include_on_dashboard,
-                   delivery_status, remarks_rich_text, start_date, due_date, actual_production_date
+                   delivery_status, remarks_rich_text, start_date, due_date, actual_production_date,
+                   item_kind, issue_type, source_tag, assignee_text
             FROM ipp_meeting_epics WHERE meeting_id = ? AND epic_row_id = ?
             """,
             (meeting_id, epic_row_id_n),
@@ -18762,6 +19144,7 @@ def _ipp_meeting_planner_update_epic(
     allowed = {
         "display_order", "include_on_dashboard", "delivery_status", "remarks_rich_text",
         "start_date", "due_date", "actual_production_date", "project_key", "project_name", "epic_name",
+        "assignee_text",
     }
     updates: list[str] = []
     params: list[object] = []
@@ -18879,6 +19262,262 @@ def _ipp_meeting_planner_complete_meeting(
             "completed_meeting": dict(zip(completed.keys(), completed)) if completed else None,
             "next_meeting": dict(zip(next_row.keys(), next_row)) if next_row else None,
         }
+    finally:
+        conn.close()
+
+
+def _ipp_normalize_issue_type(raw: str) -> str:
+    """Normalize a Jira issue type label to one of: epic / story / subtask / bug_subtask."""
+    text = _to_text(raw).strip().lower()
+    if not text:
+        return "story"
+    if "epic" in text:
+        return "epic"
+    if "sub-task" in text or "subtask" in text or "sub task" in text:
+        if "bug" in text:
+            return "bug_subtask"
+        return "subtask"
+    if "bug" in text:
+        return "bug_subtask"
+    return "story"
+
+
+def _ipp_meeting_planner_search_work_items(
+    settings_db_path: Path,
+    query: str,
+    types: list[str] | None = None,
+    sources: list[str] | None = None,
+    project: str = "",
+    limit: int = 25,
+    offset: int = 0,
+    exclude_keys: list[str] | None = None,
+) -> dict[str, object]:
+    """Search across Epics Planner epics + canonical Jira work_items.
+
+    Returns: { items: [...], has_more: bool, total_seen: int }
+    Each item: { key, summary, issue_type, project_key, project_name, status,
+                 assignee, in_epics_planner, is_tk_epic, source_tag, jira_url }
+    """
+    _init_epics_management_db(settings_db_path)
+    q = _to_text(query).strip()
+    q_like = f"%{q.lower()}%" if q else ""
+    types_set = {str(t).strip().lower() for t in (types or []) if str(t).strip()}
+    sources_set = {str(s).strip().lower() for s in (sources or []) if str(s).strip()}
+    project_n = _to_text(project).strip().upper()
+    exclude_set = {str(k).strip().upper() for k in (exclude_keys or []) if str(k).strip()}
+    safe_limit = max(1, min(int(limit or 25), 100))
+    safe_offset = max(0, int(offset or 0))
+
+    items: list[dict[str, object]] = []
+
+    # 1) Epics Planner epics from epics_management
+    conn = sqlite3.connect(settings_db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute(
+            """
+            SELECT epic_key, project_key, project_name, epic_name, plan_status, originator,
+                   is_tk_epic, jira_url
+            FROM epics_management
+            ORDER BY project_key, epic_key
+            """
+        ).fetchall()
+        for r in rows:
+            key = _to_text(r["epic_key"]).upper()
+            if not key or key in exclude_set:
+                continue
+            summary = _to_text(r["epic_name"]) or key
+            if q_like:
+                hay = (key + " " + summary).lower()
+                if q.lower() not in hay:
+                    continue
+            proj_key = _to_text(r["project_key"]).upper()
+            if project_n and proj_key != project_n:
+                continue
+            is_tk = 1 if int(r["is_tk_epic"] or 0) else 0
+            source_tag = "tk" if is_tk else "epics_planner"
+            items.append({
+                "key": key,
+                "summary": summary,
+                "issue_type": "epic",
+                "project_key": proj_key,
+                "project_name": _to_text(r["project_name"]) or proj_key,
+                "status": _to_text(r["plan_status"]),
+                "assignee": _to_text(r["originator"]),
+                "in_epics_planner": True,
+                "is_tk_epic": bool(is_tk),
+                "source_tag": source_tag,
+                "jira_url": _to_text(r["jira_url"]),
+            })
+    finally:
+        conn.close()
+
+    # Build a set of Epics Planner keys for in_epics_planner flag on Jira side.
+    planner_keys = {it["key"] for it in items}
+
+    # 2) Canonical Jira work_items table (Epic / Story / Subtask / Bug subtask)
+    try:
+        from jira_export_db import connect as _jira_connect
+        jconn = _jira_connect()
+        try:
+            j_rows = jconn.execute(
+                """
+                SELECT issue_key, project_key, jira_issue_type, work_item_type, summary, status, assignee, jira_url
+                FROM work_items
+                """
+            ).fetchall()
+        finally:
+            jconn.close()
+    except Exception:
+        j_rows = []
+
+    for r in j_rows:
+        try:
+            key = _to_text(r["issue_key"]).upper()
+        except Exception:
+            key = ""
+        if not key or key in exclude_set:
+            continue
+        # Skip if this key is already an Epics Planner epic (avoid duplicates)
+        if key in planner_keys:
+            continue
+        summary = _to_text(r["summary"]) or key
+        if q_like:
+            hay = (key + " " + summary).lower()
+            if q.lower() not in hay:
+                continue
+        proj_key = _to_text(r["project_key"]).upper()
+        if project_n and proj_key != project_n:
+            continue
+        # Issue type normalization
+        raw_type = _to_text(r["jira_issue_type"]) or _to_text(r["work_item_type"])
+        norm_type = _ipp_normalize_issue_type(raw_type)
+        items.append({
+            "key": key,
+            "summary": summary,
+            "issue_type": norm_type,
+            "project_key": proj_key,
+            "project_name": proj_key,
+            "status": _to_text(r["status"]),
+            "assignee": _to_text(r["assignee"]),
+            "in_epics_planner": False,
+            "is_tk_epic": False,
+            "source_tag": "jira",
+            "jira_url": _to_text(r["jira_url"]),
+        })
+
+    # 3) Filter by type / source after merging
+    if types_set:
+        items = [it for it in items if it["issue_type"] in types_set]
+    if sources_set:
+        items = [it for it in items if it["source_tag"] in sources_set]
+
+    # 4) Rank: exact key match → key prefix → summary contains; then by key.
+    if q:
+        ql = q.lower()
+        def _rank(it: dict[str, object]) -> tuple[int, str]:
+            kl = str(it["key"]).lower()
+            sl = str(it["summary"]).lower()
+            if kl == ql:
+                return (0, kl)
+            if kl.startswith(ql):
+                return (1, kl)
+            if ql in kl:
+                return (2, kl)
+            if ql in sl:
+                return (3, kl)
+            return (4, kl)
+        items.sort(key=_rank)
+    else:
+        items.sort(key=lambda it: (str(it["project_key"]), str(it["key"])))
+
+    total_seen = len(items)
+    sliced = items[safe_offset: safe_offset + safe_limit]
+    has_more = (safe_offset + safe_limit) < total_seen
+    return {"items": sliced, "has_more": has_more, "total_seen": total_seen}
+
+
+def _ipp_meeting_planner_add_custom_item(
+    settings_db_path: Path,
+    meeting_id: int,
+    title: str,
+    assignee_text: str = "",
+    start_date: str = "",
+    due_date: str = "",
+    delivery_status: str = "Yet to start",
+    remarks_rich_text: str = "",
+) -> dict | None:
+    """Insert a chairperson-requested custom (non-Jira) item into the meeting."""
+    _init_epics_management_db(settings_db_path)
+    title_n = _to_text(title).strip()
+    if not title_n:
+        return None
+    if delivery_status not in ("Late", "On-track", "Yet to start"):
+        delivery_status = "Yet to start"
+    if not _ipp_has_visible_rich_text(remarks_rich_text):
+        remarks_rich_text = ""
+    conn = sqlite3.connect(settings_db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        # Generate unique CUSTOM-<meeting_id>-<seq> key.
+        existing = conn.execute(
+            "SELECT epic_key FROM ipp_meeting_epics WHERE meeting_id = ? AND item_kind = 'custom'",
+            (meeting_id,),
+        ).fetchall()
+        max_seq = 0
+        for row in existing:
+            k = _to_text(row["epic_key"])
+            m = re.match(r"^CUSTOM-\d+-(\d+)$", k or "")
+            if m:
+                try:
+                    max_seq = max(max_seq, int(m.group(1)))
+                except Exception:
+                    pass
+        seq = max_seq + 1
+        custom_key = f"CUSTOM-{int(meeting_id)}-{seq}"
+        max_order_row = conn.execute(
+            "SELECT COALESCE(MAX(display_order), 0) FROM ipp_meeting_epics WHERE meeting_id = ?",
+            (meeting_id,),
+        ).fetchone()
+        next_order = int((max_order_row[0] if max_order_row else 0) or 0) + 10
+        conn.execute(
+            """
+            INSERT INTO ipp_meeting_epics (
+                meeting_id, epic_row_id, epic_key, project_key, project_name, epic_name,
+                display_order, include_on_dashboard, delivery_status, remarks_rich_text,
+                start_date, due_date, actual_production_date,
+                item_kind, issue_type, source_tag, assignee_text
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'custom', 'custom', 'custom', ?)
+            """,
+            (
+                meeting_id,
+                custom_key,
+                custom_key,
+                "CUSTOM",
+                "Chairperson Requests",
+                title_n,
+                next_order,
+                1,
+                delivery_status,
+                _to_text(remarks_rich_text),
+                _to_text(start_date).strip(),
+                _to_text(due_date).strip(),
+                "",
+                _to_text(assignee_text).strip(),
+            ),
+        )
+        conn.commit()
+        row = conn.execute(
+            """
+            SELECT meeting_id, epic_row_id, epic_key, project_key, project_name, epic_name,
+                   display_order, include_on_dashboard, delivery_status, remarks_rich_text,
+                   start_date, due_date, actual_production_date,
+                   item_kind, issue_type, source_tag, assignee_text
+            FROM ipp_meeting_epics WHERE meeting_id = ? AND epic_row_id = ?
+            """,
+            (meeting_id, custom_key),
+        ).fetchone()
+        return dict(zip(row.keys(), row)) if row else None
     finally:
         conn.close()
 
@@ -19325,6 +19964,25 @@ def _init_epics_management_db(settings_db_path: Path) -> None:
           )
           conn.execute("DROP TABLE ipp_meeting_epics")
           conn.execute("ALTER TABLE ipp_meeting_epics_v2 RENAME TO ipp_meeting_epics")
+        ipp_meeting_epics_cols2 = {
+            str(col[1]) for col in conn.execute("PRAGMA table_info(ipp_meeting_epics)").fetchall()
+        }
+        if "item_kind" not in ipp_meeting_epics_cols2:
+          conn.execute(
+            "ALTER TABLE ipp_meeting_epics ADD COLUMN item_kind TEXT NOT NULL DEFAULT 'jira'"
+          )
+        if "issue_type" not in ipp_meeting_epics_cols2:
+          conn.execute(
+            "ALTER TABLE ipp_meeting_epics ADD COLUMN issue_type TEXT NOT NULL DEFAULT 'epic'"
+          )
+        if "source_tag" not in ipp_meeting_epics_cols2:
+          conn.execute(
+            "ALTER TABLE ipp_meeting_epics ADD COLUMN source_tag TEXT NOT NULL DEFAULT ''"
+          )
+        if "assignee_text" not in ipp_meeting_epics_cols2:
+          conn.execute(
+            "ALTER TABLE ipp_meeting_epics ADD COLUMN assignee_text TEXT NOT NULL DEFAULT ''"
+          )
         plan_column_names = {
             str(col[1])
             for col in conn.execute("PRAGMA table_info(epics_management_plan_columns)").fetchall()
@@ -30516,6 +31174,10 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             start_date = _to_text(payload.get("start_date")).strip()
             due_date = _to_text(payload.get("due_date")).strip()
             actual_production_date = _to_text(payload.get("actual_production_date")).strip()
+            item_kind = _to_text(payload.get("item_kind")).strip().lower() or "jira"
+            issue_type = _to_text(payload.get("issue_type")).strip().lower()
+            source_tag = _to_text(payload.get("source_tag")).strip().lower()
+            assignee_text = _to_text(payload.get("assignee_text")).strip()
             row = _ipp_meeting_planner_add_epic(
                 capacity_paths["db_path"],
                 meeting_id,
@@ -30530,9 +31192,88 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 start_date=start_date,
                 due_date=due_date,
                 actual_production_date=actual_production_date,
+                item_kind=item_kind,
+                issue_type=issue_type,
+                source_tag=source_tag,
+                assignee_text=assignee_text,
             )
             if row is None:
                 return jsonify({"error": "Failed to add epic"}), 400
+            return jsonify(row)
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @app.route("/api/ipp-meeting-planner/work-items/search", methods=["GET"])
+    def ipp_meeting_planner_work_items_search_api():
+        try:
+            q = _to_text(request.args.get("q", "")).strip()
+            types = [t for t in request.args.getlist("types") if t]
+            if not types:
+                # Allow CSV form for convenience.
+                csv_types = _to_text(request.args.get("types_csv", ""))
+                if csv_types:
+                    types = [t.strip() for t in csv_types.split(",") if t.strip()]
+            sources = [s for s in request.args.getlist("sources") if s]
+            if not sources:
+                csv_sources = _to_text(request.args.get("sources_csv", ""))
+                if csv_sources:
+                    sources = [s.strip() for s in csv_sources.split(",") if s.strip()]
+            project = _to_text(request.args.get("project", "")).strip()
+            try:
+                limit = int(request.args.get("limit", "25"))
+            except Exception:
+                limit = 25
+            try:
+                offset = int(request.args.get("offset", "0"))
+            except Exception:
+                offset = 0
+            exclude_keys = [k for k in request.args.getlist("exclude") if k]
+            if not exclude_keys:
+                csv_excl = _to_text(request.args.get("exclude_csv", ""))
+                if csv_excl:
+                    exclude_keys = [k.strip() for k in csv_excl.split(",") if k.strip()]
+            # Performance guard: require at least 2 chars OR an active filter to query.
+            has_filter = bool(types) or bool(sources) or bool(project)
+            if (not q or len(q) < 2) and not has_filter:
+                return jsonify({"items": [], "has_more": False, "total_seen": 0, "guidance": "Type at least 2 characters or apply a filter."})
+            data = _ipp_meeting_planner_search_work_items(
+                capacity_paths["db_path"],
+                query=q,
+                types=types,
+                sources=sources,
+                project=project,
+                limit=limit,
+                offset=offset,
+                exclude_keys=exclude_keys,
+            )
+            return jsonify(data)
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @app.route("/api/ipp-meeting-planner/meetings/<int:meeting_id>/custom-items", methods=["POST"])
+    def ipp_meeting_planner_add_custom_item_api(meeting_id: int):
+        try:
+            payload = request.get_json(silent=True) or {}
+            title = _to_text(payload.get("title")).strip()
+            if not title:
+                return jsonify({"error": "title required"}), 400
+            assignee_text = _to_text(payload.get("assignee_text")).strip()
+            start_date = _to_text(payload.get("start_date")).strip()
+            due_date = _to_text(payload.get("due_date")).strip()
+            delivery_status = _to_text(payload.get("delivery_status")).strip() or "Yet to start"
+            remarks_rich_text = _to_text(payload.get("remarks_rich_text"))
+            row = _ipp_meeting_planner_add_custom_item(
+                capacity_paths["db_path"],
+                meeting_id,
+                title=title,
+                assignee_text=assignee_text,
+                start_date=start_date,
+                due_date=due_date,
+                delivery_status=delivery_status,
+                remarks_rich_text=remarks_rich_text,
+            )
+            if row is None:
+                return jsonify({"error": "Failed to add custom item"}), 400
             return jsonify(row)
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
@@ -30545,7 +31286,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 capacity_paths["db_path"],
                 meeting_id,
                 epic_key,
-                **{k: v for k, v in payload.items() if k in ("display_order", "include_on_dashboard", "delivery_status", "remarks_rich_text", "start_date", "due_date", "actual_production_date", "project_key", "project_name", "epic_name")},
+                **{k: v for k, v in payload.items() if k in ("display_order", "include_on_dashboard", "delivery_status", "remarks_rich_text", "start_date", "due_date", "actual_production_date", "project_key", "project_name", "epic_name", "assignee_text")},
             )
             if row is None:
                 return jsonify({"error": "Not found"}), 404

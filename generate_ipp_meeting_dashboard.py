@@ -130,7 +130,8 @@ def _load_current_ipp_meeting_epics(settings_db_path: Path) -> tuple[list[dict[s
             rows = conn.execute(
                 """
                 SELECT e.meeting_id, e.epic_key, e.project_key, e.project_name, e.epic_name, e.display_order,
-                       e.include_on_dashboard, e.delivery_status, e.remarks_rich_text, e.start_date, e.due_date, e.actual_production_date
+                       e.include_on_dashboard, e.delivery_status, e.remarks_rich_text, e.start_date, e.due_date, e.actual_production_date,
+                       e.item_kind, e.issue_type, e.source_tag, e.assignee_text
                 FROM ipp_meeting_epics e
                 WHERE e.meeting_id = ? AND e.include_on_dashboard = 1
                 ORDER BY e.project_key, e.display_order, e.epic_key
@@ -198,6 +199,10 @@ def _load_current_ipp_meeting_epics(settings_db_path: Path) -> tuple[list[dict[s
             "delivery_status": _normalize_delivery_status(r["delivery_status"]),
             "plans": {**plans, "epic_plan": {**epic_plan, "start_date": _as_text(r["start_date"]), "due_date": _as_text(r["due_date"])}},
             "_record_source": "IPP Meeting Planner",
+            "item_kind": (_as_text(r["item_kind"]) or "jira").lower(),
+            "issue_type": (_as_text(r["issue_type"]) or "epic").lower(),
+            "source_tag": (_as_text(r["source_tag"]) or ("custom" if (_as_text(r["item_kind"]).lower() == "custom") else "epics_planner")).lower(),
+            "assignee_text": _as_text(r["assignee_text"]),
         })
     return selected, meeting_id
 
