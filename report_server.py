@@ -328,6 +328,7 @@ LEGACY_PVD_API_PREFIX = "/api/planned-vs-dispensed"
 CANONICAL_PVD_API_PREFIX = "/api/approved-vs-planned-hours"
 
 STATIC_REPORT_NAV_ITEMS: list[dict[str, object]] = [
+    {"page_key": "introduction", "title": "Introduction", "href": "/introduction.html", "icon": "home", "file": "introduction.html", "default_nav_order": 5, "page_type": "report"},
     {"page_key": "dashboard", "title": "Dashboard", "href": "/dashboard.html", "icon": "space_dashboard", "file": "dashboard.html", "default_nav_order": 10, "page_type": "report"},
     {"page_key": "executive_dashboard", "title": "Executive Dashboard", "href": "/executive_dashboard.html", "icon": "analytics", "file": "executive_dashboard.html", "default_nav_order": 15, "page_type": "report"},
     {"page_key": "nested_view_report", "title": "Nested View Report", "href": "/nested_view_report.html", "icon": "account_tree", "file": "nested_view_report.html", "default_nav_order": 20, "page_type": "report"},
@@ -15790,6 +15791,7 @@ def _resolve_output_html_path(env_var: str, default_name: str, base_dir: Path) -
 
 def _resolve_report_html_sources(base_dir: Path) -> dict[str, Path]:
     return {
+        "introduction.html": base_dir / "introduction.html",
         "dashboard.html": base_dir / "dashboard.html",
         "executive_dashboard.html": _resolve_output_html_path(
             "JIRA_EXECUTIVE_DASHBOARD_HTML_PATH", "executive_dashboard.html", base_dir
@@ -24388,6 +24390,10 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
 
     @app.route("/")
     def index():
+        _promote_report_html_if_newer(base_dir, report_dir, "introduction.html")
+        intro_path = report_dir / "introduction.html"
+        if intro_path.exists():
+            return redirect("/introduction.html", code=302)
         _promote_report_html_if_newer(base_dir, report_dir, "dashboard.html")
         dashboard_path = report_dir / "dashboard.html"
         if dashboard_path.exists():
@@ -24424,7 +24430,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         html = (
             '<!DOCTYPE html><html lang="en"><head>'
             '<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">'
-            '<title>Reports</title>'
+            '<title>EPR Tool Reports</title>'
             '<link rel="stylesheet" href="/shared-nav.css">'
             '<style>'
             'body { font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, sans-serif; margin: 0; padding: 2rem; background: #f5f7fb; color: #1f2937; }'
@@ -24436,7 +24442,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             'a { color: #2563eb; text-decoration: none; }'
             'a:hover { text-decoration: underline; }'
             '</style></head><body>'
-            '<div class="page-wrap"><h1>Reports</h1>'
+            '<div class="page-wrap"><h1>EPR Tool Reports</h1>'
             + links
             + "</div></body></html>"
         )
@@ -30706,8 +30712,11 @@ def run_report_server(base_dir: Path, folder_raw: str, host: str, port: int) -> 
     report_dir.mkdir(parents=True, exist_ok=True)
     app = create_report_server_app(base_dir=base_dir, folder_raw=folder_raw)
 
+    introduction_path = report_dir / "introduction.html"
     dashboard_path = report_dir / "dashboard.html"
-    if dashboard_path.exists():
+    if introduction_path.exists():
+        url = f"http://{host}:{port}/introduction.html"
+    elif dashboard_path.exists():
         url = f"http://{host}:{port}/dashboard.html"
     else:
         url = f"http://{host}:{port}/"

@@ -29,6 +29,7 @@ Each info item contains:
 
 ## Screen Docs
 
+- `docs/report-user-guide/screens/00-introduction-epr-tool.md`
 - `docs/report-user-guide/screens/01-assignee-hours-report.md`
 - `docs/report-user-guide/screens/02-dashboard-report.md`
 - `docs/report-user-guide/screens/03-employee-performance-report.md`

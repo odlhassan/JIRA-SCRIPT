@@ -6,18 +6,18 @@
 - Reporting Window: `2026-03-01` to `2026-05-31`
 
 ## Executive Summary
-- Planned Taken (hours): `542.50`
+- Planned Taken (hours): `606.50`
 - Unplanned Taken (hours): `121.50`
-- Unknown Taken (hours): `367.00`
+- Unknown Taken (hours): `327.00`
 - Planned Not Yet Taken (hours): `152.00`
 - Planned Not Yet Taken (No Entry count): `1`
-- Defective subtasks listed: `133`
-- Clubbed leave subtasks: `23`
+- Defective subtasks listed: `126`
+- Clubbed leave subtasks: `24`
 
 ## Assignee-wise Summary
 | Assignee | Planned Taken (h) | Unplanned Taken (h) | Unknown Taken (h) | Planned Not Yet Taken (h) | No Entry Count | Unknown Count |
 | --- | --- | --- | --- | --- | --- | --- |
-| Ameer Hamza Khan | 0.00 | 32.00 | 0.00 | 0.00 | 0 | 0 |
+| Ameer Hamza Khan | 24.00 | 32.00 | 0.00 | 0.00 | 0 | 0 |
 | Arsalan Zafar Khan | 0.00 | 0.00 | 6.50 | 0.00 | 0 | 1 |
 | awais akhter | 0.00 | 0.00 | 0.00 | 0.00 | 0 | 4 |
 | Danish Rashid | 8.00 | 0.00 | 0.00 | 0.00 | 0 | 0 |
@@ -25,7 +25,7 @@
 | Faiq Butt | 0.00 | 0.00 | 64.00 | 0.00 | 0 | 3 |
 | Faiza Nasir | 0.00 | 8.00 | 0.00 | 136.00 | 0 | 3 |
 | Hamza Ali | 0.00 | 0.00 | 16.00 | 0.00 | 0 | 2 |
-| Hassan Malik | 0.00 | 0.00 | 88.00 | 0.00 | 0 | 32 |
+| Hassan Malik | 40.00 | 0.00 | 48.00 | 0.00 | 0 | 25 |
 | Hassan Saeed Wattoo | 0.00 | 0.00 | 64.00 | 0.00 | 0 | 25 |
 | Maria Sharafat | 352.00 | 0.00 | 0.00 | 0.00 | 1 | 2 |
 | Mariam Zulfiqar | 16.00 | 8.00 | 0.00 | 0.00 | 0 | 0 |

@@ -12,7 +12,7 @@ from typing import Any
 from canonical_report_data import build_rlt_leave_snapshot, load_canonical_issues, load_canonical_worklogs, resolve_canonical_run_id
 from jira_client import BASE_URL
 from generate_assignee_hours_report import DEFAULT_LEAVE_REPORT_INPUT_XLSX, _load_leave_daily_rows
-from generate_employee_performance_report import _list_performance_teams
+from generate_employee_performance_report import _list_performance_teams, _load_performance_resource_resignation_map
 from generate_nested_view_html import _load_capacity_profiles
 from report_server import _load_epics_management_rows
 
@@ -484,6 +484,7 @@ def build_capacity_source(epics: list[dict[str, Any]], db_path: Path, run_id: st
     # Load performance teams for team selector + employee breakdown drawer
     teams: list[dict[str, Any]] = []
     assignee_to_teams: dict[str, list[str]] = defaultdict(list)
+    member_records: dict[str, dict[str, Any]] = {}
     try:
         raw_teams = _list_performance_teams(db_path)
         for team in raw_teams:
@@ -505,6 +506,11 @@ def build_capacity_source(epics: list[dict[str, Any]], db_path: Path, run_id: st
             )
         for a in assignee_to_teams:
             assignee_to_teams[a].sort(key=lambda x: str(x).lower())
+        if assignee_to_teams:
+            member_records = _load_performance_resource_resignation_map(
+                db_path,
+                sorted(assignee_to_teams.keys(), key=lambda v: str(v).lower()),
+            )
     except Exception:
         pass
 
@@ -543,6 +549,7 @@ def build_capacity_source(epics: list[dict[str, Any]], db_path: Path, run_id: st
         "capacity_universe_assignees": capacity_universe_assignees,
         "rlt_employees": rlt_employees,
         "teams": teams,
+        "member_records": member_records,
         "capacity_profiles": capacity_profiles,
         "leaves_hours_by_month": {
             month: round(hours, 2)
@@ -757,7 +764,13 @@ h2 { margin:0 0 10px; font-size:1.2rem; font-weight:700; }
   background:#f8fbff; color:var(--text); font:inherit; font-weight:700;
   box-shadow:0 1px 3px rgba(16,32,51,.06); min-width:100px;
 }
-.capacity-result-card { min-width:160px; padding:14px 16px; }
+.capacity-results-grid {
+  width:100%;
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:14px;
+}
+.capacity-result-card { width:auto; min-width:0; padding:14px 16px; height:100%; }
 /* ── Capacity team multi-select ─────────────────────────────────────── */
 .capacity-team-field { position:relative; z-index:1; min-width:200px; max-width:320px; }
 .capacity-ms { position:relative; }
@@ -1190,6 +1203,7 @@ a { color:#1d4ed8; }
     border-radius:var(--radius-lg) var(--radius-lg) 0 0;
   }
   .capacity-calc-body { border-radius:0 0 var(--radius-lg) var(--radius-lg); }
+  .capacity-results-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
 }
 """
 
@@ -1262,19 +1276,29 @@ _REPORT_JS = """
     {key:"pessimistic_seconds", label:"Pessimistic", cls:"metric-estimate-step-3", type:"duration", meta:"Workbook pessimistic total for the selected epic set", isEstimate:true},
     {key:"calculated_seconds",  label:"Calculated",  cls:"metric-estimate-step-4", type:"duration", meta:"Workbook calculated estimate total for the selected epic set", isEstimate:true},
     {key:"tk_approved_seconds",  label:"TK Approved", cls:"metric-card-emerald", type:"duration", meta:"TK approved total for the selected epic set", hero:true},
-    {key:"jira_original_estimate_seconds", label:"Epic Estimates",    cls:"metric-card-indigo", type:"duration", meta:"Epic-level Jira original estimate total"},
-    {key:"story_estimate_seconds",         label:"Story Estimates",   cls:"metric-card-slate",  type:"duration", meta:"Story-level original estimate total (excludes subtasks)"},
-    {key:"subtask_estimate_seconds",       label:"Subtask Estimates", cls:"metric-card-violet", type:"duration", meta:"Subtask-level original estimate total"},
+    {key:"jira_original_estimate_seconds", label:"Epic Estimates",    cls:"metric-card-indigo", type:"duration", meta:"Epic-level Jira original estimate total", diagnosticsHide:true},
+    {key:"story_estimate_seconds",         label:"Story Estimates",   cls:"metric-card-slate",  type:"duration", meta:"Story-level original estimate total (excludes subtasks)", diagnosticsHide:true},
+    {key:"subtask_estimate_seconds",       label:"Subtask Estimates", cls:"metric-card-violet", type:"duration", meta:"Subtask-level original estimate total", diagnosticsHide:true},
     {key:"logged_seconds",                 label:"Logged",            cls:"metric-card-rose",   type:"duration", meta:"Total hours logged across all stories/subtasks"}
   ];
+
+  function diagnosticsEnabled() {
+    var toggle = document.getElementById("diagnostics-toggle-enabled");
+    return Boolean(toggle && toggle.checked);
+  }
 
   function renderMetrics() {
     var t = scopedTotals();
     var grid = document.getElementById("metric-grid");
     if (!grid) return;
+    var diagnosticsMode = diagnosticsEnabled();
 
     var estimateDefs = METRIC_DEFS.filter(function (d) { return d.isEstimate; });
-    var otherDefs    = METRIC_DEFS.filter(function (d) { return !d.isEstimate; });
+    var otherDefs    = METRIC_DEFS.filter(function (d) {
+      if (d.isEstimate) return false;
+      if (!diagnosticsMode && d.diagnosticsHide) return false;
+      return true;
+    });
 
     var html = "";
     /* epic count */
@@ -1306,15 +1330,6 @@ _REPORT_JS = """
             + '<div class="metric-value-wrap"><span class="metric-value duration-value" data-seconds="' + v + '">' + fmtSec(v) + '</span></div>'
             + '<div class="metric-meta">' + d.meta + '. Click to view contributing epics.' + '</div></section>';
     });
-
-    /* idle capacity */
-    var availSec = Number(document.getElementById("availability-value").dataset.seconds) || 0;
-    var idleSec = availSec - (t.tk_approved_seconds || 0);
-    var idleMeta = idleSec < 0 ? "TK Approved exceeds total availability" : "Total Availability minus TK Approved for the current scope.";
-    html += '<section class="metric-card metric-card-cyan" data-metric-key="idle_capacity_seconds">'
-          + '<div class="metric-label">Idle Hours/Days</div>'
-          + '<div class="metric-value-wrap"><span class="metric-value duration-value" data-seconds="' + idleSec + '">' + fmtSec(idleSec) + '</span></div>'
-          + '<div class="metric-meta">' + idleMeta + '</div></section>';
 
     grid.innerHTML = html;
     renderProductSummary();
@@ -1371,6 +1386,7 @@ _REPORT_JS = """
   /* ── Capacity (auto-sourced from RLT + teams) ────────────────────── */
   var rltEmployees = capacitySource.rlt_employees || [];
   var teams = capacitySource.teams || [];
+  var memberRecords = capacitySource.member_records || {};
   var capacityProfiles = capacitySource.capacity_profiles || [];
   var capacityAllMembers = new Set();
   var selectedMembers = new Set();
@@ -1443,12 +1459,25 @@ _REPORT_JS = """
       capacityAllMembers.forEach(function (m) { selectedMembers.add(m); });
     }
 
+    function selectDefaultMembers() {
+      selectedMembers.clear();
+      capacityAllMembers.forEach(function (m) {
+        var rec = memberRecords[m] || {};
+        if (!Boolean(rec.resigned)) selectedMembers.add(m);
+      });
+    }
+
     function clearAllMembers() {
       selectedMembers.clear();
     }
 
     function membersForTeam(teamName) {
       return teamMemberMap[teamName] || [];
+    }
+
+    function memberStatusLabel(name) {
+      var rec = memberRecords[name] || {};
+      return Boolean(rec.resigned) ? "Resigned" : "Active";
     }
 
     function refreshCheckboxStates() {
@@ -1510,14 +1539,15 @@ _REPORT_JS = """
         memberRow.className = "capacity-ms-item capacity-ms-member-row";
         memberRow.setAttribute("data-team-name", teamName);
         memberRow.setAttribute("data-member-name", m);
+        var statusLabel = memberStatusLabel(m);
         memberRow.innerHTML = '<input type="checkbox" class="capacity-ms-member-cb" value="' + escAttr(m) + '" data-team-name="' + escAttr(teamName) + '" />'
-          + '<span class="capacity-ms-item-text">' + escAttr(m) + "</span>";
+          + '<span class="capacity-ms-item-text">' + escAttr(m) + " (" + escAttr(statusLabel) + ")</span>";
         membersWrap.appendChild(memberRow);
       });
       group.appendChild(membersWrap);
       list.appendChild(group);
     });
-    selectAllMembers();
+    selectDefaultMembers();
 
     function updateTriggerLabel() {
       if (isAllSelectedNow()) {
@@ -1915,10 +1945,10 @@ _REPORT_JS = """
             if (reasons && reasons.length) {
               rHtml = '<div class="tk-month-analysis-exclude-reason">' + reasons.map(function (r) { return escHtml(String(r)); }).join("<br>") + "</div>";
             }
-            var rem = e.epics_planner_remarks;
+            var rem = formatPlannerRemarkText(e.epics_planner_remarks);
             var pHtml = "";
             if (rem) {
-              pHtml = '<div class="tk-month-analysis-planner-remark"><span class="lbl">Epics Planner remarks:</span> ' + escHtml(String(rem)) + "</div>";
+              pHtml = '<div class="tk-month-analysis-planner-remark"><span class="lbl">Epics Planner remarks:</span> ' + escHtml(String(rem)).replace(/\\n/g, "<br>") + "</div>";
             }
             return '<div class="tk-month-analysis-epic-row">' + heading(e) + rHtml + pHtml + "</div>";
           }).join("");
@@ -2161,6 +2191,28 @@ _REPORT_JS = """
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;");
+  }
+  function formatPlannerRemarkText(value) {
+    var raw = String(value === undefined || value === null ? "" : value).trim();
+    if (!raw) return "";
+    var decoded = raw;
+    for (var i = 0; i < 2; i += 1) {
+      var ta = document.createElement("textarea");
+      ta.innerHTML = decoded;
+      decoded = ta.value;
+    }
+    decoded = decoded
+      .replace(/<br\\s*\\/?\\s*>/gi, "\\n")
+      .replace(/<li\\b[^>]*>/gi, "- ")
+      .replace(/<\\/(p|div|li|tr|h[1-6])>/gi, "\\n")
+      .replace(/<[^>]+>/g, "")
+      .replace(/\\u00a0/g, " ");
+    return decoded
+      .split(/\\r?\\n/)
+      .map(function (line) { return line.trim(); })
+      .filter(Boolean)
+      .join("\\n")
+      .trim();
   }
   function normEmp(n) { return String(n || "").trim().toLowerCase(); }
   function nameInEmpList(name, arr) {
@@ -2477,6 +2529,8 @@ _REPORT_JS = """
     var el = document.getElementById(id);
     if (el) el.addEventListener("change", function () { renderCapacity(); renderMonthAnalysis(); });
   });
+  var diagnosticsToggle = document.getElementById("diagnostics-toggle-enabled");
+  if (diagnosticsToggle) diagnosticsToggle.addEventListener("change", function () { renderMetrics(); });
 
   /* ── RMI Estimation & Scheduling (IPP reference layout) ─────────── */
   var rmiScheduleRecords = DATA.rmi_schedule_records || [];
@@ -2921,6 +2975,11 @@ def render_html(data: dict[str, Any]) -> str:
         <span class="tk-month-toggle-track"><span class="tk-month-toggle-thumb"></span></span>
         <span class="tk-month-toggle-text">Only Jira Populated Epics</span>
       </label>
+      <label class="tk-month-toggle" for="diagnostics-toggle-enabled">
+        <input id="diagnostics-toggle-enabled" class="tk-month-toggle-input" type="checkbox">
+        <span class="tk-month-toggle-track"><span class="tk-month-toggle-thumb"></span></span>
+        <span class="tk-month-toggle-text">Diagnostics</span>
+      </label>
       <span class="tk-month-status" data-tk-month-status></span>
     </div>""")
 
@@ -2965,26 +3024,28 @@ def render_html(data: dict[str, Any]) -> str:
           <span class="capacity-field-label">Total Leaves (RLT)</span>
           <div class="capacity-field-value" id="capacity-leaves-val">0 h</div>
         </div>
-        <section class="metric-card metric-card-capacity capacity-result-card">
-          <div class="metric-label">Total Capacity</div>
-          <div class="metric-value-wrap"><span class="metric-value duration-value" id="capacity-value" data-seconds="0">0 h</span></div>
-          <div class="metric-meta">Man-hours/days available</div>
-        </section>
-        <section class="metric-card metric-card-emerald capacity-result-card">
-          <div class="metric-label">Total Availability</div>
-          <div class="metric-value-wrap"><span class="metric-value duration-value" id="availability-value" data-seconds="0">0 h</span></div>
-          <div class="metric-meta">Capacity minus leaves</div>
-        </section>
-        <section class="metric-card metric-card-indigo capacity-result-card" id="capacity-tk-approved-card" hidden>
-          <div class="metric-label">TK Approved (Month)</div>
-          <div class="metric-value-wrap"><span class="metric-value duration-value" id="capacity-tk-approved-value" data-seconds="0">0 h</span></div>
-          <div class="metric-meta" id="capacity-tk-approved-meta">Based on month filter toggle scope</div>
-        </section>
-        <section class="metric-card metric-card-cyan capacity-result-card" id="capacity-idle-card" hidden>
-          <div class="metric-label">Idle Hours/Days (Month)</div>
-          <div class="metric-value-wrap"><span class="metric-value duration-value" id="capacity-idle-value" data-seconds="0">0 h</span></div>
-          <div class="metric-meta" id="capacity-idle-meta">Availability minus TK Approved for selected month</div>
-        </section>
+        <div class="capacity-results-grid">
+          <section class="metric-card metric-card-capacity capacity-result-card">
+            <div class="metric-label">Total Capacity</div>
+            <div class="metric-value-wrap"><span class="metric-value duration-value" id="capacity-value" data-seconds="0">0 h</span></div>
+            <div class="metric-meta">Man-hours/days available</div>
+          </section>
+          <section class="metric-card metric-card-emerald capacity-result-card">
+            <div class="metric-label">Total Availability</div>
+            <div class="metric-value-wrap"><span class="metric-value duration-value" id="availability-value" data-seconds="0">0 h</span></div>
+            <div class="metric-meta">Capacity minus leaves</div>
+          </section>
+          <section class="metric-card metric-card-indigo capacity-result-card" id="capacity-tk-approved-card" hidden>
+            <div class="metric-label">TK Approved (Month)</div>
+            <div class="metric-value-wrap"><span class="metric-value duration-value" id="capacity-tk-approved-value" data-seconds="0">0 h</span></div>
+            <div class="metric-meta" id="capacity-tk-approved-meta">Based on month filter toggle scope</div>
+          </section>
+          <section class="metric-card metric-card-cyan capacity-result-card" id="capacity-idle-card" hidden>
+            <div class="metric-label">Idle Hours/Days (Month)</div>
+            <div class="metric-value-wrap"><span class="metric-value duration-value" id="capacity-idle-value" data-seconds="0">0 h</span></div>
+            <div class="metric-meta" id="capacity-idle-meta">Availability minus TK Approved for selected month</div>
+          </section>
+        </div>
       </div>
     </div>""")
 

@@ -20,6 +20,7 @@
       mainIcon: "description",
       title: "Reports",
       items: [
+        { page_key: "introduction", title: "Introduction", href: resolveReportHref("introduction.html"), icon: "home", file: "introduction.html" },
         { page_key: "dashboard", title: "Dashboard", href: resolveReportHref("dashboard.html"), icon: "space_dashboard", file: "dashboard.html" },
         { page_key: "executive_dashboard", title: "Executive Dashboard", href: resolveReportHref("executive_dashboard.html"), icon: "analytics", file: "executive_dashboard.html" },
         { page_key: "nested_view_report", title: "Nested View Report", href: resolveReportHref("nested_view_report.html"), icon: "account_tree", file: "nested_view_report.html" },
@@ -163,7 +164,8 @@
     head.className = "unified-nav-head";
 
     const brand = document.createElement("div");
-    brand.innerHTML = '<h2 class="unified-nav-title">Reports</h2><div class="unified-nav-sub">Unified Navigation</div>';
+    brand.className = "unified-nav-brand";
+    brand.innerHTML = '<h2 class="unified-nav-title">EPR Tool</h2><div class="unified-nav-sub">Employee Performance Reporting Tool - Octopus Digital</div>';
 
     const toggle = document.createElement("button");
     toggle.type = "button";

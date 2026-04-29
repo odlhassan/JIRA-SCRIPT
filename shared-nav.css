@@ -56,22 +56,39 @@ body.unified-nav-enabled {
   gap: 8px;
   padding: 11px 10px;
   border-bottom: 1px solid rgba(148, 201, 219, 0.25);
+  min-width: 0;
+}
+
+.unified-nav-brand {
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .unified-nav-title {
   margin: 0;
-  font-size: 0.86rem;
+  font-size: 0.82rem;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.03em;
   color: #f2fcff;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 
 .unified-nav-sub {
   margin-top: 2px;
-  font-size: 0.66rem;
+  font-size: 0.62rem;
+  line-height: 1.2;
   color: #95cadb;
-  white-space: nowrap;
+  white-space: normal;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  max-width: 100%;
 }
 
 .unified-nav-toggle {

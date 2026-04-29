@@ -25,6 +25,8 @@ from report_server import (
 class AdminNavigationTests(unittest.TestCase):
     def _build_app(self, root: Path):
         (root / "report_html").mkdir(parents=True, exist_ok=True)
+        (root / "introduction.html").write_text("<html><body>intro</body></html>", encoding="utf-8")
+        (root / "report_html" / "introduction.html").write_text("<html><body>intro</body></html>", encoding="utf-8")
         (root / "report_html" / "dashboard.html").write_text("<html><body>ok</body></html>", encoding="utf-8")
         (root / "executive_dashboard.html").write_text("<html><body>executive</body></html>", encoding="utf-8")
         wb = Workbook()
@@ -84,6 +86,16 @@ class AdminNavigationTests(unittest.TestCase):
             self.assertIn(f'href="{EPICS_MANAGEMENT_SETTINGS_ROUTE}"', html)
             self.assertIn(f'href="{SQL_CONSOLE_SETTINGS_ROUTE}"', html)
             self.assertIn('href="/dashboard.html"', html)
+            self.assertIn('href="/introduction.html"', html)
+
+    def test_index_redirects_to_introduction_when_available(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            app = self._build_app(root)
+            client = app.test_client()
+            resp = client.get("/", follow_redirects=False)
+            self.assertEqual(resp.status_code, 302)
+            self.assertEqual(resp.headers.get("Location"), "/introduction.html")
 
     def test_report_html_uses_effective_report_display_names(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
@@ -110,6 +122,9 @@ class AdminNavigationTests(unittest.TestCase):
     def test_shared_nav_contract_contains_admin_section(self):
         nav_js = (Path(__file__).resolve().parents[1] / "shared-nav.js").read_text(encoding="utf-8")
         self.assertIn('title: "Reports"', nav_js)
+        self.assertIn('page_key: "introduction"', nav_js)
+        self.assertIn("introduction.html", nav_js)
+        self.assertIn('unified-nav-title">EPR Tool', nav_js)
         self.assertIn("approved_vs_planned_hours_report.html", nav_js)
         self.assertIn("original_estimates_hierarchy_report.html", nav_js)
         self.assertIn('title: "Admin Settings"', nav_js)

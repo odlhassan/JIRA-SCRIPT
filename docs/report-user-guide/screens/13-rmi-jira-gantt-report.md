@@ -113,6 +113,9 @@ the canonical `assignee_hours_capacity.db`:
 - 2026-04-28: Capacity Calculator now shows month-scoped **TK Approved** and
   **Idle Hours/Days** cards when any month toggle is enabled (started in,
   delivered in, or any work done through), using the selected analysis month.
+- 2026-04-28: Team dropdown member rows now include status labels in brackets
+  (`Active` / `Resigned`). Members marked resigned in
+  `performance_resource_resignations` are unselected by default.
 - 2026-04-27: Restored full executive summary card row matching the
   `IPP Meeting Reports/rmi_jira_gantt.html` reference (Total # of RMI Epics,
   Optimistic / Most Likely / Pessimistic / Calculated, TK Approved hero,
