@@ -139,6 +139,8 @@ from fetch_jira_dashboard import (
     apply_risk_rollup as dash_apply_risk_rollup,
     build_item as dash_build_item,
     compute_self_risk as dash_compute_self_risk,
+    fetch_dashboard_data as dash_fetch_dashboard_data,
+    generate_exports_dashboard_html as dash_generate_dashboard_html,
     load_dashboard_risk_settings as dash_load_risk_settings,
 )
 from planned_actual_table_view_service import (
@@ -13456,6 +13458,13 @@ def _epics_management_settings_html() -> str:
     #manage-sealed-modal .btn.small { padding:5px 9px; font-size:.8rem; }
     #manage-sealed-modal .btn.danger { border-color:#fecaca; color:#b91c1c; background:#fef2f2; }
     #manage-sealed-modal .btn.danger:hover { background:#fee2e2; }
+    #sync-jira-modal .sync-jira-grid { display:grid; gap:12px; }
+    #sync-jira-modal .sync-jira-group { border:1px solid #e2e8f0; border-radius:10px; padding:12px; background:#f8fafc; }
+    #sync-jira-modal .sync-jira-group-title { margin:0 0 8px; font-size:.86rem; font-weight:700; color:#0f172a; }
+    #sync-jira-modal .sync-jira-option { display:flex; align-items:flex-start; gap:8px; margin:6px 0; font-size:.84rem; }
+    #sync-jira-modal .sync-jira-option input[type="checkbox"] { width:auto; margin-top:2px; }
+    #sync-jira-modal .sync-jira-hint { margin:0; color:#475569; font-size:.79rem; }
+    #sync-jira-modal .sync-jira-note { padding:10px 12px; border:1px solid #dbeafe; border-radius:10px; background:#eff6ff; color:#1e3a8a; font-size:.8rem; }
     .manage-columns-wrap { max-height:52vh; overflow:auto; border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
     .manage-columns-table { width:100%; min-width:680px; border-collapse:separate; border-spacing:0; }
     .manage-columns-table th, .manage-columns-table td { border-bottom:1px solid #e2e8f0; border-right:1px solid #e2e8f0; padding:8px 10px; font-size:.82rem; vertical-align:middle; }
@@ -13557,7 +13566,7 @@ def _epics_management_settings_html() -> str:
       <div id="plan-context" class="muted" style="margin-top:4px;font-size:.8rem;"></div>
     </div>
     <div class="modal-body">
-      <div>
+      <div id="plan-mandays-wrap">
         <label for="plan-mandays">Most Likely man-days</label>
         <input id="plan-mandays" type="number" min="0" step="0.5" placeholder="e.g. 12" title="Most likely man-days for this phase">
       </div>
@@ -13692,6 +13701,34 @@ def _epics_management_settings_html() -> str:
     </div>
   </dialog>
 
+  <dialog id="sync-jira-modal" aria-labelledby="sync-jira-title">
+    <div class="modal-head">
+      <h2 id="sync-jira-title" style="margin:0;font-size:1rem;">Sync Jira Epic</h2>
+      <div id="sync-jira-subtitle" class="muted" style="margin-top:4px;font-size:.8rem;">Choose which fields should be refreshed from Jira.</div>
+    </div>
+    <div class="modal-body">
+      <div class="sync-jira-grid">
+        <div class="sync-jira-group">
+          <div class="sync-jira-group-title">Man-days</div>
+          <label class="sync-jira-option"><input id="sync-epic-mandays" type="checkbox"><span>Update epic man-days only</span></label>
+          <label class="sync-jira-option"><input id="sync-phase-mandays" type="checkbox"><span>Update linked phase man-days too</span></label>
+          <p class="sync-jira-hint">Checking the phase option also keeps epic man-days in sync.</p>
+        </div>
+        <div class="sync-jira-group">
+          <div class="sync-jira-group-title">Planned dates</div>
+          <label class="sync-jira-option"><input id="sync-epic-dates" type="checkbox"><span>Update epic planned dates only</span></label>
+          <label class="sync-jira-option"><input id="sync-phase-dates" type="checkbox"><span>Update linked phase planned dates too</span></label>
+          <p class="sync-jira-hint">Phase date sync only applies to phases that already have Jira links configured.</p>
+        </div>
+      </div>
+      <div class="sync-jira-note">Epic-only sync keeps phase values intact. Linked phase updates are applied only where a phase Jira URL exists.</div>
+    </div>
+    <div class="modal-foot">
+      <button id="sync-jira-cancel" class="btn alt small" type="button">Cancel</button>
+      <button id="sync-jira-apply" class="btn small" type="button">Sync Selected Fields</button>
+    </div>
+  </dialog>
+
   <script>
     const API = "/api/epics-management/rows";
     const SEAL_API = "/api/epics-management/seal";
@@ -13747,9 +13784,17 @@ def _epics_management_settings_html() -> str:
     const planDialogEl = document.getElementById("plan-dialog");
     const planTitleEl = document.getElementById("plan-title");
     const planContextEl = document.getElementById("plan-context");
+    const planMandaysWrapEl = document.getElementById("plan-mandays-wrap");
     const planMandaysEl = document.getElementById("plan-mandays");
     const planStartEl = document.getElementById("plan-start");
     const planDueEl = document.getElementById("plan-due");
+    const syncJiraModalEl = document.getElementById("sync-jira-modal");
+    const syncJiraSubtitleEl = document.getElementById("sync-jira-subtitle");
+    const syncEpicMandaysEl = document.getElementById("sync-epic-mandays");
+    const syncPhaseMandaysEl = document.getElementById("sync-phase-mandays");
+    const syncEpicDatesEl = document.getElementById("sync-epic-dates");
+    const syncPhaseDatesEl = document.getElementById("sync-phase-dates");
+    const syncJiraApplyEl = document.getElementById("sync-jira-apply");
     const epicDialogEl = document.getElementById("epic-dialog");
     const epicDialogTitleEl = document.getElementById("epic-dialog-title");
     const epicDialogSubtitleEl = document.getElementById("epic-dialog-subtitle");
@@ -13798,6 +13843,7 @@ def _epics_management_settings_html() -> str:
     const selectedEpicKeys = new Set();
     const rebudgetedEpicKeys = new Set();
     let activePlan = { rowIndex: -1, planKey: "" };
+    let activeSyncRowIndex = -1;
     let activeEpicEditKey = "";
     let activePlanInsertPosition = 0;
     let planDragKey = "";
@@ -13811,6 +13857,7 @@ def _epics_management_settings_html() -> str:
     const expandedPlanDetails = new Set();
     const autoSaveInFlight = new Map();
     const autoSaveQueued = new Set();
+    const DATE_ONLY_FORMULA_PLAN_KEYS = new Set(["qa_handover", "bug_fixing", "production_plan"]);
     const deepLinkEpicKey = (() => {
       try {
         const params = new URLSearchParams(window.location.search || "");
@@ -13821,6 +13868,72 @@ def _epics_management_settings_html() -> str:
     })();
     let deepLinkHandled = false;
     let deepLinkMissingWarningShown = false;
+
+    function canEditFormulaManagedPlanDates(planMeta) {
+      if (!planMeta) return false;
+      const key = String(planMeta.key || "").trim();
+      return DATE_ONLY_FORMULA_PLAN_KEYS.has(key);
+    }
+
+    function setPlanDialogMode(dateOnly) {
+      const isDateOnly = !!dateOnly;
+      if (planMandaysWrapEl) planMandaysWrapEl.style.display = isDateOnly ? "none" : "";
+      planMandaysEl.disabled = isDateOnly;
+      planMandaysEl.title = isDateOnly ? "Man-days are formula-managed for this phase." : "Most likely man-days for this phase";
+      const planClearBtn = document.getElementById("plan-clear");
+      const planSaveBtn = document.getElementById("plan-save");
+      if (planClearBtn) planClearBtn.textContent = isDateOnly ? "Clear Dates" : "Clear";
+      if (planSaveBtn) planSaveBtn.textContent = isDateOnly ? "Save Dates" : "Save Plan";
+    }
+
+    function syncJiraCheckboxes() {
+      return [syncEpicMandaysEl, syncPhaseMandaysEl, syncEpicDatesEl, syncPhaseDatesEl].filter(Boolean);
+    }
+
+    function updateSyncJiraSubmitState() {
+      if (!syncJiraApplyEl) return;
+      const hasSelection = syncJiraCheckboxes().some((inputEl) => !!(inputEl && inputEl.checked));
+      syncJiraApplyEl.disabled = !hasSelection;
+    }
+
+    function applySyncScopeDependencies(changedEl) {
+      if (!changedEl) return;
+      if (changedEl === syncPhaseMandaysEl && syncPhaseMandaysEl.checked) syncEpicMandaysEl.checked = true;
+      if (changedEl === syncEpicMandaysEl && !syncEpicMandaysEl.checked) syncPhaseMandaysEl.checked = false;
+      if (changedEl === syncPhaseDatesEl && syncPhaseDatesEl.checked) syncEpicDatesEl.checked = true;
+      if (changedEl === syncEpicDatesEl && !syncEpicDatesEl.checked) syncPhaseDatesEl.checked = false;
+      updateSyncJiraSubmitState();
+    }
+
+    function syncJiraSelectionPayload() {
+      return {
+        sync_epic_mandays: !!(syncEpicMandaysEl && syncEpicMandaysEl.checked),
+        sync_phase_mandays: !!(syncPhaseMandaysEl && syncPhaseMandaysEl.checked),
+        sync_epic_dates: !!(syncEpicDatesEl && syncEpicDatesEl.checked),
+        sync_phase_dates: !!(syncPhaseDatesEl && syncPhaseDatesEl.checked),
+      };
+    }
+
+    function closeSyncJiraModal() {
+      activeSyncRowIndex = -1;
+      if (syncJiraModalEl && syncJiraModalEl.open) syncJiraModalEl.close();
+    }
+
+    function openSyncJiraModal(rowIndex) {
+      if (!syncJiraModalEl) return;
+      const row = rows[rowIndex];
+      if (!row) return;
+      activeSyncRowIndex = rowIndex;
+      const epicKey = String(row.epic_key || row.id || "").trim().toUpperCase();
+      const epicName = String(row.epic_name || row.epic_key || "").trim() || epicKey;
+      if (syncJiraSubtitleEl) syncJiraSubtitleEl.textContent = epicName + " (" + epicKey + ")";
+      syncEpicMandaysEl.checked = true;
+      syncPhaseMandaysEl.checked = false;
+      syncEpicDatesEl.checked = true;
+      syncPhaseDatesEl.checked = false;
+      updateSyncJiraSubmitState();
+      syncJiraModalEl.showModal();
+    }
 
     function rowSearchString(row) {
       if (!row) return "";
@@ -14671,6 +14784,7 @@ def _epics_management_settings_html() -> str:
       const jiraUrl = planJiraUrl(plan);
       const hasJira = !!jiraUrl;
       const isFormulaJiraCell = layer === "tk_budgeted" && !planCol.most_likely_enabled && isPlanJiraEnabled(planCol.key);
+      const allowFormulaDateEditing = layer === "tk_budgeted" && !planCol.most_likely_enabled && canEditFormulaManagedPlanDates(planCol) && !rowEffectivelySealed;
       const jiraActions = isPlanJiraEnabled(planCol.key)
         ? '<div class="plan-cell-actions">'
           + '<a class="jira-open ' + (hasJira ? "" : "disabled") + '" href="' + esc(hasJira ? jiraUrl : "#") + '" target="_blank" rel="noopener noreferrer" title="' + (hasJira ? "Open Jira link" : "No Jira link set") + '">J</a>'
@@ -14678,6 +14792,15 @@ def _epics_management_settings_html() -> str:
           + "</div>"
         : "";
       if (layer === "summary" || layer === "tk_budgeted" || effectivelySealed) {
+        if (allowFormulaDateEditing) {
+          return ''
+            + '<td class="' + cellClasses + '">'
+            + '  <div class="plan-cell">'
+            + '    <button class="plan-btn" type="button" data-row-index="' + rowIndex + '" data-plan-key="' + esc(planCol.key) + '">' + summary + '</button>'
+            + jiraActions
+            + '  </div>'
+            + '</td>';
+        }
         if (isFormulaJiraCell) {
           return ''
             + '<td class="' + cellClasses + '">'
@@ -15302,7 +15425,7 @@ def _epics_management_settings_html() -> str:
         btn.addEventListener("click", () => {
           const rowIndex = Number(btn.getAttribute("data-sync-epic-row"));
           closeActionsMenuForRow(rowIndex);
-          syncRowPlanFromJira(rowIndex).catch((err) => setStatus(err.message || String(err), "warn"));
+          openSyncJiraModal(rowIndex);
         });
       });
       Array.from(tbodyEl.querySelectorAll("button[data-delete-epic-row]")).forEach((btn) => {
@@ -15570,11 +15693,12 @@ def _epics_management_settings_html() -> str:
         rowEl.classList.remove(nextClass);
       }, Math.max(0, Number(durationMs) || 0));
     }
-    async function syncRowPlanFromJira(rowIndex) {
+    async function syncRowPlanFromJira(rowIndex, syncOptions) {
       const row = rows[rowIndex];
       if (!row) throw new Error("Row not found.");
       const key = String(row.epic_key || row.id || "").toUpperCase();
       if (!key) throw new Error("Epic key is required to sync.");
+      const options = syncOptions && typeof syncOptions === "object" ? syncOptions : {};
       const planJiraLinks = {};
       PLAN_COLUMNS.forEach((col) => {
         const plan = (row.plans || {})[col.key] || {};
@@ -15587,6 +15711,10 @@ def _epics_management_settings_html() -> str:
         body: JSON.stringify({
           jira_url: String(row.jira_url || ""),
           plan_jira_links: planJiraLinks,
+          sync_epic_mandays: options.sync_epic_mandays,
+          sync_phase_mandays: options.sync_phase_mandays,
+          sync_epic_dates: options.sync_epic_dates,
+          sync_phase_dates: options.sync_phase_dates,
         }),
       });
       const body = await resp.json().catch(() => ({}));
@@ -15774,20 +15902,23 @@ def _epics_management_settings_html() -> str:
       const row = rows[rowIndex];
       const planMeta = PLAN_COLUMNS.find((x) => x.key === planKey);
       if (!row || !planMeta) return;
-      if (!planMeta.most_likely_enabled || planMeta.phase_role === "summary" || planMeta.key === "epic_plan") {
+      const isDateOnlyFormulaPhase = canEditFormulaManagedPlanDates(planMeta);
+      if ((!planMeta.most_likely_enabled && !isDateOnlyFormulaPhase) || planMeta.phase_role === "summary" || planMeta.key === "epic_plan") {
         setStatus((planMeta.label || "This phase") + " is computed and cannot be edited directly.", "warn");
         return;
       }
-      activePlan = { rowIndex, planKey };
+      activePlan = { rowIndex, planKey, dateOnly: isDateOnlyFormulaPhase };
       const plan = ((row.plans || {})[planKey]) || {};
-      planTitleEl.textContent = "Edit Most Likely " + planMeta.label;
+      planTitleEl.textContent = isDateOnlyFormulaPhase ? ("Edit Planned Dates for " + planMeta.label) : ("Edit Most Likely " + planMeta.label);
       planContextEl.textContent = (row.project_name || row.project_key || "-") + " / " + (row.product_category || "-") + " / " + (row.component || "-") + " / " + (row.epic_name || row.epic_key || "-");
-      planMandaysEl.value = plan.most_likely_man_days == null ? (plan.man_days == null ? "" : String(plan.man_days)) : String(plan.most_likely_man_days);
+      setPlanDialogMode(isDateOnlyFormulaPhase);
+      planMandaysEl.value = isDateOnlyFormulaPhase ? "" : (plan.most_likely_man_days == null ? (plan.man_days == null ? "" : String(plan.man_days)) : String(plan.most_likely_man_days));
       planStartEl.value = toDateValue(plan.start_date);
       planDueEl.value = toDateValue(plan.due_date);
       planDialogEl.showModal();
     }
     function clearPlanInputs() {
+      setPlanDialogMode(false);
       planMandaysEl.value = "";
       planStartEl.value = "";
       planDueEl.value = "";
@@ -15796,6 +15927,7 @@ def _epics_management_settings_html() -> str:
       const row = rows[activePlan.rowIndex];
       if (!row || !activePlan.planKey) return;
       const rowIndex = activePlan.rowIndex;
+      const isDateOnly = !!activePlan.dateOnly;
       const manDaysRaw = String(planMandaysEl.value || "").trim();
       const startDate = String(planStartEl.value || "").trim();
       const dueDate = String(planDueEl.value || "").trim();
@@ -15804,14 +15936,14 @@ def _epics_management_settings_html() -> str:
         return;
       }
       const manDays = manDaysRaw === "" ? "" : Number(manDaysRaw);
-      if (manDaysRaw !== "" && (!Number.isFinite(manDays) || manDays < 0)) {
+      if (!isDateOnly && manDaysRaw !== "" && (!Number.isFinite(manDays) || manDays < 0)) {
         setStatus("Man-days must be zero or a positive number.", "warn");
         return;
       }
       row.plans = row.plans || {};
       const currentPlan = (row.plans || {})[activePlan.planKey] || {};
       row.plans[activePlan.planKey] = {
-        most_likely_man_days: manDaysRaw === "" ? "" : manDays,
+        most_likely_man_days: isDateOnly ? (currentPlan.most_likely_man_days == null ? "" : currentPlan.most_likely_man_days) : (manDaysRaw === "" ? "" : manDays),
         man_days: currentPlan.man_days == null ? "" : currentPlan.man_days,
         tk_budgeted_man_days: currentPlan.tk_budgeted_man_days == null ? "" : currentPlan.tk_budgeted_man_days,
         start_date: startDate,
@@ -15832,10 +15964,11 @@ def _epics_management_settings_html() -> str:
       const row = rows[activePlan.rowIndex];
       if (!row || !activePlan.planKey) return;
       const rowIndex = activePlan.rowIndex;
+      const isDateOnly = !!activePlan.dateOnly;
       row.plans = row.plans || {};
       const currentPlan = (row.plans || {})[activePlan.planKey] || {};
       row.plans[activePlan.planKey] = {
-        most_likely_man_days: "",
+        most_likely_man_days: isDateOnly ? (currentPlan.most_likely_man_days == null ? "" : currentPlan.most_likely_man_days) : "",
         man_days: currentPlan.man_days == null ? "" : currentPlan.man_days,
         tk_budgeted_man_days: currentPlan.tk_budgeted_man_days == null ? "" : currentPlan.tk_budgeted_man_days,
         start_date: "",
@@ -15959,6 +16092,21 @@ def _epics_management_settings_html() -> str:
     planColumnNameEl.addEventListener("input", refreshPlanColumnRestoreHint);
     document.getElementById("plan-column-cancel").addEventListener("click", () => planColumnDialogEl.close());
     document.getElementById("manage-columns-close").addEventListener("click", () => manageColumnsDialogEl.close());
+    syncJiraCheckboxes().forEach((inputEl) => {
+      inputEl.addEventListener("change", () => applySyncScopeDependencies(inputEl));
+    });
+    document.getElementById("sync-jira-cancel").addEventListener("click", closeSyncJiraModal);
+    document.getElementById("sync-jira-apply").addEventListener("click", () => {
+      if (activeSyncRowIndex < 0) return;
+      const selection = syncJiraSelectionPayload();
+      if (!selection.sync_epic_mandays && !selection.sync_phase_mandays && !selection.sync_epic_dates && !selection.sync_phase_dates) {
+        setStatus("Select at least one Jira sync option.", "warn");
+        return;
+      }
+      const rowIndex = activeSyncRowIndex;
+      closeSyncJiraModal();
+      syncRowPlanFromJira(rowIndex, selection).catch((err) => setStatus(err.message || String(err), "warn"));
+    });
     manageColumnsTbodyEl.addEventListener("click", (event) => {
       const target = event.target instanceof Element ? event.target : null;
       const btn = target ? target.closest("button[data-delete-plan-key]") : null;
@@ -16068,6 +16216,14 @@ def _epics_management_settings_html() -> str:
     document.getElementById("manage-sealed-review-close").addEventListener("click", () => {
       document.getElementById("manage-sealed-review-section").style.display = "none";
     });
+    syncJiraModalEl.addEventListener("close", () => {
+      activeSyncRowIndex = -1;
+      syncEpicMandaysEl.checked = false;
+      syncPhaseMandaysEl.checked = false;
+      syncEpicDatesEl.checked = false;
+      syncPhaseDatesEl.checked = false;
+      updateSyncJiraSubmitState();
+    });
     document.getElementById("seal-modal-seal-it").addEventListener("click", () => {
       const epicKeys = Array.from(selectedEpicKeys);
       if (epicKeys.length === 0) return;
@@ -16096,7 +16252,7 @@ def _epics_management_settings_html() -> str:
     });
     document.addEventListener("keydown", (event) => {
       if (event.key !== "Tab" || !event.shiftKey) return;
-      if (planDialogEl.open || epicDialogEl.open || planColumnDialogEl.open || manageColumnsDialogEl.open) return;
+      if (planDialogEl.open || epicDialogEl.open || planColumnDialogEl.open || manageColumnsDialogEl.open || syncJiraModalEl.open) return;
       const active = document.activeElement;
       if (active && active instanceof Element) {
         const tag = String(active.tagName || "").toUpperCase();
@@ -16277,6 +16433,95 @@ def _promote_report_html_if_newer(base_dir: Path, report_dir: Path, report_name:
         except OSError:
             pass
     return target_path
+
+
+def _with_dashboard_env(base_dir: Path, callback):
+    env_updates = {
+        "JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH": str(base_dir / "assignee_hours_capacity.db"),
+        "JIRA_EXPORT_XLSX_PATH": str(base_dir / "1_jira_work_items_export.xlsx"),
+        "JIRA_WORKLOG_XLSX_PATH": str(base_dir / "2_jira_subtask_worklogs.xlsx"),
+        "JIRA_SUBTASK_ROLLUP_XLSX_PATH": str(base_dir / "3_jira_subtask_worklog_rollup.xlsx"),
+    }
+    previous = {key: os.environ.get(key) for key in env_updates}
+    try:
+        for key, value in env_updates.items():
+            os.environ[key] = value
+        return callback()
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+
+def _dashboard_source_mtime_ns(base_dir: Path) -> int:
+    candidates = [
+        base_dir / "assignee_hours_capacity.db",
+        base_dir / DEFAULT_EXPORTS_DB,
+        base_dir / "1_jira_work_items_export.xlsx",
+        base_dir / "2_jira_subtask_worklogs.xlsx",
+        base_dir / "3_jira_subtask_worklog_rollup.xlsx",
+    ]
+    latest = 0
+    for candidate in candidates:
+        try:
+            if candidate.exists() and candidate.is_file():
+                stat = candidate.stat()
+                latest = max(latest, int(getattr(stat, "st_mtime_ns", int(stat.st_mtime * 1_000_000_000))))
+        except OSError:
+            continue
+    return latest
+
+
+def _dashboard_html_needs_refresh(base_dir: Path, root_dashboard: Path, published_dashboard: Path) -> bool:
+    source_mtime_ns = _dashboard_source_mtime_ns(base_dir)
+    for path in (root_dashboard, published_dashboard):
+        if not path.exists() or not path.is_file():
+            return True
+        try:
+            sample = path.read_text(encoding="utf-8", errors="ignore")[:200_000]
+            if "const dashboardData =" not in sample:
+                return True
+            stat = path.stat()
+            html_mtime_ns = int(getattr(stat, "st_mtime_ns", int(stat.st_mtime * 1_000_000_000)))
+            if source_mtime_ns and html_mtime_ns < source_mtime_ns:
+                return True
+        except OSError:
+            return True
+    return False
+
+
+def _try_refresh_dashboard_html_from_db(base_dir: Path, report_dir: Path) -> Path | None:
+    root_dashboard = base_dir / "dashboard.html"
+    published_dashboard = report_dir / "dashboard.html"
+    if not _dashboard_html_needs_refresh(base_dir, root_dashboard, published_dashboard):
+        return published_dashboard
+
+    def _build() -> str:
+        data = dash_fetch_dashboard_data()
+        return dash_generate_dashboard_html(data)
+
+    html = _with_dashboard_env(base_dir, _build)
+    for output_path in (root_dashboard, published_dashboard):
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        fd, temp_name = tempfile.mkstemp(
+            prefix=f".{output_path.stem}_",
+            suffix=output_path.suffix,
+            dir=str(output_path.parent),
+        )
+        os.close(fd)
+        temp_path = Path(temp_name)
+        try:
+            temp_path.write_text(html, encoding="utf-8")
+            os.replace(str(temp_path), str(output_path))
+        finally:
+            try:
+                temp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+    print(f"[report-html-sync] Rebuilt dashboard.html from live data: {published_dashboard}")
+    return published_dashboard
 
 
 def resolve_report_html_dir(base_dir: Path, folder_raw: str) -> Path:
@@ -20320,6 +20565,8 @@ def _normalize_epics_management_plan(value: object) -> dict:
       tk_budgeted_man_days = round(parsed_tk, 2)
     except Exception:
       tk_budgeted_man_days = ""
+  preserve_epic_dates = 1 if _to_text(value.get("preserve_epic_dates")).strip().lower() in {"1", "true", "yes", "y", "on"} else 0
+  preserve_epic_mandays = 1 if _to_text(value.get("preserve_epic_mandays")).strip().lower() in {"1", "true", "yes", "y", "on"} else 0
   return {
     "most_likely_man_days": most_likely_man_days,
     "man_days": tk_budgeted_man_days if tk_budgeted_man_days != "" else most_likely_man_days,
@@ -20329,6 +20576,8 @@ def _normalize_epics_management_plan(value: object) -> dict:
     "tk_budgeted_start_date": _to_text(value.get("tk_budgeted_start_date")) or start_date,
     "tk_budgeted_due_date": _to_text(value.get("tk_budgeted_due_date")) or due_date,
     "jira_url": jira_url,
+    "preserve_epic_dates": preserve_epic_dates,
+    "preserve_epic_mandays": preserve_epic_mandays,
   }
 
 
@@ -20483,17 +20732,21 @@ def _compute_epics_management_tk_budgeted_plans(
   starts = sorted(start for start, _ in non_epic_dates if start)
   dues = sorted(due for _, due in non_epic_dates if due)
   epic_plan = dict(normalized.get("epic_plan") or {})
+  preserve_epic_dates = bool(epic_plan.get("preserve_epic_dates"))
+  preserve_epic_mandays = bool(epic_plan.get("preserve_epic_mandays"))
+  explicit_epic_most_likely = epic_plan.get("most_likely_man_days") if preserve_epic_mandays else ""
+  computed_epic_most_likely = explicit_epic_most_likely if explicit_epic_most_likely not in (None, "") else _round_plan_days(input_total)
   epic_plan.update(
     {
-      "most_likely_man_days": _round_plan_days(input_total),
+      "most_likely_man_days": computed_epic_most_likely,
       "tk_budgeted_man_days": tk_approved,
       "man_days": tk_approved,
       "optimistic_man_days": optimistic,
       "pessimistic_man_days": pessimistic,
       "calculated_man_days": calculated,
       "tk_approved_man_days": tk_approved,
-      "start_date": starts[0] if starts else _to_text(epic_plan.get("start_date")),
-      "due_date": dues[-1] if dues else _to_text(epic_plan.get("due_date")),
+      "start_date": _to_text(epic_plan.get("start_date")) if preserve_epic_dates else (starts[0] if starts else _to_text(epic_plan.get("start_date"))),
+      "due_date": _to_text(epic_plan.get("due_date")) if preserve_epic_dates else (dues[-1] if dues else _to_text(epic_plan.get("due_date"))),
     }
   )
   epic_plan["tk_budgeted_start_date"] = _to_text(epic_plan.get("start_date"))
@@ -21581,6 +21834,8 @@ def _submit_epics_import_mapping(settings_db_path: Path, payload: dict) -> dict[
       if epic_key in processed:
         raise ValueError(f"Duplicate import row for {epic_key}.")
       processed.add(epic_key)
+      existing = existing_by_key.get(epic_key)
+      existing_plans = existing.get("plans") if isinstance((existing or {}).get("plans"), dict) else {}
       phases = raw_row.get("phases") if isinstance(raw_row.get("phases"), dict) else {}
       phase_reviews = raw_row.get("phase_reviews") if isinstance(raw_row.get("phase_reviews"), dict) else {}
       plans: dict[str, dict[str, object]] = {}
@@ -21595,8 +21850,14 @@ def _submit_epics_import_mapping(settings_db_path: Path, payload: dict) -> dict[
           plan_payload["start_date"] = _to_text(review.get("start_date"))
         if _to_text(review.get("due_date")):
           plan_payload["due_date"] = _to_text(review.get("due_date"))
-        if plan_key in jira_enabled and _to_text(review.get("jira_url")):
-          plan_payload["jira_url"] = _to_text(review.get("jira_url"))
+        if plan_key in jira_enabled:
+          incoming_jira_url = _to_text(review.get("jira_url"))
+          existing_jira_url = _to_text((existing_plans.get(plan_key) or {}).get("jira_url"))
+          if incoming_jira_url:
+            plan_payload["jira_url"] = incoming_jira_url
+          elif existing_jira_url:
+            # Spreadsheet blanks mean "no new mapping provided", not "clear existing mapping".
+            plan_payload["jira_url"] = existing_jira_url
         plans[plan_key] = plan_payload
       payload_row = {
         "epic_key": epic_key,
@@ -21613,7 +21874,6 @@ def _submit_epics_import_mapping(settings_db_path: Path, payload: dict) -> dict[
         "is_tk_epic": 1,
         "plans": plans,
       }
-      existing = existing_by_key.get(epic_key)
       if existing:
         if int(existing.get("is_sealed") or 0):
           _rebudget_epics_management_epic(settings_db_path, _to_text(existing.get("id")) or epic_key)
@@ -22354,6 +22614,10 @@ def _sync_epic_plan_from_jira(
     row_ref: str,
     jira_url_override: str = "",
     plan_jira_overrides: dict[str, str] | None = None,
+  sync_epic_mandays: bool = True,
+  sync_phase_mandays: bool = True,
+  sync_epic_dates: bool = True,
+  sync_phase_dates: bool = True,
 ) -> dict[str, str]:
     existing = _resolve_epics_management_row(_load_epics_management_rows(settings_db_path), row_ref)
     row_id = _normalize_epics_management_row_id(existing.get("id"))
@@ -22490,16 +22754,23 @@ def _sync_epic_plan_from_jira(
     for plan_key, plan_jira_url, linked_key in plan_issue_refs:
         issue = issue_by_key.get(linked_key) or {}
         issue_fields = issue.get("fields", {}) or {}
-        next_item = {
-            "man_days": "",
-            "start_date": "",
-            "due_date": "",
-            "jira_url": plan_jira_url,
-        }
+        current_plan = _normalize_epics_management_plan(plans_in.get(plan_key) or {})
+        next_item = dict(current_plan)
+        next_item["jira_url"] = plan_jira_url
         plan_start_iso, plan_due_iso, plan_estimate_hours = _extract_issue_plan_metrics(issue_fields, start_field_id, end_field_ids)
-        next_item["man_days"] = round(plan_estimate_hours / 8.0, 2)
-        next_item["start_date"] = plan_start_iso
-        next_item["due_date"] = plan_due_iso
+        sync_mandays = sync_epic_mandays if plan_key == "epic_plan" else sync_phase_mandays
+        sync_dates = sync_epic_dates if plan_key == "epic_plan" else sync_phase_dates
+        if sync_mandays:
+            next_item["most_likely_man_days"] = round(plan_estimate_hours / 8.0, 2)
+        if sync_dates:
+            next_item["start_date"] = plan_start_iso
+            next_item["due_date"] = plan_due_iso
+        if plan_key == "epic_plan":
+            next_item["preserve_epic_mandays"] = 1 if (sync_epic_mandays and not sync_phase_mandays) else 0
+            next_item["preserve_epic_dates"] = 1 if (sync_epic_dates and not sync_phase_dates) else 0
+        else:
+            next_item["preserve_epic_mandays"] = 0
+            next_item["preserve_epic_dates"] = 0
         plan_updates[plan_key] = next_item
 
         story_row = _story_sync_row_from_issue(
@@ -30978,11 +31249,25 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             jira_url = _to_text(payload.get("jira_url"))
             plan_jira_links_raw = payload.get("plan_jira_links")
             plan_jira_links = plan_jira_links_raw if isinstance(plan_jira_links_raw, dict) else {}
+            has_sync_scope_flags = any(
+                key_item in payload
+                for key_item in ("sync_epic_mandays", "sync_phase_mandays", "sync_epic_dates", "sync_phase_dates")
+            )
+            sync_epic_mandays = bool(payload.get("sync_epic_mandays")) if has_sync_scope_flags else True
+            sync_phase_mandays = bool(payload.get("sync_phase_mandays")) if has_sync_scope_flags else True
+            sync_epic_dates = bool(payload.get("sync_epic_dates")) if has_sync_scope_flags else True
+            sync_phase_dates = bool(payload.get("sync_phase_dates")) if has_sync_scope_flags else True
+            if not any((sync_epic_mandays, sync_phase_mandays, sync_epic_dates, sync_phase_dates)):
+                raise ValueError("Select at least one Jira sync option.")
             row = _sync_epic_plan_from_jira(
                 settings_db_path=capacity_paths["db_path"],
                 row_ref=epic_key,
                 jira_url_override=jira_url,
                 plan_jira_overrides=plan_jira_links,
+                sync_epic_mandays=sync_epic_mandays,
+                sync_phase_mandays=sync_phase_mandays,
+                sync_epic_dates=sync_epic_dates,
+                sync_phase_dates=sync_phase_dates,
             )
             return jsonify(
                 {
@@ -31468,7 +31753,13 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             return send_file(source_asset)
 
         if requested_name.lower().endswith(".html"):
-            _promote_report_html_if_newer(base_dir, report_dir, Path(requested_name).name)
+            report_name = Path(requested_name).name
+            if report_name == "dashboard.html":
+                try:
+                    _try_refresh_dashboard_html_from_db(base_dir, report_dir)
+                except Exception as exc:
+                    print(f"[report-html-sync] Warning: dashboard live rebuild failed: {exc}")
+            _promote_report_html_if_newer(base_dir, report_dir, report_name)
 
         target = (report_dir / requested_path).resolve()
         if not target.exists() or not target.is_file():

@@ -939,6 +939,34 @@ def _rows_for_payload(records: list[dict[str, object]]) -> list[dict[str, object
             actual_left = round(actual_pct, 4)
 
         mini = _compute_phase_geometry_for_record(r, global_max_mandays)
+        phase_data = {
+            p["name"]: {
+                "plan_key": p.get("plan_key", ""),
+                "start": p["start_iso"],
+                "end": p["end_iso"],
+                "mandays": p["mandays_text"],
+                "raw": p["raw"],
+                "state": p["state"],
+                "warning": p["warning"],
+                "date_source": p.get("date_source", ""),
+                "jira_url": p.get("jira_url", ""),
+                "linked_issue_key": p.get("linked_issue_key", ""),
+                "linked_issue_status": p.get("linked_issue_status", ""),
+                "linked_issue_assignee": p.get("linked_issue_assignee", ""),
+                "linked_issue_start_date": p.get("linked_issue_start_date", ""),
+                "linked_issue_end_date": p.get("linked_issue_end_date", ""),
+                "linked_issue_actual_end_date": p.get("linked_issue_actual_end_date", ""),
+                "linked_issue_planned_hours": p.get("linked_issue_planned_hours"),
+                "linked_issue_logged_hours": p.get("linked_issue_logged_hours"),
+                "linked_issue_progress_pct": p.get("linked_issue_progress_pct"),
+            }
+            for p in r["phases"]
+        }
+        mapped_phase_data = {
+            name: value
+            for name, value in phase_data.items()
+            if _as_text(value.get("jira_url"))
+        }
         out_rows.append(
             {
                 "source_sheet": r["source_sheet"],
@@ -980,29 +1008,8 @@ def _rows_for_payload(records: list[dict[str, object]]) -> list[dict[str, object
                 "jira_original_estimate_hours": r.get("jira_original_estimate_hours"),
                 "jira_total_hours_logged": r.get("jira_total_hours_logged"),
                 "jira_progress_pct": r.get("jira_progress_pct"),
-                "phase_data": {
-                    p["name"]: {
-                        "plan_key": p.get("plan_key", ""),
-                        "start": p["start_iso"],
-                        "end": p["end_iso"],
-                        "mandays": p["mandays_text"],
-                        "raw": p["raw"],
-                        "state": p["state"],
-                        "warning": p["warning"],
-                        "date_source": p.get("date_source", ""),
-                        "jira_url": p.get("jira_url", ""),
-                        "linked_issue_key": p.get("linked_issue_key", ""),
-                        "linked_issue_status": p.get("linked_issue_status", ""),
-                        "linked_issue_assignee": p.get("linked_issue_assignee", ""),
-                        "linked_issue_start_date": p.get("linked_issue_start_date", ""),
-                        "linked_issue_end_date": p.get("linked_issue_end_date", ""),
-                        "linked_issue_actual_end_date": p.get("linked_issue_actual_end_date", ""),
-                        "linked_issue_planned_hours": p.get("linked_issue_planned_hours"),
-                        "linked_issue_logged_hours": p.get("linked_issue_logged_hours"),
-                        "linked_issue_progress_pct": p.get("linked_issue_progress_pct"),
-                    }
-                    for p in r["phases"]
-                },
+                "phase_data": phase_data,
+                "mapped_phase_data": mapped_phase_data,
                 "stories": r.get("stories", []),
                 "roadmap": {
                     "valid": r["computed_has_valid_epic_plan"] == "Yes",

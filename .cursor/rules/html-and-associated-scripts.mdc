@@ -1,23 +1,28 @@
 ---
-description: When changing HTML, always update linked or embedded scripting and keep localhost serving the latest build
+description: Treat HTML, its behavior, and its served output as one unit of work
 alwaysApply: true
 ---
 
-# HTML changes require associated script updates and localhost readiness
+# HTML Changes Require Coupled Updates
 
-## Associated scripting (required)
+Whenever you change any HTML in this repo, treat the change as incomplete until the full serving chain is aligned:
 
-Whenever you change **any HTML** in this project (static `.html`, templates read by generators, inline HTML strings in Python/JS, or report output):
+1. Find the canonical source first. That may be a root-level `.html` file, a template such as `dashboard_template.html` or `ipp_meeting_dashboard_template.html`, inline HTML inside Python, or a generated output that is refreshed by a generator script.
+2. Update every dependent layer that the changed markup relies on:
+   - JavaScript selectors, handlers, and shared assets such as `shared-nav.js` or `shared-date-filter.js`
+   - CSS selectors in root assets or the relevant generated/template file
+   - Python generators or server code that emit, wrap, sync, or route that HTML
+   - tests that assert on DOM, generated output, or served routes
+   - relevant documentation when the visible behavior or verification path changes
+3. Do not patch only a published copy under `report_html/` when the canonical source lives elsewhere. Update the source file that `sync_report_html()` or the generator pipeline uses.
+4. If a new report is added or a source path changes, update `_resolve_report_html_sources()` in `report_server.py`.
 
-1. **Identify and update** every file that behavior depends on: linked or embedded **JavaScript**, **CSS** that targets new structure, **Python generators** that produce or wrap that HTML, **tests** that assert on DOM or output, and **server routes** that serve or sync those files.
-2. **Do not** update only the HTML and leave selectors, event handlers, `shared-*.js`, or generator templates inconsistent — treat HTML + its scripting surface as one unit of work.
+# Localhost Readiness
 
-## Live localhost (required)
+- If the change affects a generated report, rerun the narrowest generator or rebuild command needed so the source artifact is current before relying on localhost.
+- If the change affects shared assets, edit the canonical asset source so a server restart syncs the updated file into `report_html/`.
+- Use `python run_server.py` for the normal localhost experience path and combine this rule with `experience-latest-changes.mdc` and `AGENTS.md`.
 
-After the change, ensure the user can see it on **live localhost** by following project norms:
+# Changelog
 
-- Restart or run the report server as documented (e.g. `python run_server.py` from `"E:\JIRA SCRIPT"`; default `http://127.0.0.1:3000`).
-- If HTML is **generated**, re-run the relevant generator so source output is current; server startup syncs into `report_html/` per `report_server.py`.
-- If **shared assets** changed, edit the canonical source used by `_sync_report_html` / asset sync so a server restart picks them up.
-
-Combine this rule with **experience-latest-changes** and **AGENTS.md** “How to test locally” so every task ends with verifiable localhost steps.
+- `2026-04-30`: added canonical-source, sync-map, documentation, and generated-output requirements.

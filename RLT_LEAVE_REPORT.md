@@ -9,7 +9,7 @@
 - Planned Taken (hours): `606.50`
 - Unplanned Taken (hours): `121.50`
 - Unknown Taken (hours): `327.00`
-- Planned Not Yet Taken (hours): `152.00`
+- Planned Not Yet Taken (hours): `192.00`
 - Planned Not Yet Taken (No Entry count): `1`
 - Defective subtasks listed: `126`
 - Clubbed leave subtasks: `24`
@@ -24,7 +24,7 @@
 | DANIYAL AHMAD | 0.00 | 0.00 | 16.00 | 0.00 | 0 | 2 |
 | Faiq Butt | 0.00 | 0.00 | 64.00 | 0.00 | 0 | 3 |
 | Faiza Nasir | 0.00 | 8.00 | 0.00 | 136.00 | 0 | 3 |
-| Hamza Ali | 0.00 | 0.00 | 16.00 | 0.00 | 0 | 2 |
+| Hamza Ali | 0.00 | 0.00 | 16.00 | 40.00 | 0 | 2 |
 | Hassan Malik | 40.00 | 0.00 | 48.00 | 0.00 | 0 | 25 |
 | Hassan Saeed Wattoo | 0.00 | 0.00 | 64.00 | 0.00 | 0 | 25 |
 | Maria Sharafat | 352.00 | 0.00 | 0.00 | 0.00 | 1 | 2 |

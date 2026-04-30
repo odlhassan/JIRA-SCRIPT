@@ -400,6 +400,11 @@ class IppMeetingDashboardMergeTests(unittest.TestCase):
             development = next(item for item in phase_values if item.get("plan_key") == "development_plan")
             self.assertEqual(development.get("jira_url"), "https://jira.example.com/browse/O2-444")
             self.assertEqual(development.get("linked_issue_key"), "O2-444")
+            mapped_phase_data = row.get("mapped_phase_data") or {}
+            self.assertEqual(len(mapped_phase_data), 1)
+            mapped_phase = next(iter(mapped_phase_data.values()))
+            self.assertEqual(mapped_phase.get("plan_key"), "development_plan")
+            self.assertEqual(mapped_phase.get("jira_url"), "https://jira.example.com/browse/O2-444")
             self.assertEqual(development.get("start"), "2026-05-03")
             self.assertEqual(development.get("end"), "2026-05-06")
             self.assertEqual(development.get("date_source"), "jira")

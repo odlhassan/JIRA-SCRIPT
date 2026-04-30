@@ -1,32 +1,39 @@
 ---
-description: Project workspace root and primary URLs for the JIRA SCRIPT report server
+description: Repo-specific workspace defaults and localhost conventions for the JIRA SCRIPT report server
 alwaysApply: true
 ---
 
-# Workspace Location
+# Workspace Defaults
 
-- The project root is `E:\JIRA SCRIPT`. Always operate from this path on Windows (PowerShell). Quote it as `"E:\JIRA SCRIPT"` because of the space.
-- The primary entry point is `report_server.py`; default local server runs at `http://127.0.0.1:3000`.
-- Server PIDs for ports 3000–3006 are tracked in files named `.codex_run_server_<port>_pid` in the project root.
+- Treat `E:\JIRA SCRIPT` as the project root. Use Windows PowerShell commands and quote the path as `"E:\JIRA SCRIPT"` when needed.
+- Prefer repo-native Python entry points over generic framework guesses. The primary local startup command is `python run_server.py`.
+- The default localhost entry is `http://127.0.0.1:3000/introduction.html`. `run_server.py` may automatically switch from port `3000` to `3001`, `3002`, or `3003` when `3000` is busy.
+- The HTML-only refresh path is `python run_html_only.py --no-server` when the task needs regenerated report output without running the server.
 
-# Key Pages
+# Report Serving Model
 
+- Canonical report sources live in the repo root (for example `introduction.html`, `dashboard.html`, `approved_vs_planned_hours_report.html`) and are promoted into `report_html/` by `sync_report_html()` in `report_server.py`.
+- Shared assets served on localhost are synced from canonical sources such as `shared-nav.js`, `shared-nav.css`, `shared-date-filter.js`, and `report_html/material-symbols.css`.
+- If a report output path changes or a new report is added, update `_resolve_report_html_sources()` in `report_server.py` so localhost serves the right file after sync.
+
+# Important Routes
+
+- Introduction: `http://127.0.0.1:3000/introduction.html`
+- Report index: `http://127.0.0.1:3000/report_html/`
 - Epics Planner UI: `http://127.0.0.1:3000/settings/epics-management`
 - Epics Planner Import: `http://127.0.0.1:3000/settings/epics-management/import`
 - Rows API: `/api/epics-management/rows`
 - Projects API: `/api/projects?include_inactive=0`
 
-# Databases
+# Stateful Files
 
-- Settings/epics DB: `assignee_hours_capacity.db` (also `epics_management.db`).
-- Jira sync cache: `jira_sync_cache.db`.
+- Primary settings and planning database: `assignee_hours_capacity.db`
+- Supporting settings database: `epics_management.db`
+- Jira sync cache: `jira_sync_cache.db`
+- Startup port markers: `.codex_run_server_<port>_pid`
 
-When the user says "the project", "the app", "localhost", or names a route without a host, assume this workspace and these defaults unless they say otherwise.
+When the user says "the project", "the app", "localhost", or names a route without a host, assume this workspace and these defaults unless they explicitly say otherwise.
 
-# Stability check before new work (GitHub)
+# Changelog
 
-Before starting work on a **new requirement** for this project:
-
-1. **Ask the user** whether the current project is stable.
-2. If the user says **yes** — **push the codebase to GitHub** (commit if needed per repo norms, then push) **before** continuing with the new requirement.
-3. If the user says **no** — **do not push** to GitHub before working; proceed without a push unless the user explicitly asks to push.
+- `2026-04-30`: tightened repo-root, localhost, sync, and stateful-file guidance; removed unrelated GitHub push instructions.

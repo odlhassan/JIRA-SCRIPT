@@ -3329,10 +3329,17 @@ function renderProductRoadmap(rows) {
         });
     });
 }
-function renderMiniGantt(row) {
+function renderMiniGantt(row, visiblePhaseNames) {
     const mini = row.mini_gantt || {};
     const phasesObj = mini.phases || {};
     const weekTicks = Array.isArray(mini.week_ticks) ? mini.week_ticks : [];
+    const scopedPhaseNames = Array.isArray(visiblePhaseNames) && visiblePhaseNames.length
+        ? visiblePhaseNames
+        : phaseNames;
+
+    if (!scopedPhaseNames.length) {
+        return '<div class="mini-gantt-empty">No linked phases available for this RMI.</div>';
+    }
 
     const weekTicksHtml = weekTicks.map((tick) =>
         `<span class="mini-gantt-week-tick" style="left:${pctStyle(tick.left_pct)}%;"></span>`
@@ -3347,7 +3354,7 @@ function renderMiniGantt(row) {
         ? `<span class="mini-gantt-today-line" style="left:${pctStyle(mini.today_left_pct)}%;"></span>`
         : "";
 
-    const rowsHtml = phaseNames.map((phaseName) => {
+    const rowsHtml = scopedPhaseNames.map((phaseName) => {
         const phase = phasesObj[phaseName] || {};
         const badgeClass = asText(phase.state || "");
         const badgeText = stateBadgeText(phase);
@@ -3393,7 +3400,11 @@ function renderMiniGantt(row) {
         `;
     }).join("");
 
-    const noDatedHtml = mini.has_dated_phases ? "" : '<div class="mini-gantt-empty">No dated phases</div>';
+    const hasVisibleDatedPhases = scopedPhaseNames.some((phaseName) => {
+        const phase = phasesObj[phaseName] || {};
+        return !phase.show_no_bar && !!phase.valid;
+    });
+    const noDatedHtml = hasVisibleDatedPhases ? "" : '<div class="mini-gantt-empty">No dated phases</div>';
 
     return `
         <div class="mini-gantt" style="--timeline-col: ${esc(mini.timeline_width_px || 520)}px;">
@@ -3464,14 +3475,16 @@ function buildRmiDetailsHtml(row) {
         : (deliveryStatus === "On-track" ? "is-on-track" : "is-yet-to-start");
     const remarksText = formatRemarksText(row.remarks);
 
-    const phasesObj = row.mini_gantt?.phases || {};
-    const getPhasePayload = (phase) => phasesObj[phase] || row.phase_data?.[phase] || {};
-    const phaseJiraRows = phaseNames.map((phase) => {
-        const p = getPhasePayload(phase);
+    const allPhaseData = row.phase_data || {};
+    const mappedPhaseData = row.mapped_phase_data || {};
+    const mappedPhaseRows = phaseNames.map((phase) => {
+        const p = mappedPhaseData?.[phase];
+        if (!p) return null;
         const jiraUrl = asText(p.jira_url);
         const linkedKey = asText(p.linked_issue_key);
         return {
             phase,
+            payload: p,
             jiraUrl,
             linkedKey,
             status: asText(p.linked_issue_status),
@@ -3482,8 +3495,9 @@ function buildRmiDetailsHtml(row) {
             loggedHours: p.linked_issue_logged_hours,
             progress: p.linked_issue_progress_pct,
         };
-    }).filter((item) => item.jiraUrl || item.linkedKey);
-    const phaseJiraLinksHtml = phaseJiraRows.length ? `
+    }).filter((item) => item && item.jiraUrl);
+    const linkedPhaseNames = mappedPhaseRows.map((item) => item.phase);
+    const phaseJiraLinksHtml = mappedPhaseRows.length ? `
         <div class="simple-table-wrap">
             <table class="simple-table">
                 <thead>
@@ -3500,7 +3514,7 @@ function buildRmiDetailsHtml(row) {
                     </tr>
                 </thead>
                 <tbody>
-                    ${phaseJiraRows.map((item) => {
+                    ${mappedPhaseRows.map((item) => {
                         const jiraCell = item.jiraUrl && item.jiraUrl.startsWith("http")
                             ? `<a class="link" href="${esc(item.jiraUrl)}" target="_blank" rel="noopener">${esc(item.linkedKey || item.jiraUrl)}</a>`
                             : esc(item.linkedKey || item.jiraUrl || "-");
@@ -3521,28 +3535,28 @@ function buildRmiDetailsHtml(row) {
                 </tbody>
             </table>
         </div>
-    ` : '<div class="muted">No phase Jira links found for this RMI.</div>';
-    const phaseMdItems = phaseNames.map((phase) => {
-        const p = getPhasePayload(phase);
+    ` : '<div class="muted">No mapped phase Jira links found for this RMI.</div>';
+    const phaseMdItems = mappedPhaseRows.length ? mappedPhaseRows.map((item) => {
+        const p = item.payload || {};
         const mdLabel = asText(p.mandays_text || p.mandays) || "-";
         const badgeClass = asText(p.state || "");
         return `
             <div class="phase-md-item">
-                <div class="phase-md-title">${esc(phase)} <span class="badge ${esc(badgeClass)}">${esc(stateBadgeText(p))}</span></div>
+                <div class="phase-md-title">${esc(item.phase)} <span class="badge ${esc(badgeClass)}">${esc(stateBadgeText(p))}</span></div>
                 <div class="phase-md-value">${esc(mdLabel)} md</div>
             </div>
         `;
-    }).join("");
+    }).join("") : '<div class="muted">No mapped phases available for this RMI.</div>';
 
-    const phaseCards = phaseNames.map((phase) => {
-        const p = getPhasePayload(phase);
+    const phaseCards = mappedPhaseRows.length ? mappedPhaseRows.map((item) => {
+        const p = item.payload || {};
         const phaseJiraUrl = asText(p.jira_url);
         const phaseJiraLink = phaseJiraUrl && phaseJiraUrl.startsWith("http")
             ? `<a class="link" href="${esc(phaseJiraUrl)}" target="_blank" rel="noopener">${esc(asText(p.linked_issue_key) || phaseJiraUrl)}</a>`
             : esc(asText(p.linked_issue_key) || phaseJiraUrl || "-");
         return `
             <article class="phase-card">
-                <h4>${esc(phase)} <span class="badge ${esc(asText(p.state || ""))}">${esc(stateBadgeText(p))}</span></h4>
+                <h4>${esc(item.phase)} <span class="badge ${esc(asText(p.state || ""))}">${esc(stateBadgeText(p))}</span></h4>
                 <div><strong>Start:</strong> ${esc(formatDisplayDate(p.start_iso || p.start))}</div>
                 <div><strong>End:</strong> ${esc(formatDisplayDate(p.end_iso || p.end))}</div>
                 <div><strong>Man-days:</strong> ${esc(asText(p.mandays_text || p.mandays) || "-")}</div>
@@ -3552,7 +3566,7 @@ function buildRmiDetailsHtml(row) {
                 <div><strong>Warning:</strong> ${esc(asText(p.warning) || "-")}</div>
             </article>
         `;
-    }).join("");
+    }).join("") : '<div class="muted">No mapped phases available for this RMI.</div>';
     const rmiText = asText(row.epic_name) || asText(row.epic_rmi) || "(No Epic/RMI)";
     const storiesHtml = stories.length ? `
         <div class="simple-table-wrap">
@@ -3647,7 +3661,7 @@ function buildRmiDetailsHtml(row) {
                 }).join("") + "</div>"
                 : "<p class=\"muted\">No sealed dates recorded for this RMI.</p>"}
         </section>
-        ${renderMiniGantt(row)}
+        ${renderMiniGantt(row, linkedPhaseNames)}
         <h3>Phase Jira Links</h3>
         ${phaseJiraLinksHtml}
         <h3>Stories</h3>

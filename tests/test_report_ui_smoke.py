@@ -277,6 +277,13 @@ class ReportUiSmokeTests(unittest.TestCase):
         self.assertIn("evaluateManagedField", html)
         self.assertIn("managedFieldFormulaText", html)
 
+    def test_ipp_meeting_drawer_scopes_mini_gantt_to_linked_phases(self):
+        html = (Path(__file__).resolve().parents[1] / "ipp_meeting_dashboard_template.html").read_text(encoding="utf-8")
+        self.assertIn("function renderMiniGantt(row, visiblePhaseNames)", html)
+        self.assertIn("const linkedPhaseNames = mappedPhaseRows.map((item) => item.phase);", html)
+        self.assertIn("${renderMiniGantt(row, linkedPhaseNames)}", html)
+        self.assertIn("No linked phases available for this RMI.", html)
+
     def test_planned_rmis_actual_mode_controls_exist(self):
         payload = {
             "rows": [],
@@ -546,6 +553,7 @@ class ReportUiSmokeTests(unittest.TestCase):
             self.assertIn("--most-likely-bg:#ffedd5", epics_html)
             self.assertIn("--tk-budgeted-bg:#dcfce7", epics_html)
             self.assertIn('id="plan-dialog"', epics_html)
+            self.assertIn('id="plan-mandays-wrap"', epics_html)
             self.assertIn('id="add-epic-btn"', epics_html)
             self.assertIn('id="add-plan-column-btn"', epics_html)
             self.assertIn('id="manage-plan-columns-btn"', epics_html)
@@ -564,6 +572,11 @@ class ReportUiSmokeTests(unittest.TestCase):
             self.assertIn('id="plan-column-restore-hint"', epics_html)
             self.assertIn('id="manage-columns-dialog"', epics_html)
             self.assertIn("data-sync-epic-row", epics_html)
+            self.assertIn('id="sync-jira-modal"', epics_html)
+            self.assertIn('id="sync-epic-mandays"', epics_html)
+            self.assertIn('id="sync-phase-mandays"', epics_html)
+            self.assertIn('id="sync-epic-dates"', epics_html)
+            self.assertIn('id="sync-phase-dates"', epics_html)
             self.assertIn('id="epic-research-urs-plan-jira-url"', epics_html)
             self.assertIn('id="epic-dds-plan-jira-url"', epics_html)
             self.assertIn('id="epic-development-plan-jira-url"', epics_html)
@@ -571,6 +584,8 @@ class ReportUiSmokeTests(unittest.TestCase):
             self.assertIn('id="epic-user-manual-plan-jira-url"', epics_html)
             self.assertIn('id="epic-production-plan-jira-url"', epics_html)
             self.assertIn('id="dynamic-plan-fields"', epics_html)
+            self.assertIn('DATE_ONLY_FORMULA_PLAN_KEYS', epics_html)
+            self.assertIn('Edit Planned Dates for', epics_html)
 
     def test_page_categories_page_contains_report_display_name_controls(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
@@ -801,6 +816,60 @@ class ReportUiSmokeTests(unittest.TestCase):
             )
             self.assertEqual(update_body["row"]["plans"][security_key]["most_likely_man_days"], 2.0)
             self.assertEqual(update_body["row"]["plans"][security_key]["man_days"], 2.0)
+
+            formula_dates_resp = client.post(
+                "/api/epics-management/rows",
+                json={
+                    "epic_key": "O2-1001",
+                    "project_key": "O2",
+                    "project_name": "O2 Project",
+                    "product_category": "Core",
+                    "epic_name": "Formula Phase Dates",
+                    "plans": {
+                        "development_plan": {
+                            "man_days": 4,
+                            "start_date": "2026-03-01",
+                            "due_date": "2026-03-05",
+                        },
+                        "qa_handover": {
+                            "start_date": "2026-03-06",
+                            "due_date": "2026-03-06",
+                        },
+                        "bug_fixing": {
+                            "start_date": "2026-03-07",
+                            "due_date": "2026-03-08",
+                        },
+                        "production_plan": {
+                            "start_date": "2026-03-09",
+                            "due_date": "2026-03-09",
+                        },
+                    },
+                },
+            )
+            self.assertEqual(formula_dates_resp.status_code, 201)
+            formula_dates_body = formula_dates_resp.get_json()
+            formula_row = formula_dates_body["row"]
+            self.assertEqual(formula_row["plans"]["qa_handover"]["start_date"], "2026-03-06")
+            self.assertEqual(formula_row["plans"]["qa_handover"]["due_date"], "2026-03-06")
+            self.assertEqual(formula_row["plans"]["qa_handover"]["tk_budgeted_start_date"], "2026-03-06")
+            self.assertEqual(formula_row["plans"]["qa_handover"]["tk_budgeted_due_date"], "2026-03-06")
+            self.assertEqual(formula_row["plans"]["qa_handover"]["tk_budgeted_man_days"], 0.5)
+            self.assertEqual(formula_row["plans"]["qa_handover"]["man_days"], 0.5)
+            self.assertEqual(formula_row["plans"]["qa_handover"]["most_likely_man_days"], "")
+            self.assertEqual(formula_row["plans"]["bug_fixing"]["start_date"], "2026-03-07")
+            self.assertEqual(formula_row["plans"]["bug_fixing"]["due_date"], "2026-03-08")
+            self.assertEqual(formula_row["plans"]["bug_fixing"]["tk_budgeted_start_date"], "2026-03-07")
+            self.assertEqual(formula_row["plans"]["bug_fixing"]["tk_budgeted_due_date"], "2026-03-08")
+            self.assertGreater(formula_row["plans"]["bug_fixing"]["tk_budgeted_man_days"], 0)
+            self.assertEqual(formula_row["plans"]["bug_fixing"]["man_days"], formula_row["plans"]["bug_fixing"]["tk_budgeted_man_days"])
+            self.assertEqual(formula_row["plans"]["bug_fixing"]["most_likely_man_days"], "")
+            self.assertEqual(formula_row["plans"]["production_plan"]["start_date"], "2026-03-09")
+            self.assertEqual(formula_row["plans"]["production_plan"]["due_date"], "2026-03-09")
+            self.assertEqual(formula_row["plans"]["production_plan"]["tk_budgeted_start_date"], "2026-03-09")
+            self.assertEqual(formula_row["plans"]["production_plan"]["tk_budgeted_due_date"], "2026-03-09")
+            self.assertEqual(formula_row["plans"]["production_plan"]["tk_budgeted_man_days"], 2.0)
+            self.assertEqual(formula_row["plans"]["production_plan"]["man_days"], 2.0)
+            self.assertEqual(formula_row["plans"]["production_plan"]["most_likely_man_days"], "")
 
             planner_columns_after_rename = client.get("/api/epics-management/plan-columns")
             self.assertEqual(planner_columns_after_rename.status_code, 200)
@@ -1047,7 +1116,13 @@ class ReportUiSmokeTests(unittest.TestCase):
                     "priority": "Low",
                     "plan_status": "Not Planned Yet",
                     "jira_url": "https://octopusdtlsupport.atlassian.net/browse/O2-321",
-                    "plans": {},
+                    "plans": {
+                        "sqa_plan": {
+                            "most_likely_man_days": 1,
+                            "man_days": 1,
+                            "jira_url": "https://octopusdtlsupport.atlassian.net/browse/O2-990",
+                        }
+                    },
                 },
             )
             self.assertEqual(create_existing.status_code, 201)
@@ -1148,7 +1223,7 @@ class ReportUiSmokeTests(unittest.TestCase):
             self.assertEqual(updated["plans"]["development_plan"]["jira_url"], "https://octopusdtlsupport.atlassian.net/browse/O2-401")
             self.assertEqual(updated["plans"]["development_plan"]["start_date"], "2026-05-03")
             self.assertEqual(updated["plans"]["sqa_plan"]["most_likely_man_days"], 5.0)
-            self.assertEqual(updated["plans"]["sqa_plan"]["jira_url"], "")
+            self.assertEqual(updated["plans"]["sqa_plan"]["jira_url"], "https://octopusdtlsupport.atlassian.net/browse/O2-990")
             self.assertIn("FF-541", rows)
             self.assertEqual(rows["FF-541"]["is_tk_epic"], 1)
 
@@ -1582,6 +1657,134 @@ class ReportUiSmokeTests(unittest.TestCase):
                 self.assertEqual(story_rows[1][0], "O2-102")
             finally:
                 conn.close()
+
+    @patch("report_server._fetch_jira_issues_for_jql")
+    @patch("report_server.resolve_jira_end_date_field_ids")
+    @patch("report_server.resolve_jira_start_date_field_id")
+    @patch("report_server.get_session")
+    @patch("report_server.extract_jira_key_from_url")
+    def test_epics_management_sync_epic_only_scope_preserves_phase_values(
+        self,
+        mock_extract_key,
+        mock_get_session,
+        mock_start_field,
+        mock_end_fields,
+        mock_fetch_jql,
+    ):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            (root / "report_html").mkdir(parents=True, exist_ok=True)
+            (root / "report_html" / "dashboard.html").write_text("<html><body>ok</body></html>", encoding="utf-8")
+            _write_minimal_assignee_workbook(root)
+            app = create_report_server_app(base_dir=root, folder_raw="report_html")
+            client = app.test_client()
+
+            create_resp = client.post(
+                "/api/epics-management/rows",
+                json={
+                    "epic_key": "O2-654",
+                    "project_key": "O2",
+                    "project_name": "O2 Project",
+                    "product_category": "Core",
+                    "epic_name": "Scoped Sync Epic",
+                    "jira_url": "https://jira.example.com/browse/O2-654",
+                    "plans": {
+                        "research_urs_plan": {
+                            "jira_url": "https://jira.example.com/browse/O2-201",
+                            "man_days": 2,
+                            "start_date": "2026-03-01",
+                            "due_date": "2026-03-05",
+                        }
+                    },
+                },
+            )
+            self.assertEqual(create_resp.status_code, 201)
+
+            no_scope_resp = client.post(
+                "/api/epics-management/rows/O2-654/sync-jira-plan",
+                json={
+                    "jira_url": "https://jira.example.com/browse/O2-654",
+                    "sync_epic_mandays": False,
+                    "sync_phase_mandays": False,
+                    "sync_epic_dates": False,
+                    "sync_phase_dates": False,
+                },
+            )
+            self.assertEqual(no_scope_resp.status_code, 400)
+
+            mock_extract_key.side_effect = lambda url: str(url or "").rstrip("/").split("/")[-1]
+            mock_get_session.return_value = object()
+            mock_start_field.return_value = "customfield_start"
+            mock_end_fields.return_value = ["customfield_end"]
+            mock_fetch_jql.side_effect = [
+                [
+                    {
+                        "key": "O2-654",
+                        "fields": {
+                            "issuetype": {"name": "Epic"},
+                            "summary": "Scoped Sync Epic from Jira",
+                            "description": {
+                                "type": "doc",
+                                "content": [
+                                    {
+                                        "type": "paragraph",
+                                        "content": [{"type": "text", "text": "Scoped sync desc"}],
+                                    }
+                                ],
+                            },
+                            "timeoriginalestimate": 28800,
+                            "customfield_start": "2026-04-10",
+                            "customfield_end": "2026-04-20",
+                        },
+                    }
+                ],
+                [
+                    {
+                        "key": "O2-201",
+                        "fields": {
+                            "issuetype": {"name": "Story"},
+                            "customfield_10014": "O2-654",
+                            "summary": "Story 201",
+                            "status": {"name": "In Progress"},
+                            "timeoriginalestimate": 14400,
+                            "customfield_start": "2026-05-01",
+                            "customfield_end": "2026-05-08",
+                        },
+                    }
+                ],
+            ]
+
+            sync_resp = client.post(
+                "/api/epics-management/rows/O2-654/sync-jira-plan",
+                json={
+                    "jira_url": "https://jira.example.com/browse/O2-654",
+                    "sync_epic_mandays": True,
+                    "sync_phase_mandays": False,
+                    "sync_epic_dates": True,
+                    "sync_phase_dates": False,
+                },
+            )
+            self.assertEqual(sync_resp.status_code, 200)
+            body = sync_resp.get_json() or {}
+            row = body["row"]
+            self.assertEqual(row["epic_name"], "Scoped Sync Epic from Jira")
+            self.assertEqual(row["plans"]["research_urs_plan"]["most_likely_man_days"], 2.0)
+            self.assertEqual(row["plans"]["research_urs_plan"]["start_date"], "2026-03-01")
+            self.assertEqual(row["plans"]["research_urs_plan"]["due_date"], "2026-03-05")
+            self.assertEqual(row["plans"]["epic_plan"]["most_likely_man_days"], 1.0)
+            self.assertEqual(row["plans"]["epic_plan"]["start_date"], "2026-04-10")
+            self.assertEqual(row["plans"]["epic_plan"]["due_date"], "2026-04-20")
+
+            rows_resp = client.get("/api/epics-management/rows")
+            self.assertEqual(rows_resp.status_code, 200)
+            rows = rows_resp.get_json()["rows"]
+            saved_row = next(item for item in rows if item["epic_key"] == "O2-654")
+            self.assertEqual(saved_row["plans"]["research_urs_plan"]["most_likely_man_days"], 2.0)
+            self.assertEqual(saved_row["plans"]["research_urs_plan"]["start_date"], "2026-03-01")
+            self.assertEqual(saved_row["plans"]["research_urs_plan"]["due_date"], "2026-03-05")
+            self.assertEqual(saved_row["plans"]["epic_plan"]["most_likely_man_days"], 1.0)
+            self.assertEqual(saved_row["plans"]["epic_plan"]["start_date"], "2026-04-10")
+            self.assertEqual(saved_row["plans"]["epic_plan"]["due_date"], "2026-04-20")
 
     def test_dashboard_template_uses_planner_validation_alerts(self):
         template_path = Path(__file__).resolve().parents[1] / "dashboard_template.html"

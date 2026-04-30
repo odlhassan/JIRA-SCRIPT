@@ -13,3 +13,4 @@ INFO_IDS: `ipp.roadmap_geometry`
 ## Drawer Notes
 
 - Drawer explains that rendering geometry is computed upstream in transformed IPP workbook columns.
+- RMI Details drawer only shows Jira-linked phases in its mini-gantt, phase links, man-days, and breakdown sections.

@@ -1,29 +1,31 @@
 ---
-description: When implementing a solution, always include a section on how to experience the latest changes on live localhost with CLI commands and steps
+description: Require exact localhost reproduction steps and executed-command reporting in every completed implementation
 alwaysApply: true
 ---
 
 # How to Experience Latest Changes on Live Localhost
 
-Whenever you implement a solution, new feature, or fix, you **must** include a short section titled **"How to experience latest changes on live localhost"** (or equivalent) in your response.
+Whenever you implement a solution, new feature, or fix, your final response must contain a short section titled exactly `How to experience latest changes on live localhost`.
 
-## What to include
+## Required content
 
-1. **CLI commands** – Exact commands to run (e.g. start dev server, run migrations, install deps).
-2. **Steps** – Ordered steps so the user can run the app and see the new behavior (e.g. open URL, click where, what to expect).
-3. **Context** – If the project has a known dev server or script (e.g. `npm run dev`, `python run_server.py`), use those; otherwise infer from the codebase and state assumptions.
+1. The exact commands you executed during verification.
+2. The exact additional commands the user can run locally.
+3. The exact server start command for this repo when localhost is applicable. Prefer `python run_server.py` from `E:\JIRA SCRIPT` unless the codebase shows a narrower command is correct.
+4. The exact localhost URL, route, or endpoint to inspect.
+5. Ordered manual steps with expected visible behavior, focused on the latest change instead of the whole app.
+6. A brief blocker note if startup or local experience was not executable in the current environment.
 
-## Example
+## Repo defaults
 
-After implementing a new report page, you might add:
+- Default entry page: `http://127.0.0.1:3000/introduction.html`
+- Report index: `http://127.0.0.1:3000/report_html/`
+- If `run_server.py` selected a fallback port, report the actual port you used.
 
-**How to experience latest changes on live localhost**
+## Not applicable case
 
-1. From the project root, start the report server:
-   ```bash
-   python run_server.py
-   ```
-2. Open in a browser: `http://localhost:8000/reports/new-report`.
-3. Use the date filter and click "Apply" to see the new chart.
+If the task does not have a meaningful localhost experience path, say `How to experience latest changes on live localhost: Not applicable for this change`.
 
-Keep this section concise (a few bullets and one code block is usually enough) but complete enough that someone can run it and see the change.
+# Changelog
+
+- `2026-04-30`: made the section title exact, required executed-command reporting, and pinned repo-specific localhost defaults.

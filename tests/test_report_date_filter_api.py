@@ -223,6 +223,31 @@ class ReportDateFilterApiTests(unittest.TestCase):
             self.assertIn("fresh from db", report_dashboard.read_text(encoding="utf-8"))
             self.assertIn("fresh from db", root_dashboard.read_text(encoding="utf-8"))
 
+    def test_dashboard_html_rebuilds_when_database_source_is_newer(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            app = _build_app(root)
+            client = app.test_client()
+            stale_html = "<html><script>const dashboardData = {\"epics\": []};</script><body>stale generated</body></html>"
+            report_dashboard = root / "report_html" / "dashboard.html"
+            root_dashboard = root / "dashboard.html"
+            report_dashboard.write_text(stale_html, encoding="utf-8")
+            root_dashboard.write_text(stale_html, encoding="utf-8")
+            sleep(1.1)
+            (root / "assignee_hours_capacity.db").write_text("newer source", encoding="utf-8")
+
+            with (
+                patch("report_server.dash_fetch_dashboard_data", return_value={"epics": [], "stories": [], "subtasks": [], "bug_subtasks": [], "projects": [], "orphans": {}, "generated_at": "2026-02-28 12:00 UTC"}),
+                patch("report_server.dash_generate_dashboard_html", return_value="<html><body>fresh after db update</body></html>"),
+            ):
+                resp = client.get("/dashboard.html")
+
+            self.assertEqual(resp.status_code, 200)
+            html = resp.get_data(as_text=True)
+            self.assertIn("fresh after db update", html)
+            self.assertNotIn("stale generated", html)
+            self.assertIn("fresh after db update", report_dashboard.read_text(encoding="utf-8"))
+
     def test_employee_performance_html_promotes_newer_root_source_before_serving(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             root = Path(td)

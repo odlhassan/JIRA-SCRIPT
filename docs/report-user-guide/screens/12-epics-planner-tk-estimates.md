@@ -20,6 +20,7 @@ Epics Planner manages RMI phase budgets with two layers:
 | Approved plan import page | `/settings/epics-management/import` |
 | Approved plan import preview API | `/api/epics-management/import/preview` |
 | Approved plan import submit API | `/api/epics-management/import/submit` |
+| Jira sync API | `/api/epics-management/rows/<epic_key>/sync-jira-plan` |
 | Seal API | `/api/epics-management/seal` |
 | Re-budget API | `/api/epics-management/rows/<epic_key>/re-budget` |
 
@@ -36,9 +37,9 @@ Editable cells save atomically. The phase name commits when the user presses Ent
 | `development_plan` | Dev | Most Likely input; shares remaining TK Approved budget with SQA by 40:15 weighting. |
 | `sqa_plan` | SQA | Most Likely input; shares remaining TK Approved budget with Dev by 40:15 weighting. |
 | `user_manual_plan` | Doc / User Manual | Most Likely input; TK Budgeted is 5% of TK Approved when input exists. |
-| `qa_handover` | Handover | Formula-managed; TK Budgeted is 0.5 days when Dev has input. |
-| `bug_fixing` | Bug Fixing | Formula-managed; TK Budgeted is 15% of TK Approved. |
-| `production_plan` | Release | Formula-managed; TK Budgeted is 2 days when TK Approved is greater than zero. |
+| `qa_handover` | Handover | Formula-managed for man-days; planned start/due dates are user-editable; TK Budgeted is 0.5 days when Dev has input. |
+| `bug_fixing` | Bug Fixing | Formula-managed for man-days; planned start/due dates are user-editable; TK Budgeted is 15% of TK Approved. |
+| `production_plan` | Release | Formula-managed for man-days; planned start/due dates are user-editable; TK Budgeted is 2 days when TK Approved is greater than zero. |
 | `process_design` | Process Design | Most Likely input; direct TK Budgeted pass-through. |
 | `process_qa_testing` | Process QA Testing | Most Likely input; direct TK Budgeted pass-through. |
 | `regression_sqa_testing` | Regression SQA Testing | Most Likely input; TK Budgeted is 10% of TK Approved when input exists. |
@@ -55,7 +56,16 @@ The system computes the Epic Plan summary from Most Likely phase inputs:
 | Calculated | `(optimistic + 4 * most_likely_total + pessimistic) / 6`. |
 | TK Approved | `calculated / 2`. |
 
-For each phase, TK Budgeted dates copy from the corresponding Most Likely start and due dates. Formula-managed phases do not require user-entered Most Likely estimates.
+For each phase, TK Budgeted dates copy from the phase planned start and due dates. Formula-managed phases do not require user-entered Most Likely estimates, but Handover, Bug Fixing, and Release do allow direct planned date entry while their man-days remain computed.
+
+## Jira Sync Scope
+
+The **Sync Jira Epic** action opens a modal before any Jira data is applied. The modal has separate checkboxes for man-days and planned dates so the user can choose whether to refresh:
+
+- epic values only
+- epic values plus linked phase values
+
+When only epic options are selected, linked phase plans keep their current man-days and dates. When linked phase options are selected, only phases with configured Jira URLs are updated from Jira. If no sync option is selected, the request is rejected. Sealed epics still reject Jira sync until the user clicks **RE-BUDGET**.
 
 ## Approved Plan Import
 
