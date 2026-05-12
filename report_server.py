@@ -1076,10 +1076,12 @@ def _init_page_categories_db(db_path: Path) -> None:
             )
             """
         )
-        columns = conn.execute("PRAGMA table_info(page_categories)").fetchall()
-        column_names = {str(row[1]) for row in columns}
-        if "icon_name" not in column_names:
-            conn.execute("ALTER TABLE page_categories ADD COLUMN icon_name TEXT NOT NULL DEFAULT 'folder'")
+        _sqlite_add_column_if_missing(
+            conn,
+            "page_categories",
+            "icon_name",
+            "ALTER TABLE page_categories ADD COLUMN icon_name TEXT NOT NULL DEFAULT 'folder'",
+        )
         conn.execute("CREATE INDEX IF NOT EXISTS idx_page_category_assignments_page_key ON page_category_assignments(page_key)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_page_category_assignments_category ON page_category_assignments(category_id)")
         conn.commit()

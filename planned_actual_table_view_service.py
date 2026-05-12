@@ -35,6 +35,26 @@ def _text(value: Any) -> str:
     return str(value).strip()
 
 
+def _sqlite_column_exists(conn: sqlite3.Connection, table_name: str, column_name: str) -> bool:
+    rows = conn.execute(f"PRAGMA table_info({table_name})").fetchall()
+    for row in rows:
+        if len(row) > 1 and _text(row[1]) == column_name:
+            return True
+    return False
+
+
+def _sqlite_add_column_if_missing(
+    conn: sqlite3.Connection, table_name: str, column_name: str, alter_sql: str
+) -> None:
+    """ALTER ADD COLUMN safe under concurrent Gunicorn workers."""
+    if _sqlite_column_exists(conn, table_name, column_name):
+        return
+    try:
+        conn.execute(alter_sql)
+    except sqlite3.OperationalError as exc:
+        if "duplicate column name" in str(exc).lower():
+            return
+        raise
 
 def _norm_set(values: set[str], *, upper: bool = False) -> list[str]:
     out = set()
@@ -101,18 +121,36 @@ def init_db(db_path: Path) -> None:
             )
             """
         )
-        cols = conn.execute("PRAGMA table_info(planned_actual_refresh_runs)").fetchall()
-        col_names = {str(item[1]) for item in cols}
-        if "cancel_requested" not in col_names:
-            conn.execute("ALTER TABLE planned_actual_refresh_runs ADD COLUMN cancel_requested INTEGER NOT NULL DEFAULT 0")
-        if "queued_at_utc" not in col_names:
-            conn.execute("ALTER TABLE planned_actual_refresh_runs ADD COLUMN queued_at_utc TEXT NOT NULL DEFAULT ''")
-        if "attempt" not in col_names:
-            conn.execute("ALTER TABLE planned_actual_refresh_runs ADD COLUMN attempt INTEGER NOT NULL DEFAULT 1")
-        if "max_attempts" not in col_names:
-            conn.execute("ALTER TABLE planned_actual_refresh_runs ADD COLUMN max_attempts INTEGER NOT NULL DEFAULT 1")
-        if "next_retry_at_utc" not in col_names:
-            conn.execute("ALTER TABLE planned_actual_refresh_runs ADD COLUMN next_retry_at_utc TEXT NOT NULL DEFAULT ''")
+        _sqlite_add_column_if_missing(
+            conn,
+            "planned_actual_refresh_runs",
+            "cancel_requested",
+            "ALTER TABLE planned_actual_refresh_runs ADD COLUMN cancel_requested INTEGER NOT NULL DEFAULT 0",
+        )
+        _sqlite_add_column_if_missing(
+            conn,
+            "planned_actual_refresh_runs",
+            "queued_at_utc",
+            "ALTER TABLE planned_actual_refresh_runs ADD COLUMN queued_at_utc TEXT NOT NULL DEFAULT ''",
+        )
+        _sqlite_add_column_if_missing(
+            conn,
+            "planned_actual_refresh_runs",
+            "attempt",
+            "ALTER TABLE planned_actual_refresh_runs ADD COLUMN attempt INTEGER NOT NULL DEFAULT 1",
+        )
+        _sqlite_add_column_if_missing(
+            conn,
+            "planned_actual_refresh_runs",
+            "max_attempts",
+            "ALTER TABLE planned_actual_refresh_runs ADD COLUMN max_attempts INTEGER NOT NULL DEFAULT 1",
+        )
+        _sqlite_add_column_if_missing(
+            conn,
+            "planned_actual_refresh_runs",
+            "next_retry_at_utc",
+            "ALTER TABLE planned_actual_refresh_runs ADD COLUMN next_retry_at_utc TEXT NOT NULL DEFAULT ''",
+        )
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS planned_actual_snapshots (
@@ -137,16 +175,30 @@ def init_db(db_path: Path) -> None:
             )
             """
         )
-        snap_cols = conn.execute("PRAGMA table_info(planned_actual_snapshots)").fetchall()
-        snap_col_names = {str(item[1]) for item in snap_cols}
-        if "is_official" not in snap_col_names:
-            conn.execute("ALTER TABLE planned_actual_snapshots ADD COLUMN is_official INTEGER NOT NULL DEFAULT 0")
-        if "official_pinned_by" not in snap_col_names:
-            conn.execute("ALTER TABLE planned_actual_snapshots ADD COLUMN official_pinned_by TEXT NOT NULL DEFAULT ''")
-        if "official_pinned_at_utc" not in snap_col_names:
-            conn.execute("ALTER TABLE planned_actual_snapshots ADD COLUMN official_pinned_at_utc TEXT NOT NULL DEFAULT ''")
-        if "lifecycle_state" not in snap_col_names:
-            conn.execute("ALTER TABLE planned_actual_snapshots ADD COLUMN lifecycle_state TEXT NOT NULL DEFAULT 'active'")
+        _sqlite_add_column_if_missing(
+            conn,
+            "planned_actual_snapshots",
+            "is_official",
+            "ALTER TABLE planned_actual_snapshots ADD COLUMN is_official INTEGER NOT NULL DEFAULT 0",
+        )
+        _sqlite_add_column_if_missing(
+            conn,
+            "planned_actual_snapshots",
+            "official_pinned_by",
+            "ALTER TABLE planned_actual_snapshots ADD COLUMN official_pinned_by TEXT NOT NULL DEFAULT ''",
+        )
+        _sqlite_add_column_if_missing(
+            conn,
+            "planned_actual_snapshots",
+            "official_pinned_at_utc",
+            "ALTER TABLE planned_actual_snapshots ADD COLUMN official_pinned_at_utc TEXT NOT NULL DEFAULT ''",
+        )
+        _sqlite_add_column_if_missing(
+            conn,
+            "planned_actual_snapshots",
+            "lifecycle_state",
+            "ALTER TABLE planned_actual_snapshots ADD COLUMN lifecycle_state TEXT NOT NULL DEFAULT 'active'",
+        )
         conn.execute(
             """
             DROP INDEX IF EXISTS idx_planned_actual_snapshot_filter
