@@ -11,7 +11,7 @@
 - Unknown Taken (hours): `256.00`
 - Planned Not Yet Taken (hours): `336.00`
 - Planned Not Yet Taken (No Entry count): `1`
-- Defective subtasks listed: `127`
+- Defective subtasks listed: `142`
 - Clubbed leave subtasks: `26`
 
 ## Assignee-wise Summary
@@ -29,13 +29,14 @@
 | Hassan Saeed Wattoo | 0.00 | 0.00 | 48.00 | 0.00 | 0 | 25 |
 | Maria Sharafat | 176.00 | 0.00 | 0.00 | 0.00 | 1 | 2 |
 | Mariam Zulfiqar | 16.00 | 8.00 | 0.00 | 24.00 | 0 | 0 |
-| Muhammad Abbas | 0.00 | 0.00 | 24.00 | 0.00 | 0 | 16 |
+| Muhammad Abbas | 0.00 | 0.00 | 24.00 | 0.00 | 0 | 26 |
 | Muhammad Abdul Wasi | 4.00 | 0.00 | 0.00 | 0.00 | 0 | 0 |
 | Muhammad Abdullah | 0.00 | 3.00 | 0.00 | 0.00 | 0 | 2 |
 | Muhammad Ahmad Saleem | 0.00 | 16.00 | 0.00 | 0.00 | 0 | 3 |
 | Muhammad Imran Aslam | 0.00 | 0.00 | 8.00 | 16.00 | 0 | 2 |
 | Muhammad Usman Javed | 0.00 | 0.00 | 0.00 | 0.00 | 0 | 2 |
 | Muhammad Zeeshan Aslam | 104.00 | 0.00 | 136.00 | 0.00 | 0 | 1 |
+| Namra Zahid | 0.00 | 0.00 | 0.00 | 0.00 | 0 | 5 |
 | Sarmad Sabir | 16.00 | 0.00 | 0.00 | 0.00 | 0 | 8 |
 | Taimur Zahid | 0.00 | 0.00 | 0.00 | 0.00 | 0 | 7 |
 | Waqar Rasheed | 40.00 | 0.00 | 0.00 | 0.00 | 0 | 0 |

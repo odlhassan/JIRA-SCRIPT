@@ -13,6 +13,7 @@ from generate_assignee_hours_report import (
     _normalize_capacity_payload,
     calculate_capacity_metrics,
 )
+from generate_employee_performance_report import _load_performance_resource_resignation_map
 
 
 HOURS_PER_DAY = 8.0
@@ -342,6 +343,28 @@ def build_workforce_month_payload(
 
     availability_hours = _round_hours(capacity_hours - leave_hours)
 
+    option_names = [display_by_lower[k] for k in sorted(known_keys, key=lambda x: display_by_lower[x].lower())]
+    resignation_by_name: dict[str, dict[str, Any]] = {}
+    try:
+        resignation_by_name = _load_performance_resource_resignation_map(db_path, option_names)
+    except Exception:
+        resignation_by_name = {}
+    employee_options: list[dict[str, Any]] = []
+    for name in option_names:
+        rec = resignation_by_name.get(name) or {}
+        employee_options.append(
+            {
+                "name": name,
+                "resigned": bool(rec.get("resigned")),
+                "resignation_date": rec.get("resignation_date"),
+            }
+        )
+    for row in assignee_rows:
+        nm = _to_text(row.get("name"))
+        rec = resignation_by_name.get(nm) or {}
+        row["resigned"] = bool(rec.get("resigned"))
+        row["resignation_date"] = rec.get("resignation_date")
+
     return {
         "capacity_source": profile_hint,
         "capacity_settings": cap["settings"],
@@ -359,7 +382,8 @@ def build_workforce_month_payload(
         "availability_hours": availability_hours,
         "availability_days": _round_hours(availability_hours / HOURS_PER_DAY),
         "assignees": assignee_rows,
-        "assignee_options": [display_by_lower[k] for k in sorted(known_keys, key=lambda x: display_by_lower[x].lower())],
+        "assignee_options": option_names,
+        "employee_options": employee_options,
         "meta": {
             "capacity_basis": "assignee_capacity_settings profile overlapping the month (calendar clipped to month), else defaults",
             "leave_basis": "canonical RLT leave snapshot daily rows in the month (all leave hour buckets)",

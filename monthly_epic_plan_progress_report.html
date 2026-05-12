@@ -91,6 +91,111 @@
     }
     .control-span-assignees { max-width: min(560px, 100%); }
     .field-hint { margin: 0 0 4px; font-size: 0.78rem; color: var(--muted); font-weight: 600; line-height: 1.35; }
+    .emp-dd { position: relative; max-width: min(560px, 100%); }
+    .emp-dd-toggle {
+      width: 100%;
+      min-height: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 8px 12px;
+      border: 1px solid #c0ccd8;
+      border-radius: 10px;
+      background: #fff;
+      font-size: 0.94rem;
+      cursor: pointer;
+      text-align: left;
+      color: #142230;
+    }
+    .emp-dd-toggle:hover { border-color: #9db0c2; }
+    .emp-dd-toggle:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(29, 95, 143, 0.14);
+    }
+    .emp-dd-toggle .caret {
+      flex: 0 0 auto;
+      font-size: 0.72rem;
+      color: var(--muted);
+      transition: transform 0.15s ease;
+    }
+    .emp-dd.is-open .emp-dd-toggle .caret { transform: rotate(180deg); }
+    .emp-dd-panel {
+      display: none;
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: calc(100% + 4px);
+      z-index: 50;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      box-shadow: 0 16px 44px rgba(15, 23, 42, 0.12);
+      flex-direction: column;
+      max-height: min(320px, 70vh);
+      overflow: hidden;
+    }
+    .emp-dd.is-open .emp-dd-panel { display: flex; }
+    .emp-dd-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 14px;
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(180deg, #fbfdff, #f4f8fc);
+      font-size: 0.8rem;
+      font-weight: 700;
+    }
+    .emp-dd-actions button {
+      background: none;
+      border: none;
+      padding: 0;
+      color: var(--accent);
+      cursor: pointer;
+      text-decoration: underline;
+      font: inherit;
+      font-weight: 700;
+    }
+    .emp-dd-actions button:hover { color: #164a71; }
+    .emp-dd-list {
+      overflow: auto;
+      padding: 6px 8px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .emp-dd-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 6px 8px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 0.88rem;
+      line-height: 1.35;
+    }
+    .emp-dd-row:hover { background: #f5f9fd; }
+    .emp-dd-row input { margin-top: 3px; flex: 0 0 auto; accent-color: var(--accent); }
+    .emp-dd-name { flex: 1 1 auto; font-weight: 600; color: #0f172a; }
+    .emp-dd-res {
+      flex: 0 0 auto;
+      margin-left: auto;
+      font-size: 0.7rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--muted);
+      background: #f1f5f9;
+      border: 1px solid #cbd5e1;
+      border-radius: 999px;
+      padding: 2px 7px;
+    }
+    .emp-dd-res[data-resigned="1"] {
+      color: #9a3412;
+      background: #fff7ed;
+      border-color: #fdba74;
+    }
     .control select[multiple] {
       width: 100%;
       min-height: 112px;
@@ -310,9 +415,21 @@
       </div>
       <div class="controls controls-extra">
         <div class="control control-span-assignees">
-          <label for="assignee-filter">Employees (optional)</label>
-          <p class="field-hint">Ctrl/Cmd-click to select multiple. Leave none selected for full team (capacity profile headcount).</p>
-          <select id="assignee-filter" multiple aria-label="Filter by employees"></select>
+          <label id="employee-dropdown-label-static">Employees (optional)</label>
+          <p class="field-hint">Use the list to filter capacity and leave to specific people. Leave none checked for full team (capacity profile headcount). Resigned status comes from Performance settings resource records.</p>
+          <div class="emp-dd" id="employee-dropdown">
+            <button type="button" class="emp-dd-toggle" id="employee-dropdown-toggle" aria-expanded="false" aria-haspopup="listbox" aria-controls="employee-dropdown-panel">
+              <span id="employee-dropdown-summary">All employees (team scope)</span>
+              <span class="caret" aria-hidden="true">▼</span>
+            </button>
+            <div class="emp-dd-panel" id="employee-dropdown-panel" role="listbox" aria-multiselectable="true" aria-label="Employee list">
+              <div class="emp-dd-actions">
+                <button type="button" id="assignee-select-all">Select all</button>
+                <button type="button" id="assignee-clear-panel">Clear all</button>
+              </div>
+              <div class="emp-dd-list" id="employee-dropdown-list"></div>
+            </div>
+          </div>
         </div>
         <div class="btn-row" style="align-self: end;">
           <button type="button" class="btn alt" id="clear-assignees-btn">All employees</button>
@@ -385,7 +502,13 @@
     const els = {
       month: document.getElementById("month-input"),
       projects: document.getElementById("project-filter"),
-      assigneeFilter: document.getElementById("assignee-filter"),
+      employeeDd: document.getElementById("employee-dropdown"),
+      employeeDdToggle: document.getElementById("employee-dropdown-toggle"),
+      employeeDdPanel: document.getElementById("employee-dropdown-panel"),
+      employeeDdList: document.getElementById("employee-dropdown-list"),
+      employeeDdSummary: document.getElementById("employee-dropdown-summary"),
+      assigneeSelectAll: document.getElementById("assignee-select-all"),
+      assigneeClearPanel: document.getElementById("assignee-clear-panel"),
       apply: document.getElementById("apply-btn"),
       clearProjects: document.getElementById("clear-projects-btn"),
       clearAssignees: document.getElementById("clear-assignees-btn"),
@@ -413,6 +536,95 @@
       workforceCaption: document.getElementById("workforce-caption")
     };
     let latestPayload = null;
+    let employeeDropdownInteractionsBound = false;
+
+    function getCheckedEmployeeNames() {
+      if (!els.employeeDdList) return [];
+      return Array.from(els.employeeDdList.querySelectorAll(".emp-dd-cb:checked")).map((el) => String(el.value || "").trim()).filter(Boolean);
+    }
+
+    function setEmployeeDropdownOpen(open) {
+      if (!els.employeeDd || !els.employeeDdToggle || !els.employeeDdPanel) return;
+      els.employeeDd.classList.toggle("is-open", open);
+      els.employeeDdToggle.setAttribute("aria-expanded", open ? "true" : "false");
+    }
+
+    function updateEmployeeDropdownSummary() {
+      if (!els.employeeDdSummary || !els.employeeDdList) return;
+      const total = els.employeeDdList.querySelectorAll(".emp-dd-cb").length;
+      const checked = els.employeeDdList.querySelectorAll(".emp-dd-cb:checked").length;
+      if (!total) {
+        els.employeeDdSummary.textContent = "No employees with RLT data this month";
+        return;
+      }
+      if (!checked) {
+        els.employeeDdSummary.textContent = "All employees (team scope)";
+        return;
+      }
+      if (checked === total) els.employeeDdSummary.textContent = "All " + total + " selected";
+      else els.employeeDdSummary.textContent = checked + " of " + total + " selected";
+    }
+
+    function bindEmployeeDropdownChromeOnce() {
+      if (employeeDropdownInteractionsBound) return;
+      employeeDropdownInteractionsBound = true;
+      if (els.employeeDdToggle) {
+        els.employeeDdToggle.addEventListener("click", () => {
+          const open = !els.employeeDd.classList.contains("is-open");
+          setEmployeeDropdownOpen(open);
+        });
+      }
+      if (els.assigneeSelectAll && els.employeeDdList) {
+        els.assigneeSelectAll.addEventListener("click", () => {
+          els.employeeDdList.querySelectorAll(".emp-dd-cb").forEach((el) => { el.checked = true; });
+          updateEmployeeDropdownSummary();
+        });
+      }
+      if (els.assigneeClearPanel && els.employeeDdList) {
+        els.assigneeClearPanel.addEventListener("click", () => {
+          els.employeeDdList.querySelectorAll(".emp-dd-cb").forEach((el) => { el.checked = false; });
+          updateEmployeeDropdownSummary();
+        });
+      }
+      document.addEventListener("click", (ev) => {
+        if (!els.employeeDd || !els.employeeDd.classList.contains("is-open")) return;
+        if (els.employeeDd.contains(ev.target)) return;
+        setEmployeeDropdownOpen(false);
+      });
+      document.addEventListener("keydown", (ev) => {
+        if (ev.key === "Escape") setEmployeeDropdownOpen(false);
+      });
+    }
+
+    function renderEmployeeDropdown(wf) {
+      bindEmployeeDropdownChromeOnce();
+      const payload = wf || {};
+      if (!els.employeeDdList) return;
+      const rows = Array.isArray(payload.employee_options) && payload.employee_options.length
+        ? payload.employee_options
+        : (Array.isArray(payload.assignee_options) ? payload.assignee_options.map((name) => ({ name, resigned: false, resignation_date: null })) : []);
+      const selected = new Set(Array.isArray(payload.selected_assignees) ? payload.selected_assignees : []);
+      const active = !!payload.assignee_filter_active;
+      els.employeeDdList.innerHTML = rows.map((row, idx) => {
+        const name = String(row && row.name || "").trim();
+        if (!name) return "";
+        const rid = row.resigned === true || row.resigned === 1;
+        const rdate = row.resignation_date ? String(row.resignation_date).slice(0, 10) : "";
+        const title = rid ? ("Resigned" + (rdate ? " — " + rdate : "")) : "";
+        return (
+          '<label class="emp-dd-row" title="' + esc(title) + '">'
+          + '<input type="checkbox" class="emp-dd-cb" id="' + esc(bid) + '" value="' + esc(name) + '"' + (checked ? " checked" : "") + ">"
+          + '<span class="emp-dd-name">' + esc(name) + "</span>"
+          + (rid ? '<span class="emp-dd-res" data-resigned="1">Resigned' + (rdate ? " · " + esc(rdate) : "") + "</span>" : "")
+          + "</label>"
+        );
+      }).join("");
+      els.employeeDdList.querySelectorAll(".emp-dd-cb").forEach((el) => {
+        el.addEventListener("change", updateEmployeeDropdownSummary);
+      });
+      updateEmployeeDropdownSummary();
+      setEmployeeDropdownOpen(false);
+    }
     let unit = "hours";
     const projectMetaByKey = new Map();
 
@@ -546,24 +758,11 @@
       });
       renderProjectCards(latestPayload.by_project || []);
       renderRows(latestPayload.rows || []);
-      populateAssigneeFilter(latestPayload.workforce || {});
+      renderEmployeeDropdown(latestPayload.workforce || {});
       renderWorkforce(latestPayload.workforce || {});
       els.runMeta.textContent = latestPayload.canonical_run_id
         ? "Canonical run: " + latestPayload.canonical_run_id
         : "No canonical run loaded.";
-    }
-
-    function populateAssigneeFilter(wf) {
-      if (!els.assigneeFilter) return;
-      const payload = wf || {};
-      const opts = Array.isArray(payload.assignee_options) ? payload.assignee_options : [];
-      els.assigneeFilter.innerHTML = opts.map((name) => '<option value="' + esc(name) + '">' + esc(name) + "</option>").join("");
-      const selected = new Set(Array.isArray(payload.selected_assignees) ? payload.selected_assignees : []);
-      const active = !!payload.assignee_filter_active;
-      for (let i = 0; i < els.assigneeFilter.options.length; i += 1) {
-        const opt = els.assigneeFilter.options[i];
-        opt.selected = active && selected.has(opt.value);
-      }
     }
 
     function renderWorkforce(wf) {
@@ -661,11 +860,7 @@
       const params = new URLSearchParams({ month });
       const projects = selectedProjects();
       if (projects.length) params.set("projects", projects.join(","));
-      if (els.assigneeFilter) {
-        Array.from(els.assigneeFilter.selectedOptions).forEach((opt) => {
-          if (opt.value) params.append("assignees", opt.value);
-        });
-      }
+      getCheckedEmployeeNames().forEach((name) => params.append("assignees", name));
       els.status.textContent = "Loading monthly epic report...";
       try {
         const response = await fetch(API_SUMMARY + "?" + params.toString(), { cache: "no-store", headers: { "Accept": "application/json" } });
@@ -687,8 +882,7 @@
         if (els.kpiEndSlip) els.kpiEndSlip.textContent = "0";
         if (els.kpiCarriedForward) els.kpiCarriedForward.textContent = "0";
         renderWorkforce({});
-        populateAssigneeFilter({});
-        if (els.assigneeFilter) els.assigneeFilter.innerHTML = "";
+        renderEmployeeDropdown({});
         els.status.textContent = "Could not load report.";
         els.runMeta.textContent = "No data loaded.";
       }
@@ -706,11 +900,10 @@
       loadSummary();
     });
     if (els.clearAssignees) els.clearAssignees.addEventListener("click", () => {
-      if (els.assigneeFilter) {
-        for (let i = 0; i < els.assigneeFilter.options.length; i += 1) {
-          els.assigneeFilter.options[i].selected = false;
-        }
+      if (els.employeeDdList) {
+        els.employeeDdList.querySelectorAll(".emp-dd-cb").forEach((el) => { el.checked = false; });
       }
+      updateEmployeeDropdownSummary();
       loadSummary();
     });
     els.projects.addEventListener("change", loadSummary);

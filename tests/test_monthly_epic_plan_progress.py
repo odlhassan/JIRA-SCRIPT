@@ -235,6 +235,7 @@ class MonthlyEpicPlanProgressTests(unittest.TestCase):
             self.assertEqual(payload["totals"]["carried_forward_count"], 2)
             self.assertIn("workforce", payload)
             self.assertIn("assignee_options", payload["workforce"])
+            self.assertIn("employee_options", payload["workforce"])
             by_proj = {p["project_key"]: p for p in payload["by_project"]}
             self.assertIn("O2", by_proj)
             self.assertEqual(by_proj["O2"]["epic_count"], 3)
@@ -293,7 +294,9 @@ class MonthlyEpicPlanProgressTests(unittest.TestCase):
         self.assertIn("function renderProjectCards", html)
         self.assertIn("totals.carried_forward_count", html)
         self.assertIn("workforce", html)
-        self.assertIn("assignee-filter", html)
+        self.assertIn('id="employee-dropdown-toggle"', html)
+        self.assertIn('id="assignee-select-all"', html)
+        self.assertIn("function renderEmployeeDropdown", html)
 
 
 if __name__ == "__main__":

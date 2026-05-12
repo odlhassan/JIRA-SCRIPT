@@ -35,6 +35,7 @@
         { page_key: "approved_vs_planned_hours_report", title: "Approved vs Planned Hours Report", href: resolveReportHref("approved_vs_planned_hours_report.html"), icon: "analytics", file: "approved_vs_planned_hours_report.html" },
         { page_key: "planned_actual_table_view", title: "Planned vs Actual Table View", href: resolveReportHref("planned_actual_table_view.html"), icon: "table_view", file: "planned_actual_table_view.html" },
         { page_key: "original_estimates_hierarchy_report", title: "Epic Estimate Report", href: resolveReportHref("original_estimates_hierarchy_report.html"), icon: "schema", file: "original_estimates_hierarchy_report.html" },
+        { page_key: "monthly_epic_plan_progress", title: "Monthly Epic Plan vs Actual", href: resolveReportHref("monthly_epic_plan_progress_report.html"), icon: "event_available", file: "monthly_epic_plan_progress_report.html" },
         { page_key: "ipp_meeting_dashboard", title: "IPP Meeting Dashboard", href: resolveReportHref("ipp_meeting_dashboard.html"), icon: "groups", file: "ipp_meeting_dashboard.html" }
       ],
       categories: []
