@@ -2,6 +2,13 @@
 
 This project can run on Azure App Service for Linux as a Python 3.11 web app.
 
+## GitHub Actions → production
+
+- **Live URL:** `https://epreporting.azurewebsites.net/`
+- Workflow: `.github/workflows/azure-appservice-deploy.yml` (runs on push to `main` or `master`, and manual `workflow_dispatch`).
+- The deploy ZIP is built from the **GitHub checkout** after staging (excludes tests, `node_modules`, `handover`, `offline_bundles`, root `backup/`, etc.). **Commit and push every file the running app depends on** — anything not in Git will not ship. Do not rely on unpushed local builds.
+- **Backups:** do not commit local backup trees or `*.backup` files (see `.gitignore`). Do not expect backup-only branches to drive production unless you change the workflow deliberately.
+
 ## Why a startup command is required
 
 Azure App Service auto-detects Flask only when the app entrypoint is `app.py` or `application.py` with an `app` callable.
@@ -62,10 +69,11 @@ az webapp deploy --resource-group $RESOURCE_GROUP --name $APP --src-path app.zip
 
 ## Verify deployment
 
-Open:
+Open (production example):
 
 ```text
-https://<app-name>.azurewebsites.net/dashboard.html
+https://epreporting.azurewebsites.net/introduction.html
+https://epreporting.azurewebsites.net/dashboard.html
 ```
 
 Stream logs:

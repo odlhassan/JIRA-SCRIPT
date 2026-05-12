@@ -5,7 +5,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from monthly_epic_plan_progress_service import build_monthly_epic_plan_payload
+from datetime import date
+
+from monthly_epic_plan_progress_service import (
+    _nested_aligned_leave_by_assignee,
+    build_monthly_epic_plan_payload,
+)
 from report_server import _init_epics_management_db, create_report_server_app
 
 
@@ -181,8 +186,77 @@ def _insert_planner_epic(db_path: Path, row: dict) -> None:
         conn.close()
 
 
+def _add_performance_team(db_path: Path, team_name: str, team_leader: str, assignees_json: str) -> None:
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS performance_teams (
+                team_name TEXT PRIMARY KEY,
+                team_leader TEXT NOT NULL DEFAULT '',
+                assignees_json TEXT NOT NULL DEFAULT '[]',
+                updated_at TEXT NOT NULL DEFAULT ''
+            )
+            """
+        )
+        conn.execute(
+            "INSERT INTO performance_teams(team_name, team_leader, assignees_json, updated_at) VALUES (?, ?, ?, ?)",
+            (team_name, team_leader, assignees_json, "2026-03-01T00:00:00Z"),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 class MonthlyEpicPlanProgressTests(unittest.TestCase):
-    def test_service_uses_true_overlap_and_month_worklogs(self):
+    def test_nested_aligned_leave_prefers_distributed_buckets(self):
+        month_start = date(2026, 4, 1)
+        month_end = date(2026, 4, 30)
+        snapshot = {
+            "distributed_subtasks": [
+                {
+                    "assignee": "Alpha",
+                    "planned_date_for_bucket": "2026-04-10",
+                    "original_estimate_hours": 8,
+                    "total_worklog_hours": 0,
+                }
+            ],
+            "daily": [
+                {
+                    "assignee": "Alpha",
+                    "period_day": "2026-04-10",
+                    "planned_taken_hours": 1,
+                    "planned_not_taken_hours": 1,
+                    "unplanned_taken_hours": 999,
+                    "unknown_taken_hours": 0,
+                }
+            ],
+        }
+        _, leave_by, src = _nested_aligned_leave_by_assignee(snapshot, month_start, month_end)
+        self.assertEqual(src, "distributed_subtasks")
+        self.assertAlmostEqual(leave_by.get("alpha", 0), 8.0, places=2)
+
+    def test_nested_aligned_daily_excludes_unplanned_and_unknown_buckets(self):
+        month_start = date(2026, 4, 1)
+        month_end = date(2026, 4, 30)
+        snapshot = {
+            "distributed_subtasks": [],
+            "daily": [
+                {
+                    "assignee": "Beta",
+                    "period_day": "2026-04-12",
+                    "planned_taken_hours": 2,
+                    "planned_not_taken_hours": 3,
+                    "unplanned_taken_hours": 44,
+                    "unknown_taken_hours": 11,
+                }
+            ],
+        }
+        _, leave_by, src = _nested_aligned_leave_by_assignee(snapshot, month_start, month_end)
+        self.assertEqual(src, "daily_planned_buckets")
+        self.assertAlmostEqual(leave_by.get("beta", 0), 5.0, places=2)
+
+    def test_service_includes_epic_when_start_or_due_in_month_and_month_worklogs(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             db_path = Path(td) / "assignee_hours_capacity.db"
             _create_canonical_tables(db_path)
@@ -191,7 +265,7 @@ class MonthlyEpicPlanProgressTests(unittest.TestCase):
             payload = build_monthly_epic_plan_payload(
                 db_path,
                 "2026-03",
-                [_planner_row("O2-SPAN", "Spanning Epic", "2026-02-15", "2026-04-10")],
+                [_planner_row("O2-SPAN", "Spanning Epic", "2026-03-01", "2026-04-10")],
                 "run-1",
                 selected_projects={"O2"},
             )
@@ -204,6 +278,21 @@ class MonthlyEpicPlanProgressTests(unittest.TestCase):
             self.assertFalse(row["start_slip"])
             self.assertFalse(row["end_slip"])
 
+    def test_service_excludes_epic_when_schedule_spans_month_but_no_endpoint_in_month(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            db_path = Path(td) / "assignee_hours_capacity.db"
+            _create_canonical_tables(db_path)
+            _add_epic_tree(db_path, "O2-MID", "In Progress", [("2026-03-10", 2)])
+            payload = build_monthly_epic_plan_payload(
+                db_path,
+                "2026-03",
+                [_planner_row("O2-MID", "Spans March", "2026-02-10", "2026-05-10")],
+                "run-1",
+                selected_projects={"O2"},
+            )
+            self.assertEqual(payload["totals"]["epic_count"], 0)
+            self.assertEqual(len(payload["rows"]), 0)
+
     def test_service_marks_start_and_end_slips_for_month(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             db_path = Path(td) / "assignee_hours_capacity.db"
@@ -211,6 +300,8 @@ class MonthlyEpicPlanProgressTests(unittest.TestCase):
             _add_epic_tree(db_path, "O2-START", "To Do", [])
             _add_epic_tree(db_path, "O2-END", "In Progress", [("2026-03-04", 3)])
             _add_epic_tree(db_path, "O2-DONE", "Resolved!", [("2026-03-04", 3)])
+            _add_epic_tree(db_path, "O2-OLD", "In Progress", [])
+            _add_performance_team(db_path, "Delivery Team", "Alice", '["Alice", "Bob"]')
 
             payload = build_monthly_epic_plan_payload(
                 db_path,
@@ -219,6 +310,7 @@ class MonthlyEpicPlanProgressTests(unittest.TestCase):
                     _planner_row("O2-START", "Start Slip", "2026-03-05", "2026-04-15"),
                     _planner_row("O2-END", "End Slip", "2026-02-01", "2026-03-15"),
                     _planner_row("O2-DONE", "Done", "2026-02-01", "2026-03-15"),
+                    _planner_row("O2-OLD", "Previous Month Pending", "2026-01-10", "2026-02-25"),
                 ],
                 "run-1",
                 selected_projects={"O2"},
@@ -230,16 +322,75 @@ class MonthlyEpicPlanProgressTests(unittest.TestCase):
             self.assertTrue(rows["O2-END"]["end_slip"])
             self.assertFalse(rows["O2-END"]["start_slip"])
             self.assertFalse(rows["O2-DONE"]["end_slip"])
+            self.assertTrue(rows["O2-OLD"]["brought_forward"])
+            self.assertFalse(rows["O2-OLD"]["start_slip"])
+            self.assertFalse(rows["O2-OLD"]["end_slip"])
+            self.assertFalse(rows["O2-OLD"]["carried_forward"])
+            self.assertEqual(payload["totals"]["brought_forward_count"], 1)
+            self.assertEqual(payload["totals"]["brought_forward_planned_hours"], 80.0)
+            self.assertEqual(payload["totals"]["carried_forward_planned_hours"], 160.0)
             self.assertEqual(payload["totals"]["start_slip_count"], 1)
             self.assertEqual(payload["totals"]["end_slip_count"], 1)
             self.assertEqual(payload["totals"]["carried_forward_count"], 2)
             self.assertIn("workforce", payload)
             self.assertIn("assignee_options", payload["workforce"])
             self.assertIn("employee_options", payload["workforce"])
+            self.assertIn("employee_tree", payload["workforce"])
+            etree = payload["workforce"]["employee_tree"]
+            self.assertIn("teams", etree)
+            self.assertIn("ungrouped", etree)
+            team = next(t for t in etree["teams"] if t["team_name"] == "Delivery Team")
+            self.assertEqual([m["name"] for m in team["members"]], ["Alice", "Bob"])
             by_proj = {p["project_key"]: p for p in payload["by_project"]}
             self.assertIn("O2", by_proj)
-            self.assertEqual(by_proj["O2"]["epic_count"], 3)
+            self.assertEqual(by_proj["O2"]["epic_count"], 4)
+            self.assertEqual(by_proj["O2"]["brought_forward_count"], 1)
+            self.assertEqual(by_proj["O2"]["brought_forward_planned_hours"], 80.0)
             self.assertEqual(by_proj["O2"]["carried_forward_count"], 2)
+            self.assertEqual(by_proj["O2"]["carried_forward_planned_hours"], 160.0)
+
+    def test_delivery_status_aligns_when_jira_in_progress_but_planner_yet_to_start(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            db_path = Path(td) / "assignee_hours_capacity.db"
+            _create_canonical_tables(db_path)
+            _add_epic_tree(db_path, "O2-WIP", "In Progress", [])
+            payload = build_monthly_epic_plan_payload(
+                db_path,
+                "2026-04",
+                [_planner_row("O2-WIP", "WIP Epic", "2026-04-01", "2026-04-27")],
+                "run-1",
+                selected_projects={"O2"},
+            )
+            self.assertEqual(len(payload["rows"]), 1)
+            self.assertEqual(payload["rows"][0]["delivery_status"], "On-track")
+
+    def test_delivery_status_keeps_yet_to_start_when_jira_to_do(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            db_path = Path(td) / "assignee_hours_capacity.db"
+            _create_canonical_tables(db_path)
+            _add_epic_tree(db_path, "O2-TODO", "To Do", [])
+            payload = build_monthly_epic_plan_payload(
+                db_path,
+                "2026-04",
+                [_planner_row("O2-TODO", "Todo Epic", "2026-04-04", "2026-04-06")],
+                "run-1",
+                selected_projects={"O2"},
+            )
+            self.assertEqual(payload["rows"][0]["delivery_status"], "Yet to start")
+
+    def test_delivery_status_keeps_planner_late_when_jira_also_active(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            db_path = Path(td) / "assignee_hours_capacity.db"
+            _create_canonical_tables(db_path)
+            _add_epic_tree(db_path, "O2-LATE", "In Progress", [])
+            payload = build_monthly_epic_plan_payload(
+                db_path,
+                "2026-04",
+                [_planner_row("O2-LATE", "Late Epic", "2026-04-01", "2026-04-27", status="Late")],
+                "run-1",
+                selected_projects={"O2"},
+            )
+            self.assertEqual(payload["rows"][0]["delivery_status"], "Late")
 
     def test_api_summary_loads_epics_management_rows(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
@@ -288,15 +439,39 @@ class MonthlyEpicPlanProgressTests(unittest.TestCase):
         self.assertIn("function statusPill", html)
         self.assertIn(".pill.info", html)
         self.assertIn('normalized === "yet to start"', html)
+        self.assertIn('normalized === "on track"', html)
         self.assertIn("start < todayIso()", html)
-        self.assertIn('id="kpi-carried-forward"', html)
-        self.assertIn('id="project-cards"', html)
+        self.assertIn('id="kpi-brought-forward-count"', html)
+        self.assertIn('id="kpi-brought-forward-planned"', html)
+        self.assertIn('id="kpi-carried-forward-count"', html)
+        self.assertIn('id="kpi-carried-forward-planned"', html)
+        self.assertIn("Total epics", html)
+        self.assertIn("Total planned hours", html)
+        self.assertNotIn('id="kpi-start-slip"', html)
+        self.assertIn("proj-card-filter", html)
+        self.assertIn("filteredRowsForTable", html)
+        self.assertIn("resetTableProjectFilter", html)
         self.assertIn("function renderProjectCards", html)
+        self.assertIn("totals.brought_forward_planned_days", html)
+        self.assertIn("totals.brought_forward_count", html)
+        self.assertIn("totals.carried_forward_planned_hours", html)
         self.assertIn("totals.carried_forward_count", html)
         self.assertIn("workforce", html)
+        self.assertIn('id="capacity-profile-select"', html)
+        self.assertIn("renderCapacityProfileDropdown", html)
+        self.assertIn("capacity_profile", html)
         self.assertIn('id="employee-dropdown-toggle"', html)
+        self.assertIn('id="employee-dropdown-search"', html)
+        self.assertIn('id="employee-dropdown-empty"', html)
         self.assertIn('id="assignee-select-all"', html)
         self.assertIn("function renderEmployeeDropdown", html)
+        self.assertIn("function applyEmployeeDropdownFilter", html)
+        self.assertIn('const bid = "emp-cb-leaf-" + (rowSeq++);', html)
+        self.assertIn('const tid = "emp-team-cb-" + (teamSeq++);', html)
+        self.assertIn("emp-dd-team-cb", html)
+        self.assertIn("emp-dd-meta", html)
+        self.assertIn("Brought Forward", html)
+        self.assertIn("Brought forward", html)
 
 
 if __name__ == "__main__":

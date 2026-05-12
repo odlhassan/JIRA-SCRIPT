@@ -30,6 +30,17 @@ jira_sync_cache.db
 jira_sync_cache.db-shm
 jira_sync_cache.db-wal
 
+# Local or export backups — do not push (GitHub Actions production deploy skips these too)
+/backup/
+*.backup
+
+# Timestamped offline/export snapshots at repo root (folder + sibling .zip)
+/12 Mar 2026 06-23-26/
+/12 Mar 2026 06-23-26.zip
+# Same naming pattern for future exports: "DD Mon YYYY HH-MM-SS"
+/[0-9][0-9] ??? [0-9][0-9][0-9][0-9] [0-9][0-9]-[0-9][0-9]-[0-9][0-9]/
+/[0-9][0-9] ??? [0-9][0-9][0-9][0-9] [0-9][0-9]-[0-9][0-9]-[0-9][0-9].zip
+
 # Local tooling / logs
 .azure_deploy_staging/
 __*server*.log

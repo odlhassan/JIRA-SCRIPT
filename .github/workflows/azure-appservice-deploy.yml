@@ -1,12 +1,19 @@
 # Deploy this repo to Azure App Service (Linux) as a ZIP.
 #
+# Production site (live): https://epreporting.azurewebsites.net/
+# The ZIP is exactly what Git tracks after checkout — commit and push every file the app needs
+# (Python, templates, shared assets, startup, requirements, committed DBs per .gitignore). Do not
+# rely on unpushed local-only files. Backup branches and backup artifacts are excluded from deploy
+# triggers and from the package (see rsync excludes below).
+#
 # Setup (one-time in GitHub):
 #   1. Azure Portal → your Web App → Download publish profile
 #   2. Repo → Settings → Secrets and variables → Actions
 #   3. New repository secret: AZURE_WEBAPP_PUBLISH_PROFILE = entire .PublishSettings XML
 #
-# Databases: commit assignee_hours_capacity.db, epics_management.db, jira_exports.db (see root
-# .gitignore). jira_sync_cache.db stays gitignored and rebuilds on the server from Jira.
+# Databases: see root .gitignore — smaller DBs (e.g. epics_management.db, jira_exports.db) may be
+# committed; large/cache DBs stay gitignored. assignee_hours_capacity.db is typically uploaded once
+# via Kudu if not in Git. jira_sync_cache.db rebuilds on the server from Jira.
 #
 # Optional: change AZURE_WEBAPP_NAME below if your app name differs.
 
@@ -18,7 +25,6 @@ on:
     branches:
       - main
       - master
-      - backup/pre-populate-jira-20260430
 
 env:
   AZURE_WEBAPP_NAME: epreporting
@@ -48,6 +54,7 @@ jobs:
             --exclude='test-results/' \
             --exclude='handover/' \
             --exclude='offline_bundles/' \
+            --exclude='backup/' \
             --exclude='.cursor/' \
             --exclude='.azure_deploy_staging/' \
             --exclude='.env' \

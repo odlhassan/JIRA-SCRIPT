@@ -89,26 +89,38 @@
       gap: 12px;
       align-items: start;
     }
+    .workforce-cap-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px 14px;
+      align-items: end;
+      margin-bottom: 12px;
+    }
+    .workforce-cap-toolbar .control { min-width: min(440px, 100%); flex: 1 1 280px; }
     .control-span-assignees { max-width: min(560px, 100%); }
     .field-hint { margin: 0 0 4px; font-size: 0.78rem; color: var(--muted); font-weight: 600; line-height: 1.35; }
     .emp-dd { position: relative; max-width: min(560px, 100%); }
     .emp-dd-toggle {
       width: 100%;
-      min-height: 40px;
+      min-height: 42px;
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 10px;
-      padding: 8px 12px;
+      padding: 8px 12px 8px 14px;
       border: 1px solid #c0ccd8;
-      border-radius: 10px;
-      background: #fff;
+      border-radius: 12px;
+      background: linear-gradient(180deg, #ffffff, #f8fbff);
       font-size: 0.94rem;
       cursor: pointer;
       text-align: left;
       color: #142230;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
     }
-    .emp-dd-toggle:hover { border-color: #9db0c2; }
+    .emp-dd-toggle:hover {
+      border-color: #9db0c2;
+      background: #fff;
+    }
     .emp-dd-toggle:focus {
       outline: none;
       border-color: var(--accent);
@@ -126,62 +138,188 @@
       position: absolute;
       left: 0;
       right: 0;
-      top: calc(100% + 4px);
+      top: calc(100% + 6px);
       z-index: 50;
       background: #fff;
       border: 1px solid var(--line);
-      border-radius: 12px;
-      box-shadow: 0 16px 44px rgba(15, 23, 42, 0.12);
+      border-radius: 16px;
+      box-shadow: 0 22px 56px rgba(15, 23, 42, 0.16);
       flex-direction: column;
-      max-height: min(320px, 70vh);
+      align-items: stretch;
+      max-height: min(440px, 72vh);
+      min-height: 0;
       overflow: hidden;
     }
     .emp-dd.is-open .emp-dd-panel { display: flex; }
     .emp-dd-actions {
       display: flex;
       flex-wrap: wrap;
-      gap: 8px 14px;
+      align-items: center;
+      gap: 6px;
       padding: 8px 10px;
       border-bottom: 1px solid var(--line);
       background: linear-gradient(180deg, #fbfdff, #f4f8fc);
       font-size: 0.8rem;
       font-weight: 700;
+      flex: 0 0 auto;
     }
     .emp-dd-actions button {
-      background: none;
-      border: none;
-      padding: 0;
+      background: #ffffff;
+      border: 1px solid #c8d7e5;
+      border-radius: 999px;
+      padding: 4px 9px;
       color: var(--accent);
       cursor: pointer;
-      text-decoration: underline;
       font: inherit;
       font-weight: 700;
     }
-    .emp-dd-actions button:hover { color: #164a71; }
+    .emp-dd-actions button:hover {
+      color: #164a71;
+      border-color: #9db7ce;
+      background: #edf6fd;
+    }
+    .emp-dd-search-wrap {
+      padding: 8px 10px;
+      border-bottom: 1px solid #e5edf5;
+      background: #fff;
+      flex: 0 0 auto;
+    }
+    .emp-dd-search {
+      width: 100%;
+      min-height: 34px;
+      border: 1px solid #c9d6e3;
+      border-radius: 10px;
+      padding: 6px 10px 6px 30px;
+      font-size: 0.84rem;
+      color: #142230;
+      background:
+        radial-gradient(circle at 14px 50%, #64748b 0 2px, transparent 2.5px),
+        linear-gradient(45deg, transparent 48%, #64748b 48% 55%, transparent 55%) 19px 20px / 8px 8px no-repeat,
+        #ffffff;
+    }
+    .emp-dd-search:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(29, 95, 143, 0.12);
+    }
     .emp-dd-list {
-      overflow: auto;
-      padding: 6px 8px 10px;
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-x: hidden;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior: contain;
+      scrollbar-gutter: stable;
+      padding: 5px 8px 8px;
       display: flex;
       flex-direction: column;
-      gap: 2px;
+      gap: 5px;
+    }
+    .emp-dd-list > * {
+      flex-shrink: 0;
+    }
+    .emp-dd-group {
+      border-radius: 10px;
+      border: 1px solid #e5edf5;
+      background: #fff;
+      overflow: hidden;
+    }
+    .emp-dd-members {
+      padding: 0 6px 4px 22px;
+      margin: 0;
+      border: none;
+      background: #fafcfe;
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }
+    .emp-dd-members[hidden] {
+      display: none !important;
+    }
+    .emp-dd-team-row {
+      font-weight: 750;
+      color: var(--title);
+      background: #f4f9fc;
+      border-bottom: 1px solid #e8eef5;
+      padding: 5px 8px;
+      align-items: center;
+      min-height: 0;
+      flex-wrap: wrap;
+      row-gap: 2px;
+      column-gap: 6px;
+    }
+    .emp-dd-team-row .emp-dd-name {
+      letter-spacing: 0.01em;
+      text-transform: none;
+      font-size: 0.82rem;
+      flex: 1 1 140px;
+      min-width: 0;
+      word-break: break-word;
+      line-height: 1.25;
+    }
+    .emp-dd-team-lead {
+      font-weight: 650;
+      color: var(--muted);
+      font-size: 0.92em;
+    }
+    .emp-dd-meta {
+      flex: 0 0 auto;
+      margin-left: auto;
+      align-self: center;
+      margin-top: 0;
+      color: var(--muted);
+      background: transparent;
+      border: none;
+      border-radius: 0;
+      padding: 0;
+      font-size: 0.68rem;
+      font-weight: 700;
+      white-space: nowrap;
     }
     .emp-dd-row {
       display: flex;
-      align-items: flex-start;
-      gap: 8px;
-      padding: 6px 8px;
-      border-radius: 8px;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 6px;
+      border-radius: 6px;
       cursor: pointer;
-      font-size: 0.88rem;
-      line-height: 1.35;
+      font-size: 0.82rem;
+      line-height: 1.2;
     }
-    .emp-dd-row:hover { background: #f5f9fd; }
-    .emp-dd-row input { margin-top: 3px; flex: 0 0 auto; accent-color: var(--accent); }
-    .emp-dd-name { flex: 1 1 auto; font-weight: 600; color: #0f172a; }
+    .emp-dd-row:hover { background: #eef6fb; }
+    .emp-dd-row input {
+      width: 14px;
+      height: 14px;
+      margin: 0;
+      flex: 0 0 auto;
+      accent-color: var(--accent);
+    }
+    .emp-dd-member {
+      margin: 0;
+      border: none;
+      background: transparent;
+    }
+    .emp-dd-member:hover {
+      background: #f0f7fc;
+    }
+    .emp-dd-name { flex: 1 1 auto; font-weight: 600; color: #0f172a; min-width: 0; line-height: 1.2; }
+    .emp-dd-empty {
+      display: none;
+      flex: 0 0 auto;
+      margin: 0 10px 10px;
+      padding: 12px;
+      border: 1px dashed #cbd5e1;
+      border-radius: 12px;
+      color: var(--muted);
+      background: #f8fafc;
+      font-size: 0.86rem;
+      text-align: center;
+    }
+    .emp-dd-empty.is-visible { display: block; }
     .emp-dd-res {
       flex: 0 0 auto;
       margin-left: auto;
-      font-size: 0.7rem;
+      font-size: 0.62rem;
       font-weight: 800;
       text-transform: uppercase;
       letter-spacing: 0.04em;
@@ -239,6 +377,14 @@
       font-weight: 700;
     }
     .card .value { margin-top: 4px; font-size: 1.35rem; font-weight: 800; color: var(--title); }
+    .card .detail {
+      margin-top: 6px;
+      font-size: 0.88rem;
+      font-weight: 700;
+      color: var(--muted);
+      line-height: 1.35;
+      font-variant-numeric: tabular-nums;
+    }
     .table-wrap {
       overflow: auto;
       border: 1px solid var(--line);
@@ -247,7 +393,7 @@
     }
     table {
       width: 100%;
-      min-width: 1160px;
+      min-width: 1240px;
       border-collapse: separate;
       border-spacing: 0;
     }
@@ -357,6 +503,23 @@
       border-left: 5px solid var(--pcolor, #94a3b8);
       background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), var(--pbg, #f8fafc));
     }
+    button.proj-card {
+      margin: 0;
+      font: inherit;
+      text-align: left;
+      cursor: pointer;
+      width: 100%;
+      display: block;
+      box-sizing: border-box;
+      color: inherit;
+    }
+    button.proj-card:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+    button.proj-card.is-selected {
+      box-shadow: 0 0 0 2px rgba(29, 95, 143, 0.35), 0 8px 26px rgba(15, 23, 42, 0.08);
+    }
     .proj-card-name { font-weight: 800; font-size: 0.95rem; color: #0f172a; line-height: 1.25; }
     .proj-card-meta {
       margin-top: 6px;
@@ -385,7 +548,7 @@
         <div>
           <h1>Monthly Epic Plan vs Actual</h1>
           <div class="meta">
-            Shows epics whose approved TK schedule overlaps the selected month, with planned effort and actual hours logged in that month.
+            Shows epics whose approved TK start <strong>or</strong> due date falls in the selected month (plus unresolved brought-forward epics due before that month), with planned effort and actual hours logged in that month.
           </div>
         </div>
         <div class="meta" id="run-meta">Waiting for data.</div>
@@ -416,7 +579,7 @@
       <div class="controls controls-extra">
         <div class="control control-span-assignees">
           <label id="employee-dropdown-label-static">Employees (optional)</label>
-          <p class="field-hint">Use the list to filter capacity and leave to specific people. Leave none checked for full team (capacity profile headcount). Resigned status comes from Performance settings resource records.</p>
+          <p class="field-hint">Filter capacity and leave by team (from Performance teams) and people. Leave none checked for full team. Team checkboxes select every member under that node. Resigned labels use Performance resource records.</p>
           <div class="emp-dd" id="employee-dropdown">
             <button type="button" class="emp-dd-toggle" id="employee-dropdown-toggle" aria-expanded="false" aria-haspopup="listbox" aria-controls="employee-dropdown-panel">
               <span id="employee-dropdown-summary">All employees (team scope)</span>
@@ -427,7 +590,11 @@
                 <button type="button" id="assignee-select-all">Select all</button>
                 <button type="button" id="assignee-clear-panel">Clear all</button>
               </div>
+              <div class="emp-dd-search-wrap">
+                <input type="search" class="emp-dd-search" id="employee-dropdown-search" placeholder="Search teams or employees" autocomplete="off" aria-label="Search employees">
+              </div>
               <div class="emp-dd-list" id="employee-dropdown-list"></div>
+              <div class="emp-dd-empty" id="employee-dropdown-empty">No teams or employees match your search.</div>
             </div>
           </div>
         </div>
@@ -439,18 +606,34 @@
     </section>
 
     <section class="panel">
+      <h2 class="section-title">Executive summary</h2>
       <div class="cards">
-        <div class="card"><div class="label">Epics</div><div class="value" id="kpi-epics">0</div></div>
-        <div class="card"><div class="label" id="kpi-planned-label">Planned Hours</div><div class="value" id="kpi-planned">0.00</div></div>
-        <div class="card"><div class="label" id="kpi-actual-label">Actual Hours</div><div class="value" id="kpi-actual">0.00</div></div>
-        <div class="card"><div class="label">Start Slips</div><div class="value" id="kpi-start-slip">0</div></div>
-        <div class="card"><div class="label">End Slips</div><div class="value" id="kpi-end-slip">0</div></div>
-        <div class="card"><div class="label">Carried Forward</div><div class="value" id="kpi-carried-forward">0</div></div>
+        <div class="card"><div class="label">Total epics</div><div class="value" id="kpi-epics">0</div></div>
+        <div class="card">
+          <div class="label">Brought Forward</div>
+          <div class="value" id="kpi-brought-forward-count">0</div>
+          <div class="detail" id="kpi-brought-forward-planned">0.00 planned hours</div>
+        </div>
+        <div class="card">
+          <div class="label">Carried Forward</div>
+          <div class="value" id="kpi-carried-forward-count">0</div>
+          <div class="detail" id="kpi-carried-forward-planned">0.00 planned hours</div>
+        </div>
+        <div class="card"><div class="label" id="kpi-planned-label">Total planned hours</div><div class="value" id="kpi-planned">0.00</div></div>
+        <div class="card"><div class="label" id="kpi-actual-label">Total actual hours</div><div class="value" id="kpi-actual">0.00</div></div>
       </div>
     </section>
 
     <section class="panel">
       <h2 class="section-title">Workforce capacity (RLT)</h2>
+      <div class="workforce-cap-toolbar">
+        <div class="control">
+          <label for="capacity-profile-select">Capacity profile</label>
+          <select id="capacity-profile-select" autocomplete="off" aria-describedby="workforce-caption">
+          </select>
+          <p class="field-hint">Auto picks the saved profile that overlaps most of this month. <a href="/settings/capacity">Manage profiles</a></p>
+        </div>
+      </div>
       <div class="cards">
         <div class="card"><div class="label">Team (capacity profile)</div><div class="value" id="kpi-wf-team">0</div></div>
         <div class="card"><div class="label" id="kpi-wf-scope-label">Employees in scope</div><div class="value" id="kpi-wf-scope">0</div></div>
@@ -463,7 +646,7 @@
 
     <section class="panel">
       <h2 class="section-title">By project</h2>
-      <div class="project-cards" id="project-cards" aria-live="polite"></div>
+      <p class="field-hint" style="margin:-4px 0 12px;">Click a card to narrow the epic table below. Use <strong>All projects</strong> to clear the card filter.</p>      <div class="project-cards" id="project-cards" aria-live="polite"></div>
     </section>
 
     <section class="panel">
@@ -479,6 +662,7 @@
               <th>Jira Status</th>
               <th class="num effort-head">Planned Hours</th>
               <th class="num effort-head">Actual Hours</th>
+              <th>Brought Forward</th>
               <th>Start</th>
               <th>End</th>
               <th>Carry Forward</th>
@@ -488,6 +672,9 @@
         </table>
       </div>
       <div class="caption">
+        Rows include epics whose approved start <strong>or</strong> approved due falls inside the selected month (TK planner), plus unresolved brought-forward epics whose approved due was before that month.
+        Delivery status comes from Epics planner; if it is still Yet to start while Jira shows the epic in progress or resolved, this report displays <strong>On-track</strong> so delivery reflects execution reality.
+        Brought forward means the approved due date is before the selected month and the latest Jira epic status is still unresolved.
         Start slip means the approved start date is inside the selected month and no subtask worklog exists through month end.
         End slip means the approved due date is inside the selected month and the current Jira epic status is not resolved.
         Historical months use the latest canonical Jira status, so old-month completion status is approximate unless Jira snapshots are added later.
@@ -507,6 +694,8 @@
       employeeDdPanel: document.getElementById("employee-dropdown-panel"),
       employeeDdList: document.getElementById("employee-dropdown-list"),
       employeeDdSummary: document.getElementById("employee-dropdown-summary"),
+      employeeDdSearch: document.getElementById("employee-dropdown-search"),
+      employeeDdEmpty: document.getElementById("employee-dropdown-empty"),
       assigneeSelectAll: document.getElementById("assignee-select-all"),
       assigneeClearPanel: document.getElementById("assignee-clear-panel"),
       apply: document.getElementById("apply-btn"),
@@ -520,9 +709,10 @@
       kpiActual: document.getElementById("kpi-actual"),
       kpiPlannedLabel: document.getElementById("kpi-planned-label"),
       kpiActualLabel: document.getElementById("kpi-actual-label"),
-      kpiStartSlip: document.getElementById("kpi-start-slip"),
-      kpiEndSlip: document.getElementById("kpi-end-slip"),
-      kpiCarriedForward: document.getElementById("kpi-carried-forward"),
+      kpiBroughtForwardCount: document.getElementById("kpi-brought-forward-count"),
+      kpiBroughtForwardPlanned: document.getElementById("kpi-brought-forward-planned"),
+      kpiCarriedForwardCount: document.getElementById("kpi-carried-forward-count"),
+      kpiCarriedForwardPlanned: document.getElementById("kpi-carried-forward-planned"),
       projectCards: document.getElementById("project-cards"),
       kpiWfTeam: document.getElementById("kpi-wf-team"),
       kpiWfScope: document.getElementById("kpi-wf-scope"),
@@ -533,14 +723,33 @@
       kpiWfCapacityLabel: document.getElementById("kpi-wf-capacity-label"),
       kpiWfLeaveLabel: document.getElementById("kpi-wf-leave-label"),
       kpiWfAvailLabel: document.getElementById("kpi-wf-avail-label"),
-      workforceCaption: document.getElementById("workforce-caption")
+      workforceCaption: document.getElementById("workforce-caption"),
+      capacityProfile: document.getElementById("capacity-profile-select"),
     };
+    const STORAGE_CAPACITY_PROFILE_KEY = "monthly_epic_plan_capacity_profile_key";
     let latestPayload = null;
     let employeeDropdownInteractionsBound = false;
 
     function getCheckedEmployeeNames() {
       if (!els.employeeDdList) return [];
-      return Array.from(els.employeeDdList.querySelectorAll(".emp-dd-cb:checked")).map((el) => String(el.value || "").trim()).filter(Boolean);
+      return Array.from(els.employeeDdList.querySelectorAll(".emp-dd-leaf:checked")).map((el) => String(el.value || "").trim()).filter(Boolean);
+    }
+
+    function syncTeamCheckboxForGroup(groupEl) {
+      const teamCb = groupEl && groupEl.querySelector(".emp-dd-team-cb");
+      const leaves = groupEl ? groupEl.querySelectorAll(".emp-dd-leaf") : [];
+      if (!teamCb || !leaves.length) return;
+      let total = 0;
+      let checked = 0;
+      leaves.forEach((el) => {
+        total += 1;
+        if (el.checked) checked += 1;
+      });
+      teamCb.indeterminate = false;
+      if (checked === 0) teamCb.checked = false;
+      else if (checked === total) teamCb.checked = true;
+      else teamCb.checked = false;
+      if (checked > 0 && checked < total) teamCb.indeterminate = true;
     }
 
     function setEmployeeDropdownOpen(open) {
@@ -551,8 +760,8 @@
 
     function updateEmployeeDropdownSummary() {
       if (!els.employeeDdSummary || !els.employeeDdList) return;
-      const total = els.employeeDdList.querySelectorAll(".emp-dd-cb").length;
-      const checked = els.employeeDdList.querySelectorAll(".emp-dd-cb:checked").length;
+      const total = els.employeeDdList.querySelectorAll(".emp-dd-leaf").length;
+      const checked = els.employeeDdList.querySelectorAll(".emp-dd-leaf:checked").length;
       if (!total) {
         els.employeeDdSummary.textContent = "No employees with RLT data this month";
         return;
@@ -565,24 +774,86 @@
       else els.employeeDdSummary.textContent = checked + " of " + total + " selected";
     }
 
+    function applyEmployeeDropdownFilter() {
+      if (!els.employeeDdList) return;
+      const q = String(els.employeeDdSearch && els.employeeDdSearch.value || "").trim().toLowerCase();
+      let visibleCount = 0;
+      const groups = els.employeeDdList.querySelectorAll(".emp-dd-group");
+      if (groups.length) {
+        groups.forEach((groupEl) => {
+          const teamRow = groupEl.querySelector(".emp-dd-team-row");
+          const membersEl = groupEl.querySelector(".emp-dd-members");
+          const teamText = String(teamRow && teamRow.dataset.search || teamRow && teamRow.textContent || "").toLowerCase();
+          const teamMatch = !!q && teamText.includes(q);
+          let visibleRows = 0;
+          groupEl.querySelectorAll(".emp-dd-member").forEach((rowEl) => {
+            const rowText = String(rowEl.dataset.search || rowEl.textContent || "").toLowerCase();
+            const show = !q || teamMatch || rowText.includes(q);
+            rowEl.hidden = !show;
+            if (show) visibleRows += 1;
+          });
+          const showGroup = !q || teamMatch || visibleRows > 0;
+          groupEl.hidden = !showGroup;
+          if (membersEl) membersEl.hidden = !!q && visibleRows === 0;
+          if (showGroup) visibleCount += visibleRows || 1;
+        });
+      } else {
+        els.employeeDdList.querySelectorAll(".emp-dd-member").forEach((rowEl) => {
+          const rowText = String(rowEl.dataset.search || rowEl.textContent || "").toLowerCase();
+          const show = !q || rowText.includes(q);
+          rowEl.hidden = !show;
+          if (show) visibleCount += 1;
+        });
+      }
+      if (els.employeeDdEmpty) els.employeeDdEmpty.classList.toggle("is-visible", !!q && visibleCount === 0);
+    }
+
     function bindEmployeeDropdownChromeOnce() {
       if (employeeDropdownInteractionsBound) return;
       employeeDropdownInteractionsBound = true;
+      function onEmpListChange(ev) {
+        const t = ev.target;
+        if (!t || t.tagName !== "INPUT") return;
+        const groupEl = t.closest(".emp-dd-group");
+        if (t.classList.contains("emp-dd-team-cb")) {
+          const val = !!t.checked;
+          t.indeterminate = false;
+          if (groupEl) {
+            groupEl.querySelectorAll(".emp-dd-leaf").forEach((leaf) => { leaf.checked = val; });
+          }
+          updateEmployeeDropdownSummary();
+          return;
+        }
+        if (t.classList.contains("emp-dd-leaf")) {
+          if (groupEl) syncTeamCheckboxForGroup(groupEl);
+          updateEmployeeDropdownSummary();
+        }
+      }
+      if (els.employeeDdList) els.employeeDdList.addEventListener("change", onEmpListChange);
       if (els.employeeDdToggle) {
-        els.employeeDdToggle.addEventListener("click", () => {
+        els.employeeDdToggle.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          if (!els.employeeDd) return;
           const open = !els.employeeDd.classList.contains("is-open");
           setEmployeeDropdownOpen(open);
+          if (open && els.employeeDdSearch) els.employeeDdSearch.focus();
         });
+      }
+      if (els.employeeDdSearch) {
+        els.employeeDdSearch.addEventListener("input", applyEmployeeDropdownFilter);
+        els.employeeDdSearch.addEventListener("click", (ev) => { ev.stopPropagation(); });
       }
       if (els.assigneeSelectAll && els.employeeDdList) {
         els.assigneeSelectAll.addEventListener("click", () => {
-          els.employeeDdList.querySelectorAll(".emp-dd-cb").forEach((el) => { el.checked = true; });
+          els.employeeDdList.querySelectorAll(".emp-dd-leaf").forEach((el) => { el.checked = true; });
+          els.employeeDdList.querySelectorAll(".emp-dd-team-cb").forEach((el) => { el.checked = true; el.indeterminate = false; });
           updateEmployeeDropdownSummary();
         });
       }
       if (els.assigneeClearPanel && els.employeeDdList) {
         els.assigneeClearPanel.addEventListener("click", () => {
-          els.employeeDdList.querySelectorAll(".emp-dd-cb").forEach((el) => { el.checked = false; });
+          els.employeeDdList.querySelectorAll(".emp-dd-leaf").forEach((el) => { el.checked = false; });
+          els.employeeDdList.querySelectorAll(".emp-dd-team-cb").forEach((el) => { el.checked = false; el.indeterminate = false; });
           updateEmployeeDropdownSummary();
         });
       }
@@ -600,33 +871,97 @@
       bindEmployeeDropdownChromeOnce();
       const payload = wf || {};
       if (!els.employeeDdList) return;
-      const rows = Array.isArray(payload.employee_options) && payload.employee_options.length
-        ? payload.employee_options
-        : (Array.isArray(payload.assignee_options) ? payload.assignee_options.map((name) => ({ name, resigned: false, resignation_date: null })) : []);
       const selected = new Set(Array.isArray(payload.selected_assignees) ? payload.selected_assignees : []);
       const active = !!payload.assignee_filter_active;
-      els.employeeDdList.innerHTML = rows.map((row, idx) => {
+      let rowSeq = 0;
+      let teamSeq = 0;
+
+      function memberRowMarkup(row) {
         const name = String(row && row.name || "").trim();
         if (!name) return "";
         const rid = row.resigned === true || row.resigned === 1;
         const rdate = row.resignation_date ? String(row.resignation_date).slice(0, 10) : "";
         const title = rid ? ("Resigned" + (rdate ? " — " + rdate : "")) : "";
+        const bid = "emp-cb-leaf-" + (rowSeq++);
+        const checked = active && selected.has(name);
         return (
-          '<label class="emp-dd-row" title="' + esc(title) + '">'
-          + '<input type="checkbox" class="emp-dd-cb" id="' + esc(bid) + '" value="' + esc(name) + '"' + (checked ? " checked" : "") + ">"
+          '<label class="emp-dd-row emp-dd-member" title="' + esc(title) + '" data-search="' + esc(name + " " + (rid ? "resigned " + rdate : "")) + '">'
+          + '<input type="checkbox" class="emp-dd-leaf" id="' + esc(bid) + '" value="' + esc(name) + '"' + (checked ? " checked" : "") + ">"
           + '<span class="emp-dd-name">' + esc(name) + "</span>"
           + (rid ? '<span class="emp-dd-res" data-resigned="1">Resigned' + (rdate ? " · " + esc(rdate) : "") + "</span>" : "")
           + "</label>"
         );
-      }).join("");
-      els.employeeDdList.querySelectorAll(".emp-dd-cb").forEach((el) => {
-        el.addEventListener("change", updateEmployeeDropdownSummary);
-      });
+      }
+
+      function fallbackRows() {
+        return Array.isArray(payload.employee_options) && payload.employee_options.length
+          ? payload.employee_options
+          : (Array.isArray(payload.assignee_options) ? payload.assignee_options.map((name) => ({ name, resigned: false, resignation_date: null })) : []);
+      }
+
+      function treeHtml() {
+        const et = payload.employee_tree;
+        if (!et || typeof et !== "object") return "";
+        const teams = Array.isArray(et.teams) ? et.teams : [];
+        const ungrouped = Array.isArray(et.ungrouped) ? et.ungrouped : [];
+        const parts = [];
+
+        teams.forEach((team, tIdx) => {
+          const teamName = String(team && team.team_name || "").trim() || ("Team " + (tIdx + 1));
+          const leader = String(team && team.team_leader || "").trim();
+          const members = Array.isArray(team.members) ? team.members : [];
+          const memberCount = members.filter((member) => String(member && member.name || "").trim()).length;
+          const membersHtml = members.map(memberRowMarkup).join("");
+          if (!membersHtml) return;
+          const tid = "emp-team-cb-" + (teamSeq++);
+          parts.push(
+            '<div class="emp-dd-group" role="group" aria-label="' + esc(teamName) + '">'
+            + '<label class="emp-dd-row emp-dd-team-row" data-search="' + esc(teamName + " " + leader) + '">'
+            + '<input type="checkbox" class="emp-dd-team-cb" id="' + esc(tid) + '">'
+            + '<span class="emp-dd-name">' + esc(teamName)
+            + (leader ? '<span class="emp-dd-team-lead"> · ' + esc(leader) + "</span>" : "")
+            + "</span>"
+            + '<span class="emp-dd-meta">' + memberCount + (memberCount === 1 ? " member" : " members") + "</span>"
+            + "</label>"
+            + '<div class="emp-dd-members">' + membersHtml + "</div>"
+            + "</div>"
+          );
+        });
+
+        if (ungrouped.length) {
+          const membersHtml = ungrouped.map(memberRowMarkup).join("");
+          if (membersHtml) {
+            const tid = "emp-team-cb-" + (teamSeq++);
+            parts.push(
+              '<div class="emp-dd-group" role="group" aria-label="Others">'
+              + '<label class="emp-dd-row emp-dd-team-row" data-search="others not mapped to a team">'
+              + '<input type="checkbox" class="emp-dd-team-cb" id="' + esc(tid) + '">'
+              + '<span class="emp-dd-name">Others<span class="emp-dd-team-lead"> · not mapped to a team</span></span>'
+              + '<span class="emp-dd-meta">' + ungrouped.length + (ungrouped.length === 1 ? " member" : " members") + "</span>"
+              + "</label>"
+              + '<div class="emp-dd-members">' + membersHtml + "</div>"
+              + "</div>"
+            );
+          }
+        }
+
+        return parts.join("");
+      }
+
+      let inner = treeHtml();
+      if (!inner) inner = fallbackRows().map(memberRowMarkup).join("");
+      els.employeeDdList.innerHTML = inner;
+      if (els.employeeDdSearch) els.employeeDdSearch.value = "";
+      if (els.employeeDdEmpty) els.employeeDdEmpty.classList.remove("is-visible");
+      els.employeeDdList.querySelectorAll(".emp-dd-group").forEach((grp) => { syncTeamCheckboxForGroup(grp); });
+      applyEmployeeDropdownFilter();
       updateEmployeeDropdownSummary();
       setEmployeeDropdownOpen(false);
     }
     let unit = "hours";
     const projectMetaByKey = new Map();
+    let tableProjectFilterKey = "";
+    let projectCardsFilterDelegationBound = false;
 
     function esc(value) {
       return String(value == null ? "" : value)
@@ -644,6 +979,35 @@
 
     function selectedProjects() {
       return els.projects.value ? [els.projects.value] : [];
+    }
+
+    function filteredRowsForTable(rows) {
+      const all = Array.isArray(rows) ? rows.slice() : [];
+      const fk = String(tableProjectFilterKey || "").trim().toUpperCase();
+      if (!fk) return all;
+      return all.filter((r) => String(r.project_key || "").trim().toUpperCase() === fk);
+    }
+
+    function bindProjectCardFilterDelegation() {
+      if (projectCardsFilterDelegationBound || !els.projectCards) return;
+      projectCardsFilterDelegationBound = true;
+      els.projectCards.addEventListener("click", (event) => {
+        const btn = event.target.closest("button.proj-card-filter");
+        if (!btn || !els.projectCards.contains(btn)) return;
+        const raw = btn.getAttribute("data-project-key");
+        if (raw === null) return;
+        tableProjectFilterKey = String(raw).trim();
+        if (!latestPayload) return;
+        renderProjectCards(latestPayload.by_project || []);
+        renderRows(filteredRowsForTable(latestPayload.rows || []));
+      });
+      els.projectCards.addEventListener("keydown", (event) => {
+        const btn = event.target.closest("button.proj-card-filter");
+        if (!btn || !els.projectCards.contains(btn)) return;
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        btn.click();
+      });
     }
 
     function formatNumber(value) {
@@ -685,6 +1049,10 @@
         cls = " good";
       } else if (normalized.includes("progress")) {
         cls = " info";
+      } else if (normalized === "on track") {
+        cls = " info";
+      } else if (normalized === "late") {
+        cls = " bad";
       } else if (normalized === "yet to start") {
         const start = String(approvedStart || "").slice(0, 10);
         if (/^\d{4}-\d{2}-\d{2}$/.test(start) && start < todayIso()) cls = " bad";
@@ -731,6 +1099,47 @@
       els.projects.innerHTML = options.join("");
     }
 
+    function capacityProfileKey(profile) {
+      return String(profile && profile.from_date || "") + "|" + String(profile && profile.to_date || "");
+    }
+
+    function persistedCapacityProfileChoice() {
+      try {
+        return String(sessionStorage.getItem(STORAGE_CAPACITY_PROFILE_KEY) ?? "");
+      } catch (e) {
+        return "";
+      }
+    }
+
+    function setPersistedCapacityProfileChoice(value) {
+      try {
+        sessionStorage.setItem(STORAGE_CAPACITY_PROFILE_KEY, String(value || ""));
+      } catch (e) {
+        /* ignore */
+      }
+    }
+
+    function renderCapacityProfileDropdown(wf) {
+      if (!els.capacityProfile) return;
+      const wfOk = wf && typeof wf === "object";
+      const profiles = wfOk && Array.isArray(wf.capacity_profiles) ? wf.capacity_profiles : [];
+      const parts = ['<option value="">Auto (longest overlap with month)</option>'];
+      for (let i = 0; i < profiles.length; i++) {
+        const p = profiles[i];
+        const key = capacityProfileKey(p);
+        if (!key || key === "|") continue;
+        const fd = esc(String(p.from_date || ""));
+        const td = esc(String(p.to_date || ""));
+        const emp = esc(String(p.employee_count != null ? p.employee_count : ""));
+        parts.push('<option value="' + esc(key) + '">' + fd + " to " + td + " | " + emp + " employees</option>");
+      }
+      els.capacityProfile.innerHTML = parts.join("");
+      let want = persistedCapacityProfileChoice();
+      const matched = !!(want && Array.from(els.capacityProfile.options).some((opt) => opt.value === want));
+      if (want !== "" && !matched) setPersistedCapacityProfileChoice("");
+      els.capacityProfile.value = matched ? want : "";
+    }
+
     async function loadProjects() {
       try {
         const response = await fetch(API_PROJECTS, { cache: "no-store", headers: { "Accept": "application/json" } });
@@ -741,23 +1150,33 @@
       }
     }
 
-    function renderSummary(payload) {
+    function renderSummary(payload, options) {
+      const resetTableProjectFilter = !!(options && options.resetTableProjectFilter);
       latestPayload = payload || {};
+      if (resetTableProjectFilter) tableProjectFilterKey = "";
       const totals = latestPayload.totals || {};
-      const suffix = unit === "days" ? "Days" : "Hours";
+      const suffixShort = unit === "days" ? "days" : "hours";
+      const suffixTitle = unit === "days" ? "Days" : "Hours";
       els.kpiEpics.textContent = String(totals.epic_count || 0);
-      els.kpiPlannedLabel.textContent = "Planned " + suffix;
-      els.kpiActualLabel.textContent = "Actual " + suffix;
+      if (els.kpiPlannedLabel) els.kpiPlannedLabel.textContent = "Total planned " + suffixShort;
+      if (els.kpiActualLabel) els.kpiActualLabel.textContent = "Total actual " + suffixShort;
       els.kpiPlanned.textContent = formatNumber(unit === "days" ? totals.planned_days : totals.planned_hours);
       els.kpiActual.textContent = formatNumber(unit === "days" ? totals.actual_days : totals.actual_hours);
-      els.kpiStartSlip.textContent = String(totals.start_slip_count || 0);
-      els.kpiEndSlip.textContent = String(totals.end_slip_count || 0);
-      els.kpiCarriedForward.textContent = String(totals.carried_forward_count || 0);
+      if (els.kpiBroughtForwardCount) els.kpiBroughtForwardCount.textContent = String(totals.brought_forward_count || 0);
+      if (els.kpiBroughtForwardPlanned) {
+        const bh = unit === "days" ? totals.brought_forward_planned_days : totals.brought_forward_planned_hours;
+        els.kpiBroughtForwardPlanned.textContent = formatNumber(bh || 0) + (unit === "days" ? " planned days" : " planned hours");
+      }
+      if (els.kpiCarriedForwardCount) els.kpiCarriedForwardCount.textContent = String(totals.carried_forward_count || 0);
+      if (els.kpiCarriedForwardPlanned) {
+        const ch = unit === "days" ? totals.carried_forward_planned_days : totals.carried_forward_planned_hours;
+        els.kpiCarriedForwardPlanned.textContent = formatNumber(ch || 0) + (unit === "days" ? " planned days" : " planned hours");
+      }
       document.querySelectorAll(".effort-head").forEach((cell, index) => {
-        cell.textContent = (index === 0 ? "Planned " : "Actual ") + suffix;
+        cell.textContent = (index === 0 ? "Planned " : "Actual ") + suffixTitle;
       });
       renderProjectCards(latestPayload.by_project || []);
-      renderRows(latestPayload.rows || []);
+      renderRows(filteredRowsForTable(latestPayload.rows || []));
       renderEmployeeDropdown(latestPayload.workforce || {});
       renderWorkforce(latestPayload.workforce || {});
       els.runMeta.textContent = latestPayload.canonical_run_id
@@ -783,50 +1202,122 @@
       if (els.kpiWfCapacity) els.kpiWfCapacity.textContent = formatNumber(cap);
       if (els.kpiWfLeave) els.kpiWfLeave.textContent = formatNumber(lv);
       if (els.kpiWfAvailability) els.kpiWfAvailability.textContent = formatNumber(av);
+      renderCapacityProfileDropdown(payload);
       if (els.workforceCaption) {
-        const base = payload.capacity_source === "default"
-          ? "No capacity profile overlaps this month; team capacity is 0 until a profile covers this range (Capacity settings)."
-          : "Capacity uses the saved profile that overlaps this month (calendar clipped to month boundaries). ";
-        els.workforceCaption.textContent = base + "Availability = capacity minus leave hours aggregated from canonical RLT daily rows.";
+        const meta = payload.meta || {};
+        const leaveLine = meta.leave_basis ? String(meta.leave_basis) : "";
+        const src = String(payload.capacity_source || "");
+        const apk = String(payload.applied_capacity_profile_key || "").trim();
+        const reqOk = !!(String(payload.requested_capacity_profile_key || "").trim() && src === "selected_profile");
+        let capLine = "";
+        if (src === "default") {
+          capLine = "No saved capacity profile applies to this month; team capacity stays at 0 unless you explicitly choose a profile above.";
+        } else if (reqOk && apk) {
+          capLine = "Capacity uses the saved profile you selected (" + apk + "), clipped to this month.";
+        } else if (src === "overlapping_profile" && apk) {
+          capLine = "Capacity uses Auto: the saved profile with the longest overlap with this month (" + apk + "), clipped to boundaries.";
+        } else {
+          capLine = "Capacity follows your saved overlapping profile clipped to month boundaries.";
+        }
+        els.workforceCaption.textContent = capLine + " " + leaveLine + " Availability = capacity minus leave load.";
       }
     }
-
     function renderProjectCards(byProject) {
       if (!els.projectCards) return;
+      bindProjectCardFilterDelegation();
       const list = Array.isArray(byProject) ? byProject : [];
       if (!list.length) {
+        tableProjectFilterKey = "";
         els.projectCards.innerHTML = '<div class="empty" style="grid-column:1/-1;">No projects in this scope.</div>';
         return;
       }
-      els.projectCards.innerHTML = list.map((p) => {
+      const totals = latestPayload && latestPayload.totals ? latestPayload.totals : {};
+      const planLabel = unit === "days" ? "Planned days" : "Planned hours";
+      const actLabel = unit === "days" ? "Actual days" : "Actual hours";
+      const dayMode = unit === "days";
+      const allPlanned = dayMode ? Number(totals.planned_days || 0) : Number(totals.planned_hours || 0);
+      const allActual = dayMode ? Number(totals.actual_days || 0) : Number(totals.actual_hours || 0);
+      const fkActive = String(tableProjectFilterKey || "").trim().toUpperCase();
+      const allSelected = !fkActive;
+      const neutral = safeColor("#64748b");
+      const allCardStyle = "--pcolor:" + neutral + ";--pbg:" + colorToSoftBg(neutral);
+      const parts = [
+        '<button type="button" class="proj-card proj-card-filter'
+        + (allSelected ? " is-selected" : "")
+        + '" style="'
+        + esc(allCardStyle)
+        + '" data-project-key="" aria-pressed="'
+        + (allSelected ? "true" : "false")
+        + '" aria-label="Show epics for all projects in scope">'
+        + '<div class="proj-card-name">' + esc("All projects") + "</div>"
+        + '<div class="proj-card-meta">'
+        + esc(String(totals.epic_count || 0))
+        + " epics · "
+        + esc(String(totals.brought_forward_count || 0))
+        + " brought forward · "
+        + esc(String(totals.carried_forward_count || 0))
+        + " carried forward</div>"
+        + '<div class="proj-card-grid">'
+        + '<div><div class="stat-label">' + esc(planLabel) + '</div><div class="stat-value">' + formatNumber(allPlanned) + "</div></div>"
+        + '<div><div class="stat-label">' + esc(actLabel) + '</div><div class="stat-value">' + formatNumber(allActual) + "</div></div>"
+        + "</div></button>",
+      ];
+      for (let idx = 0; idx < list.length; idx++) {
+        const p = list[idx];
         const key = String(p.project_key || "").toUpperCase();
         const hex = projectColor(key);
         const cardStyle = "--pcolor:" + hex + ";--pbg:" + colorToSoftBg(hex);
-        const name = esc(projectDisplayName(key, p.project_name));
-        const planned = unit === "days" ? Number(p.planned_days || 0) : Number(p.planned_hours || 0);
-        const actual = unit === "days" ? Number(p.actual_days || 0) : Number(p.actual_hours || 0);
-        const planLabel = unit === "days" ? "Planned days" : "Planned hours";
-        const actLabel = unit === "days" ? "Actual days" : "Actual hours";
+        const displayName = projectDisplayName(key, p.project_name);
+        const name = esc(displayName);
+        const planned = dayMode ? Number(p.planned_days || 0) : Number(p.planned_hours || 0);
+        const actual = dayMode ? Number(p.actual_days || 0) : Number(p.actual_hours || 0);
         const epicPart = String(p.epic_count || 0);
+        const broughtPart = String(p.brought_forward_count || 0);
         const carryPart = String(p.carried_forward_count || 0);
-        return (
-          '<div class="proj-card" style="' + esc(cardStyle) + '">'
-          + '<div class="proj-card-name">' + name + '</div>'
-          + '<div class="proj-card-meta">' + esc(epicPart) + " epics · " + esc(carryPart) + " carried forward</div>"
+        const isSel = fkActive && fkActive === key;
+        parts.push(
+          '<button type="button" class="proj-card proj-card-filter'
+          + (isSel ? " is-selected" : "")
+          + '" style="'
+          + esc(cardStyle)
+          + '" data-project-key="'
+          + esc(key)
+          + '" aria-pressed="'
+          + (isSel ? "true" : "false")
+          + '" aria-label="Filter epics to project '
+          + esc(displayName)
+          + '">'
+          + '<div class="proj-card-name">'
+          + name
+          + "</div>"
+          + '<div class="proj-card-meta">'
+          + esc(epicPart)
+          + " epics · "
+          + esc(broughtPart)
+          + " brought forward · "
+          + esc(carryPart)
+          + " carried forward</div>"
           + '<div class="proj-card-grid">'
           + '<div><div class="stat-label">' + esc(planLabel) + '</div><div class="stat-value">' + formatNumber(planned) + "</div></div>"
           + '<div><div class="stat-label">' + esc(actLabel) + '</div><div class="stat-value">' + formatNumber(actual) + "</div></div>"
-          + "</div></div>"
+          + "</div></button>"
         );
-      }).join("");
+      }
+      els.projectCards.innerHTML = parts.join("");
     }
 
     function renderRows(rows) {
-      if (!rows.length) {
-        els.rows.innerHTML = '<tr><td colspan="11"><div class="empty">No epics matched the selected month and project scope.</div></td></tr>';
+      const displayRows = Array.isArray(rows) ? rows : [];
+      if (!displayRows.length) {
+        const fk = String(tableProjectFilterKey || "").trim();
+        const hint = fk ? ' Try "All projects" or another project card.' : "";
+        els.rows.innerHTML =
+          '<tr><td colspan="12"><div class="empty">No epics to show for this view.'
+          + esc(hint)
+          + "</div></td></tr>";
         return;
       }
-      els.rows.innerHTML = rows.map((row) => {
+      els.rows.innerHTML = displayRows.map((row) => {
         const epicTitle = esc(row.epic_name || row.epic_key);
         const epicCell = row.jira_url
           ? '<div class="epic-cell"><div><div class="epic-title">' + epicTitle + '</div></div>'
@@ -847,6 +1338,7 @@
           + '<td>' + statusPill(row.jira_status || "Not in canonical data", row.approved_start) + '</td>'
           + '<td class="num">' + formatNumber(effortValue(row, "planned")) + '</td>'
           + '<td class="num">' + formatNumber(effortValue(row, "actual")) + '</td>'
+          + '<td>' + (row.brought_forward ? '<span class="pill info">Brought forward</span>' : '<span class="pill good">No</span>') + '</td>'
           + '<td>' + flagPill(row.start_slip, "Could not start", "Started/OK") + '</td>'
           + '<td>' + flagPill(row.end_slip, "Could not end", "Completed/OK") + '</td>'
           + '<td>' + (row.carried_forward ? '<span class="pill warn">Carried forward</span>' : '<span class="pill good">No</span>') + '</td>'
@@ -861,26 +1353,29 @@
       const projects = selectedProjects();
       if (projects.length) params.set("projects", projects.join(","));
       getCheckedEmployeeNames().forEach((name) => params.append("assignees", name));
+      if (els.capacityProfile && els.capacityProfile.value) params.set("capacity_profile", els.capacityProfile.value);
       els.status.textContent = "Loading monthly epic report...";
       try {
         const response = await fetch(API_SUMMARY + "?" + params.toString(), { cache: "no-store", headers: { "Accept": "application/json" } });
         const body = await response.json().catch(() => ({}));
         if (!response.ok || !body.ok) throw new Error(body.error || "Failed to load report.");
-        renderSummary(body);
+        renderSummary(body, { resetTableProjectFilter: true });
         els.status.textContent = "Loaded " + (body.rows || []).length + " epics for " + esc(body.month || month) + ".";
       } catch (err) {
         latestPayload = null;
-        els.rows.innerHTML = '<tr><td colspan="11"><div class="empty">' + esc(err.message || err) + '</div></td></tr>';
+        tableProjectFilterKey = "";
+        els.rows.innerHTML = '<tr><td colspan="12"><div class="empty">' + esc(err.message || err) + '</div></td></tr>';
         if (els.projectCards) els.projectCards.innerHTML = '<div class="empty" style="grid-column:1/-1;">Could not load data.</div>';
-        const suffix = unit === "days" ? "Days" : "Hours";
+        const suffixShort = unit === "days" ? "days" : "hours";
         if (els.kpiEpics) els.kpiEpics.textContent = "0";
-        if (els.kpiPlannedLabel) els.kpiPlannedLabel.textContent = "Planned " + suffix;
-        if (els.kpiActualLabel) els.kpiActualLabel.textContent = "Actual " + suffix;
+        if (els.kpiPlannedLabel) els.kpiPlannedLabel.textContent = "Total planned " + suffixShort;
+        if (els.kpiActualLabel) els.kpiActualLabel.textContent = "Total actual " + suffixShort;
         if (els.kpiPlanned) els.kpiPlanned.textContent = formatNumber(0);
         if (els.kpiActual) els.kpiActual.textContent = formatNumber(0);
-        if (els.kpiStartSlip) els.kpiStartSlip.textContent = "0";
-        if (els.kpiEndSlip) els.kpiEndSlip.textContent = "0";
-        if (els.kpiCarriedForward) els.kpiCarriedForward.textContent = "0";
+        if (els.kpiBroughtForwardCount) els.kpiBroughtForwardCount.textContent = "0";
+        if (els.kpiBroughtForwardPlanned) els.kpiBroughtForwardPlanned.textContent = formatNumber(0) + (unit === "days" ? " planned days" : " planned hours");
+        if (els.kpiCarriedForwardCount) els.kpiCarriedForwardCount.textContent = "0";
+        if (els.kpiCarriedForwardPlanned) els.kpiCarriedForwardPlanned.textContent = formatNumber(0) + (unit === "days" ? " planned days" : " planned hours");
         renderWorkforce({});
         renderEmployeeDropdown({});
         els.status.textContent = "Could not load report.";
@@ -891,7 +1386,7 @@
     document.querySelectorAll('input[name="unit"]').forEach((input) => {
       input.addEventListener("change", () => {
         unit = document.querySelector('input[name="unit"]:checked').value || "hours";
-        if (latestPayload) renderSummary(latestPayload);
+        if (latestPayload) renderSummary(latestPayload, { resetTableProjectFilter: false });
       });
     });
     els.apply.addEventListener("click", loadSummary);
@@ -901,11 +1396,18 @@
     });
     if (els.clearAssignees) els.clearAssignees.addEventListener("click", () => {
       if (els.employeeDdList) {
-        els.employeeDdList.querySelectorAll(".emp-dd-cb").forEach((el) => { el.checked = false; });
+        els.employeeDdList.querySelectorAll(".emp-dd-leaf").forEach((el) => { el.checked = false; });
+        els.employeeDdList.querySelectorAll(".emp-dd-team-cb").forEach((el) => { el.checked = false; el.indeterminate = false; });
       }
       updateEmployeeDropdownSummary();
       loadSummary();
     });
+    if (els.capacityProfile) {
+      els.capacityProfile.addEventListener("change", () => {
+        setPersistedCapacityProfileChoice(els.capacityProfile.value || "");
+        loadSummary();
+      });
+    }
     els.projects.addEventListener("change", loadSummary);
     els.month.value = monthNow();
     loadProjects().then(loadSummary);

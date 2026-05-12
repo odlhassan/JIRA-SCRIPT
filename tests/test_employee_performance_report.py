@@ -21,6 +21,7 @@ from generate_employee_performance_report import (
     _load_simple_scoring,
     _load_work_items,
     _load_worklogs,
+    _load_work_items_from_canonical_db,
     _load_performance_settings,
     _normalize_performance_settings,
     _precompute_simple_scoring,
@@ -29,7 +30,7 @@ from generate_employee_performance_report import (
     _save_performance_settings,
 )
 import report_server
-from report_server import create_report_server_app
+from report_server import _init_canonical_refresh_db, create_report_server_app
 
 
 def _seed_canonical_run(db_path: Path, run_id: str = "canonical-test-run") -> str:
@@ -185,34 +186,42 @@ class EmployeePerformanceReportTests(unittest.TestCase):
     def test_settings_validation(self):
         valid = _normalize_performance_settings(
             {
-                "base_score": 100,
-                "min_score": 0,
-                "max_score": 100,
-                "points_per_bug_hour": 1,
-                "points_per_bug_late_hour": 2,
-                "points_per_unplanned_leave_hour": 3,
-                "points_per_subtask_late_hour": 4,
-                "points_per_estimate_overrun_hour": 5,
-                "points_per_missed_due_date": 2,
+                "weight_estimate_discipline": 25,
+                "weight_due_date": 25,
+                "weight_subtask_timeliness": 15,
+                "weight_bug_quality": 15,
+                "weight_bug_late": 10,
+                "weight_leave_reliability": 10,
                 "overloaded_penalty_enabled": 1,
                 "planning_realism_enabled": 0,
                 "overloaded_penalty_threshold_pct": 10,
             }
         )
-        self.assertEqual(valid["base_score"], 100)
+        self.assertEqual(valid["weight_estimate_discipline"], 25)
 
         with self.assertRaises(ValueError):
             _normalize_performance_settings(
                 {
-                    "base_score": 100,
-                    "min_score": 0,
-                    "max_score": 100,
-                    "points_per_bug_hour": -1,
-                    "points_per_bug_late_hour": 2,
-                    "points_per_unplanned_leave_hour": 3,
-                    "points_per_subtask_late_hour": 4,
-                    "points_per_estimate_overrun_hour": 5,
-                    "points_per_missed_due_date": 2,
+                    "weight_estimate_discipline": -1,
+                    "weight_due_date": 25,
+                    "weight_subtask_timeliness": 15,
+                    "weight_bug_quality": 15,
+                    "weight_bug_late": 10,
+                    "weight_leave_reliability": 10,
+                    "overloaded_penalty_enabled": 1,
+                    "planning_realism_enabled": 0,
+                    "overloaded_penalty_threshold_pct": 10,
+                }
+            )
+        with self.assertRaises(ValueError):
+            _normalize_performance_settings(
+                {
+                    "weight_estimate_discipline": 20,
+                    "weight_due_date": 20,
+                    "weight_subtask_timeliness": 15,
+                    "weight_bug_quality": 15,
+                    "weight_bug_late": 10,
+                    "weight_leave_reliability": 10,
                     "overloaded_penalty_enabled": 1,
                     "planning_realism_enabled": 0,
                     "overloaded_penalty_threshold_pct": 10,
@@ -224,32 +233,72 @@ class EmployeePerformanceReportTests(unittest.TestCase):
             db = Path(td) / "assignee_hours_capacity.db"
             _init_performance_settings_db(db)
             initial = _load_performance_settings(db)
-            self.assertIn("base_score", initial)
+            self.assertIn("weight_estimate_discipline", initial)
             self.assertEqual(initial["overloaded_penalty_enabled"], 0)
             self.assertEqual(initial["planning_realism_enabled"], 0)
             saved = _save_performance_settings(
                 db,
                 {
-                    "base_score": 90,
-                    "min_score": 0,
-                    "max_score": 100,
-                    "points_per_bug_hour": 0.8,
-                    "points_per_bug_late_hour": 1.9,
-                    "points_per_unplanned_leave_hour": 0.6,
-                    "points_per_subtask_late_hour": 1.2,
-                    "points_per_estimate_overrun_hour": 1.4,
-                    "points_per_missed_due_date": 2.0,
+                    "weight_estimate_discipline": 20,
+                    "weight_due_date": 30,
+                    "weight_subtask_timeliness": 15,
+                    "weight_bug_quality": 15,
+                    "weight_bug_late": 10,
+                    "weight_leave_reliability": 10,
                     "overloaded_penalty_enabled": 1,
                     "planning_realism_enabled": 1,
                     "overloaded_penalty_threshold_pct": 12.5,
                 },
             )
             loaded = _load_performance_settings(db)
-            self.assertEqual(saved["base_score"], loaded["base_score"])
-            self.assertEqual(saved["points_per_bug_late_hour"], loaded["points_per_bug_late_hour"])
+            self.assertEqual(saved["weight_due_date"], loaded["weight_due_date"])
+            self.assertEqual(saved["weight_estimate_discipline"], loaded["weight_estimate_discipline"])
             self.assertEqual(saved["overloaded_penalty_enabled"], loaded["overloaded_penalty_enabled"])
             self.assertEqual(saved["planning_realism_enabled"], loaded["planning_realism_enabled"])
             self.assertEqual(saved["overloaded_penalty_threshold_pct"], loaded["overloaded_penalty_threshold_pct"])
+
+    def test_settings_db_migrates_legacy_penalty_schema(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            db = Path(td) / "assignee_hours_capacity.db"
+            with sqlite3.connect(db) as conn:
+                conn.execute(
+                    """
+                    CREATE TABLE performance_point_settings (
+                        id INTEGER PRIMARY KEY CHECK(id = 1),
+                        base_score REAL NOT NULL,
+                        min_score REAL NOT NULL,
+                        max_score REAL NOT NULL,
+                        points_per_bug_hour REAL NOT NULL,
+                        points_per_bug_late_hour REAL NOT NULL,
+                        points_per_unplanned_leave_hour REAL NOT NULL,
+                        points_per_subtask_late_hour REAL NOT NULL,
+                        points_per_estimate_overrun_hour REAL NOT NULL,
+                        points_per_missed_due_date REAL NOT NULL,
+                        overloaded_penalty_enabled INTEGER NOT NULL DEFAULT 0,
+                        planning_realism_enabled INTEGER NOT NULL DEFAULT 0,
+                        overloaded_penalty_threshold_pct REAL NOT NULL DEFAULT 10.0,
+                        updated_at TEXT NOT NULL
+                    )
+                    """
+                )
+                conn.execute(
+                    """
+                    INSERT INTO performance_point_settings
+                    VALUES (1, 100, 0, 100, 0.5, 1.5, 0.75, 1, 1.25, 2, 1, 1, 12.5, 'legacy-ts')
+                    """
+                )
+                conn.commit()
+            _init_performance_settings_db(db)
+            settings = _load_performance_settings(db)
+            self.assertEqual(settings["weight_estimate_discipline"], DEFAULT_PERFORMANCE_SETTINGS["weight_estimate_discipline"])
+            self.assertEqual(settings["overloaded_penalty_enabled"], 1)
+            self.assertEqual(settings["planning_realism_enabled"], 1)
+            self.assertEqual(settings["overloaded_penalty_threshold_pct"], 12.5)
+            with sqlite3.connect(db) as conn:
+                cols = {str(row[1]) for row in conn.execute("PRAGMA table_info(performance_point_settings)").fetchall()}
+            self.assertIn("weight_due_date", cols)
+            self.assertNotIn("points_per_bug_hour", cols)
+            self.assertNotIn("base_score", cols)
 
     def test_html_contains_core_controls(self):
         payload = _build_payload([], [], [], dict(DEFAULT_PERFORMANCE_SETTINGS), [], [], [], [])
@@ -298,6 +347,15 @@ class EmployeePerformanceReportTests(unittest.TestCase):
         self.assertIn("performanceSettingsReady = true;", html)
         self.assertIn('document.getElementById("leader-sort-direction").addEventListener("change", renderAll);', html)
         self.assertIn('document.getElementById("leader-sort-direction").value="desc";', html)
+
+    def test_html_uses_weighted_advanced_score_math(self):
+        payload = _build_payload([], [], [], dict(DEFAULT_PERFORMANCE_SETTINGS), [], [], [], [])
+        html = _build_html(payload)
+        self.assertIn("weight_estimate_discipline", html)
+        self.assertIn("factor.effective_weight = factor.eligible && eligibleWeight > 0", html)
+        self.assertIn("factor.contribution = factor.eligible ? n(factor.effective_weight) * n(factor.score_pct) / 100 : 0;", html)
+        self.assertIn("Weighted normalized", html)
+        self.assertIn("Daily Advanced Score trend is not shown for the weighted model yet.", html)
 
     def test_html_applies_subtask_only_scope_for_performance_kpis(self):
         payload = _build_payload([], [], [], dict(DEFAULT_PERFORMANCE_SETTINGS), [], [], [], [])
@@ -359,8 +417,13 @@ class EmployeePerformanceReportTests(unittest.TestCase):
         self.assertIn('id="score-detail-drawer"', html)
         self.assertIn('id="score-detail-drawer-overlay"', html)
         self.assertIn('id="summary-simple-score-trigger"', html)
+        self.assertIn('id="summary-advanced-score-trigger"', html)
         self.assertIn("openScoreDrawerForAssignee(item)", html)
+        self.assertIn("openAdvancedScoreDrawerForAssignee(item)", html)
         self.assertIn("Simple Score Details", html)
+        self.assertIn("Advanced Score Details", html)
+        self.assertIn("Factor Breakdown", html)
+        self.assertGreaterEqual(html.count("All Scored Subtasks"), 2)
         self.assertIn("Actual Complete Date", html)
         self.assertIn("Last Logged Date", html)
         self.assertIn("Planned Due Date", html)
@@ -413,13 +476,47 @@ class EmployeePerformanceReportTests(unittest.TestCase):
         self.assertIn("await loadScopedSubtasksForCurrentFilters();", html)
         self.assertIn("const scopedIssueSet = scopedSubtasksIssueKeySet instanceof Set ? scopedSubtasksIssueKeySet : null;", html)
 
-    def test_html_due_completion_mode_mentions_late_completion_penalties(self):
+    def test_html_due_completion_mode_matches_commitment_forgiveness_formula(self):
         payload = _build_payload([], [], [], dict(DEFAULT_PERFORMANCE_SETTINGS), [], [], [], [])
         html = _build_html(payload)
-        self.assertIn("Late Completion Rule", html)
-        self.assertIn("Late-completed subtasks add their original estimate as penalty input", html)
-        self.assertIn("Late Completion Estimate Penalty", html)
-        self.assertIn("Late estimate penalty:", html)
+        self.assertIn("Due Completion Rule", html)
+        self.assertIn("overrun hours from items finished on time are not counted in penalty", html)
+        self.assertIn("const dueAdjustedPenaltyHours = adjOver;", html)
+        self.assertNotIn("Late Completion Estimate Penalty", html)
+        self.assertNotIn("Late estimate penalty:", html)
+
+    def test_build_payload_exposes_precomputed_simple_scoring_key(self):
+        rows = [{"issue_key": "ABC-1", "assignee": "Alice"}]
+        payload = _build_payload(
+            [],
+            [],
+            [],
+            dict(DEFAULT_PERFORMANCE_SETTINGS),
+            [],
+            [],
+            [],
+            [],
+            simple_scoring=rows,
+        )
+        self.assertEqual(payload["simple_scoring_precomputed"], rows)
+        self.assertEqual(payload["simple_scoring"], rows)
+
+    def test_html_stacks_simple_and_advanced_scoring_sections(self):
+        payload = _build_payload([], [], [], dict(DEFAULT_PERFORMANCE_SETTINGS), [], [], [], [])
+        html = _build_html(payload)
+        self.assertIn("scoring-sections-stack", html)
+        self.assertIn('${simpleScoringContent}${advancedScoringContent}', html)
+        self.assertNotIn('data-tab-group="scoring"', html)
+
+    def test_html_exposes_synchronized_simple_advanced_score_controls(self):
+        payload = _build_payload([], [], [], dict(DEFAULT_PERFORMANCE_SETTINGS), [], [], [], [])
+        html = _build_html(payload)
+        self.assertIn('id="adv-score-simple"', html)
+        self.assertIn('id="header-score-advanced"', html)
+        self.assertIn('id="leader-score-simple"', html)
+        self.assertIn("function setScoringMode(mode, shouldRender = true)", html)
+        self.assertIn('setScoringMode("simple", false)', html)
+        self.assertNotIn("adv-due-completion-toggle", html)
 
     def test_html_due_compliance_table_uses_updated_completion_headers(self):
         payload = _build_payload([], [], [], dict(DEFAULT_PERFORMANCE_SETTINGS), [], [], [], [])
@@ -525,12 +622,67 @@ class EmployeePerformanceReportTests(unittest.TestCase):
         self.assertEqual(meta["actual_complete_source"], "last_logged_date")
         self.assertEqual(meta["completion_bucket"], "after_due")
 
+    def test_derive_actual_completion_uses_later_of_last_log_and_resolved_stable(self):
+        meta = _derive_actual_completion("2026-03-10", "2026-03-05", "2026-03-08")
+        self.assertEqual(meta["actual_complete_date"], "2026-03-08")
+        self.assertEqual(meta["actual_complete_source"], "max_last_logged_resolved_stable")
+        self.assertEqual(meta["completion_bucket"], "before_due")
+
+    def test_derive_actual_completion_resolved_only_when_no_logs(self):
+        meta = _derive_actual_completion("2026-03-12", "", "2026-03-11")
+        self.assertEqual(meta["actual_complete_date"], "2026-03-11")
+        self.assertEqual(meta["actual_complete_source"], "resolved_stable_since_date")
+
     def test_derive_actual_completion_handles_missing_dates(self):
         only_last = _derive_actual_completion("2026-03-05", "2026-03-04")
         none = _derive_actual_completion("2026-03-05", "")
         self.assertEqual(only_last["actual_complete_date"], "2026-03-04")
         self.assertEqual(none["actual_complete_date"], "")
         self.assertEqual(none["completion_bucket"], "not_completed")
+
+    def test_load_work_items_from_canonical_db_includes_resolved_stable_since(self):
+        """Colossal refresh stores resolved_stable_since_date; loaders must expose it for scoring."""
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            db_path = Path(td) / "jira_exports.db"
+            run_id = "run-rs1"
+            _init_canonical_refresh_db(db_path)
+            now = "2026-04-01T00:00:00+00:00"
+            with sqlite3.connect(db_path) as conn:
+                conn.execute(
+                    """
+                    INSERT INTO canonical_issues(
+                        run_id, issue_id, issue_key, project_key, issue_type, summary, status, assignee,
+                        start_date, due_date, created_utc, updated_utc, resolved_stable_since_date,
+                        original_estimate_hours, total_hours_logged, fix_type, parent_issue_key,
+                        story_key, epic_key, raw_payload_json
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        run_id,
+                        "1",
+                        "O2-500",
+                        "O2",
+                        "Sub-task",
+                        "Scoped",
+                        "Done",
+                        "Alice",
+                        "2026-03-01",
+                        "2026-03-20",
+                        now,
+                        now,
+                        "2026-03-18T14:30:00+00:00",
+                        4.0,
+                        4.0,
+                        "",
+                        "O2-ST9",
+                        "O2-ST9",
+                        "O2-EP9",
+                        "{}",
+                    ),
+                )
+                conn.commit()
+            loaded = _load_work_items_from_canonical_db(db_path, run_id)
+            self.assertEqual(loaded["O2-500"].get("resolved_stable_since_date"), "2026-03-18")
 
     def test_precompute_simple_scoring_persists_actual_completion_fields(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
@@ -550,10 +702,19 @@ class EmployeePerformanceReportTests(unittest.TestCase):
                     "due_date": "2026-03-08",
                     "status": "Done",
                 },
+                "O2-103": {
+                    "issue_type": "Sub-task",
+                    "assignee": "Alice",
+                    "original_estimate_hours": 4,
+                    "due_date": "2026-03-08",
+                    "resolved_stable_since_date": "2026-03-10",
+                    "status": "Done",
+                },
             }
             worklogs = [
                 {"issue_id": "O2-101", "worklog_date": "2026-03-07", "hours_logged": 2},
                 {"issue_id": "O2-102", "worklog_date": "2026-03-06", "hours_logged": 2},
+                {"issue_id": "O2-103", "worklog_date": "2026-03-06", "hours_logged": 1},
             ]
 
             _precompute_simple_scoring(db, work_items, worklogs)
@@ -568,6 +729,11 @@ class EmployeePerformanceReportTests(unittest.TestCase):
             self.assertEqual(rows["O2-102"]["actual_complete_date"], "2026-03-06")
             self.assertEqual(rows["O2-102"]["actual_complete_source"], "last_logged_date")
             self.assertEqual(rows["O2-102"]["due_completion_status"], "on_time")
+
+            self.assertEqual(rows["O2-103"]["last_logged_date"], "2026-03-06")
+            self.assertEqual(rows["O2-103"]["actual_complete_date"], "2026-03-10")
+            self.assertEqual(rows["O2-103"]["actual_complete_source"], "max_last_logged_resolved_stable")
+            self.assertEqual(rows["O2-103"]["due_completion_status"], "late")
 
     def test_load_leave_issue_keys_prefers_raw_subtasks_and_normalizes(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
@@ -728,15 +894,12 @@ class EmployeePerformanceReportTests(unittest.TestCase):
             post_resp = client.post(
                 "/api/performance/settings",
                 json={
-                    "base_score": 88,
-                    "min_score": 0,
-                    "max_score": 100,
-                    "points_per_bug_hour": 1.1,
-                    "points_per_bug_late_hour": 2.1,
-                    "points_per_unplanned_leave_hour": 0.9,
-                    "points_per_subtask_late_hour": 1.2,
-                    "points_per_estimate_overrun_hour": 1.3,
-                    "points_per_missed_due_date": 2.0,
+                    "weight_estimate_discipline": 20,
+                    "weight_due_date": 30,
+                    "weight_subtask_timeliness": 15,
+                    "weight_bug_quality": 15,
+                    "weight_bug_late": 10,
+                    "weight_leave_reliability": 10,
                     "overloaded_penalty_enabled": 1,
                     "planning_realism_enabled": 0,
                     "overloaded_penalty_threshold_pct": 10.0,
@@ -744,7 +907,7 @@ class EmployeePerformanceReportTests(unittest.TestCase):
             )
             self.assertEqual(post_resp.status_code, 200)
             saved = post_resp.get_json()
-            self.assertEqual(saved["settings"]["base_score"], 88)
+            self.assertEqual(saved["settings"]["weight_due_date"], 30)
 
     def test_performance_settings_page_uses_planning_realism_labels(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:

@@ -4377,14 +4377,23 @@ def _canonical_month_code(iso_date: str) -> str:
 def _canonical_derive_actual_completion(
     due_date_text: str,
     last_worklog_date_text: str,
+    resolved_stable_since_text: str = "",
 ) -> tuple[str, str, str]:
+    """Mirror generate_employee_performance_report._derive_actual_completion for derived canonical tables."""
     due_date_value = _parse_iso_date(due_date_text)
     last_worklog_date = _parse_iso_date(last_worklog_date_text)
+    resolved_stable = _parse_iso_date(resolved_stable_since_text)
+    candidates = [d for d in (last_worklog_date, resolved_stable) if d]
     actual_complete_date = ""
     actual_complete_source = "none"
-    if last_worklog_date:
-        actual_complete_date = last_worklog_date
-        actual_complete_source = "last_worklog_date"
+    if candidates:
+        actual_complete_date = max(candidates)
+        if last_worklog_date and resolved_stable:
+            actual_complete_source = "max_last_logged_resolved_stable"
+        elif last_worklog_date:
+            actual_complete_source = "last_worklog_date"
+        else:
+            actual_complete_source = "resolved_stable_since_date"
 
     if not due_date_value:
         bucket = "no_due_date"
@@ -4480,6 +4489,7 @@ def _canonical_rebuild_derived_data(db_path: Path, run_id: str) -> dict[str, int
             actual_complete_date, actual_complete_source, completion_bucket = _canonical_derive_actual_completion(
                 due_date,
                 last_worklog_date,
+                _to_text(issue.get("resolved_stable_since_date")),
             )
             actual_rows.append(
                 (
@@ -6808,73 +6818,47 @@ def _performance_settings_html() -> str:
       <div style="display:flex;gap:8px;flex-wrap:wrap;">""" + _settings_top_nav_html(PERFORMANCE_SETTINGS_ROUTE) + """</div>
     </div>
     <section class="field-group">
-      <div class="group-title">Score Foundation</div>
+      <div class="group-title">Advanced Score Weights</div>
+      <p style="margin:6px 0 0;color:var(--muted);font-size:.88rem;">Weighted Advanced Score uses normalized factor percentages. The six weights must total 100.</p>
       <div class="grid" style="margin-top:8px;">
-        <div class="perf-field" data-field-key="base_score">
-          <label for="base-score" class="label-row">Base Score
-            <span class="material-symbols-outlined field-info" role="button" tabindex="0" data-info-title="Base Score" data-info-body="Starting performance score before penalties are applied.\n\nMeaning for performance calculation:\n- It is the additive anchor in `Raw Score = base_score - Total Penalty`.\n- Increasing Base Score raises everyone’s starting point.\n- Use carefully so penalties still create meaningful separation." aria-label="Base Score info">info</span>
+        <div class="perf-field" data-field-key="weight_estimate_discipline">
+          <label for="weight-estimate-discipline" class="label-row">Estimate Discipline Weight
+            <span class="material-symbols-outlined field-info" role="button" tabindex="0" data-info-title="Estimate Discipline Weight" data-info-body="Weight for estimate overrun performance.\n\nFormula: factor score = 100 × (1 − min(1, estimate_overrun_hours / planned_hours_assigned)).\nContribution = effective weight × factor score / 100." aria-label="Estimate Discipline Weight info">info</span>
           </label>
-          <input id="base-score" type="number" step="0.1">
+          <input id="weight-estimate-discipline" type="number" min="0" max="100" step="0.01">
         </div>
-        <div class="related-box">
-          <p class="related-title">Related Bounds</p>
-          <div class="related-grid">
-            <div class="perf-field" data-field-key="min_score">
-              <label for="min-score" class="label-row">Min Score
-                <span class="material-symbols-outlined field-info" role="button" tabindex="0" data-info-title="Min Score" data-info-body="Lower clamp boundary.\n\nMeaning for performance calculation:\n- Final score cannot go below this value.\n- Protects against extreme penalties causing unstable negative/very-low outputs.\n- Higher Min Score compresses low-end differentiation." aria-label="Min Score info">info</span>
-              </label>
-              <input id="min-score" type="number" step="0.1">
-            </div>
-            <div class="perf-field" data-field-key="max_score">
-              <label for="max-score" class="label-row">Max Score
-                <span class="material-symbols-outlined field-info" role="button" tabindex="0" data-info-title="Max Score" data-info-body="Upper clamp boundary.\n\nMeaning for performance calculation:\n- Final score cannot exceed this value.\n- Prevents inflated scores when Base Score is high.\n- Lower Max Score compresses top-end differentiation." aria-label="Max Score info">info</span>
-              </label>
-              <input id="max-score" type="number" step="0.1">
-            </div>
-          </div>
+        <div class="perf-field" data-field-key="weight_due_date">
+          <label for="weight-due-date" class="label-row">Due-Date Delivery Weight
+            <span class="material-symbols-outlined field-info" role="button" tabindex="0" data-info-title="Due-Date Delivery Weight" data-info-body="Weight for due-date reliability.\n\nFormula: factor score = 100 × (1 − missed_due_date_count / due_dated_assigned_count).\nContribution = effective weight × factor score / 100." aria-label="Due-Date Delivery Weight info">info</span>
+          </label>
+          <input id="weight-due-date" type="number" min="0" max="100" step="0.01">
+        </div>
+        <div class="perf-field" data-field-key="weight_subtask_timeliness">
+          <label for="weight-subtask-timeliness" class="label-row">Subtask Timeliness Weight
+            <span class="material-symbols-outlined field-info" role="button" tabindex="0" data-info-title="Subtask Timeliness Weight" data-info-body="Weight for late subtask hours.\n\nFormula: factor score = 100 × (1 − min(1, subtask_late_hours / planned_hours_assigned)).\nContribution = effective weight × factor score / 100." aria-label="Subtask Timeliness Weight info">info</span>
+          </label>
+          <input id="weight-subtask-timeliness" type="number" min="0" max="100" step="0.01">
+        </div>
+        <div class="perf-field" data-field-key="weight_bug_quality">
+          <label for="weight-bug-quality" class="label-row">Bug Quality Weight
+            <span class="material-symbols-outlined field-info" role="button" tabindex="0" data-info-title="Bug Quality Weight" data-info-body="Weight for bug work relative to total logged hours.\n\nFormula: factor score = 100 × (1 − min(1, bug_hours / total_hours)).\nContribution = effective weight × factor score / 100." aria-label="Bug Quality Weight info">info</span>
+          </label>
+          <input id="weight-bug-quality" type="number" min="0" max="100" step="0.01">
+        </div>
+        <div class="perf-field" data-field-key="weight_bug_late">
+          <label for="weight-bug-late" class="label-row">Late-Bug Severity Weight
+            <span class="material-symbols-outlined field-info" role="button" tabindex="0" data-info-title="Late-Bug Severity Weight" data-info-body="Weight for bug hours logged after the related story due date.\n\nFormula: factor score = 100 × (1 − min(1, bug_late_hours / max(bug_hours, total_hours))).\nContribution = effective weight × factor score / 100." aria-label="Late-Bug Severity Weight info">info</span>
+          </label>
+          <input id="weight-bug-late" type="number" min="0" max="100" step="0.01">
+        </div>
+        <div class="perf-field" data-field-key="weight_leave_reliability">
+          <label for="weight-leave-reliability" class="label-row">Leave Reliability Weight
+            <span class="material-symbols-outlined field-info" role="button" tabindex="0" data-info-title="Leave Reliability Weight" data-info-body="Weight for unplanned leave hours relative to employee capacity.\n\nFormula: factor score = 100 × (1 − min(1, unplanned_leave_hours / employee_capacity_hours)).\nContribution = effective weight × factor score / 100." aria-label="Leave Reliability Weight info">info</span>
+          </label>
+          <input id="weight-leave-reliability" type="number" min="0" max="100" step="0.01">
         </div>
       </div>
-    </section>
-    <section class="field-group">
-      <div class="group-title">Penalty Multipliers</div>
-      <div class="grid" style="margin-top:8px;">
-        <div class="perf-field" data-field-key="points_per_bug_hour">
-          <label for="bug-hour" class="label-row">Points per Bug Hour
-            <span class="material-symbols-outlined field-info" role="button" tabindex="0" data-info-title="Points per Bug Hour" data-info-body="Penalty rate applied to bug hours.\n\nMeaning for performance calculation:\n- Contributes to Total Penalty as `bug_hours * points_per_bug_hour`.\n- Higher value makes quality-related rework deduct score faster.\n- Use to reflect seriousness of bug workload in scoring." aria-label="Points per Bug Hour info">info</span>
-          </label>
-          <input id="bug-hour" type="number" min="0" step="0.01">
-        </div>
-        <div class="perf-field" data-field-key="points_per_bug_late_hour">
-          <label for="bug-late-hour" class="label-row">Points per Bug Late Hour
-            <span class="material-symbols-outlined field-info" role="button" tabindex="0" data-info-title="Points per Bug Late Hour" data-info-body="Penalty rate for late bug resolution hours.\n\nMeaning for performance calculation:\n- Contributes as `bug_late_hours * points_per_bug_late_hour`.\n- Emphasizes delay in quality closure and SLA risk.\n- Higher value prioritizes timeliness of bug fixing." aria-label="Points per Bug Late Hour info">info</span>
-          </label>
-          <input id="bug-late-hour" type="number" min="0" step="0.01">
-        </div>
-        <div class="perf-field" data-field-key="points_per_unplanned_leave_hour">
-          <label for="leave-hour" class="label-row">Points per Unplanned Leave Hour
-            <span class="material-symbols-outlined field-info" role="button" tabindex="0" data-info-title="Points per Unplanned Leave Hour" data-info-body="Penalty rate for unplanned leave hours.\n\nMeaning for performance calculation:\n- Contributes as `unplanned_leave_hours * points_per_unplanned_leave_hour`.\n- Captures disruption risk from unexpected availability loss.\n- Higher value increases penalty sensitivity to sudden leave." aria-label="Points per Unplanned Leave Hour info">info</span>
-          </label>
-          <input id="leave-hour" type="number" min="0" step="0.01">
-        </div>
-        <div class="perf-field" data-field-key="points_per_subtask_late_hour">
-          <label for="subtask-late-hour" class="label-row">Points per Subtask Late Hour
-            <span class="material-symbols-outlined field-info" role="button" tabindex="0" data-info-title="Points per Subtask Late Hour" data-info-body="Penalty rate for subtask late hours.\n\nMeaning for performance calculation:\n- Contributes as `subtask_late_hours * points_per_subtask_late_hour`.\n- Converts schedule slippage into measurable score deduction.\n- Higher value penalizes execution delays more strongly." aria-label="Points per Subtask Late Hour info">info</span>
-          </label>
-          <input id="subtask-late-hour" type="number" min="0" step="0.01">
-        </div>
-        <div class="perf-field" data-field-key="points_per_estimate_overrun_hour">
-          <label for="estimate-hour" class="label-row">Points per Estimate Overrun Hour
-            <span class="material-symbols-outlined field-info" role="button" tabindex="0" data-info-title="Points per Estimate Overrun Hour" data-info-body="Penalty rate for estimate overrun hours.\n\nMeaning for performance calculation:\n- Contributes as `estimate_overrun_hours * points_per_estimate_overrun_hour`.\n- Measures planning and estimation discipline.\n- Higher value increases penalty for underestimation/effort drift." aria-label="Points per Estimate Overrun Hour info">info</span>
-          </label>
-          <input id="estimate-hour" type="number" min="0" step="0.01">
-        </div>
-        <div class="perf-field" data-field-key="points_per_missed_due_date">
-          <label for="missed-due-date" class="label-row">Points per Missed Due Date
-            <span class="material-symbols-outlined field-info" role="button" tabindex="0" data-info-title="Points per Missed Due Date" data-info-body="Fixed penalty per missed due date event.\n\nMeaning for performance calculation:\n- Contributes as `missed_due_dates * points_per_missed_due_date`.\n- Encodes delivery commitment reliability in final score.\n- Higher value makes date misses more costly than hour-only signals." aria-label="Points per Missed Due Date info">info</span>
-          </label>
-          <input id="missed-due-date" type="number" min="0" step="0.01">
-        </div>
-      </div>
+      <div id="weight-total-status" style="margin-top:8px;font-weight:700;color:var(--muted);">Total: 100 / 100</div>
     </section>
     <section class="field-group">
       <div class="group-title">Simple Scoring Guardrail</div>
@@ -6907,49 +6891,36 @@ def _performance_settings_html() -> str:
     <section class="guide">
       <h2 class="guide-title"><span class="material-symbols-outlined" aria-hidden="true">calculate</span>Performance Formula Guide</h2>
       <div class="formula-box">
-        <p class="formula-essence">Essence: this is a penalty-first model. We start from a base score and deduct penalty points for delivery quality, delay, overrun, and unplanned leave factors. In this formula, only `base_score` adds points; all other scoring ingredients reduce points.</p>
+        <p class="formula-essence">Essence: Advanced Score is a weighted normalized model. Each factor earns a 0-100% score, then contributes `effective_weight × factor_score / 100` points. Configured weights must total 100.</p>
         <p class="formula-code">
-          <span class="line">1) Total Penalty =</span>
-          <span class="line">   (<span class="token-reduce" data-target-fields="points_per_bug_hour" tabindex="0">bug_hours * points_per_bug_hour</span>) +</span>
-          <span class="line">   (<span class="token-reduce" data-target-fields="points_per_bug_late_hour" tabindex="0">bug_late_hours * points_per_bug_late_hour</span>) +</span>
-          <span class="line">   (<span class="token-reduce" data-target-fields="points_per_unplanned_leave_hour" tabindex="0">unplanned_leave_hours * points_per_unplanned_leave_hour</span>) +</span>
-          <span class="line">   (<span class="token-reduce" data-target-fields="points_per_subtask_late_hour" tabindex="0">subtask_late_hours * points_per_subtask_late_hour</span>) +</span>
-          <span class="line">   (<span class="token-reduce" data-target-fields="points_per_estimate_overrun_hour" tabindex="0">estimate_overrun_hours * points_per_estimate_overrun_hour</span>) +</span>
-          <span class="line">   (<span class="token-reduce" data-target-fields="points_per_missed_due_date" tabindex="0">missed_due_dates * points_per_missed_due_date</span>)</span>
-          <span class="line" style="margin-top:6px;">2) Raw Score = <span class="token-add" data-target-fields="base_score" tabindex="0">base_score</span> - <span class="token-reduce">Total Penalty</span></span>
-          <span class="line" style="margin-top:6px;">3) Final Score = <span class="token-neutral" data-target-fields="min_score,max_score" tabindex="0">clamp(Raw Score, min_score, max_score)</span></span>
+          <span class="line">1) Factor Score % = 100 × (1 − min(1, input / denominator))</span>
+          <span class="line">2) Contribution = <span class="token-add" data-target-fields="weight_estimate_discipline,weight_due_date,weight_subtask_timeliness,weight_bug_quality,weight_bug_late,weight_leave_reliability" tabindex="0">effective weight</span> × factor score % / 100</span>
+          <span class="line">3) Advanced Score = sum(all factor contributions)</span>
+          <span class="line" style="margin-top:6px;">4) If a factor denominator is 0, that factor is N/A and its weight is redistributed across eligible factors.</span>
           <span class="line" style="margin-top:6px;">4) Overloaded Penalty = <span class="token-neutral" data-target-fields="overloaded_penalty_enabled,planning_realism_enabled,overloaded_penalty_threshold_pct" tabindex="0">if enabled and planned &gt; availability: safe = planned × (1 − threshold/100); if actual &lt; safe then penalty = (safe − actual)/planned × 100</span></span>
           <span class="line">5) Overload Capping/ Planning Realism = <span class="token-neutral" data-target-fields="planning_realism_enabled,overloaded_penalty_enabled,overloaded_penalty_threshold_pct" tabindex="0">if overload penalty applies and enabled, final simple score = actual/planned × 100; otherwise deduct penalty % from base simple score</span></span>
         </p>
       </div>
       <div class="ingredients">
-        <article class="ingredient" data-target-fields="points_per_bug_hour,points_per_bug_late_hour" tabindex="0">
+        <article class="ingredient" data-target-fields="weight_bug_quality,weight_bug_late" tabindex="0">
           <div class="ingredient-top"><span class="material-symbols-outlined" aria-hidden="true">bug_report</span>Bug Quality Impact</div>
-          <p>Higher bug hours and late bug closure reduce score faster when severity or rework is high.</p>
+          <p>Bug factors score quality using bug-hour and late-bug ratios, then apply the configured weights.</p>
         </article>
-        <article class="ingredient" data-target-fields="points_per_unplanned_leave_hour" tabindex="0">
+        <article class="ingredient" data-target-fields="weight_leave_reliability" tabindex="0">
           <div class="ingredient-top"><span class="material-symbols-outlined" aria-hidden="true">event_busy</span>Unplanned Leave Impact</div>
-          <p>Unexpected leave hours apply a direct penalty and reflect sudden execution gaps.</p>
+          <p>Unexpected leave is normalized against employee capacity before its weight contributes to the score.</p>
         </article>
-        <article class="ingredient" data-target-fields="points_per_subtask_late_hour" tabindex="0">
+        <article class="ingredient" data-target-fields="weight_subtask_timeliness" tabindex="0">
           <div class="ingredient-top"><span class="material-symbols-outlined" aria-hidden="true">schedule</span>Subtask Delay Impact</div>
-          <p>Subtask late hours convert schedule drift into score deductions.</p>
+          <p>Subtask late hours are normalized against planned assigned hours.</p>
         </article>
-        <article class="ingredient" data-target-fields="points_per_estimate_overrun_hour" tabindex="0">
+        <article class="ingredient" data-target-fields="weight_estimate_discipline" tabindex="0">
           <div class="ingredient-top"><span class="material-symbols-outlined" aria-hidden="true">timer</span>Estimation Accuracy</div>
-          <p>Estimate overrun hours track planning accuracy and penalize larger overruns.</p>
+          <p>Estimate overrun hours are normalized against planned assigned hours.</p>
         </article>
-        <article class="ingredient" data-target-fields="points_per_missed_due_date" tabindex="0">
+        <article class="ingredient" data-target-fields="weight_due_date" tabindex="0">
           <div class="ingredient-top"><span class="material-symbols-outlined" aria-hidden="true">assignment_late</span>Due Date Breaches</div>
-          <p>Each missed due date adds a fixed point deduction for delivery discipline.</p>
-        </article>
-        <article class="ingredient" data-target-fields="min_score,max_score" tabindex="0">
-          <div class="ingredient-top"><span class="material-symbols-outlined" aria-hidden="true">shield</span>Score Bounds</div>
-          <p>`min_score` and `max_score` cap extreme outcomes to keep scoring stable.</p>
-        </article>
-        <article class="ingredient" data-target-fields="base_score" tabindex="0">
-          <div class="ingredient-top"><span class="material-symbols-outlined" aria-hidden="true">add_circle</span>Positive Contributor (Applicable)</div>
-          <p>`base_score` is the additive anchor. All configurable penalty multipliers on this page are deduction terms.</p>
+          <p>Missed due dates are normalized against due-dated assigned items.</p>
         </article>
         <article class="ingredient" data-target-fields="overloaded_penalty_enabled,planning_realism_enabled,overloaded_penalty_threshold_pct" tabindex="0">
           <div class="ingredient-top"><span class="material-symbols-outlined" aria-hidden="true">rule</span>Overload Handling</div>
@@ -6959,15 +6930,15 @@ def _performance_settings_html() -> str:
       <div class="explain-grid">
         <article class="case">
           <h3><span class="material-symbols-outlined" aria-hidden="true">trending_up</span>Case A: Balanced Delivery</h3>
-          <p>Given `base_score=100`, penalty total of `14.5` gives `Raw Score=85.5`. If bounds are `40..100`, final remains `85.5` because it is inside range.</p>
+          <p>If a 25-weight factor scores 70%, it contributes `25 × 70 / 100 = 17.5` points.</p>
         </article>
         <article class="case">
           <h3><span class="material-symbols-outlined" aria-hidden="true">warning</span>Case B: Heavy Delay and Overrun</h3>
-          <p>If penalties rise to `73` with `base_score=100`, `Raw Score=27`. With `min_score=40`, final score is clamped up to `40` to represent floor risk case.</p>
+          <p>If estimate overrun exceeds planned hours, that factor scores 0%, but it only loses its configured factor weight.</p>
         </article>
         <article class="case">
-          <h3><span class="material-symbols-outlined" aria-hidden="true">rule</span>Case C: No Penalty Period</h3>
-          <p>When all ingredients are zero, `Total Penalty=0`, so `Raw Score=base_score`. Final equals base score unless base exceeds `max_score`, where it is capped.</p>
+          <h3><span class="material-symbols-outlined" aria-hidden="true">rule</span>Case C: Missing Denominator</h3>
+          <p>If a factor cannot be scored because its denominator is 0, its weight is redistributed across the remaining eligible factors.</p>
         </article>
       </div>
     </section>
@@ -7046,19 +7017,26 @@ def _performance_settings_html() -> str:
     const drawerCloseEl = document.getElementById("field-drawer-close");
     const fieldInfoButtons = Array.from(document.querySelectorAll(".field-info[data-info-title][data-info-body]"));
     const fields = {
-      base_score: document.getElementById("base-score"),
-      min_score: document.getElementById("min-score"),
-      max_score: document.getElementById("max-score"),
-      points_per_bug_hour: document.getElementById("bug-hour"),
-      points_per_bug_late_hour: document.getElementById("bug-late-hour"),
-      points_per_unplanned_leave_hour: document.getElementById("leave-hour"),
-      points_per_subtask_late_hour: document.getElementById("subtask-late-hour"),
-      points_per_estimate_overrun_hour: document.getElementById("estimate-hour"),
-      points_per_missed_due_date: document.getElementById("missed-due-date"),
+      weight_estimate_discipline: document.getElementById("weight-estimate-discipline"),
+      weight_due_date: document.getElementById("weight-due-date"),
+      weight_subtask_timeliness: document.getElementById("weight-subtask-timeliness"),
+      weight_bug_quality: document.getElementById("weight-bug-quality"),
+      weight_bug_late: document.getElementById("weight-bug-late"),
+      weight_leave_reliability: document.getElementById("weight-leave-reliability"),
       overloaded_penalty_enabled: document.getElementById("overloaded-penalty-enabled"),
       planning_realism_enabled: document.getElementById("planning-realism-enabled"),
       overloaded_penalty_threshold_pct: document.getElementById("overloaded-penalty-threshold-pct")
     };
+    const weightKeys = [
+      "weight_estimate_discipline",
+      "weight_due_date",
+      "weight_subtask_timeliness",
+      "weight_bug_quality",
+      "weight_bug_late",
+      "weight_leave_reliability"
+    ];
+    const weightTotalStatusEl = document.getElementById("weight-total-status");
+    const saveSettingsBtnEl = document.getElementById("save-btn");
     const fieldContainers = Array.from(document.querySelectorAll(".perf-field[data-field-key]"));
     const fieldContainerByKey = {};
     fieldContainers.forEach((el) => { fieldContainerByKey[String(el.getAttribute("data-field-key") || "")] = el; });
@@ -7086,6 +7064,7 @@ def _performance_settings_html() -> str:
         if (k === "overloaded_penalty_enabled" || k === "planning_realism_enabled") fields[k].checked = Number(settings[k] ?? 0) > 0;
         else fields[k].value = String(Number(settings[k] ?? 0));
       }
+      syncWeightTotalStatus();
     }
     function readForm() {
       const out = {};
@@ -7094,6 +7073,19 @@ def _performance_settings_html() -> str:
         else out[k] = Number(fields[k].value || 0);
       }
       return out;
+    }
+    function currentWeightTotal() {
+      return weightKeys.reduce((sum, key) => sum + Number(fields[key]?.value || 0), 0);
+    }
+    function syncWeightTotalStatus() {
+      const total = currentWeightTotal();
+      const valid = Math.abs(total - 100) <= 0.01;
+      if (weightTotalStatusEl) {
+        weightTotalStatusEl.textContent = "Total: " + total.toFixed(2) + " / 100" + (valid ? "" : " - adjust weights before saving");
+        weightTotalStatusEl.style.color = valid ? "#16a34a" : "#dc2626";
+      }
+      if (saveSettingsBtnEl) saveSettingsBtnEl.disabled = !valid;
+      return valid;
     }
     function esc(text) { return String(text || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
     function getSelectedAssignees() {
@@ -7266,6 +7258,9 @@ def _performance_settings_html() -> str:
       el.addEventListener("focus", () => highlightTargetsFromElement(el));
       el.addEventListener("blur", () => clearLinkedHighlights());
     });
+    weightKeys.forEach((key) => {
+      if (fields[key]) fields[key].addEventListener("input", syncWeightTotalStatus);
+    });
     async function loadSettings() {
       setStatus("Loading...", "");
       const response = await fetch(API);
@@ -7278,6 +7273,7 @@ def _performance_settings_html() -> str:
     document.getElementById("reset-btn").addEventListener("click", () => { setForm(DEFAULTS); setStatus("Defaults loaded in form. Save to persist.", ""); });
     document.getElementById("save-btn").addEventListener("click", async () => {
       try {
+        if (!syncWeightTotalStatus()) throw new Error("Advanced score weights must total 100 before saving.");
         const response = await fetch(API, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(readForm()) });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || "Failed to save settings.");
@@ -18327,24 +18323,24 @@ def _build_report_info_catalog(report_id: str) -> list[dict]:
                 "label": "Team Avg Score",
                 "report": "employee_performance_report",
                 "ui_targets": ["#kpi-avg"],
-                "definition": "Average score across assignees after configured penalty deductions.",
-                "formula": "Average(clamp(base_score - total_penalty, min_score, max_score))",
-                "ingredients": ["base_score", "penalty_settings", "assignee_penalty_totals"],
-                "business_validations": ["Score clamp applies between min and max settings."],
-                "field_linkages": ["Total Penalty", "At Risk (<60)"],
+                "definition": "Average weighted normalized score across eligible assignees.",
+                "formula": "Average(sum(effective_weight * factor_score_pct / 100))",
+                "ingredients": ["advanced_score_weights", "normalized_factor_scores"],
+                "business_validations": ["Configured Advanced Score weights must total 100."],
+                "field_linkages": ["Advanced Score Sum", "At Risk (<60)"],
                 "cross_report_linkages": ["assignee.project_plan_actual_gap", "rlt.total_taken"],
                 "data_sources": ["assignee_hours_report.xlsx", "assignee_hours_capacity.db", "/api/performance/settings"],
                 "leadership_interpretation": "Summarizes overall execution quality and delivery health.",
             },
             {
-                "id": "employee.total_penalty",
-                "label": "Total Penalty",
+                "id": "employee.advanced_score_sum",
+                "label": "Advanced Score Sum",
                 "report": "employee_performance_report",
                 "ui_targets": ["#kpi-pen"],
-                "definition": "Aggregate penalty points from bugs, lateness, missed due dates, leave, and overruns.",
-                "formula": "Sum(weighted penalty components by configured multipliers)",
+                "definition": "Sum of eligible assignee Advanced Scores in the current filter.",
+                "formula": "Sum(assignee_weighted_advanced_score)",
                 "ingredients": ["bug_hours", "bug_late_hours", "subtask_late_hours", "missed_due_date_count", "estimate_overrun_hours", "unplanned_leave_hours"],
-                "business_validations": ["Penalty multipliers loaded from performance settings API."],
+                "business_validations": ["Advanced Score weights loaded from performance settings API."],
                 "field_linkages": ["Team Avg Score", "At Risk (<60)"],
                 "cross_report_linkages": ["dashboard.delivery_health", "missed_entries.missing_fields"],
                 "data_sources": ["assignee_hours_report.xlsx", "rlt_leave_report.xlsx", "/api/performance/settings"],
@@ -30420,6 +30416,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 else None
             )
             canonical_run_id = _canonical_last_success_run_id(capacity_paths["db_path"])
+            capacity_profile_raw = _to_text(request.args.get("capacity_profile"))
             payload = build_monthly_epic_plan_payload(
                 capacity_paths["db_path"],
                 month,
@@ -30427,6 +30424,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 canonical_run_id,
                 selected_projects=selected_projects,
                 selected_assignees=selected_assignees_set,
+                capacity_profile_key=capacity_profile_raw or None,
                 jira_base_url=BASE_URL,
             )
             return jsonify({"ok": True, **payload})

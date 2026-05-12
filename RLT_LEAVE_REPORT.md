@@ -53,3 +53,6 @@
 - Month/week forecasts use Jira date fields only.
 - Subtasks without Jira dates are not bucketed into week/month and are reported as data-quality issues.
 - Hours are primary; days are derived by date-aware hours/day (Ramadan dates use Ramadan hours/day; other dates use standard hours/day).
+
+## Employee Performance Scoring Note
+- Employee Performance uses weighted normalized Advanced Score factors instead of raw penalty multipliers. RLT unplanned leave hours feed the `Leave Reliability` factor as `100 × (1 − min(1, unplanned_leave_hours / employee_capacity_hours))`, then that factor contributes by its configured weight.

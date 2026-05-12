@@ -34,6 +34,13 @@ alwaysApply: true
 
 When the user says "the project", "the app", "localhost", or names a route without a host, assume this workspace and these defaults unless they explicitly say otherwise.
 
+# GitHub Actions / production (Azure)
+
+- Live site: `https://epreporting.azurewebsites.net/` (App Service name `epreporting`, workflow `.github/workflows/azure-appservice-deploy.yml`).
+- Production deploy packages **only what is committed and pushed** to GitHub (then rsync-staged without dev/test folders). Any file needed on the server must be tracked or produced in CI — do not assume local-only artifacts reach Azure.
+- Do **not** use backup branches or `backup/` snapshot folders for routine production deploys; keep backup artifacts gitignored (see root `.gitignore`).
+
 # Changelog
 
+- `2026-05-12`: added GitHub Actions / production Azure URL and push expectations; backup exclusions.
 - `2026-04-30`: tightened repo-root, localhost, sync, and stateful-file guidance; removed unrelated GitHub push instructions.
