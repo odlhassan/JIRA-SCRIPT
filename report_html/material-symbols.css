@@ -1,10 +1,12 @@
-/* Self-hosted Material Symbols Outlined; fallback to CDN if local font missing */
+/* Material Symbols Outlined — CDN listed first so hosted deployments render icons even if
+   /fonts/*.woff2 is missing or mis-served; local second for offline/fast repeat loads.
+   Google stylesheet reference: fonts.googleapis.com/css2?family=Material+Symbols+Outlined */
 @font-face {
   font-family: 'Material Symbols Outlined';
   font-style: normal;
-  font-weight: 500;
-  src: url('fonts/material-symbols-outlined.woff2') format('woff2'),
-       url('https://fonts.gstatic.com/s/materialsymbolsoutlined/v318/kJF1BvYX7BgnkSrUwT8OhrdQw4oELdPIeeII9v6oDMzByHX9rA6RzaxHMPdY43zj-jCxv3fzvRNU22ZXGJpEpjC_1v-p_4MrImHCIJIZrDCvHOejbd5zrDAt.woff2') format('woff2');
+  font-weight: 100 700;
+  src: url('https://fonts.gstatic.com/s/materialsymbolsoutlined/v336/kJEhBvYX7BgnkSrUwT8OhrdQw4oELdPIeeII9v6oFsI.woff2') format('woff2'),
+       url('fonts/material-symbols-outlined.woff2') format('woff2');
 }
 
 .material-symbols-outlined,
@@ -22,5 +24,6 @@
   word-wrap: normal;
   direction: ltr;
   -webkit-font-feature-settings: 'liga';
+  font-feature-settings: 'liga';
   -webkit-font-smoothing: antialiased;
 }

@@ -34130,6 +34130,12 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 html = _inject_refresh_ui(html, report_id)
             return html
 
+        suffix = target.suffix.lower()
+        if suffix == ".woff2":
+            return send_file(target, mimetype="font/woff2")
+        if suffix == ".woff":
+            return send_file(target, mimetype="font/woff")
+
         return send_file(target)
 
     return app
