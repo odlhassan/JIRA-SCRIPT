@@ -15,6 +15,7 @@ from openpyxl import load_workbook
 from generate_assignee_hours_report import (
     DEFAULT_LEAVE_REPORT_INPUT_XLSX,
     _load_leave_daily_rows,
+    _load_leave_distributed_rows,
     _load_leave_subtask_rows,
 )
 
@@ -3462,15 +3463,15 @@ Total Planned Hours = 0h</span>
           </section>
         </article>
         <article class="score-card" id="score-total-leaves-planned-card">
-          <span class="score-formula-chip" id="score-total-leaves-planned-formula">Planned Taken + Planned Not Yet Taken</span>
+          <span class="score-formula-chip" id="score-total-leaves-planned-formula">Bucketed RLT Leave Estimates</span>
           <p class="score-label">
             Total Leaves Planned
             <span class="score-info" tabindex="0" aria-label="Total Leaves Planned information">
               i
-              <span class="score-info-tip" id="score-total-leaves-planned-tip">Formula: Total Leaves Planned = Planned Taken + Planned Not Yet Taken from day-bucketed leave rows in selected date range.
+              <span class="score-info-tip" id="score-total-leaves-planned-tip">Formula: Total Leaves Planned = Sum(bucketed RLT leave original estimates) within selected date range.
 Values:
 Capacity Profile Effect = None (independent of selected profile)
-Planned Taken + Planned Not Yet Taken = 0h
+Estimated Leave Load = 0h
 Total Leaves Planned = 0h</span>
             </span>
           </p>
@@ -3678,6 +3679,7 @@ Total Leaves Taken = 0h</span>
 
     let allRows = reportData.rows || [];
     const leaveDailyRows = Array.isArray(reportData.leave_daily_rows) ? reportData.leave_daily_rows : [];
+    const leaveDistributedRows = Array.isArray(reportData.leave_distributed_rows) ? reportData.leave_distributed_rows : [];
     const leaveSubtaskRows = Array.isArray(reportData.leave_subtask_rows) ? reportData.leave_subtask_rows : [];
     const jiraBaseUrl = String(reportData.jira_base_url || "").trim().replace(/[/]+$/, "");
     const rowsById = new Map();
@@ -5534,6 +5536,8 @@ Total Leaves Taken = 0h</span>
           plannedTakenHours: 0,
           plannedNotTakenHours: 0,
           unplannedTakenHours: 0,
+          estimatedLeaveLoadHours: NaN,
+          sourceLabel: "Daily_Assignee buckets",
         }};
         if (!bounds || !bounds.start || !bounds.end || !leaveDailyRows.length) {{
           return empty;
@@ -5557,6 +5561,99 @@ Total Leaves Taken = 0h</span>
           plannedTakenHours,
           plannedNotTakenHours,
           unplannedTakenHours,
+          estimatedLeaveLoadHours: plannedTakenHours + plannedNotTakenHours,
+          sourceLabel: "Daily_Assignee buckets",
+        }};
+      }}
+      function computeDistributedLeaveMetricsForRange(bounds) {{
+        const empty = {{
+          hasData: false,
+          plannedTakenHours: 0,
+          plannedNotTakenHours: 0,
+          unplannedTakenHours: 0,
+          estimatedLeaveLoadHours: NaN,
+          sourceLabel: "Subtasks_Distributed buckets",
+        }};
+        if (!bounds || !bounds.start || !bounds.end || !leaveDistributedRows.length) {{
+          return empty;
+        }}
+        let plannedTakenHours = 0;
+        let plannedNotTakenHours = 0;
+        let unplannedTakenHours = 0;
+        let estimatedLeaveLoadHours = 0;
+        let hasData = false;
+        for (const row of leaveDistributedRows) {{
+          const day = parseDateValue(row && (row.planned_date_for_bucket || row.start_date));
+          if (!day || !isDateWithinBounds(day, bounds)) {{
+            continue;
+          }}
+          if (!leaveSubtaskMatchesSelectedTeams(row)) {{
+            continue;
+          }}
+          const plannedHours = Math.max(0, toFiniteNumber(row && row.original_estimate_hours, 0));
+          const actualHours = Math.max(0, toFiniteNumber(row && row.total_worklog_hours, 0));
+          if (plannedHours <= 0 && actualHours <= 0) {{
+            continue;
+          }}
+          hasData = true;
+          estimatedLeaveLoadHours += plannedHours;
+          const cappedTaken = Math.min(actualHours, plannedHours);
+          plannedTakenHours += cappedTaken;
+          plannedNotTakenHours += Math.max(0, plannedHours - cappedTaken);
+          unplannedTakenHours += Math.max(0, actualHours - plannedHours);
+        }}
+        return {{
+          hasData,
+          plannedTakenHours,
+          plannedNotTakenHours,
+          unplannedTakenHours,
+          estimatedLeaveLoadHours,
+          sourceLabel: "Subtasks_Distributed buckets",
+        }};
+      }}
+      function computeSubtaskLeaveMetricsForRange(bounds) {{
+        const empty = {{
+          hasData: false,
+          plannedTakenHours: 0,
+          plannedNotTakenHours: 0,
+          unplannedTakenHours: 0,
+          estimatedLeaveLoadHours: NaN,
+          sourceLabel: "Raw_Subtasks overlap fallback",
+        }};
+        if (!bounds || !bounds.start || !bounds.end || !leaveSubtaskRows.length) {{
+          return empty;
+        }}
+        let plannedTakenHours = 0;
+        let plannedNotTakenHours = 0;
+        let unplannedTakenHours = 0;
+        let estimatedLeaveLoadHours = 0;
+        let hasData = false;
+        for (const row of leaveSubtaskRows) {{
+          if (!leaveSubtaskOverlapsBounds(row, bounds)) {{
+            continue;
+          }}
+          if (!leaveSubtaskMatchesSelectedTeams(row)) {{
+            continue;
+          }}
+          const plannedHours = Math.max(0, toFiniteNumber(row && row.original_estimate_hours, 0));
+          const actualHours = Math.max(0, toFiniteNumber(row && row.total_worklog_hours, 0));
+          if (plannedHours <= 0 && actualHours <= 0) {{
+            continue;
+          }}
+          hasData = true;
+          estimatedLeaveLoadHours += plannedHours;
+          const cappedTaken = Math.min(actualHours, plannedHours);
+          plannedTakenHours += cappedTaken;
+          plannedNotTakenHours += Math.max(0, plannedHours - cappedTaken);
+          unplannedTakenHours += Math.max(0, actualHours - plannedHours);
+        }}
+        return {{
+          hasData,
+          plannedTakenHours,
+          plannedNotTakenHours,
+          unplannedTakenHours,
+          estimatedLeaveLoadHours,
+          sourceLabel: "Raw_Subtasks overlap fallback",
         }};
       }}
       const embeddedLeaveMetrics = computeEmbeddedLeaveMetricsForRange(dateBounds);
@@ -5615,6 +5712,28 @@ Total Leaves Taken = 0h</span>
           dailyPlannedDetailsRowsNext.push(item);
         }}
       }}
+      const distributedPlannedDetailsRowsNext = [];
+      for (const leaveRow of leaveDistributedRows) {{
+        const leaveDay = parseDateValue(leaveRow && (leaveRow.planned_date_for_bucket || leaveRow.start_date));
+        if (!leaveDay || !isDateWithinBounds(leaveDay, dateBounds)) {{
+          continue;
+        }}
+        if (!leaveSubtaskMatchesSelectedTeams(leaveRow)) {{
+          continue;
+        }}
+        const plannedHours = toFiniteNumber(leaveRow && leaveRow.original_estimate_hours, 0);
+        if (plannedHours <= 0) {{
+          continue;
+        }}
+        const issueKey = String(leaveRow && leaveRow.issue_key || "").trim().toUpperCase();
+        distributedPlannedDetailsRowsNext.push({{
+          date: toIsoDate(leaveDay),
+          assignee_name: String(leaveRow && leaveRow.assignee || "").trim(),
+          hours: plannedHours,
+          jira_key: issueKey,
+          jira_url: leaveJiraUrl(leaveRow),
+        }});
+      }}
       const totalLeavesPlannedDetailsRowsNext = [];
       for (const leaveRow of leaveSubtaskRows) {{
         if (!leaveSubtaskOverlapsBounds(leaveRow, dateBounds)) {{
@@ -5632,9 +5751,11 @@ Total Leaves Taken = 0h</span>
           jira_url: leaveJiraUrl(leaveRow),
         }});
       }}
-      const detailsRowsForRender = dailyPlannedDetailsRowsNext.length
-        ? dailyPlannedDetailsRowsNext
-        : (totalLeavesPlannedDetailsRowsNext.length ? totalLeavesPlannedDetailsRowsNext : fallbackLeavesDetailsRowsNext);
+      const detailsRowsForRender = distributedPlannedDetailsRowsNext.length
+        ? distributedPlannedDetailsRowsNext
+        : (dailyPlannedDetailsRowsNext.length
+          ? dailyPlannedDetailsRowsNext
+          : (totalLeavesPlannedDetailsRowsNext.length ? totalLeavesPlannedDetailsRowsNext : fallbackLeavesDetailsRowsNext));
       detailsRowsForRender.sort((left, right) => {{
         const lDate = String(left && left.date || "");
         const rDate = String(right && right.date || "");
@@ -5658,10 +5779,15 @@ Total Leaves Taken = 0h</span>
       }});
       totalLeavesPlannedDetailsRows = detailsRowsForRender;
       renderTotalLeavesPlannedDetails();
-      if (embeddedLeaveMetrics.hasData) {{
-        plannedLeavesTaken = embeddedLeaveMetrics.plannedTakenHours;
-        plannedLeavesNotTakenYet = embeddedLeaveMetrics.plannedNotTakenHours;
-        unplannedLeavesTaken = embeddedLeaveMetrics.unplannedTakenHours;
+      const distributedLeaveMetrics = computeDistributedLeaveMetricsForRange(dateBounds);
+      const subtaskLeaveMetrics = computeSubtaskLeaveMetricsForRange(dateBounds);
+      const appliedLeaveMetrics = distributedLeaveMetrics.hasData
+        ? distributedLeaveMetrics
+        : (embeddedLeaveMetrics.hasData ? embeddedLeaveMetrics : subtaskLeaveMetrics);
+      if (appliedLeaveMetrics.hasData) {{
+        plannedLeavesTaken = appliedLeaveMetrics.plannedTakenHours;
+        plannedLeavesNotTakenYet = appliedLeaveMetrics.plannedNotTakenHours;
+        unplannedLeavesTaken = appliedLeaveMetrics.unplannedTakenHours;
       }}
       const totalLeavesTakenHours = plannedLeavesTaken + unplannedLeavesTaken;
       const deltaHours = totalPlannedHours - totalActualProjectHours;
@@ -5686,7 +5812,12 @@ Total Leaves Taken = 0h</span>
         && Number(capacityBusinessDays) > 0
         ? (profileCapacityHours / (Number(capacityEmployeeCount) * Number(capacityBusinessDays)))
         : null;
-      const totalPlannedLeavesHours = plannedLeavesTaken + plannedLeavesNotTakenYet;
+      const estimatedLeaveLoadHours = Number.isFinite(Number(appliedLeaveMetrics && appliedLeaveMetrics.estimatedLeaveLoadHours))
+        ? toFiniteNumber(appliedLeaveMetrics.estimatedLeaveLoadHours, 0)
+        : NaN;
+      const totalPlannedLeavesHours = Number.isFinite(estimatedLeaveLoadHours)
+        ? estimatedLeaveLoadHours
+        : (plannedLeavesTaken + plannedLeavesNotTakenYet);
       const totalCapacityPlannedLeavesAdjustedHoursDefault = totalCapacityHoursValue - totalPlannedLeavesHours;
       const capacityGapHoursDefault = totalCapacityHoursValue - totalPlannedHours - totalPlannedLeavesHours;
       const hoursRequiredToCompleteProjectsDefault = deltaHours;
@@ -5862,13 +5993,15 @@ Total Leaves Taken = 0h</span>
       if (totalLeavesPlannedTipNode) {{
         const scoreRangeFrom = dateBounds && dateBounds.start ? toIsoDate(dateBounds.start) : "-";
         const scoreRangeTo = dateBounds && dateBounds.end ? toIsoDate(dateBounds.end) : "-";
+        const leaveMetricSource = String(appliedLeaveMetrics && appliedLeaveMetrics.sourceLabel || "No leave rows");
         totalLeavesPlannedTipNode.textContent =
-          "Formula: Total Leaves Planned = Planned Taken + Planned Not Yet Taken from day-bucketed leave rows within selected date range.\\n"
+          "Formula: Total Leaves Planned = Sum(bucketed RLT leave original estimates) within selected date range. Uses Subtasks_Distributed date buckets first, then Daily_Assignee buckets, then Raw_Subtasks overlap only as a legacy fallback.\\n"
           + "Values:\\n"
+          + "Source = " + leaveMetricSource + "\\n"
           + "Capacity Profile Effect = None (independent of selected profile)\\n"
           + "Date Range = " + scoreRangeFrom + " to " + scoreRangeTo + "\\n"
-          + "Planned Taken = " + formatHours(plannedLeavesTaken) + "\\n"
-          + "Planned Not Yet Taken = " + formatHours(plannedLeavesNotTakenYet) + "\\n"
+          + "Estimated Leave Load = " + formatHours(totalPlannedLeavesHours) + "\\n"
+          + "Logged Leave Hours = " + formatHours(totalLeavesTakenHours) + "\\n"
           + "Total Leaves Planned = " + formatHours(totalPlannedLeavesHours);
       }}
       if (totalCapacityPlannedLeavesAdjustedTipNode) {{
@@ -8510,6 +8643,7 @@ def main() -> None:
         rows = _load_nested_rows(input_path)
     capacity_profiles = _load_capacity_profiles(capacity_db_path)
     leave_daily_rows = _load_leave_daily_rows(leave_path)
+    leave_distributed_rows = _load_leave_distributed_rows(leave_path)
     leave_subtask_rows = _load_leave_subtask_rows(leave_path)
     data = {
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
@@ -8517,6 +8651,7 @@ def main() -> None:
         "rows": rows,
         "capacity_profiles": capacity_profiles,
         "leave_daily_rows": leave_daily_rows,
+        "leave_distributed_rows": leave_distributed_rows,
         "leave_subtask_rows": leave_subtask_rows,
         "jira_base_url": _jira_base_url(),
     }
@@ -8531,6 +8666,7 @@ def main() -> None:
     print(f"Rows loaded: {len(rows)}")
     print(f"Capacity profiles loaded: {len(capacity_profiles)}")
     print(f"Leave daily rows loaded: {len(leave_daily_rows)}")
+    print(f"Leave distributed rows loaded: {len(leave_distributed_rows)}")
     print(f"Leave subtask rows loaded: {len(leave_subtask_rows)}")
     print(f"HTML report written: {output_path}")
     if served_output_path.resolve() != output_path.resolve():

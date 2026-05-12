@@ -11,6 +11,7 @@ from generate_assignee_hours_report import (
     MONTH_CROSSTAB_SHEET,
     SUMMARY_SHEET,
     WEEK_CROSSTAB_SHEET,
+    _load_leave_distributed_rows,
     _load_leave_subtask_rows,
     _load_worklog_rows,
     _read_summary_xlsx,
@@ -93,6 +94,35 @@ class AssigneeHoursReportTests(unittest.TestCase):
             self.assertEqual(rows[0]["original_estimate_hours"], 528.0)
             self.assertEqual(rows[0]["total_worklog_hours"], 528.0)
             self.assertEqual(rows[1]["start_date"], "")
+
+    def test_load_leave_distributed_rows_reads_bucket_dates(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "rlt_leave_report.xlsx"
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "Subtasks_Distributed"
+            ws.append(
+                [
+                    "issue_key",
+                    "assignee",
+                    "start_date",
+                    "due_date",
+                    "original_estimate_hours",
+                    "total_worklog_hours",
+                    "planned_date_for_bucket",
+                    "leave_classification",
+                ]
+            )
+            ws.append(["RLT-172", "Maria Sharafat", "2026-03-01", "2026-03-01", 8, 8, "2026-03-01", "Planned"])
+            ws.append(["RLT-172", "Maria Sharafat", "2026-03-02", "2026-03-02", 8, 8, "bad", "Planned"])
+            wb.save(path)
+
+            rows = _load_leave_distributed_rows(path)
+            self.assertEqual(len(rows), 2)
+            self.assertEqual(rows[0]["issue_key"], "RLT-172")
+            self.assertEqual(rows[0]["planned_date_for_bucket"], "2026-03-01")
+            self.assertEqual(rows[0]["original_estimate_hours"], 8.0)
+            self.assertEqual(rows[1]["planned_date_for_bucket"], "")
 
     def test_aggregate_rows_period_assignee(self):
         rows = [

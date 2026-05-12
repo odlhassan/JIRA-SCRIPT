@@ -101,6 +101,7 @@ from ipp_meeting_utils import (
     resolve_jira_start_date_field_id,
 )
 from jira_client import BASE_URL, extract_jira_key_from_url, get_session
+from jira_client import get_write_session
 from jira_export_db import (
     DEFAULT_EXPORTS_DB,
     SUBTASK_ROLLUP_COLS,
@@ -236,6 +237,7 @@ REPORT_REFRESH_CHAINS: dict[str, list[str]] = {
     "executive_dashboard": [],
     "nested_view": [
         "run_all_exports.py",
+        "generate_rlt_leave_report.py",
         "generate_nested_view_html.py",
     ],
     "missed_entries": [
@@ -13229,7 +13231,7 @@ def _epics_management_settings_html() -> str:
   <link rel="stylesheet" href="/shared-nav.css">
   <link rel="stylesheet" href="/material-symbols.css">
   <style>
-    :root { --bg:#f5f7fb; --card:#fff; --line:#d1d9e8; --text:#0f172a; --muted:#475569; --brand:#1d4ed8; --ok:#166534; --warn:#92400e; --head:#eff6ff; --sticky:#f8fbff; --plan:#eef4ff; --most-likely-bg:#ffedd5; --tk-budgeted-bg:#dcfce7; --phase-group-line:#64748b; --epics-static-min-width:1420px; --epics-plan-col-min-width:170px; --epics-table-min-width:2610px; }
+    :root { --bg:#f5f7fb; --card:#fff; --line:#d1d9e8; --text:#0f172a; --muted:#475569; --brand:#1d4ed8; --ok:#166534; --warn:#92400e; --head:#eff6ff; --sticky:#f8fbff; --plan:#eef4ff; --most-likely-bg:#ffedd5; --tk-budgeted-bg:#dcfce7; --phase-group-line:#64748b; --epics-static-min-width:1180px; --epics-plan-col-min-width:170px; --epics-table-min-width:1180px; }
     * { box-sizing:border-box; }
     body { margin:0; padding:0; background:linear-gradient(180deg,#f3f7ff,#f8fbff); color:var(--text); font-family:"Segoe UI",Tahoma,sans-serif; }
     .card { width:100%; max-width:none; margin:0; border:1px solid var(--line); border-left:none; border-right:none; border-radius:0; background:var(--card); padding:16px; }
@@ -13286,32 +13288,21 @@ def _epics_management_settings_html() -> str:
     th, td { border-bottom:1px solid #e2e8f0; border-right:1px solid #e2e8f0; padding:5px 8px; font-size:.8rem; line-height:1.2; text-align:left; vertical-align:top; background:#fff; }
     th:last-child, td:last-child { border-right:none; }
     thead th { position:sticky; top:0; background:#5b7cba; color:#fff; font-size:.7rem; text-transform:uppercase; letter-spacing:.04em; z-index:3; }
-    thead th:nth-child(5), tbody td:nth-child(5) { position:sticky; left:0; z-index:4; min-width:280px; }
-    thead th:nth-child(5) { z-index:5; background:#1e3a8a; color:#fff; }
-    tbody tr.epic-row td:nth-child(5) { background:#b0ccec; color:#0f172a; }
+    thead th:nth-child(2), tbody tr.epic-row > td:nth-child(2) { position:sticky; left:0; z-index:4; min-width:320px; }
+    thead th:nth-child(2) { z-index:5; background:#1e3a8a; color:#fff; }
+    tbody tr.epic-row > td:nth-child(2) { background:#b0ccec; color:#0f172a; }
     tbody tr.epic-row.row-alt-0 td { background:#e2e8f0; }
-    tbody tr.epic-row.row-alt-0 td:nth-child(5) { background:#b0ccec; color:#0f172a; }
+    tbody tr.epic-row.row-alt-0 > td:nth-child(2) { background:#b0ccec; color:#0f172a; }
     tbody tr.epic-row.row-alt-1 td { background:#fff; }
-    tbody tr.epic-row.row-alt-1 td:nth-child(5) { background:#b0ccec; color:#0f172a; }
+    tbody tr.epic-row.row-alt-1 > td:nth-child(2) { background:#b0ccec; color:#0f172a; }
     th:nth-child(1), td:nth-child(1) { min-width:44px; }
-    th:nth-child(2), td:nth-child(2) { min-width:220px; }
-    th:nth-child(3), td:nth-child(3) { min-width:220px; }
-    th:nth-child(4), td:nth-child(4) { min-width:220px; }
-    th:nth-child(5), td:nth-child(5) { min-width:280px; }
-    th:nth-child(6), td:nth-child(6) { min-width:180px; }
-    th:nth-child(7), td:nth-child(7) { min-width:120px; }
-    th:nth-child(8), td:nth-child(8) { min-width:150px; white-space:nowrap; }
-    th:nth-child(9), td:nth-child(9) { min-width:170px; white-space:nowrap; }
-    th:nth-child(10), td:nth-child(10) { min-width:170px; }
-    th:nth-child(11), td:nth-child(11) { min-width:260px; }
-    th:nth-child(12), td:nth-child(12),
-    th:nth-child(13), td:nth-child(13),
-    th:nth-child(14), td:nth-child(14),
-    th:nth-child(15), td:nth-child(15),
-    th:nth-child(16), td:nth-child(16),
-    th:nth-child(17), td:nth-child(17),
-    th:nth-child(18), td:nth-child(18) { min-width:150px; white-space:nowrap; }
-    th:nth-child(19), td:nth-child(19) { min-width:260px; }
+    th:nth-child(2), td:nth-child(2) { min-width:320px; }
+    th:nth-child(3), td:nth-child(3) { min-width:260px; }
+    th:nth-child(4), td:nth-child(4) { min-width:150px; }
+    th:nth-child(5), td:nth-child(5) { min-width:110px; white-space:nowrap; }
+    th:nth-child(6), td:nth-child(6) { min-width:140px; white-space:nowrap; }
+    th:nth-child(7), td:nth-child(7) { min-width:220px; }
+    th:nth-child(8), td:nth-child(8) { min-width:72px; }
     td[contenteditable="true"] { min-width:180px; cursor:text; }
     td[contenteditable="true"]:focus { outline:2px solid #bfdbfe; outline-offset:-2px; background:#f8fbff; }
     td.description-cell { padding:4px 8px; }
@@ -13326,12 +13317,17 @@ def _epics_management_settings_html() -> str:
     .tree-epic-name-wrap { display:inline-flex; align-items:center; gap:6px; flex-wrap:wrap; max-width:100%; }
     .tree-epic-name-wrap .tree-title { display:inline; max-width:240px; white-space:normal; }
     .tk-epic-badge { display:inline-flex; align-items:center; border:1px solid #1e40af; color:#1e3a8a; background:#dbeafe; border-radius:999px; padding:1px 7px; font-size:.66rem; font-weight:700; letter-spacing:.03em; }
+    .epr-jira-badge { display:inline-flex; align-items:center; border:1px solid #065f46; color:#047857; background:#d1fae5; border-radius:999px; padding:1px 7px; font-size:.66rem; font-weight:700; letter-spacing:.03em; }
     .tree-actions { display:flex; gap:4px; flex-wrap:wrap; margin-top:2px; }
     .tree.tree-epic-cell .tree-actions { position:absolute; top:0; right:0; margin-top:0; flex-wrap:nowrap; }
     .tree-toggle { border:1px solid #cbd5e1; background:#fff; color:#334155; border-radius:6px; width:20px; height:20px; line-height:1; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; }
     .tree-toggle:hover { background:#f1f5f9; }
     .tree-label-project { font-weight:700; color:#0f172a; }
-    .tree-label-category { font-weight:600; color:#1e293b; margin-left:14px; }
+    .tree-label-category { display:inline-flex; align-items:center; font-weight:600; color:#1e293b; }
+    .tree-label-component { display:inline-flex; align-items:center; font-weight:600; color:#334155; }
+    .tree-level-category { padding-left:20px; }
+    .tree-level-component { padding-left:40px; }
+    .tree-level-epic { padding-left:60px; }
     .tree-group-total { margin-left:8px; font-size:.72rem; color:#1d4ed8; font-weight:700; background:#e8f1ff; border:1px solid #bfdbfe; border-radius:999px; padding:1px 7px; }
     .group-row td { background:#f8fbff; }
     .group-row.category td { background:#fbfdff; }
@@ -13346,6 +13342,7 @@ def _epics_management_settings_html() -> str:
     .plan-cell { display:grid; gap:4px; }
     .plan-cell-actions { display:flex; justify-content:flex-end; gap:4px; }
     .plan-btn { width:100%; border:1px solid #fed7aa; background:var(--most-likely-bg); color:#000; border-radius:8px; text-align:left; padding:6px; cursor:pointer; min-height:42px; max-height:60px; overflow-y:auto; }
+    .plan-btn.plan-btn-tk { border-color:#86efac; background:var(--tk-budgeted-bg); }
     .plan-empty { color:#475569; font-size:.76rem; }
     .plan-summary { font-size:.74rem; line-height:1.2; }
     .plan-summary b { color:#000; }
@@ -13390,6 +13387,9 @@ def _epics_management_settings_html() -> str:
     .btn.seal-btn { border-color:#b91c1c; color:#fff; background:#b91c1c; }
     .btn.seal-btn:hover:not(:disabled) { background:#991b1b; }
     .btn.seal-btn:disabled { opacity:0.5; cursor:not-allowed; }
+    .btn.populate-jira-btn { border:none; color:#fff; background:linear-gradient(135deg,#0f4c81 0%,#4338ca 100%); box-shadow:0 12px 24px rgba(37,99,235,.18); }
+    .btn.populate-jira-btn:hover:not(:disabled) { transform:translateY(-1px); box-shadow:0 16px 28px rgba(37,99,235,.24); }
+    .btn.populate-jira-btn:disabled { opacity:.45; cursor:not-allowed; box-shadow:none; }
     .epic-seal-lock { display:inline-flex; align-items:center; flex-shrink:0; color:#b91c1c; font-size:1rem; font-variation-settings:\"FILL\" 1,\"wght\" 500; vertical-align:middle; }
     th:nth-child(1), td:nth-child(1) { min-width:44px; width:44px; text-align:center; }
     .icon-btn svg { width:12px; height:12px; display:block; }
@@ -13404,6 +13404,52 @@ def _epics_management_settings_html() -> str:
     .plan-summary-readonly { padding:6px 8px; font-size:.78rem; color:#000; min-height:42px; border-radius:8px; }
     .plan-summary-readonly.tk-budgeted { background:var(--tk-budgeted-bg); border:1px solid #86efac; }
     .actions-cell { min-width:52px; }
+    .epic-row { cursor:pointer; }
+    .epic-row td { transition:background-color .14s ease; }
+    .epic-row:hover td { background:#eef4ff; }
+    .epic-row:hover > td:nth-child(2) { background:#9fc2ea; }
+    .epic-detail-row td { padding:0; background:#f8fbff; }
+    .epic-detail-panel { padding:12px 14px 14px; background:linear-gradient(180deg,#fbfdff 0%,#f4f8ff 100%); border-top:1px solid #dbeafe; }
+    .epic-detail-top { display:grid; gap:12px; grid-template-columns:minmax(260px,1fr) minmax(420px,2fr); align-items:start; margin-bottom:12px; }
+    .epic-detail-summary { display:grid; gap:8px; grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); }
+    .epic-detail-card { border:1px solid #dbeafe; border-radius:12px; background:#fff; padding:8px 10px; }
+    .epic-detail-card-label { display:block; font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:#475569; margin-bottom:4px; }
+    .epic-detail-card-value { display:block; font-size:.92rem; font-weight:700; color:#0f172a; }
+    .epic-detail-note { border:1px solid #dbeafe; border-radius:12px; background:#eff6ff; color:#1e3a8a; padding:10px 12px; font-size:.8rem; }
+    .epic-phase-matrix-wrap { border:1px solid #dbe7f5; border-radius:14px; overflow:hidden; background:#fff; }
+    .epic-phase-matrix { width:100%; min-width:100%; border-collapse:collapse; }
+    .epic-phase-matrix th, .epic-phase-matrix td { border:1px solid #dbe7f5; padding:6px 8px; text-align:left; vertical-align:middle; background:#fff; color:#0f172a; }
+    .epic-phase-matrix th { background:#f8fbff; color:#1e3a8a; font-size:.68rem; text-transform:uppercase; letter-spacing:.05em; }
+    .epic-phase-matrix td.phase-col { width:28%; min-width:220px; }
+    .epic-phase-matrix td.value-col { width:36%; min-width:260px; }
+    .epic-phase-name { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+    .epic-phase-name-main { font-weight:700; color:#0f172a; }
+    .epic-phase-actions { display:flex; gap:4px; flex-shrink:0; }
+    .epic-phase-matrix .jira-open, .epic-phase-matrix .jira-edit { width:18px; height:18px; font-size:.72rem; }
+    .matrix-value { display:grid; gap:3px; }
+    .matrix-value-main { font-weight:700; color:#0f172a; font-size:.84rem; }
+    .matrix-value-meta { font-size:.7rem; color:#475569; }
+    .matrix-value-empty { color:#64748b; font-size:.72rem; }
+    .matrix-value-readonly { padding:6px 10px; border-radius:8px; min-height:34px; border:1px solid #e2e8f0; background:#fff; }
+    .matrix-value-readonly.plan-layer-most-likely { border-color:#fdba74; background:var(--most-likely-bg); }
+    .matrix-value-readonly.plan-layer-tk-budgeted { border-color:#86efac; background:var(--tk-budgeted-bg); }
+    .matrix-value-readonly.plan-layer-summary { border-color:#93c5fd; background:#dbeafe; }
+    .epic-phase-matrix .plan-btn { padding:6px 10px; min-height:34px; max-height:none; border-radius:8px; }
+    .epic-overview-cell { display:block; }
+    .epic-overview-split { display:grid; grid-template-columns:1fr 1fr; border:1px solid #cbd5e1; border-radius:10px; overflow:hidden; min-width:170px; }
+    .epic-overview-half { display:flex; align-items:center; justify-content:center; padding:6px 8px; font-size:.8rem; font-weight:700; color:#0f172a; white-space:nowrap; }
+    .epic-overview-half + .epic-overview-half { border-left:1px solid rgba(15,23,42,.08); }
+    .epic-overview-half.most-likely { background:var(--most-likely-bg); }
+    .epic-overview-half.tk-approved { background:var(--tk-budgeted-bg); }
+    .group-summary-chips { display:flex; flex-wrap:wrap; gap:6px; }
+    .group-summary-chip { display:inline-flex; align-items:center; gap:5px; border:1px solid #cbd5e1; border-radius:999px; background:#fff; color:#334155; padding:4px 8px; font-size:.74rem; white-space:nowrap; }
+    .group-summary-chip b { color:#0f172a; }
+    .epic-accordion-toggle { width:22px; height:22px; border:1px solid #bfdbfe; border-radius:999px; background:#eff6ff; color:#1e3a8a; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; padding:0; flex-shrink:0; }
+    .epic-accordion-toggle .material-symbols-outlined { font-size:1rem; transition:transform .18s ease; }
+    .epic-accordion-toggle[aria-expanded="true"] .material-symbols-outlined { transform:rotate(180deg); }
+    .group-summary-cell { background:#f8fbff !important; }
+    .group-summary-wrap { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+    .group-summary-title { display:flex; align-items:center; gap:8px; }
     .actions-menu-wrap { position:relative; display:inline-block; }
     .actions-menu-btn { width:32px; height:32px; }
     .actions-menu-btn .material-symbols-outlined { font-size:1.2rem; }
@@ -13458,6 +13504,57 @@ def _epics_management_settings_html() -> str:
     #manage-sealed-modal .btn.small { padding:5px 9px; font-size:.8rem; }
     #manage-sealed-modal .btn.danger { border-color:#fecaca; color:#b91c1c; background:#fef2f2; }
     #manage-sealed-modal .btn.danger:hover { background:#fee2e2; }
+    #populate-jira-modal { width:min(1100px,95vw); border:none; border-radius:22px; padding:0; overflow:hidden; background:linear-gradient(180deg,#f8fbff 0%,#eef4ff 100%); box-shadow:0 32px 64px rgba(15,23,42,.25); }
+    #populate-jira-modal::backdrop { background:rgba(15,23,42,.52); backdrop-filter:blur(3px); }
+    #populate-jira-modal .modal-head { padding:20px 22px 16px; background:radial-gradient(circle at top left, rgba(96,165,250,.35), transparent 42%), linear-gradient(135deg,#0f172a 0%,#1e3a8a 55%,#4338ca 100%); color:#fff; border-bottom:none; }
+    #populate-jira-modal .modal-body { padding:18px 22px 12px; max-height:68vh; overflow:auto; }
+    #populate-jira-modal .modal-foot { padding:16px 22px 22px; background:linear-gradient(180deg,rgba(255,255,255,.65),#f8fbff); }
+    .populate-jira-kicker { display:inline-flex; align-items:center; gap:8px; padding:6px 10px; border-radius:999px; background:rgba(255,255,255,.12); font-size:.76rem; letter-spacing:.08em; text-transform:uppercase; }
+    .populate-jira-kicker .pulse-dot { width:9px; height:9px; border-radius:999px; background:#93c5fd; box-shadow:0 0 0 rgba(147,197,253,.7); animation:populateJiraPulse 1.6s infinite; }
+    .populate-jira-subtitle { margin-top:8px; color:rgba(255,255,255,.86); font-size:.9rem; }
+    .populate-jira-banner { border-radius:16px; padding:14px 16px; margin-bottom:16px; border:1px solid #bfdbfe; background:#eff6ff; color:#1e3a8a; }
+    .populate-jira-banner.error { border-color:#fecaca; background:#fef2f2; color:#991b1b; }
+    .populate-jira-list { display:grid; gap:16px; }
+    .populate-jira-card { position:relative; overflow:hidden; border:1px solid #dbeafe; border-radius:18px; background:linear-gradient(180deg,#ffffff 0%,#f8fbff 100%); box-shadow:0 12px 24px rgba(15,23,42,.06); }
+    .populate-jira-card::before { content:\"\"; position:absolute; inset:0 auto 0 0; width:4px; background:linear-gradient(180deg,#38bdf8,#4338ca); }
+    .populate-jira-card-head { display:flex; justify-content:space-between; gap:14px; padding:16px 18px 10px 22px; align-items:flex-start; }
+    .populate-jira-card-title { margin:0; font-size:1rem; color:#0f172a; }
+    .populate-jira-card-meta { margin-top:6px; display:flex; flex-wrap:wrap; gap:8px; color:#475569; font-size:.8rem; }
+    .populate-jira-pill { display:inline-flex; align-items:center; gap:6px; border-radius:999px; padding:4px 10px; background:#eff6ff; color:#1d4ed8; font-size:.75rem; font-weight:700; }
+    .populate-jira-pill.warn { background:#fef3c7; color:#92400e; }
+    .populate-jira-pill.ok { background:#dcfce7; color:#166534; }
+    .populate-jira-card-body { padding:0 18px 18px 22px; display:grid; gap:12px; }
+    .populate-jira-warning { border:1px solid #fcd34d; border-radius:14px; background:#fffbeb; padding:12px 14px; color:#92400e; }
+    .populate-jira-warning-title { margin:0 0 6px; font-size:.82rem; font-weight:700; }
+    .populate-jira-warning-list { display:grid; gap:6px; margin-top:8px; }
+    .populate-jira-warning-item { font-size:.8rem; color:#78350f; }
+    .populate-jira-grid { display:grid; grid-template-columns:minmax(0,1.3fr) minmax(280px,.9fr); gap:14px; }
+    .populate-jira-table { width:100%; min-width:100%; border-collapse:collapse; }
+    .populate-jira-table th, .populate-jira-table td { border:1px solid #dbe7f5; padding:7px 8px; font-size:.78rem; text-align:left; vertical-align:top; background:#fff; }
+    .populate-jira-table th { background:#eff6ff; color:#1e3a8a; }
+    .populate-jira-sidepanel { border:1px solid #dbeafe; border-radius:16px; background:linear-gradient(180deg,#f8fbff 0%,#eef4ff 100%); padding:14px; }
+    .populate-jira-sidepanel h3 { margin:0 0 8px; font-size:.84rem; color:#0f172a; }
+    .populate-jira-sidepanel label { display:block; margin-top:8px; }
+    .populate-jira-results { display:none; gap:12px; }
+    .populate-jira-result-card { border:1px solid #bbf7d0; border-radius:16px; padding:14px 16px; background:linear-gradient(180deg,#f0fdf4 0%,#ecfeff 100%); }
+    .populate-jira-result-title { margin:0 0 6px; font-size:.9rem; color:#14532d; }
+    .populate-jira-result-meta { font-size:.8rem; color:#166534; }
+    .populate-jira-report { display:none; gap:12px; }
+    .populate-jira-report-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap; border:1px solid #dbeafe; border-radius:16px; background:#fff; padding:14px 16px; }
+    .populate-jira-report-title { margin:0; font-size:.98rem; color:#0f172a; }
+    .populate-jira-report-meta { margin-top:5px; color:#475569; font-size:.78rem; }
+    .populate-jira-report-actions { display:flex; flex-wrap:wrap; gap:8px; justify-content:flex-end; }
+    .populate-jira-report-table { width:100%; border-collapse:collapse; background:#fff; }
+    .populate-jira-report-table th, .populate-jira-report-table td { border:1px solid #dbe7f5; padding:7px 8px; font-size:.76rem; vertical-align:top; text-align:left; }
+    .populate-jira-report-table th { background:#eff6ff; color:#1e3a8a; }
+    .populate-jira-report-table tr.failed td { background:#fff7ed; }
+    .populate-jira-report-table tr.success td { background:#f0fdf4; }
+    .populate-jira-error-text { color:#991b1b; font-weight:700; }
+    .populate-jira-history { display:none; border:1px solid #dbeafe; border-radius:16px; background:#fff; padding:14px; }
+    .populate-jira-history-list { display:grid; gap:8px; margin-top:10px; }
+    .populate-jira-history-item { display:flex; justify-content:space-between; align-items:center; gap:10px; border:1px solid #e2e8f0; border-radius:10px; padding:8px 10px; background:#f8fafc; }
+    @keyframes populateJiraPulse { 0% { box-shadow:0 0 0 0 rgba(147,197,253,.65); } 70% { box-shadow:0 0 0 12px rgba(147,197,253,0); } 100% { box-shadow:0 0 0 0 rgba(147,197,253,0); } }
+    @media (max-width: 860px) { .populate-jira-grid { grid-template-columns:1fr; } }
     #sync-jira-modal .sync-jira-grid { display:grid; gap:12px; }
     #sync-jira-modal .sync-jira-group { border:1px solid #e2e8f0; border-radius:10px; padding:12px; background:#f8fafc; }
     #sync-jira-modal .sync-jira-group-title { margin:0 0 8px; font-size:.86rem; font-weight:700; color:#0f172a; }
@@ -13482,6 +13579,11 @@ def _epics_management_settings_html() -> str:
     .sync-saved-highlight td * {
       background-color:#dcfce7 !important;
       transition:background-color .18s ease;
+    }
+    @media (max-width: 980px) {
+      .epic-detail-top { grid-template-columns:1fr; }
+      .epic-phase-matrix td.phase-col,
+      .epic-phase-matrix td.value-col { min-width:0; width:auto; }
     }
     @keyframes epicJumpPulse {
       0% { background:#fef3c7; }
@@ -13516,6 +13618,8 @@ def _epics_management_settings_html() -> str:
           <button id="manage-plan-columns-btn" class="btn alt" type="button">Manage Phases</button>
           <a class="btn alt" href="/settings/epics-management/import">Import Approved Plan</a>
           <button id="seal-epics-btn" class="btn seal-btn" type="button" disabled title="Select epics to seal">SEAL EPICS</button>
+          <button id="populate-jira-btn" class="btn populate-jira-btn" type="button" disabled title="Publish selected epics to Jira">POPULATE JIRA</button>
+          <button id="populate-jira-history-btn" class="btn alt" type="button" title="View Jira publish report history">Publish History</button>
           <button id="expand-all-btn" class="btn alt" type="button">Expand</button>
           <button id="collapse-all-btn" class="btn alt" type="button">Collapse</button>
           <span class="shortcut-chip" title="Quick add epic"><kbd>Shift</kbd>+<kbd>Tab</kbd></span>
@@ -13593,13 +13697,11 @@ def _epics_management_settings_html() -> str:
     </div>
     <div class="modal-body">
       <div><label for="epic-project-select">Project</label><select id="epic-project-select"></select></div>
-      <div><label for="epic-product-category">Product Categorization</label><select id="epic-product-category"></select></div>
-      <div><label for="epic-component">Component</label><select id="epic-component"></select></div>
       <div><label for="epic-name">Epic Name</label><input id="epic-name" type="text"></div>
       <div><label for="epic-originator">Originator</label><input id="epic-originator" type="text"></div>
       <div><label for="epic-priority">Priority</label><select id="epic-priority"><option>Low</option><option>Medium</option><option>High</option><option>Highest</option></select></div>
       <div><label for="epic-plan-status">Plan Status</label><select id="epic-plan-status"><option>Planned</option><option>Not Planned Yet</option></select></div>
-      <div><label for="epic-jira-url">Jira URL</label><input id="epic-jira-url" type="url" placeholder="https://..."></div>
+      <div><label for="epic-jira-url">Jira URL (optional)</label><input id="epic-jira-url" type="url" placeholder="https://..."></div>
       <div><label for="epic-description">Description</label><textarea id="epic-description"></textarea></div>
       <div><label for="epic-research-urs-plan-jira-url">Research/URS Plan Jira URL</label><input id="epic-research-urs-plan-jira-url" type="url" placeholder="https://..."></div>
       <div><label for="epic-dds-plan-jira-url">DDS Plan Jira URL</label><input id="epic-dds-plan-jira-url" type="url" placeholder="https://..."></div>
@@ -13612,6 +13714,22 @@ def _epics_management_settings_html() -> str:
     <div class="modal-foot">
       <button id="epic-cancel" class="btn alt small" type="button">Cancel</button>
       <button id="epic-save" class="btn small" type="button">Create Epic</button>
+    </div>
+  </dialog>
+
+  <dialog id="delete-epic-modal">
+    <div class="modal-head">
+      <h2 id="delete-epic-title" style="margin:0;font-size:1rem;">Delete epic</h2>
+      <div id="delete-epic-subtitle" class="muted" style="margin-top:4px;font-size:.8rem;"></div>
+    </div>
+    <div class="modal-body">
+      <p id="delete-epic-explainer" style="margin:0 0 10px;font-size:.85rem;line-height:1.45;color:#0f172a;">Remove this epic from Epics Planner only, or also delete Jira issues that were <strong>created</strong> via Populate Jira (manually linked epics are never removed from Jira).</p>
+      <div id="delete-epic-jira-hint" class="muted" style="font-size:.78rem;line-height:1.4;padding:8px;border-radius:8px;background:#fefce8;border:1px solid #fde047;"></div>
+    </div>
+    <div class="modal-foot" style="display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end;">
+      <button type="button" class="btn alt small" id="delete-epic-cancel">Cancel</button>
+      <button type="button" class="btn small" id="delete-epic-planner-only">Planner only</button>
+      <button type="button" class="btn small danger" id="delete-epic-planner-jira">Planner + Jira</button>
     </div>
   </dialog>
 
@@ -13681,6 +13799,33 @@ def _epics_management_settings_html() -> str:
     </div>
   </dialog>
 
+  <dialog id="populate-jira-modal" aria-labelledby="populate-jira-title">
+    <div class="modal-head">
+      <div class="populate-jira-kicker"><span class="pulse-dot"></span><span>Jira Launch Pad</span></div>
+      <h2 id="populate-jira-title" style="margin:12px 0 0;font-size:1.2rem;">Prepare Jira Publication</h2>
+      <div id="populate-jira-subtitle" class="populate-jira-subtitle">Review the generated Jira structure, duplicate warnings, and update choices before publishing selected epics.</div>
+    </div>
+    <div class="modal-body">
+      <div id="populate-jira-banner" class="populate-jira-banner" style="display:none;"></div>
+      <div id="populate-jira-list" class="populate-jira-list"></div>
+      <div id="populate-jira-results" class="populate-jira-results"></div>
+      <div id="populate-jira-report" class="populate-jira-report"></div>
+      <div id="populate-jira-history" class="populate-jira-history">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+          <strong>Publish report history</strong>
+          <button id="populate-jira-history-refresh" class="btn alt small" type="button">Refresh History</button>
+        </div>
+        <div id="populate-jira-history-list" class="populate-jira-history-list"></div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button id="populate-jira-cancel" class="btn alt small" type="button">Close</button>
+      <button id="populate-jira-history-open" class="btn alt small" type="button">History</button>
+      <button id="populate-jira-refresh-preview" class="btn alt small" type="button">Refresh Preview</button>
+      <button id="populate-jira-confirm" class="btn populate-jira-btn small" type="button">Launch To Jira</button>
+    </div>
+  </dialog>
+
   <dialog id="manage-sealed-modal" class="modal manage-sealed-modal-full" aria-labelledby="manage-sealed-title">
     <div class="modal-head">
       <h2 id="manage-sealed-title" style="margin:0;font-size:1rem;">Manage sealed budgets</h2>
@@ -13732,6 +13877,9 @@ def _epics_management_settings_html() -> str:
   <script>
     const API = "/api/epics-management/rows";
     const SEAL_API = "/api/epics-management/seal";
+    const POPULATE_JIRA_PREFLIGHT_API = "/api/epics-management/populate-jira/preflight";
+    const POPULATE_JIRA_EXECUTE_API = "/api/epics-management/populate-jira/execute";
+    const POPULATE_JIRA_REPORTS_API = "/api/epics-management/populate-jira/reports";
     const SEALED_DATES_API = "/api/epics-management/sealed-dates";
     const EPIC_SEALED_DATES_API_BASE = "/api/epics-management/epics";
     const HEADER_COLLAPSE_STORAGE_KEY = "epics-management-header-collapsed";
@@ -13761,7 +13909,8 @@ def _epics_management_settings_html() -> str:
       { key: "regression_sqa_testing", label: "Regression SQA Testing", jira_link_enabled: false, is_default: true, phase_role: "most_likely_input", most_likely_enabled: true, tk_budgeted_enabled: true },
       { key: "production_plan", label: "Release", jira_link_enabled: true, is_default: true, phase_role: "formula_managed", most_likely_enabled: false, tk_budgeted_enabled: true },
     ];
-    const EPICS_STATIC_COL_MIN_WIDTH = 1420;
+    const PLANNER_TABLE_COLUMN_COUNT = 8;
+    const EPICS_STATIC_COL_MIN_WIDTH = 1600;
     const EPICS_PLAN_COL_MIN_WIDTH = 170;
     const EPICS_PLAN_COL_MAX_WIDTH = 260;
     const STATIC_PLAN_JIRA_INPUT_KEYS = new Set([
@@ -13795,12 +13944,20 @@ def _epics_management_settings_html() -> str:
     const syncEpicDatesEl = document.getElementById("sync-epic-dates");
     const syncPhaseDatesEl = document.getElementById("sync-phase-dates");
     const syncJiraApplyEl = document.getElementById("sync-jira-apply");
+    const populateJiraBtnEl = document.getElementById("populate-jira-btn");
+    const populateJiraHistoryBtnEl = document.getElementById("populate-jira-history-btn");
+    const populateJiraModalEl = document.getElementById("populate-jira-modal");
+    const populateJiraBannerEl = document.getElementById("populate-jira-banner");
+    const populateJiraListEl = document.getElementById("populate-jira-list");
+    const populateJiraResultsEl = document.getElementById("populate-jira-results");
+    const populateJiraReportEl = document.getElementById("populate-jira-report");
+    const populateJiraHistoryEl = document.getElementById("populate-jira-history");
+    const populateJiraHistoryListEl = document.getElementById("populate-jira-history-list");
+    const populateJiraConfirmEl = document.getElementById("populate-jira-confirm");
     const epicDialogEl = document.getElementById("epic-dialog");
     const epicDialogTitleEl = document.getElementById("epic-dialog-title");
     const epicDialogSubtitleEl = document.getElementById("epic-dialog-subtitle");
     const epicProjectSelectEl = document.getElementById("epic-project-select");
-    const epicProductCategoryEl = document.getElementById("epic-product-category");
-    const epicComponentEl = document.getElementById("epic-component");
     const epicNameEl = document.getElementById("epic-name");
     const epicOriginatorEl = document.getElementById("epic-originator");
     const epicPriorityEl = document.getElementById("epic-priority");
@@ -13814,6 +13971,7 @@ def _epics_management_settings_html() -> str:
     const epicUserManualPlanJiraUrlEl = document.getElementById("epic-user-manual-plan-jira-url");
     const epicProductionPlanJiraUrlEl = document.getElementById("epic-production-plan-jira-url");
     const dynamicPlanFieldsEl = document.getElementById("dynamic-plan-fields");
+    const deleteEpicModalEl = document.getElementById("delete-epic-modal");
     const planColumnDialogEl = document.getElementById("plan-column-dialog");
     const planColumnNameEl = document.getElementById("plan-column-name");
     const planColumnPositionEl = document.getElementById("plan-column-position");
@@ -13844,16 +14002,19 @@ def _epics_management_settings_html() -> str:
     const rebudgetedEpicKeys = new Set();
     let activePlan = { rowIndex: -1, planKey: "" };
     let activeSyncRowIndex = -1;
+    let activePopulateJiraPreview = null;
     let activeEpicEditKey = "";
     let activePlanInsertPosition = 0;
     let planDragKey = "";
     let draftEpicRow = null;
     let draftEpicCreateInFlight = false;
     let dynamicPlanInputEls = {};
+    let activeDeleteEpicRowIndex = -1;
     let planColumnsCatalog = [];
     const expandedProjects = new Set();
     const expandedCategories = new Set();
     const expandedComponents = new Set();
+    const expandedEpicRows = new Set();
     const expandedPlanDetails = new Set();
     const autoSaveInFlight = new Map();
     const autoSaveQueued = new Set();
@@ -13917,6 +14078,344 @@ def _epics_management_settings_html() -> str:
     function closeSyncJiraModal() {
       activeSyncRowIndex = -1;
       if (syncJiraModalEl && syncJiraModalEl.open) syncJiraModalEl.close();
+    }
+
+    function setPopulateJiraBanner(message, tone) {
+      if (!populateJiraBannerEl) return;
+      const text = String(message || "").trim();
+      populateJiraBannerEl.textContent = text;
+      populateJiraBannerEl.classList.toggle("error", tone === "error");
+      populateJiraBannerEl.style.display = text ? "block" : "none";
+    }
+
+    function closePopulateJiraModal() {
+      activePopulateJiraPreview = null;
+      if (populateJiraResultsEl) {
+        populateJiraResultsEl.style.display = "none";
+        populateJiraResultsEl.innerHTML = "";
+      }
+      if (populateJiraReportEl) {
+        populateJiraReportEl.style.display = "none";
+        populateJiraReportEl.innerHTML = "";
+      }
+      if (populateJiraHistoryEl) populateJiraHistoryEl.style.display = "none";
+      if (populateJiraListEl) {
+        populateJiraListEl.style.display = "grid";
+        populateJiraListEl.innerHTML = "";
+      }
+      setPopulateJiraBanner("", "");
+      if (populateJiraModalEl && populateJiraModalEl.open) populateJiraModalEl.close();
+    }
+
+    function updatePopulateJiraConfirmState() {
+      if (!populateJiraConfirmEl || !populateJiraModalEl || !populateJiraModalEl.open) return;
+      const preview = activePopulateJiraPreview || {};
+      if (!preview.can_execute) {
+        populateJiraConfirmEl.disabled = true;
+        return;
+      }
+      let actionableCount = 0;
+      let blocked = false;
+      Array.from(populateJiraListEl.querySelectorAll("[data-populate-epic-key]")).forEach((card) => {
+        const modeEl = card.querySelector("[data-populate-mode]");
+        const mode = modeEl ? String(modeEl.value || "") : String(card.getAttribute("data-default-mode") || "create");
+        if (mode === "skip") return;
+        actionableCount += 1;
+        const dupRequired = card.getAttribute("data-has-duplicate-warning") === "1";
+        const dupAckEl = card.querySelector("[data-populate-duplicate-ack]");
+        if (dupRequired && dupAckEl && !dupAckEl.checked) blocked = true;
+      });
+      populateJiraConfirmEl.disabled = blocked || actionableCount === 0;
+    }
+
+    function populateJiraStatusLabel(status) {
+      const value = String(status || "").replace(/_/g, " ").trim();
+      return value ? value.toUpperCase() : "-";
+    }
+
+    function populateJiraSummaryText(summary) {
+      const s = summary || {};
+      return "Total " + Number(s.total || 0)
+        + " | Success " + Number(s.succeeded || 0)
+        + " | Failed " + Number(s.failed || 0)
+        + " | Skipped " + Number(s.skipped || 0);
+    }
+
+    function renderPopulateJiraReport(report) {
+      if (!populateJiraReportEl) return;
+      const data = report || {};
+      const items = Array.isArray(data.items) ? data.items : [];
+      const failedRetryable = items.filter((item) => String(item.status || "").toLowerCase() === "failed" && item.can_retry);
+      const reportId = String(data.report_id || "");
+      populateJiraReportEl.style.display = "grid";
+      if (populateJiraListEl) populateJiraListEl.style.display = "none";
+      if (populateJiraResultsEl) {
+        populateJiraResultsEl.style.display = "none";
+        populateJiraResultsEl.innerHTML = "";
+      }
+      if (populateJiraHistoryEl) populateJiraHistoryEl.style.display = "none";
+      const retryButton = failedRetryable.length
+        ? '<button class="btn populate-jira-btn small" type="button" data-retry-publish-report="' + esc(reportId) + '">Retry Failed Work Items</button>'
+        : '';
+      const rowsHtml = items.length ? items.map((item) => {
+        const status = String(item.status || "").toLowerCase();
+        const issueKey = String(item.jira_issue_key || "");
+        const issueUrl = String(item.jira_url || "");
+        const issueHtml = issueUrl ? '<a href="' + esc(issueUrl) + '" target="_blank" rel="noopener noreferrer">' + esc(issueKey || issueUrl) + '</a>' : esc(issueKey || "-");
+        const phase = String(item.phase_label || item.phase_key || item.month_label || "-");
+        const error = item.error ? '<div class="populate-jira-error-text">' + esc(item.error) + '</div>' : '';
+        return '<tr class="' + esc(status) + '">'
+          + '<td>' + esc(String(item.epic_key || "")) + '</td>'
+          + '<td>' + esc(String(item.issue_level || "")) + '</td>'
+          + '<td>' + esc(phase) + '</td>'
+          + '<td>' + esc(String(item.action || "")) + '</td>'
+          + '<td>' + esc(populateJiraStatusLabel(status)) + '</td>'
+          + '<td>' + issueHtml + '</td>'
+          + '<td>' + error + '</td>'
+          + '</tr>';
+      }).join("") : '<tr><td colspan="7" class="muted">No publish work items were recorded.</td></tr>';
+      populateJiraReportEl.innerHTML = ''
+        + '<div class="populate-jira-report-head">'
+        + '  <div>'
+        + '    <h3 class="populate-jira-report-title">Publish Report ' + esc(reportId || "") + '</h3>'
+        + '    <div class="populate-jira-report-meta">' + esc(populateJiraStatusLabel(data.status)) + ' | ' + esc(populateJiraSummaryText(data.summary || {})) + ' | ' + esc(String(data.completed_at_utc || data.started_at_utc || "")) + '</div>'
+        + '  </div>'
+        + '  <div class="populate-jira-report-actions">' + retryButton + '</div>'
+        + '</div>'
+        + '<table class="populate-jira-report-table">'
+        + '  <thead><tr><th>Epic</th><th>Level</th><th>Phase / Work</th><th>Action</th><th>Status</th><th>Jira Issue</th><th>Error</th></tr></thead>'
+        + '  <tbody>' + rowsHtml + '</tbody>'
+        + '</table>';
+      const retryEl = populateJiraReportEl.querySelector("[data-retry-publish-report]");
+      if (retryEl) {
+        retryEl.addEventListener("click", () => retryPopulateJiraReport(reportId).catch((err) => setPopulateJiraBanner(err.message || String(err), "error")));
+      }
+    }
+
+    async function loadPopulateJiraReport(reportId) {
+      const resp = await fetch(POPULATE_JIRA_REPORTS_API + "/" + encodeURIComponent(reportId));
+      const body = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(String(body.error || "Failed to load publish report."));
+      renderPopulateJiraReport(body.report || {});
+      setPopulateJiraBanner("Loaded publish report details.", "");
+    }
+
+    async function retryPopulateJiraReport(reportId) {
+      if (!reportId) throw new Error("Publish report id is required for retry.");
+      setPopulateJiraBanner("Retrying failed Jira publish work items...", "");
+      const resp = await fetch(POPULATE_JIRA_REPORTS_API + "/" + encodeURIComponent(reportId) + "/retry", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const body = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(String(body.error || "Failed to retry publish report."));
+      renderPopulateJiraReport(body.report || {});
+      setPopulateJiraBanner("Retry completed. A new publish report has been saved.", "");
+      await loadRowsFromApi();
+    }
+
+    async function loadPopulateJiraHistory() {
+      if (!populateJiraHistoryEl || !populateJiraHistoryListEl) return;
+      if (populateJiraListEl) populateJiraListEl.style.display = "none";
+      if (populateJiraReportEl) populateJiraReportEl.style.display = "none";
+      if (populateJiraResultsEl) populateJiraResultsEl.style.display = "none";
+      populateJiraHistoryEl.style.display = "block";
+      populateJiraHistoryListEl.innerHTML = '<div class="muted">Loading publish reports...</div>';
+      const resp = await fetch(POPULATE_JIRA_REPORTS_API + "?limit=25");
+      const body = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(String(body.error || "Failed to load publish report history."));
+      const reports = Array.isArray(body.reports) ? body.reports : [];
+      populateJiraHistoryListEl.innerHTML = reports.length ? reports.map((report) => {
+        const reportId = String(report.report_id || "");
+        return '<div class="populate-jira-history-item">'
+          + '<div><strong>' + esc(populateJiraStatusLabel(report.status)) + '</strong><div class="muted">' + esc(String(report.started_at_utc || "")) + ' | ' + esc(populateJiraSummaryText(report.summary || {})) + '</div></div>'
+          + '<button class="btn alt small" type="button" data-open-publish-report="' + esc(reportId) + '">View Details</button>'
+          + '</div>';
+      }).join("") : '<div class="muted">No publish reports have been saved yet.</div>';
+      Array.from(populateJiraHistoryListEl.querySelectorAll("[data-open-publish-report]")).forEach((btn) => {
+        btn.addEventListener("click", () => {
+          loadPopulateJiraReport(String(btn.getAttribute("data-open-publish-report") || "")).catch((err) => setPopulateJiraBanner(err.message || String(err), "error"));
+        });
+      });
+    }
+
+    function renderPopulateJiraResults(results) {
+      if (!populateJiraResultsEl) return;
+      const items = Array.isArray(results) ? results : [];
+      populateJiraResultsEl.style.display = items.length ? "grid" : "none";
+      populateJiraResultsEl.innerHTML = items.map((item) => {
+        const epicName = esc(String((item.row || {}).epic_name || item.epic_key || "Epic"));
+        const epicKey = esc(String(item.epic_jira_key || ""));
+        const epicUrl = String(item.epic_jira_url || "");
+        const storyCount = Number(item.story_count || 0);
+        const modeLabel = esc(String(item.mode || "create").toUpperCase());
+        const epicLink = epicUrl
+          ? '<a href="' + esc(epicUrl) + '" target="_blank" rel="noopener noreferrer">' + epicKey + '</a>'
+          : epicKey;
+        return ''
+          + '<div class="populate-jira-result-card">'
+          + '  <h3 class="populate-jira-result-title">' + epicName + ' <span class="populate-jira-pill ok">' + modeLabel + '</span></h3>'
+          + '  <div class="populate-jira-result-meta">' + epicLink + ' created/updated with ' + esc(String(storyCount)) + ' phase stories.</div>'
+          + '</div>';
+      }).join("");
+    }
+
+    function renderPopulateJiraPreview(preview) {
+      activePopulateJiraPreview = preview || null;
+      if (!populateJiraListEl || !populateJiraResultsEl) return;
+      const epics = Array.isArray((preview || {}).epics) ? preview.epics : [];
+      populateJiraListEl.style.display = "grid";
+      populateJiraResultsEl.style.display = "none";
+      populateJiraResultsEl.innerHTML = "";
+      if (populateJiraReportEl) {
+        populateJiraReportEl.style.display = "none";
+        populateJiraReportEl.innerHTML = "";
+      }
+      if (populateJiraHistoryEl) populateJiraHistoryEl.style.display = "none";
+      if (!epics.length) {
+        populateJiraListEl.innerHTML = '<div class="populate-jira-card"><div class="populate-jira-card-body"><div class="muted">No epics selected for Jira publication.</div></div></div>';
+        setPopulateJiraBanner("Select one or more epics from the table first.", "error");
+        updatePopulateJiraConfirmState();
+        return;
+      }
+      const permissionBlocked = epics.some((item) => !(item.permission || {}).ok);
+      if (permissionBlocked) {
+        setPopulateJiraBanner("Jira write access is currently blocked for the configured write token. The preview is available, but execution is disabled until CREATE_ISSUES and EDIT_ISSUES are granted.", "error");
+      } else {
+        setPopulateJiraBanner("Review each epic carefully. Already published epics can be updated, and duplicate-name warnings require explicit acknowledgement.", "");
+      }
+      populateJiraListEl.innerHTML = epics.map((item) => {
+        const stories = Array.isArray(item.stories) ? item.stories : [];
+        const duplicateWarning = item.duplicate_warning || {};
+        const permission = item.permission || {};
+        const duplicateItems = Array.isArray(duplicateWarning.matches) ? duplicateWarning.matches : [];
+        const modeControl = item.already_published
+          ? '<label>Publish mode<select data-populate-mode><option value="update">Update existing Jira issues</option><option value="skip">Skip this epic</option></select></label>'
+          : '<div class="populate-jira-pill">Create new Jira structure</div>';
+        const duplicateHtml = duplicateItems.length
+          ? ('<div class="populate-jira-warning">'
+              + '<div class="populate-jira-warning-title">Duplicate warning</div>'
+              + '<div>' + esc(String(duplicateWarning.message || "A similar Jira epic already exists.")) + '</div>'
+              + '<div class="populate-jira-warning-list">'
+              + duplicateItems.map((dup) => '<div class="populate-jira-warning-item">' + (dup.jira_url ? ('<a href="' + esc(dup.jira_url) + '" target="_blank" rel="noopener noreferrer">' + esc(dup.issue_key || '') + '</a>') : esc(dup.issue_key || '')) + ' - ' + esc(dup.summary || '') + ' (' + esc(dup.status || '-') + ')</div>').join('')
+              + '</div>'
+              + '<label><input type="checkbox" data-populate-duplicate-ack> <span>I understand this may create a duplicate Jira epic and want to continue.</span></label>'
+              + '</div>')
+          : '';
+        return ''
+          + '<div class="populate-jira-card" data-populate-epic-key="' + esc(item.epic_key || '') + '" data-default-mode="' + (item.already_published ? 'update' : 'create') + '" data-has-duplicate-warning="' + (duplicateItems.length ? '1' : '0') + '">'
+          + '  <div class="populate-jira-card-head">'
+          + '    <div>'
+          + '      <h3 class="populate-jira-card-title">' + esc(item.epic_name || item.epic_key || 'Epic') + '</h3>'
+          + '      <div class="populate-jira-card-meta">'
+          + '        <span class="populate-jira-pill">' + esc(item.project_key || '') + '</span>'
+          + '        <span class="populate-jira-pill ' + (permission.ok ? 'ok' : 'warn') + '">' + (permission.ok ? 'Write ready' : 'Permission blocked') + '</span>'
+          + (item.already_published ? '<span class="populate-jira-pill warn">Already linked</span>' : '')
+          + '      </div>'
+          + '    </div>'
+          + '    <div>' + modeControl + '</div>'
+          + '  </div>'
+          + '  <div class="populate-jira-card-body">'
+          + duplicateHtml
+          + '    <div class="populate-jira-grid">'
+          + '      <div>'
+          + '        <table class="populate-jira-table">'
+          + '          <thead><tr><th>Phase / Story</th><th>Man-days</th><th>Dates</th><th>Subtasks</th></tr></thead>'
+          + '          <tbody>'
+          + stories.map((story) => '<tr><td>' + esc(story.phase_label || '') + '</td><td>' + esc(String(story.man_days || 0)) + '</td><td>' + esc((story.start_date || '-') + ' -> ' + (story.due_date || '-')) + '</td><td>' + esc(String((story.subtasks || []).length)) + '</td></tr>').join('')
+          + '          </tbody>'
+          + '        </table>'
+          + '      </div>'
+          + '      <div class="populate-jira-sidepanel">'
+          + '        <h3>Epic payload</h3>'
+          + '        <div class="muted">Man-days: ' + esc(String(((item.epic_plan || {}).man_days) || 0)) + '</div>'
+          + '        <div class="muted">Dates: ' + esc((((item.epic_plan || {}).start_date) || '-') + ' -> ' + (((item.epic_plan || {}).due_date) || '-')) + '</div>'
+          + (item.existing_jira_url ? '<div class="muted" style="margin-top:8px;">Existing Jira: <a href="' + esc(item.existing_jira_url) + '" target="_blank" rel="noopener noreferrer">Open linked epic</a></div>' : '')
+          + '      </div>'
+          + '    </div>'
+          + '  </div>'
+          + '</div>';
+      }).join("");
+      Array.from(populateJiraListEl.querySelectorAll('[data-populate-mode], [data-populate-duplicate-ack]')).forEach((inputEl) => {
+        inputEl.addEventListener('change', updatePopulateJiraConfirmState);
+      });
+      updatePopulateJiraConfirmState();
+    }
+
+    async function openPopulateJiraModal() {
+      const epicKeys = Array.from(selectedEpicKeys);
+      if (!epicKeys.length) {
+        setStatus('Select one or more epics first.', 'warn');
+        return;
+      }
+      setPopulateJiraBanner('Loading Jira publish preview...', '');
+      populateJiraListEl.innerHTML = '<div class="populate-jira-card"><div class="populate-jira-card-body"><div class="muted">Loading selected epics...</div></div></div>';
+      populateJiraListEl.style.display = 'grid';
+      populateJiraResultsEl.style.display = 'none';
+      populateJiraResultsEl.innerHTML = '';
+      if (populateJiraReportEl) populateJiraReportEl.style.display = 'none';
+      if (populateJiraHistoryEl) populateJiraHistoryEl.style.display = 'none';
+      populateJiraConfirmEl.disabled = true;
+      populateJiraModalEl.showModal();
+      try {
+        const resp = await fetch(POPULATE_JIRA_PREFLIGHT_API, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ epic_keys: epicKeys }),
+        });
+        const body = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(String(body.error || 'Failed to load Jira publish preview.'));
+        renderPopulateJiraPreview(body);
+      } catch (err) {
+        setPopulateJiraBanner(err.message || String(err), 'error');
+        populateJiraListEl.innerHTML = '<div class="populate-jira-card"><div class="populate-jira-card-body"><div class="muted">Preview could not be loaded.</div></div></div>';
+        populateJiraConfirmEl.disabled = true;
+      }
+    }
+
+    function buildPopulateJiraExecutionPayload() {
+      const items = [];
+      Array.from(populateJiraListEl.querySelectorAll('[data-populate-epic-key]')).forEach((card) => {
+        const epicKey = String(card.getAttribute('data-populate-epic-key') || '').trim().toUpperCase();
+        if (!epicKey) return;
+        const modeEl = card.querySelector('[data-populate-mode]');
+        const mode = modeEl ? String(modeEl.value || '').trim().toLowerCase() : String(card.getAttribute('data-default-mode') || 'create');
+        if (mode === 'skip') return;
+        const dupAckEl = card.querySelector('[data-populate-duplicate-ack]');
+        const allowDuplicate = !dupAckEl || !!dupAckEl.checked;
+        items.push({ epic_key: epicKey, mode, allow_duplicate: allowDuplicate });
+      });
+      if (!items.length) throw new Error('Select at least one epic to create or update in Jira.');
+      return { epics: items };
+    }
+
+    async function executePopulateJira() {
+      const payload = buildPopulateJiraExecutionPayload();
+      populateJiraConfirmEl.disabled = true;
+      setPopulateJiraBanner('Publishing selected epics to Jira...', '');
+      try {
+        const resp = await fetch(POPULATE_JIRA_EXECUTE_API, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const body = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(String(body.error || 'Failed to populate Jira.'));
+        renderPopulateJiraReport(body.report || {});
+        const failedCount = Number(((body.report || {}).summary || {}).failed || 0);
+        setPopulateJiraBanner(
+          failedCount ? 'Jira publication finished with failures. Review the report and retry failed work items.' : 'Jira publication completed. Returned links have been written back into Epics Planner.',
+          failedCount ? 'error' : ''
+        );
+        selectedEpicKeys.clear();
+        updateSealButtonState();
+        await loadRowsFromApi();
+      } catch (err) {
+        setPopulateJiraBanner(err.message || String(err), 'error');
+      } finally {
+        updatePopulateJiraConfirmState();
+      }
     }
 
     function openSyncJiraModal(rowIndex) {
@@ -14104,16 +14603,8 @@ def _epics_management_settings_html() -> str:
       return '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M9 3h6l1 2h4v2H4V5h4l1-2zm1 6h2v8h-2V9zm4 0h2v8h-2V9zM7 9h2v8H7V9z"/></svg>';
     }
     function applyPlanColumnLayout() {
-      const planCount = Math.max(planLayerColumns().length, 1);
-      const viewportWidth = Math.max(window.innerWidth || 0, 1024);
-      const availableForPlans = Math.max(viewportWidth - 240 - EPICS_STATIC_COL_MIN_WIDTH, EPICS_PLAN_COL_MIN_WIDTH * planCount);
-      const computedPlanWidth = Math.max(
-        EPICS_PLAN_COL_MIN_WIDTH,
-        Math.min(EPICS_PLAN_COL_MAX_WIDTH, Math.floor(availableForPlans / planCount))
-      );
-      const tableMinWidth = EPICS_STATIC_COL_MIN_WIDTH + (computedPlanWidth * planCount);
-      document.documentElement.style.setProperty("--epics-plan-col-min-width", String(computedPlanWidth) + "px");
-      document.documentElement.style.setProperty("--epics-table-min-width", String(tableMinWidth) + "px");
+      document.documentElement.style.setProperty("--epics-plan-col-min-width", String(EPICS_PLAN_COL_MIN_WIDTH) + "px");
+      document.documentElement.style.setProperty("--epics-table-min-width", String(EPICS_STATIC_COL_MIN_WIDTH) + "px");
     }
     function normalizePlanColumnMeta(item) {
       const key = String(item && item.key || "").trim();
@@ -14311,100 +14802,16 @@ def _epics_management_settings_html() -> str:
       renderTable();
     }
     function renderPlanHeaders() {
-      const planHeaders = planLayerColumns().map((layerItem) => {
-        const col = layerItem.col;
-        const idx = PLAN_COLUMNS.findIndex((item) => item && item.key === col.key);
-        const layer = layerItem.layer;
-        const layerLabel = layer === "most_likely" ? "Most Likely" : layer === "tk_budgeted" ? "TK Budgeted" : "Summary";
-        const deleteBtn = !col.is_locked
-          ? '<button class="icon-btn danger" type="button" data-delete-plan-key="' + esc(col.key) + '" data-delete-plan-label="' + esc(col.label || col.key || "Plan") + '" title="Delete column">' + planColumnTrashIconSvg() + "</button>"
-          : '<button class="icon-btn danger" type="button" disabled title="Column is locked">' + planColumnTrashIconSvg() + "</button>";
-        const insertBeforeBtn = '<button class="plan-insert-handle" type="button" data-insert-position="' + (idx + 1) + '" title="Add column here">+</button>';
-        const insertAfterBtn = idx === PLAN_COLUMNS.length - 1
-          ? '<button class="plan-insert-handle after" type="button" data-insert-position="' + (PLAN_COLUMNS.length + 1) + '" title="Add column here">+</button>'
-          : "";
-        const canManage = layer === "summary" || layer === "most_likely" || !col.most_likely_enabled;
-        return '<th class="plan-col-head ' + planLayerCssClasses(col, layer) + '" draggable="true" data-plan-key="' + esc(col.key) + '" data-plan-layer="' + esc(layer) + '" data-plan-index="' + idx + '"><div class="plan-head-wrap">'
-          + (canManage ? insertBeforeBtn : "")
-          + '<span class="plan-label"><span>' + esc(col.label || col.key || "Plan") + '</span><span class="plan-layer">' + esc(layerLabel) + '</span></span>'
-          + (canManage ? '<span class="plan-head-actions">' + deleteBtn + '</span>' + insertAfterBtn : "")
-          + "</div></th>";
-      }).join("");
       headerRowEl.innerHTML = ""
         + "<th title=\\"Select epics to seal\\">Select</th>"
-        + "<th>Project</th>"
-        + "<th>Product Categorization</th>"
-        + "<th>Component</th>"
         + "<th>Epic</th>"
         + "<th>Description</th>"
         + "<th>Originator</th>"
         + "<th>Priority</th>"
         + "<th>Plan Status</th>"
-        + planHeaders
+        + "<th>Plan Overview</th>"
         + "<th>Actions</th>";
       applyPlanColumnLayout();
-      Array.from(headerRowEl.querySelectorAll("button.plan-insert-handle[data-insert-position]")).forEach((btn) => {
-        btn.addEventListener("click", (evt) => {
-          evt.preventDefault();
-          evt.stopPropagation();
-          const insertPosition = Number(btn.getAttribute("data-insert-position") || "0");
-          openPlanColumnDialog(insertPosition);
-        });
-      });
-      Array.from(headerRowEl.querySelectorAll("button[data-delete-plan-key]")).forEach((btn) => {
-        btn.addEventListener("click", (evt) => {
-          evt.preventDefault();
-          evt.stopPropagation();
-          const key = String(btn.getAttribute("data-delete-plan-key") || "");
-          const label = String(btn.getAttribute("data-delete-plan-label") || key);
-          deletePlanColumn(key, label).catch((err) => setStatus(err.message || String(err), "warn"));
-        });
-      });
-      const planHeadersEls = Array.from(headerRowEl.querySelectorAll("th.plan-col-head[data-plan-key]"));
-      planHeadersEls.forEach((thEl) => {
-        thEl.addEventListener("dragstart", (evt) => {
-          planDragKey = String(thEl.getAttribute("data-plan-key") || "");
-          thEl.classList.add("dragging");
-          if (evt.dataTransfer) {
-            evt.dataTransfer.effectAllowed = "move";
-            evt.dataTransfer.setData("text/plain", planDragKey);
-          }
-        });
-        thEl.addEventListener("dragover", (evt) => {
-          if (!planDragKey) return;
-          evt.preventDefault();
-          thEl.classList.add("drop-target");
-        });
-        thEl.addEventListener("dragleave", () => thEl.classList.remove("drop-target"));
-        thEl.addEventListener("drop", (evt) => {
-          evt.preventDefault();
-          const targetKey = String(thEl.getAttribute("data-plan-key") || "");
-          const sourceKey = planDragKey || (evt.dataTransfer ? evt.dataTransfer.getData("text/plain") : "");
-          planHeadersEls.forEach((item) => item.classList.remove("drop-target", "dragging"));
-          planDragKey = "";
-          if (!sourceKey || !targetKey || sourceKey === targetKey) return;
-          const current = PLAN_COLUMNS.slice();
-          const fromIndex = current.findIndex((item) => item.key === sourceKey);
-          const toIndex = current.findIndex((item) => item.key === targetKey);
-          if (fromIndex < 0 || toIndex < 0) return;
-          const next = current.slice();
-          const moved = next.splice(fromIndex, 1)[0];
-          next.splice(toIndex, 0, moved);
-          PLAN_COLUMNS = next;
-          renderPlanHeaders();
-          renderDynamicPlanJiraFields();
-          renderTable();
-          persistPlanColumnOrder(next).catch(async (err) => {
-            setStatus(err.message || String(err), "warn");
-            await loadPlanColumns();
-            renderTable();
-          });
-        });
-        thEl.addEventListener("dragend", () => {
-          planDragKey = "";
-          planHeadersEls.forEach((item) => item.classList.remove("drop-target", "dragging"));
-        });
-      });
     }
     function renderDynamicPlanJiraFields() {
       const html = [];
@@ -14618,8 +15025,6 @@ def _epics_management_settings_html() -> str:
       PLAN_STATUS_OPTIONS = dropdownOptions.plan_status_options.length
         ? dropdownOptions.plan_status_options.slice()
         : ["Planned", "Not Planned Yet"];
-      setDropdownSelectOptions(epicProductCategoryEl, dropdownOptions.product_category_options, epicProductCategoryEl.value);
-      setDropdownSelectOptions(epicComponentEl, dropdownOptions.component_options, epicComponentEl.value);
       setDropdownSelectOptions(epicPlanStatusEl, PLAN_STATUS_OPTIONS, normalizePlanStatus(epicPlanStatusEl.value));
       if (rows.length) renderTable();
     }
@@ -14717,6 +15122,143 @@ def _epics_management_settings_html() -> str:
       }
       const overall = (totals[GROUP_TOTAL_PLAN_KEY] && totals[GROUP_TOTAL_PLAN_KEY].tk_budgeted) || 0;
       return { totals, overall };
+    }
+    function plannerTableColumnCount() {
+      return PLANNER_TABLE_COLUMN_COUNT;
+    }
+    function epicPlanSummaryValues(row) {
+      const epicPlan = ((row && row.plans) || {}).epic_plan || {};
+      const mostLikely = parseManDaysValue(epicPlan.most_likely_man_days);
+      const optimistic = parseManDaysValue(epicPlan.optimistic_man_days);
+      const pessimistic = parseManDaysValue(epicPlan.pessimistic_man_days);
+      const calculated = parseManDaysValue(epicPlan.calculated_man_days);
+      const tkApproved = parseManDaysValue(
+        epicPlan.tk_approved_man_days != null && String(epicPlan.tk_approved_man_days) !== ""
+          ? epicPlan.tk_approved_man_days
+          : (epicPlan.tk_budgeted_man_days != null && String(epicPlan.tk_budgeted_man_days) !== "" ? epicPlan.tk_budgeted_man_days : epicPlan.man_days)
+      );
+      return { mostLikely, optimistic, pessimistic, calculated, tkApproved };
+    }
+    function phaseColumnsForMatrix() {
+      return PLAN_COLUMNS.filter((col) => col && col.key && col.key !== "epic_plan" && col.phase_role !== "summary");
+    }
+    function formatPlanDateRange(startValue, dueValue) {
+      const start = toDateValue(startValue);
+      const due = toDateValue(dueValue);
+      if (start && due) return formatDateDisplay(start) + " to " + formatDateDisplay(due);
+      if (start) return "Start " + formatDateDisplay(start);
+      if (due) return "Due " + formatDateDisplay(due);
+      return "";
+    }
+    function renderGroupSummaryHtml(groupTotals, epicCount) {
+      const overallMostLikely = groupTotals && groupTotals.totals && groupTotals.totals[GROUP_TOTAL_PLAN_KEY]
+        ? Number(groupTotals.totals[GROUP_TOTAL_PLAN_KEY].most_likely || 0)
+        : 0;
+      const overallBudgeted = groupTotals && groupTotals.totals && groupTotals.totals[GROUP_TOTAL_PLAN_KEY]
+        ? Number(groupTotals.totals[GROUP_TOTAL_PLAN_KEY].tk_budgeted || 0)
+        : 0;
+      return '<div class="group-summary-chips">'
+        + '<span class="group-summary-chip"><span>Epics</span><b>' + esc(String(Number(epicCount || 0))) + '</b></span>'
+        + '<span class="group-summary-chip"><span>Most Likely</span><b>' + esc(formatManDaysValue(overallMostLikely)) + ' md</b></span>'
+        + '<span class="group-summary-chip"><span>TK Budgeted</span><b>' + esc(formatManDaysValue(overallBudgeted)) + ' md</b></span>'
+        + "</div>";
+    }
+    function renderEpicOverviewCell(row) {
+      const summary = epicPlanSummaryValues(row);
+      const budgetText = summary.tkApproved == null ? "0" : formatManDaysValue(summary.tkApproved);
+      const likelyText = summary.mostLikely == null ? "0" : formatManDaysValue(summary.mostLikely);
+      return '<div class="epic-overview-cell">'
+        + '<div class="epic-overview-split">'
+        + '<span class="epic-overview-half most-likely" title="Most Likely">' + esc(likelyText) + ' md</span>'
+        + '<span class="epic-overview-half tk-approved" title="TK Approved">' + esc(budgetText) + ' md</span>'
+        + "</div>"
+        + "</div>";
+    }
+    function shouldIgnoreEpicRowToggle(target) {
+      if (!(target instanceof Element)) return false;
+      return !!target.closest("button, a, input, select, textarea, [contenteditable='true'], .actions-menu-dropdown, .summary-count-cell");
+    }
+    function toggleEpicRowExpanded(epicKey) {
+      const key = String(epicKey || "").trim().toUpperCase();
+      if (!key) return;
+      if (expandedEpicRows.has(key)) expandedEpicRows.delete(key);
+      else expandedEpicRows.add(key);
+      renderTable();
+    }
+    function renderDetailSummaryCard(label, value) {
+      return '<div class="epic-detail-card"><span class="epic-detail-card-label">' + esc(label) + '</span><span class="epic-detail-card-value">' + esc(value) + '</span></div>';
+    }
+    function renderMatrixValueContent(plan, planCol, layer) {
+      const activeLayer = String(layer || "most_likely");
+      const isMostLikely = activeLayer === "most_likely";
+      const manDaysValue = isMostLikely
+        ? parseManDaysValue(plan && plan.most_likely_man_days)
+        : parseManDaysValue(
+            plan && plan.tk_budgeted_man_days != null && String(plan.tk_budgeted_man_days) !== ""
+              ? plan.tk_budgeted_man_days
+              : plan && plan.man_days
+          );
+      if (isMostLikely && !planCol.most_likely_enabled) {
+        return '<div class="matrix-value"><div class="matrix-value-empty">Formula-managed phase</div></div>';
+      }
+      if (manDaysValue == null) {
+        return '<div class="matrix-value"><div class="matrix-value-empty">' + (isMostLikely ? "Set plan details" : "Computed after Most Likely") + "</div></div>";
+      }
+      const dateText = isMostLikely
+        ? formatPlanDateRange(plan && plan.start_date, plan && plan.due_date)
+        : formatPlanDateRange(plan && plan.tk_budgeted_start_date, plan && plan.tk_budgeted_due_date);
+      return '<div class="matrix-value">'
+        + '<div class="matrix-value-main">' + esc(formatManDaysValue(manDaysValue)) + ' md</div>'
+        + (dateText ? '<div class="matrix-value-meta">' + esc(dateText) + "</div>" : "")
+        + "</div>";
+    }
+    function renderPhaseMatrixValueCell(rowIndex, planCol, row, effectivelySealed, layer) {
+      const plan = (row.plans || {})[planCol.key] || {};
+      const valueHtml = renderMatrixValueContent(plan, planCol, layer);
+      const layerClass = layer === "most_likely" ? "plan-layer-most-likely" : "plan-layer-tk-budgeted";
+      const allowMostLikelyEdit = layer === "most_likely" && planCol.most_likely_enabled && !effectivelySealed;
+      const allowFormulaDateEdit = layer === "tk_budgeted" && !planCol.most_likely_enabled && canEditFormulaManagedPlanDates(planCol) && !effectivelySealed;
+      if (allowMostLikelyEdit || allowFormulaDateEdit) {
+        return '<button class="plan-btn' + (layer === "tk_budgeted" ? " plan-btn-tk" : "") + '" type="button" data-row-index="' + rowIndex + '" data-plan-key="' + esc(planCol.key) + '">' + valueHtml + "</button>";
+      }
+      return '<div class="matrix-value-readonly ' + layerClass + '">' + valueHtml + "</div>";
+    }
+    function renderEpicDetailRow(rowIndex, row, effectivelySealed) {
+      const epicKey = String(row.epic_key || row.id || "").trim().toUpperCase();
+      if (!expandedEpicRows.has(epicKey)) return "";
+      const summary = epicPlanSummaryValues(row);
+      const detailCards = [
+        renderDetailSummaryCard("Most Likely", (summary.mostLikely == null ? "0" : formatManDaysValue(summary.mostLikely)) + " md"),
+        renderDetailSummaryCard("Optimistic", (summary.optimistic == null ? "0" : formatManDaysValue(summary.optimistic)) + " md"),
+        renderDetailSummaryCard("Pessimistic", (summary.pessimistic == null ? "0" : formatManDaysValue(summary.pessimistic)) + " md"),
+        renderDetailSummaryCard("Calculated", (summary.calculated == null ? "0" : formatManDaysValue(summary.calculated)) + " md"),
+        renderDetailSummaryCard("TK Approved", (summary.tkApproved == null ? "0" : formatManDaysValue(summary.tkApproved)) + " md"),
+      ].join("");
+      const phaseRows = phaseColumnsForMatrix().map((planCol) => {
+        const plan = (row.plans || {})[planCol.key] || {};
+        const jiraUrl = planJiraUrl(plan);
+        const hasJira = !!jiraUrl;
+        const jiraActions = isPlanJiraEnabled(planCol.key)
+          ? '<div class="epic-phase-actions">'
+            + '<a class="jira-open ' + (hasJira ? "" : "disabled") + '" href="' + esc(hasJira ? jiraUrl : "#") + '" target="_blank" rel="noopener noreferrer" title="' + (hasJira ? "Open Jira link" : "No Jira link set") + '">J</a>'
+            + (effectivelySealed ? '' : '<button class="jira-edit plan-jira-edit" type="button" data-row-index="' + rowIndex + '" data-plan-key="' + esc(planCol.key) + '" title="Set Jira link">E</button>')
+            + "</div>"
+          : "";
+        return '<tr>'
+          + '<td class="phase-col"><div class="epic-phase-name"><div><div class="epic-phase-name-main">' + esc(planCol.label || planCol.key || "Phase") + '</div></div>' + jiraActions + "</div></td>"
+          + '<td class="value-col">' + renderPhaseMatrixValueCell(rowIndex, planCol, row, effectivelySealed, "most_likely") + "</td>"
+          + '<td class="value-col">' + renderPhaseMatrixValueCell(rowIndex, planCol, row, effectivelySealed, "tk_budgeted") + "</td>"
+          + "</tr>";
+      }).join("");
+      return '<tr class="epic-detail-row" data-detail-row-for="' + esc(epicKey) + '"><td colspan="' + plannerTableColumnCount() + '">'
+        + '<div class="epic-detail-panel">'
+        + '  <div class="epic-detail-top">'
+        + '    <div class="epic-detail-summary">' + detailCards + "</div>"
+        + '    <div class="epic-detail-note"><strong>Phase matrix.</strong> Use the Most likely column to edit direct estimates. TK Budgeted stays computed; formula-managed phases still allow planned date edits from the TK Budgeted side.</div>'
+        + "  </div>"
+        + '  <div class="epic-phase-matrix-wrap"><table class="epic-phase-matrix" aria-label="Epic phase matrix"><thead><tr><th>Phase</th><th>Most likely</th><th>TK Budgeted</th></tr></thead><tbody>' + phaseRows + "</tbody></table></div>"
+        + "</div>"
+        + "</td></tr>";
     }
     function renderGroupPlanTotalCells(groupTotals) {
       return planLayerColumns().map((layerItem) => {
@@ -14925,12 +15467,14 @@ def _epics_management_settings_html() -> str:
       const rowIndex = findRowIndexByEpicKey(epicKey);
       if (rowIndex < 0) return false;
       const row = rows[rowIndex];
+      const normalizedEpicKey = String(row.epic_key || row.id || "").trim().toUpperCase();
       const project = String(row.project_name || row.project_key || "-").trim() || "-";
       const category = displayBucketValue(row.product_category);
       const component = displayBucketValue(row.component);
       expandedProjects.add(projectNodeKey(project));
       expandedCategories.add(categoryNodeKey(project, category));
       expandedComponents.add(componentNodeKey(project, category, component));
+      if (normalizedEpicKey) expandedEpicRows.add(normalizedEpicKey);
       return true;
     }
     function jumpToDeepLinkedEpicIfNeeded() {
@@ -14953,15 +15497,17 @@ def _epics_management_settings_html() -> str:
       rowEl.scrollIntoView({ behavior: "smooth", block: "center" });
       window.setTimeout(() => rowEl.classList.remove("epic-jump-highlight"), 2000);
     }
-    function renderEpicCell(row, effectivelySealed) {
+    function renderEpicCell(row, effectivelySealed, expanded) {
       const hasJira = !!String(row.jira_url || "").trim();
       const showLock = !!effectivelySealed;
       const lockTitle = "Sealed – cannot be modified until RE-BUDGET is clicked.";
       const lockHtml = showLock ? '<span class="material-symbols-outlined epic-seal-lock" title="' + esc(lockTitle) + '" aria-label="Sealed">lock</span>' : '';
       const tkBadge = row.is_tk_epic ? '<span class="tk-epic-badge" title="Marked as TK Epic">TK</span>' : '';
+      const eprBadge = row.epr_jira_epic_created ? '<span class="epr-jira-badge" title="Epic issue was created via Populate Jira">EPR</span>' : '';
+      const epicKey = String(row.epic_key || row.id || "").trim().toUpperCase();
       return ''
-        + '<div class="tree tree-epic-cell">'
-        + '  <div class="tree-line tree-epic"><span class="tree-epic-name-wrap"><span class="tree-title">' + esc(row.epic_name || row.epic_key || "-") + '</span>' + tkBadge + lockHtml + '</span></div>'
+        + '<div class="tree tree-epic-cell tree-level-epic">'
+        + '  <div class="tree-line tree-epic"><button class="epic-accordion-toggle" type="button" data-epic-toggle="' + esc(epicKey) + '" aria-expanded="' + (expanded ? "true" : "false") + '" aria-label="' + (expanded ? "Collapse epic details" : "Expand epic details") + '"><span class="material-symbols-outlined" aria-hidden="true">expand_more</span></button><span class="tree-epic-name-wrap"><span class="tree-title">' + esc(row.epic_name || row.epic_key || "-") + '</span>' + tkBadge + eprBadge + lockHtml + '</span></div>'
         + '  <div class="tree-actions">'
         + '    <a class="jira-open ' + (hasJira ? "" : "disabled") + '" href="' + esc(hasJira ? row.jira_url : "#") + '" target="_blank" rel="noopener noreferrer" title="' + (hasJira ? "Open Jira link" : "No Jira link set") + '">J</a>'
         + '    <button class="jira-edit" type="button" data-row-index="' + esc(row._row_index) + '" title="Set Jira link">E</button>'
@@ -14972,11 +15518,7 @@ def _epics_management_settings_html() -> str:
       const row = rows[rowIndex];
       const epicKey = String(row.epic_key || row.id || "").trim().toUpperCase();
       const effectivelySealed = !!(row.is_sealed) && !rebudgetedEpicKeys.has(epicKey);
-      const planTds = PLAN_COLUMNS.map((planCol) => renderPlanCell(rowIndex, planCol, row, effectivelySealed)).join("");
-      const categoryRaw = String(row.product_category || "").trim();
-      const componentRaw = String(row.component || "").trim();
-      const categoryClass = categoryRaw ? "" : " missing-categorization";
-      const componentClass = componentRaw ? "" : " missing-categorization";
+      const expanded = expandedEpicRows.has(epicKey);
       const project = String(row.project_name || row.project_key || "-").trim() || "-";
       const category = displayBucketValue(row.product_category);
       const component = displayBucketValue(row.component);
@@ -15000,19 +15542,17 @@ def _epics_management_settings_html() -> str:
       const sealedDisable = effectivelySealed;
       const ceAllowed = effectivelySealed ? "false" : "true";
       return ""
-        + '<tr class="epic-row' + altClass + sealedClass + '" data-row-index="' + rowIndex + '" data-epic-key="' + esc(epicKey) + '" data-project-node-key="' + esc(projectNodeKey(project)) + '" data-category-node-key="' + esc(categoryNodeKey(project, category)) + '" data-component-node-key="' + esc(componentNodeKey(project, category, component)) + '">'
+        + '<tr class="epic-row epic-row-accordion' + altClass + sealedClass + '" data-row-index="' + rowIndex + '" data-epic-key="' + esc(epicKey) + '" data-accordion-row="1" data-project-node-key="' + esc(projectNodeKey(project)) + '" data-category-node-key="' + esc(categoryNodeKey(project, category)) + '" data-component-node-key="' + esc(componentNodeKey(project, category, component)) + '">'
         + '<td><input type="checkbox" class="epic-select-cb" data-row-index="' + rowIndex + '" data-epic-key="' + esc(epicKey) + '"' + checked + ' title="Select to seal"></td>'
-        + "<td>" + esc(String(row.project_name || row.project_key || "-").trim() || "-") + "</td>"
-        + '<td class="' + categoryClass.trim() + '">' + renderCategorizationSelect("product_category", dropdownOptions.product_category_options, categoryRaw, rowIndex, sealedDisable) + "</td>"
-        + '<td class="' + componentClass.trim() + '">' + renderCategorizationSelect("component", dropdownOptions.component_options, componentRaw, rowIndex, sealedDisable) + "</td>"
-        + "<td>" + renderEpicCell(row, sealedDisable) + "</td>"
+        + "<td>" + renderEpicCell(row, sealedDisable, expanded) + "</td>"
         + '<td class="description-cell"><div class="description-editor" contenteditable="' + ceAllowed + '" data-row-index="' + rowIndex + '" data-field="description">' + esc(row.description || "") + "</div></td>"
         + '<td contenteditable="' + ceAllowed + '" data-row-index="' + rowIndex + '" data-field="originator">' + esc(row.originator || "") + "</td>"
         + "<td>" + renderPrioritySelect(normalizePriority(row.priority), rowIndex, sealedDisable) + "</td>"
         + "<td>" + renderPlanStatusSelect(normalizePlanStatus(row.plan_status), rowIndex, sealedDisable) + "</td>"
-        + planTds
+        + "<td>" + renderEpicOverviewCell(row) + "</td>"
         + actionsCell
-        + "</tr>";
+        + "</tr>"
+        + renderEpicDetailRow(rowIndex, row, effectivelySealed);
     }
     function ensureDraftEpicRow() {
       if (draftEpicRow && typeof draftEpicRow === "object") return draftEpicRow;
@@ -15034,19 +15574,15 @@ def _epics_management_settings_html() -> str:
     }
     function renderDraftEpicRow() {
       const draft = ensureDraftEpicRow();
-      const planTds = planLayerColumns().map((layerItem) => '<td class="plan-col-cell ' + planLayerCssClasses(layerItem.col, layerItem.layer) + '"><span class="plan-empty">Draft</span></td>').join("");
       return ""
         + '<tr class="draft-row">'
         + "<td></td>"
-        + "<td>" + renderDraftProjectSelect(draft.project_key || "") + "</td>"
-        + "<td>" + renderDraftCategorizationSelect("product_category", dropdownOptions.product_category_options, draft.product_category || "") + "</td>"
-        + "<td>" + renderDraftCategorizationSelect("component", dropdownOptions.component_options, draft.component || "") + "</td>"
-        + '<td><input id="draft-epic-name" class="draft-input" data-draft-field="epic_name" placeholder="Epic name (required)" value="' + esc(draft.epic_name || "") + '"></td>'
+        + '<td><div class="tree tree-epic-cell tree-level-epic"><div style="display:grid;gap:6px;">' + renderDraftProjectSelect(draft.project_key || "") + '<input id="draft-epic-name" class="draft-input" data-draft-field="epic_name" placeholder="Epic name (required)" value="' + esc(draft.epic_name || "") + '"></div></div></td>'
         + '<td><input class="draft-input" data-draft-field="description" placeholder="Description (optional)" value="' + esc(draft.description || "") + '"></td>'
         + '<td><input class="draft-input" data-draft-field="originator" placeholder="Originator (optional)" value="' + esc(draft.originator || "") + '"></td>'
         + '<td><span class="muted">Low</span></td>'
         + '<td><span class="muted">' + esc(defaultPlanStatus()) + "</span></td>"
-        + planTds
+        + '<td><div class="epic-overview-meta">Create the epic first, then expand its row to edit phase plans.</div></td>'
         + '<td><button class="btn small" type="button" id="save-draft-epic-btn">Save Draft Epic</button></td>'
         + "</tr>";
     }
@@ -15152,7 +15688,7 @@ def _epics_management_settings_html() -> str:
 
       const html = [];
       if (!grouped.size) {
-        const totalCols = 10 + planLayerCount();
+        const totalCols = plannerTableColumnCount();
         tbodyEl.innerHTML = '<tr><td colspan="' + totalCols + '" style="text-align:center;color:#64748b;padding:16px;">No epics found in database.</td></tr>';
         return;
       }
@@ -15176,13 +15712,10 @@ def _epics_management_settings_html() -> str:
           for (const epicIndexes of componentMap.values()) projectIndexes.push(...epicIndexes);
         }
         const projectTotals = computeGroupManDaysTotals(projectIndexes);
-        const projectPlanTotalTds = renderGroupPlanTotalCells(projectTotals);
         html.push(
           '<tr class="group-row project">'
           + '<td></td>'
-          + '<td><div class="tree-line"><button class="tree-toggle" type="button" data-toggle-project="' + esc(pKey) + '">' + (pExpanded ? "-" : "+") + '</button><span class="tree-label-project">' + esc(project) + '</span><span class="tree-group-total">Total: ' + esc(formatManDaysValue(projectTotals.overall)) + ' md</span></div></td>'
-          + '<td></td><td></td><td></td><td></td><td></td><td></td><td></td>'
-          + projectPlanTotalTds
+          + '<td colspan="' + (plannerTableColumnCount() - 2) + '" class="group-summary-cell"><div class="group-summary-wrap"><div class="group-summary-title"><button class="tree-toggle" type="button" data-toggle-project="' + esc(pKey) + '">' + (pExpanded ? "-" : "+") + '</button><span class="tree-label-project">' + esc(project) + '</span><span class="tree-group-total">Total: ' + esc(formatManDaysValue(projectTotals.overall)) + ' md</span></div>' + renderGroupSummaryHtml(projectTotals, projectIndexes.length) + '</div></td>'
           + '<td></td>'
           + '</tr>'
         );
@@ -15194,13 +15727,10 @@ def _epics_management_settings_html() -> str:
           const categoryIndexes = [];
           for (const epicIndexes of componentMap.values()) categoryIndexes.push(...epicIndexes);
           const categoryTotals = computeGroupManDaysTotals(categoryIndexes);
-          const categoryPlanTotalTds = renderGroupPlanTotalCells(categoryTotals);
           html.push(
             '<tr class="group-row category">'
-            + '<td></td><td></td>'
-            + '<td><div class="tree-line"><button class="tree-toggle" type="button" data-toggle-category="' + esc(cKey) + '">' + (cExpanded ? "-" : "+") + '</button><span class="tree-label-category">' + esc(category) + '</span><span class="tree-group-total">Total: ' + esc(formatManDaysValue(categoryTotals.overall)) + ' md</span></div></td>'
-            + '<td></td><td></td><td></td><td></td><td></td><td></td>'
-            + categoryPlanTotalTds
+            + '<td></td>'
+            + '<td colspan="' + (plannerTableColumnCount() - 2) + '" class="group-summary-cell"><div class="group-summary-wrap"><div class="group-summary-title"><button class="tree-toggle" type="button" data-toggle-category="' + esc(cKey) + '">' + (cExpanded ? "-" : "+") + '</button><span class="tree-label-category tree-level-category">' + esc(category) + '</span><span class="tree-group-total">Total: ' + esc(formatManDaysValue(categoryTotals.overall)) + ' md</span></div>' + renderGroupSummaryHtml(categoryTotals, categoryIndexes.length) + '</div></td>'
             + '<td></td>'
             + '</tr>'
           );
@@ -15210,13 +15740,10 @@ def _epics_management_settings_html() -> str:
             const compKey = componentNodeKey(project, category, component);
             const compExpanded = expandedComponents.has(compKey);
             const componentTotals = computeGroupManDaysTotals(epicIndexes);
-            const componentPlanTotalTds = renderGroupPlanTotalCells(componentTotals);
             html.push(
               '<tr class="group-row component">'
-              + '<td></td><td></td><td></td>'
-              + '<td><div class="tree-line"><button class="tree-toggle" type="button" data-toggle-component="' + esc(compKey) + '">' + (compExpanded ? "-" : "+") + '</button><span class="tree-label-category">' + esc(component) + '</span><span class="tree-group-total">Total: ' + esc(formatManDaysValue(componentTotals.overall)) + ' md</span></div></td>'
-              + '<td></td><td></td><td></td><td></td><td></td>'
-              + componentPlanTotalTds
+              + '<td></td>'
+              + '<td colspan="' + (plannerTableColumnCount() - 2) + '" class="group-summary-cell"><div class="group-summary-wrap"><div class="group-summary-title"><button class="tree-toggle" type="button" data-toggle-component="' + esc(compKey) + '">' + (compExpanded ? "-" : "+") + '</button><span class="tree-label-component tree-level-component">' + esc(component) + '</span><span class="tree-group-total">Total: ' + esc(formatManDaysValue(componentTotals.overall)) + ' md</span></div>' + renderGroupSummaryHtml(componentTotals, epicIndexes.length) + '</div></td>'
               + '<td></td>'
               + '</tr>'
             );
@@ -15261,6 +15788,21 @@ def _epics_management_settings_html() -> str:
           if (expandedComponents.has(key)) expandedComponents.delete(key);
           else expandedComponents.add(key);
           renderTable();
+        });
+      });
+      Array.from(tbodyEl.querySelectorAll("tr[data-accordion-row='1']")).forEach((rowEl) => {
+        rowEl.addEventListener("click", (event) => {
+          if (shouldIgnoreEpicRowToggle(event.target)) return;
+          const epicKey = String(rowEl.getAttribute("data-epic-key") || "").trim().toUpperCase();
+          toggleEpicRowExpanded(epicKey);
+        });
+      });
+      Array.from(tbodyEl.querySelectorAll("button[data-epic-toggle]")).forEach((btn) => {
+        btn.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          const epicKey = String(btn.getAttribute("data-epic-toggle") || "").trim().toUpperCase();
+          toggleEpicRowExpanded(epicKey);
         });
       });
 
@@ -15508,8 +16050,9 @@ def _epics_management_settings_html() -> str:
     }
     function updateSealButtonState() {
       const btn = document.getElementById("seal-epics-btn");
-      if (!btn) return;
-      btn.disabled = selectedEpicKeys.size === 0;
+      const hasSelection = selectedEpicKeys.size > 0;
+      if (btn) btn.disabled = !hasSelection;
+      if (populateJiraBtnEl) populateJiraBtnEl.disabled = !hasSelection;
     }
     function loadManageSealedDates(epicKey) {
       const listEl = document.getElementById("manage-sealed-dates-list");
@@ -15733,24 +16276,62 @@ def _epics_management_settings_html() -> str:
       });
       flashSyncRowHighlight(rowIndex, "saved", 2000);
     }
-    async function deleteEpicRow(rowIndex) {
+    function openDeleteEpicModal(rowIndex) {
       const row = rows[rowIndex];
-      if (!row) throw new Error("Row not found.");
+      if (!row || !deleteEpicModalEl) return;
+      const key = String(row.epic_key || row.id || "").trim().toUpperCase();
+      if (!key) {
+        setStatus("Epic key is required to delete.", "warn");
+        return;
+      }
+      activeDeleteEpicRowIndex = rowIndex;
+      const label = String(row.epic_name || row.epic_key || key).trim() || key;
+      const subEl = document.getElementById("delete-epic-subtitle");
+      const hintEl = document.getElementById("delete-epic-jira-hint");
+      const jiraBtn = document.getElementById("delete-epic-planner-jira");
+      if (subEl) subEl.textContent = label + " (" + key + ")";
+      const eprCount = Number(row.epr_created_jira_issue_count || 0);
+      if (hintEl) {
+        if (eprCount > 0) {
+          hintEl.style.display = "block";
+          hintEl.textContent = "Populate Jira created " + String(eprCount) + " recorded issue(s) that can be removed from Jira (subtasks and stories first; epic only if it was created by the tool). Requires Jira DELETE_ISSUES permission.";
+        } else {
+          hintEl.style.display = "block";
+          hintEl.textContent = 'No Jira issues are marked as created by Populate Jira for this epic (legacy publishes or planner-only rows). Run Populate Jira after upgrade to record provenance; only "Planner only" applies until then.';
+        }
+      }
+      if (jiraBtn) jiraBtn.disabled = eprCount <= 0;
+      deleteEpicModalEl.showModal();
+    }
+    async function executeEpicDeletion(deleteJira) {
+      const rowIndex = activeDeleteEpicRowIndex;
+      if (!Number.isInteger(rowIndex) || rowIndex < 0) return;
+      const row = rows[rowIndex];
+      if (!row) return;
       const key = String(row.epic_key || row.id || "").trim().toUpperCase();
       if (!key) throw new Error("Epic key is required to delete.");
-      const label = String(row.epic_name || row.epic_key || key).trim() || key;
-      if (!window.confirm('Delete epic "' + label + '" (' + key + ') from Epics Planner? This cannot be undone.')) return;
-      const resp = await fetch(API + "/" + encodeURIComponent(key), { method: "DELETE" });
+      if (deleteEpicModalEl && deleteEpicModalEl.open) deleteEpicModalEl.close();
+      activeDeleteEpicRowIndex = -1;
+      const resp = await fetch(API + "/" + encodeURIComponent(key), {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ delete_jira: !!deleteJira }),
+      });
       const body = await resp.json().catch(() => ({}));
       if (!resp.ok) throw new Error(String(body.error || "Failed to delete epic."));
       await loadRowsFromApi();
-      setStatus("Epic deleted: " + key, "ok");
+      const deletedKeys = body.jira_issues_deleted || [];
+      let msg = "Epic deleted from planner: " + key;
+      if (deleteJira && deletedKeys.length) msg += ". Removed from Jira: " + deletedKeys.join(", ");
+      else if (deleteJira && !deletedKeys.length) msg += ". No Jira issues were removed (none recorded as EPR-created).";
+      setStatus(msg, "ok");
+    }
+    async function deleteEpicRow(rowIndex) {
+      openDeleteEpicModal(rowIndex);
     }
     function resetEpicCreateForm() {
       renderProjectOptions("");
       epicProjectSelectEl.value = "";
-      setDropdownSelectOptions(epicProductCategoryEl, dropdownOptions.product_category_options, "");
-      setDropdownSelectOptions(epicComponentEl, dropdownOptions.component_options, "");
       epicNameEl.value = "";
       epicOriginatorEl.value = "";
       epicPriorityEl.value = "Low";
@@ -15782,8 +16363,6 @@ def _epics_management_settings_html() -> str:
       document.getElementById("epic-save").textContent = "Save Epic";
       renderProjectOptions(String(row.project_key || ""));
       epicProjectSelectEl.value = normalizeProjectKey(row.project_key);
-      setDropdownSelectOptions(epicProductCategoryEl, dropdownOptions.product_category_options, String(row.product_category || ""));
-      setDropdownSelectOptions(epicComponentEl, dropdownOptions.component_options, String(row.component || ""));
       epicNameEl.value = String(row.epic_name || "");
       epicOriginatorEl.value = String(row.originator || "");
       epicPriorityEl.value = normalizePriority(row.priority || "Low");
@@ -15808,12 +16387,9 @@ def _epics_management_settings_html() -> str:
       const resolvedEpicKey = activeEpicEditKey
         ? normalizeEpicKeyAllowTmp(activeEpicEditKey)
         : epicKeyFromJiraUrl(jiraUrl);
-      if (!resolvedEpicKey) {
-        throw new Error("Jira URL must include an epic key like /browse/O2-1234.");
-      }
       const project = selectedManagedProject();
       let projectKey = project ? normalizeProjectKey(project.project_key) : "";
-      if (!projectKey) projectKey = projectKeyFromEpicKey(resolvedEpicKey);
+      if (!projectKey && resolvedEpicKey) projectKey = projectKeyFromEpicKey(resolvedEpicKey);
       if (!projectKey) projectKey = "ORPHAN";
       const projectName = project
         ? String(project.display_name || project.project_name || projectKey || "").trim()
@@ -15855,9 +16431,9 @@ def _epics_management_settings_html() -> str:
       return {
         project_key: projectKey,
         project_name: projectName || projectKey,
-        product_category: String(epicProductCategoryEl.value || "").trim(),
-        component: String(epicComponentEl.value || "").trim(),
-        epic_key: resolvedEpicKey,
+        product_category: editingRow ? String(editingRow.product_category || "").trim() : "",
+        component: editingRow ? String(editingRow.component || "").trim() : "",
+        epic_key: resolvedEpicKey || "",
         epic_name: String(epicNameEl.value || "").trim(),
         originator: String(epicOriginatorEl.value || "").trim(),
         priority: normalizePriority(epicPriorityEl.value),
@@ -16011,6 +16587,7 @@ def _epics_management_settings_html() -> str:
       expandedProjects.clear();
       expandedCategories.clear();
       expandedComponents.clear();
+      expandedEpicRows.clear();
       for (const row of rows) {
         const project = String(row.project_name || row.project_key || "-").trim() || "-";
         const category = displayBucketValue(row.product_category);
@@ -16031,7 +16608,7 @@ def _epics_management_settings_html() -> str:
       renderTable();
       jumpToDeepLinkedEpicIfNeeded();
       if (!deepLinkMissingWarningShown) {
-        setStatus("Loaded " + rows.length + " epics from database. Use + / - to collapse or expand Project/Product Categorization/Component groups. Yellow cells need categorization data.", "ok");
+        setStatus("Loaded " + rows.length + " epics from database. Use + / - for group rows, then click any epic row to open its phase matrix. Yellow cells need categorization data.", "ok");
       }
     }
 
@@ -16122,17 +16699,33 @@ def _epics_management_settings_html() -> str:
       createEpic().catch((err) => setStatus(err.message || String(err), "warn"));
     });
     document.getElementById("epic-cancel").addEventListener("click", () => epicDialogEl.close());
+    const deleteEpicCancelEl = document.getElementById("delete-epic-cancel");
+    const deleteEpicPlannerOnlyEl = document.getElementById("delete-epic-planner-only");
+    const deleteEpicPlannerJiraEl = document.getElementById("delete-epic-planner-jira");
+    if (deleteEpicCancelEl) deleteEpicCancelEl.addEventListener("click", () => {
+      activeDeleteEpicRowIndex = -1;
+      if (deleteEpicModalEl && deleteEpicModalEl.open) deleteEpicModalEl.close();
+    });
+    if (deleteEpicPlannerOnlyEl) deleteEpicPlannerOnlyEl.addEventListener("click", () => {
+      executeEpicDeletion(false).catch((err) => setStatus(err.message || String(err), "warn"));
+    });
+    if (deleteEpicPlannerJiraEl) deleteEpicPlannerJiraEl.addEventListener("click", () => {
+      executeEpicDeletion(true).catch((err) => setStatus(err.message || String(err), "warn"));
+    });
     document.getElementById("expand-all-btn").addEventListener("click", () => {
       expandedProjects.clear();
       expandedCategories.clear();
       expandedComponents.clear();
+      expandedEpicRows.clear();
       for (const row of rows) {
         const project = String(row.project_name || row.project_key || "-").trim() || "-";
         const category = displayBucketValue(row.product_category);
         const component = displayBucketValue(row.component);
+        const epicKey = String(row.epic_key || row.id || "").trim().toUpperCase();
         expandedProjects.add(projectNodeKey(project));
         expandedCategories.add(categoryNodeKey(project, category));
         expandedComponents.add(componentNodeKey(project, category, component));
+        if (epicKey) expandedEpicRows.add(epicKey);
       }
       renderTable();
     });
@@ -16140,6 +16733,7 @@ def _epics_management_settings_html() -> str:
       expandedProjects.clear();
       expandedCategories.clear();
       expandedComponents.clear();
+      expandedEpicRows.clear();
       renderTable();
     });
     const sealEpicsBtn = document.getElementById("seal-epics-btn");
@@ -16208,7 +16802,32 @@ def _epics_management_settings_html() -> str:
           .catch(() => { datesListEl.innerHTML = "<span class=\\"muted\\">Failed to load dates.</span>"; });
       });
     }
+    if (populateJiraBtnEl) {
+      populateJiraBtnEl.addEventListener("click", () => {
+        openPopulateJiraModal().catch((err) => setPopulateJiraBanner(err.message || String(err), "error"));
+      });
+    }
+    if (populateJiraHistoryBtnEl) {
+      populateJiraHistoryBtnEl.addEventListener("click", () => {
+        setPopulateJiraBanner("", "");
+        if (populateJiraModalEl) populateJiraModalEl.showModal();
+        loadPopulateJiraHistory().catch((err) => setPopulateJiraBanner(err.message || String(err), "error"));
+      });
+    }
     document.getElementById("seal-modal-cancel").addEventListener("click", () => document.getElementById("seal-epics-modal").close());
+    document.getElementById("populate-jira-cancel").addEventListener("click", closePopulateJiraModal);
+    document.getElementById("populate-jira-history-open").addEventListener("click", () => {
+      loadPopulateJiraHistory().catch((err) => setPopulateJiraBanner(err.message || String(err), "error"));
+    });
+    document.getElementById("populate-jira-history-refresh").addEventListener("click", () => {
+      loadPopulateJiraHistory().catch((err) => setPopulateJiraBanner(err.message || String(err), "error"));
+    });
+    document.getElementById("populate-jira-refresh-preview").addEventListener("click", () => {
+      openPopulateJiraModal().catch((err) => setPopulateJiraBanner(err.message || String(err), "error"));
+    });
+    populateJiraConfirmEl.addEventListener("click", () => {
+      executePopulateJira().catch((err) => setPopulateJiraBanner(err.message || String(err), "error"));
+    });
     document.getElementById("seal-modal-review-close").addEventListener("click", () => {
       document.getElementById("seal-modal-review-section").style.display = "none";
     });
@@ -16223,6 +16842,9 @@ def _epics_management_settings_html() -> str:
       syncEpicDatesEl.checked = false;
       syncPhaseDatesEl.checked = false;
       updateSyncJiraSubmitState();
+    });
+    populateJiraModalEl.addEventListener("close", () => {
+      activePopulateJiraPreview = null;
     });
     document.getElementById("seal-modal-seal-it").addEventListener("click", () => {
       const epicKeys = Array.from(selectedEpicKeys);
@@ -16252,7 +16874,7 @@ def _epics_management_settings_html() -> str:
     });
     document.addEventListener("keydown", (event) => {
       if (event.key !== "Tab" || !event.shiftKey) return;
-      if (planDialogEl.open || epicDialogEl.open || planColumnDialogEl.open || manageColumnsDialogEl.open || syncJiraModalEl.open) return;
+      if (planDialogEl.open || epicDialogEl.open || planColumnDialogEl.open || manageColumnsDialogEl.open || syncJiraModalEl.open || populateJiraModalEl.open || (deleteEpicModalEl && deleteEpicModalEl.open)) return;
       const active = document.activeElement;
       if (active && active instanceof Element) {
         const tag = String(active.tagName || "").toUpperCase();
@@ -16270,6 +16892,7 @@ def _epics_management_settings_html() -> str:
         return;
       }
       if (!draftEpicRow || draftEpicCreateInFlight) return;
+      if (deleteEpicModalEl && deleteEpicModalEl.open) return;
       if (planDialogEl.open || epicDialogEl.open || planColumnDialogEl.open || manageColumnsDialogEl.open) return;
       draftEpicRow = null;
       renderTable();
@@ -19839,7 +20462,8 @@ def _init_epics_management_db(settings_db_path: Path) -> None:
                 user_manual_plan_json TEXT NOT NULL DEFAULT '{}',
                 production_plan_json TEXT NOT NULL DEFAULT '{}',
                 is_sealed INTEGER NOT NULL DEFAULT 0,
-                is_tk_epic INTEGER NOT NULL DEFAULT 0
+                is_tk_epic INTEGER NOT NULL DEFAULT 0,
+                epr_jira_epic_created INTEGER NOT NULL DEFAULT 0
             )
             """
         )
@@ -19964,6 +20588,64 @@ def _init_epics_management_db(settings_db_path: Path) -> None:
             "CREATE INDEX IF NOT EXISTS idx_epics_management_approved_dates_epic_key ON epics_management_approved_dates(epic_key)"
         )
         conn.execute(
+          """
+          CREATE TABLE IF NOT EXISTS epics_management_jira_publish (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            epic_row_id TEXT NOT NULL DEFAULT '',
+            epic_key TEXT NOT NULL DEFAULT '',
+            phase_key TEXT NOT NULL DEFAULT '',
+            issue_level TEXT NOT NULL DEFAULT 'epic',
+            jira_issue_key TEXT NOT NULL DEFAULT '',
+            jira_url TEXT NOT NULL DEFAULT '',
+            parent_jira_key TEXT NOT NULL DEFAULT '',
+            month_label TEXT NOT NULL DEFAULT '',
+            man_days REAL NOT NULL DEFAULT 0,
+            start_date TEXT NOT NULL DEFAULT '',
+            due_date TEXT NOT NULL DEFAULT '',
+            published_at_utc TEXT NOT NULL DEFAULT '',
+            updated_at_utc TEXT NOT NULL DEFAULT '',
+            created_via_epr INTEGER NOT NULL DEFAULT 0
+          )
+          """
+        )
+        conn.execute(
+          """
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_epics_management_jira_publish_identity
+          ON epics_management_jira_publish(epic_row_id, phase_key, issue_level, month_label)
+          """
+        )
+        conn.execute(
+          """
+          CREATE INDEX IF NOT EXISTS idx_epics_management_jira_publish_epic
+          ON epics_management_jira_publish(epic_key, issue_level, phase_key)
+          """
+        )
+        conn.execute(
+          """
+          CREATE TABLE IF NOT EXISTS epics_management_jira_publish_reports (
+            report_id TEXT PRIMARY KEY,
+            status TEXT NOT NULL DEFAULT 'completed',
+            started_at_utc TEXT NOT NULL DEFAULT '',
+            completed_at_utc TEXT NOT NULL DEFAULT '',
+            requested_epic_count INTEGER NOT NULL DEFAULT 0,
+            summary_json TEXT NOT NULL DEFAULT '{}',
+            request_json TEXT NOT NULL DEFAULT '{}',
+            detail_json TEXT NOT NULL DEFAULT '{}'
+          )
+          """
+        )
+        conn.execute(
+          """
+          CREATE INDEX IF NOT EXISTS idx_epics_management_jira_publish_reports_started
+          ON epics_management_jira_publish_reports(started_at_utc DESC)
+          """
+        )
+        publish_cols = {str(c[1]) for c in conn.execute("PRAGMA table_info(epics_management_jira_publish)").fetchall()}
+        if "created_via_epr" not in publish_cols:
+            conn.execute(
+                "ALTER TABLE epics_management_jira_publish ADD COLUMN created_via_epr INTEGER NOT NULL DEFAULT 0"
+            )
+        conn.execute(
             """
             CREATE TABLE IF NOT EXISTS ipp_meetings (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -20042,7 +20724,8 @@ def _init_epics_management_db(settings_db_path: Path) -> None:
                     user_manual_plan_json TEXT NOT NULL DEFAULT '{}',
                     production_plan_json TEXT NOT NULL DEFAULT '{}',
                     is_sealed INTEGER NOT NULL DEFAULT 0,
-                    is_tk_epic INTEGER NOT NULL DEFAULT 0
+                    is_tk_epic INTEGER NOT NULL DEFAULT 0,
+                    epr_jira_epic_created INTEGER NOT NULL DEFAULT 0
                 )
                 """
             )
@@ -20062,6 +20745,7 @@ def _init_epics_management_db(settings_db_path: Path) -> None:
                 "user_manual_plan_json": "'{}'",
                 "is_sealed": "0",
                 "is_tk_epic": "0",
+                "epr_jira_epic_created": "0",
             }
             select_exprs = list(_v2_cols)
             for col_name, fallback in _v2_opt.items():
@@ -20100,6 +20784,8 @@ def _init_epics_management_db(settings_db_path: Path) -> None:
             conn.execute("ALTER TABLE epics_management ADD COLUMN is_sealed INTEGER NOT NULL DEFAULT 0")
         if "is_tk_epic" not in names:
             conn.execute("ALTER TABLE epics_management ADD COLUMN is_tk_epic INTEGER NOT NULL DEFAULT 0")
+        if "epr_jira_epic_created" not in names:
+            conn.execute("ALTER TABLE epics_management ADD COLUMN epr_jira_epic_created INTEGER NOT NULL DEFAULT 0")
         backfill_key = "is_tk_epic_backfilled"
         backfill_row = conn.execute(
             "SELECT meta_value FROM epics_management_meta WHERE meta_key=?",
@@ -20915,8 +21601,8 @@ def _save_epics_management_row(settings_db_path: Path, payload: dict) -> dict[st
         id, epic_key, project_key, project_name, product_category, component, epic_name,
         description, originator, priority, plan_status, ipp_meeting_planned, actual_production_date, delivery_status, remarks, jira_url,
         epic_plan_json, research_urs_plan_json, dds_plan_json,
-        development_plan_json, sqa_plan_json, user_manual_plan_json, production_plan_json, is_sealed, is_tk_epic
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        development_plan_json, sqa_plan_json, user_manual_plan_json, production_plan_json, is_sealed, is_tk_epic, epr_jira_epic_created
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       """,
       (
         row_id,
@@ -20944,6 +21630,7 @@ def _save_epics_management_row(settings_db_path: Path, payload: dict) -> dict[st
         json.dumps(legacy_plans["production_plan"], ensure_ascii=True),
         0,
         row["is_tk_epic"],
+        0,
       ),
     )
     _upsert_epics_plan_values_for_row(conn, row_id, row["epic_key"], row["plans"])
@@ -21054,23 +21741,47 @@ def _update_epics_management_row(settings_db_path: Path, row_ref: str, payload: 
   return matches[0]
 
 
-def _delete_epics_management_row(settings_db_path: Path, row_ref: str) -> str:
+def _delete_epics_management_row(
+  settings_db_path: Path, row_ref: str, *, delete_jira: bool = False
+) -> dict[str, object]:
   _init_epics_management_db(settings_db_path)
   existing = _resolve_epics_management_row(_load_epics_management_rows(settings_db_path), row_ref)
   row_id = _normalize_epics_management_row_id(existing.get("id"))
+  project_key = _to_text(existing.get("project_key")).upper()
   if int(existing.get("is_sealed") or 0):
     raise PermissionError(f"Epic '{existing.get('epic_key')}' is sealed. Click RE-BUDGET before deleting it.")
+  jira_issues_deleted: list[str] = []
+  if delete_jira:
+    session, perm_summary = _resolve_jira_issue_delete_session(project_key)
+    if not perm_summary.get("ok"):
+      raise PermissionError(
+        "Jira token cannot delete issues in this project. Missing: "
+        + ", ".join(perm_summary.get("missing_permissions") or [])
+      )
+    preview_conn = sqlite3.connect(settings_db_path)
+    preview_conn.row_factory = sqlite3.Row
+    try:
+      keys = _epr_created_jira_keys_ordered(preview_conn, row_id)
+    finally:
+      preview_conn.close()
+    for issue_key in keys:
+      _jira_delete_issue(session, issue_key)
+      jira_issues_deleted.append(issue_key)
   conn = sqlite3.connect(settings_db_path)
   try:
     conn.execute("DELETE FROM epics_management_plan_values WHERE epic_row_id=?", (row_id,))
     conn.execute("DELETE FROM epics_management_story_sync WHERE epic_row_id=?", (row_id,))
     conn.execute("DELETE FROM epics_management_approved_dates WHERE epic_row_id=?", (row_id,))
     conn.execute("DELETE FROM ipp_meeting_epics WHERE epic_row_id=?", (row_id,))
+    conn.execute("DELETE FROM epics_management_jira_publish WHERE epic_row_id=?", (row_id,))
     conn.execute("DELETE FROM epics_management WHERE id=?", (row_id,))
     conn.commit()
   finally:
     conn.close()
-  return row_id
+  return {
+    "epic_row_id": row_id,
+    "jira_issues_deleted": jira_issues_deleted,
+  }
 
 
 def _load_epics_management_rows(settings_db_path: Path) -> list[dict[str, str]]:
@@ -21090,12 +21801,13 @@ def _load_epics_management_rows(settings_db_path: Path) -> list[dict[str, str]]:
     delivery_status_col = "delivery_status" if "delivery_status" in col_names else "'' AS delivery_status"
     is_sealed_col = "is_sealed" if "is_sealed" in col_names else "0 AS is_sealed"
     is_tk_epic_col = "is_tk_epic" if "is_tk_epic" in col_names else "0 AS is_tk_epic"
+    epr_epic_col = "epr_jira_epic_created" if "epr_jira_epic_created" in col_names else "0 AS epr_jira_epic_created"
     rows = conn.execute(
       f"""
       SELECT
         id, epic_key, project_key, project_name, product_category, component, epic_name,
         description, originator, priority, plan_status, ipp_meeting_planned, actual_production_date, {delivery_status_col}, remarks, jira_url,
-        {is_sealed_col}, {is_tk_epic_col},
+        {is_sealed_col}, {is_tk_epic_col}, {epr_epic_col},
         epic_plan_json, research_urs_plan_json, dds_plan_json,
         development_plan_json, sqa_plan_json, user_manual_plan_json, production_plan_json
       FROM epics_management
@@ -21103,8 +21815,29 @@ def _load_epics_management_rows(settings_db_path: Path) -> list[dict[str, str]]:
       """
     ).fetchall()
     plan_columns = _load_epics_plan_columns_from_conn(conn, include_inactive=False)
+    row_ids_for_epr_counts = [_to_text(row["id"]).strip() for row in rows if _to_text(row["id"]).strip()]
+    epr_created_counts_by_row_id: dict[str, int] = {}
+    publish_tbl = conn.execute(
+      "SELECT 1 FROM sqlite_master WHERE type='table' AND name='epics_management_jira_publish'"
+    ).fetchone()
+    if publish_tbl and row_ids_for_epr_counts:
+      publish_col_names = {str(c[1]) for c in conn.execute("PRAGMA table_info(epics_management_jira_publish)").fetchall()}
+      if "created_via_epr" in publish_col_names:
+        publish_ph = ",".join("?" for _ in row_ids_for_epr_counts)
+        for count_row in conn.execute(
+          f"""
+          SELECT epic_row_id, COUNT(*) AS c
+          FROM epics_management_jira_publish
+          WHERE epic_row_id IN ({publish_ph}) AND created_via_epr = 1
+          GROUP BY epic_row_id
+          """,
+          row_ids_for_epr_counts,
+        ).fetchall():
+          rid_epr = _to_text(count_row["epic_row_id"]).strip()
+          if rid_epr:
+            epr_created_counts_by_row_id[rid_epr] = int(count_row["c"] or 0)
     plan_keys = [_to_text(col.get("key")) for col in plan_columns if _to_text(col.get("key"))]
-    row_ids = [_to_text(row["id"]).strip() for row in rows if _to_text(row["id"]).strip()]
+    row_ids = row_ids_for_epr_counts
     epic_keys = [_to_text(row["epic_key"]).upper() for row in rows if _to_text(row["epic_key"])]
     row_ids_by_epic_key: dict[str, str | None] = {}
     for row in rows:
@@ -21198,6 +21931,13 @@ def _load_epics_management_rows(settings_db_path: Path) -> list[dict[str, str]]:
       is_tk_epic = 1 if int(row["is_tk_epic"] or 0) else 0
     except (KeyError, TypeError, ValueError):
       is_tk_epic = 0
+    epr_jira_epic_created = 0
+    try:
+      epr_jira_epic_created = 1 if int(row["epr_jira_epic_created"] or 0) else 0
+    except (KeyError, TypeError, ValueError):
+      epr_jira_epic_created = 0
+    row_id_for_epr_counts = _to_text(row["id"]).strip()
+    epr_created_jira_issue_count = int(epr_created_counts_by_row_id.get(row_id_for_epr_counts, 0))
     out.append(
       {
         "id": row_id,
@@ -21220,6 +21960,8 @@ def _load_epics_management_rows(settings_db_path: Path) -> list[dict[str, str]]:
         "plans": plans,
         "is_sealed": is_sealed,
         "is_tk_epic": is_tk_epic,
+        "epr_jira_epic_created": epr_jira_epic_created,
+        "epr_created_jira_issue_count": epr_created_jira_issue_count,
       }
     )
   return out
@@ -21278,6 +22020,1441 @@ def _build_epics_management_snapshot_dict(
     "jira_url": _to_text(row["jira_url"]),
     "plans": plans,
   }
+
+
+_JIRA_POPULATE_PERMISSION_KEYS = ("BROWSE_PROJECTS", "CREATE_ISSUES", "EDIT_ISSUES")
+_JIRA_DELETE_ISSUE_PERMISSION_KEYS = ("BROWSE_PROJECTS", "DELETE_ISSUES")
+
+
+def _text_to_jira_adf(text: object) -> dict:
+  value = _to_text(text)
+  if not value:
+    return {"type": "doc", "version": 1, "content": []}
+  paragraphs = []
+  for line in value.splitlines() or [value]:
+    paragraphs.append(
+      {
+        "type": "paragraph",
+        "content": [{"type": "text", "text": line or " "}],
+      }
+    )
+  return {"type": "doc", "version": 1, "content": paragraphs}
+
+
+def _jira_seconds_from_man_days(man_days: object) -> int | None:
+  if man_days in (None, ""):
+    return None
+  try:
+    parsed = float(man_days)
+  except (TypeError, ValueError):
+    return None
+  if parsed < 0:
+    return None
+  return int(round(parsed * 8.0 * 3600.0))
+
+
+def _jira_publish_plan_man_days(plan: object) -> float:
+  if not isinstance(plan, dict):
+    return 0.0
+  for key in ("most_likely_man_days", "man_days", "tk_budgeted_man_days"):
+    value = plan.get(key)
+    if value in (None, ""):
+      continue
+    try:
+      return round(max(0.0, float(value)), 2)
+    except (TypeError, ValueError):
+      continue
+  return 0.0
+
+
+def _jira_publish_plan_has_content(plan: object) -> bool:
+  if not isinstance(plan, dict):
+    return False
+  if _jira_publish_plan_man_days(plan) > 0:
+    return True
+  return bool(_to_text(plan.get("start_date")) or _to_text(plan.get("due_date")))
+
+
+def _last_day_of_month(day: date) -> date:
+  if day.month == 12:
+    next_month = date(day.year + 1, 1, 1)
+  else:
+    next_month = date(day.year, day.month + 1, 1)
+  return next_month - timedelta(days=1)
+
+
+def _split_story_plan_into_month_efforts(start_date_text: str, due_date_text: str, man_days: object) -> list[dict[str, object]]:
+  start_day = _parse_iso_date(start_date_text)
+  due_day = _parse_iso_date(due_date_text)
+  total_man_days = _jira_publish_plan_man_days({"most_likely_man_days": man_days})
+  if not start_day or not due_day or start_day > due_day:
+    return []
+  if start_day.year == due_day.year and start_day.month == due_day.month:
+    return []
+  total_days = (due_day - start_day).days + 1
+  if total_days <= 0:
+    return []
+  slices: list[dict[str, object]] = []
+  cursor = start_day
+  allocated = 0.0
+  while cursor <= due_day:
+    month_end = min(_last_day_of_month(cursor), due_day)
+    slice_days = (month_end - cursor).days + 1
+    if cursor.year == due_day.year and cursor.month == due_day.month:
+      slice_man_days = round(total_man_days - allocated, 2)
+    else:
+      slice_man_days = round(total_man_days * (slice_days / total_days), 2)
+      allocated += slice_man_days
+    slices.append(
+      {
+        "month_label": cursor.strftime("%b") + " effort",
+        "start_date": cursor.isoformat(),
+        "due_date": month_end.isoformat(),
+        "man_days": max(0.0, slice_man_days),
+      }
+    )
+    cursor = month_end + timedelta(days=1)
+  return slices
+
+
+def _resolve_jira_field_id_by_name(session, field_name: str) -> str:
+  query = _to_text(field_name)
+  if not query:
+    return ""
+  endpoints = [
+    (f"{BASE_URL}/rest/api/3/field/search", {"query": query, "maxResults": 50}),
+    (f"{BASE_URL}/rest/api/3/field", None),
+  ]
+  for url, params in endpoints:
+    try:
+      response = session.get(url, params=params, timeout=(10, 30))
+      response.raise_for_status()
+    except Exception:
+      continue
+    payload = response.json()
+    items = payload.get("values", []) if isinstance(payload, dict) else payload
+    if not isinstance(items, list):
+      continue
+    for item in items:
+      if _to_text((item or {}).get("name")).strip().lower() == query.strip().lower():
+        return _to_text((item or {}).get("id"))
+  return ""
+
+
+def _jira_publish_session_candidates() -> list[tuple[str, object]]:
+  candidates = []
+  seen = set()
+  for token_source, factory in (("write", get_write_session), ("default", get_session)):
+    try:
+      session = factory()
+    except Exception:
+      continue
+    auth_header = _to_text((session.headers or {}).get("Authorization"))
+    if auth_header and auth_header in seen:
+      continue
+    if auth_header:
+      seen.add(auth_header)
+    candidates.append((token_source, session))
+  return candidates
+
+
+def _jira_permissions_summary_for_session(
+  session,
+  project_key: str = "",
+  *,
+  permission_keys: tuple[str, ...] | None = None,
+) -> dict[str, object]:
+  keys_tuple = tuple(permission_keys) if permission_keys else _JIRA_POPULATE_PERMISSION_KEYS
+  params = {"permissions": ",".join(keys_tuple)}
+  normalized_project_key = _to_text(project_key).upper()
+  if normalized_project_key:
+    params["projectKey"] = normalized_project_key
+  response = session.get(f"{BASE_URL}/rest/api/3/mypermissions", params=params, timeout=(10, 30))
+  response.raise_for_status()
+  payload = response.json() if response.content else {}
+  permissions_payload = payload.get("permissions", {}) if isinstance(payload, dict) else {}
+  permissions = {}
+  missing = []
+  for key in keys_tuple:
+    has_permission = bool((permissions_payload.get(key) or {}).get("havePermission"))
+    permissions[key] = has_permission
+    if not has_permission:
+      missing.append(key)
+  return {
+    "ok": not missing,
+    "project_key": normalized_project_key,
+    "permissions": permissions,
+    "missing_permissions": missing,
+  }
+
+
+def _resolve_jira_session_for_permissions(
+  project_key: str,
+  permission_keys: tuple[str, ...],
+  *,
+  no_token_message: str,
+) -> tuple[object, dict[str, object]]:
+  fallback_summary = None
+  fallback_session = None
+  keys_list = list(permission_keys)
+  for token_source, session in _jira_publish_session_candidates():
+    try:
+      summary = _jira_permissions_summary_for_session(session, project_key, permission_keys=permission_keys)
+    except Exception as exc:
+      if fallback_summary is None:
+        fallback_session = session
+        fallback_summary = {
+          "ok": False,
+          "project_key": _to_text(project_key).upper(),
+          "permissions": {},
+          "missing_permissions": keys_list,
+          "error": str(exc),
+          "token_source": token_source,
+        }
+      continue
+    summary["token_source"] = token_source
+    if summary.get("ok"):
+      return session, summary
+    if fallback_summary is None:
+      fallback_session = session
+      fallback_summary = summary
+  if fallback_session is None or fallback_summary is None:
+    raise ValueError(no_token_message)
+  return fallback_session, fallback_summary
+
+
+def _resolve_jira_publish_session(project_key: str = "") -> tuple[object, dict[str, object]]:
+  return _resolve_jira_session_for_permissions(
+    project_key,
+    _JIRA_POPULATE_PERMISSION_KEYS,
+    no_token_message="No Jira API token is configured for publish operations.",
+  )
+
+
+def _resolve_jira_issue_delete_session(project_key: str = "") -> tuple[object, dict[str, object]]:
+  return _resolve_jira_session_for_permissions(
+    project_key,
+    _JIRA_DELETE_ISSUE_PERMISSION_KEYS,
+    no_token_message="No Jira API token is configured for issue delete operations.",
+  )
+
+
+def _jira_write_permissions_summary(project_key: str = "") -> dict[str, object]:
+  _session, summary = _resolve_jira_publish_session(project_key)
+  return summary
+
+
+def _load_epics_management_publish_records(settings_db_path: Path, epic_row_id: str) -> dict[tuple[str, str, str], dict[str, object]]:
+  _init_epics_management_db(settings_db_path)
+  normalized_row_id = _normalize_epics_management_row_id(epic_row_id)
+  conn = sqlite3.connect(settings_db_path)
+  conn.row_factory = sqlite3.Row
+  try:
+    rows = conn.execute(
+      """
+      SELECT id, epic_row_id, epic_key, phase_key, issue_level, jira_issue_key, jira_url,
+             parent_jira_key, month_label, man_days, start_date, due_date, published_at_utc, updated_at_utc,
+             created_via_epr
+      FROM epics_management_jira_publish
+      WHERE epic_row_id = ?
+      ORDER BY id ASC
+      """,
+      (normalized_row_id,),
+    ).fetchall()
+  finally:
+    conn.close()
+  out: dict[tuple[str, str, str], dict[str, object]] = {}
+  for row in rows:
+    identity = (_to_text(row["issue_level"]), _to_text(row["phase_key"]), _to_text(row["month_label"]))
+    out[identity] = dict(row)
+  return out
+
+
+def _epics_management_publish_report_summary(items: list[dict[str, object]]) -> dict[str, int]:
+  failed = sum(1 for item in items if _to_text(item.get("status")).lower() == "failed")
+  succeeded = sum(1 for item in items if _to_text(item.get("status")).lower() == "success")
+  skipped = sum(1 for item in items if _to_text(item.get("status")).lower() == "skipped")
+  return {
+    "total": len(items),
+    "succeeded": succeeded,
+    "failed": failed,
+    "skipped": skipped,
+  }
+
+
+def _epics_management_publish_report_status(items: list[dict[str, object]]) -> str:
+  summary = _epics_management_publish_report_summary(items)
+  if summary["failed"] and summary["succeeded"]:
+    return "partial_failed"
+  if summary["failed"]:
+    return "failed"
+  return "completed"
+
+
+def _save_epics_management_publish_report(settings_db_path: Path, report: dict[str, object]) -> None:
+  _init_epics_management_db(settings_db_path)
+  report_id = _to_text(report.get("report_id"))
+  if not report_id:
+    raise ValueError("report_id is required.")
+  items = report.get("items") if isinstance(report.get("items"), list) else []
+  summary = report.get("summary") if isinstance(report.get("summary"), dict) else _epics_management_publish_report_summary(items)
+  status = _to_text(report.get("status")) or _epics_management_publish_report_status(items)
+  request_payload = report.get("request") if isinstance(report.get("request"), dict) else {}
+  conn = sqlite3.connect(settings_db_path)
+  try:
+    conn.execute(
+      """
+      INSERT INTO epics_management_jira_publish_reports (
+        report_id, status, started_at_utc, completed_at_utc, requested_epic_count,
+        summary_json, request_json, detail_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(report_id) DO UPDATE SET
+        status=excluded.status,
+        completed_at_utc=excluded.completed_at_utc,
+        requested_epic_count=excluded.requested_epic_count,
+        summary_json=excluded.summary_json,
+        request_json=excluded.request_json,
+        detail_json=excluded.detail_json
+      """,
+      (
+        report_id,
+        status,
+        _to_text(report.get("started_at_utc")),
+        _to_text(report.get("completed_at_utc")),
+        int(report.get("requested_epic_count") or 0),
+        json.dumps(summary, ensure_ascii=True),
+        json.dumps(request_payload, ensure_ascii=True),
+        json.dumps(report, ensure_ascii=True),
+      ),
+    )
+    conn.commit()
+  finally:
+    conn.close()
+
+
+def _load_epics_management_publish_reports(settings_db_path: Path, limit: int = 25) -> list[dict[str, object]]:
+  _init_epics_management_db(settings_db_path)
+  safe_limit = max(1, min(int(limit or 25), 100))
+  conn = sqlite3.connect(settings_db_path)
+  conn.row_factory = sqlite3.Row
+  try:
+    rows = conn.execute(
+      """
+      SELECT report_id, status, started_at_utc, completed_at_utc, requested_epic_count, summary_json
+      FROM epics_management_jira_publish_reports
+      ORDER BY started_at_utc DESC, report_id DESC
+      LIMIT ?
+      """,
+      (safe_limit,),
+    ).fetchall()
+  finally:
+    conn.close()
+  out = []
+  for row in rows:
+    try:
+      summary = json.loads(_to_text(row["summary_json"]) or "{}")
+    except Exception:
+      summary = {}
+    out.append(
+      {
+        "report_id": _to_text(row["report_id"]),
+        "status": _to_text(row["status"]),
+        "started_at_utc": _to_text(row["started_at_utc"]),
+        "completed_at_utc": _to_text(row["completed_at_utc"]),
+        "requested_epic_count": int(row["requested_epic_count"] or 0),
+        "summary": summary if isinstance(summary, dict) else {},
+      }
+    )
+  return out
+
+
+def _load_epics_management_publish_report(settings_db_path: Path, report_id: str) -> dict[str, object]:
+  _init_epics_management_db(settings_db_path)
+  rid = _to_text(report_id).strip()
+  if not rid:
+    raise LookupError("Publish report id is required.")
+  conn = sqlite3.connect(settings_db_path)
+  conn.row_factory = sqlite3.Row
+  try:
+    row = conn.execute(
+      "SELECT detail_json FROM epics_management_jira_publish_reports WHERE report_id = ?",
+      (rid,),
+    ).fetchone()
+  finally:
+    conn.close()
+  if not row:
+    raise LookupError(f"Publish report '{rid}' not found.")
+  try:
+    detail = json.loads(_to_text(row["detail_json"]) or "{}")
+  except Exception:
+    detail = {}
+  if not isinstance(detail, dict):
+    detail = {}
+  detail.setdefault("report_id", rid)
+  detail.setdefault("items", [])
+  detail.setdefault("summary", _epics_management_publish_report_summary(detail.get("items") or []))
+  return detail
+
+
+def _build_epics_management_publish_retry_payload(settings_db_path: Path, report_id: str) -> dict[str, object]:
+  report = _load_epics_management_publish_report(settings_db_path, report_id)
+  failed_items = [
+    item for item in (report.get("items") or [])
+    if isinstance(item, dict) and _to_text(item.get("status")).lower() == "failed" and bool(item.get("can_retry"))
+  ]
+  if not failed_items:
+    raise ValueError("This publish report has no failed retryable epics or stories.")
+  epics_by_key: dict[str, dict[str, object]] = {}
+  for failed in failed_items:
+    epic_key = _to_text(failed.get("epic_key")).upper()
+    if not epic_key:
+      continue
+    entry = epics_by_key.setdefault(
+      epic_key,
+      {
+        "epic_key": epic_key,
+        "mode": "update" if _to_text(failed.get("issue_level")).lower() == "story" else (_to_text(failed.get("mode")).lower() or "update"),
+        "allow_duplicate": True,
+        "phase_keys": [],
+      },
+    )
+    level = _to_text(failed.get("issue_level")).lower()
+    phase_key = _to_text(failed.get("phase_key"))
+    if level == "story" and phase_key:
+      phases = entry.setdefault("phase_keys", [])
+      if phase_key not in phases:
+        phases.append(phase_key)
+    elif level == "epic":
+      entry["phase_keys"] = []
+  epics = list(epics_by_key.values())
+  if not epics:
+    raise ValueError("This publish report has no failed retryable epics or stories.")
+  for item in epics:
+    if not item.get("phase_keys"):
+      item.pop("phase_keys", None)
+  return {"epics": epics, "retry_of_report_id": _to_text(report.get("report_id"))}
+
+
+def _upsert_epics_management_publish_record(
+  conn: sqlite3.Connection,
+  epic_row_id: str,
+  epic_key: str,
+  phase_key: str,
+  issue_level: str,
+  jira_issue_key: str,
+  jira_url: str,
+  parent_jira_key: str,
+  month_label: str,
+  man_days: object,
+  start_date: str,
+  due_date: str,
+  *,
+  created_via_epr: int = 0,
+) -> None:
+  normalized_row_id = _normalize_epics_management_row_id(epic_row_id)
+  normalized_epic_key = _normalize_epic_key(epic_key)
+  normalized_phase_key = _to_text(phase_key)
+  normalized_issue_level = _to_text(issue_level).lower() or "epic"
+  normalized_month_label = _to_text(month_label)
+  now_utc = _utc_now_iso()
+  normalized_created = 1 if int(created_via_epr or 0) else 0
+  existing = conn.execute(
+    """
+    SELECT id, published_at_utc
+    FROM epics_management_jira_publish
+    WHERE epic_row_id = ? AND phase_key = ? AND issue_level = ? AND month_label = ?
+    """,
+    (normalized_row_id, normalized_phase_key, normalized_issue_level, normalized_month_label),
+  ).fetchone()
+  man_days_value = _jira_publish_plan_man_days({"most_likely_man_days": man_days})
+  if existing:
+    conn.execute(
+      """
+      UPDATE epics_management_jira_publish
+      SET epic_key = ?, jira_issue_key = ?, jira_url = ?, parent_jira_key = ?, man_days = ?,
+          start_date = ?, due_date = ?, updated_at_utc = ?, created_via_epr = ?
+      WHERE id = ?
+      """,
+      (
+        normalized_epic_key,
+        _to_text(jira_issue_key).upper(),
+        _to_text(jira_url),
+        _to_text(parent_jira_key).upper(),
+        man_days_value,
+        _to_text(start_date),
+        _to_text(due_date),
+        now_utc,
+        normalized_created,
+        int(existing["id"] if isinstance(existing, sqlite3.Row) else existing[0]),
+      ),
+    )
+    return
+  conn.execute(
+    """
+    INSERT INTO epics_management_jira_publish (
+      epic_row_id, epic_key, phase_key, issue_level, jira_issue_key, jira_url,
+      parent_jira_key, month_label, man_days, start_date, due_date, published_at_utc, updated_at_utc,
+      created_via_epr
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """,
+    (
+      normalized_row_id,
+      normalized_epic_key,
+      normalized_phase_key,
+      normalized_issue_level,
+      _to_text(jira_issue_key).upper(),
+      _to_text(jira_url),
+      _to_text(parent_jira_key).upper(),
+      normalized_month_label,
+      man_days_value,
+      _to_text(start_date),
+      _to_text(due_date),
+      now_utc,
+      now_utc,
+      normalized_created,
+    ),
+  )
+
+
+def _epr_created_jira_keys_ordered(conn: sqlite3.Connection, epic_row_id: str) -> list[str]:
+  """Jira issue keys created by Populate Jira (created_via_epr=1), ordered subtask -> story -> epic."""
+  normalized_row_id = _normalize_epics_management_row_id(epic_row_id)
+  cols = {str(c[1]) for c in conn.execute("PRAGMA table_info(epics_management_jira_publish)").fetchall()}
+  if "created_via_epr" not in cols:
+    return []
+  rows = conn.execute(
+    """
+    SELECT jira_issue_key, issue_level, id
+    FROM epics_management_jira_publish
+    WHERE epic_row_id = ?
+      AND created_via_epr = 1
+      AND TRIM(jira_issue_key) <> ''
+    ORDER BY
+      CASE lower(issue_level)
+        WHEN 'subtask' THEN 0
+        WHEN 'sub-task' THEN 0
+        WHEN 'story' THEN 1
+        WHEN 'epic' THEN 2
+        ELSE 3
+      END ASC,
+      id ASC
+    """,
+    (normalized_row_id,),
+  ).fetchall()
+  ordered: list[str] = []
+  seen: set[str] = set()
+  for row in rows:
+    key = _to_text(row["jira_issue_key"]).upper()
+    if not key or key in seen:
+      continue
+    seen.add(key)
+    ordered.append(key)
+  return ordered
+
+
+def _persist_epics_management_publish_links(
+  settings_db_path: Path,
+  row_ref: str,
+  epic_jira_url: str,
+  phase_jira_urls: dict[str, str] | None = None,
+  conn: sqlite3.Connection | None = None,
+  existing_row: dict[str, object] | None = None,
+) -> dict[str, object]:
+  if conn is None:
+    _init_epics_management_db(settings_db_path)
+  phase_links = phase_jira_urls if isinstance(phase_jira_urls, dict) else {}
+  existing = dict(existing_row or {})
+  if not existing:
+    existing = _resolve_epics_management_row(_load_epics_management_rows(settings_db_path), row_ref)
+  row_id = _normalize_epics_management_row_id(existing.get("id"))
+  epic_key = _normalize_epic_key(existing.get("epic_key"))
+  plans = {
+    _to_text(key): _normalize_epics_management_plan(value)
+    for key, value in (existing.get("plans") or {}).items()
+  }
+  for plan_key, jira_url in phase_links.items():
+    normalized_plan_key = _to_text(plan_key)
+    if not normalized_plan_key:
+      continue
+    current_plan = dict(plans.get(normalized_plan_key) or _normalize_epics_management_plan({}))
+    current_plan["jira_url"] = _to_text(jira_url)
+    plans[normalized_plan_key] = current_plan
+  owns_conn = conn is None
+  if conn is None:
+    conn = sqlite3.connect(settings_db_path)
+  try:
+    legacy_plans = {
+      key_item: plans.get(key_item, _normalize_epics_management_plan({}))
+      for key_item in _EPICS_MANAGEMENT_DEFAULT_PLAN_KEYS
+    }
+    conn.execute(
+      """
+      UPDATE epics_management
+      SET jira_url = ?, epic_plan_json = ?, research_urs_plan_json = ?, dds_plan_json = ?,
+          development_plan_json = ?, sqa_plan_json = ?, user_manual_plan_json = ?, production_plan_json = ?
+      WHERE id = ?
+      """,
+      (
+        _to_text(epic_jira_url),
+        json.dumps(legacy_plans["epic_plan"], ensure_ascii=True),
+        json.dumps(legacy_plans["research_urs_plan"], ensure_ascii=True),
+        json.dumps(legacy_plans["dds_plan"], ensure_ascii=True),
+        json.dumps(legacy_plans["development_plan"], ensure_ascii=True),
+        json.dumps(legacy_plans["sqa_plan"], ensure_ascii=True),
+        json.dumps(legacy_plans["user_manual_plan"], ensure_ascii=True),
+        json.dumps(legacy_plans["production_plan"], ensure_ascii=True),
+        row_id,
+      ),
+    )
+    _upsert_epics_plan_values_for_row(conn, row_id, epic_key, plans)
+    conn.commit()
+  finally:
+    if owns_conn:
+      conn.close()
+  if owns_conn:
+    return _resolve_epics_management_row(_load_epics_management_rows(settings_db_path), row_id)
+  updated_row = dict(existing)
+  updated_row["jira_url"] = _to_text(epic_jira_url)
+  updated_row["plans"] = plans
+  return updated_row
+
+
+def _canonical_duplicate_epics_for_name(settings_db_path: Path, project_key: str, epic_name: str, exclude_issue_key: str = "") -> list[dict[str, str]]:
+  normalized_project_key = _to_text(project_key).upper()
+  normalized_epic_name = _to_text(epic_name).strip()
+  if not normalized_project_key or not normalized_epic_name:
+    return []
+  conn = sqlite3.connect(settings_db_path)
+  conn.row_factory = sqlite3.Row
+  try:
+    table_exists = conn.execute(
+      "SELECT 1 FROM sqlite_master WHERE type='table' AND name='canonical_issues'"
+    ).fetchone()
+    if not table_exists:
+      return []
+    run_row = conn.execute(
+      "SELECT last_success_run_id FROM canonical_refresh_state WHERE id = 1"
+    ).fetchone()
+    run_id = _to_text(run_row["last_success_run_id"] if isinstance(run_row, sqlite3.Row) else (run_row[0] if run_row else ""))
+    if not run_id:
+      return []
+    exact_name = normalized_epic_name.lower()
+    fuzzy_name = "%" + exact_name + "%"
+    rows = conn.execute(
+      """
+      SELECT issue_key, summary, status
+      FROM canonical_issues
+      WHERE run_id = ?
+        AND UPPER(project_key) = ?
+        AND LOWER(issue_type) LIKE '%epic%'
+        AND (LOWER(TRIM(summary)) = ? OR LOWER(summary) LIKE ?)
+      ORDER BY CASE WHEN LOWER(TRIM(summary)) = ? THEN 0 ELSE 1 END, LOWER(summary) ASC, issue_key ASC
+      LIMIT 10
+      """,
+      (run_id, normalized_project_key, exact_name, fuzzy_name, exact_name),
+    ).fetchall()
+  finally:
+    conn.close()
+  excluded = _to_text(exclude_issue_key).upper()
+  out = []
+  for row in rows:
+    issue_key = _to_text(row["issue_key"]).upper()
+    if excluded and issue_key == excluded:
+      continue
+    out.append(
+      {
+        "issue_key": issue_key,
+        "summary": _to_text(row["summary"]),
+        "status": _to_text(row["status"]),
+        "jira_url": f"{BASE_URL.rstrip('/')}/browse/{issue_key}" if issue_key else "",
+      }
+    )
+  return out
+
+
+def _build_epics_management_jira_publish_preview(settings_db_path: Path, epic_refs: list[str]) -> dict[str, object]:
+  all_rows = _load_epics_management_rows(settings_db_path)
+  plan_columns = _load_epics_plan_columns(settings_db_path, include_inactive=False)
+  items = []
+  can_execute = True
+  for epic_ref in [_to_text(item).strip() for item in epic_refs if _to_text(item).strip()]:
+    row = _resolve_epics_management_row(all_rows, epic_ref)
+    row_id = _normalize_epics_management_row_id(row.get("id"))
+    epic_key = _normalize_epic_key(row.get("epic_key"))
+    epic_issue_key = _to_text(extract_jira_key_from_url(row.get("jira_url"))).upper()
+    try:
+      permission_summary = _jira_write_permissions_summary(_to_text(row.get("project_key")))
+    except Exception as exc:
+      permission_summary = {
+        "ok": False,
+        "project_key": _to_text(row.get("project_key")).upper(),
+        "permissions": {},
+        "missing_permissions": list(_JIRA_POPULATE_PERMISSION_KEYS),
+        "error": str(exc),
+      }
+    if not permission_summary.get("ok"):
+      can_execute = False
+    stories = []
+    for plan_col in plan_columns:
+      plan_key = _to_text(plan_col.get("key"))
+      if not plan_key or plan_key == "epic_plan":
+        continue
+      plan = _normalize_epics_management_plan((row.get("plans") or {}).get(plan_key) or {})
+      if not _jira_publish_plan_has_content(plan):
+        continue
+      start_date = _to_text(plan.get("start_date"))
+      due_date = _to_text(plan.get("due_date"))
+      man_days = _jira_publish_plan_man_days(plan)
+      stories.append(
+        {
+          "phase_key": plan_key,
+          "phase_label": _to_text(plan_col.get("label")) or plan_key,
+          "summary": _to_text(plan_col.get("label")) or plan_key,
+          "man_days": man_days,
+          "start_date": start_date,
+          "due_date": due_date,
+          "story_jira_url": _to_text(plan.get("jira_url")),
+          "subtasks": _split_story_plan_into_month_efforts(start_date, due_date, man_days),
+        }
+      )
+    duplicate_matches = _canonical_duplicate_epics_for_name(
+      settings_db_path,
+      _to_text(row.get("project_key")),
+      _to_text(row.get("epic_name")),
+      exclude_issue_key=epic_issue_key,
+    )
+    epic_plan = _normalize_epics_management_plan((row.get("plans") or {}).get("epic_plan") or {})
+    items.append(
+      {
+        "epic_row_id": row_id,
+        "epic_key": epic_key,
+        "project_key": _to_text(row.get("project_key")).upper(),
+        "project_name": _to_text(row.get("project_name")),
+        "epic_name": _to_text(row.get("epic_name")) or epic_key,
+        "description": _to_text(row.get("description")),
+        "is_sealed": int(row.get("is_sealed") or 0),
+        "already_published": bool(_to_text(row.get("jira_url"))),
+        "existing_jira_url": _to_text(row.get("jira_url")),
+        "permission": permission_summary,
+        "duplicate_warning": {
+          "found": bool(duplicate_matches),
+          "matches": duplicate_matches,
+          "message": "A Jira epic with the same or very similar name already exists." if duplicate_matches else "",
+        },
+        "epic_plan": {
+          "man_days": _jira_publish_plan_man_days(epic_plan),
+          "start_date": _to_text(epic_plan.get("start_date")),
+          "due_date": _to_text(epic_plan.get("due_date")),
+        },
+        "stories": stories,
+      }
+    )
+  return {
+    "can_execute": can_execute and bool(items),
+    "permissions_checked": True,
+    "epics": items,
+  }
+
+
+def _jira_issue_payload_fields(
+  project_key: str,
+  issue_type_name: str,
+  summary: str,
+  description: str,
+  estimate_seconds: int | None,
+  start_date: str,
+  due_date: str,
+  start_field_id: str,
+  end_field_ids: list[str],
+  extra_fields: dict[str, object] | None = None,
+) -> dict[str, object]:
+  fields: dict[str, object] = {
+    "project": {"key": _to_text(project_key).upper()},
+    "issuetype": {"name": _to_text(issue_type_name)},
+    "summary": _to_text(summary),
+    "description": _text_to_jira_adf(description),
+  }
+  if estimate_seconds is not None:
+    seconds = int(max(0, estimate_seconds))
+    if seconds > 0:
+      hours = seconds / 3600.0
+      if hours.is_integer():
+        estimate_text = f"{int(hours)}h"
+      else:
+        estimate_text = f"{round(hours, 2)}h"
+      fields["timetracking"] = {"originalEstimate": estimate_text}
+  if start_field_id and _to_text(start_date):
+    fields[start_field_id] = _to_text(start_date)
+  if _to_text(due_date):
+    primary_end_field_id = ""
+    for field_id in end_field_ids or ["duedate"]:
+      if field_id:
+        primary_end_field_id = field_id
+        break
+    if primary_end_field_id:
+      fields[primary_end_field_id] = _to_text(due_date)
+  if extra_fields:
+    for key, value in extra_fields.items():
+      if not key:
+        continue
+      fields[key] = value
+  return fields
+
+
+def _jira_extract_error_messages(response) -> str:
+  """Pull human-readable error message(s) out of a Jira REST API error response."""
+  try:
+    body = response.json() if response is not None and response.content else {}
+  except Exception:
+    return _to_text(getattr(response, "text", "") or "")[:500]
+  if not isinstance(body, dict):
+    return _to_text(body)[:500]
+  parts: list[str] = []
+  for msg in body.get("errorMessages") or []:
+    text = _to_text(msg).strip()
+    if text:
+      parts.append(text)
+  errors = body.get("errors")
+  if isinstance(errors, dict):
+    for field_id, msg in errors.items():
+      text = _to_text(msg).strip()
+      if text:
+        parts.append(f"{field_id}: {text}")
+  if not parts:
+    return _to_text(body)[:500]
+  return "; ".join(parts)
+
+
+def _jira_raise_for_status(response, action: str, fields: dict[str, object] | None = None) -> None:
+  """Raise a ValueError that includes the Jira error message body on 4xx/5xx."""
+  if response is None:
+    return
+  if response.status_code < 400:
+    return
+  detail = _jira_extract_error_messages(response)
+  status = response.status_code
+  message = f"Jira {action} failed ({status})"
+  if detail:
+    message += f": {detail}"
+  if isinstance(fields, dict):
+    try:
+      payload_keys = sorted(fields.keys())
+      message += f" [fields={payload_keys}]"
+    except Exception:
+      pass
+  raise ValueError(message)
+
+
+_JIRA_CORE_FIELD_KEYS = {"project", "issuetype", "summary"}
+
+
+def _jira_field_unsettable_keys(response) -> list[str]:
+  """Return list of field keys Jira reports as 'cannot be set' for the current screen."""
+  try:
+    body = response.json() if response is not None and response.content else {}
+  except Exception:
+    return []
+  if not isinstance(body, dict):
+    return []
+  errors = body.get("errors")
+  if not isinstance(errors, dict):
+    return []
+  unsettable: list[str] = []
+  for field_id, msg in errors.items():
+    text = _to_text(msg).lower()
+    if any(token in text for token in (
+      "cannot be set",
+      "is not on the appropriate screen",
+      "field is unknown",
+      "is not valid for project",
+    )):
+      unsettable.append(_to_text(field_id))
+  return unsettable
+
+
+def _jira_create_issue(session, fields: dict[str, object]) -> dict[str, str]:
+  attempts = 0
+  current_fields = dict(fields)
+  last_response = None
+  while attempts < 4:
+    attempts += 1
+    response = session.post(
+      f"{BASE_URL}/rest/api/3/issue", json={"fields": current_fields}, timeout=(10, 30)
+    )
+    last_response = response
+    if response.status_code < 400:
+      payload = response.json() if response.content else {}
+      issue_key = _to_text((payload or {}).get("key")).upper()
+      if not issue_key:
+        raise ValueError("Jira create issue response did not include an issue key.")
+      return {"issue_key": issue_key, "jira_url": f"{BASE_URL.rstrip('/')}/browse/{issue_key}"}
+    if response.status_code == 400:
+      unsettable = [
+        key
+        for key in _jira_field_unsettable_keys(response)
+        if key and key in current_fields and key not in _JIRA_CORE_FIELD_KEYS
+      ]
+      if unsettable:
+        for key in unsettable:
+          current_fields.pop(key, None)
+        continue
+    break
+  _jira_raise_for_status(last_response, "create issue", current_fields)
+  raise ValueError("Jira create issue failed for an unknown reason.")
+
+
+def _jira_update_issue(session, issue_key: str, fields: dict[str, object]) -> dict[str, str]:
+  normalized_issue_key = _to_text(issue_key).upper()
+  attempts = 0
+  current_fields = dict(fields)
+  last_response = None
+  while attempts < 4:
+    attempts += 1
+    response = session.put(
+      f"{BASE_URL}/rest/api/3/issue/{normalized_issue_key}",
+      json={"fields": current_fields},
+      timeout=(10, 30),
+    )
+    last_response = response
+    if response.status_code < 400:
+      return {"issue_key": normalized_issue_key, "jira_url": f"{BASE_URL.rstrip('/')}/browse/{normalized_issue_key}"}
+    if response.status_code == 400:
+      unsettable = [
+        key
+        for key in _jira_field_unsettable_keys(response)
+        if key and key in current_fields and key not in _JIRA_CORE_FIELD_KEYS
+      ]
+      if unsettable:
+        for key in unsettable:
+          current_fields.pop(key, None)
+        continue
+    break
+  _jira_raise_for_status(last_response, f"update issue {normalized_issue_key}", current_fields)
+  raise ValueError(f"Jira update issue {normalized_issue_key} failed for an unknown reason.")
+
+
+def _jira_delete_issue(session, issue_key: str) -> None:
+  normalized_issue_key = _to_text(issue_key).upper()
+  if not normalized_issue_key:
+    raise ValueError("Jira issue key is required for delete.")
+  response = session.delete(
+    f"{BASE_URL}/rest/api/3/issue/{normalized_issue_key}",
+    timeout=(10, 30),
+  )
+  if response is not None and response.status_code == 404:
+    return
+  _jira_raise_for_status(response, f"delete issue {normalized_issue_key}", None)
+
+
+_JIRA_CREATEMETA_ISSUE_FIELDS_CACHE: dict[tuple[str, str], dict[str, object]] = {}
+
+
+def _jira_createmeta_issue_fields(session, project_key: str, issue_type_name: str) -> dict[str, object]:
+  """Return create-screen field definitions for a project + issue type (cached per process)."""
+  pk = _to_text(project_key).upper()
+  it = _to_text(issue_type_name)
+  cache_key = (pk, it.casefold())
+  if cache_key in _JIRA_CREATEMETA_ISSUE_FIELDS_CACHE:
+    return _JIRA_CREATEMETA_ISSUE_FIELDS_CACHE[cache_key]
+  fields: dict[str, object] = {}
+  if not pk or not it:
+    _JIRA_CREATEMETA_ISSUE_FIELDS_CACHE[cache_key] = fields
+    return fields
+  try:
+    response = session.get(
+      f"{BASE_URL}/rest/api/3/issue/createmeta",
+      params={"projectKeys": pk, "issuetypeNames": it, "expand": "projects.issuetypes.fields"},
+      timeout=(10, 30),
+    )
+    if response.status_code >= 400:
+      _JIRA_CREATEMETA_ISSUE_FIELDS_CACHE[cache_key] = fields
+      return fields
+    payload = response.json() if response.content else {}
+    for proj in payload.get("projects") or []:
+      for issuetype in proj.get("issuetypes") or []:
+        if _to_text(issuetype.get("name")).casefold() != it.casefold():
+          continue
+        raw_fields = issuetype.get("fields")
+        if isinstance(raw_fields, dict):
+          fields = raw_fields
+        break
+      if fields:
+        break
+  except Exception:
+    fields = {}
+  _JIRA_CREATEMETA_ISSUE_FIELDS_CACHE[cache_key] = fields
+  return fields
+
+
+def _jira_select_option_payload(option: dict[str, object]) -> dict[str, object] | None:
+  oid = _to_text(option.get("id")).strip()
+  if oid:
+    return {"id": oid}
+  val = _to_text(option.get("value"))
+  if val:
+    return {"value": val}
+  return None
+
+
+def _jira_pick_select_option_for_yes_no(allowed: list[object], wanted_label: str) -> dict[str, object] | None:
+  """Pick a Jira option object for Epics Planner ipp_meeting_planned-style Yes/No."""
+  w = _to_text(wanted_label).strip().casefold()
+  if w not in {"yes", "no"}:
+    w = "no"
+  yes_tokens = {"yes", "y", "true", "1"}
+  no_tokens = {"no", "n", "false", "0"}
+  target_tokens = yes_tokens if w == "yes" else no_tokens
+
+  def _score_option(val_norm: str) -> int:
+    if val_norm in target_tokens:
+      return 3
+    if w == "yes":
+      if val_norm.startswith("y"):
+        return 2
+      if "yes" in val_norm:
+        return 1
+      if "not planned" in val_norm or "unplanned" in val_norm:
+        return 0
+      if val_norm == "planned" or ("planned" in val_norm and "not " not in val_norm):
+        return 3
+      return 0
+    if val_norm.startswith("n"):
+      return 2
+    if "no" in val_norm:
+      return 1
+    if "not planned" in val_norm or "unplanned" in val_norm:
+      return 3
+    return 0
+
+  best: tuple[int, dict[str, object]] | None = None
+  for raw in allowed:
+    if not isinstance(raw, dict):
+      continue
+    val_norm = _to_text(raw.get("value")).strip().casefold()
+    score = _score_option(val_norm)
+    if score <= 0:
+      continue
+    cand = _jira_select_option_payload(raw)
+    if not cand:
+      continue
+    if best is None or score > best[0]:
+      best = (score, cand)
+  return best[1] if best else None
+
+
+def _jira_rmi_planned_fields_for_issue(
+  session, project_key: str, issue_type_name: str, ipp_meeting_planned_raw: object
+) -> dict[str, object]:
+  """Map Epics Planner ``ipp_meeting_planned`` into Jira field ``RMI Planned`` (required on some projects)."""
+  field_id = _resolve_jira_field_id_by_name(session, "RMI Planned")
+  if not field_id:
+    return {}
+  wanted = _ipp_meeting_planned_for_epics_management(ipp_meeting_planned_raw)
+  meta_fields = _jira_createmeta_issue_fields(session, project_key, issue_type_name)
+  entry = meta_fields.get(field_id) if meta_fields else None
+  allowed = (entry or {}).get("allowedValues") if isinstance(entry, dict) else None
+  if isinstance(allowed, list) and allowed:
+    picked = _jira_pick_select_option_for_yes_no(allowed, wanted)
+    if picked is not None:
+      return {field_id: picked}
+  return {field_id: {"value": wanted}}
+
+
+def _execute_epics_management_jira_publish(settings_db_path: Path, payload: dict[str, object]) -> dict[str, object]:
+  items_in = payload.get("epics") if isinstance(payload.get("epics"), list) else []
+  if not items_in:
+    raise ValueError("Select at least one epic to populate in Jira.")
+
+  report_id = "jira-publish-" + uuid.uuid4().hex
+  started_at_utc = _utc_now_iso()
+  report_items: list[dict[str, object]] = []
+  results: list[dict[str, object]] = []
+  all_rows = _load_epics_management_rows(settings_db_path)
+  plan_columns = _load_epics_plan_columns(settings_db_path, include_inactive=False)
+
+  def record_item(
+    *,
+    epic_row_id: str,
+    epic_key: str,
+    issue_level: str,
+    phase_key: str = "",
+    phase_label: str = "",
+    month_label: str = "",
+    mode: str = "",
+    action: str = "",
+    status: str = "success",
+    jira_issue_key: str = "",
+    jira_url: str = "",
+    error: str = "",
+    can_retry: bool = False,
+    details: dict[str, object] | None = None,
+  ) -> None:
+    report_items.append(
+      {
+        "epic_row_id": _to_text(epic_row_id),
+        "epic_key": _to_text(epic_key).upper(),
+        "issue_level": _to_text(issue_level).lower() or "epic",
+        "phase_key": _to_text(phase_key),
+        "phase_label": _to_text(phase_label),
+        "month_label": _to_text(month_label),
+        "mode": _to_text(mode).lower(),
+        "action": _to_text(action),
+        "status": _to_text(status).lower() or "success",
+        "jira_issue_key": _to_text(jira_issue_key).upper(),
+        "jira_url": _to_text(jira_url),
+        "error": _to_text(error),
+        "can_retry": bool(can_retry),
+        "details": details or {},
+      }
+    )
+
+  for item in items_in:
+    if not isinstance(item, dict):
+      continue
+    epic_ref = _to_text(item.get("epic_key") or item.get("epic_row_id"))
+    if not epic_ref:
+      continue
+    phase_filter = {
+      _to_text(phase_key)
+      for phase_key in (item.get("phase_keys") if isinstance(item.get("phase_keys"), list) else [])
+      if _to_text(phase_key)
+    }
+    row: dict[str, object] = {}
+    row_id = ""
+    epic_key = _to_text(epic_ref).upper()
+    mode = _to_text(item.get("mode")).lower()
+    try:
+      row = _resolve_epics_management_row(all_rows, epic_ref)
+      row_id = _normalize_epics_management_row_id(row.get("id"))
+      epic_key = _normalize_epic_key(row.get("epic_key"))
+      mode = mode or ("update" if _to_text(row.get("jira_url")) else "create")
+      allow_duplicate = bool(item.get("allow_duplicate"))
+      session, permission_summary = _resolve_jira_publish_session(_to_text(row.get("project_key")))
+      if not permission_summary.get("ok"):
+        raise PermissionError(
+          "Jira write token does not have required permissions: "
+          + ", ".join(permission_summary.get("missing_permissions") or [])
+        )
+      if not allow_duplicate:
+        duplicate_matches = _canonical_duplicate_epics_for_name(
+          settings_db_path,
+          _to_text(row.get("project_key")),
+          _to_text(row.get("epic_name")),
+          exclude_issue_key=_to_text(extract_jira_key_from_url(row.get("jira_url"))).upper(),
+        )
+        if duplicate_matches:
+          raise ValueError(
+            "Potential duplicate Jira epic detected for '"
+            + (_to_text(row.get("epic_name")) or epic_key)
+            + "'. Review duplicate warning and confirm before continuing."
+          )
+      project_key = _to_text(row.get("project_key")).upper()
+      start_field_id = resolve_jira_start_date_field_id(session, BASE_URL, project_keys=[project_key] if project_key else None)
+      end_field_ids = resolve_jira_end_date_field_ids(session, BASE_URL, project_keys=[project_key] if project_key else None)
+      if "duedate" not in end_field_ids:
+        end_field_ids.append("duedate")
+      epic_name_field_id = _resolve_jira_field_id_by_name(session, "Epic Name")
+      epic_link_field_id = _resolve_jira_field_id_by_name(session, "Epic Link") or "customfield_10014"
+      existing_publish = _load_epics_management_publish_records(settings_db_path, row_id)
+      epic_plan = _normalize_epics_management_plan((row.get("plans") or {}).get("epic_plan") or {})
+      epic_man_days = _jira_publish_plan_man_days(epic_plan)
+      epic_extra: dict[str, object] = {}
+      if epic_name_field_id:
+        epic_extra[epic_name_field_id] = _to_text(row.get("epic_name")) or epic_key
+      epic_extra.update(_jira_rmi_planned_fields_for_issue(session, project_key, "Epic", row.get("ipp_meeting_planned")))
+      epic_fields = _jira_issue_payload_fields(
+        project_key=project_key,
+        issue_type_name="Epic",
+        summary=_to_text(row.get("epic_name")) or epic_key,
+        description=_to_text(row.get("description")),
+        estimate_seconds=_jira_seconds_from_man_days(epic_man_days),
+        start_date=_to_text(epic_plan.get("start_date")),
+        due_date=_to_text(epic_plan.get("due_date")),
+        start_field_id=start_field_id,
+        end_field_ids=end_field_ids,
+        extra_fields=epic_extra or None,
+      )
+      epic_issue_key = _to_text(extract_jira_key_from_url(row.get("jira_url"))).upper()
+      epic_created_via_epr = 0
+      epic_action = "update" if mode == "update" and epic_issue_key else "create"
+      if mode == "update" and epic_issue_key:
+        epic_publish = _jira_update_issue(session, epic_issue_key, epic_fields)
+      elif mode == "update":
+        raise ValueError("Epic has no Jira URL to update. Choose create instead.")
+      else:
+        epic_publish = _jira_create_issue(session, epic_fields)
+        epic_issue_key = _to_text(epic_publish.get("issue_key")).upper()
+        epic_created_via_epr = 1
+      record_item(
+        epic_row_id=row_id,
+        epic_key=epic_key,
+        issue_level="epic",
+        mode=mode,
+        action=epic_action,
+        status="success",
+        jira_issue_key=epic_publish["issue_key"],
+        jira_url=epic_publish["jira_url"],
+        details={
+          "man_days": epic_man_days,
+          "start_date": _to_text(epic_plan.get("start_date")),
+          "due_date": _to_text(epic_plan.get("due_date")),
+        },
+      )
+    except Exception as exc:
+      record_item(
+        epic_row_id=row_id,
+        epic_key=epic_key,
+        issue_level="epic",
+        mode=mode or "create",
+        action=mode or "create",
+        status="failed",
+        error=str(exc),
+        can_retry=True,
+      )
+      continue
+
+    phase_links: dict[str, str] = {}
+    updated_row: dict[str, object] | None = None
+    conn = sqlite3.connect(settings_db_path)
+    try:
+      _upsert_epics_management_publish_record(
+        conn,
+        epic_row_id=row_id,
+        epic_key=epic_key,
+        phase_key="",
+        issue_level="epic",
+        jira_issue_key=epic_publish["issue_key"],
+        jira_url=epic_publish["jira_url"],
+        parent_jira_key="",
+        month_label="",
+        man_days=epic_man_days,
+        start_date=_to_text(epic_plan.get("start_date")),
+        due_date=_to_text(epic_plan.get("due_date")),
+        created_via_epr=epic_created_via_epr,
+      )
+      if epic_created_via_epr:
+        conn.execute("UPDATE epics_management SET epr_jira_epic_created = 1 WHERE id = ?", (row_id,))
+      for plan_col in plan_columns:
+        plan_key = _to_text(plan_col.get("key"))
+        if not plan_key or plan_key == "epic_plan":
+          continue
+        if phase_filter and plan_key not in phase_filter:
+          continue
+        plan = _normalize_epics_management_plan((row.get("plans") or {}).get(plan_key) or {})
+        if not _jira_publish_plan_has_content(plan):
+          continue
+        phase_label = _to_text(plan_col.get("label")) or plan_key
+        phase_man_days = _jira_publish_plan_man_days(plan)
+        existing_story = existing_publish.get(("story", plan_key, ""), {})
+        story_existing_key = _to_text((existing_story or {}).get("jira_issue_key")).upper() or _to_text(extract_jira_key_from_url(plan.get("jira_url"))).upper()
+        story_action = "update" if mode == "update" and story_existing_key else "create"
+        try:
+          story_extra: dict[str, object] = {epic_link_field_id: epic_publish["issue_key"]}
+          story_extra.update(_jira_rmi_planned_fields_for_issue(session, project_key, "Story", row.get("ipp_meeting_planned")))
+          story_fields = _jira_issue_payload_fields(
+            project_key=project_key,
+            issue_type_name="Story",
+            summary=phase_label,
+            description=(phase_label + " for " + (_to_text(row.get("epic_name")) or epic_key)).strip(),
+            estimate_seconds=_jira_seconds_from_man_days(phase_man_days),
+            start_date=_to_text(plan.get("start_date")),
+            due_date=_to_text(plan.get("due_date")),
+            start_field_id=start_field_id,
+            end_field_ids=end_field_ids,
+            extra_fields=story_extra,
+          )
+          if story_action == "update":
+            story_publish = _jira_update_issue(session, story_existing_key, story_fields)
+            story_created_via_epr = 0
+          else:
+            story_publish = _jira_create_issue(session, story_fields)
+            story_created_via_epr = 1
+          phase_links[plan_key] = story_publish["jira_url"]
+          _upsert_epics_management_publish_record(
+            conn,
+            epic_row_id=row_id,
+            epic_key=epic_key,
+            phase_key=plan_key,
+            issue_level="story",
+            jira_issue_key=story_publish["issue_key"],
+            jira_url=story_publish["jira_url"],
+            parent_jira_key=epic_publish["issue_key"],
+            month_label="",
+            man_days=phase_man_days,
+            start_date=_to_text(plan.get("start_date")),
+            due_date=_to_text(plan.get("due_date")),
+            created_via_epr=story_created_via_epr,
+          )
+          record_item(
+            epic_row_id=row_id,
+            epic_key=epic_key,
+            issue_level="story",
+            phase_key=plan_key,
+            phase_label=phase_label,
+            mode=mode,
+            action=story_action,
+            status="success",
+            jira_issue_key=story_publish["issue_key"],
+            jira_url=story_publish["jira_url"],
+            details={
+              "man_days": phase_man_days,
+              "start_date": _to_text(plan.get("start_date")),
+              "due_date": _to_text(plan.get("due_date")),
+            },
+          )
+        except Exception as exc:
+          record_item(
+            epic_row_id=row_id,
+            epic_key=epic_key,
+            issue_level="story",
+            phase_key=plan_key,
+            phase_label=phase_label,
+            mode=mode,
+            action=story_action,
+            status="failed",
+            error=str(exc),
+            can_retry=True,
+            details={
+              "man_days": phase_man_days,
+              "start_date": _to_text(plan.get("start_date")),
+              "due_date": _to_text(plan.get("due_date")),
+            },
+          )
+          continue
+        for slice_item in _split_story_plan_into_month_efforts(_to_text(plan.get("start_date")), _to_text(plan.get("due_date")), phase_man_days):
+          month_label = _to_text(slice_item.get("month_label"))
+          existing_subtask = existing_publish.get(("subtask", plan_key, month_label), {})
+          subtask_existing_key = _to_text((existing_subtask or {}).get("jira_issue_key")).upper()
+          subtask_action = "update" if mode == "update" and subtask_existing_key else "create"
+          try:
+            subtask_extra: dict[str, object] = {"parent": {"key": story_publish["issue_key"]}}
+            subtask_extra.update(
+              _jira_rmi_planned_fields_for_issue(session, project_key, "Sub-task", row.get("ipp_meeting_planned"))
+            )
+            subtask_fields = _jira_issue_payload_fields(
+              project_key=project_key,
+              issue_type_name="Sub-task",
+              summary=month_label,
+              description=(phase_label + " - " + month_label).strip(),
+              estimate_seconds=_jira_seconds_from_man_days(slice_item.get("man_days")),
+              start_date=_to_text(slice_item.get("start_date")),
+              due_date=_to_text(slice_item.get("due_date")),
+              start_field_id=start_field_id,
+              end_field_ids=end_field_ids,
+              extra_fields=subtask_extra,
+            )
+            if subtask_action == "update":
+              subtask_publish = _jira_update_issue(session, subtask_existing_key, subtask_fields)
+              subtask_created_via_epr = 0
+            else:
+              subtask_publish = _jira_create_issue(session, subtask_fields)
+              subtask_created_via_epr = 1
+            _upsert_epics_management_publish_record(
+              conn,
+              epic_row_id=row_id,
+              epic_key=epic_key,
+              phase_key=plan_key,
+              issue_level="subtask",
+              jira_issue_key=subtask_publish["issue_key"],
+              jira_url=subtask_publish["jira_url"],
+              parent_jira_key=story_publish["issue_key"],
+              month_label=month_label,
+              man_days=slice_item.get("man_days"),
+              start_date=_to_text(slice_item.get("start_date")),
+              due_date=_to_text(slice_item.get("due_date")),
+              created_via_epr=subtask_created_via_epr,
+            )
+            record_item(
+              epic_row_id=row_id,
+              epic_key=epic_key,
+              issue_level="subtask",
+              phase_key=plan_key,
+              phase_label=phase_label,
+              month_label=month_label,
+              mode=mode,
+              action=subtask_action,
+              status="success",
+              jira_issue_key=subtask_publish["issue_key"],
+              jira_url=subtask_publish["jira_url"],
+              details={
+                "man_days": slice_item.get("man_days"),
+                "start_date": _to_text(slice_item.get("start_date")),
+                "due_date": _to_text(slice_item.get("due_date")),
+              },
+            )
+          except Exception as exc:
+            record_item(
+              epic_row_id=row_id,
+              epic_key=epic_key,
+              issue_level="subtask",
+              phase_key=plan_key,
+              phase_label=phase_label,
+              month_label=month_label,
+              mode=mode,
+              action=subtask_action,
+              status="failed",
+              error=str(exc),
+              can_retry=False,
+              details={
+                "man_days": slice_item.get("man_days"),
+                "start_date": _to_text(slice_item.get("start_date")),
+                "due_date": _to_text(slice_item.get("due_date")),
+              },
+            )
+      updated_row = _persist_epics_management_publish_links(
+        settings_db_path,
+        row_ref=row_id,
+        epic_jira_url=epic_publish["jira_url"],
+        phase_jira_urls=phase_links,
+        conn=conn,
+        existing_row=row,
+      )
+    except Exception as exc:
+      record_item(
+        epic_row_id=row_id,
+        epic_key=epic_key,
+        issue_level="epic",
+        mode=mode,
+        action="persist-local-links",
+        status="failed",
+        jira_issue_key=epic_publish.get("issue_key"),
+        jira_url=epic_publish.get("jira_url"),
+        error="Jira publish succeeded but local publish links could not be saved: " + str(exc),
+        can_retry=True,
+      )
+    finally:
+      conn.close()
+    results.append(
+      {
+        "epic_key": epic_key,
+        "mode": mode,
+        "epic_jira_key": epic_publish["issue_key"],
+        "epic_jira_url": epic_publish["jira_url"],
+        "story_count": len(phase_links),
+        "row": updated_row,
+      }
+    )
+
+  completed_at_utc = _utc_now_iso()
+  summary = _epics_management_publish_report_summary(report_items)
+  status = _epics_management_publish_report_status(report_items)
+  report = {
+    "report_id": report_id,
+    "status": status,
+    "started_at_utc": started_at_utc,
+    "completed_at_utc": completed_at_utc,
+    "requested_epic_count": len(items_in),
+    "request": {
+      "epics": items_in,
+      "retry_of_report_id": _to_text(payload.get("retry_of_report_id")),
+    },
+    "summary": summary,
+    "items": report_items,
+    "results": results,
+  }
+  _save_epics_management_publish_report(settings_db_path, report)
+  return {"results": results, "updated_rows": [item["row"] for item in results if item.get("row")], "report": report}
 
 
 def _seal_epics_management_epics(settings_db_path: Path, epic_keys: list[str]) -> dict:
@@ -21498,6 +23675,14 @@ def _excel_number_or_blank(value: object) -> object:
   return int(rounded) if float(rounded).is_integer() else rounded
 
 
+def _excel_hyperlink_or_text(cell) -> str:
+  hyperlink = getattr(cell, "hyperlink", None)
+  target = _to_text(getattr(hyperlink, "target", "") if hyperlink else "").strip()
+  if target:
+    return target
+  return _to_text(getattr(cell, "value", "")).strip()
+
+
 def _find_header_col(headers: dict[str, int], *names: str) -> int:
   wanted = {name.casefold() for name in names}
   for header, col_idx in headers.items():
@@ -21583,7 +23768,7 @@ def _extract_epics_import_rows_from_workbook(workbook_path: Path) -> list[dict[s
           current_category = category_value
         if component_value:
           current_component = component_value
-        jira_url = _to_text(ws.cell(row_idx, jira_col).value).strip() if jira_col else ""
+        jira_url = _excel_hyperlink_or_text(ws.cell(row_idx, jira_col)) if jira_col else ""
         roadmap_item = _to_text(ws.cell(row_idx, roadmap_col).value).strip() if roadmap_col else ""
         phase_values: dict[str, object] = {}
         for phase in _EPICS_IMPORT_PHASES:
@@ -26172,6 +28357,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         completed = set(completed_keys or set())
         items = [
             {"key": "validate_canonical", "label": "Validate canonical dataset", "status": "pending"},
+            {"key": "generate_rlt_leave_report", "label": "Generate RLT leave buckets", "status": "pending"},
             {"key": "generate_nested_view_html", "label": "Generate nested view report", "status": "pending"},
             {"key": "sync_report_html", "label": "Sync report output", "status": "pending"},
         ]
@@ -26241,6 +28427,44 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             def _on_stdout_line(line: str) -> None:
                 nonlocal last_stdout_line
                 last_stdout_line = _to_text(line)
+
+            def _rlt_heartbeat() -> None:
+                _update("generating_rlt_leave_report", 35, "generate_rlt_leave_report", 1, "Generate RLT leave buckets", detail=last_stdout_line)
+
+            _update("generating_rlt_leave_report", 25, "generate_rlt_leave_report", 1, "Generate RLT leave buckets")
+            code, stdout, stderr = _run_script_interruptible(
+                "generate_rlt_leave_report.py",
+                base_dir,
+                env_overrides=_canonical_group2_script_env(canonical_run_id),
+                cancel_check=_is_canceled,
+                on_stdout_line=_on_stdout_line,
+                heartbeat=_rlt_heartbeat,
+                heartbeat_interval_sec=1.5,
+            )
+            if code == -1:
+                _report_refresh_mark_run_status(
+                    capacity_paths["db_path"],
+                    run_id,
+                    "nested_view",
+                    "canceled",
+                    error_message="Canceled by user during RLT leave bucket generation.",
+                    stats=_stats("generate_rlt_leave_report", 1, "Generate RLT leave buckets", detail=_tail(stderr) or _tail(stdout)),
+                    activate=False,
+                )
+                return
+            if code != 0:
+                _report_refresh_mark_run_status(
+                    capacity_paths["db_path"],
+                    run_id,
+                    "nested_view",
+                    "failed",
+                    error_message="RLT leave bucket generation failed.",
+                    stats=_stats("", 1, "Generate RLT leave buckets", detail=_tail(stderr) or _tail(stdout), failed_key="generate_rlt_leave_report"),
+                    activate=False,
+                )
+                return
+            completed_keys.add("generate_rlt_leave_report")
+            last_stdout_line = ""
 
             def _heartbeat() -> None:
                 _update("generating_nested_view", 55, "generate_nested_view_html", 1, "Generate nested view report", detail=last_stdout_line)
@@ -26484,26 +28708,37 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                             "canonical_run_id": canonical_run_id,
                         }
                     )
-                local_script = "fetch_jira_dashboard.py" if report_id == "dashboard" else "generate_nested_view_html.py"
-                code, stdout, stderr = _run_script(local_script, base_dir)
-                step_data = {
-                    "script": local_script,
-                    "exit_code": code,
-                    "stdout_tail": _tail(stdout),
-                    "stderr_tail": _tail(stderr),
-                }
-                steps.append(step_data)
-                if code != 0:
-                    duration_sec = round(time.perf_counter() - started, 2)
-                    return jsonify(
-                        {
-                            "ok": False,
-                            "report": report_id,
-                            "error": f"Step failed: {local_script}",
-                            "steps": steps,
-                            "duration_sec": duration_sec,
-                        }
-                    ), 500
+                if report_id == "nested_view":
+                    script_plan = [
+                        ("generate_rlt_leave_report.py", _canonical_group2_script_env(canonical_run_id)),
+                        ("generate_nested_view_html.py", {}),
+                    ]
+                else:
+                    script_plan = [("fetch_jira_dashboard.py", {})]
+                for local_script, env_overrides in script_plan:
+                    code, stdout, stderr = _run_script(
+                        local_script,
+                        base_dir,
+                        env_overrides=env_overrides or None,
+                    )
+                    step_data = {
+                        "script": local_script,
+                        "exit_code": code,
+                        "stdout_tail": _tail(stdout),
+                        "stderr_tail": _tail(stderr),
+                    }
+                    steps.append(step_data)
+                    if code != 0:
+                        duration_sec = round(time.perf_counter() - started, 2)
+                        return jsonify(
+                            {
+                                "ok": False,
+                                "report": report_id,
+                                "error": f"Step failed: {local_script}",
+                                "steps": steps,
+                                "duration_sec": duration_sec,
+                            }
+                        ), 500
                 sync_report_html(base_dir, folder_raw)
                 duration_sec = round(time.perf_counter() - started, 2)
                 return jsonify(
@@ -31223,12 +33458,28 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
     @app.route("/api/epics-management/rows/<path:epic_key>", methods=["DELETE"])
     def delete_epics_management_row_api(epic_key: str):
         try:
-            deleted_key = _delete_epics_management_row(capacity_paths["db_path"], epic_key)
-            return jsonify({"deleted": True, "epic_key": deleted_key, "source": "epics_management_db"})
+            payload = request.get_json(silent=True) or {}
+            delete_jira = bool(payload.get("delete_jira"))
+            result = _delete_epics_management_row(capacity_paths["db_path"], epic_key, delete_jira=delete_jira)
+            return jsonify(
+                {
+                    "deleted": True,
+                    "epic_key": epic_key,
+                    "source": "epics_management_db",
+                    "jira_issues_deleted": result.get("jira_issues_deleted") or [],
+                }
+            )
         except LookupError as exc:
             return jsonify({"error": str(exc)}), 404
         except PermissionError as exc:
-            return jsonify({"error": str(exc)}), 423
+            msg = str(exc)
+            lower = msg.lower()
+            status = 423
+            if "sealed" not in lower and ("cannot delete issues" in lower or "jira token cannot" in lower):
+                status = 403
+            return jsonify({"error": msg}), status
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
         except Exception as exc:
             return jsonify({"error": f"Failed to delete epic row: {exc}"}), 500
 
@@ -31284,6 +33535,79 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             return jsonify({"error": str(exc)}), 400
         except Exception as exc:
             return jsonify({"error": f"Failed to sync epic from Jira: {exc}"}), 500
+
+    @app.route("/api/epics-management/populate-jira/permissions-check", methods=["GET"])
+    def epics_management_populate_jira_permissions_api():
+        try:
+            project_key = _to_text(request.args.get("project_key")).upper()
+            summary = _jira_write_permissions_summary(project_key)
+            status = 200 if summary.get("ok") else 403
+            return jsonify({**summary, "source": "jira_permissions"}), status
+        except Exception as exc:
+            return jsonify({"ok": False, "error": f"Failed to check Jira write permissions: {exc}", "source": "jira_permissions"}), 502
+
+    @app.route("/api/epics-management/populate-jira/preflight", methods=["POST"])
+    def epics_management_populate_jira_preflight_api():
+        try:
+            payload = request.get_json(silent=True) or {}
+            epic_refs = payload.get("epic_keys") if isinstance(payload.get("epic_keys"), list) else []
+            preview = _build_epics_management_jira_publish_preview(capacity_paths["db_path"], epic_refs)
+            return jsonify({**preview, "source": "epics_management_populate_jira"})
+        except LookupError as exc:
+            return jsonify({"error": str(exc)}), 404
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"error": f"Failed to build Jira populate preview: {exc}"}), 500
+
+    @app.route("/api/epics-management/populate-jira/execute", methods=["POST"])
+    def epics_management_populate_jira_execute_api():
+        try:
+            payload = request.get_json(silent=True) or {}
+            result = _execute_epics_management_jira_publish(capacity_paths["db_path"], payload)
+            return jsonify({**result, "source": "epics_management_populate_jira"})
+        except LookupError as exc:
+            return jsonify({"error": str(exc)}), 404
+        except PermissionError as exc:
+            return jsonify({"error": str(exc)}), 403
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"error": f"Failed to populate Jira: {exc}"}), 500
+
+    @app.route("/api/epics-management/populate-jira/reports", methods=["GET"])
+    def epics_management_populate_jira_reports_api():
+        try:
+            limit = int(request.args.get("limit") or 25)
+            reports = _load_epics_management_publish_reports(capacity_paths["db_path"], limit=limit)
+            return jsonify({"reports": reports, "source": "epics_management_populate_jira_reports"})
+        except Exception as exc:
+            return jsonify({"error": f"Failed to load Jira publish reports: {exc}"}), 500
+
+    @app.route("/api/epics-management/populate-jira/reports/<path:report_id>", methods=["GET"])
+    def epics_management_populate_jira_report_detail_api(report_id: str):
+        try:
+            report = _load_epics_management_publish_report(capacity_paths["db_path"], report_id)
+            return jsonify({"report": report, "source": "epics_management_populate_jira_reports"})
+        except LookupError as exc:
+            return jsonify({"error": str(exc)}), 404
+        except Exception as exc:
+            return jsonify({"error": f"Failed to load Jira publish report: {exc}"}), 500
+
+    @app.route("/api/epics-management/populate-jira/reports/<path:report_id>/retry", methods=["POST"])
+    def epics_management_populate_jira_report_retry_api(report_id: str):
+        try:
+            retry_payload = _build_epics_management_publish_retry_payload(capacity_paths["db_path"], report_id)
+            result = _execute_epics_management_jira_publish(capacity_paths["db_path"], retry_payload)
+            return jsonify({**result, "source": "epics_management_populate_jira_retry"})
+        except LookupError as exc:
+            return jsonify({"error": str(exc)}), 404
+        except PermissionError as exc:
+            return jsonify({"error": str(exc)}), 403
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"error": f"Failed to retry Jira publish report: {exc}"}), 500
 
     @app.route("/api/epics-management/import/upload", methods=["POST"])
     def epics_management_import_upload_api():

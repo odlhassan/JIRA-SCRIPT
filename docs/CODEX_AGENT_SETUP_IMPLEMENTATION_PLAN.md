@@ -18,6 +18,16 @@ Out of scope:
 - Product feature implementation unrelated to agent setup.
 - CI/CD architecture changes beyond minimal verification commands.
 
+## Implementation status (this repo)
+
+As of `2026-05-12`, required items **1–6** and Phase **4** docs exist under `E:\JIRA SCRIPT`. Cursor loads `.cursor/rules/*.mdc` and project skills from `.cursor/skills/` automatically; optional items **7–10** live under `%USERPROFILE%\.codex\skills\` (global Codex skills) and may also be registered as available skills in Cursor.
+
+Guardrail: **`tests/test_codex_agent_setup_contract.py`** asserts the contract files exist and contain the key phrases. Re-run:
+
+```powershell
+Set-Location "E:\JIRA SCRIPT"; python -m pytest tests/test_codex_agent_setup_contract.py tests/test_run_server.py -q
+```
+
 ## Target Outcomes
 1. A new Codex run starts with clear workspace defaults and guardrails.
 2. Any HTML/UI change forces related JS/CSS/generator/test updates.

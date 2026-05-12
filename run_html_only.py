@@ -18,7 +18,7 @@ from pathlib import Path
 from report_server import run_report_server, sync_report_html
 
 DEFAULT_HTML_ONLY_STEPS: list[tuple[str, str]] = [
-    # Keep leave workbook/html fresh before any report that embeds leave_daily_rows.
+    # Keep leave workbook/html fresh before reports that embed RLT leave buckets.
     ("rlt-leave-report", "generate_rlt_leave_report.py"),
     ("nested-view-html", "generate_nested_view_html.py"),
     ("missed-entries-html", "generate_missed_entries_html.py"),

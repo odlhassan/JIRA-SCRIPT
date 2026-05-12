@@ -1,0 +1,66 @@
+# Deploy this repo to Azure App Service (Linux) as a ZIP.
+#
+# Setup (one-time in GitHub):
+#   1. Azure Portal → your Web App → Download publish profile
+#   2. Repo → Settings → Secrets and variables → Actions
+#   3. New repository secret: AZURE_WEBAPP_PUBLISH_PROFILE = entire .PublishSettings XML
+#
+# Optional: change AZURE_WEBAPP_NAME below if your app name differs.
+
+name: Azure App Service deploy
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
+
+env:
+  AZURE_WEBAPP_NAME: epreporting
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Stage files (match local packaging exclusions)
+        run: |
+          set -e
+          mkdir -p staging
+          rsync -a \
+            --exclude='.git/' \
+            --exclude='.github/' \
+            --exclude='.venv/' \
+            --exclude='.pytest_cache/' \
+            --exclude='__pycache__/' \
+            --exclude='node_modules/' \
+            --exclude='tests/' \
+            --exclude='test-results/' \
+            --exclude='handover/' \
+            --exclude='offline_bundles/' \
+            --exclude='.cursor/' \
+            --exclude='.azure_deploy_staging/' \
+            --exclude='.env' \
+            --exclude='server.stdout.log' \
+            --exclude='server.stderr.log' \
+            --exclude='server.verify.stdout.log' \
+            --exclude='server.verify.stderr.log' \
+            ./ staging/
+
+      - name: Create ZIP
+        run: |
+          set -e
+          (cd staging && zip -rq ../deploy.zip .)
+
+      - name: Deploy to Azure Web App
+        uses: Azure/webapps-deploy@v3
+        with:
+          app-name: ${{ env.AZURE_WEBAPP_NAME }}
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+          package: deploy.zip

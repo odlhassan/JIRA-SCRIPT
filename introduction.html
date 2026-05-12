@@ -364,6 +364,252 @@
       font-size: 1rem;
     }
 
+    .architecture-stack {
+      margin-top: 22px;
+      display: grid;
+      gap: 18px;
+    }
+
+    .architecture-panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      padding: 24px;
+      box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+    }
+
+    .section-kicker {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 11px;
+      border-radius: 999px;
+      border: 1px solid #cfe0ff;
+      background: #eef4ff;
+      color: #1e3a8a;
+      font-size: 0.72rem;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .architecture-panel h2 {
+      margin: 12px 0 8px;
+      font-size: 1.4rem;
+      color: var(--ink);
+      letter-spacing: -0.01em;
+    }
+
+    .architecture-panel > p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.95rem;
+      line-height: 1.68;
+      max-width: 1020px;
+    }
+
+    .dataflow-layout {
+      margin-top: 18px;
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+      gap: 16px;
+      align-items: start;
+    }
+
+    .architecture-cards {
+      display: grid;
+      gap: 12px;
+      margin-top: 18px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .arch-layer {
+      position: relative;
+      border: 1px solid #d9e6f5;
+      border-radius: 18px;
+      background: linear-gradient(180deg, #ffffff, #f8fbff);
+      padding: 16px 16px 16px 56px;
+      min-height: 132px;
+    }
+
+    .arch-layer:nth-child(2n) {
+      background: linear-gradient(180deg, #ffffff, #f6fcfb);
+    }
+
+    .arch-layer:nth-child(3n) {
+      background: linear-gradient(180deg, #ffffff, #fbf8ff);
+    }
+
+    .layer-step {
+      position: absolute;
+      left: 16px;
+      top: 16px;
+      width: 28px;
+      height: 28px;
+      border-radius: 10px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: #dbeafe;
+      color: #1d4ed8;
+      font-size: 0.82rem;
+      font-weight: 800;
+    }
+
+    .arch-layer h3 {
+      margin: 0 0 7px;
+      font-size: 1rem;
+      color: var(--ink);
+    }
+
+    .arch-layer p,
+    .diagram-card p,
+    .flow-steps li {
+      margin: 0;
+      color: #334155;
+      font-size: 0.9rem;
+      line-height: 1.58;
+    }
+
+    .diagram-card {
+      border: 1px solid #d9e6f5;
+      border-radius: 18px;
+      background: linear-gradient(180deg, #fbfdff, #f4f8ff);
+      padding: 16px;
+    }
+
+    .diagram-card-wide {
+      margin-top: 18px;
+    }
+
+    .diagram-card h3 {
+      margin: 0 0 6px;
+      font-size: 1rem;
+      color: var(--ink);
+    }
+
+    .diagram-meta {
+      margin-top: 10px;
+      color: #64748b;
+      font-size: 0.77rem;
+      line-height: 1.45;
+    }
+
+    .diagram-toolbar {
+      margin-top: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .diagram-toolbar p {
+      color: #475569;
+      font-size: 0.81rem;
+      line-height: 1.45;
+    }
+
+    .zoom-controls {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      padding: 8px 10px;
+      border: 1px solid #d7e3f3;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.92);
+    }
+
+    .zoom-btn {
+      border: 1px solid #bfd3f8;
+      background: #eef4ff;
+      color: #1d4ed8;
+      border-radius: 10px;
+      min-width: 38px;
+      height: 34px;
+      padding: 0 10px;
+      font-size: 0.86rem;
+      font-weight: 800;
+      cursor: pointer;
+      transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+    }
+
+    .zoom-btn:hover {
+      background: #dbeafe;
+      border-color: #93c5fd;
+      transform: translateY(-1px);
+    }
+
+    .zoom-slider {
+      width: 132px;
+      accent-color: #1d4ed8;
+      cursor: pointer;
+    }
+
+    .zoom-readout {
+      min-width: 52px;
+      text-align: right;
+      color: #1e3a8a;
+      font-size: 0.82rem;
+      font-weight: 800;
+    }
+
+    .mermaid-shell {
+      margin-top: 12px;
+      border: 1px solid #d8e3f0;
+      border-radius: 16px;
+      background:
+        radial-gradient(340px 150px at 0% 0%, rgba(219, 234, 254, 0.9) 0%, transparent 70%),
+        radial-gradient(320px 140px at 100% 0%, rgba(237, 233, 254, 0.88) 0%, transparent 72%),
+        #ffffff;
+      padding: 12px;
+      overflow: auto;
+    }
+
+    .mermaid-shell .mermaid {
+      min-width: 760px;
+      width: 100%;
+      transition: width 0.18s ease;
+    }
+
+    .mermaid-shell svg {
+      width: 100%;
+      max-width: none;
+      height: auto;
+      display: block;
+    }
+
+    .mermaid-shell-wide .mermaid {
+      min-width: 1320px;
+    }
+
+    .mermaid-shell-wide svg {
+      min-width: 680px;
+    }
+
+    .flow-steps {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      display: grid;
+      gap: 10px;
+    }
+
+    .flow-steps li {
+      border: 1px solid #d9e6f5;
+      border-radius: 16px;
+      background: linear-gradient(180deg, #ffffff, #f8fbff);
+      padding: 14px 15px;
+    }
+
+    .flow-steps strong {
+      display: block;
+      margin-bottom: 4px;
+      color: var(--ink);
+      font-size: 0.92rem;
+    }
+
     .page-footer {
       margin-top: 18px;
       font-size: 0.79rem;
@@ -391,12 +637,23 @@
         grid-template-columns: 1fr;
       }
 
+      .architecture-cards,
+      .dataflow-layout {
+        grid-template-columns: 1fr;
+      }
+
       .col-insights .feat-list {
         grid-template-columns: 1fr;
       }
 
       .column { min-height: auto; }
       .flow-strip { grid-template-columns: 1fr; }
+      .architecture-panel { padding: 18px; }
+      .arch-layer { padding: 14px 14px 14px 52px; }
+      .mermaid-shell .mermaid { min-width: 560px; }
+      .mermaid-shell-wide .mermaid { min-width: 980px; }
+      .zoom-controls { width: 100%; justify-content: space-between; border-radius: 16px; }
+      .zoom-slider { flex: 1 1 160px; }
       .page-footer { text-align: left; }
     }
   </style>
@@ -574,8 +831,248 @@
         <div class="flow-chip"><strong>Outcome</strong> Leadership Actions <span class="material-symbols-outlined" aria-hidden="true">north_east</span></div>
       </div>
     </section>
+
+    <section class="architecture-stack" aria-label="Software architecture and data flow">
+      <article class="architecture-panel">
+        <span class="section-kicker">Technical blueprint</span>
+        <h2>Detailed software architecture</h2>
+        <p>
+          EPR Tool is structured as a layered reporting system with clearly separated functional modules. Each module
+          exists to solve a specific reporting problem, passes forward a cleaner and richer form of delivery truth, and
+          allows leadership to move from raw operational activity to auditable decisions without needing to inspect the codebase.
+        </p>
+        <div class="architecture-cards">
+          <section class="arch-layer">
+            <span class="layer-step">1</span>
+            <h3>Operational intake module</h3>
+            <p>
+              This module captures the raw operational picture: Jira work hierarchy, worklogs, planning fields, leave
+              context, and controlled leadership inputs. Its purpose is to ensure no report starts from assumptions or
+              partial extracts. Everything downstream depends on this intake layer to preserve traceability back to the
+              operating record.
+            </p>
+          </section>
+          <section class="arch-layer">
+            <span class="layer-step">2</span>
+            <h3>Trust and standardization module</h3>
+            <p>
+              Raw delivery data is not decision-ready, so this module reconciles naming, dates, hierarchy links, and
+              planning structures into one shared shape. It exists to eliminate report-to-report drift and make every
+              later calculation compare like with like.
+            </p>
+          </section>
+          <section class="arch-layer">
+            <span class="layer-step">3</span>
+            <h3>Business context and interpretation module</h3>
+            <p>
+              Here the platform adds meaning, not just structure. Capacity rules, leave impact, holiday effects,
+              delivery-risk signals, budget movement, and timeline interpretation are layered onto the standardized data
+              so leadership can understand why performance changed, not only that it changed.
+            </p>
+          </section>
+          <section class="arch-layer">
+            <span class="layer-step">4</span>
+            <h3>Canonical reporting memory</h3>
+            <p>
+              This module keeps a durable reporting-grade version of the truth that multiple pages can reuse. It exists
+              so dashboards, performance views, and governance screens all read from the same historical and current
+              state instead of recalculating incompatible answers independently.
+            </p>
+          </section>
+          <section class="arch-layer">
+            <span class="layer-step">5</span>
+            <h3>Insight composition module</h3>
+            <p>
+              Once the reporting memory is stable, this module shapes it into leadership products: scorecards, detailed
+              reports, utilization views, risk narratives, and planning comparisons. Its role is to translate shared
+              data into audience-specific decision surfaces without changing the underlying truth.
+            </p>
+          </section>
+          <section class="arch-layer">
+            <span class="layer-step">6</span>
+            <h3>Experience and action module</h3>
+            <p>
+              The final module delivers the reports through a consistent local experience with shared navigation,
+              interactive pages, and live report APIs. It exists so executives, PMO, and delivery leaders can consume
+              one connected reporting estate, move across views, and act on the same evidence with minimal friction.
+            </p>
+          </section>
+        </div>
+        <div class="diagram-card diagram-card-wide" data-diagram-panel>
+          <h3>System architecture diagram</h3>
+          <p>The diagram shows how the functional architecture modules connect to move from operating records to leadership action.</p>
+          <div class="diagram-toolbar">
+            <p>Use the zoom controls to enlarge the architecture map without losing the full end-to-end context.</p>
+            <div class="zoom-controls" aria-label="System architecture diagram zoom controls">
+              <button type="button" class="zoom-btn" data-zoom-out aria-label="Zoom out">-</button>
+              <button type="button" class="zoom-btn" data-zoom-reset aria-label="Reset zoom">Reset</button>
+              <button type="button" class="zoom-btn" data-zoom-in aria-label="Zoom in">+</button>
+              <input
+                class="zoom-slider"
+                type="range"
+                min="80"
+                max="220"
+                step="10"
+                value="110"
+                data-zoom-slider
+                aria-label="System architecture zoom percentage"
+              >
+              <span class="zoom-readout" data-zoom-readout>110%</span>
+            </div>
+          </div>
+          <div class="mermaid-shell mermaid-shell-wide" data-zoom-shell>
+            <div class="mermaid">
+flowchart LR
+    subgraph Sources["Operational source domain"]
+        Jira["Jira delivery records<br/>work hierarchy, status, worklogs"]
+        Plans["Controlled planning inputs<br/>roadmaps, budgets, governance data"]
+        Calendars["Availability context<br/>leaves, calendars, working patterns"]
+    end
+
+    Intake["Operational intake module<br/>collects and preserves source evidence"]
+    Trust["Trust and standardization module<br/>aligns hierarchy, ownership, dates, structures"]
+    Context["Business context and interpretation module<br/>adds capacity, delay, budget, and risk meaning"]
+    Memory["Canonical reporting memory<br/>stores reusable reporting-grade truth"]
+    Compose["Insight composition module<br/>builds dashboards, scorecards, narratives"]
+    Experience["Experience and action module<br/>delivers reports, filters, APIs, navigation"]
+    Decisions["Leadership and PMO actions<br/>governance, recovery, prioritization decisions"]
+
+    Jira --> Intake
+    Plans --> Intake
+    Calendars --> Intake
+    Intake --> Trust --> Context --> Memory --> Compose --> Experience --> Decisions
+    Memory --> Experience
+            </div>
+          </div>
+          <p class="diagram-meta">
+            Full-width Mermaid rendering keeps the architecture legible while still showing how the platform’s modules cooperate as one reporting system.
+          </p>
+        </div>
+      </article>
+
+      <article class="architecture-panel">
+        <span class="section-kicker">Operational path</span>
+        <h2>Detailed data-flow architecture</h2>
+        <p>
+          The data path is intentionally staged: raw Jira facts are acquired, canonicalized, enriched with business
+          context, persisted for reuse, then rendered into HTML reports and live endpoints. That split keeps reporting
+          consistent while allowing multiple dashboards to reuse the same transformed facts.
+        </p>
+        <div class="dataflow-layout">
+          <ol class="flow-steps">
+            <li>
+              <strong>1. Capture operational signals</strong>
+              Jira issues, subtasks, worklogs, leaves, budget fields, and planner references are collected from APIs and managed exports.
+            </li>
+            <li>
+              <strong>2. Standardize identifiers and dates</strong>
+              Extraction logic aligns epic-story-subtask relationships, date semantics, assignee naming, and project mappings into stable report inputs.
+            </li>
+            <li>
+              <strong>3. Apply business enrichment</strong>
+              Capacity, availability, holiday impacts, phase structure, delay heuristics, and budget comparisons are derived as reusable facts.
+            </li>
+            <li>
+              <strong>4. Persist canonical reporting state</strong>
+              SQLite databases hold refreshed facts so report generation and API responses can reuse the same validated source of truth.
+            </li>
+            <li>
+              <strong>5. Generate report-ready outputs</strong>
+              HTML generators assemble metrics, tables, charts, and narratives for each leadership-facing page in the reporting suite.
+            </li>
+            <li>
+              <strong>6. Serve and consume</strong>
+              The local report server exposes reports and APIs, and the browser applies shared navigation plus page-specific scripts for final interaction.
+            </li>
+          </ol>
+          <div class="diagram-card">
+            <h3>Data flow diagram</h3>
+            <p>This view traces the full movement from Jira extraction to user decisions on localhost.</p>
+            <div class="mermaid-shell">
+              <div class="mermaid">
+flowchart TD
+    Raw["1. Raw operational inputs<br/>Jira APIs, workbooks, planner files"]
+    Extract["2. Extraction and collection<br/>Python fetch/export scripts"]
+    Canon["3. Canonical shaping<br/>hierarchy joins, dates, assignee alignment"]
+    Enriched["4. Business enrichment<br/>capacity, leave, risk, budget, diagnostics"]
+    Persist["5. Persisted reporting state<br/>SQLite stores and caches"]
+    Compose["6. Report composition<br/>generate_*.py pipelines and templates"]
+    Serve["7. Local delivery<br/>report_server.py routes and APIs"]
+    Act["8. User consumption<br/>reports, filters, governance actions"]
+    Admin["Admin and planning metadata<br/>managed fields, categories, planner settings"]
+
+    Raw --> Extract --> Canon --> Enriched --> Persist --> Compose --> Serve --> Act
+    Admin --> Canon
+    Admin --> Enriched
+    Persist --> Serve
+              </div>
+            </div>
+            <p class="diagram-meta">
+              This flow emphasizes the separation between acquisition, canonical state, report generation, and final decision consumption.
+            </p>
+          </div>
+        </div>
+      </article>
+    </section>
     <p class="page-footer">EPR Tool - Employee Performance Reporting Tool</p>
   </main>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
   <script src="/shared-nav.js"></script>
+  <script>
+    function initializeDiagramZoom() {
+      const panels = document.querySelectorAll("[data-diagram-panel]");
+      for (const panel of panels) {
+        const shell = panel.querySelector("[data-zoom-shell]");
+        const stage = shell?.querySelector(".mermaid");
+        const slider = panel.querySelector("[data-zoom-slider]");
+        const readout = panel.querySelector("[data-zoom-readout]");
+        const zoomIn = panel.querySelector("[data-zoom-in]");
+        const zoomOut = panel.querySelector("[data-zoom-out]");
+        const zoomReset = panel.querySelector("[data-zoom-reset]");
+        if (!shell || !stage || !slider || !readout) {
+          continue;
+        }
+
+        const clamp = (value) => Math.max(80, Math.min(220, value));
+        const applyZoom = (value) => {
+          const zoomValue = clamp(Number(value) || 100);
+          stage.style.width = `${zoomValue}%`;
+          slider.value = String(zoomValue);
+          readout.textContent = `${zoomValue}%`;
+        };
+
+        zoomIn?.addEventListener("click", () => applyZoom(Number(slider.value) + 10));
+        zoomOut?.addEventListener("click", () => applyZoom(Number(slider.value) - 10));
+        zoomReset?.addEventListener("click", () => applyZoom(110));
+        slider.addEventListener("input", () => applyZoom(slider.value));
+        applyZoom(slider.value);
+        window.setTimeout(() => applyZoom(slider.value), 250);
+      }
+    }
+
+    if (typeof mermaid !== "undefined") {
+      mermaid.initialize({
+        startOnLoad: true,
+        securityLevel: "loose",
+        theme: "base",
+        flowchart: {
+          htmlLabels: true,
+          curve: "basis"
+        },
+        themeVariables: {
+          background: "#ffffff",
+          primaryColor: "#dbeafe",
+          primaryTextColor: "#0f172a",
+          primaryBorderColor: "#93c5fd",
+          secondaryColor: "#dcfce7",
+          tertiaryColor: "#ede9fe",
+          lineColor: "#1d4ed8",
+          fontFamily: "Inter, Segoe UI, sans-serif"
+        }
+      });
+    }
+
+    initializeDiagramZoom();
+  </script>
 </body>
 </html>

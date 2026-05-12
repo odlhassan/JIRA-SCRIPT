@@ -15,6 +15,7 @@ load_dotenv()
 BASE_URL = f"https://{os.getenv('JIRA_SITE', 'octopusdtlsupport')}.atlassian.net"
 EMAIL = os.getenv("JIRA_EMAIL", "hassan.malik@octopusdtl.com")
 API_TOKEN = os.getenv("JIRA_API_TOKEN")
+WRITE_API_TOKEN = os.getenv("JIRA_API_TOKEN_WRITE")
 BOARD_NAME = os.getenv("JIRA_BOARD", "O2")
 
 
@@ -37,12 +38,35 @@ def get_auth_header():
     return {"Authorization": f"Basic {encoded}"}
 
 
+def get_write_auth_header():
+    """Build Basic auth header from email and the dedicated Jira write token."""
+    if not WRITE_API_TOKEN:
+        raise ValueError(
+            "JIRA_API_TOKEN_WRITE not set. Create a .env file (copy from env.example) with your write token."
+        )
+    credentials = f"{EMAIL}:{WRITE_API_TOKEN}"
+    encoded = base64.b64encode(credentials.encode()).decode()
+    return {"Authorization": f"Basic {encoded}"}
+
+
 def get_session():
     """Return a requests Session with Jira auth headers."""
     headers = {
         "Accept": "application/json",
         "Content-Type": "application/json",
         **get_auth_header(),
+    }
+    session = requests.Session()
+    session.headers.update(headers)
+    return session
+
+
+def get_write_session():
+    """Return a requests Session authenticated with the dedicated Jira write token."""
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        **get_write_auth_header(),
     }
     session = requests.Session()
     session.headers.update(headers)

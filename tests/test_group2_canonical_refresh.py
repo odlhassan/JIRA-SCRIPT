@@ -52,6 +52,7 @@ class Group2CanonicalRefreshTests(unittest.TestCase):
             report_server.sync_report_html = lambda *_args, **_kwargs: None
             try:
                 expectations = {
+                    "nested_view": ["generate_rlt_leave_report.py", "generate_nested_view_html.py"],
                     "rlt_leave_report": ["generate_rlt_leave_report.py"],
                     "leaves_planned_calendar": ["generate_rlt_leave_report.py", "generate_leaves_planned_calendar_html.py"],
                     "assignee_hours": ["generate_rlt_leave_report.py", "generate_assignee_hours_report.py"],

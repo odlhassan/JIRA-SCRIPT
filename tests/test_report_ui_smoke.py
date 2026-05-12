@@ -28,6 +28,7 @@ def _write_epics_import_source(path: Path, *, total_override: float | None = Non
     wb = Workbook()
     ws = wb.active
     ws.title = "OmniConnect RMI"
+    epic_url = "https://octopusdtlsupport.atlassian.net/browse/O2-321"
     headers = [
         "Sr #", "Category", "Components", "Road Map Items", "Jira ID", "Originator",
         "Value", "Priority", "Priority", "Priority", "Priority", "Plan Status", "Work Status",
@@ -46,10 +47,11 @@ def _write_epics_import_source(path: Path, *, total_override: float | None = Non
     ws.append(headers)
     phase_values = [1, 2, 3, 4, 5, 6, 7, 8, 9]
     ws.append([
-        1, "Input", "Streaming", "Streaming Epic", "https://octopusdtlsupport.atlassian.net/browse/O2-321",
+        1, "Input", "Streaming", "Streaming Epic", "[O2-321] Streaming Pub/Sub Architecture - Jira",
         "RnD", None, None, None, None, None, "Plan", "Ready",
         *phase_values, total_override if total_override is not None else sum(phase_values),
     ])
+    ws["E3"].hyperlink = epic_url
     ws.append([
         2, None, None, "Streaming child without Jira", None,
         "Imp Team", None, None, None, None, None, "UnPlan", "Blocked",
@@ -214,6 +216,44 @@ class ReportUiSmokeTests(unittest.TestCase):
         self.assertIn('"&scope_basis=" + scopeBasisParam', html)
         self.assertIn('if (scorecardPlannedHoursSource === "subtask_logs") {', html)
         self.assertIn("return subtaskLoggedInRange(row);", html)
+
+    def test_nested_leave_scorecards_prefer_distributed_buckets_for_date_accuracy(self):
+        payload = {
+            "generated_at": "2026-02-21 00:00 UTC",
+            "source_file": "nested view.xlsx",
+            "rows": [],
+            "capacity_profiles": [],
+            "leave_daily_rows": [],
+            "leave_distributed_rows": [
+                {
+                    "issue_key": "RLT-172",
+                    "assignee": "Alice",
+                    "start_date": "2026-03-01",
+                    "due_date": "2026-03-01",
+                    "planned_date_for_bucket": "2026-03-01",
+                    "original_estimate_hours": 8,
+                    "total_worklog_hours": 8,
+                    "leave_classification": "Planned",
+                }
+            ],
+            "leave_subtask_rows": [
+                {
+                    "issue_key": "RLT-172",
+                    "assignee": "Alice",
+                    "start_date": "2026-01-01",
+                    "due_date": "2026-03-31",
+                    "original_estimate_hours": 528,
+                    "total_worklog_hours": 528,
+                    "leave_classification": "Planned",
+                }
+            ],
+        }
+        html = build_nested_html(payload)
+        self.assertIn("const leaveDistributedRows = Array.isArray(reportData.leave_distributed_rows)", html)
+        self.assertIn("function computeDistributedLeaveMetricsForRange(bounds)", html)
+        self.assertIn("? distributedLeaveMetrics", html)
+        self.assertIn("Subtasks_Distributed buckets", html)
+        self.assertIn("Sum(bucketed RLT leave original estimates)", html)
 
     def test_nested_view_actual_rollup_uses_subtask_leaves_only(self):
         payload = {
@@ -539,13 +579,33 @@ class ReportUiSmokeTests(unittest.TestCase):
             self.assertIn("Onhold", epics_html)
             self.assertIn('class="executive-summary-table"', epics_html)
             self.assertIn("renderExecutiveSummary", epics_html)
-            self.assertIn("Project/Product Categorization/Component groups", epics_html)
+            self.assertIn("click any epic row to open its phase matrix", epics_html)
             self.assertIn('id="seal-epics-btn"', epics_html)
+            self.assertIn('id="populate-jira-btn"', epics_html)
+            self.assertIn('id="populate-jira-modal"', epics_html)
+            self.assertIn('id="populate-jira-confirm"', epics_html)
+            self.assertIn('id="populate-jira-history-btn"', epics_html)
+            self.assertIn('id="populate-jira-report"', epics_html)
+            self.assertIn('id="populate-jira-history"', epics_html)
+            self.assertIn("Retry Failed Work Items", epics_html)
+            self.assertIn('/api/epics-management/populate-jira/preflight', epics_html)
+            self.assertIn('/api/epics-management/populate-jira/execute', epics_html)
+            self.assertIn('/api/epics-management/populate-jira/reports', epics_html)
             self.assertIn("Manage sealed budgets", epics_html)
             self.assertIn("User Manual Plan", epics_html)
             self.assertIn("Most Likely", epics_html)
             self.assertIn("TK Budgeted", epics_html)
             self.assertIn("TK Approved", epics_html)
+            self.assertIn("Plan Overview", epics_html)
+            self.assertIn('data-accordion-row="1"', epics_html)
+            self.assertIn("epic-accordion-toggle", epics_html)
+            self.assertIn("epic-overview-split", epics_html)
+            self.assertIn('title="Most Likely"', epics_html)
+            self.assertIn('title="TK Approved"', epics_html)
+            self.assertIn('aria-label="Epic phase matrix"', epics_html)
+            self.assertIn("<th>Phase</th><th>Most likely</th><th>TK Budgeted</th>", epics_html)
+            self.assertNotIn("Click the epic row to view the phase matrix.", epics_html)
+            self.assertNotIn("Most Likely input", epics_html)
             self.assertIn("plan-layer-most-likely", epics_html)
             self.assertIn("plan-layer-tk-budgeted", epics_html)
             self.assertIn("plan-pair-start", epics_html)
@@ -559,6 +619,14 @@ class ReportUiSmokeTests(unittest.TestCase):
             self.assertIn('id="manage-plan-columns-btn"', epics_html)
             self.assertIn('id="epic-dialog"', epics_html)
             self.assertIn('id="epic-project-select"', epics_html)
+            self.assertIn("tree-level-category", epics_html)
+            self.assertIn("tree-level-component", epics_html)
+            self.assertIn("tree-level-epic", epics_html)
+            self.assertNotIn('id="epic-product-category"', epics_html)
+            self.assertNotIn('id="epic-component"', epics_html)
+            self.assertIn("Jira URL (optional)", epics_html)
+            self.assertIn('epic_key: resolvedEpicKey || ""', epics_html)
+            self.assertNotIn("Jira URL must include an epic key like /browse/O2-1234.", epics_html)
             self.assertIn("/api/epics-management/dropdown-options", epics_html)
             self.assertIn("/api/epics-management/plan-columns", epics_html)
             self.assertIn("/api/epics-management/plan-columns/order", epics_html)
@@ -586,6 +654,8 @@ class ReportUiSmokeTests(unittest.TestCase):
             self.assertIn('id="dynamic-plan-fields"', epics_html)
             self.assertIn('DATE_ONLY_FORMULA_PLAN_KEYS', epics_html)
             self.assertIn('Edit Planned Dates for', epics_html)
+            self.assertIn("hintEl.textContent = 'No Jira issues are marked as created by Populate Jira", epics_html)
+            self.assertIn('only "Planner only" applies until then.\';', epics_html)
 
     def test_page_categories_page_contains_report_display_name_controls(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
@@ -988,6 +1058,8 @@ class ReportUiSmokeTests(unittest.TestCase):
             self.assertEqual(len(rows), 2)
             row = rows[0]
             self.assertEqual(row["project_name"], "OmniConnect")
+            self.assertEqual(row["jira_url"], "https://octopusdtlsupport.atlassian.net/browse/O2-321")
+            self.assertEqual(row["epic_key"], "O2-321")
             self.assertEqual(row["work_status"], "Ready")
             self.assertEqual(row["category"], "Input")
             self.assertEqual(row["component"], "Streaming")
@@ -1343,6 +1415,510 @@ class ReportUiSmokeTests(unittest.TestCase):
 
             delete_after_rebudget = client.delete("/api/epics-management/rows/O2-555")
             self.assertEqual(delete_after_rebudget.status_code, 200)
+
+    @patch("report_server._jira_write_permissions_summary")
+    def test_epics_management_populate_jira_preflight_returns_duplicate_warning_and_month_split_subtasks(
+        self,
+        mock_permissions,
+    ):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            (root / "report_html").mkdir(parents=True, exist_ok=True)
+            (root / "report_html" / "dashboard.html").write_text("<html><body>ok</body></html>", encoding="utf-8")
+            _write_minimal_assignee_workbook(root)
+            app = create_report_server_app(base_dir=root, folder_raw="report_html")
+            client = app.test_client()
+
+            mock_permissions.return_value = {
+                "ok": True,
+                "project_key": "O2",
+                "permissions": {},
+                "missing_permissions": [],
+            }
+
+            create_resp = client.post(
+                "/api/epics-management/rows",
+                json={
+                    "epic_key": "O2-880",
+                    "project_key": "O2",
+                    "project_name": "OmniConnect",
+                    "product_category": "Input",
+                    "component": "Streaming",
+                    "epic_name": "Publish Preview Epic",
+                    "description": "Preview me",
+                    "plans": {
+                        "epic_plan": {"man_days": 12, "start_date": "2026-01-10", "due_date": "2026-03-20"},
+                        "development_plan": {"man_days": 9, "start_date": "2026-01-15", "due_date": "2026-03-10"},
+                    },
+                },
+            )
+            self.assertEqual(create_resp.status_code, 201)
+
+            db_path = root / "assignee_hours_capacity.db"
+            conn = sqlite3.connect(db_path)
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO canonical_refresh_state(id, active_run_id, last_success_run_id, updated_at_utc)
+                    VALUES (1, ?, ?, ?)
+                    ON CONFLICT(id) DO UPDATE SET
+                        active_run_id=excluded.active_run_id,
+                        last_success_run_id=excluded.last_success_run_id,
+                        updated_at_utc=excluded.updated_at_utc
+                    """,
+                    ("run-preview", "run-preview", "2026-04-30T00:00:00+00:00"),
+                )
+                conn.execute(
+                    """
+                    INSERT INTO canonical_issues(
+                        run_id, issue_id, issue_key, project_key, issue_type, summary, status,
+                        assignee, start_date, due_date, created_utc, updated_utc,
+                        resolved_stable_since_date, original_estimate_hours, total_hours_logged,
+                        fix_type, parent_issue_key, story_key, epic_key, raw_payload_json
+                    )
+                    VALUES (?, '', ?, ?, ?, ?, ?, '', '', '', '', '', '', 0, 0, '', '', '', '', '{}')
+                    """,
+                    ("run-preview", "O2-998", "O2", "Epic", "Publish Preview Epic", "In Progress"),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            preview_resp = client.post(
+                "/api/epics-management/populate-jira/preflight",
+                json={"epic_keys": ["O2-880"]},
+            )
+            self.assertEqual(preview_resp.status_code, 200)
+            body = preview_resp.get_json() or {}
+            self.assertTrue(body.get("can_execute"))
+            self.assertEqual(body.get("source"), "epics_management_populate_jira")
+
+            epics = body.get("epics") or []
+            self.assertEqual(len(epics), 1)
+            item = epics[0]
+            self.assertTrue((item.get("duplicate_warning") or {}).get("found"))
+            self.assertEqual((item.get("permission") or {}).get("project_key"), "O2")
+
+            stories = item.get("stories") or []
+            self.assertGreaterEqual(len(stories), 1)
+            story = next(entry for entry in stories if entry.get("phase_key") == "development_plan")
+            self.assertEqual(story.get("phase_key"), "development_plan")
+            subtasks = story.get("subtasks") or []
+            self.assertEqual(len(subtasks), 3)
+            self.assertEqual(subtasks[0].get("month_label"), "Jan effort")
+            self.assertEqual(subtasks[0].get("start_date"), "2026-01-15")
+            self.assertEqual(subtasks[0].get("due_date"), "2026-01-31")
+            self.assertEqual(subtasks[1].get("month_label"), "Feb effort")
+            self.assertEqual(subtasks[2].get("month_label"), "Mar effort")
+
+    @patch("report_server._jira_create_issue")
+    @patch("report_server._resolve_jira_field_id_by_name")
+    @patch("report_server._resolve_jira_publish_session")
+    @patch("report_server.resolve_jira_end_date_field_ids")
+    @patch("report_server.resolve_jira_start_date_field_id")
+    def test_epics_management_populate_jira_execute_persists_links_for_sealed_epic(
+        self,
+        mock_start_field,
+        mock_end_fields,
+        mock_resolve_publish_session,
+        mock_resolve_field_id,
+        mock_create_issue,
+    ):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            (root / "report_html").mkdir(parents=True, exist_ok=True)
+            (root / "report_html" / "dashboard.html").write_text("<html><body>ok</body></html>", encoding="utf-8")
+            _write_minimal_assignee_workbook(root)
+            app = create_report_server_app(base_dir=root, folder_raw="report_html")
+            client = app.test_client()
+
+            mock_session = object()
+            mock_start_field.return_value = "customfield_start"
+            mock_end_fields.return_value = ["customfield_end"]
+            mock_resolve_publish_session.return_value = (
+                mock_session,
+                {
+                    "ok": True,
+                    "project_key": "O2",
+                    "permissions": {},
+                    "missing_permissions": [],
+                    "token_source": "default",
+                },
+            )
+            mock_resolve_field_id.side_effect = lambda _session, field_name: {
+                "Epic Name": "customfield_epic_name",
+                "Epic Link": "customfield_10014",
+            }.get(field_name, "")
+            issued_keys: list[str] = []
+
+            def _fake_create_issue(_session, _fields):
+                issue_key = f"O2-90{len(issued_keys) + 1}"
+                issued_keys.append(issue_key)
+                return {"issue_key": issue_key, "jira_url": f"https://jira.example.com/browse/{issue_key}"}
+
+            mock_create_issue.side_effect = _fake_create_issue
+
+            create_resp = client.post(
+                "/api/epics-management/rows",
+                json={
+                    "epic_key": "O2-556",
+                    "project_key": "O2",
+                    "project_name": "OmniConnect",
+                    "product_category": "Input",
+                    "component": "Streaming",
+                    "epic_name": "Sealed Publish Epic",
+                    "plans": {
+                        "epic_plan": {"man_days": 6, "start_date": "2026-02-01", "due_date": "2026-02-12"},
+                        "research_urs_plan": {"man_days": 4, "start_date": "2026-02-02", "due_date": "2026-02-10"},
+                    },
+                },
+            )
+            self.assertEqual(create_resp.status_code, 201)
+
+            seal_resp = client.post("/api/epics-management/seal", json={"epic_keys": ["O2-556"]})
+            self.assertEqual(seal_resp.status_code, 200)
+
+            execute_resp = client.post(
+                "/api/epics-management/populate-jira/execute",
+                json={"epics": [{"epic_key": "O2-556", "mode": "create", "allow_duplicate": True}]},
+            )
+            self.assertEqual(execute_resp.status_code, 200)
+            body = execute_resp.get_json() or {}
+            self.assertEqual(body.get("source"), "epics_management_populate_jira")
+            results = body.get("results") or []
+            self.assertEqual(len(results), 1)
+            result = results[0]
+            self.assertEqual(result.get("epic_jira_key"), "O2-901")
+            self.assertEqual(result.get("story_count"), 3)
+
+            rows_resp = client.get("/api/epics-management/rows")
+            self.assertEqual(rows_resp.status_code, 200)
+            row = next(item for item in (rows_resp.get_json() or {}).get("rows", []) if item.get("epic_key") == "O2-556")
+            self.assertEqual(row.get("is_sealed"), 1)
+            self.assertEqual(row.get("epr_jira_epic_created"), 1)
+            self.assertEqual(row.get("epr_created_jira_issue_count"), 4)
+            self.assertEqual(row.get("jira_url"), "https://jira.example.com/browse/O2-901")
+            self.assertEqual(
+                ((row.get("plans") or {}).get("research_urs_plan") or {}).get("jira_url"),
+                "https://jira.example.com/browse/O2-902",
+            )
+            self.assertEqual(
+                ((row.get("plans") or {}).get("production_plan") or {}).get("jira_url"),
+                "https://jira.example.com/browse/O2-904",
+            )
+
+            db_path = root / "assignee_hours_capacity.db"
+            conn = sqlite3.connect(db_path)
+            try:
+                publish_rows = conn.execute(
+                    "SELECT issue_level, jira_issue_key, jira_url, created_via_epr FROM epics_management_jira_publish WHERE epic_key=? ORDER BY issue_level, phase_key",
+                    ("O2-556",),
+                ).fetchall()
+                self.assertEqual(len(publish_rows), 4)
+                self.assertTrue(all(int(pr[3] or 0) == 1 for pr in publish_rows))
+                epic_records = [row for row in publish_rows if row[0] == "epic"]
+                story_records = [row for row in publish_rows if row[0] == "story"]
+                self.assertEqual(len(epic_records), 1)
+                self.assertEqual(epic_records[0][1], "O2-901")
+                self.assertEqual({row[1] for row in story_records}, {"O2-902", "O2-903", "O2-904"})
+            finally:
+                conn.close()
+
+    @patch("report_server._jira_update_issue")
+    @patch("report_server._jira_create_issue")
+    @patch("report_server._resolve_jira_field_id_by_name")
+    @patch("report_server._resolve_jira_publish_session")
+    @patch("report_server.resolve_jira_end_date_field_ids")
+    @patch("report_server.resolve_jira_start_date_field_id")
+    def test_epics_management_populate_jira_report_records_failure_history_and_retry(
+        self,
+        mock_start_field,
+        mock_end_fields,
+        mock_resolve_publish_session,
+        mock_resolve_field_id,
+        mock_create_issue,
+        mock_update_issue,
+    ):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            (root / "report_html").mkdir(parents=True, exist_ok=True)
+            (root / "report_html" / "dashboard.html").write_text("<html><body>ok</body></html>", encoding="utf-8")
+            _write_minimal_assignee_workbook(root)
+            app = create_report_server_app(base_dir=root, folder_raw="report_html")
+            client = app.test_client()
+
+            mock_session = object()
+            mock_start_field.return_value = "customfield_start"
+            mock_end_fields.return_value = ["customfield_end"]
+            mock_resolve_publish_session.return_value = (
+                mock_session,
+                {
+                    "ok": True,
+                    "project_key": "O2",
+                    "permissions": {},
+                    "missing_permissions": [],
+                    "token_source": "default",
+                },
+            )
+            mock_resolve_field_id.side_effect = lambda _session, field_name: {
+                "Epic Name": "customfield_epic_name",
+                "Epic Link": "customfield_10014",
+            }.get(field_name, "")
+            mock_update_issue.side_effect = lambda _session, issue_key, _fields: {
+                "issue_key": issue_key,
+                "jira_url": f"https://jira.example.com/browse/{issue_key}",
+            }
+            issued_keys: list[str] = []
+            failed_dev_once = {"value": False}
+
+            def _fake_create_issue(_session, fields):
+                issue_type = (fields.get("issuetype") or {}).get("name")
+                summary = fields.get("summary")
+                if issue_type == "Story" and summary == "Dev" and not failed_dev_once["value"]:
+                    failed_dev_once["value"] = True
+                    raise ValueError("Jira create issue failed (400): summary: Dev blocked")
+                issue_key = f"O2-92{len(issued_keys) + 1}"
+                issued_keys.append(issue_key)
+                return {"issue_key": issue_key, "jira_url": f"https://jira.example.com/browse/{issue_key}"}
+
+            mock_create_issue.side_effect = _fake_create_issue
+
+            create_resp = client.post(
+                "/api/epics-management/rows",
+                json={
+                    "epic_key": "O2-557",
+                    "project_key": "O2",
+                    "project_name": "OmniConnect",
+                    "product_category": "Input",
+                    "component": "Streaming",
+                    "epic_name": "Failure Report Epic",
+                    "plans": {
+                        "epic_plan": {"man_days": 6, "start_date": "2026-02-01", "due_date": "2026-02-12"},
+                        "development_plan": {"man_days": 4, "start_date": "2026-02-02", "due_date": "2026-02-10"},
+                    },
+                },
+            )
+            self.assertEqual(create_resp.status_code, 201)
+
+            execute_resp = client.post(
+                "/api/epics-management/populate-jira/execute",
+                json={"epics": [{"epic_key": "O2-557", "mode": "create", "allow_duplicate": True}]},
+            )
+            self.assertEqual(execute_resp.status_code, 200)
+            body = execute_resp.get_json() or {}
+            report = body.get("report") or {}
+            self.assertEqual(report.get("status"), "partial_failed")
+            self.assertGreater((report.get("summary") or {}).get("failed", 0), 0)
+            failed_story = next(
+                item
+                for item in (report.get("items") or [])
+                if item.get("issue_level") == "story" and item.get("phase_key") == "development_plan"
+            )
+            self.assertEqual(failed_story.get("status"), "failed")
+            self.assertTrue(failed_story.get("can_retry"))
+            self.assertIn("Dev blocked", failed_story.get("error", ""))
+
+            history_resp = client.get("/api/epics-management/populate-jira/reports")
+            self.assertEqual(history_resp.status_code, 200)
+            history = (history_resp.get_json() or {}).get("reports") or []
+            self.assertEqual(history[0].get("report_id"), report.get("report_id"))
+
+            detail_resp = client.get(f"/api/epics-management/populate-jira/reports/{report.get('report_id')}")
+            self.assertEqual(detail_resp.status_code, 200)
+            detail_report = (detail_resp.get_json() or {}).get("report") or {}
+            self.assertEqual(detail_report.get("report_id"), report.get("report_id"))
+
+            retry_resp = client.post(f"/api/epics-management/populate-jira/reports/{report.get('report_id')}/retry")
+            self.assertEqual(retry_resp.status_code, 200)
+            retry_report = (retry_resp.get_json() or {}).get("report") or {}
+            self.assertEqual(retry_report.get("status"), "completed")
+            retry_request = ((retry_report.get("request") or {}).get("epics") or [])[0]
+            self.assertEqual(retry_request.get("mode"), "update")
+            self.assertEqual(retry_request.get("phase_keys"), ["development_plan"])
+            self.assertEqual(retry_report.get("request", {}).get("retry_of_report_id"), report.get("report_id"))
+
+    def test_epics_management_delete_row_clears_jira_publish(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            (root / "report_html").mkdir(parents=True, exist_ok=True)
+            (root / "report_html" / "dashboard.html").write_text("<html><body>ok</body></html>", encoding="utf-8")
+            _write_minimal_assignee_workbook(root)
+            app = create_report_server_app(base_dir=root, folder_raw="report_html")
+            client = app.test_client()
+
+            create_resp = client.post(
+                "/api/epics-management/rows",
+                json={
+                    "epic_key": "O2-888",
+                    "project_key": "O2",
+                    "project_name": "OmniConnect",
+                    "product_category": "Input",
+                    "component": "Del",
+                    "epic_name": "Delete publish cleanup",
+                },
+            )
+            self.assertEqual(create_resp.status_code, 201)
+            row = (create_resp.get_json() or {}).get("row") or {}
+            row_id = str(row.get("id") or "").strip()
+            self.assertTrue(row_id)
+
+            db_path = root / "assignee_hours_capacity.db"
+            conn = sqlite3.connect(db_path)
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO epics_management_jira_publish (
+                      epic_row_id, epic_key, phase_key, issue_level, jira_issue_key, jira_url,
+                      parent_jira_key, month_label, man_days, start_date, due_date,
+                      published_at_utc, updated_at_utc, created_via_epr
+                    ) VALUES (?, ?, '', 'epic', 'O2-800', '', '', '', 0, '', '', '', '', 1)
+                    """,
+                    (row_id, "O2-888"),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            del_resp = client.delete("/api/epics-management/rows/O2-888", json={"delete_jira": False})
+            self.assertEqual(del_resp.status_code, 200)
+            body = del_resp.get_json() or {}
+            self.assertEqual(body.get("deleted"), True)
+            self.assertEqual(body.get("epic_key"), "O2-888")
+            self.assertEqual(body.get("jira_issues_deleted"), [])
+
+            conn2 = sqlite3.connect(db_path)
+            try:
+                n = conn2.execute(
+                    "SELECT COUNT(*) FROM epics_management_jira_publish WHERE epic_row_id=?",
+                    (row_id,),
+                ).fetchone()[0]
+                self.assertEqual(int(n), 0)
+                left = conn2.execute("SELECT COUNT(*) FROM epics_management WHERE id=?", (row_id,)).fetchone()[0]
+                self.assertEqual(int(left), 0)
+            finally:
+                conn2.close()
+
+    @patch("report_server._jira_delete_issue")
+    @patch("report_server._resolve_jira_issue_delete_session")
+    def test_epics_management_delete_with_jira_only_created_keys_in_order(
+        self, mock_resolve_delete_session, mock_jira_delete
+    ):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            (root / "report_html").mkdir(parents=True, exist_ok=True)
+            (root / "report_html" / "dashboard.html").write_text("<html><body>ok</body></html>", encoding="utf-8")
+            _write_minimal_assignee_workbook(root)
+            app = create_report_server_app(base_dir=root, folder_raw="report_html")
+            client = app.test_client()
+
+            mock_resolve_delete_session.return_value = (
+                object(),
+                {"ok": True, "missing_permissions": []},
+            )
+            mock_jira_delete.return_value = None
+
+            create_resp = client.post(
+                "/api/epics-management/rows",
+                json={
+                    "epic_key": "O2-887",
+                    "project_key": "O2",
+                    "project_name": "OmniConnect",
+                    "product_category": "Input",
+                    "component": "JD",
+                    "epic_name": "Jira delete order",
+                },
+            )
+            self.assertEqual(create_resp.status_code, 201)
+            row = (create_resp.get_json() or {}).get("row") or {}
+            row_id = str(row.get("id") or "").strip()
+
+            db_path = root / "assignee_hours_capacity.db"
+            now = "2026-04-01T12:00:00Z"
+            conn = sqlite3.connect(db_path)
+            try:
+                # Insert epic first (lower id): ordering must still prefer sub-task -> story -> epic.
+                conn.execute(
+                    """
+                    INSERT INTO epics_management_jira_publish (
+                      epic_row_id, epic_key, phase_key, issue_level, jira_issue_key, jira_url,
+                      parent_jira_key, month_label, man_days, start_date, due_date,
+                      published_at_utc, updated_at_utc, created_via_epr
+                    ) VALUES (?, ?, '', 'epic', 'O2-E1', '', '', '', 0, '', '', ?, ?, 1)
+                    """,
+                    (row_id, "O2-887", now, now),
+                )
+                conn.execute(
+                    """
+                    INSERT INTO epics_management_jira_publish (
+                      epic_row_id, epic_key, phase_key, issue_level, jira_issue_key, jira_url,
+                      parent_jira_key, month_label, man_days, start_date, due_date,
+                      published_at_utc, updated_at_utc, created_via_epr
+                    ) VALUES (?, ?, 'research_urs_plan', 'story', 'O2-S1', '', '', '', 0, '', '', ?, ?, 1)
+                    """,
+                    (row_id, "O2-887", now, now),
+                )
+                conn.execute(
+                    """
+                    INSERT INTO epics_management_jira_publish (
+                      epic_row_id, epic_key, phase_key, issue_level, jira_issue_key, jira_url,
+                      parent_jira_key, month_label, man_days, start_date, due_date,
+                      published_at_utc, updated_at_utc, created_via_epr
+                    ) VALUES (?, ?, 'm1', 'subtask', 'O2-ST1', 'https://jira.example/browse/O2-ST1', 'O2-S1', 'Jan', 0, '', '', ?, ?, 1)
+                    """,
+                    (row_id, "O2-887", now, now),
+                )
+                conn.execute(
+                    """
+                    INSERT INTO epics_management_jira_publish (
+                      epic_row_id, epic_key, phase_key, issue_level, jira_issue_key, jira_url,
+                      parent_jira_key, month_label, man_days, start_date, due_date,
+                      published_at_utc, updated_at_utc, created_via_epr
+                    ) VALUES (?, ?, '', 'story', 'O2-LINKED', '', '', '', 0, '', '', ?, ?, 0)
+                    """,
+                    (row_id, "O2-887", now, now),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            del_resp = client.delete("/api/epics-management/rows/O2-887", json={"delete_jira": True})
+            self.assertEqual(del_resp.status_code, 200)
+            self.assertEqual((del_resp.get_json() or {}).get("jira_issues_deleted"), ["O2-ST1", "O2-S1", "O2-E1"])
+
+            issued = [call.args[1] for call in mock_jira_delete.call_args_list]
+            self.assertEqual(issued, ["O2-ST1", "O2-S1", "O2-E1"])
+            conn3 = sqlite3.connect(db_path)
+            try:
+                self.assertEqual(
+                    conn3.execute("SELECT COUNT(*) FROM epics_management_jira_publish WHERE epic_row_id=?", (row_id,)).fetchone()[
+                        0
+                    ],
+                    0,
+                )
+            finally:
+                conn3.close()
+
+    def test_jira_pick_select_option_for_yes_no_prefers_id(self):
+        from report_server import _jira_pick_select_option_for_yes_no
+
+        allowed = [{"id": "10650-y", "value": "Yes"}, {"id": "10650-n", "value": "No"}]
+        self.assertEqual(_jira_pick_select_option_for_yes_no(allowed, "yes"), {"id": "10650-y"})
+        self.assertEqual(_jira_pick_select_option_for_yes_no(allowed, "No"), {"id": "10650-n"})
+
+    def test_jira_pick_select_option_matches_planned_labels(self):
+        from report_server import _jira_pick_select_option_for_yes_no
+
+        allowed = [{"id": "a", "value": "Planned"}, {"id": "b", "value": "Not planned"}]
+        self.assertEqual(_jira_pick_select_option_for_yes_no(allowed, "Yes"), {"id": "a"})
+        self.assertEqual(_jira_pick_select_option_for_yes_no(allowed, "No"), {"id": "b"})
+
+    def test_jira_rmi_planned_fields_fallback_value_when_no_createmeta_allowed_values(self):
+        from report_server import _jira_rmi_planned_fields_for_issue
+
+        with patch("report_server._resolve_jira_field_id_by_name", return_value="customfield_10650"):
+            with patch("report_server._jira_createmeta_issue_fields", return_value={}):
+                out = _jira_rmi_planned_fields_for_issue(object(), "WOM", "Epic", "y")
+        self.assertEqual(out, {"customfield_10650": {"value": "Yes"}})
 
     def test_reference_tk_estimates_folder_contains_expected_files(self):
         root = Path(__file__).resolve().parents[1] / "Reference TK Estimates Folder"

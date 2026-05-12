@@ -52,11 +52,12 @@
 - `Hours Required To Complete Projects` card behavior:
   - Formula: `Total Planned Projects - Total Actual Project Hours`.
 - `Total Leaves Planned` card behavior:
-  - Formula: `Sum(Original Estimates) for RLT leave work`.
+  - Formula: `Sum(bucketed RLT leave original estimates)` within the selected date range.
+  - Source priority: `Subtasks_Distributed` date buckets first, then `Daily_Assignee` buckets, then raw subtask overlap only as a legacy fallback when no bucketed rows are available.
 - `Availability` card behavior:
   - Formula: `Total Capacity (Hours) - Total Leaves Planned`.
 - `Capacity Gap` card behavior:
-  - Formula: `Total Capacity (Hours) - Total Planned Projects (Hours) - RLT RnD Leave Tracker Original Estimates`.
+  - Formula: `Total Capacity (Hours) - Total Planned Projects (Hours) - bucketed RLT leave estimates`.
   - Recalculates when date filters, project filters, or capacity profile selection changes.
 - Performance Overview `i` icon behavior:
   - Shows formula text and live ingredient values for each KPI card.

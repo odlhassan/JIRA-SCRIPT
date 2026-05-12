@@ -26,6 +26,8 @@ jira_sync_cache.db-wal
 jira_exports.db
 
 # Local tooling / logs
+.azure_deploy_staging/
+__*server*.log
 .codex_run_server_*_pid
 __server.*.log
 .playwright-mcp/

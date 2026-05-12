@@ -87,6 +87,37 @@ def _format_generated_at() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
 
+def _tk_comparison_badge(tk_seconds: float, jira_estimate_seconds: float) -> str:
+    """Return HTML badge comparing TK target vs Jira original estimate (Doc §6.6)."""
+    if not tk_seconds and not jira_estimate_seconds:
+        return '<span class="comparison-badge comparison-neutral" title="No numeric TK target available">&#8505;</span>'
+    if not tk_seconds or not jira_estimate_seconds:
+        return '<span class="comparison-badge comparison-neutral" title="No numeric TK target available">&#8505;</span>'
+    tk_hours = tk_seconds / SECONDS_PER_HOUR
+    est_hours = jira_estimate_seconds / SECONDS_PER_HOUR
+    delta = tk_hours - est_hours
+    if abs(delta) < 0.01:
+        return '<span class="comparison-badge comparison-match" title="Matches Jira original estimate">&#8505;</span>'
+    if delta > 0:
+        return f'<span class="comparison-badge comparison-over" title="+{delta:.2f} h above Jira original estimate">&#8505;</span>'
+    return f'<span class="comparison-badge comparison-under" title="{delta:.2f} h below Jira original estimate">&#8505;</span>'
+
+
+def _story_rollup_badge(story_rollup_seconds: float, jira_estimate_seconds: float) -> str:
+    """Return HTML badge comparing story rollup vs epic aggregate estimate (Doc §6.7)."""
+    if not story_rollup_seconds and not jira_estimate_seconds:
+        return '<span class="comparison-badge comparison-neutral" title="No story rollup or estimate available">&#8505;</span>'
+    if not story_rollup_seconds or not jira_estimate_seconds:
+        return '<span class="comparison-badge comparison-neutral" title="No story rollup or estimate available">&#8505;</span>'
+    delta = story_rollup_seconds - jira_estimate_seconds
+    delta_hours = delta / SECONDS_PER_HOUR
+    if abs(delta_hours) < 0.01:
+        return '<span class="comparison-badge comparison-match" title="Story rollup matches epic original estimate">&#8505;</span>'
+    if delta_hours > 0:
+        return f'<span class="comparison-badge comparison-over" title="+{delta_hours:.2f} h above epic original estimate">&#8505;</span>'
+    return f'<span class="comparison-badge comparison-under" title="{delta_hours:.2f} h below epic original estimate">&#8505;</span>'
+
+
 def _parse_jira_datetime_for_display(started_date: str, started_utc: str) -> datetime | None:
     raw = _to_text(started_utc) or _to_text(started_date)
     if not raw:
@@ -112,6 +143,36 @@ def _format_worklog_started_cell(started_date: str, started_utc: str) -> str:
     if dt:
         return dt.strftime("%d-%b-%Y %H:%M")
     return _to_text(started_utc) or _to_text(started_date)
+
+
+def _load_run_errors(db_path: Path) -> list[dict[str, str]]:
+    """Load run_errors table if it exists. Gracefully returns [] when table is absent."""
+    import sqlite3 as _sqlite3
+    try:
+        conn = _sqlite3.connect(db_path)
+        conn.row_factory = _sqlite3.Row
+        cursor = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='run_errors'"
+        )
+        if not cursor.fetchone():
+            conn.close()
+            return []
+        rows = conn.execute(
+            "SELECT error_scope, issue_key, sheet_name, row_number, message FROM run_errors ORDER BY sheet_name, row_number, issue_key"
+        ).fetchall()
+        conn.close()
+        return [
+            {
+                "scope": _to_text(row["error_scope"]),
+                "issue_key": _to_text(row["issue_key"]),
+                "sheet": _to_text(row["sheet_name"]),
+                "row": _to_text(row["row_number"]),
+                "message": _to_text(row["message"]),
+            }
+            for row in rows
+        ]
+    except Exception:
+        return []
 
 
 def _format_time_spent_jira_style(hours: Any) -> str:
@@ -288,6 +349,13 @@ def load_report_data(db_path: Path, run_id: str = "") -> dict[str, Any]:
             for story in stories
         )
         metrics = _epic_metrics(row)
+        aggregate_estimate_seconds = round(story_estimate_seconds + subtask_estimate_seconds, 2)
+        # Source values from workbook (plans)
+        source_man_days = _to_text(epic_plan.get("most_likely_man_days") if epic_plan.get("most_likely_man_days") not in (None, "") else epic_plan.get("man_days"))
+        source_optimistic = _to_text(epic_plan.get("optimistic_man_days"))
+        source_pessimistic = _to_text(epic_plan.get("pessimistic_man_days"))
+        source_est_formula = _to_text(epic_plan.get("calculated_man_days"))
+        source_tk_target = _to_text(epic_plan.get("tk_approved_man_days") if epic_plan.get("tk_approved_man_days") not in (None, "") else epic_plan.get("tk_budgeted_man_days"))
         epic_records.append(
             {
                 "jira_id": epic_key,
@@ -306,6 +374,8 @@ def load_report_data(db_path: Path, run_id: str = "") -> dict[str, Any]:
                 "subtask_estimate_seconds": round(subtask_estimate_seconds, 2),
                 "logged_seconds": round(logged_seconds, 2),
                 "jira_original_estimate_seconds": _seconds_from_hours(canonical_epic.get("original_estimate_hours")),
+                "aggregate_estimate_seconds": aggregate_estimate_seconds,
+                "source_values": f"ML:{source_man_days} O:{source_optimistic} P:{source_pessimistic} C:{source_est_formula} TK:{source_tk_target}",
                 "epics_planner_remarks": _to_text(row.get("remarks")),
                 "stories": stories,
                 **metrics,
@@ -325,6 +395,7 @@ def load_report_data(db_path: Path, run_id: str = "") -> dict[str, Any]:
         "capacity_source": build_capacity_source(epic_records, planner_db, effective_run_id),
         "rmi_schedule_records": rmi_schedule_records,
         "rmi_schedule_years": build_rmi_schedule_years(rmi_schedule_records),
+        "run_errors": _load_run_errors(canonical_db),
     }
 
 
@@ -362,6 +433,7 @@ def build_rmi_schedule_records(epics: list[dict[str, Any]]) -> list[dict[str, An
                 "due_date": _to_text(epic.get("due_date")),
                 "most_likely_days": round(_to_float(epic.get("most_likely_seconds")) / SECONDS_PER_DAY, 8),
                 "tk_approved_days": round(_to_float(epic.get("tk_approved_seconds")) / SECONDS_PER_DAY, 8),
+                "jira_original_estimate_seconds": round(_to_float(epic.get("jira_original_estimate_seconds")), 4),
                 "stories": stories_out,
             }
         )
@@ -386,6 +458,134 @@ def build_rmi_schedule_years(records: list[dict[str, Any]]) -> list[int]:
                 ingest(c.get("start_date"))
                 ingest(c.get("due_date"))
     return sorted(years)
+
+
+def _rmi_bucket_epic_months_py(record: dict[str, Any]) -> dict[str, float]:
+    """Python port of the JS rmiBucketEpicMonths — allocate story/subtask estimates into YYYY-MM buckets."""
+    totals: dict[str, float] = {}
+
+    def parse_month_key(iso: Any) -> str:
+        t = _to_text(iso)
+        if len(t) >= 7 and t[4] == "-":
+            return t[:7]
+        return ""
+
+    def is_cross_month(item: dict[str, Any]) -> bool:
+        a = parse_month_key(item.get("start_date"))
+        b = parse_month_key(item.get("due_date"))
+        return bool(a and b and a != b)
+
+    def bucket_key(item: dict[str, Any]) -> str:
+        sk = parse_month_key(item.get("start_date"))
+        dk = parse_month_key(item.get("due_date"))
+        if sk and dk and sk == dk:
+            return sk
+        if dk:
+            return dk
+        return sk
+
+    for story in record.get("stories") or []:
+        story_est = _to_float(story.get("estimate_seconds"))
+        if is_cross_month(story):
+            for sub in story.get("subtasks") or []:
+                est = _to_float(sub.get("estimate_seconds"))
+                if est <= 0:
+                    continue
+                mk = bucket_key(sub)
+                if mk:
+                    totals[mk] = totals.get(mk, 0) + est
+            continue
+        if story_est <= 0:
+            continue
+        mk = bucket_key(story)
+        if mk:
+            totals[mk] = totals.get(mk, 0) + story_est
+    return totals
+
+
+def _render_rmi_schedule_body_html(records: list[dict[str, Any]], initial_year: int) -> str:
+    """Pre-render the RMI schedule table body for server-side first paint."""
+    PRODUCT_ACCENTS = {"Digital Log": "#7c3aed", "Fintech Fuel": "#b45309", "OmniChat": "#2563eb", "OmniConnect": "#0f766e"}
+    year_str = str(initial_year)
+    month_keys = [f"{year_str}-{m:02d}" for m in range(1, 13)]
+
+    by_product: dict[str, list[dict[str, Any]]] = {}
+    product_order: list[str] = []
+    for r in records:
+        p = _to_text(r.get("product")) or "Unassigned"
+        if p not in by_product:
+            by_product[p] = []
+            product_order.append(p)
+        by_product[p].append(r)
+    product_order.sort()
+
+    parts: list[str] = []
+    grand_months = [0.0] * 12
+    grand_ml = 0.0
+    grand_tk = 0.0
+
+    for product in product_order:
+        color = PRODUCT_ACCENTS.get(product, "#475569")
+        ep = escape(product)
+        parts.append(
+            f'<tr class="rmi-sched-product-group" data-rmi-product-group="{ep}">'
+            f'<td><button type="button" class="rmi-sched-chevron" data-rmi-toggle-product="{ep}" aria-expanded="true" aria-label="Toggle {ep}">&#9660;</button></td>'
+            f'<td class="rmi-sched-group-label" style="border-left-color:{color}">{ep}</td>'
+        )
+        for _ in range(16):
+            parts.append("<td></td>")
+        parts.append("</tr>")
+
+        subtotal_months = [0.0] * 12
+        subtotal_ml = 0.0
+        subtotal_tk = 0.0
+        epics = by_product[product]
+
+        for idx, epic in enumerate(epics, 1):
+            buckets = _rmi_bucket_epic_months_py(epic)
+            status = _to_text(epic.get("status")) or "\u2014"
+            status_lower = status.lower().replace("_", " ").replace("-", " ").strip()
+            ml_days = _to_float(epic.get("most_likely_days"))
+            tk_days = _to_float(epic.get("tk_approved_days"))
+            jira_url = _to_text(epic.get("jira_url"))
+            jira_link = (
+                f' <a class="rmi-sched-jira-link" href="{escape(jira_url)}" target="_blank" rel="noopener" title="Open Jira issue" aria-label="Open Jira issue">'
+                '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3h7v7h-2V6.41l-9.29 9.3-1.42-1.42 9.3-9.29H14V3Z"/><path d="M5 5h6v2H7v10h10v-4h2v6H5V5Z"/></svg></a>'
+                if jira_url and jira_url != "#" else
+                ' <span class="rmi-sched-jira-link rmi-sched-jira-link--disabled" title="No Jira issue found" aria-label="No Jira issue found">'
+                '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3h7v7h-2V6.41l-9.29 9.3-1.42-1.42 9.3-9.29H14V3Z"/><path d="M5 5h6v2H7v10h10v-4h2v6H5V5Z"/></svg></span>'
+            )
+
+            subtotal_ml += round(ml_days)
+            subtotal_tk += round(tk_days)
+
+            parts.append(f'<tr class="rmi-sched-epic-row" data-product="{ep}">')
+            parts.append(f"<td>{idx}</td>")
+            parts.append(f'<td class="rmi-sched-cell-rmi">{escape(_to_text(epic.get("roadmap_item")))}{jira_link}</td>')
+            parts.append(f"<td>{ep}</td>")
+            parts.append(f'<td><span class="rmi-sched-status-pill" data-status-lower="{escape(status_lower)}">{escape(status)}</span></td>')
+            parts.append(f"<td>{round(ml_days):,}</td>" if ml_days else "<td></td>")
+            parts.append(f"<td>{round(tk_days):,}</td>" if tk_days else "<td></td>")
+
+            for mi, mk in enumerate(month_keys):
+                val = buckets.get(mk, 0)
+                subtotal_months[mi] += val
+                cell_val = f"{round(val / SECONDS_PER_HOUR):,}" if val else ""
+                parts.append(f"<td>{cell_val}</td>")
+            parts.append("</tr>")
+
+        parts.append(f'<tr class="rmi-sched-product-subtotal"><td></td><td style="border-left-color:{color}">{ep} Subtotal</td><td></td><td></td>')
+        parts.append(f"<td>{round(subtotal_ml):,}</td>" if subtotal_ml else "<td></td>")
+        parts.append(f"<td>{round(subtotal_tk):,}</td>" if subtotal_tk else "<td></td>")
+        for mi in range(12):
+            grand_months[mi] += subtotal_months[mi]
+            cell_val = f"{round(subtotal_months[mi] / SECONDS_PER_HOUR):,}" if subtotal_months[mi] else ""
+            parts.append(f"<td>{cell_val}</td>")
+        grand_ml += subtotal_ml
+        grand_tk += subtotal_tk
+        parts.append("</tr>")
+
+    return "".join(parts)
 
 
 def build_summary(epics: list[dict[str, Any]]) -> dict[str, Any]:
@@ -1044,14 +1244,78 @@ h2 { margin:0 0 10px; font-size:1.2rem; font-weight:700; }
 .table-legend-swatch { width:12px; height:12px; border-radius:999px; border:1px solid rgba(16,32,51,.12); }
 
 /* ── Gantt view ───────────────────────────────────────────────────── */
-.gantt-product-grid { display:grid; gap:16px; }
-.gantt-product-section {
-  border:1px solid rgba(200,214,228,.75); border-radius:var(--radius-md);
-  padding:16px; background:rgba(252,253,255,.96); box-shadow:var(--shadow-sm);
+.rmi-gantt-panel { margin-bottom:var(--gutter); }
+.rmi-gantt-panel .table-frame { overflow:auto; max-width:100%; max-height:80vh; }
+.rmi-gantt-table {
+  border-collapse:separate; border-spacing:0; font-size:.78rem; min-width:1450px;
 }
-.gantt-product-section[data-hidden="true"] { display:none; }
-.gantt-label { font-size:12px; font-weight:800; fill:#203141; }
-.gantt-meta { font-size:11px; fill:#627487; }
+.rmi-gantt-table th, .rmi-gantt-table td {
+  padding:6px 8px; border:1px solid var(--line); text-align:center; white-space:nowrap;
+}
+.rmi-gantt-table thead th { position:sticky; z-index:2; background:#f1f5f9; font-weight:700; }
+.rmi-gantt-header-groups th { top:0; background:var(--panel-soft) !important; border-bottom:none; }
+.rmi-gantt-header-cols th { top:var(--rmi-gantt-row1-h,31px); background:#f1f5f9 !important; font-size:.74rem; text-transform:uppercase; letter-spacing:.04em; }
+.rmi-gantt-group-estimation { background:#1e3a5f !important; color:#fff !important; }
+.rmi-gantt-group-scheduling { background:#d97706 !important; color:#fff !important; }
+.rmi-gantt-table th:nth-child(-n+6), .rmi-gantt-table td:nth-child(-n+6) { position:sticky; z-index:2; }
+.rmi-gantt-table thead th:nth-child(-n+6) { z-index:4; }
+.rmi-gantt-table th:nth-child(1), .rmi-gantt-table td:nth-child(1) {
+  left:0; min-width:36px; width:36px; background:var(--panel); color:var(--muted); font-size:.7rem;
+}
+.rmi-gantt-table th:nth-child(2), .rmi-gantt-table td:nth-child(2) {
+  left:36px; min-width:360px; width:360px; white-space:normal; word-break:break-word; background:var(--panel); text-align:left;
+}
+.rmi-gantt-table th:nth-child(3), .rmi-gantt-table td:nth-child(3) { left:396px; min-width:90px; width:90px; background:var(--panel); }
+.rmi-gantt-table th:nth-child(4), .rmi-gantt-table td:nth-child(4) { left:486px; min-width:80px; width:80px; background:var(--panel); }
+.rmi-gantt-table th:nth-child(5), .rmi-gantt-table td:nth-child(5) { left:566px; min-width:70px; width:70px; background:var(--panel); }
+.rmi-gantt-table th:nth-child(6), .rmi-gantt-table td:nth-child(6) {
+  left:636px; min-width:70px; width:70px; background:var(--panel); border-right:2px solid #94a3b8;
+}
+.rmi-gantt-month { min-width:62px; width:62px; }
+.rmi-gantt-product-group td {
+  background:#f8fafc !important; font-weight:800; font-size:.76rem; text-transform:uppercase; letter-spacing:.06em; border-top:2px solid var(--line);
+}
+.rmi-gantt-product-group td:first-child { border-left:4px solid var(--muted); }
+.rmi-gantt-product-group td.rmi-gantt-group-label { text-align:left; }
+.rmi-gantt-product-subtotal td {
+  background:#f1f5f9 !important; font-weight:700; font-size:.76rem; border-top:1px solid var(--line);
+}
+.rmi-gantt-epic-row:nth-child(even) td { background:#fafbfd !important; }
+.rmi-gantt-epic-row:hover td { background:#eef2ff !important; }
+.rmi-gantt-cell-rmi { font-weight:700; color:#102033; }
+.rmi-gantt-issue-link {
+  display:inline-flex; align-items:center; justify-content:center; width:20px; height:20px; margin-left:6px;
+  vertical-align:middle; border-radius:4px; background:#0052cc; color:#fff; text-decoration:none;
+}
+.rmi-gantt-issue-link:hover { background:#0747a6; }
+.rmi-gantt-issue-link svg { width:14px; height:14px; fill:currentColor; display:block; }
+.rmi-gantt-issue-link--disabled {
+  background:#e2e8f0; color:#94a3b8; border:1px solid #cbd5e1; cursor:not-allowed;
+}
+.rmi-gantt-issue-link--disabled:hover { background:#e2e8f0; }
+.rmi-gantt-timeline-cell {
+  min-width:744px; width:744px; padding:4px 8px !important; background:#fff !important; overflow:visible;
+}
+.rmi-gantt-track {
+  position:relative; height:38px; border-radius:5px; background:
+    repeating-linear-gradient(to right, transparent 0, transparent calc(8.333333% - 1px), rgba(208,219,230,.85) calc(8.333333% - 1px), rgba(208,219,230,.85) 8.333333%);
+}
+.rmi-gantt-bar {
+  position:absolute; top:8px; height:22px; min-width:22px; border-radius:6px;
+  background:var(--product-accent,#475569); box-shadow:0 2px 5px rgba(15,23,42,.18);
+  display:flex; align-items:center; justify-content:center; padding:0 8px; overflow:hidden;
+}
+.rmi-gantt-bar-label {
+  color:#fff; font-size:.72rem; font-weight:800; line-height:1; text-shadow:0 1px 1px rgba(15,23,42,.32);
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:100%;
+}
+.rmi-gantt-date-label {
+  position:absolute; top:11px; color:#334155; font-size:.68rem; font-weight:800; line-height:1;
+  background:rgba(255,255,255,.92); border:1px solid rgba(208,219,230,.9); border-radius:4px; padding:2px 4px;
+}
+.rmi-gantt-date-label.start { text-align:right; transform:translateX(-100%); }
+.rmi-gantt-date-label.due { text-align:left; }
+.rmi-gantt-empty { padding:16px; border:1px dashed rgba(192,210,226,.80); border-radius:var(--radius-sm); color:var(--muted); background:rgba(251,253,255,.90); text-align:center; }
 
 /* ── Drawer ───────────────────────────────────────────────────────── */
 .drawer-overlay { position:fixed; inset:0; background:rgba(15,23,42,.45); z-index:99; display:none; }
@@ -1094,6 +1358,20 @@ h2 { margin:0 0 10px; font-size:1.2rem; font-weight:700; }
 .view-section[hidden] { display:none; }
 .empty-state { padding:16px; border:1px dashed rgba(192,210,226,.80); border-radius:var(--radius-sm); color:var(--muted); background:rgba(251,253,255,.90); text-align:center; }
 a { color:#1d4ed8; }
+
+/* ── Comparison badges ────────────────────────────────────────────── */
+.comparison-badge {
+  display:inline-flex; align-items:center; justify-content:center;
+  width:18px; height:18px; border-radius:50%; font-size:.7rem; font-weight:800;
+  margin-left:4px; vertical-align:middle; cursor:help;
+}
+.comparison-match { background:#d1fae5; color:#065f46; }
+.comparison-over  { background:#fee2e2; color:#991b1b; }
+.comparison-under { background:#fef3c7; color:#92400e; }
+.comparison-neutral { background:#e2e8f0; color:#475569; }
+
+/* ── Source values cell ───────────────────────────────────────────── */
+.source-values-cell { font-size:.72rem; color:var(--muted); white-space:nowrap; }
 
 /* --- RMI Estimation & Scheduling Table (IPP reference layout) --- */
 .rmi-schedule-panel { margin-bottom:var(--gutter); }
@@ -1141,14 +1419,25 @@ a { color:#1d4ed8; }
 .rmi-schedule-table td.rmi-sched-cell-rmi { text-align:left; font-weight:600; }
 .rmi-sched-jira-link {
   display:inline-flex; align-items:center; justify-content:center; width:18px; height:18px; margin-left:4px;
-  vertical-align:middle; border-radius:3px; background:#0052cc; color:#fff; font-size:10px; font-weight:800;
+  vertical-align:middle; border-radius:3px; background:#0052cc; color:#fff;
   text-decoration:none; line-height:1;
 }
 .rmi-sched-jira-link:hover { background:#0747a6; }
+.rmi-sched-jira-link svg { width:13px; height:13px; fill:currentColor; display:block; }
+.rmi-sched-jira-link--disabled {
+  background:#e2e8f0; color:#94a3b8; border:1px solid #cbd5e1; cursor:not-allowed;
+}
+.rmi-sched-jira-link--disabled:hover { background:#e2e8f0; }
 .rmi-sched-product-group td {
   background:#f8fafc !important; font-weight:800; font-size:.76rem; text-transform:uppercase; letter-spacing:.06em; border-top:2px solid var(--line);
 }
 .rmi-sched-product-group td:first-child { border-left:4px solid var(--muted); }
+.rmi-sched-chevron {
+  appearance:none; border:1px solid rgba(192,206,218,.90); background:#fff; color:#315b8a;
+  font-size:.7rem; width:22px; height:22px; border-radius:4px; cursor:pointer;
+  display:inline-flex; align-items:center; justify-content:center; line-height:1; padding:0;
+}
+.rmi-sched-chevron:hover { background:#f0f5fb; }
 .rmi-sched-product-group td.rmi-sched-group-label { text-align:left; }
 .rmi-sched-product-subtotal td {
   background:#f1f5f9 !important; font-weight:700; font-size:.76rem; border-top:1px solid var(--line);
@@ -1241,8 +1530,10 @@ _REPORT_JS = """
   function scopedEpics() {
     var q = searchQuery();
     return epics.filter(function (e) {
-      return (activeProduct === "all" || e.product === activeProduct) &&
-             (!q || (e.jira_id + " " + e.title).toLowerCase().indexOf(q) >= 0);
+      if (activeProduct !== "all" && e.product !== activeProduct) return false;
+      if (!q) return true;
+      var haystack = (e.jira_id + " " + e.title + " " + (e.product || "") + " " + (e.status || "") + " " + (e.priority || "")).toLowerCase();
+      return haystack.indexOf(q) >= 0;
     });
   }
 
@@ -1279,7 +1570,8 @@ _REPORT_JS = """
     {key:"jira_original_estimate_seconds", label:"Epic Estimates",    cls:"metric-card-indigo", type:"duration", meta:"Epic-level Jira original estimate total", diagnosticsHide:true},
     {key:"story_estimate_seconds",         label:"Story Estimates",   cls:"metric-card-slate",  type:"duration", meta:"Story-level original estimate total (excludes subtasks)", diagnosticsHide:true},
     {key:"subtask_estimate_seconds",       label:"Subtask Estimates", cls:"metric-card-violet", type:"duration", meta:"Subtask-level original estimate total", diagnosticsHide:true},
-    {key:"logged_seconds",                 label:"Logged",            cls:"metric-card-rose",   type:"duration", meta:"Total hours logged across all stories/subtasks"}
+    {key:"logged_seconds",                 label:"Logged",            cls:"metric-card-rose",   type:"duration", meta:"Total hours logged across all stories/subtasks"},
+    {key:"idle_capacity_seconds",           label:"Idle Hours/Days",   cls:"metric-card-cyan",   type:"duration", meta:"Remaining availability after TK Approved", isIdle:true}
   ];
 
   function diagnosticsEnabled() {
@@ -1289,6 +1581,11 @@ _REPORT_JS = """
 
   function renderMetrics() {
     var t = scopedTotals();
+    /* Compute idle capacity: availability - TK approved */
+    var availEl = document.getElementById("availability-value");
+    var availSec = availEl ? Number(availEl.dataset.seconds || 0) : 0;
+    t.idle_capacity_seconds = availSec - (t.tk_approved_seconds || 0);
+
     var grid = document.getElementById("metric-grid");
     if (!grid) return;
     var diagnosticsMode = diagnosticsEnabled();
@@ -1323,12 +1620,18 @@ _REPORT_JS = """
     /* remaining cards */
     otherDefs.filter(function (d) { return d.key !== "epic_count"; }).forEach(function (d) {
       var v = t[d.key] || 0;
-      var heroClass = d.hero ? " metric-card-hero metric-card-clickable" : " metric-card-clickable";
-      var clickIcon = d.hero ? "" : '<span class="metric-click-icon" aria-hidden="true">&#x2192;</span>';
-      html += '<section class="metric-card ' + d.cls + heroClass + '" data-metric-key="' + d.key + '" role="button" tabindex="0">'
+      var isClickable = !d.isIdle;
+      var heroClass = d.hero ? " metric-card-hero metric-card-clickable" : (isClickable ? " metric-card-clickable" : "");
+      var clickIcon = d.hero || d.isIdle ? "" : '<span class="metric-click-icon" aria-hidden="true">&#x2192;</span>';
+      var metaSuffix = isClickable ? ". Click to view contributing epics." : "";
+      var idleMeta = "";
+      if (d.isIdle && v < 0) idleMeta = "TK Approved exceeds total availability";
+      else if (d.isIdle) idleMeta = d.meta;
+      else idleMeta = d.meta + metaSuffix;
+      html += '<section class="metric-card ' + d.cls + heroClass + '" data-metric-key="' + d.key + '"' + (isClickable ? ' role="button" tabindex="0"' : '') + '>'
             + '<div class="metric-label">' + d.label + clickIcon + '</div>'
             + '<div class="metric-value-wrap"><span class="metric-value duration-value" data-seconds="' + v + '">' + fmtSec(v) + '</span></div>'
-            + '<div class="metric-meta">' + d.meta + '. Click to view contributing epics.' + '</div></section>';
+            + '<div class="metric-meta">' + idleMeta + '</div></section>';
     });
 
     grid.innerHTML = html;
@@ -2420,55 +2723,161 @@ _REPORT_JS = """
   });
 
   /* ── Gantt ────────────────────────────────────────────────────────── */
+  function parseGanttDate(value) {
+    if (!value) return null;
+    var parts = String(value).slice(0, 10).split("-").map(Number);
+    if (parts.length !== 3 || parts.some(function (n) { return !Number.isFinite(n); })) return null;
+    return new Date(parts[0], parts[1] - 1, parts[2]);
+  }
+
+  function formatGanttDate(value) {
+    var d = parseGanttDate(value);
+    if (!d) return "";
+    return d.toLocaleDateString("en-US", { month: "short", day: "2-digit" });
+  }
+
+  function jiraIssueIconLink(url, key, className) {
+    var icon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3h7v7h-2V6.41l-9.29 9.3-1.42-1.42 9.3-9.29H14V3Z"></path><path d="M5 5h6v2H7v10h10v-4h2v6H5V5Z"></path></svg>';
+    var safeUrl = String(url || "").trim();
+    var issueKey = String(key || "").trim();
+    var title = issueKey ? "Open Jira issue " + issueKey : "Open Jira issue";
+    if (safeUrl && safeUrl !== "#") {
+      return '<a class="' + className + '" href="' + escHtml(safeUrl) + '" target="_blank" rel="noopener noreferrer" title="' + escHtml(title) + '" aria-label="' + escHtml(title) + '">' + icon + '</a>';
+    }
+    return '<span class="' + className + ' ' + className + '--disabled" title="No Jira issue found" aria-label="No Jira issue found">' + icon + '</span>';
+  }
+
+  function rmiRecordMatchesSearch(epic) {
+    var q = searchQuery();
+    if (!q) return true;
+    var haystack = [
+      epic.jira_id || "",
+      epic.roadmap_item || "",
+      epic.product || "",
+      epic.status || ""
+    ].join(" ").toLowerCase();
+    return haystack.indexOf(q) >= 0;
+  }
+
+  function rmiGanttFilteredRecords() {
+    var recs = rmiScheduleRecords || [];
+    if (rmiJiraOnly) recs = recs.filter(function (e) { return e.jira_populated; });
+    if (rmiActiveProduct !== "all") recs = recs.filter(function (e) { return e.product === rmiActiveProduct; });
+    if (activeProduct !== "all") recs = recs.filter(function (e) { return e.product === activeProduct; });
+    return recs.filter(rmiRecordMatchesSearch);
+  }
+
   function renderGantt() {
     var container = document.getElementById("gantt-view");
     if (!container) return;
-    var dated = scopedEpics().filter(function (e) { return e.start_date && e.due_date; });
-    if (!dated.length) { container.innerHTML = '<div class="empty-state">No dated epics in scope.</div>'; return; }
-
-    var products = [];
-    var seen = {};
-    dated.forEach(function (e) { var p = e.product || "Unassigned"; if (!seen[p]) { seen[p] = true; products.push(p); } });
-    products.sort();
-
-    var allStarts = dated.map(function (e) { return new Date(e.start_date + "T00:00:00").getTime(); });
-    var allEnds   = dated.map(function (e) { return new Date(e.due_date   + "T00:00:00").getTime(); });
-    var globalMin = Math.min.apply(null, allStarts);
-    var globalMax = Math.max.apply(null, allEnds);
-    var span = Math.max(1, globalMax - globalMin);
-
-    var rowH = 32, padY = 8, headerH = 30;
-    var html = '<div class="gantt-product-grid">';
-
-    products.forEach(function (p, pi) {
-      var pEpics = dated.filter(function (e) { return (e.product || "Unassigned") === p; });
-      var svgH = headerH + pEpics.length * (rowH + padY) + padY;
-      var color = PRODUCT_COLORS[pi % PRODUCT_COLORS.length];
-      html += '<div class="gantt-product-section"><h3 style="margin:0 0 8px;color:' + color + '">' + p + ' (' + pEpics.length + ')</h3>'
-            + '<svg width="100%" height="' + svgH + '" style="display:block">';
-      /* month grid lines */
-      var d = new Date(globalMin);
-      d.setDate(1);
-      while (d.getTime() <= globalMax) {
-        var x = ((d.getTime() - globalMin) / span) * 100;
-        var label = d.toLocaleString("default", {month:"short",year:"2-digit"});
-        html += '<line x1="' + x + '%" y1="0" x2="' + x + '%" y2="' + svgH + '" stroke="#d0dbe6" stroke-dasharray="4,4"/>';
-        html += '<text x="' + x + '%" y="16" class="gantt-meta" dx="4">' + label + '</text>';
-        d.setMonth(d.getMonth() + 1);
-      }
-      pEpics.forEach(function (e, ei) {
-        var s = new Date(e.start_date + "T00:00:00").getTime();
-        var en = new Date(e.due_date + "T00:00:00").getTime();
-        var x = ((s - globalMin) / span) * 100;
-        var w = Math.max(1, ((en - s) / span) * 100);
-        var y = headerH + ei * (rowH + padY) + padY;
-        html += '<rect x="' + x + '%" y="' + y + '" width="' + w + '%" height="' + rowH + '" rx="6" fill="' + color + '" opacity=".82"/>';
-        html += '<text x="' + x + '%" y="' + (y + 20) + '" class="gantt-label" dx="8" fill="#fff" style="font-size:11px">' + e.jira_id + '</text>';
-      });
-      html += '</svg></div>';
+    var year = Number(rmiSelectedYear || new Date().getFullYear());
+    var yearStart = new Date(year, 0, 1);
+    var yearEnd = new Date(year, 11, 31);
+    var totalMs = yearEnd.getTime() - yearStart.getTime();
+    var monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    var filtered = rmiGanttFilteredRecords().filter(function (e) {
+      var s = parseGanttDate(e.start_date);
+      var d = parseGanttDate(e.due_date);
+      return Boolean(s && d && d >= yearStart && s <= yearEnd);
     });
-    html += '</div>';
+    if (!filtered.length) {
+      container.innerHTML = '<section class="panel rmi-gantt-panel"><div class="rmi-gantt-empty">No epics in the current Gantt scope have both start and due dates overlapping ' + year + '.</div></section>';
+      return;
+    }
+
+    var byProduct = {};
+    var productOrder = [];
+    filtered.forEach(function (epic) {
+      var product = epic.product || "Unassigned";
+      if (!byProduct[product]) {
+        byProduct[product] = [];
+        productOrder.push(product);
+      }
+      byProduct[product].push(epic);
+    });
+    productOrder.sort();
+
+    function pctForDate(d) {
+      return Math.max(0, Math.min(100, ((d.getTime() - yearStart.getTime()) / totalMs) * 100));
+    }
+
+    function ganttBarHtml(epic, color) {
+      var start = parseGanttDate(epic.start_date);
+      var due = parseGanttDate(epic.due_date);
+      var visibleStart = start < yearStart ? yearStart : start;
+      var visibleDue = due > yearEnd ? yearEnd : due;
+      var left = pctForDate(visibleStart);
+      var right = pctForDate(visibleDue);
+      var width = Math.max(1.4, right - left);
+      var startLabelLeft = Math.max(0, left - 0.8);
+      var dueLabelLeft = Math.min(98, right + 0.8);
+      var tkSeconds = (Number(epic.tk_approved_days) || 0) * SEC_PER_DAY;
+      var jiraSeconds = Number(epic.jira_original_estimate_seconds || 0);
+      var label = fmtSec(tkSeconds);
+      if (diagnosticsEnabled()) label += " | " + fmtSec(jiraSeconds);
+      var title = (epic.jira_id || "") + " | " + (epic.roadmap_item || "") + " | TK Approved " + fmtSec(tkSeconds);
+      if (diagnosticsEnabled()) title += " | Epic Jira Estimate " + fmtSec(jiraSeconds);
+      return '<div class="rmi-gantt-track">'
+        + '<span class="rmi-gantt-date-label start" style="left:' + startLabelLeft.toFixed(3) + '%">' + escHtml(formatGanttDate(epic.start_date)) + '</span>'
+        + '<div class="rmi-gantt-bar" data-gantt-bar style="--product-accent:' + color + ';left:' + left.toFixed(3) + '%;width:' + width.toFixed(3) + '%" title="' + escHtml(title) + '">'
+        + '<span class="rmi-gantt-bar-label" data-gantt-bar-label>' + escHtml(label) + '</span></div>'
+        + '<span class="rmi-gantt-date-label due" style="left:' + dueLabelLeft.toFixed(3) + '%">' + escHtml(formatGanttDate(epic.due_date)) + '</span>'
+        + '</div>';
+    }
+
+    var monthHeader = monthNames.map(function (m, i) {
+      return '<th class="rmi-gantt-month" data-gantt-month-index="' + (i + 1) + '">' + m + '</th>';
+    }).join("");
+    var bodyHtml = "";
+    var grandMl = 0;
+    var grandTk = 0;
+
+    productOrder.forEach(function (product) {
+      var color = rmiScheduleProductColor(product);
+      var epics = byProduct[product].slice().sort(function (a, b) {
+        return String(a.start_date || "").localeCompare(String(b.start_date || "")) ||
+               String(a.due_date || "").localeCompare(String(b.due_date || "")) ||
+               String(a.roadmap_item || "").localeCompare(String(b.roadmap_item || ""));
+      });
+      var subtotalMl = 0;
+      var subtotalTk = 0;
+      bodyHtml += '<tr class="rmi-gantt-product-group"><td></td><td class="rmi-gantt-group-label" style="border-left-color:' + color + '">' + escHtml(product) + ' (' + epics.length.toLocaleString() + ')</td><td></td><td></td><td></td><td></td><td colspan="12"></td></tr>';
+      epics.forEach(function (epic, idx) {
+        var stLabel = epic.status ? epic.status : "\u2014";
+        var statusLower = rmiStatusDataLower(epic.status);
+        var jiraLink = jiraIssueIconLink(epic.jira_url, epic.jira_id, "rmi-gantt-issue-link");
+        var ml = rmiDisplayDays(epic.most_likely_days);
+        var tk = rmiDisplayDays(epic.tk_approved_days);
+        subtotalMl += ml;
+        subtotalTk += tk;
+        bodyHtml += '<tr class="rmi-gantt-epic-row" data-product="' + escHtml(product) + '">'
+          + '<td>' + (idx + 1) + '</td>'
+          + '<td class="rmi-gantt-cell-rmi">' + escHtml(epic.roadmap_item || "") + jiraLink + '</td>'
+          + '<td>' + escHtml(product) + '</td>'
+          + '<td><span class="rmi-sched-status-pill" data-status-lower="' + escHtml(statusLower) + '">' + escHtml(stLabel) + '</span></td>'
+          + '<td>' + (ml ? ml.toLocaleString() : "") + '</td>'
+          + '<td>' + (tk ? tk.toLocaleString() : "") + '</td>'
+          + '<td colspan="12" class="rmi-gantt-timeline-cell">' + ganttBarHtml(epic, color) + '</td>'
+          + '</tr>';
+      });
+      grandMl += subtotalMl;
+      grandTk += subtotalTk;
+      bodyHtml += '<tr class="rmi-gantt-product-subtotal"><td></td><td style="border-left-color:' + color + '">' + escHtml(product) + ' Subtotal</td><td></td><td></td><td>' + (subtotalMl ? subtotalMl.toLocaleString() : "") + '</td><td>' + (subtotalTk ? subtotalTk.toLocaleString() : "") + '</td><td colspan="12"></td></tr>';
+    });
+    bodyHtml += '<tr class="rmi-sched-grand-total"><td>' + filtered.length.toLocaleString() + '</td><td>Grand Total</td><td></td><td></td><td>' + (grandMl ? grandMl.toLocaleString() : "") + '</td><td>' + (grandTk ? grandTk.toLocaleString() : "") + '</td><td colspan="12"></td></tr>';
+
+    var html = '<section class="panel rmi-gantt-panel">'
+      + '<div class="footnote">Gantt View uses the same RMI schedule rows, selected year, product scope, unit toggle, search, and Jira-populated filter as the scheduling view. Bar labels show TK Approved; Diagnostics adds Epic Jira Estimate.</div>'
+      + '<div class="table-frame"><table class="rmi-gantt-table" id="rmi-gantt-table">'
+      + '<thead><tr class="rmi-gantt-header-groups"><th></th><th></th><th></th><th></th><th colspan="2" class="rmi-gantt-group-estimation">Estimation</th><th colspan="12" class="rmi-gantt-group-scheduling">Scheduling</th></tr>'
+      + '<tr class="rmi-gantt-header-cols"><th class="rmi-gantt-col-num">#</th><th class="rmi-gantt-col-rmi">RMI</th><th class="rmi-gantt-col-product">Product</th><th class="rmi-gantt-col-status">Status</th><th>Most&nbsp;likely</th><th>TK&nbsp;Approved</th>' + monthHeader + '</tr></thead>'
+      + '<tbody>' + bodyHtml + '</tbody></table></div></section>';
     container.innerHTML = html;
+    var headerGroupRow = container.querySelector(".rmi-gantt-header-groups");
+    var ganttTable = container.querySelector(".rmi-gantt-table");
+    if (headerGroupRow && ganttTable) {
+      ganttTable.style.setProperty("--rmi-gantt-row1-h", headerGroupRow.getBoundingClientRect().height + "px");
+    }
   }
 
   /* ── View toggle ──────────────────────────────────────────────────── */
@@ -2491,6 +2900,7 @@ _REPORT_JS = """
       updateAllDurations();
       if (typeof renderRmiProductCards === "function") renderRmiProductCards();
       if (typeof renderRmiScheduleTable === "function") renderRmiScheduleTable();
+      renderGantt();
     });
   });
 
@@ -2527,10 +2937,24 @@ _REPORT_JS = """
   if (analysisMonthSel) analysisMonthSel.addEventListener("change", function () { syncMonthSelectors(analysisMonthSel); });
   ["tk-start-month-enabled","tk-month-enabled","tk-through-month-enabled","tk-jira-only-enabled"].forEach(function (id) {
     var el = document.getElementById(id);
-    if (el) el.addEventListener("change", function () { renderCapacity(); renderMonthAnalysis(); });
+    if (el) el.addEventListener("change", function () {
+      /* Through disables Started/Delivered (doc §7) */
+      if (id === "tk-through-month-enabled") {
+        var startEl = document.getElementById("tk-start-month-enabled");
+        var deliveredEl = document.getElementById("tk-month-enabled");
+        if (el.checked) {
+          if (startEl) { startEl.checked = false; startEl.disabled = true; }
+          if (deliveredEl) { deliveredEl.checked = false; deliveredEl.disabled = true; }
+        } else {
+          if (startEl) startEl.disabled = false;
+          if (deliveredEl) deliveredEl.disabled = false;
+        }
+      }
+      renderCapacity(); renderMonthAnalysis();
+    });
   });
   var diagnosticsToggle = document.getElementById("diagnostics-toggle-enabled");
-  if (diagnosticsToggle) diagnosticsToggle.addEventListener("change", function () { renderMetrics(); });
+  if (diagnosticsToggle) diagnosticsToggle.addEventListener("change", function () { renderMetrics(); renderGantt(); });
 
   /* ── RMI Estimation & Scheduling (IPP reference layout) ─────────── */
   var rmiScheduleRecords = DATA.rmi_schedule_records || [];
@@ -2565,7 +2989,8 @@ _REPORT_JS = """
     if (!rmiScheduleYearSelect) return;
     var years = rmiScheduleYears.slice();
     if (!years.length) years.push(new Date().getFullYear());
-    rmiSelectedYear = years[years.length - 1];
+    var currentYear = new Date().getFullYear();
+    rmiSelectedYear = years.indexOf(currentYear) >= 0 ? currentYear : years[years.length - 1];
     rmiScheduleYearSelect.innerHTML = "";
     years.forEach(function (year) {
       var opt = document.createElement("option");
@@ -2577,6 +3002,7 @@ _REPORT_JS = """
     rmiScheduleYearSelect.addEventListener("change", function () {
       rmiSelectedYear = Number(rmiScheduleYearSelect.value);
       renderRmiScheduleTable();
+      renderGantt();
     });
     if (rmiJiraOnlyToggle) {
       rmiJiraOnly = rmiJiraOnlyToggle.checked;
@@ -2584,10 +3010,12 @@ _REPORT_JS = """
         rmiJiraOnly = rmiJiraOnlyToggle.checked;
         renderRmiProductCards();
         renderRmiScheduleTable();
+        renderGantt();
       });
     }
     renderRmiProductCards();
     renderRmiScheduleTable();
+    renderGantt();
     var headerGroupRow = document.querySelector(".rmi-sched-header-groups");
     var schedTable = document.querySelector(".rmi-schedule-table");
     if (headerGroupRow && schedTable) {
@@ -2637,6 +3065,7 @@ _REPORT_JS = """
           c.setAttribute("aria-pressed", String(isActive));
         });
         renderRmiScheduleTable();
+        renderGantt();
       }
       card.addEventListener("click", handleClick);
       card.addEventListener("keydown", function (e) {
@@ -2731,9 +3160,14 @@ _REPORT_JS = """
     var grandTotalMonths = [0,0,0,0,0,0,0,0,0,0,0,0];
     var grandMl = 0;
     var grandTk = 0;
+    var rmiCollapsedProducts = {};
     productOrder.forEach(function (product) {
       var color = rmiScheduleProductColor(product);
-      bodyHtml += '<tr class="rmi-sched-product-group"><td></td><td class="rmi-sched-group-label" style="border-left-color:' + color + '">' + escHtml(product) + "</td>";
+      var productEscaped = escHtml(product);
+      var chevronId = "rmi-chevron-" + productEscaped.replace(/[^a-zA-Z0-9]/g, "_");
+      bodyHtml += '<tr class="rmi-sched-product-group" data-rmi-product-group="' + productEscaped + '">'
+        + '<td><button type="button" class="rmi-sched-chevron" id="' + chevronId + '" data-rmi-toggle-product="' + productEscaped + '" aria-expanded="true" aria-label="Toggle ' + productEscaped + '">&#9660;</button></td>'
+        + '<td class="rmi-sched-group-label" style="border-left-color:' + color + '">' + productEscaped + "</td>";
       for (var gi = 0; gi < 16; gi++) bodyHtml += "<td></td>";
       bodyHtml += "</tr>";
       var epics = byProduct[product];
@@ -2747,7 +3181,7 @@ _REPORT_JS = """
         var stLabel = epic.status ? epic.status : "\u2014";
         var statusLower = rmiStatusDataLower(epic.status);
         var ju = epic.jira_url || "";
-        var jiraLink = ju && ju !== "#" ? ' <a class="rmi-sched-jira-link" href="' + escHtml(ju) + '" target="_blank" rel="noopener" title="Open in Jira">J</a>' : "";
+        var jiraLink = jiraIssueIconLink(ju, epic.jira_id, "rmi-sched-jira-link");
         var cells = "<td>" + rowNum + "</td>";
         cells += '<td class="rmi-sched-cell-rmi">' + escHtml(epic.roadmap_item) + jiraLink + "</td>";
         cells += "<td>" + escHtml(epic.product) + "</td>";
@@ -2783,9 +3217,43 @@ _REPORT_JS = """
       footCells += "<td>" + rmiFormatValue(val) + "</td>";
     });
     rmiScheduleFoot.innerHTML = '<tr class="rmi-sched-grand-total">' + footCells + "</tr>";
+
+    /* Bind chevron expand/collapse */
+    rmiScheduleBody.querySelectorAll(".rmi-sched-chevron").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var product = btn.getAttribute("data-rmi-toggle-product");
+        var expanded = btn.getAttribute("aria-expanded") === "true";
+        var newState = !expanded;
+        btn.setAttribute("aria-expanded", String(newState));
+        btn.innerHTML = newState ? "&#9660;" : "&#9654;";
+        rmiCollapsedProducts[product] = !newState;
+        rmiScheduleBody.querySelectorAll('.rmi-sched-epic-row[data-product="' + CSS.escape(product) + '"]').forEach(function (row) {
+          row.hidden = !newState;
+        });
+      });
+    });
   }
 
   /* ── Init ─────────────────────────────────────────────────────────── */
+  /* "See Epics" button opens a drawer with included + excluded epic lists */
+  (function initSeeEpicsBtn() {
+    var btn = document.getElementById("see-epics-btn");
+    if (!btn) return;
+    btn.addEventListener("click", function () {
+      var inclList = document.querySelector("[data-month-analysis-included-list]");
+      var exclList = document.querySelector("[data-month-analysis-excluded-list]");
+      var incCount = document.querySelector("[data-month-analysis-included]");
+      var excCount = document.querySelector("[data-month-analysis-excluded]");
+      var html = '<div>';
+      html += '<h3 style="margin:0 0 8px">Included Epics (' + (incCount ? incCount.textContent : '0') + ')</h3>';
+      html += inclList ? inclList.innerHTML : '<div class="drawer-empty">None</div>';
+      html += '<h3 style="margin:18px 0 8px">Excluded Epics (' + (excCount ? excCount.textContent : '0') + ')</h3>';
+      html += exclList ? exclList.innerHTML : '<div class="drawer-empty">None</div>';
+      html += '</div>';
+      openHtmlDrawer("Month Story Analysis — Epics", html);
+    });
+  })();
+
   applyFilters();
   rmiScheduleInit();
 })();
@@ -2816,6 +3284,12 @@ def render_html(data: dict[str, Any]) -> str:
     if not month_options:
         month_options = '<option value="">No dates</option>'
 
+    rmi_schedule_records = data.get("rmi_schedule_records", [])
+    rmi_schedule_years = data.get("rmi_schedule_years", [])
+    current_year = datetime.now(timezone.utc).year
+    rmi_initial_year = current_year if current_year in rmi_schedule_years else (rmi_schedule_years[-1] if rmi_schedule_years else current_year)
+    rmi_schedule_body_html = _render_rmi_schedule_body_html(rmi_schedule_records, rmi_initial_year)
+
     rmi_schedule_month_headers = "".join(
         f'<th class="rmi-sched-month" data-month-index="{i + 1}">{escape(MONTH_NAMES[i])}</th>'
         for i in range(12)
@@ -2836,7 +3310,13 @@ def render_html(data: dict[str, Any]) -> str:
             f'<button class="row-toggle" data-epic="{escape(eid)}">+</button>'
             if has_children else '<button class="row-toggle" disabled>&nbsp;</button>'
         )
-        search_text = (eid + " " + _to_text(epic.get("title"))).lower()
+        search_text = " ".join([
+            eid,
+            _to_text(epic.get("title")),
+            _to_text(epic.get("product")),
+            _to_text(epic.get("status")),
+            _to_text(epic.get("priority")),
+        ]).lower()
         rows_html_parts.append(
             f'<tr class="epic-row" data-product="{escape(_to_text(epic.get("product")))}" '
             f'data-epic-id="{escape(eid)}" data-search="{escape(search_text)}">'
@@ -2847,11 +3327,14 @@ def render_html(data: dict[str, Any]) -> str:
             f'<td>{escape(_to_text(epic.get("status")))}</td>'
             f'<td>{escape(_to_text(epic.get("start_date")))}</td>'
             f'<td>{escape(_to_text(epic.get("due_date")))}</td>'
-            f'<td class="duration-value" data-seconds="{_to_float(epic.get("tk_approved_seconds"))}">{escape(_duration(epic.get("tk_approved_seconds")))}</td>'
-            f'<td class="duration-value" data-seconds="{_to_float(epic.get("story_estimate_seconds"))}">{escape(_duration(epic.get("story_estimate_seconds")))}</td>'
+            f'<td class="duration-value" data-seconds="{_to_float(epic.get("tk_approved_seconds"))}">{escape(_duration(epic.get("tk_approved_seconds")))}{_tk_comparison_badge(_to_float(epic.get("tk_approved_seconds")), _to_float(epic.get("jira_original_estimate_seconds")))}</td>'
+            f'<td class="duration-value" data-seconds="{_to_float(epic.get("jira_original_estimate_seconds"))}">{escape(_duration(epic.get("jira_original_estimate_seconds")))}</td>'
+            f'<td class="duration-value" data-seconds="{_to_float(epic.get("aggregate_estimate_seconds"))}">{escape(_duration(epic.get("aggregate_estimate_seconds")))}</td>'
+            f'<td class="duration-value" data-seconds="{_to_float(epic.get("story_estimate_seconds"))}">{escape(_duration(epic.get("story_estimate_seconds")))}{_story_rollup_badge(_to_float(epic.get("story_estimate_seconds")), _to_float(epic.get("jira_original_estimate_seconds")))}</td>'
             f'<td class="duration-value" data-seconds="{_to_float(epic.get("subtask_estimate_seconds"))}">{escape(_duration(epic.get("subtask_estimate_seconds")))}</td>'
             f'<td class="duration-value" data-seconds="{_to_float(epic.get("logged_seconds"))}">{escape(_duration(epic.get("logged_seconds")))}</td>'
             f'<td>{escape(str(len(stories)))}</td>'
+            f'<td class="source-values-cell">{escape(_to_text(epic.get("source_values")))}</td>'
             "</tr>"
         )
         for story in stories:
@@ -2872,10 +3355,13 @@ def render_html(data: dict[str, Any]) -> str:
                 f'<td>{escape(_to_text(story.get("start_date")))}</td>'
                 f'<td>{escape(_to_text(story.get("due_date")))}</td>'
                 f'<td></td>'
+                f'<td></td>'
+                f'<td></td>'
                 f'<td class="duration-value" data-seconds="{_to_float(story.get("estimate_seconds"))}">{escape(_duration(story.get("estimate_seconds")))}</td>'
                 f'<td></td>'
                 f'<td class="duration-value" data-seconds="{_to_float(story.get("logged_seconds"))}">{escape(_duration(story.get("logged_seconds")))}</td>'
                 f'<td>{escape(str(len(subtasks)))}</td>'
+                f'<td></td>'
                 "</tr>"
             )
             for sub in subtasks:
@@ -2903,16 +3389,19 @@ def render_html(data: dict[str, Any]) -> str:
                     f'<td>{escape(_to_text(sub.get("start_date")))}</td>'
                     f'<td>{escape(_to_text(sub.get("due_date")))}</td>'
                     f'<td></td>'
+                    f'<td></td>'
+                    f'<td></td>'
                     f'<td class="duration-value" data-seconds="{_to_float(sub.get("estimate_seconds"))}">{escape(_duration(sub.get("estimate_seconds")))}</td>'
                     f'<td></td>'
                     f'<td class="duration-value" data-seconds="{_to_float(sub.get("logged_seconds"))}">{escape(_duration(sub.get("logged_seconds")))}</td>'
                     f"<td>{escape(wl_summary)}</td>"
+                    f'<td></td>'
                     "</tr>"
                 )
                 if wl_count:
                     rows_html_parts.append(
                         f'<tr class="subtask-worklog-panel child-of-{escape(sid)}" data-worklog-panel="{escape(wl_panel_id)}" hidden>'
-                        '<td colspan="12" class="subtask-worklog-panel-cell">'
+                        '<td colspan="15" class="subtask-worklog-panel-cell">'
                         '<table class="worklog-nested-table">'
                         "<thead><tr>"
                         "<th>Worklog ID</th><th>Author</th><th>Started</th><th>Time Spent</th><th>Hours</th>"
@@ -2921,7 +3410,7 @@ def render_html(data: dict[str, Any]) -> str:
                         "</tbody></table></td></tr>"
                     )
 
-    table_body = "\n".join(rows_html_parts) if rows_html_parts else '<tr><td colspan="12" class="empty-state">No Epics Planner rows found.</td></tr>'
+    table_body = "\n".join(rows_html_parts) if rows_html_parts else '<tr><td colspan="15" class="empty-state">No Epics Planner rows found.</td></tr>'
 
     # ── Assemble HTML ────────────────────────────────────────────────
     generated_at = escape(_to_text(data.get("generated_at")))
@@ -3057,6 +3546,7 @@ def render_html(data: dict[str, Any]) -> str:
           <h2>Month Story Analysis</h2>
           <div class="footnote">Stories spanning multiple months fall back to subtask estimates.</div>
         </div>
+        <button type="button" class="search-clear" id="see-epics-btn" style="align-self:flex-start">See Epics</button>
       </div>
       <div class="tk-month-chart" role="img" aria-label="Month scope estimate bar chart">
         <div class="tk-month-chart-bars">
@@ -3129,7 +3619,7 @@ def render_html(data: dict[str, Any]) -> str:
               {rmi_schedule_month_headers}
             </tr>
           </thead>
-          <tbody id="rmi-schedule-body"></tbody>
+          <tbody id="rmi-schedule-body">{rmi_schedule_body_html}</tbody>
           <tfoot id="rmi-schedule-foot"></tfoot>
         </table>
       </div>
@@ -3174,8 +3664,9 @@ def render_html(data: dict[str, Any]) -> str:
         <table class="epic-table">
           <thead><tr>
             <th style="width:42px"></th><th>Key</th><th>Summary</th><th>Product</th><th>Status</th>
-            <th>Start</th><th>Due</th><th>TK Approved</th><th>Story Est.</th><th>Subtask Est.</th>
-            <th>Logged</th><th>Children</th>
+            <th>Start</th><th>Due</th><th>TK Approved</th><th>Jira Est.</th><th>Agg. Est.</th>
+            <th>Story Est.</th><th>Subtask Est.</th>
+            <th>Logged</th><th>Children</th><th>Source Values</th>
           </tr></thead>
           <tbody id="rmi-table-body">
             {table_body}
@@ -3188,6 +3679,27 @@ def render_html(data: dict[str, Any]) -> str:
     parts.append("""
     <section id="gantt-view-section" hidden>
       <div id="gantt-view"></div>
+    </section>""")
+
+    # Run Errors section (Doc §14.1)
+    run_errors = data.get("run_errors", [])
+    if run_errors:
+        error_rows = "".join(
+            f"<tr><td>{escape(e.get('scope', ''))}</td><td>{escape(e.get('issue_key', ''))}</td>"
+            f"<td>{escape(e.get('sheet', ''))}</td><td>{escape(e.get('row', ''))}</td>"
+            f"<td>{escape(e.get('message', ''))}</td></tr>"
+            for e in run_errors
+        )
+        parts.append(f"""
+    <section class="panel" id="run-errors-section">
+      <h2>Run Errors</h2>
+      <p class="subtext">{len(run_errors)} error(s) encountered during data extraction.</p>
+      <div class="table-frame">
+        <table class="epic-table" style="min-width:800px">
+          <thead><tr><th>Scope</th><th>Issue Key</th><th>Sheet</th><th>Row</th><th>Message</th></tr></thead>
+          <tbody>{error_rows}</tbody>
+        </table>
+      </div>
     </section>""")
 
     # Drawer

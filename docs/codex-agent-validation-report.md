@@ -45,3 +45,27 @@ python -m pytest tests/test_codex_agent_setup_contract.py tests/test_run_server.
 
 - If you want a literal Phase 5 product dry run, the next small report or UI task should use `docs/codex-task-contract.md` and intentionally touch a report template, its coupled assets or generator, a focused test, and the relevant user-guide page.
 - Optional global-skill edits were not applied because this environment already had `completion-test-fix`, `localhost-ready-check`, and `module-doc-sync` available.
+
+---
+
+## Re-verification (`2026-05-12`)
+
+Confirmed repo contract artifacts still present and tests green after user request to ensure full implementation.
+
+### Commands executed
+
+```powershell
+Set-Location "E:\JIRA SCRIPT"; python -m pytest tests/test_codex_agent_setup_contract.py tests/test_run_server.py -q
+```
+
+### Result
+
+- `11 passed` in under ~1s (contract + `test_run_server` suite).
+- Required Cursor paths: `.cursor/rules/*.mdc`, `.cursor/skills/*`, root `AGENTS.md`, and `docs/codex-task-contract.md` / gap / validation docs.
+- Optional global skills per plan items 7–10: present under `%USERPROFILE%\.codex\skills\` in this environment (`completion-test-fix`, `localhost-ready-check`, `module-doc-sync`, `regression-audit`).
+
+### Docs updated this pass
+
+- `docs/CODEX_AGENT_SETUP_IMPLEMENTATION_PLAN.md` — implementation status + verification command
+- `docs/codex-agent-gap-analysis.md` — current verified matrix + historical baseline preserved
+- `docs/codex-agent-validation-report.md` — this section

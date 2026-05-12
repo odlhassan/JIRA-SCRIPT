@@ -1103,13 +1103,21 @@ def _load_leave_daily_rows(leave_report_path: Path) -> list[dict]:
 
 
 def _load_leave_subtask_rows(leave_report_path: Path) -> list[dict]:
+    return _load_leave_issue_rows(leave_report_path, "Raw_Subtasks")
+
+
+def _load_leave_distributed_rows(leave_report_path: Path) -> list[dict]:
+    return _load_leave_issue_rows(leave_report_path, "Subtasks_Distributed")
+
+
+def _load_leave_issue_rows(leave_report_path: Path, sheet_name: str) -> list[dict]:
     if not leave_report_path.exists():
         return []
     wb = load_workbook(leave_report_path, read_only=True, data_only=True)
     try:
-        if "Raw_Subtasks" not in wb.sheetnames:
+        if sheet_name not in wb.sheetnames:
             return []
-        ws = wb["Raw_Subtasks"]
+        ws = wb[sheet_name]
         header = next(ws.iter_rows(min_row=1, max_row=1, values_only=True), None)
         if not header:
             return []
@@ -1126,12 +1134,14 @@ def _load_leave_subtask_rows(leave_report_path: Path) -> list[dict]:
         if not required.issubset(set(headers)):
             return []
         idx = {name: headers.index(name) for name in required}
+        planned_bucket_idx = headers.index("planned_date_for_bucket") if "planned_date_for_bucket" in headers else -1
         out: list[dict] = []
         for row in ws.iter_rows(min_row=2, values_only=True):
             issue_key = _to_text(row[idx["issue_key"]])
             assignee = _to_text(row[idx["assignee"]])
             start_date = _to_text(row[idx["start_date"]])
             due_date = _to_text(row[idx["due_date"]])
+            planned_date_for_bucket = _to_text(row[planned_bucket_idx]) if planned_bucket_idx >= 0 else ""
             if start_date:
                 try:
                     start_date = date.fromisoformat(start_date[:10]).isoformat()
@@ -1142,12 +1152,18 @@ def _load_leave_subtask_rows(leave_report_path: Path) -> list[dict]:
                     due_date = date.fromisoformat(due_date[:10]).isoformat()
                 except ValueError:
                     due_date = ""
+            if planned_date_for_bucket:
+                try:
+                    planned_date_for_bucket = date.fromisoformat(planned_date_for_bucket[:10]).isoformat()
+                except ValueError:
+                    planned_date_for_bucket = ""
             out.append(
                 {
                     "issue_key": issue_key,
                     "assignee": assignee,
                     "start_date": start_date,
                     "due_date": due_date,
+                    "planned_date_for_bucket": planned_date_for_bucket,
                     "original_estimate_hours": round(_to_float(row[idx["original_estimate_hours"]]), 2),
                     "total_worklog_hours": round(_to_float(row[idx["total_worklog_hours"]]), 2),
                     "leave_classification": _to_text(row[idx["leave_classification"]]),

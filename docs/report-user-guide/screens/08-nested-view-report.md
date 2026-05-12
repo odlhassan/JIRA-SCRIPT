@@ -8,8 +8,8 @@ INFO_IDS: `nested.capacity_gap`, `nested.total_capacity_adjusted`
 
 | Field | Definition | Formula | Ingredients | Business Validations | Cross-Report Linkage |
 | --- | --- | --- | --- | --- | --- |
-| Availability for more work | Capacity remaining after planned project load and planned leave estimates. | `Total Capacity - Total Planned Projects - Total Leaves Planned` | total capacity, planned projects (non-RLT), leaves planned (RLT) | Date range and project filter sensitive; RLT rules applied. | Assignee subtraction, RnD investable hours. |
-| Availability | Practical capacity after planned leaves are deducted. | `Total Capacity (Hours) - Total Leaves Planned` | total capacity, planned leaves (RLT original estimates) | Date range and project filter sensitive; RLT leave planned estimates are deducted once. | RLT leave totals and RnD leave-adjusted capacity. |
+| Availability for more work | Capacity remaining after planned project load and planned leave estimates. | `Total Capacity - Total Planned Projects - Total Leaves Planned` | total capacity, planned projects (non-RLT), bucketed RLT leave estimates | Date range and project filter sensitive; RLT distributed leave buckets are applied before raw fallback. | Assignee subtraction, RnD investable hours. |
+| Availability | Practical capacity after planned leaves are deducted. | `Total Capacity (Hours) - Total Leaves Planned` | total capacity, bucketed RLT leave original estimates | Date range and project filter sensitive; continuous RLT leave subtasks are counted only for their selected-range bucket rows. | RLT leave totals and RnD leave-adjusted capacity. |
 
 ## Drawer Notes
 
@@ -21,4 +21,5 @@ INFO_IDS: `nested.capacity_gap`, `nested.total_capacity_adjusted`
   - summary chips for range capacity, business days, holiday weekdays, per-assignee capacity, and leave totals
   - month cards with Ramadan (`R`), holidays (`H`), leave (`L`), and Ramadan leave (`RL`) tags
 - `Total Capacity (Hours)` uses: `Employee Count x Available Business Days x Per Day Hours`, and shows this as an icon-based top-right formula chip.
+- `Total Leaves Planned` uses `Subtasks_Distributed` date buckets from the RLT leave workbook first, so continuous leave subtasks are not counted wholesale just because they overlap the selected range.
 - `Total Leaves Taken` is currently hidden/commented in the scorecard UI (reserved for later activation).

@@ -59,6 +59,22 @@ Products` aggregate). Accent colors:
 Each card shows `Total TK Approved` (`sum(tk_approved_seconds)`) and the count
 of RMIs/Epics in that product.
 
+## Gantt View
+
+The **Gantt View** is rendered from `rmi_schedule_records`, the same normalized
+rows used by **RMI Estimation & Scheduling**. It uses the selected schedule year
+as a January-to-December timeline and keeps the same left-side columns: `#`,
+`RMI`, `Product`, `Status`, `Most likely`, and `TK Approved`.
+
+Each epic row shows the epic/RMI name in the left `RMI` column with an
+icon-only Jira issue link. The icon opens the related Jira issue in a new browser
+tab when a Jira URL exists; rows without a Jira issue show the same icon greyed
+out and disabled. The timeline bar spans the epic start date through due date,
+with the start date outside the left side of the bar and the due date outside
+the right side. The bar label shows **TK Approved** in the active unit. When
+**Diagnostics** is enabled, the label expands to `TK Approved | Epic Jira
+Estimate`.
+
 ## Data Sources
 
 All fields resolve through `load_report_data(db_path, run_id)` which reads from
@@ -116,6 +132,10 @@ the canonical `assignee_hours_capacity.db`:
 - 2026-04-28: Team dropdown member rows now include status labels in brackets
   (`Active` / `Resigned`). Members marked resigned in
   `performance_resource_resignations` are unselected by default.
+- 2026-05-11: Reworked **Gantt View** to follow the
+  **RMI Estimation & Scheduling** layout with month-wise schedule columns,
+  left-side epic names, icon-only Jira issue links, external start/due labels,
+  and Diagnostics-driven `TK Approved | Epic Jira Estimate` bar labels.
 - 2026-04-27: Restored full executive summary card row matching the
   `IPP Meeting Reports/rmi_jira_gantt.html` reference (Total # of RMI Epics,
   Optimistic / Most Likely / Pessimistic / Calculated, TK Approved hero,

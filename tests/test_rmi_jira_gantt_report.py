@@ -7,6 +7,7 @@ import unittest
 from pathlib import Path
 
 from generate_rmi_jira_gantt_html import generate_html_report, load_report_data, render_html
+from generate_rmi_jira_gantt_html import _load_run_errors, _tk_comparison_badge, _story_rollup_badge
 from report_server import (
     REPORT_FILENAME_TO_ID,
     REPORT_REFRESH_CHAINS,
@@ -255,6 +256,7 @@ class RmiJiraGanttReportTests(unittest.TestCase):
         self.assertEqual(data["canonical_database_path"], str(db_path.resolve()))
         self.assertEqual(len(data["epics"]), 1)
         self.assertEqual(len(data["rmi_schedule_records"]), 1)
+        self.assertEqual(data["rmi_schedule_records"][0]["jira_original_estimate_seconds"], 120 * 3600)
         epic = data["epics"][0]
         self.assertEqual(epic["jira_id"], "O2-321")
         self.assertEqual(epic["title"], "Planner Epic Summary")
@@ -263,6 +265,8 @@ class RmiJiraGanttReportTests(unittest.TestCase):
         self.assertEqual(epic["tk_approved_seconds"], 9.8 * 28800)
         self.assertEqual(epic["story_estimate_seconds"], 16 * 3600)
         self.assertEqual(epic["subtask_estimate_seconds"], 8 * 3600)
+        self.assertEqual(epic["aggregate_estimate_seconds"], round(16 * 3600 + 8 * 3600, 2))
+        self.assertIn("source_values", epic)
         self.assertEqual(epic["logged_seconds"], 2 * 3600)
         self.assertEqual(len(epic["stories"]), 1)
         self.assertEqual(epic["stories"][0]["story_key"], "O2-401")
@@ -356,7 +360,7 @@ class RmiJiraGanttReportTests(unittest.TestCase):
         self.assertIn("function diagnosticsEnabled()", html)
         self.assertIn("diagnosticsHide:true", html)
         self.assertIn("if (!diagnosticsMode && d.diagnosticsHide) return false;", html)
-        self.assertIn('diagnosticsToggle.addEventListener("change", function () { renderMetrics(); });', html)
+        self.assertIn('diagnosticsToggle.addEventListener("change", function () { renderMetrics(); renderGantt(); });', html)
         self.assertIn("TK approved for ", html)
         self.assertIn('.replace(/\\n/g, "<br>")', html)
         self.assertIn("Month Story Analysis", html)
@@ -365,6 +369,19 @@ class RmiJiraGanttReportTests(unittest.TestCase):
         self.assertIn("formatPlannerRemarkText(", html)
         self.assertIn("replace(/<li", html)
         self.assertIn("Gantt View", html)
+        self.assertIn("rmi-gantt-table", html)
+        self.assertIn("rmiGanttFilteredRecords()", html)
+        self.assertIn("data-gantt-bar-label", html)
+        self.assertIn("jiraIssueIconLink(epic.jira_url, epic.jira_id, \"rmi-gantt-issue-link\")", html)
+        self.assertIn("rmi-gantt-issue-link--disabled", html)
+        self.assertIn("No Jira issue found", html)
+        self.assertIn("Open Jira issue", html)
+        self.assertNotIn("rmi-gantt-key", html)
+        self.assertIn("Bar labels show TK Approved; Diagnostics adds Epic Jira Estimate.", html)
+        self.assertIn("formatGanttDate(epic.start_date)", html)
+        self.assertIn("formatGanttDate(epic.due_date)", html)
+        self.assertIn("rmiSelectedYear", html)
+        self.assertNotIn("gantt-product-grid", html)
         self.assertIn("Table View", html)
         self.assertIn("RMI Estimation &amp; Scheduling", html)
         self.assertIn("rmi-schedule-table", html)
@@ -378,9 +395,42 @@ class RmiJiraGanttReportTests(unittest.TestCase):
         self.assertIn("data-worklog-panel", html)
         self.assertNotIn('id="capacity-employees" type="number"', html)
         self.assertNotIn('id="capacity-leaves" type="number"', html)
-        self.assertNotIn('data-metric-key="idle_capacity_seconds"', html)
         self.assertNotIn("source_rmi_rows", html)
         self.assertNotIn("Epic Estimates Approved Plan.xlsx", html)
+        # New gap implementations:
+        # Through toggle disables Started/Delivered
+        self.assertIn("startEl.disabled = true", html)
+        self.assertIn("deliveredEl.disabled = true", html)
+        # Gantt follows the RMI Estimation & Scheduling month-grid layout
+        self.assertIn("rmi-gantt-month", html)
+        # Table has new columns
+        self.assertIn("Jira Est.", html)
+        self.assertIn("Agg. Est.", html)
+        self.assertIn("Source Values", html)
+        # Expanded search
+        self.assertIn("(e.product || \"\")", html)
+        self.assertIn("(e.status || \"\")", html)
+        self.assertIn("(e.priority || \"\")", html)
+        # RMI Schedule chevrons
+        self.assertIn("rmi-sched-chevron", html)
+        self.assertIn("data-rmi-toggle-product", html)
+        # RMI Schedule prefers current year
+        self.assertIn("years.indexOf(currentYear) >= 0 ? currentYear : years[years.length - 1]", html)
+        # See Epics button
+        self.assertIn('id="see-epics-btn"', html)
+        self.assertIn("See Epics", html)
+        # Idle metric card in grid
+        self.assertIn("idle_capacity_seconds", html)
+        self.assertIn("Idle Hours/Days", html)
+        # TK comparison badges
+        self.assertIn("comparison-badge", html)
+        self.assertIn("comparison-match", html)
+        # Story rollup badge
+        self.assertIn("epic original estimate", html)
+        # Source values in table
+        self.assertIn("source-values-cell", html)
+        # Server-side first paint for RMI schedule
+        self.assertIn("rmi-sched-epic-row", html)
 
     def test_generate_html_report_writes_output_file(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
@@ -423,6 +473,88 @@ class RmiJiraGanttReportTests(unittest.TestCase):
 
         self.assertEqual(resp.status_code, 200)
         self.assertIn("RMI Jira Gantt", resp.get_data(as_text=True))
+
+    def test_load_run_errors_returns_empty_when_table_missing(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            db_path = Path(td) / "test.db"
+            conn = sqlite3.connect(db_path)
+            conn.execute("CREATE TABLE dummy (x TEXT)")
+            conn.close()
+            errors = _load_run_errors(db_path)
+        self.assertEqual(errors, [])
+
+    def test_load_run_errors_returns_rows_when_table_exists(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            db_path = Path(td) / "test.db"
+            conn = sqlite3.connect(db_path)
+            conn.execute("""
+                CREATE TABLE run_errors (
+                    error_scope TEXT, issue_key TEXT, sheet_name TEXT, row_number TEXT, message TEXT
+                )
+            """)
+            conn.execute(
+                "INSERT INTO run_errors VALUES (?, ?, ?, ?, ?)",
+                ("worklog_lookup", "O2-401", "OmniConnect RMI", "5", "Connection timeout"),
+            )
+            conn.commit()
+            conn.close()
+            errors = _load_run_errors(db_path)
+        self.assertEqual(len(errors), 1)
+        self.assertEqual(errors[0]["scope"], "worklog_lookup")
+        self.assertEqual(errors[0]["issue_key"], "O2-401")
+        self.assertEqual(errors[0]["message"], "Connection timeout")
+
+    def test_tk_comparison_badge_match(self):
+        badge = _tk_comparison_badge(28800.0, 28800.0)
+        self.assertIn("comparison-match", badge)
+        self.assertIn("Matches Jira original estimate", badge)
+
+    def test_tk_comparison_badge_over(self):
+        badge = _tk_comparison_badge(57600.0, 28800.0)
+        self.assertIn("comparison-over", badge)
+        self.assertIn("above Jira original estimate", badge)
+
+    def test_tk_comparison_badge_under(self):
+        badge = _tk_comparison_badge(28800.0, 57600.0)
+        self.assertIn("comparison-under", badge)
+        self.assertIn("below Jira original estimate", badge)
+
+    def test_tk_comparison_badge_neutral(self):
+        badge = _tk_comparison_badge(0, 0)
+        self.assertIn("comparison-neutral", badge)
+
+    def test_story_rollup_badge_match(self):
+        badge = _story_rollup_badge(28800.0, 28800.0)
+        self.assertIn("comparison-match", badge)
+        self.assertIn("Story rollup matches", badge)
+
+    def test_story_rollup_badge_over(self):
+        badge = _story_rollup_badge(57600.0, 28800.0)
+        self.assertIn("comparison-over", badge)
+        self.assertIn("above epic original estimate", badge)
+
+    def test_run_errors_displayed_in_html_when_present(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            db_path = Path(td) / "assignee_hours_capacity.db"
+            _seed_planner_row(db_path)
+            _seed_canonical_tables(db_path)
+            # Add run_errors table
+            conn = sqlite3.connect(db_path)
+            conn.execute("""
+                CREATE TABLE run_errors (
+                    error_scope TEXT, issue_key TEXT, sheet_name TEXT, row_number TEXT, message TEXT
+                )
+            """)
+            conn.execute("INSERT INTO run_errors VALUES (?, ?, ?, ?, ?)", ("fetch", "O2-888", "Sheet1", "3", "API error"))
+            conn.commit()
+            conn.close()
+            data = load_report_data(db_path)
+
+        self.assertEqual(len(data["run_errors"]), 1)
+        html = render_html(data)
+        self.assertIn("Run Errors", html)
+        self.assertIn("API error", html)
+        self.assertIn("O2-888", html)
 
 
 if __name__ == "__main__":
