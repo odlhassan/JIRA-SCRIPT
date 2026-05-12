@@ -1,0 +1,721 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Monthly Epic Plan vs Actual</title>
+  <link rel="stylesheet" href="shared-nav.css">
+  <style>
+    :root {
+      --bg: #eef4fb;
+      --panel: #ffffff;
+      --line: #d7e2ee;
+      --text: #142033;
+      --muted: #5c6b7a;
+      --title: #16324f;
+      --accent: #1d5f8f;
+      --good: #0f766e;
+      --warn: #b45309;
+      --bad: #b91c1c;
+      --soft: #f7fbff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      background:
+        radial-gradient(980px 320px at 8% -12%, #d8ebff 0%, transparent 62%),
+        linear-gradient(180deg, #f8fbff, var(--bg));
+      color: var(--text);
+    }
+    .page { width: 100%; padding: 18px; }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      box-shadow: 0 14px 38px rgba(15, 23, 42, 0.06);
+      padding: 16px 18px;
+      margin-bottom: 14px;
+    }
+    .title-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      align-items: start;
+      flex-wrap: wrap;
+    }
+    h1 { margin: 0 0 6px; color: var(--title); font-size: 1.55rem; }
+    .meta { color: var(--muted); font-size: 0.92rem; line-height: 1.45; }
+    .controls {
+      margin-top: 14px;
+      display: grid;
+      grid-template-columns: minmax(150px, 190px) minmax(220px, 300px) minmax(180px, 220px) auto;
+      gap: 12px;
+      align-items: end;
+    }
+    .control { display: flex; flex-direction: column; gap: 5px; }
+    .control label { font-size: 0.8rem; font-weight: 700; color: #324559; }
+    .control input,
+    .control select {
+      min-height: 40px;
+      border: 1px solid #c0ccd8;
+      border-radius: 10px;
+      padding: 8px 11px;
+      font-size: 0.94rem;
+      background: #fff;
+      color: #142230;
+    }
+    .control input:focus,
+    .control select:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(29, 95, 143, 0.14);
+    }
+    .toggle-wrap {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 40px;
+      padding: 0 10px;
+      border: 1px solid #c0ccd8;
+      border-radius: 10px;
+      background: #fff;
+      font-size: 0.9rem;
+    }
+    .controls-extra {
+      margin-top: 10px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      align-items: start;
+    }
+    .control-span-assignees { max-width: min(560px, 100%); }
+    .field-hint { margin: 0 0 4px; font-size: 0.78rem; color: var(--muted); font-weight: 600; line-height: 1.35; }
+    .control select[multiple] {
+      width: 100%;
+      min-height: 112px;
+      padding: 8px 10px;
+      line-height: 1.35;
+    }
+    .btn-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+    .btn {
+      min-height: 40px;
+      border-radius: 10px;
+      border: 1px solid var(--accent);
+      padding: 9px 14px;
+      background: var(--accent);
+      color: #fff;
+      cursor: pointer;
+      font-weight: 700;
+    }
+    .btn.alt { background: #fff; color: var(--accent); }
+    .status {
+      margin-top: 10px;
+      min-height: 22px;
+      color: var(--muted);
+      font-size: 0.86rem;
+    }
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 10px;
+    }
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--soft);
+      padding: 12px;
+    }
+    .card .label {
+      color: var(--muted);
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      font-weight: 700;
+    }
+    .card .value { margin-top: 4px; font-size: 1.35rem; font-weight: 800; color: var(--title); }
+    .table-wrap {
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: #fff;
+    }
+    table {
+      width: 100%;
+      min-width: 1160px;
+      border-collapse: separate;
+      border-spacing: 0;
+    }
+    th, td {
+      padding: 10px 11px;
+      border-bottom: 1px solid #e8eef5;
+      text-align: left;
+      vertical-align: top;
+      font-size: 0.88rem;
+    }
+    th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      background: linear-gradient(180deg, #f9fbfd, #eff5fb);
+      color: #28425d;
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    tbody tr:hover { background: #f8fbff; }
+    .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .epic-cell {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+    }
+    .epic-title { font-weight: 700; color: #12314f; }
+    .epic-open-link {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 26px;
+      height: 26px;
+      flex: 0 0 auto;
+      border: 1px solid #c7d7e8;
+      border-radius: 8px;
+      color: #155e91;
+      background: #f8fbff;
+      text-decoration: none;
+    }
+    .epic-open-link:hover { border-color: #155e91; background: #eef7ff; }
+    .epic-open-link .material-symbols-outlined { font-size: 17px; line-height: 1; }
+    .project-cell {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .project-chip {
+      display: inline-flex;
+      align-items: center;
+      width: fit-content;
+      max-width: 100%;
+      border: 1px solid var(--project-color, #94a3b8);
+      border-left: 6px solid var(--project-color, #94a3b8);
+      border-radius: 10px;
+      background: var(--project-bg, #f8fafc);
+      color: #0f172a;
+      font-weight: 800;
+      padding: 4px 9px 4px 7px;
+      line-height: 1.1;
+    }
+    .muted { color: var(--muted); }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      border-radius: 999px;
+      padding: 4px 8px;
+      font-size: 0.78rem;
+      font-weight: 700;
+      border: 1px solid var(--line);
+      background: #fff;
+      color: #334155;
+      white-space: nowrap;
+    }
+    .pill.good { color: var(--good); background: #ecfdf5; border-color: #a7f3d0; }
+    .pill.info { color: #1d4ed8; background: #eff6ff; border-color: #bfdbfe; }
+    .pill.warn { color: var(--warn); background: #fffbeb; border-color: #fde68a; }
+    .pill.bad { color: var(--bad); background: #fef2f2; border-color: #fecaca; }
+    .caption {
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: 0.84rem;
+      line-height: 1.5;
+    }
+    .empty {
+      padding: 22px;
+      text-align: center;
+      color: var(--muted);
+    }
+    .section-title {
+      margin: 0 0 12px;
+      font-size: 1.05rem;
+      font-weight: 800;
+      color: var(--title);
+    }
+    .project-cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 10px;
+    }
+    .proj-card {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 12px 14px;
+      border-left: 5px solid var(--pcolor, #94a3b8);
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), var(--pbg, #f8fafc));
+    }
+    .proj-card-name { font-weight: 800; font-size: 0.95rem; color: #0f172a; line-height: 1.25; }
+    .proj-card-meta {
+      margin-top: 6px;
+      font-size: 0.78rem;
+      color: var(--muted);
+      font-weight: 600;
+    }
+    .proj-card-grid {
+      margin-top: 10px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px 12px;
+      font-size: 0.82rem;
+    }
+    .proj-card-grid .stat-label { color: var(--muted); font-weight: 700; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.03em; }
+    .proj-card-grid .stat-value { font-weight: 800; font-variant-numeric: tabular-nums; color: var(--title); }
+    @media (max-width: 900px) {
+      .controls { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <section class="panel">
+      <div class="title-row">
+        <div>
+          <h1>Monthly Epic Plan vs Actual</h1>
+          <div class="meta">
+            Shows epics whose approved TK schedule overlaps the selected month, with planned effort and actual hours logged in that month.
+          </div>
+        </div>
+        <div class="meta" id="run-meta">Waiting for data.</div>
+      </div>
+      <div class="controls">
+        <div class="control">
+          <label for="month-input">Month</label>
+          <input type="month" id="month-input">
+        </div>
+        <div class="control">
+          <label for="project-filter">Project filter</label>
+          <select id="project-filter"></select>
+        </div>
+        <div class="control">
+          <label>Effort unit</label>
+          <div class="toggle-wrap">
+            <input type="radio" name="unit" id="unit-hours" value="hours" checked>
+            <label for="unit-hours">Hours</label>
+            <input type="radio" name="unit" id="unit-days" value="days">
+            <label for="unit-days">Days</label>
+          </div>
+        </div>
+        <div class="btn-row">
+          <button type="button" class="btn" id="apply-btn">Apply</button>
+          <button type="button" class="btn alt" id="clear-projects-btn">All projects</button>
+        </div>
+      </div>
+      <div class="controls controls-extra">
+        <div class="control control-span-assignees">
+          <label for="assignee-filter">Employees (optional)</label>
+          <p class="field-hint">Ctrl/Cmd-click to select multiple. Leave none selected for full team (capacity profile headcount).</p>
+          <select id="assignee-filter" multiple aria-label="Filter by employees"></select>
+        </div>
+        <div class="btn-row" style="align-self: end;">
+          <button type="button" class="btn alt" id="clear-assignees-btn">All employees</button>
+        </div>
+      </div>
+      <div class="status" id="status"></div>
+    </section>
+
+    <section class="panel">
+      <div class="cards">
+        <div class="card"><div class="label">Epics</div><div class="value" id="kpi-epics">0</div></div>
+        <div class="card"><div class="label" id="kpi-planned-label">Planned Hours</div><div class="value" id="kpi-planned">0.00</div></div>
+        <div class="card"><div class="label" id="kpi-actual-label">Actual Hours</div><div class="value" id="kpi-actual">0.00</div></div>
+        <div class="card"><div class="label">Start Slips</div><div class="value" id="kpi-start-slip">0</div></div>
+        <div class="card"><div class="label">End Slips</div><div class="value" id="kpi-end-slip">0</div></div>
+        <div class="card"><div class="label">Carried Forward</div><div class="value" id="kpi-carried-forward">0</div></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2 class="section-title">Workforce capacity (RLT)</h2>
+      <div class="cards">
+        <div class="card"><div class="label">Team (capacity profile)</div><div class="value" id="kpi-wf-team">0</div></div>
+        <div class="card"><div class="label" id="kpi-wf-scope-label">Employees in scope</div><div class="value" id="kpi-wf-scope">0</div></div>
+        <div class="card"><div class="label" id="kpi-wf-capacity-label">Capacity</div><div class="value" id="kpi-wf-capacity">0.00</div></div>
+        <div class="card"><div class="label" id="kpi-wf-leave-label">Leave load</div><div class="value" id="kpi-wf-leave">0.00</div></div>
+        <div class="card"><div class="label" id="kpi-wf-avail-label">Availability</div><div class="value" id="kpi-wf-availability">0.00</div></div>
+      </div>
+      <p class="caption" id="workforce-caption">Availability = capacity minus leave hours from the RLT snapshot for the month.</p>
+    </section>
+
+    <section class="panel">
+      <h2 class="section-title">By project</h2>
+      <div class="project-cards" id="project-cards" aria-live="polite"></div>
+    </section>
+
+    <section class="panel">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Epic</th>
+              <th>Project</th>
+              <th>Approved Start</th>
+              <th>Approved Due</th>
+              <th>Delivery Status</th>
+              <th>Jira Status</th>
+              <th class="num effort-head">Planned Hours</th>
+              <th class="num effort-head">Actual Hours</th>
+              <th>Start</th>
+              <th>End</th>
+              <th>Carry Forward</th>
+            </tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+      <div class="caption">
+        Start slip means the approved start date is inside the selected month and no subtask worklog exists through month end.
+        End slip means the approved due date is inside the selected month and the current Jira epic status is not resolved.
+        Historical months use the latest canonical Jira status, so old-month completion status is approximate unless Jira snapshots are added later.
+      </div>
+    </section>
+  </div>
+
+  <script src="shared-nav.js"></script>
+  <script>
+    const API_SUMMARY = "/api/monthly-epic-plan-progress/summary";
+    const API_PROJECTS = "/api/projects?include_inactive=0";
+    const els = {
+      month: document.getElementById("month-input"),
+      projects: document.getElementById("project-filter"),
+      assigneeFilter: document.getElementById("assignee-filter"),
+      apply: document.getElementById("apply-btn"),
+      clearProjects: document.getElementById("clear-projects-btn"),
+      clearAssignees: document.getElementById("clear-assignees-btn"),
+      status: document.getElementById("status"),
+      runMeta: document.getElementById("run-meta"),
+      rows: document.getElementById("rows"),
+      kpiEpics: document.getElementById("kpi-epics"),
+      kpiPlanned: document.getElementById("kpi-planned"),
+      kpiActual: document.getElementById("kpi-actual"),
+      kpiPlannedLabel: document.getElementById("kpi-planned-label"),
+      kpiActualLabel: document.getElementById("kpi-actual-label"),
+      kpiStartSlip: document.getElementById("kpi-start-slip"),
+      kpiEndSlip: document.getElementById("kpi-end-slip"),
+      kpiCarriedForward: document.getElementById("kpi-carried-forward"),
+      projectCards: document.getElementById("project-cards"),
+      kpiWfTeam: document.getElementById("kpi-wf-team"),
+      kpiWfScope: document.getElementById("kpi-wf-scope"),
+      kpiWfScopeLabel: document.getElementById("kpi-wf-scope-label"),
+      kpiWfCapacity: document.getElementById("kpi-wf-capacity"),
+      kpiWfLeave: document.getElementById("kpi-wf-leave"),
+      kpiWfAvailability: document.getElementById("kpi-wf-availability"),
+      kpiWfCapacityLabel: document.getElementById("kpi-wf-capacity-label"),
+      kpiWfLeaveLabel: document.getElementById("kpi-wf-leave-label"),
+      kpiWfAvailLabel: document.getElementById("kpi-wf-avail-label"),
+      workforceCaption: document.getElementById("workforce-caption")
+    };
+    let latestPayload = null;
+    let unit = "hours";
+    const projectMetaByKey = new Map();
+
+    function esc(value) {
+      return String(value == null ? "" : value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+    function monthNow() {
+      const d = new Date();
+      return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+    }
+
+    function selectedProjects() {
+      return els.projects.value ? [els.projects.value] : [];
+    }
+
+    function formatNumber(value) {
+      const n = Number(value || 0);
+      return Number.isFinite(n) ? n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "0.00";
+    }
+
+    function formatDisplayDate(value) {
+      const text = String(value || "").trim();
+      if (!/^\d{4}-\d{2}-\d{2}/.test(text)) return text || "-";
+      const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+      const year = Number(text.slice(0, 4));
+      const month = Number(text.slice(5, 7));
+      const day = Number(text.slice(8, 10));
+      if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day) || month < 1 || month > 12) return text;
+      return String(day).padStart(2, "0") + "-" + months[month - 1] + "-" + String(year).slice(-2);
+    }
+
+    function todayIso() {
+      const d = new Date();
+      return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+    }
+
+    function effortValue(row, key) {
+      return unit === "days" ? Number(row[key + "_days"] || 0) : Number(row[key + "_hours"] || 0);
+    }
+
+    function flagPill(active, activeLabel, inactiveLabel) {
+      return active
+        ? '<span class="pill bad">' + esc(activeLabel) + '</span>'
+        : '<span class="pill good">' + esc(inactiveLabel) + '</span>';
+    }
+
+    function statusPill(value, approvedStart) {
+      const label = String(value || "-").trim() || "-";
+      const normalized = label.toLowerCase().replace(/[_-]+/g, " ");
+      let cls = "";
+      if (["resolved", "resolved!", "done", "closed", "complete", "completed"].includes(normalized)) {
+        cls = " good";
+      } else if (normalized.includes("progress")) {
+        cls = " info";
+      } else if (normalized === "yet to start") {
+        const start = String(approvedStart || "").slice(0, 10);
+        if (/^\d{4}-\d{2}-\d{2}$/.test(start) && start < todayIso()) cls = " bad";
+      }
+      return '<span class="pill' + cls + '">' + esc(label) + '</span>';
+    }
+
+    function safeColor(value) {
+      const text = String(value || "").trim();
+      return /^#[0-9A-Fa-f]{6}$/.test(text) ? text.toUpperCase() : "#94A3B8";
+    }
+
+    function colorToSoftBg(hex) {
+      const color = safeColor(hex);
+      const r = parseInt(color.slice(1, 3), 16);
+      const g = parseInt(color.slice(3, 5), 16);
+      const b = parseInt(color.slice(5, 7), 16);
+      return "rgba(" + r + ", " + g + ", " + b + ", 0.14)";
+    }
+
+    function projectColor(projectKey) {
+      const key = String(projectKey || "").toUpperCase();
+      const meta = projectMetaByKey.get(key) || {};
+      return safeColor(meta.color_hex);
+    }
+
+    function projectDisplayName(projectKey, fallbackName) {
+      const key = String(projectKey || "").toUpperCase();
+      const meta = projectMetaByKey.get(key) || {};
+      return String(meta.display_name || meta.project_name || fallbackName || key || "-").trim();
+    }
+
+    function renderProjects(projects) {
+      const rows = Array.isArray(projects) ? projects : [];
+      projectMetaByKey.clear();
+      const options = ['<option value="">All projects</option>'];
+      options.push(...rows.map((project) => {
+        const key = String(project.project_key || project.key || "").toUpperCase();
+        if (!key) return "";
+        const name = String(project.display_name || project.project_name || key);
+        projectMetaByKey.set(key, { ...project, color_hex: safeColor(project.color_hex) });
+        return '<option value="' + esc(key) + '">' + esc(name + " (" + key + ")") + '</option>';
+      }));
+      els.projects.innerHTML = options.join("");
+    }
+
+    async function loadProjects() {
+      try {
+        const response = await fetch(API_PROJECTS, { cache: "no-store", headers: { "Accept": "application/json" } });
+        const body = await response.json().catch(() => ({}));
+        if (response.ok) renderProjects(body.projects || []);
+      } catch (err) {
+        console.warn("Failed to load projects", err);
+      }
+    }
+
+    function renderSummary(payload) {
+      latestPayload = payload || {};
+      const totals = latestPayload.totals || {};
+      const suffix = unit === "days" ? "Days" : "Hours";
+      els.kpiEpics.textContent = String(totals.epic_count || 0);
+      els.kpiPlannedLabel.textContent = "Planned " + suffix;
+      els.kpiActualLabel.textContent = "Actual " + suffix;
+      els.kpiPlanned.textContent = formatNumber(unit === "days" ? totals.planned_days : totals.planned_hours);
+      els.kpiActual.textContent = formatNumber(unit === "days" ? totals.actual_days : totals.actual_hours);
+      els.kpiStartSlip.textContent = String(totals.start_slip_count || 0);
+      els.kpiEndSlip.textContent = String(totals.end_slip_count || 0);
+      els.kpiCarriedForward.textContent = String(totals.carried_forward_count || 0);
+      document.querySelectorAll(".effort-head").forEach((cell, index) => {
+        cell.textContent = (index === 0 ? "Planned " : "Actual ") + suffix;
+      });
+      renderProjectCards(latestPayload.by_project || []);
+      renderRows(latestPayload.rows || []);
+      populateAssigneeFilter(latestPayload.workforce || {});
+      renderWorkforce(latestPayload.workforce || {});
+      els.runMeta.textContent = latestPayload.canonical_run_id
+        ? "Canonical run: " + latestPayload.canonical_run_id
+        : "No canonical run loaded.";
+    }
+
+    function populateAssigneeFilter(wf) {
+      if (!els.assigneeFilter) return;
+      const payload = wf || {};
+      const opts = Array.isArray(payload.assignee_options) ? payload.assignee_options : [];
+      els.assigneeFilter.innerHTML = opts.map((name) => '<option value="' + esc(name) + '">' + esc(name) + "</option>").join("");
+      const selected = new Set(Array.isArray(payload.selected_assignees) ? payload.selected_assignees : []);
+      const active = !!payload.assignee_filter_active;
+      for (let i = 0; i < els.assigneeFilter.options.length; i += 1) {
+        const opt = els.assigneeFilter.options[i];
+        opt.selected = active && selected.has(opt.value);
+      }
+    }
+
+    function renderWorkforce(wf) {
+      const payload = wf || {};
+      if (els.kpiWfTeam) els.kpiWfTeam.textContent = String(payload.employee_count_profile != null ? payload.employee_count_profile : 0);
+      if (els.kpiWfScope) els.kpiWfScope.textContent = String(payload.selected_employee_count != null ? payload.selected_employee_count : 0);
+      if (els.kpiWfScopeLabel) {
+        els.kpiWfScopeLabel.textContent = payload.assignee_filter_active ? "Selected employees" : "Employees in scope";
+      }
+      const dayMode = unit === "days";
+      const cap = dayMode ? Number(payload.capacity_days || 0) : Number(payload.capacity_hours || 0);
+      const lv = dayMode ? Number(payload.leave_days || 0) : Number(payload.leave_hours || 0);
+      const av = dayMode ? Number(payload.availability_days || 0) : Number(payload.availability_hours || 0);
+      const lab = dayMode ? "days" : "hours";
+      if (els.kpiWfCapacityLabel) els.kpiWfCapacityLabel.textContent = "Capacity (" + lab + ")";
+      if (els.kpiWfLeaveLabel) els.kpiWfLeaveLabel.textContent = "Leave load (" + lab + ")";
+      if (els.kpiWfAvailLabel) els.kpiWfAvailLabel.textContent = "Availability (" + lab + ")";
+      if (els.kpiWfCapacity) els.kpiWfCapacity.textContent = formatNumber(cap);
+      if (els.kpiWfLeave) els.kpiWfLeave.textContent = formatNumber(lv);
+      if (els.kpiWfAvailability) els.kpiWfAvailability.textContent = formatNumber(av);
+      if (els.workforceCaption) {
+        const base = payload.capacity_source === "default"
+          ? "No capacity profile overlaps this month; team capacity is 0 until a profile covers this range (Capacity settings)."
+          : "Capacity uses the saved profile that overlaps this month (calendar clipped to month boundaries). ";
+        els.workforceCaption.textContent = base + "Availability = capacity minus leave hours aggregated from canonical RLT daily rows.";
+      }
+    }
+
+    function renderProjectCards(byProject) {
+      if (!els.projectCards) return;
+      const list = Array.isArray(byProject) ? byProject : [];
+      if (!list.length) {
+        els.projectCards.innerHTML = '<div class="empty" style="grid-column:1/-1;">No projects in this scope.</div>';
+        return;
+      }
+      els.projectCards.innerHTML = list.map((p) => {
+        const key = String(p.project_key || "").toUpperCase();
+        const hex = projectColor(key);
+        const cardStyle = "--pcolor:" + hex + ";--pbg:" + colorToSoftBg(hex);
+        const name = esc(projectDisplayName(key, p.project_name));
+        const planned = unit === "days" ? Number(p.planned_days || 0) : Number(p.planned_hours || 0);
+        const actual = unit === "days" ? Number(p.actual_days || 0) : Number(p.actual_hours || 0);
+        const planLabel = unit === "days" ? "Planned days" : "Planned hours";
+        const actLabel = unit === "days" ? "Actual days" : "Actual hours";
+        const epicPart = String(p.epic_count || 0);
+        const carryPart = String(p.carried_forward_count || 0);
+        return (
+          '<div class="proj-card" style="' + esc(cardStyle) + '">'
+          + '<div class="proj-card-name">' + name + '</div>'
+          + '<div class="proj-card-meta">' + esc(epicPart) + " epics · " + esc(carryPart) + " carried forward</div>"
+          + '<div class="proj-card-grid">'
+          + '<div><div class="stat-label">' + esc(planLabel) + '</div><div class="stat-value">' + formatNumber(planned) + "</div></div>"
+          + '<div><div class="stat-label">' + esc(actLabel) + '</div><div class="stat-value">' + formatNumber(actual) + "</div></div>"
+          + "</div></div>"
+        );
+      }).join("");
+    }
+
+    function renderRows(rows) {
+      if (!rows.length) {
+        els.rows.innerHTML = '<tr><td colspan="11"><div class="empty">No epics matched the selected month and project scope.</div></td></tr>';
+        return;
+      }
+      els.rows.innerHTML = rows.map((row) => {
+        const epicTitle = esc(row.epic_name || row.epic_key);
+        const epicCell = row.jira_url
+          ? '<div class="epic-cell"><div><div class="epic-title">' + epicTitle + '</div></div>'
+            + '<a class="epic-open-link" href="' + esc(row.jira_url) + '" target="_blank" rel="noopener" aria-label="Open epic in Jira">'
+            + '<span class="material-symbols-outlined" aria-hidden="true">open_in_new</span></a></div>'
+          : '<div class="epic-title">' + epicTitle + '</div>';
+        const projectKey = String(row.project_key || "").toUpperCase();
+        const projectHex = projectColor(projectKey);
+        const projectStyle = '--project-color:' + projectHex + ';--project-bg:' + colorToSoftBg(projectHex);
+        const projectName = projectDisplayName(projectKey, row.project_name);
+        const projectCell = '<div class="project-cell"><span class="project-chip" style="' + esc(projectStyle) + '">' + esc(projectName) + '</span></div>';
+        return '<tr>'
+          + '<td>' + epicCell + '</td>'
+          + '<td>' + projectCell + '</td>'
+          + '<td>' + esc(formatDisplayDate(row.approved_start)) + '</td>'
+          + '<td>' + esc(formatDisplayDate(row.approved_due)) + '</td>'
+          + '<td>' + statusPill(row.delivery_status, row.approved_start) + '</td>'
+          + '<td>' + statusPill(row.jira_status || "Not in canonical data", row.approved_start) + '</td>'
+          + '<td class="num">' + formatNumber(effortValue(row, "planned")) + '</td>'
+          + '<td class="num">' + formatNumber(effortValue(row, "actual")) + '</td>'
+          + '<td>' + flagPill(row.start_slip, "Could not start", "Started/OK") + '</td>'
+          + '<td>' + flagPill(row.end_slip, "Could not end", "Completed/OK") + '</td>'
+          + '<td>' + (row.carried_forward ? '<span class="pill warn">Carried forward</span>' : '<span class="pill good">No</span>') + '</td>'
+          + '</tr>';
+      }).join("");
+    }
+
+    async function loadSummary() {
+      const month = els.month.value || monthNow();
+      els.month.value = month;
+      const params = new URLSearchParams({ month });
+      const projects = selectedProjects();
+      if (projects.length) params.set("projects", projects.join(","));
+      if (els.assigneeFilter) {
+        Array.from(els.assigneeFilter.selectedOptions).forEach((opt) => {
+          if (opt.value) params.append("assignees", opt.value);
+        });
+      }
+      els.status.textContent = "Loading monthly epic report...";
+      try {
+        const response = await fetch(API_SUMMARY + "?" + params.toString(), { cache: "no-store", headers: { "Accept": "application/json" } });
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok || !body.ok) throw new Error(body.error || "Failed to load report.");
+        renderSummary(body);
+        els.status.textContent = "Loaded " + (body.rows || []).length + " epics for " + esc(body.month || month) + ".";
+      } catch (err) {
+        latestPayload = null;
+        els.rows.innerHTML = '<tr><td colspan="11"><div class="empty">' + esc(err.message || err) + '</div></td></tr>';
+        if (els.projectCards) els.projectCards.innerHTML = '<div class="empty" style="grid-column:1/-1;">Could not load data.</div>';
+        const suffix = unit === "days" ? "Days" : "Hours";
+        if (els.kpiEpics) els.kpiEpics.textContent = "0";
+        if (els.kpiPlannedLabel) els.kpiPlannedLabel.textContent = "Planned " + suffix;
+        if (els.kpiActualLabel) els.kpiActualLabel.textContent = "Actual " + suffix;
+        if (els.kpiPlanned) els.kpiPlanned.textContent = formatNumber(0);
+        if (els.kpiActual) els.kpiActual.textContent = formatNumber(0);
+        if (els.kpiStartSlip) els.kpiStartSlip.textContent = "0";
+        if (els.kpiEndSlip) els.kpiEndSlip.textContent = "0";
+        if (els.kpiCarriedForward) els.kpiCarriedForward.textContent = "0";
+        renderWorkforce({});
+        populateAssigneeFilter({});
+        if (els.assigneeFilter) els.assigneeFilter.innerHTML = "";
+        els.status.textContent = "Could not load report.";
+        els.runMeta.textContent = "No data loaded.";
+      }
+    }
+
+    document.querySelectorAll('input[name="unit"]').forEach((input) => {
+      input.addEventListener("change", () => {
+        unit = document.querySelector('input[name="unit"]:checked').value || "hours";
+        if (latestPayload) renderSummary(latestPayload);
+      });
+    });
+    els.apply.addEventListener("click", loadSummary);
+    els.clearProjects.addEventListener("click", () => {
+      els.projects.value = "";
+      loadSummary();
+    });
+    if (els.clearAssignees) els.clearAssignees.addEventListener("click", () => {
+      if (els.assigneeFilter) {
+        for (let i = 0; i < els.assigneeFilter.options.length; i += 1) {
+          els.assigneeFilter.options[i].selected = false;
+        }
+      }
+      loadSummary();
+    });
+    els.projects.addEventListener("change", loadSummary);
+    els.month.value = monthNow();
+    loadProjects().then(loadSummary);
+  </script>
+</body>
+</html>
