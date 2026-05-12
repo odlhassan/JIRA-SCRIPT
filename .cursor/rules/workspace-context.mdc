@@ -40,7 +40,13 @@ When the user says "the project", "the app", "localhost", or names a route witho
 - Production deploy packages **only what is committed and pushed** to GitHub (then rsync-staged without dev/test folders). Any file needed on the server must be tracked or produced in CI — do not assume local-only artifacts reach Azure.
 - Do **not** use backup branches or `backup/` snapshot folders for routine production deploys; keep backup artifacts gitignored (see root `.gitignore`).
 
+# Git / GitHub (default when the user says “push to GitHub”)
+
+- Unless the user **names another branch**, treat “push to GitHub” as: work ends on **`main`** — `git checkout main`, integrate any needed changes (merge/cherry-pick if they were done elsewhere), commit, then **`git push origin main`**. Only **`main`** / **`master`** trigger **Azure App Service deploy** (see `.github/workflows/azure-appservice-deploy.yml`).
+- Do **not** default to `backup/*` or other side branches for routine pushes. If the only commits are on another branch, bring them onto **`main`** first, then push **`main`**.
+
 # Changelog
 
+- `2026-05-12`: default “push to GitHub” to `main` for Azure deploy alignment.
 - `2026-05-12`: added GitHub Actions / production Azure URL and push expectations; backup exclusions.
 - `2026-04-30`: tightened repo-root, localhost, sync, and stateful-file guidance; removed unrelated GitHub push instructions.

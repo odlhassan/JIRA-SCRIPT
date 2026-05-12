@@ -37,7 +37,9 @@ Use this skill when a task changes anything that can affect what localhost serve
 - Normal startup: `python run_server.py`
 - Default landing page: `http://127.0.0.1:3000/introduction.html`
 - HTML-only rebuild path: `python run_html_only.py --no-server`
+- If the user asks to **push to GitHub** for production, use **`main`** per `.cursor/rules/workspace-context.mdc` (`git push origin main` triggers Azure deploy).
 
 ## Changelog
 
+- `2026-05-12`: noted default Git push branch for production (`main`).
 - `2026-04-30`: converted the skill to a concise trigger-workflow-exit contract with repo-specific commands.

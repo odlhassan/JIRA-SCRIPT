@@ -12,3 +12,7 @@
 - If a command could not be executed, say so briefly and explain why.
 - If no localhost run is applicable, explicitly state `How to experience latest changes on live localhost: Not applicable for this change`.
 - If no local server run is applicable, explicitly state `How to test locally: Not applicable for this change`.
+
+## Git push to GitHub
+
+- When the user asks to **push to GitHub** (or equivalent) **without naming a branch**, use **`main`**: `git checkout main`, commit there if needed, then `git push origin main` so Azure deploy can run. Do not default to `backup/*` or other branches unless the user explicitly asks for that branch.
