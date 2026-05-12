@@ -17067,6 +17067,8 @@ def _sync_report_html_assets(base_dir: Path, target_dir: Path) -> None:
             return
         for f in fonts_src.glob("*.woff2"):
             dst = fonts_dst / f.name
+            if f.resolve() == dst.resolve():
+                continue
             try:
                 shutil.copyfile(str(f), str(dst))
                 print(f"[report-html-sync] Synced font: {f.name}")
@@ -30407,6 +30409,16 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             if not selected_projects:
                 default_scope, _managed_keys, _default_selected = _managed_project_scope_defaults()
                 selected_projects = set(default_scope)
+            assignees_values = request.args.getlist("assignees")
+            if not assignees_values:
+                legacy_raw = _to_text(request.args.get("assignees"))
+                if legacy_raw:
+                    assignees_values = [item.strip() for item in legacy_raw.split(",") if item.strip()]
+            selected_assignees_set = (
+                {_to_text(item) for item in assignees_values if _to_text(item)}
+                if assignees_values
+                else None
+            )
             canonical_run_id = _canonical_last_success_run_id(capacity_paths["db_path"])
             payload = build_monthly_epic_plan_payload(
                 capacity_paths["db_path"],
@@ -30414,6 +30426,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 _load_epics_management_rows(capacity_paths["db_path"]),
                 canonical_run_id,
                 selected_projects=selected_projects,
+                selected_assignees=selected_assignees_set,
                 jira_base_url=BASE_URL,
             )
             return jsonify({"ok": True, **payload})
@@ -34156,7 +34169,10 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
     def serve_report_asset(requested_path: str):
         requested_name = _to_text(requested_path)
         if requested_name in {"shared-nav.js", "shared-nav.css", "shared-date-filter.js", "material-symbols.css"}:
-            _sync_report_html_assets(base_dir, report_dir)
+            try:
+                _sync_report_html_assets(base_dir, report_dir)
+            except OSError as exc:
+                print(f"[report-html-sync] Warning: asset sync aborted: {exc}")
             source_candidates = [
                 base_dir / requested_name,
                 base_dir / "report_html" / requested_name,
