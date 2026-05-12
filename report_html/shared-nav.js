@@ -32,9 +32,11 @@
         { page_key: "rnd_data_story", title: "RnD Data Story", href: resolveReportHref("rnd_data_story.html"), icon: "auto_stories", file: "rnd_data_story.html" },
         { page_key: "planned_rmis_report", title: "Planned RMIs", href: resolveReportHref("planned_rmis_report.html"), icon: "assignment_turned_in", file: "planned_rmis_report.html" },
         { page_key: "phase_rmi_gantt_report", title: "Phase RMI Gantt", href: resolveReportHref("phase_rmi_gantt_report.html"), icon: "view_timeline", file: "phase_rmi_gantt_report.html" },
+        { page_key: "rmi_jira_gantt_report", title: "RMI Jira Gantt", href: resolveReportHref("rmi_jira_gantt_report.html"), icon: "view_timeline", file: "rmi_jira_gantt_report.html" },
         { page_key: "approved_vs_planned_hours_report", title: "Approved vs Planned Hours Report", href: resolveReportHref("approved_vs_planned_hours_report.html"), icon: "analytics", file: "approved_vs_planned_hours_report.html" },
         { page_key: "planned_actual_table_view", title: "Planned vs Actual Table View", href: resolveReportHref("planned_actual_table_view.html"), icon: "table_view", file: "planned_actual_table_view.html" },
         { page_key: "original_estimates_hierarchy_report", title: "Epic Estimate Report", href: resolveReportHref("original_estimates_hierarchy_report.html"), icon: "schema", file: "original_estimates_hierarchy_report.html" },
+        { page_key: "delayed_epic_chain_gantt", title: "Delayed Epic Chain Gantt", href: resolveReportHref("delayed_epic_chain_gantt_report.html"), icon: "timeline", file: "delayed_epic_chain_gantt_report.html" },
         { page_key: "monthly_epic_plan_progress", title: "Monthly Epic Plan vs Actual", href: resolveReportHref("monthly_epic_plan_progress_report.html"), icon: "event_available", file: "monthly_epic_plan_progress_report.html" },
         { page_key: "ipp_meeting_dashboard", title: "IPP Meeting Dashboard", href: resolveReportHref("ipp_meeting_dashboard.html"), icon: "groups", file: "ipp_meeting_dashboard.html" }
       ],
@@ -55,7 +57,10 @@
         { page_key: "epic_dropdowns", title: "Epic Dropdowns", href: "/settings/epics-dropdown-options", icon: "arrow_drop_down_circle", path: "/settings/epics-dropdown-options" },
         { page_key: "epic_phases", title: "Epic Phases", href: "/settings/epic-phases", icon: "alt_route", path: "/settings/epic-phases" },
         { page_key: "epics_planner", title: "Epics Planner", href: "/settings/epics-management", icon: "event_note", path: "/settings/epics-management" },
+        { page_key: "epics_planner_import", title: "Epics Planner Import", href: "/settings/epics-management/import", icon: "upload_file", path: "/settings/epics-management/import" },
+        { page_key: "ipp_meeting_planner", title: "IPP Meeting Planner", href: "/settings/ipp-meeting-planner", icon: "groups", path: "/settings/ipp-meeting-planner" },
         { page_key: "page_categories", title: "Page Categories", href: "/settings/page-categories", icon: "category", path: "/settings/page-categories" },
+        { page_key: "canonical_refresh_settings", title: "Colossal Refresh", href: "/settings/canonical-refresh", icon: "sync", path: "/settings/canonical-refresh" },
         { page_key: "sql_console", title: "SQL Console", href: "/settings/sql-console", icon: "query_stats", path: "/settings/sql-console" }
       ],
       categories: []
