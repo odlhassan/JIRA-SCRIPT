@@ -187,9 +187,6 @@ from delayed_epic_chain_gantt_service import (
     normalize_assignee_mode as delayed_epic_normalize_assignee_mode,
     save_ui_settings as delayed_epic_save_ui_settings,
 )
-from monthly_epic_plan_progress_service import (
-    build_monthly_epic_plan_payload,
-)
 from jira_incremental_cache import (
     get_db_path as incremental_cache_db_path,
     init_db as incremental_cache_init_db,
@@ -226,7 +223,6 @@ REPORT_FILENAME_TO_ID: dict[str, str] = {
     "planned_actual_table_view.html": "planned_actual_table_view",
     "original_estimates_hierarchy_report.html": "original_estimates_hierarchy",
     "delayed_epic_chain_gantt_report.html": "delayed_epic_chain_gantt",
-    "monthly_epic_plan_progress_report.html": "monthly_epic_plan_progress",
 }
 
 
@@ -299,8 +295,6 @@ REPORT_REFRESH_CHAINS: dict[str, list[str]] = {
     "original_estimates_hierarchy": [],
     # This report is API-driven and DB-backed.
     "delayed_epic_chain_gantt": [],
-    # This report is API-driven and DB-backed.
-    "monthly_epic_plan_progress": [],
 }
 
 EPF_DEFAULT_RETENTION_RUNS = 5
@@ -355,7 +349,6 @@ STATIC_REPORT_NAV_ITEMS: list[dict[str, object]] = [
     {"page_key": "planned_actual_table_view", "title": "Planned vs Actual Table View", "href": "/planned_actual_table_view.html", "icon": "table_view", "file": "planned_actual_table_view.html", "default_nav_order": 120, "page_type": "report"},
     {"page_key": "original_estimates_hierarchy_report", "title": "Epic Estimate Report", "href": "/original_estimates_hierarchy_report.html", "icon": "schema", "file": "original_estimates_hierarchy_report.html", "default_nav_order": 130, "page_type": "report"},
     {"page_key": "delayed_epic_chain_gantt", "title": "Delayed Epic Chain Gantt", "href": "/delayed_epic_chain_gantt_report.html", "icon": "timeline", "file": "delayed_epic_chain_gantt_report.html", "default_nav_order": 140, "page_type": "report"},
-    {"page_key": "monthly_epic_plan_progress", "title": "Monthly Epic Plan vs Actual", "href": "/monthly_epic_plan_progress_report.html", "icon": "event_available", "file": "monthly_epic_plan_progress_report.html", "default_nav_order": 145, "page_type": "report"},
     {"page_key": "ipp_meeting_dashboard", "title": "IPP Meeting Dashboard", "href": "/ipp_meeting_dashboard.html", "icon": "groups", "file": "ipp_meeting_dashboard.html", "default_nav_order": 150, "page_type": "report"},
 ]
 
@@ -17017,9 +17010,6 @@ def _resolve_report_html_sources(base_dir: Path) -> dict[str, Path]:
         "delayed_epic_chain_gantt_report.html": _resolve_output_html_path(
             "JIRA_DELAYED_EPIC_CHAIN_GANTT_HTML_PATH", "delayed_epic_chain_gantt_report.html", base_dir
         ),
-        "monthly_epic_plan_progress_report.html": _resolve_output_html_path(
-            "JIRA_MONTHLY_EPIC_PLAN_PROGRESS_HTML_PATH", "monthly_epic_plan_progress_report.html", base_dir
-        ),
     }
 
 
@@ -27575,7 +27565,6 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             or req_path.startswith("/api/planned-actual-table-view/")
             or req_path.startswith("/api/original-estimates/")
             or req_path.startswith("/api/delayed-epic-chain-gantt/")
-            or req_path.startswith("/api/monthly-epic-plan-progress/")
             or req_path.endswith(".html")
             or req_path.endswith(".js")
             or req_path.endswith(".css")
@@ -30373,39 +30362,6 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             return jsonify({"ok": True, "settings": settings})
         except ValueError as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400
-
-    @app.route("/api/monthly-epic-plan-progress/summary", methods=["GET"])
-    def monthly_epic_plan_progress_summary():
-        try:
-            month = _to_text(request.args.get("month"))
-            if not month:
-                latest = _load_latest_global_report_date_filter(capacity_paths["db_path"])
-                month = _to_text((latest or {}).get("from_date"))[:7] if latest else datetime.now(timezone.utc).strftime("%Y-%m")
-            projects_raw = _to_text(request.args.get("projects"))
-            selected_projects = {
-                _to_text(item).upper()
-                for item in projects_raw.split(",")
-                if _to_text(item)
-            } if projects_raw else set()
-            if not selected_projects:
-                default_scope, _managed_keys, _default_selected = _managed_project_scope_defaults()
-                selected_projects = set(default_scope)
-            canonical_run_id = _canonical_last_success_run_id(capacity_paths["db_path"])
-            payload = build_monthly_epic_plan_payload(
-                capacity_paths["db_path"],
-                month,
-                _load_epics_management_rows(capacity_paths["db_path"]),
-                canonical_run_id,
-                selected_projects=selected_projects,
-                jira_base_url=BASE_URL,
-            )
-            return jsonify({"ok": True, **payload})
-        except ValueError as exc:
-            message = str(exc)
-            status_code = 409 if "No successful canonical refresh found" in message else 400
-            return jsonify({"ok": False, "error": message}), status_code
-        except Exception as exc:
-            return jsonify({"ok": False, "error": f"Failed to load monthly epic plan progress: {exc}"}), 500
 
     @app.route(f"{CANONICAL_PVD_API_PREFIX}/ui-settings", methods=["GET"])
     @app.route(f"{LEGACY_PVD_API_PREFIX}/ui-settings", methods=["GET"])
