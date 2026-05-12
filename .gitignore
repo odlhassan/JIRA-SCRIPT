@@ -18,12 +18,13 @@ leaves_planned_calendar.html
 employee_performance_report.html
 planned_vs_dispensed_report.html
 report_html/*.html
-# Large DB files (exceed GitHub limits)
+# Small DBs (epics_management.db, jira_exports.db) are committed and ship via GitHub Actions.
+# Large DBs stay ignored (GitHub rejects >100MB files; LFS caps at 2GB on free plans).
+# assignee_hours_capacity.db must be uploaded to Azure once via Kudu / SCM and lives under /home.
 assignee_hours_capacity.db
 jira_sync_cache.db
 jira_sync_cache.db-shm
 jira_sync_cache.db-wal
-jira_exports.db
 
 # Local tooling / logs
 .azure_deploy_staging/
@@ -31,7 +32,6 @@ __*server*.log
 .codex_run_server_*_pid
 __server.*.log
 .playwright-mcp/
-epics_management.db
 *.db.bak
 report_server.py.*.bak
 report_server.py.rowid-backup

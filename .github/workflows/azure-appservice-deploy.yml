@@ -5,6 +5,9 @@
 #   2. Repo → Settings → Secrets and variables → Actions
 #   3. New repository secret: AZURE_WEBAPP_PUBLISH_PROFILE = entire .PublishSettings XML
 #
+# Databases: commit assignee_hours_capacity.db, epics_management.db, jira_exports.db (see root
+# .gitignore). jira_sync_cache.db stays gitignored and rebuilds on the server from Jira.
+#
 # Optional: change AZURE_WEBAPP_NAME below if your app name differs.
 
 name: Azure App Service deploy
@@ -15,6 +18,7 @@ on:
     branches:
       - main
       - master
+      - backup/pre-populate-jira-20260430
 
 env:
   AZURE_WEBAPP_NAME: epreporting
