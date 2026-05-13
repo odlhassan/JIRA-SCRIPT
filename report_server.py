@@ -2886,6 +2886,8 @@ def _canonical_mark_run_abandoned(db_path: Path, run_id: str) -> tuple[bool, str
 def _init_canonical_refresh_db(db_path: Path) -> None:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(db_path) as conn:
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=5000")
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS canonical_refresh_runs (
@@ -3140,7 +3142,7 @@ def _canonical_get_run(db_path: Path, run_id: str) -> dict[str, object] | None:
     run_id_text = _to_text(run_id)
     if not run_id_text:
         return None
-    with sqlite3.connect(db_path) as conn:
+    with sqlite3.connect(db_path, timeout=10) as conn:
         conn.row_factory = sqlite3.Row
         row = conn.execute(
             """
@@ -3157,7 +3159,7 @@ def _canonical_get_run(db_path: Path, run_id: str) -> dict[str, object] | None:
 
 
 def _canonical_find_running_run(db_path: Path) -> dict[str, object] | None:
-    with sqlite3.connect(db_path) as conn:
+    with sqlite3.connect(db_path, timeout=10) as conn:
         conn.row_factory = sqlite3.Row
         row = conn.execute(
             """
@@ -3175,7 +3177,7 @@ def _canonical_find_running_run(db_path: Path) -> dict[str, object] | None:
 
 
 def _canonical_latest_run(db_path: Path) -> dict[str, object] | None:
-    with sqlite3.connect(db_path) as conn:
+    with sqlite3.connect(db_path, timeout=10) as conn:
         conn.row_factory = sqlite3.Row
         row = conn.execute(
             """
