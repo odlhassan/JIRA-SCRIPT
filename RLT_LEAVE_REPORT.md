@@ -6,39 +6,38 @@
 - Reporting Window: `2026-04-01` to `2026-06-30`
 
 ## Executive Summary
-- Planned Taken (hours): `428.00`
-- Unplanned Taken (hours): `35.00`
-- Unknown Taken (hours): `256.00`
-- Planned Not Yet Taken (hours): `336.00`
+- Planned Taken (hours): `572.00`
+- Unplanned Taken (hours): `59.00`
+- Unknown Taken (hours): `248.00`
+- Planned Not Yet Taken (hours): `368.00`
 - Planned Not Yet Taken (No Entry count): `1`
-- Defective subtasks listed: `142`
-- Clubbed leave subtasks: `26`
+- Defective subtasks listed: `108`
+- Clubbed leave subtasks: `27`
 
 ## Assignee-wise Summary
 | Assignee | Planned Taken (h) | Unplanned Taken (h) | Unknown Taken (h) | Planned Not Yet Taken (h) | No Entry Count | Unknown Count |
 | --- | --- | --- | --- | --- | --- | --- |
 | Ameer Hamza Khan | 24.00 | 0.00 | 0.00 | 0.00 | 0 | 0 |
-| Arsalan Zafar Khan | 0.00 | 0.00 | 0.00 | 0.00 | 0 | 1 |
+| Arsalan Zafar Khan | 0.00 | 0.00 | 8.00 | 0.00 | 0 | 2 |
 | awais akhter | 0.00 | 0.00 | 0.00 | 0.00 | 0 | 4 |
 | Danish Rashid | 8.00 | 0.00 | 0.00 | 0.00 | 0 | 0 |
 | DANIYAL AHMAD | 0.00 | 0.00 | 16.00 | 0.00 | 0 | 2 |
 | Faiq Butt | 0.00 | 0.00 | 8.00 | 0.00 | 0 | 3 |
 | Faiza Nasir | 0.00 | 8.00 | 0.00 | 256.00 | 0 | 3 |
 | Hamza Ali | 0.00 | 0.00 | 8.00 | 40.00 | 0 | 2 |
-| Hassan Malik | 40.00 | 0.00 | 8.00 | 0.00 | 0 | 25 |
+| Hassan Malik | 176.00 | 0.00 | 8.00 | 0.00 | 0 | 7 |
 | Hassan Saeed Wattoo | 0.00 | 0.00 | 48.00 | 0.00 | 0 | 25 |
 | Maria Sharafat | 176.00 | 0.00 | 0.00 | 0.00 | 1 | 2 |
 | Mariam Zulfiqar | 16.00 | 8.00 | 0.00 | 24.00 | 0 | 0 |
-| Muhammad Abbas | 0.00 | 0.00 | 24.00 | 0.00 | 0 | 26 |
+| Muhammad Abbas | 0.00 | 24.00 | 0.00 | 0.00 | 0 | 13 |
 | Muhammad Abdul Wasi | 4.00 | 0.00 | 0.00 | 0.00 | 0 | 0 |
-| Muhammad Abdullah | 0.00 | 3.00 | 0.00 | 0.00 | 0 | 2 |
+| Muhammad Abdullah | 0.00 | 3.00 | 8.00 | 0.00 | 0 | 3 |
 | Muhammad Ahmad Saleem | 0.00 | 16.00 | 0.00 | 0.00 | 0 | 3 |
-| Muhammad Imran Aslam | 0.00 | 0.00 | 8.00 | 16.00 | 0 | 2 |
+| Muhammad Imran Aslam | 8.00 | 0.00 | 8.00 | 8.00 | 0 | 2 |
 | Muhammad Usman Javed | 0.00 | 0.00 | 0.00 | 0.00 | 0 | 2 |
 | Muhammad Zeeshan Aslam | 104.00 | 0.00 | 136.00 | 0.00 | 0 | 1 |
-| Namra Zahid | 0.00 | 0.00 | 0.00 | 0.00 | 0 | 5 |
 | Sarmad Sabir | 16.00 | 0.00 | 0.00 | 0.00 | 0 | 8 |
-| Taimur Zahid | 0.00 | 0.00 | 0.00 | 0.00 | 0 | 7 |
+| Taimur Zahid | 0.00 | 0.00 | 0.00 | 40.00 | 0 | 7 |
 | Waqar Rasheed | 40.00 | 0.00 | 0.00 | 0.00 | 0 | 0 |
 | Zeeshan Sarwar | 0.00 | 0.00 | 0.00 | 0.00 | 0 | 18 |
 

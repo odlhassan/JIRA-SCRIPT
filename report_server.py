@@ -2795,6 +2795,94 @@ def _canonical_now_utc() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+# Running refresh must have no progress heartbeat for this long before emergency-abandon is allowed
+# (unless cancel was requested; see CANONICAL_ABANDON_CANCEL_UNFINISHED_MINUTES).
+CANONICAL_ABANDON_STALE_MINUTES = 45
+# After cancel is requested, abandon is allowed if the run still has not finished within this window.
+CANONICAL_ABANDON_CANCEL_UNFINISHED_MINUTES = 15
+
+
+def _canonical_minutes_since_run_progress_utc(row: dict[str, object] | None) -> float | None:
+    if not row:
+        return None
+    raw = _to_text(row.get("updated_at_utc"))
+    if not raw:
+        return None
+    try:
+        dt = incremental_parse_iso_utc(raw)
+        return (datetime.now(timezone.utc) - dt).total_seconds() / 60.0
+    except Exception:
+        return None
+
+
+def _canonical_abandon_eligible(row: dict[str, object] | None) -> tuple[bool, str]:
+    """Return (eligible, reason_code) for emergency abandon of a stuck canonical refresh."""
+    if not row:
+        return False, "no_run"
+    if _to_text(row.get("status")).lower() != "running":
+        return False, "not_running"
+    mins = _canonical_minutes_since_run_progress_utc(row)
+    if mins is None:
+        return False, "bad_timestamp"
+    cancel_requested = bool(int(row.get("cancel_requested") or 0))
+    if cancel_requested and mins >= float(CANONICAL_ABANDON_CANCEL_UNFINISHED_MINUTES):
+        return True, "cancel_unfinished"
+    if mins >= float(CANONICAL_ABANDON_STALE_MINUTES):
+        return True, "stale_progress"
+    if cancel_requested:
+        return False, "cancel_pending_fresh"
+    return False, "active_progress"
+
+
+def _canonical_mark_run_abandoned(db_path: Path, run_id: str) -> tuple[bool, str]:
+    """Mark a running refresh as failed after server-side stale/cancel checks. Returns (ok, error_message)."""
+    run_id_text = _to_text(run_id)
+    if not run_id_text:
+        return False, "run_id is required."
+    row = _canonical_get_run(db_path, run_id_text)
+    if not row:
+        return False, "Run not found."
+    eligible, reason = _canonical_abandon_eligible(row)
+    if not eligible:
+        if reason == "cancel_pending_fresh":
+            return (
+                False,
+                f"Cancel was requested recently; wait at least {CANONICAL_ABANDON_CANCEL_UNFINISHED_MINUTES} minutes "
+                "or until progress updates stop for longer before clearing the run.",
+            )
+        if reason == "active_progress":
+            return (
+                False,
+                f"This run is still receiving progress updates. Wait until none for {CANONICAL_ABANDON_STALE_MINUTES} minutes, "
+                "or request cancel and wait for the cancel window.",
+            )
+        return False, f"Run is not eligible to clear yet ({reason})."
+    stats: dict[str, object] = {}
+    try:
+        parsed = json.loads(_to_text(row.get("stats_json")) or "{}")
+        if isinstance(parsed, dict):
+            stats = parsed
+    except Exception:
+        stats = {}
+    mins = _canonical_minutes_since_run_progress_utc(row)
+    stats["abandon"] = {
+        "reason_code": reason,
+        "cleared_at_utc": _canonical_now_utc(),
+        "minutes_since_progress": round(mins, 3) if mins is not None else None,
+    }
+    err_msg = f"Run cleared as stuck ({reason}). Previous canonical snapshot was not replaced."
+    _canonical_mark_run_status(
+        db_path,
+        run_id=run_id_text,
+        status="failed",
+        error_message=err_msg,
+        stats=stats,
+        activate=False,
+    )
+    _canonical_update_progress_and_stats(db_path, run_id_text, "failed", 100, stats)
+    return True, ""
+
+
 def _init_canonical_refresh_db(db_path: Path) -> None:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(db_path) as conn:
@@ -3253,6 +3341,8 @@ def _canonical_serialize_run(run_row: dict[str, object] | None) -> dict[str, obj
     if not isinstance(managed_project_keys, list):
         managed_project_keys = []
     summary = stats.get("summary") if isinstance(stats, dict) else {}
+    mins_since = _canonical_minutes_since_run_progress_utc(row)
+    abandon_eligible, abandon_reason_code = _canonical_abandon_eligible(row)
     return {
         "run_id": _to_text(row.get("run_id")),
         "scope_year": int(row.get("scope_year") or 0),
@@ -3269,6 +3359,11 @@ def _canonical_serialize_run(run_row: dict[str, object] | None) -> dict[str, obj
         "updated_at_utc": _to_text(row.get("updated_at_utc")),
         "error": _to_text(row.get("error_message")),
         "stats": stats if isinstance(stats, dict) else {},
+        "minutes_since_progress_update": round(mins_since, 1) if mins_since is not None else None,
+        "abandon_eligible": abandon_eligible,
+        "abandon_reason_code": abandon_reason_code,
+        "abandon_stale_after_minutes": CANONICAL_ABANDON_STALE_MINUTES,
+        "abandon_cancel_after_minutes": CANONICAL_ABANDON_CANCEL_UNFINISHED_MINUTES,
     }
 
 
@@ -9256,6 +9351,14 @@ def _canonical_refresh_settings_html() -> str:
       border-color:#991b1b;
       background:linear-gradient(135deg, #b91c1c, #ef4444);
     }}
+    .btn.danger-outline {{
+      border-color:#b91c1c;
+      color:#b91c1c;
+      background:#fff;
+    }}
+    .btn.danger-outline:not(:disabled):hover {{
+      background:#fef2f2;
+    }}
     .btn:disabled {{ opacity:.6; cursor:not-allowed; }}
     .pill {{
       display:inline-flex;
@@ -9669,6 +9772,10 @@ def _canonical_refresh_settings_html() -> str:
             <span class="material-symbols-outlined">cancel</span>
             Cancel Refresh
           </button>
+          <button id="abandon-stale-btn" class="btn ghost danger-outline" type="button" disabled>
+            <span class="material-symbols-outlined">delete_forever</span>
+            Clear Stuck Run
+          </button>
           <button id="reload-btn" class="btn ghost" type="button">
             <span class="material-symbols-outlined">refresh</span>
             Reload Status
@@ -9781,11 +9888,13 @@ def _canonical_refresh_settings_html() -> str:
     const CURRENT_API = "/api/canonical-refresh/current";
     const START_API = "/api/canonical-refresh";
     const CANCEL_API = "/api/canonical-refresh/cancel";
+    const ABANDON_API = "/api/canonical-refresh/abandon-stale";
     const statusEl = document.getElementById("status");
     const scopeYearEl = document.getElementById("scope-year");
     const startSmartBtn = document.getElementById("start-smart-btn");
     const startFullBtn = document.getElementById("start-full-btn");
     const cancelBtn = document.getElementById("cancel-btn");
+    const abandonStaleBtn = document.getElementById("abandon-stale-btn");
     const reloadBtn = document.getElementById("reload-btn");
     const managedProjectPill = document.getElementById("managed-project-pill");
     const runModePill = document.getElementById("run-mode-pill");
@@ -9872,12 +9981,35 @@ def _canonical_refresh_settings_html() -> str:
       const pct = Number(item.progress || 0);
       const step = String(item.step || "");
       if (!state) return "No refresh run available yet.";
+      if (state === "running" && item.cancel_requested) {{
+        return "Cancel requested. Waiting for a safe checkpoint."
+          + (step ? ` (${{labelize(step)}})` : "")
+          + (pct ? ` (${{pct}}%)` : "");
+      }}
       if (state === "running") return `Running${{step ? `: ${{labelize(step)}}` : ""}}${{pct ? ` (${{pct}}%)` : ""}}`;
       if (state === "cancel_requested") return "Cancel requested. Waiting for a safe checkpoint.";
       if (state === "success") return "Refresh completed successfully.";
       if (state === "failed") return String(item.error || "Refresh failed.");
       if (state === "canceled") return String(item.error || "Refresh canceled.");
       return labelize(state);
+    }}
+
+    function abandonStaleTitle(run) {{
+      const item = run || {{}};
+      const state = String(item.status || "").toLowerCase();
+      if (state !== "running") return "Only available while a refresh is stuck in Running state.";
+      if (item.abandon_eligible) {{
+        return "Mark this run as failed in the database so you can start again. Use when progress is frozen or cancel never finished.";
+      }}
+      const sm = Number(item.abandon_stale_after_minutes || 45);
+      const cm = Number(item.abandon_cancel_after_minutes || 15);
+      const code = String(item.abandon_reason_code || "");
+      const m = item.minutes_since_progress_update;
+      const minsPart = typeof m === "number" ? ` (${{m.toFixed(1)}} min since last progress update)` : "";
+      if (item.cancel_requested && code === "cancel_pending_fresh") {{
+        return `Cancel was requested; waits up to ${{cm}} min for the worker to stop.${{minsPart}}`;
+      }}
+      return `Enabled after ${{sm}} min with no progress updates, or ${{cm}} min after cancel if still running.${{minsPart}}`;
     }}
 
     async function requestJson(url, options) {{
@@ -9977,6 +10109,8 @@ def _canonical_refresh_settings_html() -> str:
       renderStages(stats.stages || []);
       renderItems(stats.items || []);
       const statusValue = String(item.status || "").toLowerCase();
+      abandonStaleBtn.disabled = !item.abandon_eligible;
+      abandonStaleBtn.title = abandonStaleTitle(item);
       setBusy(statusValue === "running" || statusValue === "cancel_requested");
     }}
 
@@ -10070,9 +10204,33 @@ def _canonical_refresh_settings_html() -> str:
       await pollRun(activeRunId);
     }}
 
+    async function abandonStaleRun() {{
+      if (!activeRunId || abandonStaleBtn.disabled) return;
+      const body = await requestJson(ABANDON_API, {{
+        method: "POST",
+        headers: {{ "Content-Type": "application/json" }},
+        body: JSON.stringify({{ run_id: activeRunId }}),
+      }});
+      const run = body.run || null;
+      clearPolling();
+      if (run) renderRun(run);
+      else renderRun(null);
+      setStatus(String(body.message || "Run cleared."), "ok");
+      setBusy(false);
+    }}
+
     startSmartBtn.addEventListener("click", () => startRefresh("smart").catch((err) => setStatus(err.message || String(err), "err")));
     startFullBtn.addEventListener("click", () => startRefresh("full").catch((err) => setStatus(err.message || String(err), "err")));
     cancelBtn.addEventListener("click", () => cancelRefresh().catch((err) => setStatus(err.message || String(err), "err")));
+    abandonStaleBtn.addEventListener("click", () => {{
+      if (!activeRunId || abandonStaleBtn.disabled) return;
+      const ok = window.confirm(
+        "Clear this stuck refresh run in the database?\\n\\nRun ID: " + activeRunId +
+        "\\n\\nUse only when progress is frozen or cancel never finished. You can start a new refresh afterward."
+      );
+      if (!ok) return;
+      abandonStaleRun().catch((err) => setStatus(err.message || String(err), "err"));
+    }});
     reloadBtn.addEventListener("click", () => loadCurrentRun().catch((err) => setStatus(err.message || String(err), "err")));
 
     const prepareOfflineModal = document.getElementById("prepare-offline-modal");
@@ -30014,6 +30172,34 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 "status": "cancel_requested",
                 "message": "Cancel requested. Canonical refresh will stop at a safe checkpoint.",
                 "run": _canonical_serialize_run(row_after),
+            }
+        )
+
+    @app.route("/api/canonical-refresh/abandon-stale", methods=["POST"])
+    def canonical_refresh_abandon_stale():
+        payload = request.get_json(silent=True) or {}
+        run_id = _to_text(payload.get("run_id"))
+        if not run_id:
+            with canonical_jobs_lock:
+                run_id = _to_text(canonical_runtime_state.get("active_run_id"))
+        if not run_id:
+            running = _canonical_find_running_run(capacity_paths["db_path"])
+            run_id = _to_text((running or {}).get("run_id"))
+        if not run_id:
+            return jsonify({"ok": False, "error": "No canonical refresh run found to clear."}), 404
+        ok, err = _canonical_mark_run_abandoned(capacity_paths["db_path"], run_id)
+        if not ok:
+            return jsonify({"ok": False, "error": err}), 409
+        with canonical_jobs_lock:
+            if _to_text(canonical_runtime_state.get("active_run_id")) == run_id:
+                canonical_runtime_state["active_run_id"] = ""
+        row = _canonical_get_run(capacity_paths["db_path"], run_id)
+        return jsonify(
+            {
+                "ok": True,
+                "run_id": run_id,
+                "message": "Stuck run cleared in the database. You can start a new refresh when ready.",
+                "run": _canonical_serialize_run(row),
             }
         )
 
