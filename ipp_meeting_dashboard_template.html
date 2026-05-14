@@ -759,6 +759,29 @@
         .badge.no_entry { background: #fff; color: var(--entry-ink); border-color: #fecdd3; }
         .badge.invalid { background: var(--invalid-bg); color: var(--invalid-ink); border-color: rgba(153,27,27,0.12); }
         .badge.linked { background: #dbeafe; color: #1e40af; border-color: rgba(30,64,175,0.18); }
+        .release-state-badge {
+            display: inline-block;
+            border-radius: 4px;
+            padding: 0.1rem 0.5rem;
+            font-size: 0.7rem;
+            font-weight: 700;
+            letter-spacing: 0.03em;
+            white-space: nowrap;
+            vertical-align: middle;
+            margin-left: 0.3rem;
+        }
+        .release-state-badge.state-released    { background: #e8f5e9; color: #2e7d32; border: 1px solid #a5d6a7; }
+        .release-state-badge.state-planned     { background: #e3f2fd; color: #1565c0; border: 1px solid #90caf9; }
+        .release-state-badge.state-rescheduled { background: #fff3e0; color: #e65100; border: 1px solid #ffcc80; }
+        .release-state-badge.state-shelfed     { background: #f5f5f5; color: #616161; border: 1px solid #bdbdbd; }
+        .rmi-meta-release {
+            margin: 0.25rem 0;
+            font-size: 0.82rem;
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            flex-wrap: wrap;
+        }
         .link {
             color: #0f5f8b;
             font-weight: 700;
@@ -2416,6 +2439,26 @@ function asText(value) {
     return String(value ?? "").trim();
 }
 
+function releaseStateBadgeClass(state) {
+    const s = asText(state).toLowerCase();
+    if (s === "released") return "state-released";
+    if (s === "planned") return "state-planned";
+    if (s === "rescheduled") return "state-rescheduled";
+    if (s === "shelfed") return "state-shelfed";
+    return "";
+}
+
+function renderProductReleaseMeta(row) {
+    const pr = row && row.product_release;
+    if (!pr || !pr.release_number) return '<div class="rmi-meta-release"><strong>Product Release:</strong> <span>—</span></div>';
+    const planned = pr.release_date ? ` · Planned: ${esc(formatDisplayDate(pr.release_date))}` : "";
+    const actual = pr.actual_release_date ? ` · Actual: ${esc(formatDisplayDate(pr.actual_release_date))}` : "";
+    const stateBadge = pr.release_state
+        ? `<span class="release-state-badge ${esc(releaseStateBadgeClass(pr.release_state))}">${esc(pr.release_state)}</span>`
+        : "";
+    return `<div class="rmi-meta-release"><strong>Product Release:</strong> <span>${esc(pr.release_number)}${planned}${actual}</span>${stateBadge}</div>`;
+}
+
 function decodeHtmlEntities(value) {
     const textarea = document.createElement("textarea");
     textarea.innerHTML = String(value ?? "");
@@ -3620,6 +3663,7 @@ function buildRmiDetailsHtml(row) {
         <div class="rmi-meta"><strong>Project:</strong> ${esc(row.project_name || "-")}</div>
         <div class="rmi-meta"><strong>Input:</strong> ${esc(row.product_category || row.product || "-")}</div>
         <div class="rmi-meta"><strong>Component:</strong> ${esc(row.component || "-")}</div>
+        ${renderProductReleaseMeta(row)}
         <div class="rmi-meta"><strong>Jira:</strong> ${jira}</div>
         <div class="rmi-summary">
             <div><strong>Jira Status</strong><br>${esc(jiraStatus)}</div>

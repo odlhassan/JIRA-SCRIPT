@@ -1061,6 +1061,29 @@ def _build_payload(
     }
 
 
+def _load_epic_release_map(db_path: Path) -> dict[str, dict[str, object]]:
+    """Return dict: epic_key -> {release_number, release_date, actual_release_date, release_state}."""
+    if not db_path.exists():
+        return {}
+    try:
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        try:
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT pre.epic_key,
+                       pr.release_number, pr.release_date,
+                       pr.actual_release_date, pr.release_state
+                FROM product_release_epics pre
+                JOIN product_releases pr ON pr.id = pre.release_id
+            """)
+            return {_as_text(row["epic_key"]).upper(): dict(row) for row in cur.fetchall()}
+        finally:
+            conn.close()
+    except Exception:
+        return {}
+
+
 def build_payload_from_sources(base_dir: Path) -> dict[str, object]:
     settings_db_value = os.getenv("JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH", DEFAULT_SETTINGS_DB).strip() or DEFAULT_SETTINGS_DB
     settings_db_path = _resolve_path(settings_db_value, base_dir)
@@ -1080,9 +1103,17 @@ def build_payload_from_sources(base_dir: Path) -> dict[str, object]:
 
     records = _build_records(epics_to_render, jira_rows, jira_stories, jira_rows_by_key, jira_parent_by_key, plan_columns)
     rows = _rows_for_payload(records)
+    epic_release_map = _load_epic_release_map(settings_db_path)
     for row in rows:
         epic_key = _as_text(row.get("epic_rmi")).strip().upper()
         row["sealed_dates"] = _load_sealed_dates_for_epic(settings_db_path, epic_key) if epic_key else []
+        ri = epic_release_map.get(epic_key)
+        row["product_release"] = {
+            "release_number": _as_text(ri["release_number"]),
+            "release_date": _as_text(ri["release_date"]),
+            "actual_release_date": _as_text(ri["actual_release_date"]),
+            "release_state": _as_text(ri["release_state"]),
+        } if ri else {"release_number": "", "release_date": "", "actual_release_date": "", "release_state": ""}
     work_items_source_label = str(exports_db_path) + " (work_items)"
     payload = _build_payload(rows, settings_db_path, work_items_source_label, plan_columns)
     payload["selection_mode"] = "ipp_meeting_planner" if (meeting_epics is not None and len(meeting_epics) > 0) else "selected_only"
