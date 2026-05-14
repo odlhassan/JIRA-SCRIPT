@@ -1900,6 +1900,34 @@ def fetch_dashboard_data():
         issue_type = as_text(item.get("issue_type")).lower()
         return ("subtask" in issue_type) or ("sub-task" in issue_type)
 
+    def load_epic_release_map(db_path: Path):
+        """Returns dict: epic_key -> {release_number, release_date, actual_release_date, release_state}"""
+        if not db_path.exists():
+            return {}
+        try:
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+        except Exception:
+            return {}
+        try:
+            tables = {r[0] for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()}
+            if "product_release_epics" not in tables or "product_releases" not in tables:
+                return {}
+            rows = conn.execute("""
+                SELECT pre.epic_key,
+                       pr.release_number, pr.release_date,
+                       pr.actual_release_date, pr.release_state
+                FROM product_release_epics pre
+                JOIN product_releases pr ON pr.id = pre.release_id
+            """).fetchall()
+        except Exception:
+            return {}
+        finally:
+            conn.close()
+        return {normalize_issue_key(row["epic_key"]): dict(row) for row in rows if row["epic_key"]}
+
     planner_db_path = resolve_path("JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH", "assignee_hours_capacity.db")
     canonical_run_id = os.getenv("JIRA_CANONICAL_RUN_ID", "").strip()
     rows1, rows2, rows3, resolved_canonical_run_id = build_canonical_dashboard_source_rows(planner_db_path, canonical_run_id)
@@ -1912,6 +1940,7 @@ def fetch_dashboard_data():
     planner_epic_plan_by_key = load_epics_planner_epic_plan_by_key(planner_db_path)
     planner_story_dates_by_key = load_epics_planner_story_dates_by_key(planner_db_path)
     epics_management_ipp_meta = load_epics_management_dashboard_meta(planner_db_path)
+    epic_release_map = load_epic_release_map(planner_db_path)
 
     epics_map = {}
     stories_map = {}
@@ -2093,6 +2122,14 @@ def fetch_dashboard_data():
         )
 
     apply_risk_rollup(epics_map, stories_map, subtasks_map, bug_subtasks_map, risk_settings)
+
+    for item in epics_map.values():
+        epic_key = normalize_issue_key(as_text(item.get("issue_key")))
+        release = epic_release_map.get(epic_key, {})
+        item["product_release_number"] = as_text(release.get("release_number"))
+        item["product_release_date"] = normalize_date_text(release.get("release_date"))
+        item["product_actual_release_date"] = normalize_date_text(release.get("actual_release_date"))
+        item["product_release_state"] = as_text(release.get("release_state"))
 
     epics = sorted(epics_map.values(), key=lambda x: (x.get("project_key", ""), x.get("issue_key", "")))
     stories = sorted(stories_map.values(), key=lambda x: (x.get("project_key", ""), x.get("issue_key", "")))
