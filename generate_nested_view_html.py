@@ -194,6 +194,37 @@ def _load_capacity_profiles(db_path: Path) -> list[dict]:
     return profiles
 
 
+def _load_epic_release_map(db_path) -> dict:
+    """Returns dict: epic_key (upper) -> {release_number, release_date, actual_release_date, release_state}"""
+    if not db_path.exists():
+        return {}
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT pre.epic_key,
+                   pr.release_number, pr.release_date,
+                   pr.actual_release_date, pr.release_state
+            FROM product_release_epics pre
+            JOIN product_releases pr ON pr.id = pre.release_id
+        """)
+        return {
+            _to_text(row["epic_key"]).upper(): {
+                "release_number": _to_text(row["release_number"]),
+                "release_date": _to_text(row["release_date"]),
+                "actual_release_date": _to_text(row["actual_release_date"]),
+                "release_state": _to_text(row["release_state"]),
+            }
+            for row in cur.fetchall()
+            if _to_text(row["epic_key"])
+        }
+    except sqlite3.Error:
+        return {}
+    finally:
+        conn.close()
+
+
 def _project_key_from_aspect(aspect: str) -> str:
     text = _to_text(aspect)
     if " - " in text:
@@ -2725,6 +2756,24 @@ def _build_html(data: dict) -> str:
       margin-left: 8px;
       white-space: nowrap;
     }}
+    .release-badge {{
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 7px;
+      border-radius: 999px;
+      border: 1px solid currentColor;
+      font-size: 0.7rem;
+      font-weight: 700;
+      line-height: 1;
+      margin-left: 6px;
+      white-space: nowrap;
+      cursor: default;
+    }}
+    .release-badge.state-released {{ background: #e8f5e9; color: #2e7d32; border-color: #a5d6a7; }}
+    .release-badge.state-planned  {{ background: #e3f2fd; color: #1565c0; border-color: #90caf9; }}
+    .release-badge.state-rescheduled {{ background: #fff3e0; color: #e65100; border-color: #ffcc80; }}
+    .release-badge.state-shelved  {{ background: #f5f5f5; color: #616161; border-color: #bdbdbd; }}
     html[data-density="compact"] thead th {{
       padding: 6px 10px;
     }}
@@ -3203,6 +3252,10 @@ def _build_html(data: dict) -> str:
       border-color: #b91c1c;
       color: #fecaca;
     }}
+    html[data-theme="dark"] .release-badge.state-released {{ background: #1b3a1f; color: #81c784; border-color: #388e3c; }}
+    html[data-theme="dark"] .release-badge.state-planned  {{ background: #0d1f3c; color: #64b5f6; border-color: #1565c0; }}
+    html[data-theme="dark"] .release-badge.state-rescheduled {{ background: #3e2000; color: #ffb74d; border-color: #e65100; }}
+    html[data-theme="dark"] .release-badge.state-shelved  {{ background: #1e1e1e; color: #9e9e9e; border-color: #424242; }}
     html[data-theme="dark"] tr.row-type-project td {{ background: #102a43; }}
     html[data-theme="dark"] tr.row-type-product td {{ background: #3a330a; }}
     html[data-theme="dark"] tr.row-type-rmi td {{ background: #2e1f4f; }}
@@ -8083,6 +8136,27 @@ Total Leaves Taken = 0h</span>
           jiraLink.innerHTML = '<span class="material-icons-outlined" aria-hidden="true">open_in_new</span>';
           wrap.appendChild(jiraLink);
         }}
+        if (row.row_type === "rmi" && row.release_number) {{
+          const relNum = String(row.release_number || "").trim();
+          const relState = String(row.release_state || "").trim();
+          const relDate = String(row.release_date || "").trim();
+          const relActual = String(row.actual_release_date || "").trim();
+          const stateClassMap = {{
+            "Released": "state-released",
+            "Planned": "state-planned",
+            "Rescheduled": "state-rescheduled",
+            "Shelved": "state-shelved",
+          }};
+          const stateClass = stateClassMap[relState] || "state-planned";
+          const badge = document.createElement("span");
+          badge.className = "release-badge " + stateClass;
+          badge.textContent = relNum + (relState ? " · " + relState : "");
+          const tooltipParts = [];
+          if (relDate) tooltipParts.push("Planned: " + relDate);
+          if (relActual) tooltipParts.push("Released: " + relActual);
+          if (tooltipParts.length) badge.title = tooltipParts.join("  |  ");
+          wrap.appendChild(badge);
+        }}
         tdAspect.appendChild(wrap);
 
         const tdType = document.createElement("td");
@@ -8642,6 +8716,16 @@ def main() -> None:
     except Exception:
         rows = _load_nested_rows(input_path)
     capacity_profiles = _load_capacity_profiles(capacity_db_path)
+    epic_release_map = _load_epic_release_map(capacity_db_path)
+    for row in rows:
+        if row.get("row_type") == "rmi":
+            key = _to_text(row.get("jira_key")).upper()
+            rel = epic_release_map.get(key)
+            if rel:
+                row["release_number"] = rel["release_number"]
+                row["release_date"] = rel["release_date"]
+                row["actual_release_date"] = rel["actual_release_date"]
+                row["release_state"] = rel["release_state"]
     leave_daily_rows = _load_leave_daily_rows(leave_path)
     leave_distributed_rows = _load_leave_distributed_rows(leave_path)
     leave_subtask_rows = _load_leave_subtask_rows(leave_path)

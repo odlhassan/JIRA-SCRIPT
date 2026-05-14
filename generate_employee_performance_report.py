@@ -2564,7 +2564,7 @@ function openScoreDrawerForAssignee(item) {{
   const totalActual = n(item.ss_total_actual);
   const totalOverrun = n(item.ss_total_overrun);
   const commitmentForgiven = dueMode ? n(item.ss_commitment_overrun) : 0;
-  const appliedOverrun = dueMode ? Math.max(0, totalOverrun - commitmentForgiven) : totalOverrun;
+  const appliedOverrun = dueMode ? Math.max(0, totalOverrun - commitmentForgiven) + n(item.ss_due_penalty_estimate) : totalOverrun;
   const overloadedApplied = n(item.simple_score_overloaded_applied) > 0;
   const planningRealismApplied = overloadedApplied && planningRealismEnabled;
   const baseSimpleScore = dueMode ? n(item.simple_score_due) : n(item.simple_score_raw);
@@ -2575,11 +2575,12 @@ function openScoreDrawerForAssignee(item) {{
     .map((row) => {{
       const rawOverrun = n(row.overrun);
       const appliedOverrunHours = dueMode && n(row.is_commitment) ? 0 : rawOverrun;
-      const applied = appliedOverrunHours;
+      const duePenaltyComponent = dueMode && String(row.due_completion_status || "") === "late" && n(row.estimate) > 0 ? n(row.estimate) : 0;
+      const applied = appliedOverrunHours + duePenaltyComponent;
       return {{
         ...row,
         applied_overrun_component_hours: appliedOverrunHours,
-        applied_due_component_hours: 0,
+        applied_due_component_hours: duePenaltyComponent,
         applied_overrun_hours: applied,
         contribution_pct: totalEstimate > 0 ? (applied / totalEstimate) * 100 : 0,
       }};
@@ -2706,7 +2707,9 @@ function openScoreDrawerForAssignee(item) {{
       const linkCell = issueUrl
         ? `<a class="jira-link-icon" href="${{e(issueUrl)}}" target="_blank" rel="noopener noreferrer" title="Open in Jira"><span class="material-symbols-outlined">open_in_new</span></a>`
         : `<span class="jira-link-disabled">-</span>`;
-      const penaltyBreakdown = `Overrun: ${{hoursText(row.applied_overrun_component_hours)}}`;
+      const penaltyBreakdown = n(row.applied_due_component_hours) > 0
+        ? `Overrun: ${{hoursText(row.applied_overrun_component_hours)}} | Due Penalty: ${{hoursText(row.applied_due_component_hours)}}`
+        : `Overrun: ${{hoursText(row.applied_overrun_component_hours)}}`;
       return `<tr class="${{row.is_penalized_for_due ? "penalized-row" : ""}}"><td class="issue-id">${{e(issueKey || "-")}}</td><td class="issue-title">${{e(row.summary || "-")}}</td><td>${{e(row.project_name || "-")}}</td><td>${{e(row.epic_name || row.epic_key || "-")}}</td><td>${{e(formatDate(row.planned_due_date || row.due_date) || "-")}}</td><td>${{e(formatDate(row.last_logged_date) || "-")}}</td><td>${{e(formatDate(row.actual_complete_date || row.effective_completion_date) || "-")}}<div class="sub">${{e(actualCompletionSourceText(row.actual_complete_source))}}</div></td><td>${{e(row.penalty_reason || "-")}}<div class="sub">${{e(actualCompletionReason(row))}}</div></td><td>${{hoursText(row.applied_overrun_hours)}}<div class="sub">${{e(penaltyBreakdown)}}</div></td><td>${{scorePctText(row.contribution_pct)}}</td><td>${{linkCell}}</td></tr>`;
     }}).join("")
     : "";
@@ -2721,7 +2724,7 @@ function openScoreDrawerForAssignee(item) {{
       const over = n(row.overrun);
       const estStatus = String(row.estimate_status || "");
       const dueStatus = String(row.due_completion_status || "");
-      const isPenalized = over > 0 && estStatus === "over_estimate" && !(n(row.is_commitment) && dueMode);
+      const isPenalized = (over > 0 && estStatus === "over_estimate" && !(n(row.is_commitment) && dueMode)) || (dueMode && dueStatus === "late" && est > 0);
       const rawIssueType = row.issue_type || row.work_item_type || row.jira_issue_type || "";
       const isBug = isBugIssueType(rawIssueType);
       return {{ issueKey, est, act, over, estStatus, dueStatus, isPenalized, isBug, row }};
@@ -2757,6 +2760,7 @@ function openScoreDrawerForAssignee(item) {{
         overrunText: hoursText(d.over),
         estLabel,
         dueDateText: formatDate(row.planned_due_date) || "-",
+        startDateText: formatDate(row.planned_start_date) || "-",
         actualCompletedDateText: formatDate(row.actual_complete_date || row.effective_completion_date) || "-",
         actualCompletedSourceText: actualCompletionSourceText(row.actual_complete_source),
         dueLabel,
@@ -2772,7 +2776,7 @@ function openScoreDrawerForAssignee(item) {{
   const allSubtaskEpicOptions = Array.from(new Set(allSubtaskRows.map((row) => String(row.epicLabel || "-")))).sort((a, b) => a.localeCompare(b));
   const allSubtaskProjectOptions = Array.from(new Set(allSubtaskRows.map((row) => String(row.projectLabel || "-")))).sort((a, b) => a.localeCompare(b));
   const allSubtasksSectionHtml = allSubtaskRows.length
-    ? `<div class="score-subtask-table-wrap"><div class="score-subtask-filter-bar"><div class="score-subtask-filter-field"><label for="score-subtask-epic-filter">Epic/RMI</label><select id="score-subtask-epic-filter"><option value="">All Epic/RMIs</option>${{allSubtaskEpicOptions.map((value) => `<option value="${{e(value)}}">${{e(value)}}</option>`).join("")}}</select></div><div class="score-subtask-filter-field"><label for="score-subtask-project-filter">Project</label><select id="score-subtask-project-filter"><option value="">All Projects</option>${{allSubtaskProjectOptions.map((value) => `<option value="${{e(value)}}">${{e(value)}}</option>`).join("")}}</select></div></div><div id="score-subtask-filter-status" class="score-subtask-filter-status"></div><table class="ss-tbl ss-tbl-all"><thead><tr><th>Subtask</th><th>Name</th><th>Epic</th><th>Project</th><th>Estimate</th><th>Actual</th><th>Variance</th><th>Overrun</th><th>Est. Status</th><th>Due Date</th><th>Actual Completed Date</th><th>Due Status</th><th>Penalized?</th><th>Reason</th><th>Jira</th></tr></thead><tbody id="score-subtask-table-body"></tbody></table></div>`
+    ? `<div class="score-subtask-table-wrap"><div class="score-subtask-filter-bar"><div class="score-subtask-filter-field"><label for="score-subtask-epic-filter">Epic/RMI</label><select id="score-subtask-epic-filter"><option value="">All Epic/RMIs</option>${{allSubtaskEpicOptions.map((value) => `<option value="${{e(value)}}">${{e(value)}}</option>`).join("")}}</select></div><div class="score-subtask-filter-field"><label for="score-subtask-project-filter">Project</label><select id="score-subtask-project-filter"><option value="">All Projects</option>${{allSubtaskProjectOptions.map((value) => `<option value="${{e(value)}}">${{e(value)}}</option>`).join("")}}</select></div></div><div id="score-subtask-filter-status" class="score-subtask-filter-status"></div><table class="ss-tbl ss-tbl-all"><thead><tr><th>Subtask</th><th>Name</th><th>Epic</th><th>Project</th><th>Estimate</th><th>Actual</th><th>Variance</th><th>Overrun</th><th>Est. Status</th><th>Planned Start Date</th><th>Due Date</th><th>Actual Completed Date</th><th>Due Status</th><th>Penalized?</th><th>Reason</th><th>Jira</th></tr></thead><tbody id="score-subtask-table-body"></tbody></table></div>`
     : `<div class="score-drawer-empty">No scored subtasks for this assignee in the current scope.</div>`;
   if (scoreDrawerTitleEl) scoreDrawerTitleEl.textContent = `Simple Score Details${{item.assignee ? ` - ${{String(item.assignee)}}` : ""}}`;
   if (scoreDrawerSubtitleEl) {{
@@ -2823,9 +2827,9 @@ function openScoreDrawerForAssignee(item) {{
         const linkCell = row.issueUrl
           ? `<a class="jira-link-icon" href="${{e(row.issueUrl)}}" target="_blank" rel="noopener noreferrer" title="Open in Jira"><span class="material-symbols-outlined">open_in_new</span></a>`
           : `<span class="jira-link-disabled">-</span>`;
-        return `<tr class="${{row.rowClass}}"><td class="issue-id">${{e(row.issueKey)}}</td><td class="issue-title">${{e(row.summary)}}</td><td>${{e(row.epicLabel)}}</td><td>${{e(row.projectLabel)}}</td><td>${{row.estimateText}}</td><td>${{row.actualText}}</td><td>${{row.varianceText}}</td><td>${{row.overrunText}}</td><td>${{e(row.estLabel)}}</td><td>${{e(row.dueDateText)}}</td><td>${{e(row.actualCompletedDateText)}}<div class="sub">${{e(row.actualCompletedSourceText)}}</div></td><td><span class="due-status-pill ${{row.dueStatusTone}}">${{e(row.dueLabel)}}</span></td><td class="penalty-cell${{row.isPenalized ? " penalty-yes" : " penalty-no"}}">${{e(row.penaltyLabel)}}</td><td class="penalty-reason-cell">${{e(row.penaltyReason)}}</td><td>${{linkCell}}</td></tr>`;
+        return `<tr class="${{row.rowClass}}"><td class="issue-id">${{e(row.issueKey)}}</td><td class="issue-title">${{e(row.summary)}}</td><td>${{e(row.epicLabel)}}</td><td>${{e(row.projectLabel)}}</td><td>${{row.estimateText}}</td><td>${{row.actualText}}</td><td>${{row.varianceText}}</td><td>${{row.overrunText}}</td><td>${{e(row.estLabel)}}</td><td>${{e(row.startDateText)}}</td><td>${{e(row.dueDateText)}}</td><td>${{e(row.actualCompletedDateText)}}<div class="sub">${{e(row.actualCompletedSourceText)}}</div></td><td><span class="due-status-pill ${{row.dueStatusTone}}">${{e(row.dueLabel)}}</span></td><td class="penalty-cell${{row.isPenalized ? " penalty-yes" : " penalty-no"}}">${{e(row.penaltyLabel)}}</td><td class="penalty-reason-cell">${{e(row.penaltyReason)}}</td><td>${{linkCell}}</td></tr>`;
       }}).join("")
-      : `<tr><td colspan="15" class="score-drawer-empty">No scored subtasks match the selected Epic/RMI and Project filters.</td></tr>`;
+      : `<tr><td colspan="16" class="score-drawer-empty">No scored subtasks match the selected Epic/RMI and Project filters.</td></tr>`;
     if (subtaskFilterStatusEl) {{
       subtaskFilterStatusEl.textContent = `${{rows.length}} of ${{allSubtaskRows.length}} scored subtask(s) shown`;
     }}
@@ -2916,7 +2920,7 @@ function openAdvancedScoreDrawerForAssignee(item) {{
       const over = n(row.overrun);
       const estStatus = String(row.estimate_status || "");
       const dueStatus = String(row.due_completion_status || "");
-      const isPenalized = over > 0 && estStatus === "over_estimate" && !(n(row.is_commitment) && dueMode);
+      const isPenalized = (over > 0 && estStatus === "over_estimate" && !(n(row.is_commitment) && dueMode)) || (dueMode && dueStatus === "late" && est > 0);
       const rawIssueType = row.issue_type || row.work_item_type || row.jira_issue_type || "";
       const isBug = isBugIssueType(rawIssueType);
       return {{ issueKey, est, act, over, estStatus, dueStatus, isPenalized, isBug, row }};
@@ -2952,6 +2956,7 @@ function openAdvancedScoreDrawerForAssignee(item) {{
         overrunText: hoursText(d.over),
         estLabel,
         dueDateText: formatDate(row.planned_due_date) || "-",
+        startDateText: formatDate(row.planned_start_date) || "-",
         actualCompletedDateText: formatDate(row.actual_complete_date || row.effective_completion_date) || "-",
         actualCompletedSourceText: actualCompletionSourceText(row.actual_complete_source),
         dueLabel,
@@ -2967,7 +2972,7 @@ function openAdvancedScoreDrawerForAssignee(item) {{
   const allSubtaskEpicOptions = Array.from(new Set(allSubtaskRows.map((row) => String(row.epicLabel || "-")))).sort((a, b) => a.localeCompare(b));
   const allSubtaskProjectOptions = Array.from(new Set(allSubtaskRows.map((row) => String(row.projectLabel || "-")))).sort((a, b) => a.localeCompare(b));
   const allSubtasksSectionHtml = allSubtaskRows.length
-    ? `<div class="score-subtask-table-wrap"><div class="score-subtask-filter-bar"><div class="score-subtask-filter-field"><label for="score-subtask-epic-filter">Epic/RMI</label><select id="score-subtask-epic-filter"><option value="">All Epic/RMIs</option>${{allSubtaskEpicOptions.map((value) => `<option value="${{e(value)}}">${{e(value)}}</option>`).join("")}}</select></div><div class="score-subtask-filter-field"><label for="score-subtask-project-filter">Project</label><select id="score-subtask-project-filter"><option value="">All Projects</option>${{allSubtaskProjectOptions.map((value) => `<option value="${{e(value)}}">${{e(value)}}</option>`).join("")}}</select></div></div><div id="score-subtask-filter-status" class="score-subtask-filter-status"></div><table class="ss-tbl ss-tbl-all"><thead><tr><th>Subtask</th><th>Name</th><th>Epic</th><th>Project</th><th>Estimate</th><th>Actual</th><th>Variance</th><th>Overrun</th><th>Est. Status</th><th>Due Date</th><th>Actual Completed Date</th><th>Due Status</th><th>Penalized?</th><th>Reason</th><th>Jira</th></tr></thead><tbody id="score-subtask-table-body"></tbody></table></div>`
+    ? `<div class="score-subtask-table-wrap"><div class="score-subtask-filter-bar"><div class="score-subtask-filter-field"><label for="score-subtask-epic-filter">Epic/RMI</label><select id="score-subtask-epic-filter"><option value="">All Epic/RMIs</option>${{allSubtaskEpicOptions.map((value) => `<option value="${{e(value)}}">${{e(value)}}</option>`).join("")}}</select></div><div class="score-subtask-filter-field"><label for="score-subtask-project-filter">Project</label><select id="score-subtask-project-filter"><option value="">All Projects</option>${{allSubtaskProjectOptions.map((value) => `<option value="${{e(value)}}">${{e(value)}}</option>`).join("")}}</select></div></div><div id="score-subtask-filter-status" class="score-subtask-filter-status"></div><table class="ss-tbl ss-tbl-all"><thead><tr><th>Subtask</th><th>Name</th><th>Epic</th><th>Project</th><th>Estimate</th><th>Actual</th><th>Variance</th><th>Overrun</th><th>Est. Status</th><th>Planned Start Date</th><th>Due Date</th><th>Actual Completed Date</th><th>Due Status</th><th>Penalized?</th><th>Reason</th><th>Jira</th></tr></thead><tbody id="score-subtask-table-body"></tbody></table></div>`
     : `<div class="score-drawer-empty">No scored subtasks for this assignee in the current scope.</div>`;
   const allSubtaskCount = (Array.isArray(item.ss_subtask_details) ? item.ss_subtask_details : []).length;
   const withinCount = n(item.ss_within_count);
@@ -3011,9 +3016,9 @@ function openAdvancedScoreDrawerForAssignee(item) {{
         const linkCell = row.issueUrl
           ? `<a class="jira-link-icon" href="${{e(row.issueUrl)}}" target="_blank" rel="noopener noreferrer" title="Open in Jira"><span class="material-symbols-outlined">open_in_new</span></a>`
           : `<span class="jira-link-disabled">-</span>`;
-        return `<tr class="${{row.rowClass}}"><td class="issue-id">${{e(row.issueKey)}}</td><td class="issue-title">${{e(row.summary)}}</td><td>${{e(row.epicLabel)}}</td><td>${{e(row.projectLabel)}}</td><td>${{row.estimateText}}</td><td>${{row.actualText}}</td><td>${{row.varianceText}}</td><td>${{row.overrunText}}</td><td>${{e(row.estLabel)}}</td><td>${{e(row.dueDateText)}}</td><td>${{e(row.actualCompletedDateText)}}<div class="sub">${{e(row.actualCompletedSourceText)}}</div></td><td><span class="due-status-pill ${{row.dueStatusTone}}">${{e(row.dueLabel)}}</span></td><td class="penalty-cell${{row.isPenalized ? " penalty-yes" : " penalty-no"}}">${{e(row.penaltyLabel)}}</td><td class="penalty-reason-cell">${{e(row.penaltyReason)}}</td><td>${{linkCell}}</td></tr>`;
+        return `<tr class="${{row.rowClass}}"><td class="issue-id">${{e(row.issueKey)}}</td><td class="issue-title">${{e(row.summary)}}</td><td>${{e(row.epicLabel)}}</td><td>${{e(row.projectLabel)}}</td><td>${{row.estimateText}}</td><td>${{row.actualText}}</td><td>${{row.varianceText}}</td><td>${{row.overrunText}}</td><td>${{e(row.estLabel)}}</td><td>${{e(row.startDateText)}}</td><td>${{e(row.dueDateText)}}</td><td>${{e(row.actualCompletedDateText)}}<div class="sub">${{e(row.actualCompletedSourceText)}}</div></td><td><span class="due-status-pill ${{row.dueStatusTone}}">${{e(row.dueLabel)}}</span></td><td class="penalty-cell${{row.isPenalized ? " penalty-yes" : " penalty-no"}}">${{e(row.penaltyLabel)}}</td><td class="penalty-reason-cell">${{e(row.penaltyReason)}}</td><td>${{linkCell}}</td></tr>`;
       }}).join("")
-      : `<tr><td colspan="15" class="score-drawer-empty">No scored subtasks match the selected Epic/RMI and Project filters.</td></tr>`;
+      : `<tr><td colspan="16" class="score-drawer-empty">No scored subtasks match the selected Epic/RMI and Project filters.</td></tr>`;
     if (subtaskFilterStatusEl) {{
       subtaskFilterStatusEl.textContent = `${{rows.length}} of ${{allSubtaskRows.length}} scored subtask(s) shown`;
     }}
@@ -3845,7 +3850,7 @@ function compute() {{
       else if (ssDueStatus === "late") a.ss_late_count += 1;
       a.ss_subtask_details.push({{
         issue_key: issueKey, summary: String(wi.summary || ""), estimate: ssEst, actual: ssAct,
-        overrun: ssOver, estimate_status: ssEstStatus, planned_due_date: dueDate, due_date: dueDate,
+        overrun: ssOver, estimate_status: ssEstStatus, planned_start_date: startDate, planned_due_date: dueDate, due_date: dueDate,
         last_logged_date: completionMeta.last_logged_date,
         effective_completion_date: String(ssRow.effective_completion_date || ""),
         actual_complete_date: String(ssRow.actual_complete_date || completionMeta.actual_complete_date || ""),
@@ -4054,7 +4059,8 @@ function compute() {{
     it.score_eligible = n(it.planned_hours_assigned) > 0 ? 1 : 0;
     it.simple_score_raw = totalEst > 0 ? clamp(100 * (1 - totalOver / totalEst), 0, 100) : 0;
     const adjOver = Math.max(0, totalOver - commitOver);
-    const dueAdjustedPenaltyHours = adjOver;
+    const duePenaltyEst = n(it.ss_due_penalty_estimate);
+    const dueAdjustedPenaltyHours = adjOver + duePenaltyEst;
     it.simple_score_due = totalEst > 0 ? clamp(100 * (1 - dueAdjustedPenaltyHours / totalEst), 0, 100) : 0;
     const effectiveCapacity = Math.max(0, n(it.employee_capacity_hours));
     const plannedHrs = Math.max(0, n(it.planned_hours_assigned));
@@ -5407,9 +5413,10 @@ function render(items) {{
   const ssActualHours = n(item.ss_total_actual);
   const ssOverrunHours = n(item.simple_score_overrun_active);
   const ssAdjustedOverrunHours = Math.max(0, ssOverrunHours - n(item.ss_commitment_overrun));
-  const ssAppliedOverrunHours = dueCompletionEnabled ? ssAdjustedOverrunHours : ssOverrunHours;
+  const ssDuePenaltyEstHours = dueCompletionEnabled ? n(item.ss_due_penalty_estimate) : 0;
+  const ssAppliedOverrunHours = dueCompletionEnabled ? ssAdjustedOverrunHours + ssDuePenaltyEstHours : ssOverrunHours;
   const ssFormulaText = dueCompletionEnabled
-    ? `Score % = max(0, min(100, 100 x (1 - (${{simpleOverrunLabel()}} - Commitment Forgiven) / Planned Hours)))`
+    ? `Score % = max(0, min(100, 100 x (1 - (${{simpleOverrunLabel()}} - Commitment Forgiven + Late Completion Penalty) / Planned Hours)))`
     : `Score % = max(0, min(100, 100 x (1 - ${{simpleOverrunLabel()}} / Planned Hours)))`;
   const ssOverloadedFormulaText = "Overloaded Penalty: if Planned > Capacity x (1 + N/100), overload score = Capacity/Planned x 100 and overload penalty = 100 - overload score";
   const ssPlanningRealismFormulaText = "Overload Capping/ Planning Realism: if ON, Final Simple Score = overload score; if OFF, Final Simple Score = Base Simple Score - overload penalty";
@@ -5417,9 +5424,9 @@ function render(items) {{
     ? "Total Overrun Hours = max(0, Total Actual Hours - Planned Hours)"
     : "Overrun Subtask Hours = sum(max(0, Subtask Actual - Subtask Planned))";
   const ssFormulaAppliedText = dueCompletionEnabled
-    ? `100 x (1 - (${{ssOverrunHours.toFixed(1)}} - ${{(simpleOverrunMode === "total" ? 0 : n(item.ss_commitment_overrun)).toFixed(1)}}) / ${{ssPlannedHours.toFixed(1)}})`
+    ? `100 x (1 - (${{ssOverrunHours.toFixed(1)}} - ${{(simpleOverrunMode === "total" ? 0 : n(item.ss_commitment_overrun)).toFixed(1)}} + ${{ssDuePenaltyEstHours.toFixed(1)}}) / ${{ssPlannedHours.toFixed(1)}})`
     : `100 x (1 - ${{ssOverrunHours.toFixed(1)}} / ${{ssPlannedHours.toFixed(1)}})`;
-  const ssFormulaIngredientsHtml = `<section class="formula-guide"><div class="formula-head"><h3 class="formula-title">Simple Scoring Formula Guide</h3><div class="formula-head-actions"><button type="button" class="formula-toggle-btn" id="toggle-formula-guide" aria-controls="simple-formula-guide-body" aria-expanded="${{simpleFormulaGuideExpanded ? "true" : "false"}}"><span class="material-symbols-outlined">${{simpleFormulaGuideExpanded ? "expand_less" : "expand_more"}}</span><span>${{simpleFormulaGuideExpanded ? "Collapse" : "Expand"}}</span></button><div class="formula-score-pill">${{Number.isFinite(activeSimpleScore) ? activeSimpleScore.toFixed(1) + "%" : "N/A"}}</div></div></div><div class="formula-layout" id="simple-formula-guide-body" ${{simpleFormulaGuideExpanded ? "" : "hidden"}}><div class="formula-steps"><div class="formula-step step-gap"><div class="formula-kicker">Step 1: ${{simpleOverrunShortLabel()}}</div><p class="formula-eq">${{e(ssOverrunFormulaText)}}</p><div class="formula-mini-help">max(a, b) means: choose the bigger number.</div></div><div class="formula-step"><div class="formula-kicker">Step 2: Base Simple Score</div><p class="formula-eq">${{e(ssFormulaText)}}</p><p class="formula-applied">${{ssPlannedHours > 0 ? `Applied: ${{e(ssFormulaAppliedText)}}` : "Applied: Planned Hours is 0, so the employee is not eligible for scoring."}}</p></div><div class="formula-step"><div class="formula-kicker">Step 3: Overloaded Penalty (Optional)</div><p class="formula-eq">${{e(ssOverloadedFormulaText)}}</p><p class="formula-applied">${{overloadedPenaltyEnabled ? `Threshold N: ${{overloadedPenaltyThresholdPct.toFixed(1)}}% | Capacity: ${{n(item.employee_capacity_hours).toFixed(1)}}h | Max Planned Before Overload: ${{(n(item.employee_capacity_hours) * (1 + overloadedPenaltyThresholdPct / 100)).toFixed(1)}}h | Overload score: ${{n(item.simple_score_overloaded).toFixed(1)}}% | Overload penalty: ${{n(item.simple_score_overloaded_penalty_pct).toFixed(1)}}%${{overloadedApplied ? " (Applied)" : " (Not applied)"}}` : "Overloaded penalty is turned off."}}</p></div><div class="formula-step"><div class="formula-kicker">Step 4: Overload Capping/ Planning Realism (Optional)</div><p class="formula-eq">${{e(ssPlanningRealismFormulaText)}}</p><p class="formula-applied">${{planningRealismEnabled ? (overloadedApplied ? `Overload Capping/ Planning Realism is ON, so final simple score is capped to overload score ${{n(item.simple_score_overloaded).toFixed(1)}}%.` : "Overload Capping/ Planning Realism is ON, but overload threshold was not hit.") : (overloadedApplied ? `Overload Capping/ Planning Realism is OFF, so overload penalty of ${{n(item.simple_score_overloaded_penalty_pct).toFixed(1)}}% is deducted from base simple score.` : "Overload Capping/ Planning Realism is OFF.")}}</p></div><div class="formula-note">${{simpleOverrunMode === "total" ? "Total overrun mode uses only max(0, Total Actual Hours - Planned Hours). Subtask overruns are ignored if total actual hours stay within plan." : "Overrun subtask mode sums only positive subtask overruns. A good total actual can still carry penalty if individual subtasks overran."}}</div>${{dueCompletionEnabled ? `<div class="formula-note"><strong>Commitment Forgiven</strong> = ${{simpleOverrunMode === "total" ? "not used in total overrun mode." : "overrun hours from items finished on time are not counted in penalty."}}</div>` : ""}}<div class="formula-safeguards"><div class="formula-safeguards-title">Why we use max (simple examples)</div><div class="formula-safeguard-item">1. <strong>Stop negative overrun:</strong> <code>max(0, Actual - Planned)</code><br>Example: Planned 5h, Actual 3h -> Actual - Planned = -2h -> Overrun = max(0, -2) = 0h.</div><div class="formula-safeguard-item">2. <strong>Keep score between 0% and 100%:</strong> <code>max(0, min(100, ...))</code><br>Example: If math gives 108%, final shown score is 100%. If math gives -12%, final shown score is 0%.</div></div></div><div class="formula-metrics"><div class="formula-row"><span>Planned Hours</span><span>${{ssPlannedHours.toFixed(1)}}h</span></div><div class="formula-row"><span>Actual Hours Spent</span><span>${{ssActualHours.toFixed(1)}}h</span></div><div class="formula-row"><span>Employee Capacity</span><span>${{n(item.employee_capacity_hours).toFixed(1)}}h</span></div><div class="formula-row"><span>${{simpleOverrunLabel()}}</span><span>${{ssOverrunHours.toFixed(1)}}h</span></div>${{dueCompletionEnabled ? `<div class="formula-row"><span>Commitment Forgiven</span><span>${{(simpleOverrunMode === "total" ? 0 : n(item.ss_commitment_overrun)).toFixed(1)}}h</span></div><div class="formula-row"><span>Applied Penalty Hours</span><span>${{ssAppliedOverrunHours.toFixed(1)}}h</span></div>` : ""}}<div class="formula-row"><span>Overloaded Penalty</span><span>${{overloadedPenaltyEnabled ? (overloadedApplied ? "Applied" : "On") : "Off"}}</span></div><div class="formula-row"><span>Overload Capping/ Planning Realism</span><span>${{planningRealismEnabled ? (overloadedApplied ? "Cap Applied" : "On") : "Off"}}</span></div><div class="formula-row final"><span>Final Simple Score</span><span>${{Number.isFinite(activeSimpleScore) ? activeSimpleScore.toFixed(1) + "%" : "N/A"}}</span></div></div></div></section>`;
+  const ssFormulaIngredientsHtml = `<section class="formula-guide"><div class="formula-head"><h3 class="formula-title">Simple Scoring Formula Guide</h3><div class="formula-head-actions"><button type="button" class="formula-toggle-btn" id="toggle-formula-guide" aria-controls="simple-formula-guide-body" aria-expanded="${{simpleFormulaGuideExpanded ? "true" : "false"}}"><span class="material-symbols-outlined">${{simpleFormulaGuideExpanded ? "expand_less" : "expand_more"}}</span><span>${{simpleFormulaGuideExpanded ? "Collapse" : "Expand"}}</span></button><div class="formula-score-pill">${{Number.isFinite(activeSimpleScore) ? activeSimpleScore.toFixed(1) + "%" : "N/A"}}</div></div></div><div class="formula-layout" id="simple-formula-guide-body" ${{simpleFormulaGuideExpanded ? "" : "hidden"}}><div class="formula-steps"><div class="formula-step step-gap"><div class="formula-kicker">Step 1: ${{simpleOverrunShortLabel()}}</div><p class="formula-eq">${{e(ssOverrunFormulaText)}}</p><div class="formula-mini-help">max(a, b) means: choose the bigger number.</div></div><div class="formula-step"><div class="formula-kicker">Step 2: Base Simple Score</div><p class="formula-eq">${{e(ssFormulaText)}}</p><p class="formula-applied">${{ssPlannedHours > 0 ? `Applied: ${{e(ssFormulaAppliedText)}}` : "Applied: Planned Hours is 0, so the employee is not eligible for scoring."}}</p></div><div class="formula-step"><div class="formula-kicker">Step 3: Overloaded Penalty (Optional)</div><p class="formula-eq">${{e(ssOverloadedFormulaText)}}</p><p class="formula-applied">${{overloadedPenaltyEnabled ? `Threshold N: ${{overloadedPenaltyThresholdPct.toFixed(1)}}% | Capacity: ${{n(item.employee_capacity_hours).toFixed(1)}}h | Max Planned Before Overload: ${{(n(item.employee_capacity_hours) * (1 + overloadedPenaltyThresholdPct / 100)).toFixed(1)}}h | Overload score: ${{n(item.simple_score_overloaded).toFixed(1)}}% | Overload penalty: ${{n(item.simple_score_overloaded_penalty_pct).toFixed(1)}}%${{overloadedApplied ? " (Applied)" : " (Not applied)"}}` : "Overloaded penalty is turned off."}}</p></div><div class="formula-step"><div class="formula-kicker">Step 4: Overload Capping/ Planning Realism (Optional)</div><p class="formula-eq">${{e(ssPlanningRealismFormulaText)}}</p><p class="formula-applied">${{planningRealismEnabled ? (overloadedApplied ? `Overload Capping/ Planning Realism is ON, so final simple score is capped to overload score ${{n(item.simple_score_overloaded).toFixed(1)}}%.` : "Overload Capping/ Planning Realism is ON, but overload threshold was not hit.") : (overloadedApplied ? `Overload Capping/ Planning Realism is OFF, so overload penalty of ${{n(item.simple_score_overloaded_penalty_pct).toFixed(1)}}% is deducted from base simple score.` : "Overload Capping/ Planning Realism is OFF.")}}</p></div><div class="formula-note">${{simpleOverrunMode === "total" ? "Total overrun mode uses only max(0, Total Actual Hours - Planned Hours). Subtask overruns are ignored if total actual hours stay within plan." : "Overrun subtask mode sums only positive subtask overruns. A good total actual can still carry penalty if individual subtasks overran."}}</div>${{dueCompletionEnabled ? `<div class="formula-note"><strong>Commitment Forgiven</strong> = ${{simpleOverrunMode === "total" ? "not used in total overrun mode." : "overrun hours from items finished on time are not counted in penalty."}}</div>` : ""}}<div class="formula-safeguards"><div class="formula-safeguards-title">Why we use max (simple examples)</div><div class="formula-safeguard-item">1. <strong>Stop negative overrun:</strong> <code>max(0, Actual - Planned)</code><br>Example: Planned 5h, Actual 3h -> Actual - Planned = -2h -> Overrun = max(0, -2) = 0h.</div><div class="formula-safeguard-item">2. <strong>Keep score between 0% and 100%:</strong> <code>max(0, min(100, ...))</code><br>Example: If math gives 108%, final shown score is 100%. If math gives -12%, final shown score is 0%.</div></div></div><div class="formula-metrics"><div class="formula-row"><span>Planned Hours</span><span>${{ssPlannedHours.toFixed(1)}}h</span></div><div class="formula-row"><span>Actual Hours Spent</span><span>${{ssActualHours.toFixed(1)}}h</span></div><div class="formula-row"><span>Employee Capacity</span><span>${{n(item.employee_capacity_hours).toFixed(1)}}h</span></div><div class="formula-row"><span>${{simpleOverrunLabel()}}</span><span>${{ssOverrunHours.toFixed(1)}}h</span></div>${{dueCompletionEnabled ? `<div class="formula-row"><span>Commitment Forgiven</span><span>${{(simpleOverrunMode === "total" ? 0 : n(item.ss_commitment_overrun)).toFixed(1)}}h</span></div><div class="formula-row"><span>Late Completion Penalty</span><span>${{ssDuePenaltyEstHours.toFixed(1)}}h</span></div><div class="formula-row"><span>Applied Penalty Hours</span><span>${{ssAppliedOverrunHours.toFixed(1)}}h</span></div>` : ""}}<div class="formula-row"><span>Overloaded Penalty</span><span>${{overloadedPenaltyEnabled ? (overloadedApplied ? "Applied" : "On") : "Off"}}</span></div><div class="formula-row"><span>Overload Capping/ Planning Realism</span><span>${{planningRealismEnabled ? (overloadedApplied ? "Cap Applied" : "On") : "Off"}}</span></div><div class="formula-row final"><span>Final Simple Score</span><span>${{Number.isFinite(activeSimpleScore) ? activeSimpleScore.toFixed(1) + "%" : "N/A"}}</span></div></div></div></section>`;
   function renderSsDonut(within, over, commit, total) {{
     if (total <= 0) return '<div class="empty">No data.</div>';
     const r = 50, cx = 60, cy = 60, sw = 18;

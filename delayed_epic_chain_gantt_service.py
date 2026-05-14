@@ -222,6 +222,23 @@ def list_filter_options(db_path: Path) -> dict[str, Any]:
     }
 
 
+def _load_epic_release_map(conn: sqlite3.Connection) -> dict[str, dict[str, Any]]:
+    """Returns dict: epic_key -> {release_number, release_date, actual_release_date, release_state}"""
+    try:
+        rows = conn.execute(
+            """
+            SELECT pre.epic_key,
+                   pr.release_number, pr.release_date,
+                   pr.actual_release_date, pr.release_state
+            FROM product_release_epics pre
+            JOIN product_releases pr ON pr.id = pre.release_id
+            """
+        ).fetchall()
+        return {_to_text(row["epic_key"]).upper(): dict(row) for row in rows}
+    except Exception:
+        return {}
+
+
 def _load_epic_plan_rows(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     rows = conn.execute(
         """
@@ -523,6 +540,7 @@ def build_report_payload(
         run_id = _load_latest_run_id(conn)
         filter_options = list_filter_options(db_path)
         epic_rows = _annotate_delay_chain(_build_epic_rows(conn, run_id, mode, assignee))
+        release_map = _load_epic_release_map(conn)
     finally:
         conn.close()
 
@@ -538,6 +556,7 @@ def build_report_payload(
         impacted = planned_due >= range_start and row["is_impacted"]
         if not predecessor and not impacted and not planned_in_selected_range:
             continue
+        release_info = release_map.get(row["epic_key"])
         selected_rows.append(
             {
                 **row,
@@ -545,6 +564,10 @@ def build_report_payload(
                 "planned_due": planned_due.isoformat(),
                 "actual_start": row["actual_start"].isoformat() if row["actual_start"] else "",
                 "actual_complete_date": row["actual_complete_date"].isoformat() if row["actual_complete_date"] else "",
+                "release_number": _to_text(release_info.get("release_number")) if release_info else "",
+                "release_date": _to_text(release_info.get("release_date")) if release_info else "",
+                "actual_release_date": _to_text(release_info.get("actual_release_date")) if release_info else "",
+                "release_state": _to_text(release_info.get("release_state")) if release_info else "",
             }
         )
 

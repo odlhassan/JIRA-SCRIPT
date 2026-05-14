@@ -3,7 +3,7 @@ from __future__ import annotations
 import calendar
 import sqlite3
 from collections import defaultdict
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any, DefaultDict
 
@@ -84,6 +84,11 @@ def _is_resolved_status_text(value: Any) -> bool:
     if not text:
         return False
     return text in {"resolved", "resolved!", "done", "closed", "complete", "completed"}
+
+
+def _is_on_hold_status_text(value: Any) -> bool:
+    text = _to_text(value).lower().replace("-", " ").replace("_", " ").strip()
+    return text in {"on hold", "hold", "paused", "deferred"}
 
 
 def _normalize_planner_delivery_status(value: Any) -> str:
@@ -623,6 +628,8 @@ def build_monthly_epic_plan_payload(
     selected_assignees: set[str] | None = None,
     capacity_profile_key: str | None = None,
     jira_base_url: str = "",
+    overdue_threshold_days: int = 30,
+    include_on_hold: bool = False,
 ) -> dict[str, Any]:
     run_id = _to_text(canonical_run_id)
     if not run_id:
@@ -669,6 +676,7 @@ def build_monthly_epic_plan_payload(
         "carried_forward_planned_hours": 0.0,
     }
     jira_base = _to_text(jira_base_url).rstrip("/")
+    overdue_cutoff = month_start - timedelta(days=max(0, int(overdue_threshold_days)))
 
     for planner_row in planner_rows:
         project_key = _to_text(planner_row.get("project_key")).upper()
@@ -685,10 +693,13 @@ def build_monthly_epic_plan_payload(
             continue
         canonical_meta = epic_meta.get(epic_key) or {}
         jira_status = _to_text(canonical_meta.get("jira_status"))
+        is_on_hold = _is_on_hold_status_text(jira_status)
+        effectively_resolved = _is_resolved_status_text(jira_status) or (is_on_hold and not include_on_hold)
         brought_forward = bool(
             approved_due is not None
             and approved_due < month_start
-            and not _is_resolved_status_text(jira_status)
+            and approved_due >= overdue_cutoff
+            and not effectively_resolved
         )
         start_in_month = bool(
             approved_start is not None and month_start <= approved_start <= month_end
@@ -707,9 +718,9 @@ def build_monthly_epic_plan_payload(
         end_slip = bool(
             approved_due is not None
             and month_start <= approved_due <= month_end
-            and not _is_resolved_status_text(jira_status)
+            and not effectively_resolved
         )
-        carried_forward = start_slip or end_slip
+        carried_forward = brought_forward or start_slip or end_slip
         jira_url = _to_text(planner_row.get("jira_url"))
         if not jira_url and jira_base:
             jira_url = f"{jira_base}/browse/{epic_key}"
@@ -734,6 +745,7 @@ def build_monthly_epic_plan_payload(
                 "end_slip": end_slip,
                 "brought_forward": brought_forward,
                 "carried_forward": carried_forward,
+                "is_on_hold": is_on_hold,
                 "jira_url": jira_url,
                 "subtask_count": len(subtask_keys_by_epic.get(epic_key, set())),
             }
@@ -815,6 +827,8 @@ def build_monthly_epic_plan_payload(
         "to_date": month_end.isoformat(),
         "canonical_run_id": run_id,
         "selected_projects": sorted(selected_project_keys),
+        "overdue_threshold_days": int(overdue_threshold_days),
+        "include_on_hold": bool(include_on_hold),
         "rows": rows,
         "by_project": by_project_rows,
         "totals": rounded_totals,

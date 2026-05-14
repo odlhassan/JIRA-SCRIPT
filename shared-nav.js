@@ -61,7 +61,8 @@
         { page_key: "ipp_meeting_planner", title: "IPP Meeting Planner", href: "/settings/ipp-meeting-planner", icon: "groups", path: "/settings/ipp-meeting-planner" },
         { page_key: "page_categories", title: "Page Categories", href: "/settings/page-categories", icon: "category", path: "/settings/page-categories" },
         { page_key: "canonical_refresh_settings", title: "Colossal Refresh", href: "/settings/canonical-refresh", icon: "sync", path: "/settings/canonical-refresh" },
-        { page_key: "sql_console", title: "SQL Console", href: "/settings/sql-console", icon: "query_stats", path: "/settings/sql-console" }
+        { page_key: "sql_console", title: "SQL Console", href: "/settings/sql-console", icon: "query_stats", path: "/settings/sql-console" },
+        { page_key: "product_releases", title: "Product Releases", href: "/settings/product-releases", icon: "rocket_launch", path: "/settings/product-releases" }
       ],
       categories: []
     }

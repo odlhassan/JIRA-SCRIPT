@@ -321,6 +321,8 @@ MANAGE_FIELDS_SETTINGS_ROUTE = "/settings/manage-fields"
 PROJECTS_SETTINGS_ROUTE = "/settings/projects"
 EPICS_MANAGEMENT_SETTINGS_ROUTE = "/settings/epics-management"
 EPICS_MANAGEMENT_IMPORT_ROUTE = "/settings/epics-management/import"
+PRODUCT_RELEASES_SETTINGS_ROUTE = "/settings/product-releases"
+PRODUCT_RELEASES_CALENDAR_ROUTE = "/settings/product-releases/calendar"
 EPICS_IMPORT_UPLOADS_SUBDIR = "jira_script_epics_import_uploads"
 IPP_MEETING_PLANNER_SETTINGS_ROUTE = "/settings/ipp-meeting-planner"
 EPICS_DROPDOWN_OPTIONS_SETTINGS_ROUTE = "/settings/epics-dropdown-options"
@@ -371,6 +373,7 @@ STATIC_ADMIN_NAV_ITEMS: list[dict[str, object]] = [
     {"page_key": "epics_planner", "title": "Epics Planner", "href": EPICS_MANAGEMENT_SETTINGS_ROUTE, "icon": "event_note", "path": EPICS_MANAGEMENT_SETTINGS_ROUTE, "default_nav_order": 80, "page_type": "configuration"},
     {"page_key": "epics_planner_import", "title": "Epics Planner Import", "href": EPICS_MANAGEMENT_IMPORT_ROUTE, "icon": "upload_file", "path": EPICS_MANAGEMENT_IMPORT_ROUTE, "default_nav_order": 82, "page_type": "configuration"},
     {"page_key": "ipp_meeting_planner", "title": "IPP Meeting Planner", "href": IPP_MEETING_PLANNER_SETTINGS_ROUTE, "icon": "groups", "path": IPP_MEETING_PLANNER_SETTINGS_ROUTE, "default_nav_order": 85, "page_type": "configuration"},
+    {"page_key": "product_releases", "title": "Product Releases", "href": PRODUCT_RELEASES_SETTINGS_ROUTE, "icon": "rocket_launch", "path": PRODUCT_RELEASES_SETTINGS_ROUTE, "default_nav_order": 87, "page_type": "configuration"},
     {"page_key": "page_categories", "title": "Page Categories", "href": PAGE_CATEGORIES_SETTINGS_ROUTE, "icon": "category", "path": PAGE_CATEGORIES_SETTINGS_ROUTE, "default_nav_order": 90, "page_type": "configuration"},
     {"page_key": "canonical_refresh_settings", "title": "Colossal Refresh", "href": CANONICAL_REFRESH_SETTINGS_ROUTE, "icon": "sync", "path": CANONICAL_REFRESH_SETTINGS_ROUTE, "default_nav_order": 100, "page_type": "configuration"},
     {"page_key": "sql_console", "title": "SQL Console", "href": SQL_CONSOLE_SETTINGS_ROUTE, "icon": "query_stats", "path": SQL_CONSOLE_SETTINGS_ROUTE, "default_nav_order": 110, "page_type": "configuration"},
@@ -13579,6 +13582,10 @@ def _epics_management_settings_html() -> str:
     .delivery-status-icon.delivery-status-yet-to-start,
     .delivery-status-icon-inline.delivery-status-yet-to-start { color:#1d4ed8; font-variation-settings:\"FILL\" 0,\"wght\" 500; }
     .btn.danger:hover { background:#ffe4e6; }
+    .btn.toggle-active { background:#1d4ed8; border-color:#1e40af; color:#fff; }
+    .btn.toggle-active:hover { background:#1e3a8a; }
+    .btn.tk-active { background:#7c3aed; border-color:#6d28d9; color:#fff; }
+    .btn.tk-active:hover { background:#5b21b6; }
     .btn.seal-btn { border-color:#b91c1c; color:#fff; background:#b91c1c; }
     .btn.seal-btn:hover:not(:disabled) { background:#991b1b; }
     .btn.seal-btn:disabled { opacity:0.5; cursor:not-allowed; }
@@ -13599,6 +13606,13 @@ def _epics_management_settings_html() -> str:
     .plan-summary-readonly { padding:6px 8px; font-size:.78rem; color:#000; min-height:42px; border-radius:8px; }
     .plan-summary-readonly.tk-budgeted { background:var(--tk-budgeted-bg); border:1px solid #86efac; }
     .actions-cell { min-width:52px; }
+    .release-status-cell { white-space:nowrap; }
+    .release-date-cell { white-space:nowrap; font-size:.78rem; color:#065F46; text-align:center; }
+    .release-status-badge { display:inline-block; padding:2px 8px; border-radius:10px; font-size:.72rem; font-weight:700; text-transform:uppercase; letter-spacing:.05em; }
+    .release-status-badge.release-status-released { background:#dcfce7; color:#166534; }
+    .release-status-badge.release-status-scheduled { background:#dbeafe; color:#1e40af; }
+    .release-status-badge.release-status-shelved { background:#f3f4f6; color:#374151; }
+    .release-status-badge.release-status-rescheduled { background:#fef3c7; color:#92400e; }
     .epic-row { cursor:pointer; }
     .epic-row td { transition:background-color .14s ease; }
     .epic-row:hover td { background:#eef4ff; }
@@ -13812,11 +13826,14 @@ def _epics_management_settings_html() -> str:
           <button id="add-plan-column-btn" class="btn alt" type="button">Add Phase</button>
           <button id="manage-plan-columns-btn" class="btn alt" type="button">Manage Phases</button>
           <a class="btn alt" href="/settings/epics-management/import">Import Approved Plan</a>
+          <button id="download-excel-btn" class="btn alt" type="button" title="Download all epics as Excel">&#11015; Download Excel</button>
           <button id="seal-epics-btn" class="btn seal-btn" type="button" disabled title="Select epics to seal">SEAL EPICS</button>
           <button id="populate-jira-btn" class="btn populate-jira-btn" type="button" disabled title="Publish selected epics to Jira">POPULATE JIRA</button>
           <button id="populate-jira-history-btn" class="btn alt" type="button" title="View Jira publish report history">Publish History</button>
           <button id="expand-all-btn" class="btn alt" type="button">Expand</button>
           <button id="collapse-all-btn" class="btn alt" type="button">Collapse</button>
+          <button id="toggle-flat-view-btn" class="btn alt" type="button" title="Toggle grouping by categorization and component">Hide Grouping</button>
+          <button id="toggle-tk-only-btn" class="btn alt" type="button" title="Show only TK Epics">TK Epics Only</button>
           <span class="shortcut-chip" title="Quick add epic"><kbd>Shift</kbd>+<kbd>Tab</kbd></span>
         </div>
       </div>
@@ -14104,7 +14121,7 @@ def _epics_management_settings_html() -> str:
       { key: "regression_sqa_testing", label: "Regression SQA Testing", jira_link_enabled: false, is_default: true, phase_role: "most_likely_input", most_likely_enabled: true, tk_budgeted_enabled: true },
       { key: "production_plan", label: "Release", jira_link_enabled: true, is_default: true, phase_role: "formula_managed", most_likely_enabled: false, tk_budgeted_enabled: true },
     ];
-    const PLANNER_TABLE_COLUMN_COUNT = 8;
+    const PLANNER_TABLE_COLUMN_COUNT = 11;
     const EPICS_STATIC_COL_MIN_WIDTH = 1600;
     const EPICS_PLAN_COL_MIN_WIDTH = 170;
     const EPICS_PLAN_COL_MAX_WIDTH = 260;
@@ -14188,6 +14205,8 @@ def _epics_management_settings_html() -> str:
     const DEFAULT_FILTER_PROJECT_KEY = "";
     let filterProjectKey = "";
     let filterSearchQuery = "";
+    let flatView = false;
+    let filterTkOnly = false;
 
     let rows = [];
     let managedProjects = [];
@@ -14655,6 +14674,7 @@ def _epics_management_settings_html() -> str:
         if (!row) return false;
         if (projectKey && String(row.project_key || "").trim().toUpperCase() !== projectKey) return false;
         if (query && !rowSearchString(row).includes(query)) return false;
+        if (filterTkOnly && !row.is_tk_epic) return false;
         return true;
       });
     }
@@ -15004,6 +15024,9 @@ def _epics_management_settings_html() -> str:
         + "<th>Originator</th>"
         + "<th>Priority</th>"
         + "<th>Plan Status</th>"
+        + "<th>Released Status</th>"
+        + "<th>Planned Release Date</th>"
+        + "<th>Actual Release Date</th>"
         + "<th>Plan Overview</th>"
         + "<th>Actions</th>";
       applyPlanColumnLayout();
@@ -15709,6 +15732,13 @@ def _epics_management_settings_html() -> str:
         + '  </div>'
         + '</div>';
     }
+    function renderReleaseStatusChip(status) {
+      const s = String(status || "").trim().toLowerCase();
+      if (!s) return '<span class="muted">—</span>';
+      const labels = { released: "Released", scheduled: "Scheduled", shelved: "Shelved", rescheduled: "Rescheduled" };
+      const label = labels[s] || status;
+      return '<span class="release-status-badge release-status-' + s + '">' + esc(label) + '</span>';
+    }
     function renderEpicRow(rowIndex, visibleEpicIndex) {
       const row = rows[rowIndex];
       const epicKey = String(row.epic_key || row.id || "").trim().toUpperCase();
@@ -15744,6 +15774,9 @@ def _epics_management_settings_html() -> str:
         + '<td contenteditable="' + ceAllowed + '" data-row-index="' + rowIndex + '" data-field="originator">' + esc(row.originator || "") + "</td>"
         + "<td>" + renderPrioritySelect(normalizePriority(row.priority), rowIndex, sealedDisable) + "</td>"
         + "<td>" + renderPlanStatusSelect(normalizePlanStatus(row.plan_status), rowIndex, sealedDisable) + "</td>"
+        + '<td class="release-status-cell">' + renderReleaseStatusChip(row.release_status) + '</td>'
+        + '<td class="release-date-cell">' + (row.planned_release_date ? esc(formatDateDisplay(row.planned_release_date)) : '<span class="muted">—</span>') + '</td>'
+        + '<td class="release-date-cell">' + (row.actual_release_date ? esc(formatDateDisplay(row.actual_release_date)) : '<span class="muted">—</span>') + '</td>'
         + "<td>" + renderEpicOverviewCell(row) + "</td>"
         + actionsCell
         + "</tr>"
@@ -15915,6 +15948,14 @@ def _epics_management_settings_html() -> str:
           + '</tr>'
         );
         if (!pExpanded) continue;
+
+        if (flatView) {
+          for (const rowIndex of projectIndexes) {
+            html.push(renderEpicRow(rowIndex, visibleEpicRowIndex));
+            visibleEpicRowIndex++;
+          }
+          continue;
+        }
 
         for (const [category, componentMap] of categoryMap.entries()) {
           const cKey = categoryNodeKey(project, category);
@@ -16778,6 +16819,11 @@ def _epics_management_settings_html() -> str:
         jira_url: String(row.jira_url || ""),
         plans: (row.plans && typeof row.plans === "object") ? row.plans : {},
         is_sealed: row.hasOwnProperty("is_sealed") ? (Number(row.is_sealed) || 0) : 0,
+        is_tk_epic: row.hasOwnProperty("is_tk_epic") ? Boolean(row.is_tk_epic) : false,
+        epr_jira_epic_created: row.hasOwnProperty("epr_jira_epic_created") ? Boolean(row.epr_jira_epic_created) : false,
+        release_status: String(row.release_status || ""),
+        planned_release_date: normalizeIsoDateOrBlank(row.planned_release_date || ""),
+        actual_release_date: normalizeIsoDateOrBlank(row.actual_release_date || ""),
       }));
       expandedProjects.clear();
       expandedCategories.clear();
@@ -16929,6 +16975,39 @@ def _epics_management_settings_html() -> str:
       expandedCategories.clear();
       expandedComponents.clear();
       expandedEpicRows.clear();
+      renderTable();
+    });
+    document.getElementById("toggle-flat-view-btn").addEventListener("click", () => {
+      flatView = !flatView;
+      const btn = document.getElementById("toggle-flat-view-btn");
+      if (flatView) {
+        btn.textContent = "Show Grouping";
+        btn.classList.add("toggle-active");
+        btn.classList.remove("alt");
+        expandedProjects.clear();
+        for (const row of rows) {
+          const project = String(row.project_name || row.project_key || "-").trim() || "-";
+          expandedProjects.add(projectNodeKey(project));
+        }
+      } else {
+        btn.textContent = "Hide Grouping";
+        btn.classList.remove("toggle-active");
+        btn.classList.add("alt");
+      }
+      renderTable();
+    });
+    document.getElementById("toggle-tk-only-btn").addEventListener("click", () => {
+      filterTkOnly = !filterTkOnly;
+      const btn = document.getElementById("toggle-tk-only-btn");
+      if (filterTkOnly) {
+        btn.textContent = "Show All Epics";
+        btn.classList.add("tk-active");
+        btn.classList.remove("alt");
+      } else {
+        btn.textContent = "TK Epics Only";
+        btn.classList.remove("tk-active");
+        btn.classList.add("alt");
+      }
       renderTable();
     });
     const sealEpicsBtn = document.getElementById("seal-epics-btn");
@@ -17094,6 +17173,34 @@ def _epics_management_settings_html() -> str:
       setStatus("Draft epic row discarded.", "ok");
     });
     window.addEventListener("resize", applyPlanColumnLayout);
+
+    (function() {
+      const dlBtn = document.getElementById("download-excel-btn");
+      if (!dlBtn) return;
+      dlBtn.addEventListener("click", () => {
+        dlBtn.disabled = true;
+        setStatus("Preparing Excel download…", "");
+        fetch("/api/epics-management/export", { cache: "no-store" })
+          .then((resp) => {
+            if (!resp.ok) return resp.json().then((b) => { throw new Error(b.error || "Export failed."); });
+            return resp.blob();
+          })
+          .then((blob) => {
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            const ts = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, (c) => c === "T" ? "_" : c);
+            a.download = "epics_planner_" + ts + ".xlsx";
+            a.href = url;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            setStatus("Excel download started.", "ok");
+          })
+          .catch((err) => setStatus(String(err && err.message || err || "Export failed."), "warn"))
+          .finally(() => { dlBtn.disabled = false; });
+      });
+    })();
 
     (async function init() {
       initHeaderToggle();
@@ -21198,6 +21305,67 @@ def _init_epics_management_db(settings_db_path: Path) -> None:
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_epics_management_story_sync_epic_row_id ON epics_management_story_sync(epic_row_id)"
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS product_releases (
+                id TEXT PRIMARY KEY,
+                project_key TEXT NOT NULL,
+                release_number TEXT NOT NULL,
+                release_date TEXT NOT NULL,
+                notes TEXT NOT NULL DEFAULT '',
+                created_at_utc TEXT NOT NULL DEFAULT '',
+                updated_at_utc TEXT NOT NULL DEFAULT ''
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_product_releases_project ON product_releases(project_key, release_date)"
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS product_release_epics (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                release_id TEXT NOT NULL,
+                epic_row_id TEXT NOT NULL,
+                epic_key TEXT NOT NULL DEFAULT '',
+                epic_type TEXT NOT NULL DEFAULT 'new_feature',
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                added_at_utc TEXT NOT NULL DEFAULT '',
+                UNIQUE(epic_row_id)
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_product_release_epics_release ON product_release_epics(release_id, sort_order)"
+        )
+        try:
+            conn.execute("ALTER TABLE product_releases ADD COLUMN release_status TEXT NOT NULL DEFAULT 'scheduled'")
+        except Exception:
+            pass
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS product_release_actions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                release_id TEXT NOT NULL,
+                action TEXT NOT NULL,
+                actual_date TEXT NOT NULL DEFAULT '',
+                actor TEXT NOT NULL DEFAULT '',
+                notes TEXT NOT NULL DEFAULT '',
+                performed_at_utc TEXT NOT NULL DEFAULT ''
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_product_release_actions ON product_release_actions(release_id, performed_at_utc)"
+        )
+        try:
+            conn.execute("ALTER TABLE product_release_actions ADD COLUMN actor TEXT NOT NULL DEFAULT ''")
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE product_releases ADD COLUMN actual_release_date TEXT NOT NULL DEFAULT ''")
+        except Exception:
+            pass
         conn.commit()
     finally:
         conn.close()
@@ -22089,6 +22257,29 @@ def _load_epics_management_rows(settings_db_path: Path) -> list[dict[str, str]]:
         if not row_id or not column_key:
           continue
         plan_values_by_row_id.setdefault(row_id, {})[column_key] = value_row["plan_json"]
+    release_info_by_row_id: dict[str, dict] = {}
+    if row_ids:
+      rel_ph = ",".join("?" for _ in row_ids)
+      try:
+        for rel_row in conn.execute(
+          f"SELECT pre.epic_row_id,"
+          f" COALESCE(pr.release_status,'') AS release_status,"
+          f" COALESCE(pr.release_date,'') AS planned_release_date,"
+          f" COALESCE(pr.actual_release_date,'') AS actual_release_date"
+          f" FROM product_release_epics pre"
+          f" JOIN product_releases pr ON pr.id=pre.release_id"
+          f" WHERE pre.epic_row_id IN ({rel_ph})",
+          row_ids,
+        ).fetchall():
+          rid = _to_text(rel_row["epic_row_id"]).strip()
+          if rid:
+            release_info_by_row_id[rid] = {
+              "release_status": _to_text(rel_row["release_status"]),
+              "planned_release_date": _to_text(rel_row["planned_release_date"]),
+              "actual_release_date": _to_text(rel_row["actual_release_date"]),
+            }
+      except Exception:
+        pass
   except Exception:
     return []
   finally:
@@ -22153,6 +22344,7 @@ def _load_epics_management_rows(settings_db_path: Path) -> list[dict[str, str]]:
       epr_jira_epic_created = 0
     row_id_for_epr_counts = _to_text(row["id"]).strip()
     epr_created_jira_issue_count = int(epr_created_counts_by_row_id.get(row_id_for_epr_counts, 0))
+    rel_info = release_info_by_row_id.get(_to_text(row["id"]).strip(), {})
     out.append(
       {
         "id": row_id,
@@ -22177,9 +22369,276 @@ def _load_epics_management_rows(settings_db_path: Path) -> list[dict[str, str]]:
         "is_tk_epic": is_tk_epic,
         "epr_jira_epic_created": epr_jira_epic_created,
         "epr_created_jira_issue_count": epr_created_jira_issue_count,
+        "release_status": rel_info.get("release_status", ""),
+        "planned_release_date": rel_info.get("planned_release_date", ""),
+        "actual_release_date": rel_info.get("actual_release_date", ""),
       }
     )
   return out
+
+
+def _epics_management_export_xlsx_bytes(settings_db_path: Path) -> bytes:
+  """Build a formatted Excel workbook from all epics management rows."""
+  from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+  from openpyxl.utils import get_column_letter
+
+  rows = _load_epics_management_rows(settings_db_path=settings_db_path)
+  plan_columns = _load_epics_plan_columns(settings_db_path, include_inactive=False)
+
+  # ── palette ────────────────────────────────────────────────────────────
+  CLR_HEADER_BG    = "1D4ED8"
+  CLR_HEADER_FG    = "FFFFFF"
+  CLR_PHASE_HEADER = "1E40AF"
+  CLR_SUB_HEADER   = "3B82F6"
+  CLR_ROW_ODD      = "F8FAFF"
+  CLR_ROW_EVEN     = "FFFFFF"
+  CLR_SEALED       = "FEF3C7"
+  CLR_NUM_FG       = "1E3A8A"
+  CLR_DATE_FG      = "065F46"
+  CLR_BORDER       = "CBD5E1"
+
+  thin = Side(border_style="thin", color=CLR_BORDER)
+  cell_border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+  def _hdr_font(fg: str = CLR_HEADER_FG, sz: int = 10) -> Font:
+    return Font(bold=True, color=fg, size=sz, name="Segoe UI")
+
+  def _hdr_fill(bg: str) -> PatternFill:
+    return PatternFill(fill_type="solid", fgColor=bg)
+
+  def _body_font(bold: bool = False, color: str = "0F172A") -> Font:
+    return Font(bold=bold, color=color, size=9, name="Segoe UI")
+
+  center   = Alignment(horizontal="center", vertical="center", wrap_text=True)
+  left_vc  = Alignment(horizontal="left",   vertical="center", wrap_text=True)
+  right_vc = Alignment(horizontal="right",  vertical="center")
+
+  wb = Workbook()
+
+  # ── Sheet 1: Epics ──────────────────────────────────────────────────────
+  ws = wb.active
+  ws.title = "Epics"
+  ws.freeze_panes = "C3"
+
+  STATIC_COLS: list[tuple[str, int, str]] = [
+    ("Epic Key",           14, "center"),
+    ("Epic Name",          36, "left"),
+    ("Project",            16, "left"),
+    ("Product Category",   22, "left"),
+    ("Component",          20, "left"),
+    ("Originator",         16, "left"),
+    ("Priority",           12, "center"),
+    ("Plan Status",        16, "center"),
+    ("Delivery Status",    16, "center"),
+    ("Planned Due Date",   16, "center"),
+    ("Remarks",            28, "left"),
+    ("Jira URL",           30, "left"),
+    ("Sealed",              8, "center"),
+    ("TK Epic",             8, "center"),
+    ("Release Status",     18, "center"),
+    ("Release Plan Date",  18, "center"),
+    ("Actual Release Date",18, "center"),
+  ]
+  n_static = len(STATIC_COLS)
+
+  phase_sub   = ["Man Days", "Most Likely", "Start Date", "Due Date"]
+  n_phase_sub = len(phase_sub)
+
+  for ci, (label, width, _align) in enumerate(STATIC_COLS, start=1):
+    c = ws.cell(row=1, column=ci, value=label)
+    c.font      = _hdr_font(sz=10)
+    c.fill      = _hdr_fill(CLR_HEADER_BG)
+    c.alignment = center
+    c.border    = cell_border
+    ws.merge_cells(start_row=1, start_column=ci, end_row=2, end_column=ci)
+    ws.column_dimensions[get_column_letter(ci)].width = width
+
+  phase_fill_a = _hdr_fill(CLR_PHASE_HEADER)
+  phase_fill_b = _hdr_fill("1A56DB")
+  sub_fill     = _hdr_fill(CLR_SUB_HEADER)
+
+  for pi, col in enumerate(plan_columns):
+    phase_label = _to_text(col.get("label")) or _to_text(col.get("key"))
+    col_start = n_static + 1 + pi * n_phase_sub
+    col_end   = col_start + n_phase_sub - 1
+    ws.merge_cells(start_row=1, start_column=col_start, end_row=1, end_column=col_end)
+    pc = ws.cell(row=1, column=col_start, value=phase_label)
+    pc.font      = _hdr_font(sz=10)
+    pc.fill      = phase_fill_a if pi % 2 == 0 else phase_fill_b
+    pc.alignment = center
+    pc.border    = cell_border
+    for si, sub in enumerate(phase_sub):
+      sc = ws.cell(row=2, column=col_start + si, value=sub)
+      sc.font      = _hdr_font(sz=9)
+      sc.fill      = sub_fill
+      sc.alignment = center
+      sc.border    = cell_border
+      ws.column_dimensions[get_column_letter(col_start + si)].width = 13
+
+  ws.row_dimensions[1].height = 22
+  ws.row_dimensions[2].height = 18
+
+  # ── Data rows ────────────────────────────────────────────────────────────
+  priority_colors    = {"Highest": "DC2626", "High": "EA580C", "Medium": "D97706", "Low": "16A34A"}
+  plan_status_colors = {"Planned": "15803D", "Not Planned Yet": "B45309", "On Hold": "7C3AED"}
+  delivery_colors    = {"Late": "DC2626", "On-track": "15803D", "Yet to start": "475569"}
+
+  def _safe_float(v: object) -> object:
+    raw = _to_text(v)
+    if not raw:
+      return ""
+    try:
+      return float(raw)
+    except (ValueError, TypeError):
+      return raw
+
+  for data_ri, row in enumerate(rows):
+    excel_row = data_ri + 3
+    is_sealed = int(row.get("is_sealed") or 0)
+    row_bg    = CLR_SEALED if is_sealed else (CLR_ROW_ODD if data_ri % 2 == 0 else CLR_ROW_EVEN)
+    row_fill  = PatternFill(fill_type="solid", fgColor=row_bg)
+
+    plans    = row.get("plans") or {}
+    epic_key = _to_text(row.get("epic_key")).upper()
+
+    static_values = [
+      epic_key,
+      _to_text(row.get("epic_name")),
+      _to_text(row.get("project_name")) or _to_text(row.get("project_key")),
+      _to_text(row.get("product_category")),
+      _to_text(row.get("component")),
+      _to_text(row.get("originator")),
+      _to_text(row.get("priority")),
+      _to_text(row.get("plan_status")),
+      _to_text(row.get("delivery_status")),
+      _to_text(row.get("planned_due_date_epic")),
+      _to_text(row.get("remarks")),
+      _to_text(row.get("jira_url")),
+      "✓" if is_sealed else "",
+      "✓" if int(row.get("is_tk_epic") or 0) else "",
+      _to_text(row.get("release_status")) or "",
+      _to_text(row.get("planned_release_date")) or "",
+      _to_text(row.get("actual_release_date")) or "",
+    ]
+
+    for ci, (value, (_, _, align)) in enumerate(zip(static_values, STATIC_COLS), start=1):
+      cell = ws.cell(row=excel_row, column=ci, value=value)
+      cell.fill   = row_fill
+      cell.border = cell_border
+      cell.font   = _body_font()
+
+      if ci == 1:
+        cell.font      = Font(bold=True, color="1E3A8A", size=9, name="Consolas")
+        cell.alignment = center
+      elif ci == 7:
+        fg = priority_colors.get(value, "374151")
+        cell.font      = Font(bold=True, color=fg, size=9, name="Segoe UI")
+        cell.alignment = center
+      elif ci == 8:
+        fg = plan_status_colors.get(value, "374151")
+        cell.font      = Font(bold=True, color=fg, size=9, name="Segoe UI")
+        cell.alignment = center
+      elif ci == 9:
+        fg = delivery_colors.get(value, "374151")
+        cell.font      = Font(bold=True, color=fg, size=9, name="Segoe UI")
+        cell.alignment = center
+      elif ci == 10:
+        cell.font      = _body_font(color=CLR_DATE_FG)
+        cell.alignment = center
+      elif ci in (13, 14):
+        cell.alignment = center
+        cell.font      = Font(bold=True, color="065F46" if value == "✓" else "94A3B8", size=9)
+      elif ci == 15:
+        cell.alignment = center
+        cell.font      = _body_font(color="374151")
+      elif ci in (16, 17):
+        cell.font      = _body_font(color=CLR_DATE_FG)
+        cell.alignment = center
+      elif align == "center":
+        cell.alignment = center
+      else:
+        cell.alignment = left_vc
+
+    for pi, col in enumerate(plan_columns):
+      plan_key  = _to_text(col.get("key"))
+      plan      = plans.get(plan_key) or {}
+      col_start = n_static + 1 + pi * n_phase_sub
+
+      phase_cell_vals = [
+        _safe_float(plan.get("man_days", "")),
+        _safe_float(plan.get("most_likely_man_days", "")),
+        _to_text(plan.get("start_date", "")),
+        _to_text(plan.get("due_date", "")),
+      ]
+
+      for si, val in enumerate(phase_cell_vals):
+        cell = ws.cell(row=excel_row, column=col_start + si, value=val)
+        cell.fill   = row_fill
+        cell.border = cell_border
+        if si < 2:
+          cell.font          = _body_font(color=CLR_NUM_FG)
+          cell.alignment     = right_vc
+          if isinstance(val, float):
+            cell.number_format = "0.0"
+        else:
+          cell.font      = _body_font(color=CLR_DATE_FG)
+          cell.alignment = center
+
+  last_col = n_static + len(plan_columns) * n_phase_sub
+  ws.auto_filter.ref = f"A2:{get_column_letter(last_col)}2"
+
+  # ── Sheet 2: Summary ────────────────────────────────────────────────────
+  ws2 = wb.create_sheet(title="Summary")
+  ws2.freeze_panes = "B2"
+
+  for ci, h in enumerate(["Metric", "Value"], start=1):
+    c = ws2.cell(row=1, column=ci, value=h)
+    c.font      = _hdr_font()
+    c.fill      = _hdr_fill(CLR_HEADER_BG)
+    c.alignment = center
+    c.border    = cell_border
+
+  ws2.column_dimensions["A"].width = 28
+  ws2.column_dimensions["B"].width = 20
+
+  total        = len(rows)
+  sealed_count = sum(1 for r in rows if int(r.get("is_sealed") or 0))
+  planned      = sum(1 for r in rows if _to_text(r.get("plan_status")) == "Planned")
+  unplanned    = sum(1 for r in rows if _to_text(r.get("plan_status")) != "Planned")
+  late         = sum(1 for r in rows if _to_text(r.get("delivery_status")) == "Late")
+  on_track     = sum(1 for r in rows if _to_text(r.get("delivery_status")) == "On-track")
+  not_started  = sum(1 for r in rows if _to_text(r.get("delivery_status")) == "Yet to start")
+
+  summary_rows = [
+    ("Total Epics",            total),
+    ("Planned",                planned),
+    ("Not Planned Yet",        unplanned),
+    ("Sealed",                 sealed_count),
+    ("Delivery – Late",        late),
+    ("Delivery – On-track",    on_track),
+    ("Delivery – Yet to start",not_started),
+    ("Phase Columns",          len(plan_columns)),
+  ]
+
+  odd_fill  = PatternFill(fill_type="solid", fgColor=CLR_ROW_ODD)
+  even_fill = PatternFill(fill_type="solid", fgColor=CLR_ROW_EVEN)
+
+  for ri, (label, val) in enumerate(summary_rows, start=2):
+    fill = odd_fill if ri % 2 == 0 else even_fill
+    lc = ws2.cell(row=ri, column=1, value=label)
+    vc = ws2.cell(row=ri, column=2, value=val)
+    for c in (lc, vc):
+      c.fill   = fill
+      c.border = cell_border
+      c.font   = _body_font()
+    lc.alignment = left_vc
+    vc.alignment = center
+    vc.font      = Font(bold=True, color=CLR_NUM_FG, size=10)
+
+  buf = io.BytesIO()
+  wb.save(buf)
+  buf.seek(0)
+  return buf.read()
 
 
 def _build_epics_management_snapshot_dict(
@@ -25958,6 +26417,2212 @@ def _executive_dashboard_summary(
         "cycle_time_rows": cycle_rows,
         "blocked_epics": blocked_rows,
     }
+
+
+# ---------------------------------------------------------------------------
+# Product Releases helpers
+# ---------------------------------------------------------------------------
+
+def _load_product_releases(settings_db_path: Path, project_key: str | None = None) -> list[dict]:
+    _init_epics_management_db(settings_db_path)
+    conn = sqlite3.connect(settings_db_path)
+    try:
+        if project_key:
+            rows = conn.execute(
+                "SELECT id, project_key, release_number, release_date, notes, created_at_utc, updated_at_utc, "
+                "COALESCE(release_status,'scheduled') "
+                "FROM product_releases WHERE project_key = ? ORDER BY release_date ASC",
+                (project_key,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT id, project_key, release_number, release_date, notes, created_at_utc, updated_at_utc, "
+                "COALESCE(release_status,'scheduled') "
+                "FROM product_releases ORDER BY project_key ASC, release_date ASC"
+            ).fetchall()
+        releases = []
+        for r in rows:
+            release_id = _to_text(r[0])
+            epics = conn.execute(
+                "SELECT pre.id, pre.epic_row_id, pre.epic_key, pre.epic_type, pre.sort_order, pre.added_at_utc, "
+                "em.epic_name, em.product_category, em.component, em.is_sealed, em.is_tk_epic "
+                "FROM product_release_epics pre "
+                "LEFT JOIN epics_management em ON em.id = pre.epic_row_id "
+                "WHERE pre.release_id = ? ORDER BY pre.sort_order ASC",
+                (release_id,),
+            ).fetchall()
+            actions = conn.execute(
+                "SELECT id, action, actual_date, actor, notes, performed_at_utc "
+                "FROM product_release_actions WHERE release_id = ? ORDER BY performed_at_utc DESC LIMIT 20",
+                (release_id,),
+            ).fetchall()
+            releases.append({
+                "id": release_id,
+                "project_key": _to_text(r[1]),
+                "release_number": _to_text(r[2]),
+                "release_date": _to_text(r[3]),
+                "notes": _to_text(r[4]),
+                "created_at_utc": _to_text(r[5]),
+                "updated_at_utc": _to_text(r[6]),
+                "release_status": _to_text(r[7]) or "scheduled",
+                "epics": [
+                    {
+                        "epic_row_id": _to_text(e[1]),
+                        "epic_key": _to_text(e[2]),
+                        "epic_type": _to_text(e[3]),
+                        "sort_order": int(e[4] or 0),
+                        "added_at_utc": _to_text(e[5]),
+                        "epic_name": _to_text(e[6]),
+                        "product_category": _to_text(e[7]),
+                        "component": _to_text(e[8]),
+                        "is_sealed": bool(e[9]),
+                        "is_tk_epic": bool(e[10]),
+                    }
+                    for e in epics
+                ],
+                "actions": [
+                    {
+                        "id": int(a[0]),
+                        "action": _to_text(a[1]),
+                        "actual_date": _to_text(a[2]),
+                        "actor": _to_text(a[3]),
+                        "notes": _to_text(a[4]),
+                        "performed_at_utc": _to_text(a[5]),
+                    }
+                    for a in actions
+                ],
+            })
+        return releases
+    finally:
+        conn.close()
+
+
+def _create_product_release(settings_db_path: Path, project_key: str, release_number: str, release_date: str, notes: str, release_status: str = "scheduled") -> dict:
+    _init_epics_management_db(settings_db_path)
+    project_key = _to_text(project_key).strip()
+    release_number = _to_text(release_number).strip()
+    release_date = _to_text(release_date).strip()
+    notes = _to_text(notes).strip()
+    release_status = _to_text(release_status).strip() or "scheduled"
+    if release_status not in ("scheduled", "released", "shelved", "rescheduled"):
+        release_status = "scheduled"
+    if not project_key:
+        raise ValueError("project_key is required.")
+    if not release_number:
+        raise ValueError("release_number is required.")
+    if not release_date:
+        raise ValueError("release_date is required.")
+    import uuid
+    release_id = str(uuid.uuid4())
+    now = _utc_now_iso()
+    conn = sqlite3.connect(settings_db_path)
+    try:
+        conn.execute(
+            "INSERT INTO product_releases (id, project_key, release_number, release_date, notes, release_status, created_at_utc, updated_at_utc) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (release_id, project_key, release_number, release_date, notes, release_status, now, now),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return {
+        "id": release_id, "project_key": project_key, "release_number": release_number,
+        "release_date": release_date, "notes": notes, "release_status": release_status,
+        "created_at_utc": now, "updated_at_utc": now, "epics": [], "actions": [],
+    }
+
+
+def _update_product_release(settings_db_path: Path, release_id: str, payload: dict) -> dict:
+    _init_epics_management_db(settings_db_path)
+    release_id = _to_text(release_id).strip()
+    conn = sqlite3.connect(settings_db_path)
+    try:
+        row = conn.execute("SELECT id FROM product_releases WHERE id = ?", (release_id,)).fetchone()
+        if not row:
+            raise LookupError(f"Release {release_id!r} not found.")
+        now = _utc_now_iso()
+        updates: list[str] = ["updated_at_utc = ?"]
+        params: list[object] = [now]
+        for field in ("release_number", "release_date", "notes", "release_status"):
+            if field in payload:
+                val = _to_text(payload[field]).strip()
+                if field in ("release_number", "release_date") and not val:
+                    raise ValueError(f"{field} cannot be empty.")
+                if field == "release_status" and val not in ("scheduled", "released", "shelved", "rescheduled"):
+                    raise ValueError("release_status must be scheduled, released, shelved, or rescheduled.")
+                updates.append(f"{field} = ?")
+                params.append(val)
+        params.append(release_id)
+        conn.execute(f"UPDATE product_releases SET {', '.join(updates)} WHERE id = ?", params)
+        conn.commit()
+        r = conn.execute(
+            "SELECT id, project_key, release_number, release_date, notes, created_at_utc, updated_at_utc, "
+            "COALESCE(release_status,'scheduled') "
+            "FROM product_releases WHERE id = ?", (release_id,)
+        ).fetchone()
+        if not r:
+            raise LookupError(f"Release {release_id!r} not found after update.")
+        return {"id": _to_text(r[0]), "project_key": _to_text(r[1]), "release_number": _to_text(r[2]),
+                "release_date": _to_text(r[3]), "notes": _to_text(r[4]),
+                "created_at_utc": _to_text(r[5]), "updated_at_utc": _to_text(r[6]),
+                "release_status": _to_text(r[7]) or "scheduled"}
+    finally:
+        conn.close()
+
+
+def _delete_product_release(settings_db_path: Path, release_id: str) -> bool:
+    _init_epics_management_db(settings_db_path)
+    release_id = _to_text(release_id).strip()
+    conn = sqlite3.connect(settings_db_path)
+    try:
+        row = conn.execute("SELECT id FROM product_releases WHERE id = ?", (release_id,)).fetchone()
+        if not row:
+            raise LookupError(f"Release {release_id!r} not found.")
+        conn.execute("DELETE FROM product_release_epics WHERE release_id = ?", (release_id,))
+        conn.execute("DELETE FROM product_release_actions WHERE release_id = ?", (release_id,))
+        conn.execute("DELETE FROM product_releases WHERE id = ?", (release_id,))
+        conn.commit()
+        return True
+    finally:
+        conn.close()
+
+
+def _record_release_action(settings_db_path: Path, release_id: str, action: str, actual_date: str = "", actor: str = "", notes: str = "") -> dict:
+    _init_epics_management_db(settings_db_path)
+    release_id = _to_text(release_id).strip()
+    action = _to_text(action).strip().lower()
+    if action not in ("released", "rescheduled", "shelved", "reverted"):
+        raise ValueError("action must be released, rescheduled, shelved, or reverted.")
+    actual_date = _to_text(actual_date).strip()
+    actor = _to_text(actor).strip()
+    notes = _to_text(notes).strip()
+    status_map = {"released": "released", "rescheduled": "scheduled", "shelved": "shelved", "reverted": "scheduled"}
+    new_status = status_map[action]
+    now = _utc_now_iso()
+    conn = sqlite3.connect(settings_db_path)
+    try:
+        row = conn.execute("SELECT id FROM product_releases WHERE id = ?", (release_id,)).fetchone()
+        if not row:
+            raise LookupError(f"Release {release_id!r} not found.")
+        if action == "released":
+            release_actual_date = actual_date if actual_date else now[:10]
+            conn.execute(
+                "UPDATE product_releases SET release_status = ?, actual_release_date = ?, updated_at_utc = ? WHERE id = ?",
+                (new_status, release_actual_date, now, release_id),
+            )
+        else:
+            conn.execute(
+                "UPDATE product_releases SET release_status = ?, updated_at_utc = ? WHERE id = ?",
+                (new_status, now, release_id),
+            )
+        conn.execute(
+            "INSERT INTO product_release_actions (release_id, action, actual_date, actor, notes, performed_at_utc) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (release_id, action, actual_date, actor, notes, now),
+        )
+        conn.commit()
+        actions = conn.execute(
+            "SELECT id, action, actual_date, actor, notes, performed_at_utc "
+            "FROM product_release_actions WHERE release_id = ? ORDER BY performed_at_utc DESC LIMIT 20",
+            (release_id,),
+        ).fetchall()
+        return {
+            "release_id": release_id,
+            "release_status": new_status,
+            "actions": [
+                {"id": int(a[0]), "action": _to_text(a[1]), "actual_date": _to_text(a[2]),
+                 "actor": _to_text(a[3]), "notes": _to_text(a[4]), "performed_at_utc": _to_text(a[5])}
+                for a in actions
+            ],
+        }
+    finally:
+        conn.close()
+
+
+def _load_epics_pool(settings_db_path: Path, project_key: str | None = None) -> list[dict]:
+    """Return all epics from epics_management with their current release assignment."""
+    _init_epics_management_db(settings_db_path)
+    conn = sqlite3.connect(settings_db_path)
+    try:
+        if project_key:
+            rows = conn.execute(
+                "SELECT em.id, em.epic_key, em.epic_name, em.product_category, em.component, "
+                "em.is_sealed, em.is_tk_epic, em.project_key, em.project_name, "
+                "pre.release_id, pre.epic_type "
+                "FROM epics_management em "
+                "LEFT JOIN product_release_epics pre ON pre.epic_row_id = em.id "
+                "WHERE em.project_key = ? "
+                "ORDER BY em.product_category ASC, em.epic_name ASC",
+                (project_key,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT em.id, em.epic_key, em.epic_name, em.product_category, em.component, "
+                "em.is_sealed, em.is_tk_epic, em.project_key, em.project_name, "
+                "pre.release_id, pre.epic_type "
+                "FROM epics_management em "
+                "LEFT JOIN product_release_epics pre ON pre.epic_row_id = em.id "
+                "ORDER BY em.project_key ASC, em.product_category ASC, em.epic_name ASC"
+            ).fetchall()
+        return [
+            {
+                "id": _to_text(r[0]),
+                "epic_row_id": _to_text(r[0]),
+                "epic_key": _to_text(r[1]),
+                "epic_name": _to_text(r[2]),
+                "product_category": _to_text(r[3]),
+                "component": _to_text(r[4]),
+                "is_sealed": bool(r[5]),
+                "is_tk_epic": bool(r[6]),
+                "project_key": _to_text(r[7]),
+                "project_name": _to_text(r[8]),
+                "release_id": _to_text(r[9]) if r[9] else None,
+                "epic_type": _to_text(r[10]) if r[10] else None,
+            }
+            for r in rows
+        ]
+    finally:
+        conn.close()
+
+
+def _assign_epic_to_release(settings_db_path: Path, release_id: str, epic_row_id: str, epic_type: str) -> dict:
+    _init_epics_management_db(settings_db_path)
+    release_id = _to_text(release_id).strip()
+    epic_row_id = _to_text(epic_row_id).strip()
+    epic_type = _to_text(epic_type).strip() or "new_feature"
+    if epic_type not in ("new_feature", "enhancement"):
+        raise ValueError("epic_type must be 'new_feature' or 'enhancement'.")
+    conn = sqlite3.connect(settings_db_path)
+    try:
+        release_row = conn.execute("SELECT id FROM product_releases WHERE id = ?", (release_id,)).fetchone()
+        if not release_row:
+            raise LookupError(f"Release {release_id!r} not found.")
+        epic_row = conn.execute(
+            "SELECT id, epic_key FROM epics_management WHERE id = ?", (epic_row_id,)
+        ).fetchone()
+        if not epic_row:
+            raise LookupError(f"Epic row {epic_row_id!r} not found.")
+        epic_key = _to_text(epic_row[1])
+        max_order = conn.execute(
+            "SELECT COALESCE(MAX(sort_order), -1) FROM product_release_epics WHERE release_id = ?", (release_id,)
+        ).fetchone()[0]
+        now = _utc_now_iso()
+        conn.execute(
+            "INSERT INTO product_release_epics (release_id, epic_row_id, epic_key, epic_type, sort_order, added_at_utc) "
+            "VALUES (?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(epic_row_id) DO UPDATE SET release_id = excluded.release_id, "
+            "epic_type = excluded.epic_type, sort_order = excluded.sort_order, added_at_utc = excluded.added_at_utc",
+            (release_id, epic_row_id, epic_key, epic_type, int(max_order) + 1, now),
+        )
+        conn.commit()
+        return {"release_id": release_id, "epic_row_id": epic_row_id, "epic_key": epic_key, "epic_type": epic_type}
+    finally:
+        conn.close()
+
+
+def _update_release_epic(settings_db_path: Path, release_id: str, epic_row_id: str, payload: dict) -> dict:
+    _init_epics_management_db(settings_db_path)
+    release_id = _to_text(release_id).strip()
+    epic_row_id = _to_text(epic_row_id).strip()
+    conn = sqlite3.connect(settings_db_path)
+    try:
+        row = conn.execute(
+            "SELECT id FROM product_release_epics WHERE release_id = ? AND epic_row_id = ?",
+            (release_id, epic_row_id),
+        ).fetchone()
+        if not row:
+            raise LookupError(f"Epic {epic_row_id!r} not assigned to release {release_id!r}.")
+        updates: list[str] = []
+        params: list[object] = []
+        if "epic_type" in payload:
+            epic_type = _to_text(payload["epic_type"]).strip()
+            if epic_type not in ("new_feature", "enhancement"):
+                raise ValueError("epic_type must be 'new_feature' or 'enhancement'.")
+            updates.append("epic_type = ?")
+            params.append(epic_type)
+        if "sort_order" in payload:
+            updates.append("sort_order = ?")
+            params.append(int(payload["sort_order"]))
+        if not updates:
+            raise ValueError("Nothing to update.")
+        params.extend([release_id, epic_row_id])
+        conn.execute(
+            f"UPDATE product_release_epics SET {', '.join(updates)} WHERE release_id = ? AND epic_row_id = ?",
+            params,
+        )
+        conn.commit()
+        r = conn.execute(
+            "SELECT release_id, epic_row_id, epic_key, epic_type, sort_order FROM product_release_epics "
+            "WHERE release_id = ? AND epic_row_id = ?",
+            (release_id, epic_row_id),
+        ).fetchone()
+        return {"release_id": _to_text(r[0]), "epic_row_id": _to_text(r[1]),
+                "epic_key": _to_text(r[2]), "epic_type": _to_text(r[3]), "sort_order": int(r[4] or 0)}
+    finally:
+        conn.close()
+
+
+def _unassign_epic_from_release(settings_db_path: Path, release_id: str, epic_row_id: str) -> bool:
+    _init_epics_management_db(settings_db_path)
+    release_id = _to_text(release_id).strip()
+    epic_row_id = _to_text(epic_row_id).strip()
+    conn = sqlite3.connect(settings_db_path)
+    try:
+        cur = conn.execute(
+            "DELETE FROM product_release_epics WHERE release_id = ? AND epic_row_id = ?",
+            (release_id, epic_row_id),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def _product_releases_settings_html() -> str:
+    return r"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Product Releases</title>
+  <link rel="stylesheet" href="/shared-nav.css">
+  <link rel="stylesheet" href="/material-symbols.css">
+  <style>
+    :root {
+      --bg:#f4f7fc; --card:#fff; --line:#cbd5e1; --text:#0f172a; --muted:#475569;
+      --brand:#1d4ed8; --brand-light:#eff6ff; --ok:#166534; --warn:#92400e; --err:#b91c1c;
+    }
+    * { box-sizing:border-box; }
+    body { margin:0; background:linear-gradient(180deg,#f2f6ff,#f8fbff); color:var(--text); font-family:"Segoe UI",Tahoma,sans-serif; display:flex; flex-direction:column; height:100vh; overflow:hidden; }
+    .top-bar { padding:12px 16px 0; flex-shrink:0; }
+    .top-bar h1 { margin:0; font-size:1.2rem; }
+    .top-bar p { margin:.3rem 0 0; color:var(--muted); font-size:.85rem; }
+    .controls { display:flex; gap:10px; align-items:center; margin-top:10px; flex-wrap:wrap; padding:0 16px 10px; flex-shrink:0; border-bottom:1px solid var(--line); }
+    .board { display:flex; flex:1; overflow:hidden; gap:0; }
+    .pool-panel { width:300px; min-width:220px; max-width:340px; flex-shrink:0; border-right:1px solid var(--line); display:flex; flex-direction:column; background:#f8fafc; overflow:hidden; }
+    .pool-panel .panel-head { padding:10px 12px; border-bottom:1px solid var(--line); flex-shrink:0; }
+    .pool-panel .panel-head h2 { margin:0; font-size:.95rem; font-weight:700; }
+    .pool-search { width:100%; border:1px solid var(--line); border-radius:8px; padding:6px 8px; font-size:.83rem; margin-top:6px; }
+    .pool-list { flex:1; overflow-y:auto; padding:8px; display:flex; flex-direction:column; gap:6px; }
+    .releases-area { flex:1; overflow-x:auto; overflow-y:hidden; display:flex; flex-direction:column; }
+    .releases-scroll { display:flex; flex:1; gap:12px; padding:12px; overflow-x:auto; overflow-y:hidden; align-items:flex-start; }
+    .release-col { width:260px; min-width:240px; flex-shrink:0; display:flex; flex-direction:column; background:#fff; border:1px solid var(--line); border-radius:12px; overflow:hidden; max-height:100%; }
+    .release-col.drag-over { border-color:var(--brand); box-shadow:0 0 0 2px #bfdbfe; }
+    .release-col-head { padding:10px 12px; background:#f0f6ff; border-bottom:1px solid var(--line); flex-shrink:0; }
+    .release-col-head .rnum { font-size:.78rem; color:var(--muted); margin-top:2px; }
+    .release-col-head .rdate { font-weight:700; font-size:.95rem; }
+    .release-col-head .ractions { display:flex; gap:6px; margin-top:6px; }
+    .release-epics { flex:1; overflow-y:auto; padding:8px; display:flex; flex-direction:column; gap:6px; }
+    .drop-zone-empty { border:2px dashed #cbd5e1; border-radius:8px; padding:20px 10px; text-align:center; color:var(--muted); font-size:.8rem; margin:4px 0; }
+    .epic-card { background:#fff; border:1px solid #e2e8f0; border-radius:8px; padding:8px 10px; cursor:grab; user-select:none; transition:box-shadow .15s; }
+    .epic-card:hover { box-shadow:0 2px 8px rgba(0,0,0,.08); }
+    .epic-card.dragging { opacity:.45; }
+    .epic-card .ekey { font-family:ui-monospace,SFMono-Regular,monospace; font-size:.75rem; font-weight:700; color:#1e40af; }
+    .epic-card .ename { font-size:.83rem; margin-top:2px; line-height:1.35; word-break:break-word; }
+    .epic-card .emeta { display:flex; gap:4px; flex-wrap:wrap; margin-top:5px; align-items:center; }
+    .badge { display:inline-flex; align-items:center; padding:1px 7px; border-radius:999px; font-size:.7rem; font-weight:600; white-space:nowrap; }
+    .badge.tk { background:#dbeafe; color:#1e40af; border:1px solid #bfdbfe; }
+    .badge.ep { background:#dcfce7; color:#166534; border:1px solid #bbf7d0; }
+    .badge.sealed { background:#fef9c3; color:#854d0e; border:1px solid #fde68a; }
+    .badge.new-feat { background:#f0fdf4; color:#15803d; border:1px solid #86efac; cursor:pointer; }
+    .badge.enh { background:#fdf4ff; color:#7e22ce; border:1px solid #e9d5ff; cursor:pointer; }
+    .badge.type-btn { cursor:pointer; }
+    .badge.type-btn:hover { filter:brightness(.93); }
+    .btn { border:1px solid #1e40af; background:var(--brand); color:#fff; border-radius:8px; padding:7px 12px; cursor:pointer; font-size:.84rem; white-space:nowrap; }
+    .btn.sm { padding:4px 8px; font-size:.76rem; }
+    .btn.alt { border-color:var(--line); background:#fff; color:var(--text); }
+    .btn.danger { border-color:#fecaca; background:#fff7f7; color:#b91c1c; }
+    .icon-btn { width:26px; height:26px; border-radius:6px; border:1px solid var(--line); background:#fff; color:#475569; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; font-size:.85rem; }
+    .icon-btn.danger { color:#991b1b; border-color:#fecaca; }
+    select, input[type=text], input[type=date] { border:1px solid var(--line); border-radius:8px; padding:6px 8px; font-size:.85rem; }
+    #project-select { min-width:160px; }
+    .add-release-col { width:200px; min-width:180px; flex-shrink:0; display:flex; align-items:flex-start; justify-content:center; padding-top:14px; }
+    .modal-backdrop { display:none; position:fixed; inset:0; background:rgba(0,0,0,.35); z-index:100; align-items:center; justify-content:center; }
+    .modal-backdrop.open { display:flex; }
+    .modal { background:#fff; border-radius:14px; padding:22px 24px; min-width:320px; max-width:420px; width:90%; box-shadow:0 8px 40px rgba(0,0,0,.18); }
+    .modal h3 { margin:0 0 14px; font-size:1rem; }
+    .modal label { display:block; font-size:.82rem; font-weight:700; margin-bottom:4px; margin-top:10px; }
+    .modal input, .modal textarea { width:100%; border:1px solid var(--line); border-radius:8px; padding:7px 9px; font-size:.88rem; }
+    .modal textarea { resize:vertical; min-height:64px; }
+    .modal .row { display:flex; gap:8px; margin-top:14px; justify-content:flex-end; }
+    #status-bar { padding:4px 16px; font-size:.82rem; min-height:1.4em; flex-shrink:0; }
+    #status-bar.ok { color:var(--ok); }
+    #status-bar.err { color:var(--err); }
+    /* ---- Calendar overlay ---- */
+    .rcal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:200; align-items:center; justify-content:center; }
+    .rcal-overlay.open { display:flex; }
+    .rcal-modal { background:#fff; border-radius:18px; width:min(96vw,1060px); max-height:92vh; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 16px 64px rgba(0,0,0,.22); }
+    .rcal-head { display:flex; align-items:center; gap:10px; padding:14px 20px; border-bottom:1px solid var(--line); flex-shrink:0; flex-wrap:wrap; background:linear-gradient(180deg,#f8faff,#fff); }
+    .rcal-head h2 { margin:0; font-size:1.05rem; flex:1; white-space:nowrap; }
+    .rcal-year-nav { display:flex; align-items:center; gap:6px; font-size:.88rem; }
+    .rcal-year-nav button { border:1px solid var(--line); background:#fff; border-radius:6px; width:28px; height:28px; cursor:pointer; font-size:1.1rem; display:flex; align-items:center; justify-content:center; line-height:1; transition:background .12s; }
+    .rcal-year-nav button:hover { background:#eff6ff; border-color:#bfdbfe; }
+    .rcal-open-page { font-size:.78rem; color:var(--brand); text-decoration:none; border:1px solid #bfdbfe; border-radius:6px; padding:4px 9px; white-space:nowrap; }
+    .rcal-open-page:hover { background:#eff6ff; }
+    .rcal-body { display:flex; flex:1; overflow:hidden; min-height:0; }
+    .rcal-cal { flex:0 0 52%; overflow-y:auto; padding:14px; border-right:1px solid var(--line); }
+    .rcal-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; }
+    .rcal-month { border:1px solid var(--line); border-radius:10px; overflow:hidden; font-size:.7rem; }
+    .rcal-month-head { background:linear-gradient(180deg,#eef4ff,#f0f6ff); padding:5px 6px; font-size:.77rem; font-weight:700; text-align:center; color:var(--brand); }
+    .rcal-days { display:grid; grid-template-columns:repeat(7,1fr); padding:3px; gap:1px; }
+    .rcal-day { min-height:20px; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; font-size:.63rem; color:var(--muted); padding:1px 0; }
+    .rcal-day.cur-month { color:var(--text); }
+    .rcal-day.is-release { cursor:pointer; font-weight:700; }
+    .rcal-day.is-release:hover { background:#eff6ff; border-radius:4px; }
+    .rcal-dot { width:6px; height:6px; border-radius:50%; margin:1px 0; }
+    .rcal-list-pane { flex:1; overflow-y:auto; padding:12px; display:flex; flex-direction:column; gap:8px; }
+    .rcal-list-item { border:1px solid var(--line); border-radius:10px; overflow:hidden; transition:box-shadow .15s; }
+    .rcal-list-item:hover { box-shadow:0 2px 10px rgba(0,0,0,.06); }
+    .rcal-list-item-row { display:flex; align-items:center; gap:10px; padding:10px 14px; cursor:pointer; background:#fff; transition:background .1s; }
+    .rcal-list-item-row:hover { background:#f8faff; }
+    .rcal-date-dot { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+    .rcal-epics-panel { display:none; padding:8px 12px 12px; background:#f8fafc; border-top:1px solid var(--line); flex-direction:column; gap:5px; }
+    .rcal-epics-panel.open { display:flex; }
+    .rcal-epic-item { display:flex; align-items:flex-start; gap:6px; padding:6px 8px; background:#fff; border:1px solid #e2e8f0; border-radius:7px; flex-wrap:wrap; }
+    .rcal-epic-key { font-family:ui-monospace,monospace; font-size:.72rem; font-weight:700; color:#1e40af; white-space:nowrap; }
+    .rcal-epic-name { font-size:.78rem; flex:1; line-height:1.35; min-width:0; }
+    .rcal-chevron { font-size:.75rem; color:var(--muted); transition:transform .15s; margin-left:auto; flex-shrink:0; }
+    .rcal-list-item.open .rcal-chevron { transform:rotate(90deg); }
+    .rcal-list-summary { display:flex; flex-direction:column; gap:2px; flex:1; min-width:0; }
+    .rcal-list-title { font-weight:700; font-size:.88rem; }
+    .rcal-list-meta { font-size:.74rem; color:var(--muted); display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+    .rcal-proj-pill { display:inline-flex; align-items:center; padding:1px 7px; border-radius:999px; font-size:.68rem; font-weight:700; white-space:nowrap; }
+    .rcal-status-pill { display:inline-flex; align-items:center; padding:1px 6px; border-radius:999px; font-size:.65rem; font-weight:600; }
+    .rcal-empty { color:var(--muted); font-size:.85rem; padding:24px; text-align:center; }
+    .badge.status-scheduled { background:#eff6ff; color:#1e40af; border:1px solid #bfdbfe; }
+    .badge.status-released { background:#dcfce7; color:#166534; border:1px solid #bbf7d0; }
+    .badge.status-shelved { background:#f1f5f9; color:#475569; border:1px solid #cbd5e1; }
+    .badge.status-rescheduled { background:#fef3c7; color:#92400e; border:1px solid #fde68a; }
+    .badge.proj { font-size:.68rem; font-weight:700; padding:1px 7px; border-radius:999px; white-space:nowrap; }
+    .release-col.status-released { border-color:#86efac; box-shadow:0 0 0 1.5px #86efac inset; }
+    .release-col.status-released .release-col-head { background:#f0fdf4; }
+    .actual-release-date { font-size:.76rem; color:#166534; font-weight:600; margin-top:2px; }
+    .action-btns { display:flex; gap:4px; margin-top:8px; flex-wrap:wrap; }
+    .action-btn { border-radius:6px; border:1px solid var(--line); background:#f8fafc; color:var(--text); font-size:.73rem; font-weight:600; padding:3px 9px; cursor:pointer; white-space:nowrap; transition:all .12s; }
+    .action-btn:hover { filter:brightness(.93); }
+    .action-btn.active-released { background:#166534; color:#fff; border-color:#166534; }
+    .action-btn.active-shelved { background:#475569; color:#fff; border-color:#475569; }
+    .action-btn.active-rescheduled { background:#92400e; color:#fff; border-color:#92400e; }
+    .release-history { margin-top:8px; display:flex; flex-direction:column; gap:6px; }
+    .history-card { background:#fff; border:1px solid var(--line); border-radius:8px; padding:8px 10px; font-size:.75rem; color:var(--text); }
+    .history-card-head { display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-bottom:4px; }
+    .history-badge { display:inline-flex; align-items:center; padding:2px 8px; border-radius:999px; font-size:.7rem; font-weight:700; border:1px solid transparent; }
+    .history-badge.hb-released { background:#dcfce7; color:#166534; border-color:#bbf7d0; }
+    .history-badge.hb-rescheduled { background:#fef3c7; color:#92400e; border-color:#fde68a; }
+    .history-badge.hb-shelved { background:#f1f5f9; color:#475569; border-color:#cbd5e1; }
+    .history-badge.hb-reverted { background:#fff7ed; color:#9a3412; border-color:#fed7aa; }
+    .history-card-by { font-size:.76rem; color:var(--text); font-weight:600; }
+    .history-card-ts { font-size:.73rem; color:var(--muted); }
+    .history-card-line { font-size:.74rem; color:var(--text); margin-top:2px; }
+    .history-card-line.muted { color:var(--muted); }
+    .history-details { margin-top:8px; }
+    .history-summary { font-size:.73rem; color:var(--muted); cursor:pointer; user-select:none; list-style:none; padding:4px 0; }
+    .history-summary::-webkit-details-marker { display:none; }
+    .history-summary:hover { color:var(--brand); }
+    .history-count { opacity:.6; }
+    .history-details[open] .release-history { margin-top:6px; max-height:220px; overflow-y:auto; }
+    /* Multi-select dropdown */
+    .multisel-wrap { position:relative; display:inline-block; }
+    .multisel-btn { display:inline-flex; align-items:center; gap:6px; border:1px solid var(--line); border-radius:8px; padding:6px 10px; background:#fff; cursor:pointer; font-size:.85rem; min-width:160px; user-select:none; white-space:nowrap; }
+    .multisel-btn .ms-arrow { font-size:.65rem; margin-left:auto; color:var(--muted); }
+    .multisel-dropdown { display:none; position:absolute; top:calc(100% + 4px); left:0; min-width:230px; background:#fff; border:1px solid var(--line); border-radius:10px; box-shadow:0 4px 20px rgba(0,0,0,.14); z-index:600; overflow:hidden; }
+    .multisel-dropdown.open { display:block; }
+    .multisel-search { width:100%; box-sizing:border-box; border:none; border-bottom:1px solid var(--line); padding:8px 10px; font-size:.82rem; outline:none; }
+    .multisel-actions { display:flex; gap:6px; padding:6px 8px; border-bottom:1px solid var(--line); }
+    .multisel-actions button { flex:1; border:1px solid var(--line); border-radius:6px; background:#f8fafc; color:var(--text); font-size:.75rem; padding:4px 6px; cursor:pointer; }
+    .multisel-actions button:hover { background:#eff6ff; border-color:#bfdbfe; color:var(--brand); }
+    .multisel-list { max-height:220px; overflow-y:auto; padding:4px 0; }
+    .multisel-item { display:flex; align-items:center; gap:8px; padding:7px 12px; cursor:pointer; font-size:.83rem; }
+    .multisel-item:hover { background:#f0f6ff; }
+    .multisel-item input[type=checkbox] { margin:0; accent-color:var(--brand); flex-shrink:0; }
+    .ms-tag { display:inline-flex; align-items:center; padding:1px 6px; border-radius:999px; font-size:.7rem; font-weight:700; border:1px solid transparent; }
+    .action-btn.act-revert { background:#fff7ed; color:#9a3412; border-color:#fed7aa; }
+    .action-btn.act-revert:hover { background:#ffedd5; }
+    #action-modal-err { font-size:.79rem; color:var(--err); min-height:1.2em; margin-top:6px; }
+    .rcal-empty { color:var(--muted); font-size:.82rem; padding:20px; text-align:center; }
+  </style>
+</head>
+<body>
+  <div class="top-bar">
+    <h1>Product Releases</h1>
+    <p>Drag epics from the pool into a release bucket. Each epic can belong to only one release.</p>
+  </div>
+
+  <div class="controls">
+    <label style="font-size:.83rem;font-weight:700;margin:0;">Project</label>
+    <div class="multisel-wrap" id="proj-ms-wrap">
+      <div class="multisel-btn" id="proj-ms-btn" tabindex="0">
+        <span id="proj-ms-label">All Projects</span>
+        <span class="ms-arrow">&#9660;</span>
+      </div>
+      <div class="multisel-dropdown" id="proj-ms-drop">
+        <input class="multisel-search" id="proj-ms-search" type="text" placeholder="Search projects...">
+        <div class="multisel-actions">
+          <button type="button" id="proj-ms-all">Select All</button>
+          <button type="button" id="proj-ms-clear">Clear All</button>
+        </div>
+        <div class="multisel-list" id="proj-ms-list"></div>
+      </div>
+    </div>
+    <button class="btn" id="add-release-btn" type="button">+ New Release</button>
+    <button class="btn alt" id="calendar-view-btn" type="button">&#128197; Calendar View</button>
+    <span style="margin-left:auto;color:var(--muted);font-size:.8rem;" id="pool-count"></span>
+  </div>
+
+  <div id="status-bar"></div>
+
+  <div class="board">
+    <div class="pool-panel">
+      <div class="panel-head">
+        <h2>Unassigned Epics</h2>
+        <input class="pool-search" id="pool-search" type="text" placeholder="Search key or name...">
+      </div>
+      <div class="pool-list" id="pool-list"></div>
+    </div>
+    <div class="releases-area">
+      <div class="releases-scroll" id="releases-scroll"></div>
+    </div>
+  </div>
+
+  <!-- Release edit modal -->
+  <div class="modal-backdrop" id="release-modal">
+    <div class="modal">
+      <h3 id="modal-title">New Release</h3>
+      <label for="modal-project">Project</label>
+      <select id="modal-project" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:.88rem;"></select>
+      <label for="modal-rnum">Release Number / Name</label>
+      <input id="modal-rnum" type="text" placeholder="e.g. v2.1 or May Release">
+      <label for="modal-rdate">Release Date</label>
+      <input id="modal-rdate" type="date">
+      <label for="modal-notes">Notes (optional)</label>
+      <textarea id="modal-notes" placeholder="Optional notes about this release..."></textarea>
+      <label for="modal-status">Status</label>
+      <select id="modal-status" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:.88rem;">
+        <option value="scheduled">Scheduled</option>
+        <option value="released">Released</option>
+        <option value="shelved">Shelved</option>
+        <option value="rescheduled">Rescheduled</option>
+      </select>
+      <div class="row">
+        <button class="btn alt" id="modal-cancel" type="button">Cancel</button>
+        <button class="btn" id="modal-save" type="button">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Release action modal (Released / Rescheduled / Shelved / Revert) -->
+  <div class="modal-backdrop" id="action-modal">
+    <div class="modal" style="max-width:440px;">
+      <h3 id="action-modal-title">Action</h3>
+      <p id="action-modal-desc" style="margin:0 0 8px;font-size:.85rem;color:var(--muted);"></p>
+      <div id="action-modal-actor-row">
+        <label for="action-modal-actor" id="action-modal-actor-label">Actor <span style="color:var(--err);">*</span></label>
+        <input id="action-modal-actor" type="text" placeholder="Your name">
+      </div>
+      <div id="action-modal-date-row">
+        <label for="action-modal-date" id="action-modal-date-label">Actual Release Date <span style="color:var(--err);">*</span></label>
+        <input id="action-modal-date" type="date">
+        <div id="action-modal-planned-hint" style="font-size:.78rem;color:var(--muted);margin-top:3px;"></div>
+      </div>
+      <label for="action-modal-comments">Comments</label>
+      <textarea id="action-modal-comments" placeholder="Optional comments..." style="min-height:68px;"></textarea>
+      <div id="action-modal-err"></div>
+      <div class="row">
+        <button class="btn alt" id="action-modal-cancel" type="button">Cancel</button>
+        <button class="btn" id="action-modal-apply" type="button">Apply</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Calendar overlay -->
+  <div class="rcal-overlay" id="rcal-overlay">
+    <div class="rcal-modal">
+      <div class="rcal-head">
+        <h2>&#128197; Release Calendar</h2>
+        <select id="rcal-proj-filter" style="font-size:.82rem;border:1px solid var(--line);border-radius:8px;padding:5px 10px;background:#fff;cursor:pointer;min-width:140px;"></select>
+        <div class="rcal-year-nav">
+          <button id="rcal-prev-yr" type="button">&#8249;</button>
+          <strong id="rcal-year-label" style="min-width:44px;text-align:center;font-size:.92rem;">2025</strong>
+          <button id="rcal-next-yr" type="button">&#8250;</button>
+        </div>
+        <a class="rcal-open-page" id="rcal-full-page-link" href="/settings/product-releases/calendar" target="_blank">&#8599; Full Page</a>
+        <button class="icon-btn" id="rcal-close" type="button" title="Close" style="font-size:1.1rem;">&#10005;</button>
+      </div>
+      <div class="rcal-body">
+        <div class="rcal-cal"><div class="rcal-grid" id="rcal-grid"></div></div>
+        <div class="rcal-list-pane" id="rcal-list-pane"></div>
+      </div>
+    </div>
+  </div>
+
+<script>
+const API_RELEASES = "/api/product-releases";
+const API_POOL    = "/api/product-releases/epics/pool";
+
+let allReleases = [];
+let allEpics    = [];
+let allProjects = [];
+let selectedProjects = [];   // multi-select state: empty = all
+let dragEpicRowId = null;
+let dragFromReleaseId = null;
+
+// ---- Utilities ----
+function esc(v) {
+  return String(v == null ? "" : v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+function pName(p) { return p ? (p.project_name || p.display_name || p.project_key) : ""; }
+function setStatus(msg, kind) {
+  const el = document.getElementById("status-bar");
+  el.textContent = String(msg || "");
+  el.className = kind || "";
+}
+function fmtDate(d) {
+  if (!d) return "";
+  try { return new Date(d + "T00:00:00").toLocaleDateString(undefined, {year:"numeric",month:"short",day:"numeric"}); }
+  catch { return d; }
+}
+
+// ---- Load data ----
+async function loadAll() {
+  try {
+    const [relRes, epRes] = await Promise.all([
+      fetch(API_RELEASES),
+      fetch(API_POOL),
+    ]);
+    allReleases = (await relRes.json()).releases || [];
+    allEpics    = (await epRes.json()).epics || [];
+    renderAll();
+  } catch (e) {
+    setStatus("Failed to load data: " + e.message, "err");
+  }
+}
+
+async function loadProjects() {
+  try {
+    const res = await fetch("/api/projects?include_inactive=0");
+    const data = await res.json();
+    allProjects = (data.projects || []).filter(p => p.is_active !== false);
+    populateProjectSelects();
+    renderMultiselList("");
+  } catch { allProjects = []; }
+}
+
+function populateProjectSelects() {
+  const msel = document.getElementById("modal-project");
+  const mcur = msel.value;
+  msel.innerHTML = allProjects.map(p =>
+    `<option value="${esc(p.project_key)}">${esc(pName(p))}</option>`).join("");
+  if (mcur) msel.value = mcur;
+}
+
+// ---- Multi-select dropdown ----
+function renderMultiselList(search) {
+  const list = document.getElementById("proj-ms-list");
+  const q = (search || "").toLowerCase().trim();
+  const filtered = q
+    ? allProjects.filter(p => pName(p).toLowerCase().includes(q))
+    : allProjects;
+  list.innerHTML = filtered.map(p => {
+    const label = pName(p);
+    const checked = selectedProjects.includes(p.project_key);
+    const col = p.color_hex ? "#" + String(p.color_hex).replace("#","") : "#1d4ed8";
+    return `<label class="multisel-item">
+      <input type="checkbox" data-key="${esc(p.project_key)}" ${checked ? "checked" : ""}>
+      <span class="ms-tag" style="background:${esc(col)}22;color:${esc(col)};border-color:${esc(col)}55;">${esc(label)}</span>
+    </label>`;
+  }).join("");
+  list.querySelectorAll("input[type=checkbox]").forEach(cb => {
+    cb.addEventListener("change", () => {
+      const key = cb.dataset.key;
+      if (cb.checked) {
+        if (!selectedProjects.includes(key)) selectedProjects.push(key);
+      } else {
+        selectedProjects = selectedProjects.filter(k => k !== key);
+      }
+      updateMultiselLabel();
+      renderAll();
+    });
+  });
+}
+
+function updateMultiselLabel() {
+  const lbl = document.getElementById("proj-ms-label");
+  if (!selectedProjects.length) {
+    lbl.textContent = "All Projects";
+  } else if (selectedProjects.length === 1) {
+    const p = allProjects.find(x => x.project_key === selectedProjects[0]);
+    lbl.textContent = p ? pName(p) : selectedProjects[0];
+  } else {
+    lbl.textContent = `${selectedProjects.length} Projects`;
+  }
+}
+
+function filteredByProjects(items, keyFn) {
+  if (!selectedProjects.length) return items;
+  return items.filter(i => selectedProjects.includes(keyFn(i)));
+}
+
+// ---- Helpers ----
+function projLabel(key) {
+  const p = allProjects.find(x => x.project_key === key);
+  return p ? pName(p) : key;
+}
+function statusBadgeHtml(status) {
+  const map = {scheduled:"Planned", released:"Released", shelved:"Shelved", rescheduled:"Rescheduled"};
+  const cls = {scheduled:"status-scheduled", released:"status-released", shelved:"status-shelved", rescheduled:"status-rescheduled"};
+  const s = status || "scheduled";
+  return `<span class="badge ${cls[s] || 'status-scheduled'}">${map[s] || s}</span>`;
+}
+
+// ---- Epic card builder ----
+function buildEpicCard(epic, inRelease) {
+  const rowId = epic.epic_row_id || epic.id;
+  const srcBadge = epic.is_tk_epic
+    ? `<span class="badge tk">TK Epic</span>`
+    : `<span class="badge ep">Epics Planner</span>`;
+  const sealedBadge = epic.is_sealed ? `<span class="badge sealed">Sealed</span>` : "";
+  let typeBadge = "";
+  if (inRelease) {
+    const isFeat = (epic.epic_type || "new_feature") === "new_feature";
+    typeBadge = isFeat
+      ? `<span class="badge new-feat type-btn" data-row="${esc(rowId)}" data-release="${esc(inRelease)}" title="Click to toggle type">New Feature</span>`
+      : `<span class="badge enh type-btn" data-row="${esc(rowId)}" data-release="${esc(inRelease)}" title="Click to toggle type">Enhancement</span>`;
+  }
+  const removeBtn = inRelease
+    ? `<button class="icon-btn danger remove-epic-btn" data-row="${esc(rowId)}" data-release="${esc(inRelease)}" title="Remove from release" style="margin-left:auto;flex-shrink:0;">&#10005;</button>`
+    : "";
+  return `<div class="epic-card" draggable="true" data-row="${esc(rowId)}" data-from="${esc(inRelease || "")}">
+    <div style="display:flex;align-items:flex-start;gap:4px;">
+      <div style="flex:1;min-width:0;">
+        <div class="ekey">${esc(epic.epic_key)}</div>
+        <div class="ename">${esc(epic.epic_name || epic.epic_key)}</div>
+        <div class="emeta">${srcBadge}${sealedBadge}${typeBadge}</div>
+      </div>
+      ${removeBtn}
+    </div>
+  </div>`;
+}
+
+// ---- Render pool ----
+function renderPool() {
+  const search = (document.getElementById("pool-search").value || "").toLowerCase().trim();
+  const assigned = new Set(allReleases.flatMap(r => r.epics.map(e => e.epic_row_id)));
+  let unassigned = allEpics.filter(e => !assigned.has(e.epic_row_id || e.id));
+  unassigned = filteredByProjects(unassigned, e => e.project_key);
+  const filtered = search
+    ? unassigned.filter(e => e.epic_key.toLowerCase().includes(search) || (e.epic_name || "").toLowerCase().includes(search))
+    : unassigned;
+  const pool = document.getElementById("pool-list");
+  pool.innerHTML = filtered.length
+    ? filtered.map(e => buildEpicCard(e, null)).join("")
+    : `<div style="color:var(--muted);font-size:.82rem;padding:12px;text-align:center;">${search ? "No matching epics." : "All epics are assigned."}</div>`;
+  document.getElementById("pool-count").textContent = `${unassigned.length} unassigned`;
+  attachCardListeners(pool);
+  attachPoolDropZone(pool);
+}
+
+// ---- Action history HTML ----
+function fmtLocalDateTime(utcStr) {
+  if (!utcStr) return "";
+  try {
+    // Stored as ISO UTC — parse and convert to local
+    const d = new Date(utcStr.endsWith("Z") ? utcStr : utcStr + "Z");
+    return d.toLocaleString(undefined, {year:"numeric",month:"numeric",day:"numeric",hour:"numeric",minute:"2-digit",second:"2-digit"});
+  } catch { return utcStr.slice(0,19); }
+}
+
+function buildHistoryHtml(actions, epicKeys) {
+  if (!actions || !actions.length) return "";
+  const badgeCls = {released:"hb-released", rescheduled:"hb-rescheduled", shelved:"hb-shelved", reverted:"hb-reverted"};
+  const labels   = {released:"Released", rescheduled:"Rescheduled", shelved:"Shelved", reverted:"Reverted"};
+  const latest = actions[0];
+  const latestLabel = labels[latest.action] || latest.action;
+  const latestBy = latest.actor ? ` by ${esc(latest.actor)}` : "";
+  const latestTs = latest.performed_at_utc ? ` · ${fmtLocalDateTime(latest.performed_at_utc)}` : "";
+  const uid = "hist-" + Math.random().toString(36).slice(2,8);
+  const detailCards = actions.slice(0, 10).map(a => {
+    const cls   = badgeCls[a.action] || "hb-shelved";
+    const label = labels[a.action] || a.action;
+    const byTxt = a.actor ? ` <span class="history-card-by">by ${esc(a.actor)}</span>` : "";
+    const ts    = fmtLocalDateTime(a.performed_at_utc);
+    const lines = [];
+    if (ts) lines.push(`<div class="history-card-ts">${esc(ts)}</div>`);
+    if (a.notes) lines.push(`<div class="history-card-line">${esc(a.notes)}</div>`);
+    if (a.actual_date) lines.push(`<div class="history-card-line">Actual release date: ${fmtDate(a.actual_date)}</div>`);
+    if (a.action === "released" && epicKeys && epicKeys.length)
+      lines.push(`<div class="history-card-line muted">Epics: ${epicKeys.map(k => esc(k)).join(", ")}</div>`);
+    return `<div class="history-card">
+      <div class="history-card-head"><span class="history-badge ${cls}">${label}</span>${byTxt}</div>
+      ${lines.join("")}
+    </div>`;
+  }).join("");
+  return `<details class="history-details">
+    <summary class="history-summary">&#128203; ${esc(latestLabel)}${latestBy}${latestTs} <span class="history-count">(${actions.length})</span></summary>
+    <div class="release-history">${detailCards}</div>
+  </details>`;
+}
+
+// ---- Render releases ----
+function renderReleases() {
+  const scroll = document.getElementById("releases-scroll");
+  const visible = filteredByProjects(allReleases, r => r.project_key);
+  if (!visible.length) {
+    scroll.innerHTML = `<div style="color:var(--muted);font-size:.88rem;padding:20px;">${allReleases.length ? "No releases match the selected projects." : "No releases yet. Click \"+ New Release\" to create one."}</div>`;
+    return;
+  }
+  scroll.innerHTML = visible.map(r => {
+    const epicsHtml = r.epics.length
+      ? r.epics.map(e => buildEpicCard(e, r.id)).join("")
+      : `<div class="drop-zone-empty">Drop epics here</div>`;
+    const col = projColor(r.project_key);
+    const pLabel = projLabel(r.project_key);
+    const projBadge = `<span class="badge proj" style="background:${esc(col)}22;color:${esc(col)};border:1px solid ${esc(col)}55;">${esc(pLabel)}</span>`;
+    const status = r.release_status || "scheduled";
+    const isReleased = status === "released";
+    const isShelved = status === "shelved";
+    const isRescheduled = status === "rescheduled";
+    const epicKeys = r.epics.map(e => e.epic_key).filter(Boolean);
+    // Find the most recent "released" action to show actual release date in header
+    const lastReleasedAction = (r.actions || []).find(a => a.action === "released");
+    const actualReleaseLine = isReleased && lastReleasedAction && lastReleasedAction.actual_date
+      ? `<div class="actual-release-date">Actual release: ${fmtDate(lastReleasedAction.actual_date)}</div>`
+      : "";
+    const actionBtns = `<div class="action-btns">
+      <button class="action-btn act-released${isReleased ? " active-released" : ""}" data-id="${esc(r.id)}" data-action="released" title="Mark as Released">Released</button>
+      <button class="action-btn act-rescheduled${isRescheduled ? " active-rescheduled" : ""}" data-id="${esc(r.id)}" data-action="rescheduled" title="Mark as Rescheduled">Rescheduled</button>
+      <button class="action-btn act-shelved${isShelved ? " active-shelved" : ""}" data-id="${esc(r.id)}" data-action="shelved" title="Mark as Shelved">Shelved</button>
+      ${isReleased ? `<button class="action-btn act-revert" data-id="${esc(r.id)}" data-action="revert" title="Revert to Scheduled">&#8617; Revert</button>` : ""}
+    </div>`;
+    return `<div class="release-col${isReleased ? " status-released" : ""}" id="col-${esc(r.id)}" data-release-id="${esc(r.id)}">
+      <div class="release-col-head">
+        <div style="display:flex;align-items:flex-start;gap:6px;">
+          <div style="flex:1;min-width:0;">
+            <div class="rdate">${fmtDate(r.release_date)}</div>
+            <div class="rnum">${esc(r.release_number)}</div>
+            ${actualReleaseLine}
+            <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px;align-items:center;">
+              ${projBadge}${statusBadgeHtml(status)}
+            </div>
+            ${r.notes ? `<div style="font-size:.74rem;color:var(--muted);margin-top:3px;word-break:break-word;">${esc(r.notes)}</div>` : ""}
+          </div>
+          <div class="ractions">
+            <button class="icon-btn edit-release-btn" data-id="${esc(r.id)}" title="Edit release">&#9998;</button>
+            <button class="icon-btn danger delete-release-btn" data-id="${esc(r.id)}" title="Delete release">&#128465;</button>
+          </div>
+        </div>
+        <div style="font-size:.74rem;color:var(--muted);margin-top:4px;">${r.epics.length} epic${r.epics.length !== 1 ? "s" : ""}</div>
+        ${actionBtns}
+        ${buildHistoryHtml(r.actions, epicKeys)}
+      </div>
+      <div class="release-epics" data-release-id="${esc(r.id)}">${epicsHtml}</div>
+    </div>`;
+  }).join("");
+  scroll.querySelectorAll(".edit-release-btn").forEach(btn => {
+    btn.addEventListener("click", () => openEditModal(btn.dataset.id));
+  });
+  scroll.querySelectorAll(".delete-release-btn").forEach(btn => {
+    btn.addEventListener("click", () => deleteRelease(btn.dataset.id));
+  });
+  scroll.querySelectorAll(".action-btn").forEach(btn => {
+    btn.addEventListener("click", () => doReleaseAction(btn.dataset.id, btn.dataset.action));
+  });
+  scroll.querySelectorAll(".release-epics").forEach(zone => {
+    attachReleaseDropZone(zone, zone.dataset.releaseId);
+    attachCardListeners(zone);
+  });
+}
+
+function renderAll() {
+  renderPool();
+  renderReleases();
+}
+
+// ---- Drag & Drop ----
+function attachCardListeners(container) {
+  container.querySelectorAll(".epic-card").forEach(card => {
+    card.addEventListener("dragstart", e => {
+      dragEpicRowId = card.dataset.row;
+      dragFromReleaseId = card.dataset.from || null;
+      card.classList.add("dragging");
+      e.dataTransfer.effectAllowed = "move";
+    });
+    card.addEventListener("dragend", () => card.classList.remove("dragging"));
+  });
+  container.querySelectorAll(".type-btn").forEach(btn => {
+    btn.addEventListener("click", e => {
+      e.stopPropagation();
+      const rowId = btn.dataset.row;
+      const relId = btn.dataset.release;
+      const cur = btn.classList.contains("new-feat") ? "new_feature" : "enhancement";
+      const next = cur === "new_feature" ? "enhancement" : "new_feature";
+      updateEpicType(relId, rowId, next);
+    });
+  });
+  container.querySelectorAll(".remove-epic-btn").forEach(btn => {
+    btn.addEventListener("click", e => {
+      e.stopPropagation();
+      unassignEpic(btn.dataset.release, btn.dataset.row);
+    });
+  });
+}
+
+function attachPoolDropZone(pool) {
+  pool.addEventListener("dragover", e => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; });
+  pool.addEventListener("drop", e => {
+    e.preventDefault();
+    if (dragFromReleaseId && dragEpicRowId) {
+      unassignEpic(dragFromReleaseId, dragEpicRowId);
+    }
+  });
+}
+
+function attachReleaseDropZone(zone, releaseId) {
+  zone.addEventListener("dragover", e => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    zone.closest(".release-col").classList.add("drag-over");
+  });
+  zone.addEventListener("dragleave", e => {
+    if (!zone.contains(e.relatedTarget)) zone.closest(".release-col").classList.remove("drag-over");
+  });
+  zone.addEventListener("drop", e => {
+    e.preventDefault();
+    zone.closest(".release-col").classList.remove("drag-over");
+    if (!dragEpicRowId) return;
+    if (dragFromReleaseId === releaseId) return;
+    assignEpic(releaseId, dragEpicRowId, "new_feature");
+  });
+}
+
+// ---- API calls ----
+async function assignEpic(releaseId, epicRowId, epicType) {
+  try {
+    const res = await fetch(`${API_RELEASES}/${encodeURIComponent(releaseId)}/epics`, {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({epic_row_id: epicRowId, epic_type: epicType}),
+    });
+    const data = await res.json();
+    if (!res.ok) { setStatus(data.error || "Failed to assign epic.", "err"); return; }
+    setStatus("Epic assigned.", "ok");
+    await loadAll();
+  } catch(e) { setStatus("Error: " + e.message, "err"); }
+}
+
+async function unassignEpic(releaseId, epicRowId) {
+  try {
+    const res = await fetch(`${API_RELEASES}/${encodeURIComponent(releaseId)}/epics/${encodeURIComponent(epicRowId)}`, {method:"DELETE"});
+    const data = await res.json();
+    if (!res.ok) { setStatus(data.error || "Failed to remove epic.", "err"); return; }
+    setStatus("Epic returned to pool.", "ok");
+    await loadAll();
+  } catch(e) { setStatus("Error: " + e.message, "err"); }
+}
+
+async function updateEpicType(releaseId, epicRowId, newType) {
+  try {
+    const res = await fetch(`${API_RELEASES}/${encodeURIComponent(releaseId)}/epics/${encodeURIComponent(epicRowId)}`, {
+      method: "PUT",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({epic_type: newType}),
+    });
+    const data = await res.json();
+    if (!res.ok) { setStatus(data.error || "Failed to update type.", "err"); return; }
+    await loadAll();
+  } catch(e) { setStatus("Error: " + e.message, "err"); }
+}
+
+// ---- Release action modal ----
+let _actionModalState = {releaseId: null, action: null};
+
+function openActionModal(releaseId, action) {
+  const rel = allReleases.find(r => r.id === releaseId);
+  const label = rel ? rel.release_number : releaseId;
+  _actionModalState = {releaseId, action};
+  const titles = {
+    released:   "Mark as Released",
+    rescheduled:"Mark as Rescheduled",
+    shelved:    "Mark as Shelved",
+    revert:     "Revert to Scheduled",
+  };
+  document.getElementById("action-modal-title").textContent = titles[action] || action;
+  const actionLabel = action === "revert" ? "Scheduled (Reverted)" : (action.charAt(0).toUpperCase() + action.slice(1));
+  document.getElementById("action-modal-desc").textContent =
+    `You're about to mark "${label}" as ${actionLabel}.`;
+  document.getElementById("action-modal-err").textContent = "";
+  document.getElementById("action-modal-actor").value = "";
+  document.getElementById("action-modal-comments").value = "";
+
+  const actorLbl = document.getElementById("action-modal-actor-label");
+  const dateRow  = document.getElementById("action-modal-date-row");
+  const dateLbl  = document.getElementById("action-modal-date-label");
+  const dateInp  = document.getElementById("action-modal-date");
+  const hint     = document.getElementById("action-modal-planned-hint");
+
+  if (action === "released") {
+    actorLbl.innerHTML = 'Actor <span style="color:var(--err);">*</span>';
+    dateRow.style.display = "block";
+    dateLbl.innerHTML = 'Actual Release Date <span style="color:var(--err);">*</span>';
+    dateInp.value = rel ? (rel.release_date || "") : "";
+    hint.textContent = rel && rel.release_date ? `Planned: ${fmtDate(rel.release_date)}` : "";
+  } else if (action === "rescheduled") {
+    actorLbl.innerHTML = 'Actor';
+    dateRow.style.display = "block";
+    dateLbl.innerHTML = 'New Target Date';
+    dateInp.value = rel ? (rel.release_date || "") : "";
+    hint.textContent = "";
+  } else {
+    actorLbl.innerHTML = 'Actor';
+    dateRow.style.display = "none";
+    dateInp.value = "";
+    hint.textContent = "";
+  }
+  document.getElementById("action-modal").classList.add("open");
+  setTimeout(() => document.getElementById("action-modal-actor").focus(), 50);
+}
+
+async function applyReleaseAction() {
+  const {releaseId, action} = _actionModalState;
+  if (!releaseId || !action) return;
+  const actor    = document.getElementById("action-modal-actor").value.trim();
+  const date     = document.getElementById("action-modal-date").value.trim();
+  const comments = document.getElementById("action-modal-comments").value.trim();
+  const errEl    = document.getElementById("action-modal-err");
+  errEl.textContent = "";
+  if (action === "released") {
+    if (!actor) { errEl.textContent = "Actor name is required."; return; }
+    if (!date)  { errEl.textContent = "Actual Release Date is required."; return; }
+  }
+  const apiAction = action === "revert" ? "reverted" : action;
+  try {
+    const res = await fetch(`${API_RELEASES}/${encodeURIComponent(releaseId)}/actions`, {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({action: apiAction, actual_date: date, actor, notes: comments}),
+    });
+    const data = await res.json();
+    if (!res.ok) { errEl.textContent = data.error || "Failed to record action."; return; }
+    const rel = allReleases.find(r => r.id === releaseId);
+    if (rel) { rel.release_status = data.release_status; rel.actions = data.actions; }
+    document.getElementById("action-modal").classList.remove("open");
+    setStatus(`Marked as ${apiAction}.`, "ok");
+    renderAll();
+  } catch(e) { errEl.textContent = "Error: " + e.message; }
+}
+
+function doReleaseAction(releaseId, action) {
+  openActionModal(releaseId, action);
+}
+
+document.getElementById("action-modal-apply").addEventListener("click", applyReleaseAction);
+document.getElementById("action-modal-cancel").addEventListener("click", () => {
+  document.getElementById("action-modal").classList.remove("open");
+});
+document.getElementById("action-modal").addEventListener("click", e => {
+  if (e.target === document.getElementById("action-modal"))
+    document.getElementById("action-modal").classList.remove("open");
+});
+document.getElementById("action-modal-actor").addEventListener("keydown", e => {
+  if (e.key === "Enter") applyReleaseAction();
+});
+
+async function deleteRelease(releaseId) {
+  const rel = allReleases.find(r => r.id === releaseId);
+  const label = rel ? rel.release_number : releaseId;
+  if (!confirm(`Delete release "${label}"? All epic assignments will be removed.`)) return;
+  try {
+    const res = await fetch(`${API_RELEASES}/${encodeURIComponent(releaseId)}`, {method:"DELETE"});
+    const data = await res.json();
+    if (!res.ok) { setStatus(data.error || "Failed to delete release.", "err"); return; }
+    setStatus("Release deleted.", "ok");
+    await loadAll();
+  } catch(e) { setStatus("Error: " + e.message, "err"); }
+}
+
+// ---- Release modal ----
+let editingReleaseId = null;
+function openAddModal() {
+  editingReleaseId = null;
+  document.getElementById("modal-title").textContent = "New Release";
+  document.getElementById("modal-rnum").value = "";
+  document.getElementById("modal-rdate").value = "";
+  document.getElementById("modal-notes").value = "";
+  document.getElementById("modal-status").value = "scheduled";
+  if (allProjects.length) document.getElementById("modal-project").value = allProjects[0].project_key;
+  document.getElementById("release-modal").classList.add("open");
+  document.getElementById("modal-rnum").focus();
+}
+
+function openEditModal(releaseId) {
+  const rel = allReleases.find(r => r.id === releaseId);
+  if (!rel) return;
+  editingReleaseId = releaseId;
+  document.getElementById("modal-title").textContent = "Edit Release";
+  document.getElementById("modal-project").value = rel.project_key;
+  document.getElementById("modal-rnum").value = rel.release_number;
+  document.getElementById("modal-rdate").value = rel.release_date;
+  document.getElementById("modal-notes").value = rel.notes || "";
+  document.getElementById("modal-status").value = rel.release_status || "scheduled";
+  document.getElementById("release-modal").classList.add("open");
+  document.getElementById("modal-rnum").focus();
+}
+
+function closeModal() {
+  document.getElementById("release-modal").classList.remove("open");
+}
+
+async function saveModal() {
+  const project_key = document.getElementById("modal-project").value.trim();
+  const release_number = document.getElementById("modal-rnum").value.trim();
+  const release_date = document.getElementById("modal-rdate").value.trim();
+  const notes = document.getElementById("modal-notes").value.trim();
+  const release_status = document.getElementById("modal-status").value.trim() || "scheduled";
+  if (!project_key) { setStatus("Please select a project.", "err"); return; }
+  if (!release_number) { setStatus("Release number is required.", "err"); return; }
+  if (!release_date) { setStatus("Release date is required.", "err"); return; }
+  try {
+    let res, data;
+    if (editingReleaseId) {
+      res = await fetch(`${API_RELEASES}/${encodeURIComponent(editingReleaseId)}`, {
+        method: "PUT",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({release_number, release_date, notes, release_status}),
+      });
+    } else {
+      res = await fetch(API_RELEASES, {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({project_key, release_number, release_date, notes, release_status}),
+      });
+    }
+    data = await res.json();
+    if (!res.ok) { setStatus(data.error || "Failed to save release.", "err"); return; }
+    setStatus(editingReleaseId ? "Release updated." : "Release created.", "ok");
+    closeModal();
+    await loadAll();
+  } catch(e) { setStatus("Error: " + e.message, "err"); }
+}
+
+// ---- Calendar view ----
+let rcalYear = new Date().getFullYear();
+let rcalProject = "";
+
+function projColor(projectKey) {
+  const p = allProjects.find(x => x.project_key === projectKey);
+  return (p && p.color_hex) ? ("#" + String(p.color_hex).replace("#","")) : "#1d4ed8";
+}
+
+function calFilteredReleases() {
+  if (!rcalProject) return allReleases;
+  return allReleases.filter(r => r.project_key === rcalProject);
+}
+
+function epicItemsHTML(epics) {
+  if (!epics || !epics.length) return `<div style="color:var(--muted);font-size:.78rem;padding:4px 0;">No epics assigned.</div>`;
+  return epics.map(e => {
+    const typeBadge = (e.epic_type === "enhancement")
+      ? `<span class="badge enh" style="cursor:default;">Enhancement</span>`
+      : `<span class="badge new-feat" style="cursor:default;">New Feature</span>`;
+    const sealedBadge = e.is_sealed ? `<span class="badge sealed">Sealed</span>` : "";
+    return `<div class="rcal-epic-item">
+      <span class="rcal-epic-key">${esc(e.epic_key)}</span>
+      <span class="rcal-epic-name">${esc(e.epic_name || e.epic_key)}</span>
+      <span style="display:flex;gap:3px;flex-wrap:wrap;">${typeBadge}${sealedBadge}</span>
+    </div>`;
+  }).join("");
+}
+
+function buildCalHTML(releases, year) {
+  const byDate = {};
+  for (const r of releases) {
+    const dk = r.release_date ? r.release_date.slice(0, 10) : "";
+    if (!dk) continue;
+    (byDate[dk] = byDate[dk] || []).push(r);
+  }
+  const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  const DSHORT = ["Su","Mo","Tu","We","Th","Fr","Sa"];
+  let html = "";
+  for (let m = 0; m < 12; m++) {
+    const first = new Date(year, m, 1).getDay();
+    const daysInM = new Date(year, m + 1, 0).getDate();
+    let days = DSHORT.map(d => `<div class="rcal-day" style="font-weight:700;font-size:.58rem;color:var(--muted);">${d}</div>`).join("");
+    for (let i = 0; i < first; i++) days += `<div class="rcal-day"></div>`;
+    for (let d = 1; d <= daysInM; d++) {
+      const dk = `${year}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+      const rlist = byDate[dk] || [];
+      const dots = rlist.map(r => `<div class="rcal-dot" style="background:${esc(projColor(r.project_key))};"></div>`).join("");
+      const cls = rlist.length ? "rcal-day cur-month is-release" : "rcal-day cur-month";
+      const attr = rlist.length ? ` data-date="${esc(dk)}" title="${esc(rlist.map(x=>x.release_number).join(", "))}"` : "";
+      days += `<div class="${cls}"${attr}>${d}${dots}</div>`;
+    }
+    html += `<div class="rcal-month"><div class="rcal-month-head">${MONTHS[m]}</div><div class="rcal-days">${days}</div></div>`;
+  }
+  return html;
+}
+
+function buildListHTML(releases) {
+  if (!releases.length) return `<div class="rcal-empty">No releases for selected period.</div>`;
+  const statusStyles = {scheduled:['#eff6ff','#1e40af'],released:['#dcfce7','#166534'],shelved:['#f1f5f9','#475569']};
+  return releases.map(r => {
+    const col = projColor(r.project_key);
+    const projLabel = (() => { const p = allProjects.find(x => x.project_key === r.project_key); return p ? pName(p) : r.project_key; })();
+    const st = r.current_status || 'scheduled';
+    const [sbg, sclr] = statusStyles[st] || statusStyles.scheduled;
+    const epicCount = r.epics ? r.epics.length : 0;
+    return `<div class="rcal-list-item" data-rid="${esc(r.id)}" style="border-left:4px solid ${esc(col)};">
+      <div class="rcal-list-item-row">
+        <div class="rcal-list-summary">
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+            <span class="rcal-list-title">${fmtDate(r.release_date)}</span>
+            <span class="rcal-status-pill" style="background:${sbg};color:${sclr};">${esc(st.charAt(0).toUpperCase()+st.slice(1))}</span>
+          </div>
+          <div class="rcal-list-meta">
+            <span class="rcal-proj-pill" style="background:${esc(col)}15;color:${esc(col)};border:1px solid ${esc(col)}44;">${esc(projLabel)}</span>
+            <span>${esc(r.release_number)}</span>
+            <span>&middot; ${epicCount} epic${epicCount!==1?"s":""}</span>
+          </div>
+        </div>
+        <div class="rcal-chevron">&#9658;</div>
+      </div>
+      <div class="rcal-epics-panel">${epicItemsHTML(r.epics)}</div>
+    </div>`;
+  }).join("");
+}
+
+function bindCalClicks() {
+  document.querySelectorAll("#rcal-grid .is-release").forEach(cell => {
+    cell.addEventListener("click", () => {
+      const dk = cell.dataset.date;
+      if (!dk) return;
+      const matched = (calFilteredReleases()).filter(r => r.release_date && r.release_date.slice(0,10) === dk);
+      const pane = document.getElementById("rcal-list-pane");
+      const items = matched.map(r => pane.querySelector(`.rcal-list-item[data-rid="${r.id}"]`)).filter(Boolean);
+      const allOpen = items.every(item => item.querySelector(".rcal-epics-panel")?.classList.contains("open"));
+      items.forEach(item => {
+        const panel = item.querySelector(".rcal-epics-panel");
+        if (!panel) return;
+        if (allOpen) {
+          panel.classList.remove("open");
+          item.classList.remove("open");
+        } else {
+          item.scrollIntoView({behavior:"smooth", block:"nearest"});
+          panel.classList.add("open");
+          item.classList.add("open");
+        }
+      });
+    });
+  });
+}
+
+function bindListClicks() {
+  document.querySelectorAll("#rcal-list-pane .rcal-list-item-row").forEach(row => {
+    row.addEventListener("click", () => {
+      const item = row.closest(".rcal-list-item");
+      if (!item) return;
+      const panel = item.querySelector(".rcal-epics-panel");
+      const isOpen = panel && panel.classList.contains("open");
+      document.querySelectorAll("#rcal-list-pane .rcal-epics-panel.open").forEach(p => {
+        p.classList.remove("open");
+        p.closest(".rcal-list-item").classList.remove("open");
+      });
+      if (!isOpen && panel) {
+        panel.classList.add("open");
+        item.classList.add("open");
+      }
+    });
+  });
+}
+
+function setCalYear(yr) {
+  rcalYear = yr;
+  document.getElementById("rcal-year-label").textContent = yr;
+  const rels = calFilteredReleases().filter(r => r.release_date && r.release_date.startsWith(String(yr)));
+  document.getElementById("rcal-grid").innerHTML = buildCalHTML(rels, yr);
+  document.getElementById("rcal-list-pane").innerHTML = buildListHTML(rels);
+  bindCalClicks();
+  bindListClicks();
+}
+
+function openReleasesCalendarView() {
+  rcalProject = selectedProjects.length === 1 ? selectedProjects[0] : "";
+  const sel = document.getElementById("rcal-proj-filter");
+  sel.innerHTML = '<option value="">All Projects</option>' +
+    allProjects.map(p => `<option value="${esc(p.project_key)}">${esc(pName(p))}</option>`).join("");
+  sel.value = rcalProject;
+  document.getElementById("rcal-overlay").classList.add("open");
+  setCalYear(rcalYear);
+}
+
+// ---- Events ----
+document.getElementById("add-release-btn").addEventListener("click", openAddModal);
+document.getElementById("calendar-view-btn").addEventListener("click", openReleasesCalendarView);
+document.getElementById("modal-cancel").addEventListener("click", closeModal);
+document.getElementById("modal-save").addEventListener("click", saveModal);
+document.getElementById("release-modal").addEventListener("click", e => { if (e.target === e.currentTarget) closeModal(); });
+document.getElementById("pool-search").addEventListener("input", renderPool);
+document.getElementById("rcal-close").addEventListener("click", () => document.getElementById("rcal-overlay").classList.remove("open"));
+document.getElementById("rcal-overlay").addEventListener("click", e => { if (e.target === e.currentTarget) document.getElementById("rcal-overlay").classList.remove("open"); });
+document.getElementById("rcal-prev-yr").addEventListener("click", () => setCalYear(rcalYear - 1));
+document.getElementById("rcal-next-yr").addEventListener("click", () => setCalYear(rcalYear + 1));
+document.getElementById("rcal-proj-filter").addEventListener("change", e => { rcalProject = e.target.value; setCalYear(rcalYear); });
+
+// Multi-select dropdown wiring
+document.getElementById("proj-ms-btn").addEventListener("click", e => {
+  e.stopPropagation();
+  document.getElementById("proj-ms-drop").classList.toggle("open");
+  document.getElementById("proj-ms-search").focus();
+});
+document.addEventListener("click", e => {
+  if (!document.getElementById("proj-ms-wrap").contains(e.target)) {
+    document.getElementById("proj-ms-drop").classList.remove("open");
+  }
+});
+document.getElementById("proj-ms-search").addEventListener("input", e => renderMultiselList(e.target.value));
+document.getElementById("proj-ms-all").addEventListener("click", () => {
+  selectedProjects = allProjects.map(p => p.project_key);
+  renderMultiselList(document.getElementById("proj-ms-search").value);
+  updateMultiselLabel();
+  renderAll();
+});
+document.getElementById("proj-ms-clear").addEventListener("click", () => {
+  selectedProjects = [];
+  renderMultiselList(document.getElementById("proj-ms-search").value);
+  updateMultiselLabel();
+  renderAll();
+});
+
+// ---- Init ----
+(async () => {
+  await loadProjects();
+  await loadAll();
+})();
+</script>
+  <script src="/shared-nav.js"></script>
+</body>
+</html>"""
+
+
+def _product_releases_calendar_html() -> str:
+    return r"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Release Calendar</title>
+  <link rel="stylesheet" href="/shared-nav.css">
+  <link rel="stylesheet" href="/material-symbols.css">
+  <style>
+    :root {
+      --bg: #f0f4ff;
+      --surface: #ffffff;
+      --surface-2: #f7f9ff;
+      --border: #e2e8f0;
+      --border-strong: #c7d2e6;
+      --text: #0f172a;
+      --text-2: #334155;
+      --text-muted: #64748b;
+      --brand: #2563eb;
+      --brand-light: #dbeafe;
+      --brand-dark: #1d4ed8;
+      --ok: #16a34a;
+      --warn: #d97706;
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 16px;
+      --shadow-sm: 0 1px 3px rgba(15,23,42,.07), 0 1px 2px rgba(15,23,42,.04);
+      --shadow-md: 0 4px 16px rgba(15,23,42,.09), 0 2px 4px rgba(15,23,42,.05);
+      --shadow-lg: 0 12px 40px rgba(15,23,42,.12), 0 4px 8px rgba(15,23,42,.07);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: linear-gradient(135deg, #e8eeff 0%, #f5f7ff 40%, #edf2ff 100%);
+      color: var(--text);
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── Top bar ── */
+    .top-bar {
+      padding: 18px 24px 0;
+      flex-shrink: 0;
+    }
+    .top-bar h1 {
+      font-size: 1.35rem;
+      font-weight: 700;
+      letter-spacing: -.02em;
+      color: var(--text);
+      margin-bottom: 4px;
+    }
+    .back-link {
+      font-size: .82rem;
+      color: var(--brand);
+      text-decoration: none;
+      font-weight: 500;
+      opacity: .85;
+      transition: opacity .15s;
+    }
+    .back-link:hover { opacity: 1; text-decoration: underline; }
+
+    /* ── Controls bar ── */
+    .controls {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      padding: 12px 24px;
+      flex-wrap: wrap;
+      background: rgba(255,255,255,.75);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      margin-top: 12px;
+    }
+    .ctrl-label { font-size: .78rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; }
+    select {
+      border: 1px solid var(--border-strong);
+      border-radius: 8px;
+      padding: 7px 12px;
+      font-size: .85rem;
+      background: var(--surface);
+      color: var(--text);
+      cursor: pointer;
+      transition: border-color .15s, box-shadow .15s;
+      box-shadow: var(--shadow-sm);
+    }
+    select:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 3px rgba(37,99,235,.12); }
+    .rcal-year-nav {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      background: var(--surface);
+      border: 1px solid var(--border-strong);
+      border-radius: 10px;
+      padding: 4px 8px;
+      box-shadow: var(--shadow-sm);
+    }
+    .rcal-year-nav strong { font-size: .92rem; font-weight: 700; min-width: 44px; text-align: center; color: var(--text); }
+    .rcal-year-nav button {
+      border: none;
+      background: none;
+      border-radius: 6px;
+      width: 28px;
+      height: 28px;
+      cursor: pointer;
+      font-size: 1rem;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background .12s, color .12s;
+    }
+    .rcal-year-nav button:hover { background: var(--brand-light); color: var(--brand); }
+    .view-toggle {
+      display: flex;
+      background: var(--surface);
+      border: 1px solid var(--border-strong);
+      border-radius: 10px;
+      overflow: hidden;
+      margin-left: auto;
+      box-shadow: var(--shadow-sm);
+    }
+    .view-toggle button {
+      border: none;
+      background: transparent;
+      padding: 8px 18px;
+      font-size: .82rem;
+      cursor: pointer;
+      font-weight: 600;
+      color: var(--text-muted);
+      transition: background .15s, color .15s;
+      white-space: nowrap;
+    }
+    .view-toggle button.active { background: var(--brand); color: #fff; }
+    .view-toggle button:not(:last-child) { border-right: 1px solid var(--border); }
+
+    /* ── Calendar view ── */
+    .main {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+      height: calc(100vh - 130px);
+    }
+    .cal-pane {
+      flex: 0 0 58%;
+      overflow-y: auto;
+      padding: 20px 24px;
+      border-right: 1px solid var(--border);
+    }
+    .rcal-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+    .rcal-month {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      overflow: hidden;
+      background: var(--surface);
+      box-shadow: var(--shadow-sm);
+      transition: box-shadow .15s;
+    }
+    .rcal-month:hover { box-shadow: var(--shadow-md); }
+    .rcal-month-head {
+      background: linear-gradient(135deg, #eff6ff, #e8f0fe);
+      padding: 7px 10px;
+      font-size: .77rem;
+      font-weight: 700;
+      text-align: center;
+      color: var(--brand-dark);
+      letter-spacing: .03em;
+      text-transform: uppercase;
+      border-bottom: 1px solid var(--border);
+    }
+    .rcal-days { display: grid; grid-template-columns: repeat(7, 1fr); padding: 5px; gap: 1px; }
+    .rcal-day {
+      min-height: 24px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      font-size: .64rem;
+      color: var(--text-muted);
+      padding: 2px 0;
+      border-radius: 4px;
+    }
+    .rcal-day.cur-month { color: var(--text-2); }
+    .rcal-day.is-release { cursor: default; font-weight: 700; }
+    .rcal-day.is-release:hover { background: var(--brand-light); border-radius: 4px; }
+    .rcal-day.today-marker { background: var(--brand); color: #fff !important; border-radius: 50%; font-weight: 700; }
+    /* Dots row — flex so multiple releases sit side-by-side */
+    .rcal-dots-row { display: flex; flex-wrap: wrap; gap: 2px; justify-content: center; margin-top: 1px; }
+    .rcal-dot {
+      width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+      cursor: pointer; transition: transform .12s, box-shadow .12s, outline .12s;
+      outline: 2px solid transparent; outline-offset: 1px;
+    }
+    .rcal-dot:hover { transform: scale(1.55); box-shadow: 0 0 5px rgba(0,0,0,.28); }
+    .rcal-dot-extra {
+      font-size: .48rem; font-weight: 800; color: var(--text-muted);
+      line-height: 7px; white-space: nowrap; align-self: center;
+    }
+    /* Highlight animation for release buckets */
+    @keyframes highlight-pulse {
+      0%   { box-shadow: 0 0 0 3px var(--hl-color, #2563eb), 0 8px 28px rgba(0,0,0,.18); transform: translateY(-3px); }
+      55%  { box-shadow: 0 0 0 2px var(--hl-color, #2563eb), 0 5px 18px rgba(0,0,0,.1);  transform: translateY(-1px); }
+      100% { box-shadow: var(--shadow-sm); transform: translateY(0); }
+    }
+    .rcal-list-item.rcal-highlighted {
+      animation: highlight-pulse 2.2s ease-out forwards;
+      z-index: 1; position: relative;
+    }
+    .list-pane {
+      flex: 1;
+      overflow-y: scroll;
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .list-pane-header {
+      font-size: .72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: var(--text-muted);
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 4px;
+    }
+    .rcal-list-item {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      overflow: hidden;
+      background: var(--surface);
+      box-shadow: var(--shadow-sm);
+      transition: box-shadow .15s, transform .12s;
+    }
+    .rcal-list-item:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); }
+    .rcal-list-item-row {
+      display: grid;
+      grid-template-columns: 1fr 20px;
+      gap: 10px;
+      align-items: center;
+      padding: 12px 16px;
+      cursor: pointer;
+    }
+    .rcal-list-item-row:hover { background: #f8faff; }
+    .rcal-epics-panel {
+      display: none;
+      padding: 10px 14px 14px;
+      background: var(--surface-2);
+      border-top: 1px solid var(--border);
+      flex-direction: column;
+      gap: 6px;
+    }
+    .rcal-epics-panel.open { display: flex; }
+    .rcal-epic-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 8px 12px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      flex-wrap: wrap;
+      transition: box-shadow .12s;
+    }
+    .rcal-epic-item:hover { box-shadow: var(--shadow-sm); }
+    .rcal-epic-key {
+      font-family: ui-monospace, "Cascadia Code", monospace;
+      font-size: .73rem;
+      font-weight: 700;
+      color: var(--brand-dark);
+      white-space: nowrap;
+      background: var(--brand-light);
+      padding: 1px 6px;
+      border-radius: 4px;
+    }
+    .rcal-epic-name { font-size: .8rem; flex: 1; line-height: 1.45; min-width: 0; color: var(--text-2); }
+    .rcal-chevron { font-size: .75rem; color: var(--text-muted); transition: transform .18s ease; justify-self: end; }
+    .rcal-list-item.open .rcal-chevron { transform: rotate(90deg); }
+    .rcal-empty {
+      color: var(--text-muted);
+      font-size: .88rem;
+      padding: 32px 20px;
+      text-align: center;
+      background: var(--surface);
+      border: 1px dashed var(--border-strong);
+      border-radius: var(--radius-lg);
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: .68rem;
+      font-weight: 700;
+      white-space: nowrap;
+      letter-spacing: .02em;
+    }
+    .badge.new-feat { background: #f0fdf4; color: #15803d; border: 1px solid #86efac; }
+    .badge.enh { background: #fdf4ff; color: #7e22ce; border: 1px solid #d8b4fe; }
+    .badge.sealed { background: #fefce8; color: #a16207; border: 1px solid #fde68a; }
+
+    /* ── Roadmap view ── */
+    .rm-wrap {
+      flex: 1;
+      overflow: auto;
+      padding: 20px 24px;
+    }
+    .rm-scroll-hint {
+      font-size: .74rem;
+      color: var(--text-muted);
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .rm-table-scroll {
+      overflow-x: auto;
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-md);
+      border: 1px solid var(--border);
+    }
+    .rm-table {
+      border-collapse: collapse;
+      width: 100%;
+      min-width: 1400px;
+      table-layout: fixed;
+      background: var(--surface);
+    }
+    .rm-table thead tr {
+      background: linear-gradient(135deg, #eff6ff, #e8f0fe);
+    }
+    .rm-table th {
+      font-size: .72rem;
+      font-weight: 700;
+      padding: 11px 8px;
+      border-bottom: 2px solid var(--border-strong);
+      border-right: 1px solid var(--border);
+      text-align: center;
+      white-space: nowrap;
+      color: var(--brand-dark);
+      letter-spacing: .03em;
+      text-transform: uppercase;
+    }
+    .rm-table th:last-child { border-right: none; }
+    .rm-table th.rm-proj-head {
+      text-align: left;
+      padding-left: 16px;
+      width: 230px;
+      min-width: 230px;
+      background: linear-gradient(135deg, #e8f0fe, #dbeafe);
+      border-right: 2px solid var(--border-strong);
+      font-size: .73rem;
+    }
+    .rm-proj-cell {
+      font-size: .82rem;
+      font-weight: 700;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+      border-right: 2px solid var(--border-strong);
+      white-space: nowrap;
+      background: var(--surface);
+      position: sticky;
+      left: 0;
+      z-index: 2;
+      max-width: 230px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .rm-proj-cell-inner {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+    .rm-proj-color-bar {
+      width: 5px;
+      min-width: 5px;
+      height: 2em;
+      border-radius: 3px;
+      flex-shrink: 0;
+    }
+    .rm-proj-name {
+      font-size: .82rem;
+      font-weight: 700;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--text);
+    }
+    .rm-month-cell {
+      border-bottom: 1px solid var(--border);
+      border-right: 1px solid var(--border);
+      padding: 6px 6px;
+      vertical-align: top;
+      background: var(--surface);
+      min-width: 110px;
+    }
+    .rm-month-cell:last-child { border-right: none; }
+    .rm-chip {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 10px;
+      border-radius: 7px;
+      font-size: .73rem;
+      font-weight: 700;
+      cursor: pointer;
+      margin: 2px 2px;
+      white-space: nowrap;
+      border: 1.5px solid transparent;
+      transition: opacity .14s, transform .12s, box-shadow .12s;
+      line-height: 1.3;
+    }
+    .rm-chip:hover { opacity: .88; transform: translateY(-2px); box-shadow: 0 3px 8px rgba(0,0,0,.12); }
+    .rm-chip.rm-chip-open {
+      outline: 2.5px solid rgba(15,23,42,.5);
+      outline-offset: 2px;
+      transform: translateY(-1px);
+    }
+    .rm-epics-row td {
+      padding: 12px 18px 14px;
+      background: var(--surface-2);
+      border-bottom: 1px solid var(--border);
+      border-right: none;
+    }
+    .rm-epics-row.rm-epics-hidden { display: none; }
+    .rm-empty {
+      color: var(--text-muted);
+      font-size: .88rem;
+      padding: 40px 24px;
+      text-align: center;
+      background: var(--surface);
+      border: 1px dashed var(--border-strong);
+      border-radius: var(--radius-lg);
+    }
+    .rm-month-now { background: #fffbeb !important; }
+    .rm-month-now-head { background: linear-gradient(135deg, #fef9c3, #fef3c7) !important; color: #92400e !important; }
+    .rm-proj-cell-now { background: #fffbeb !important; }
+
+    /* Shared */
+    ::-webkit-scrollbar { width: 7px; height: 7px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 999px; }
+    ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+  </style>
+</head>
+<body>
+  <div class="top-bar">
+    <h1>&#128197; Release Calendar &amp; Roadmap</h1>
+    <a class="back-link" href="/settings/product-releases">&#8592; Back to Product Releases</a>
+  </div>
+  <div class="controls">
+    <span class="ctrl-label">Project</span>
+    <select id="proj-filter"><option value="">All Projects</option></select>
+    <div class="rcal-year-nav">
+      <button id="prev-yr" type="button">&#8249;</button>
+      <strong id="year-label">2025</strong>
+      <button id="next-yr" type="button">&#8250;</button>
+    </div>
+    <div class="view-toggle">
+      <button id="btn-cal" class="active" type="button">&#128197; Calendar</button>
+      <button id="btn-rm" type="button">&#128506; Roadmap</button>
+    </div>
+  </div>
+  <div id="cal-view" class="main">
+    <div class="cal-pane"><div class="rcal-grid" id="cal-grid"></div></div>
+    <div class="list-pane" id="list-pane">
+      <div class="list-pane-header">Releases</div>
+    </div>
+  </div>
+  <div id="rm-view" class="rm-wrap" style="display:none;">
+    <div class="rm-scroll-hint">&#8596; Scroll horizontally to see all months</div>
+    <div class="rm-table-scroll" id="rm-content"></div>
+  </div>
+<script>
+let allReleases = [];
+let allProjects = [];
+let curYear = new Date().getFullYear();
+let curProj = "";
+let curView = "cal";
+
+function esc(v) {
+  return String(v == null ? "" : v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+function fmtDate(d) {
+  if (!d) return "";
+  try { return new Date(d + "T00:00:00").toLocaleDateString(undefined, {year:"numeric",month:"short",day:"numeric"}); }
+  catch { return d; }
+}
+function fmtDateShort(d) {
+  if (!d) return "";
+  try { return new Date(d + "T00:00:00").toLocaleDateString(undefined, {month:"short",day:"numeric"}); }
+  catch { return d; }
+}
+function projColor(pk) {
+  const p = allProjects.find(x => x.project_key === pk);
+  return (p && p.color_hex) ? ("#" + String(p.color_hex).replace("#","")) : "#2563eb";
+}
+function projLabel(pk) {
+  const p = allProjects.find(x => x.project_key === pk);
+  return (p && (p.project_name || p.display_name)) || pk;
+}
+function filtered() {
+  return curProj ? allReleases.filter(r => r.project_key === curProj) : allReleases;
+}
+function epicItemsHTML(epics) {
+  if (!epics || !epics.length) return `<div style="color:var(--text-muted);font-size:.78rem;padding:6px 0;">No epics assigned.</div>`;
+  return epics.map(e => {
+    const tb = (e.epic_type === "enhancement")
+      ? `<span class="badge enh">Enhancement</span>`
+      : `<span class="badge new-feat">New Feature</span>`;
+    const sb = e.is_sealed ? `<span class="badge sealed">Sealed</span>` : "";
+    return `<div class="rcal-epic-item">
+      <span class="rcal-epic-key">${esc(e.epic_key)}</span>
+      <span class="rcal-epic-name">${esc(e.epic_name || e.epic_key)}</span>
+      <span style="display:flex;gap:4px;flex-wrap:wrap;">${tb}${sb}</span>
+    </div>`;
+  }).join("");
+}
+
+/* ── Calendar view ── */
+function buildCal(releases, year) {
+  const byDate = {};
+  for (const r of releases) {
+    const dk = r.release_date ? r.release_date.slice(0,10) : "";
+    if (dk) (byDate[dk] = byDate[dk] || []).push(r);
+  }
+  const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  const DS = ["Su","Mo","Tu","We","Th","Fr","Sa"];
+  const today = new Date();
+  const todayKey = today.getFullYear() === year
+    ? `${year}-${String(today.getMonth()+1).padStart(2,"0")}-${String(today.getDate()).padStart(2,"0")}`
+    : "";
+  let html = "";
+  for (let m = 0; m < 12; m++) {
+    const first = new Date(year, m, 1).getDay();
+    const dim = new Date(year, m+1, 0).getDate();
+    let days = DS.map(d => `<div class="rcal-day" style="font-weight:700;font-size:.57rem;color:var(--text-muted);letter-spacing:.03em;">${d}</div>`).join("");
+    for (let i = 0; i < first; i++) days += `<div class="rcal-day"></div>`;
+    for (let d = 1; d <= dim; d++) {
+      const dk = `${year}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+      const rlist = byDate[dk] || [];
+      // Build per-release clickable dots (max 3 shown + overflow badge)
+      let dotsHtml = "";
+      if (rlist.length) {
+        const shown = rlist.length > 4 ? rlist.slice(0, 3) : rlist;
+        const extra = rlist.length > 4 ? rlist.length - 3 : 0;
+        const dotItems = shown.map(r =>
+          `<div class="rcal-dot" data-rid="${esc(r.id)}"
+               style="background:${esc(projColor(r.project_key))};"
+               title="${esc(projLabel(r.project_key))} — ${esc(fmtDate(r.release_date))}"></div>`
+        ).join("");
+        const extraHtml = extra > 0 ? `<div class="rcal-dot-extra">+${extra}</div>` : "";
+        dotsHtml = `<div class="rcal-dots-row">${dotItems}${extraHtml}</div>`;
+      }
+      const isToday = dk === todayKey;
+      let cls = isToday ? "rcal-day cur-month today-marker" : "rcal-day cur-month";
+      if (rlist.length) cls += " is-release";
+      const attr = rlist.length ? ` data-date="${esc(dk)}"` : "";
+      days += `<div class="${cls}"${attr}>${d}${dotsHtml}</div>`;
+    }
+    html += `<div class="rcal-month"><div class="rcal-month-head">${MONTHS[m]}</div><div class="rcal-days">${days}</div></div>`;
+  }
+  return html;
+}
+
+function buildList(releases) {
+  if (!releases.length) return `<div class="rcal-empty">&#128203; No releases for the selected period.</div>`;
+  const sorted = [...releases].sort((a,b) => (a.release_date||"").localeCompare(b.release_date||""));
+  return sorted.map(r => {
+    const col = projColor(r.project_key);
+    const lbl = projLabel(r.project_key);
+    return `<div class="rcal-list-item" data-rid="${esc(r.id)}" style="border-left:5px solid ${esc(col)};">
+      <div class="rcal-list-item-row">
+        <div style="flex:1;min-width:0;">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:3px;">
+            <span style="display:inline-flex;align-items:center;padding:2px 10px;border-radius:999px;font-size:.73rem;font-weight:700;white-space:nowrap;background:${esc(col)}20;color:${esc(col)};border:1.5px solid ${esc(col)}50;">${esc(lbl)}</span>
+          </div>
+          <div style="font-size:.88rem;font-weight:700;color:var(--text);margin-bottom:2px;">${esc(fmtDate(r.release_date))}</div>
+          <div style="font-size:.74rem;color:var(--text-muted);">${r.epics.length} epic${r.epics.length!==1?"s":""}</div>
+        </div>
+        <div class="rcal-chevron">&#9658;</div>
+      </div>
+      <div class="rcal-epics-panel">${epicItemsHTML(r.epics)}</div>
+    </div>`;
+  }).join("");
+}
+
+function bindCalClicks() {
+  document.querySelectorAll("#cal-grid .is-release").forEach(cell => {
+    cell.addEventListener("click", () => {
+      const dk = cell.dataset.date;
+      if (!dk) return;
+      const matched = filtered().filter(r => r.release_date && r.release_date.slice(0,10) === dk);
+      const pane = document.getElementById("list-pane");
+      const items = matched.map(r => pane.querySelector(`.rcal-list-item[data-rid="${r.id}"]`)).filter(Boolean);
+      const allOpen = items.every(item => item.querySelector(".rcal-epics-panel")?.classList.contains("open"));
+      items.forEach(item => {
+        const panel = item.querySelector(".rcal-epics-panel");
+        if (!panel) return;
+        if (allOpen) {
+          panel.classList.remove("open");
+          item.classList.remove("open");
+        } else {
+          item.scrollIntoView({behavior:"smooth", block:"nearest"});
+          panel.classList.add("open");
+          item.classList.add("open");
+        }
+      });
+    });
+  });
+}
+
+function bindListClicks() {
+  document.querySelectorAll("#list-pane .rcal-list-item-row").forEach(row => {
+    row.addEventListener("click", () => {
+      const item = row.closest(".rcal-list-item");
+      if (!item) return;
+      const panel = item.querySelector(".rcal-epics-panel");
+      const wasOpen = panel && panel.classList.contains("open");
+      document.querySelectorAll("#list-pane .rcal-epics-panel.open").forEach(p => {
+        p.classList.remove("open");
+        p.closest(".rcal-list-item").classList.remove("open");
+      });
+      if (!wasOpen && panel) {
+        panel.classList.add("open");
+        item.classList.add("open");
+      }
+    });
+  });
+}
+
+function clearHighlights() {
+  document.querySelectorAll("#list-pane .rcal-highlighted").forEach(el => {
+    el.classList.remove("rcal-highlighted");
+    el.style.removeProperty("--hl-color");
+  });
+}
+
+function highlightBucket(rid) {
+  clearHighlights();
+  const pane = document.getElementById("list-pane");
+  const item = pane.querySelector(`.rcal-list-item[data-rid="${rid}"]`);
+  if (!item) return;
+  const rel = allReleases.find(r => String(r.id) === String(rid));
+  const col = rel ? projColor(rel.project_key) : "#2563eb";
+  item.style.setProperty("--hl-color", col);
+  item.classList.add("rcal-highlighted");
+  item.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  if (highlightBucket._timer) clearTimeout(highlightBucket._timer);
+  highlightBucket._timer = setTimeout(() => {
+    item.classList.remove("rcal-highlighted");
+    item.style.removeProperty("--hl-color");
+  }, 2400);
+}
+
+function bindDotClicks() {
+  document.querySelectorAll("#cal-grid .rcal-dot[data-rid]").forEach(dot => {
+    dot.addEventListener("click", e => {
+      e.stopPropagation();
+      highlightBucket(dot.dataset.rid);
+    });
+  });
+}
+
+/* ── Roadmap view ── */
+const MONTH_ABBR = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const MONTH_FULL = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+
+function buildRoadmap(releases, year) {
+  if (!releases.length) return `<div class="rm-empty">&#128203; No releases for the selected period.</div>`;
+  const now = new Date();
+  const curMonth = (now.getFullYear() === year) ? now.getMonth() : -1;
+
+  const projKeys = [];
+  const byProj = {};
+  for (const r of releases) {
+    const pk = r.project_key || "__none__";
+    if (!byProj[pk]) { byProj[pk] = []; projKeys.push(pk); }
+    byProj[pk].push(r);
+  }
+
+  const monthCols = MONTH_ABBR.map((m, i) => {
+    const isCur = i === curMonth;
+    const cls = isCur ? " class=\"rm-month-now-head\"" : "";
+    return `<th${cls}>${m}<br><span style="font-size:.65rem;font-weight:500;opacity:.7;">${year}</span></th>`;
+  }).join("");
+
+  let html = `<table class="rm-table"><thead><tr>
+    <th class="rm-proj-head">Project</th>${monthCols}
+  </tr></thead><tbody>`;
+
+  for (const pk of projKeys) {
+    const col = projColor(pk);
+    const lbl = projLabel(pk);
+    const rels = byProj[pk];
+
+    const byMonth = Array.from({length:12}, () => []);
+    for (const r of rels) {
+      if (r.release_date) {
+        const m = parseInt(r.release_date.slice(5,7), 10) - 1;
+        if (m >= 0 && m < 12) byMonth[m].push(r);
+      }
+    }
+
+    const cells = byMonth.map((mRels, mi) => {
+      const isCur = mi === curMonth;
+      const cls = isCur ? " rm-month-now" : "";
+      const chips = mRels.map(r => {
+        const dateLabel = fmtDateShort(r.release_date);
+        return `<div class="rm-chip" data-rmid="${esc(r.id)}"
+              style="background:${esc(col)}18;color:${esc(col)};border-color:${esc(col)}55;"
+              title="${esc(projLabel(r.project_key))} — ${esc(fmtDate(r.release_date))}${r.release_number ? ' (' + r.release_number + ')' : ''}">${esc(dateLabel)}</div>`;
+      }).join("");
+      return `<td class="rm-month-cell${cls}">${chips || '<span style="display:block;height:28px;"></span>'}</td>`;
+    }).join("");
+
+    html += `<tr>
+      <td class="rm-proj-cell${curMonth >= 0 ? " rm-proj-cell-now" : ""}">
+        <div class="rm-proj-cell-inner">
+          <div class="rm-proj-color-bar" style="background:${esc(col)};"></div>
+          <span class="rm-proj-name" title="${esc(lbl)}">${esc(lbl)}</span>
+        </div>
+      </td>${cells}
+    </tr>`;
+
+    html += `<tr class="rm-epics-row rm-epics-hidden" id="rm-epics-row-${esc(pk).replace(/[^a-z0-9]/gi,"_")}">
+      <td colspan="13"><div class="rm-epics-inner" style="display:flex;flex-direction:column;gap:6px;"></div></td>
+    </tr>`;
+  }
+  html += `</tbody></table>`;
+  return html;
+}
+
+function bindRoadmapClicks() {
+  document.querySelectorAll(".rm-chip").forEach(chip => {
+    chip.addEventListener("click", () => {
+      const rid = chip.dataset.rmid;
+      const rel = allReleases.find(r => String(r.id) === String(rid));
+      if (!rel) return;
+      const pk = rel.project_key || "__none__";
+      const rowId = "rm-epics-row-" + pk.replace(/[^a-z0-9]/gi,"_");
+      const row = document.getElementById(rowId);
+      if (!row) return;
+      const inner = row.querySelector(".rm-epics-inner");
+      const col = projColor(pk);
+      const lbl = projLabel(pk);
+
+      const isOpen = !row.classList.contains("rm-epics-hidden") && chip.classList.contains("rm-chip-open");
+      chip.closest("tr").querySelectorAll(".rm-chip").forEach(c => c.classList.remove("rm-chip-open"));
+      if (isOpen) {
+        row.classList.add("rm-epics-hidden");
+        inner.innerHTML = "";
+      } else {
+        chip.classList.add("rm-chip-open");
+        inner.innerHTML = `
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap;">
+            <span style="display:inline-flex;align-items:center;padding:2px 10px;border-radius:999px;font-size:.73rem;font-weight:700;background:${esc(col)}20;color:${esc(col)};border:1.5px solid ${esc(col)}55;">${esc(lbl)}</span>
+            <span style="font-size:.88rem;font-weight:700;color:var(--text);">${esc(fmtDate(rel.release_date))}</span>
+            ${rel.release_number ? `<span style="font-size:.75rem;color:var(--text-muted);font-style:italic;">${esc(rel.release_number)}</span>` : ""}
+            <span style="font-size:.75rem;color:var(--text-muted);">&middot; ${rel.epics.length} epic${rel.epics.length!==1?"s":""}</span>
+          </div>
+          ${epicItemsHTML(rel.epics)}`;
+        row.classList.remove("rm-epics-hidden");
+      }
+    });
+  });
+}
+
+/* ── Render ── */
+function render() {
+  document.getElementById("year-label").textContent = curYear;
+  const rels = filtered().filter(r => r.release_date && r.release_date.startsWith(String(curYear)));
+  if (curView === "cal") {
+    document.getElementById("cal-grid").innerHTML = buildCal(rels, curYear);
+    const listPaneEl = document.getElementById("list-pane");
+    listPaneEl.innerHTML = `<div class="list-pane-header">Releases</div>` + buildList(rels);
+    bindCalClicks();
+    bindListClicks();
+    bindDotClicks();
+  } else {
+    document.getElementById("rm-content").innerHTML = buildRoadmap(rels, curYear);
+    bindRoadmapClicks();
+  }
+}
+
+function showView(v) {
+  curView = v;
+  const isRm = v === "rm";
+  document.getElementById("cal-view").style.display = isRm ? "none" : "";
+  document.getElementById("rm-view").style.display = isRm ? "" : "none";
+  document.getElementById("btn-cal").classList.toggle("active", !isRm);
+  document.getElementById("btn-rm").classList.toggle("active", isRm);
+  render();
+}
+
+async function init() {
+  try {
+    const [relRes, projRes] = await Promise.all([
+      fetch("/api/product-releases"),
+      fetch("/api/projects?include_inactive=0"),
+    ]);
+    allReleases = (await relRes.json()).releases || [];
+    const pdata = await projRes.json();
+    allProjects = (pdata.projects || []).filter(p => p.is_active !== false);
+    const sel = document.getElementById("proj-filter");
+    sel.innerHTML = '<option value="">All Projects</option>' +
+      allProjects.map(p => `<option value="${esc(p.project_key)}">${esc(p.project_name || p.display_name || p.project_key)}</option>`).join("");
+  } catch(e) { console.error("Load failed:", e); }
+  render();
+}
+document.getElementById("prev-yr").addEventListener("click", () => { curYear--; render(); });
+document.getElementById("next-yr").addEventListener("click", () => { curYear++; render(); });
+document.getElementById("proj-filter").addEventListener("change", e => { curProj = e.target.value; render(); });
+document.getElementById("btn-cal").addEventListener("click", () => showView("cal"));
+document.getElementById("btn-rm").addEventListener("click", () => showView("rm"));
+init();
+</script>
+</body>
+</html>"""
 
 
 def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
@@ -30605,6 +33270,12 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             )
             canonical_run_id = _canonical_last_success_run_id(capacity_paths["db_path"])
             capacity_profile_raw = _to_text(request.args.get("capacity_profile"))
+            overdue_threshold_raw = request.args.get("overdue_threshold_days", "30")
+            try:
+                overdue_threshold_days = max(1, int(overdue_threshold_raw))
+            except (ValueError, TypeError):
+                overdue_threshold_days = 30
+            include_on_hold = request.args.get("include_on_hold", "0") in ("1", "true", "yes")
             payload = build_monthly_epic_plan_payload(
                 capacity_paths["db_path"],
                 month,
@@ -30614,6 +33285,8 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 selected_assignees=selected_assignees_set,
                 capacity_profile_key=capacity_profile_raw or None,
                 jira_base_url=BASE_URL,
+                overdue_threshold_days=overdue_threshold_days,
+                include_on_hold=include_on_hold,
             )
             return jsonify({"ok": True, **payload})
         except ValueError as exc:
@@ -33709,6 +36382,21 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         except Exception as exc:
             return jsonify({"error": f"Failed to load epics-management rows: {exc}"}), 500
 
+    @app.route("/api/epics-management/export", methods=["GET"])
+    def epics_management_export_api():
+        try:
+            from datetime import datetime as _dt
+            xlsx_bytes = _epics_management_export_xlsx_bytes(capacity_paths["db_path"])
+            filename = f"epics_planner_{_dt.utcnow().strftime('%Y%m%d_%H%M%S')}.xlsx"
+            return send_file(
+                io.BytesIO(xlsx_bytes),
+                mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                as_attachment=True,
+                download_name=filename,
+            )
+        except Exception as exc:
+            return jsonify({"error": f"Failed to export epics data: {exc}"}), 500
+
     @app.route("/api/epics-management/rows", methods=["POST"])
     def create_epics_management_row_api():
         try:
@@ -34331,6 +37019,132 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
     @app.route(IPP_MEETING_PLANNER_SETTINGS_ROUTE, methods=["GET"])
     def ipp_meeting_planner_settings():
         return _ipp_meeting_planner_settings_html()
+
+    @app.route(PRODUCT_RELEASES_SETTINGS_ROUTE, methods=["GET"])
+    def product_releases_settings():
+        return _product_releases_settings_html()
+
+    @app.route(PRODUCT_RELEASES_CALENDAR_ROUTE, methods=["GET"])
+    def product_releases_calendar():
+        return _product_releases_calendar_html()
+
+    # --- Product Releases API ---
+
+    @app.route("/api/product-releases", methods=["GET"])
+    def list_product_releases_api():
+        try:
+            project_key = _to_text(request.args.get("project_key", "")).strip() or None
+            releases = _load_product_releases(capacity_paths["db_path"], project_key=project_key)
+            return jsonify({"releases": releases})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @app.route("/api/product-releases", methods=["POST"])
+    def create_product_release_api():
+        try:
+            payload = request.get_json(silent=True) or {}
+            release = _create_product_release(
+                capacity_paths["db_path"],
+                project_key=_to_text(payload.get("project_key", "")),
+                release_number=_to_text(payload.get("release_number", "")),
+                release_date=_to_text(payload.get("release_date", "")),
+                notes=_to_text(payload.get("notes", "")),
+                release_status=_to_text(payload.get("release_status", "scheduled")),
+            )
+            return jsonify({"release": release}), 201
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @app.route("/api/product-releases/<path:release_id>", methods=["PUT"])
+    def update_product_release_api(release_id: str):
+        try:
+            payload = request.get_json(silent=True) or {}
+            release = _update_product_release(capacity_paths["db_path"], release_id, payload)
+            return jsonify({"release": release})
+        except LookupError as exc:
+            return jsonify({"error": str(exc)}), 404
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @app.route("/api/product-releases/<path:release_id>", methods=["DELETE"])
+    def delete_product_release_api(release_id: str):
+        try:
+            _delete_product_release(capacity_paths["db_path"], release_id)
+            return jsonify({"ok": True})
+        except LookupError as exc:
+            return jsonify({"error": str(exc)}), 404
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @app.route("/api/product-releases/epics/pool", methods=["GET"])
+    def list_epics_pool_api():
+        try:
+            project_key = _to_text(request.args.get("project_key", "")).strip() or None
+            epics = _load_epics_pool(capacity_paths["db_path"], project_key=project_key)
+            return jsonify({"epics": epics})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @app.route("/api/product-releases/<path:release_id>/epics", methods=["POST"])
+    def assign_epic_to_release_api(release_id: str):
+        try:
+            payload = request.get_json(silent=True) or {}
+            epic_row_id = _to_text(payload.get("epic_row_id", "")).strip()
+            epic_type = _to_text(payload.get("epic_type", "new_feature")).strip()
+            if not epic_row_id:
+                return jsonify({"error": "epic_row_id is required."}), 400
+            result = _assign_epic_to_release(capacity_paths["db_path"], release_id, epic_row_id, epic_type)
+            return jsonify({"assignment": result}), 201
+        except LookupError as exc:
+            return jsonify({"error": str(exc)}), 404
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @app.route("/api/product-releases/<release_id>/epics/<path:epic_row_id>", methods=["PUT"])
+    def update_release_epic_api(release_id: str, epic_row_id: str):
+        try:
+            payload = request.get_json(silent=True) or {}
+            result = _update_release_epic(capacity_paths["db_path"], release_id, epic_row_id, payload)
+            return jsonify({"assignment": result})
+        except LookupError as exc:
+            return jsonify({"error": str(exc)}), 404
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @app.route("/api/product-releases/<release_id>/epics/<path:epic_row_id>", methods=["DELETE"])
+    def unassign_epic_from_release_api(release_id: str, epic_row_id: str):
+        try:
+            _unassign_epic_from_release(capacity_paths["db_path"], release_id, epic_row_id)
+            return jsonify({"ok": True})
+        except LookupError as exc:
+            return jsonify({"error": str(exc)}), 404
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @app.route("/api/product-releases/<release_id>/actions", methods=["POST"])
+    def record_release_action_api(release_id: str):
+        try:
+            payload = request.get_json(silent=True) or {}
+            action = _to_text(payload.get("action", "")).strip()
+            actual_date = _to_text(payload.get("actual_date", "")).strip()
+            actor = _to_text(payload.get("actor", "")).strip()
+            notes = _to_text(payload.get("notes", "")).strip()
+            result = _record_release_action(capacity_paths["db_path"], release_id, action, actual_date, actor, notes)
+            return jsonify(result)
+        except LookupError as exc:
+            return jsonify({"error": str(exc)}), 404
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
 
     @app.route("/settings/capactiy", methods=["GET"])
     def capacity_settings_typo_redirect():

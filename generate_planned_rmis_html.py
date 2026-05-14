@@ -3,9 +3,11 @@ from __future__ import annotations
 
 import json
 import os
+import sqlite3
 from collections import defaultdict, deque
 from datetime import date, datetime, timezone
 from pathlib import Path
+from typing import Any
 
 from openpyxl import load_workbook
 from canonical_report_data import load_nested_rows_from_canonical, resolve_canonical_run_id
@@ -98,7 +100,27 @@ def _load_epic_key_index(work_items_path: Path) -> dict[tuple[str, str], deque[s
         wb.close()
 
 
-def _load_payload(input_path: Path, work_items_path: Path) -> dict:
+def _load_epic_release_map(db_path: Path) -> dict[str, dict[str, Any]]:
+    """Returns dict: epic_key -> {release_number, release_date, actual_release_date, release_state}"""
+    try:
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT pre.epic_key,
+                   pr.release_number, pr.release_date,
+                   pr.actual_release_date, pr.release_state
+            FROM product_release_epics pre
+            JOIN product_releases pr ON pr.id = pre.release_id
+        """)
+        result = {row["epic_key"]: dict(row) for row in cur.fetchall()}
+        conn.close()
+        return result
+    except Exception:
+        return {}
+
+
+def _load_payload(input_path: Path, work_items_path: Path, release_map: dict[str, dict[str, Any]] | None = None) -> dict:
     wb = load_workbook(input_path, read_only=False, data_only=True)
     ws = wb["NestedView"] if "NestedView" in wb.sheetnames else wb.active
 
@@ -198,14 +220,16 @@ def _load_payload(input_path: Path, work_items_path: Path) -> dict:
         rid += 1
         rows.append({"id": gid, "parent_id": pid, "level": 2, "row_kind": "group", "group_type": "planned", "rmi_label": "Planned Epics", "planned_hours": round(sum(float(e["planned_hours"]) for e in planned if isinstance(e["planned_hours"], (int, float))), 2), "actual_hours": round(sum(float(e["actual_hours"]) for e in planned if isinstance(e["actual_hours"], (int, float))), 2), "planned_start": "", "planned_end": "", "has_range": False, "start_ordinal": "", "end_ordinal": "", "project_key": p["project_key"]})
         for e in planned:
-            rows.append({"id": rid, "parent_id": gid, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": e["name"], "jira_key": e["jira_key"], "planned_hours": e["planned_hours"], "actual_hours": e["actual_hours"], "original_actual_hours": e["original_actual_hours"], "planned_start": e["planned_start"], "planned_end": e["planned_end"], "has_range": True, "start_ordinal": e["start_ordinal"], "end_ordinal": e["end_ordinal"], "project_key": p["project_key"]})
+            rel = (release_map or {}).get(e["jira_key"].upper()) if e.get("jira_key") else None
+            rows.append({"id": rid, "parent_id": gid, "level": 3, "row_kind": "epic", "group_type": "planned", "rmi_label": e["name"], "jira_key": e["jira_key"], "planned_hours": e["planned_hours"], "actual_hours": e["actual_hours"], "original_actual_hours": e["original_actual_hours"], "planned_start": e["planned_start"], "planned_end": e["planned_end"], "has_range": True, "start_ordinal": e["start_ordinal"], "end_ordinal": e["end_ordinal"], "project_key": p["project_key"], "release_number": rel["release_number"] if rel else None, "release_date": rel["release_date"] if rel else None, "actual_release_date": rel["actual_release_date"] if rel else None, "release_state": rel["release_state"] if rel else None})
             rid += 1
 
         ugid = rid
         rid += 1
         rows.append({"id": ugid, "parent_id": pid, "level": 2, "row_kind": "group", "group_type": "not_planned", "rmi_label": "Not Planned Yet Epics", "planned_hours": round(sum(float(e["planned_hours"]) for e in unplanned if isinstance(e["planned_hours"], (int, float))), 2), "actual_hours": round(sum(float(e["actual_hours"]) for e in unplanned if isinstance(e["actual_hours"], (int, float))), 2), "planned_start": "", "planned_end": "", "has_range": False, "start_ordinal": "", "end_ordinal": "", "project_key": p["project_key"]})
         for e in unplanned:
-            rows.append({"id": rid, "parent_id": ugid, "level": 3, "row_kind": "epic", "group_type": "not_planned", "rmi_label": e["name"], "jira_key": e["jira_key"], "planned_hours": e["planned_hours"], "actual_hours": e["actual_hours"], "original_actual_hours": e["original_actual_hours"], "planned_start": "", "planned_end": "", "has_range": False, "start_ordinal": "", "end_ordinal": "", "project_key": p["project_key"]})
+            rel = (release_map or {}).get(e["jira_key"].upper()) if e.get("jira_key") else None
+            rows.append({"id": rid, "parent_id": ugid, "level": 3, "row_kind": "epic", "group_type": "not_planned", "rmi_label": e["name"], "jira_key": e["jira_key"], "planned_hours": e["planned_hours"], "actual_hours": e["actual_hours"], "original_actual_hours": e["original_actual_hours"], "planned_start": "", "planned_end": "", "has_range": False, "start_ordinal": "", "end_ordinal": "", "project_key": p["project_key"], "release_number": rel["release_number"] if rel else None, "release_date": rel["release_date"] if rel else None, "actual_release_date": rel["actual_release_date"] if rel else None, "release_state": rel["release_state"] if rel else None})
             rid += 1
 
     today = datetime.now(timezone.utc).date()
@@ -217,7 +241,7 @@ def _load_payload(input_path: Path, work_items_path: Path) -> dict:
     }
 
 
-def _load_payload_from_canonical(db_path: Path, run_id: str = "") -> dict:
+def _load_payload_from_canonical(db_path: Path, run_id: str = "", release_map: dict[str, dict[str, Any]] | None = None) -> dict:
     effective_run_id = resolve_canonical_run_id(db_path, run_id)
     rows = load_nested_rows_from_canonical(db_path, effective_run_id)
     if not rows:
@@ -276,6 +300,8 @@ def _load_payload_from_canonical(db_path: Path, run_id: str = "") -> dict:
             )
             next_id = group_id + 1
             for item in source_children:
+                item_jira_key = _to_text(item.get("jira_key"))
+                rel = (release_map or {}).get(item_jira_key.upper()) if item_jira_key else None
                 payload_rows.append(
                     {
                         "id": next_id,
@@ -284,7 +310,7 @@ def _load_payload_from_canonical(db_path: Path, run_id: str = "") -> dict:
                         "row_kind": "epic",
                         "group_type": group_type,
                         "rmi_label": _to_text(item.get("aspect")),
-                        "jira_key": _to_text(item.get("jira_key")),
+                        "jira_key": item_jira_key,
                         "planned_hours": _to_number_or_blank(item.get("approved_hours")),
                         "actual_hours": _to_number_or_blank(item.get("actual_hours")),
                         "original_actual_hours": _to_number_or_blank(item.get("actual_hours")),
@@ -294,6 +320,10 @@ def _load_payload_from_canonical(db_path: Path, run_id: str = "") -> dict:
                         "start_ordinal": item.get("start_ordinal", ""),
                         "end_ordinal": item.get("end_ordinal", ""),
                         "project_key": _to_text(item.get("project_key")),
+                        "release_number": rel["release_number"] if rel else None,
+                        "release_date": rel["release_date"] if rel else None,
+                        "actual_release_date": rel["actual_release_date"] if rel else None,
+                        "release_state": rel["release_state"] if rel else None,
                     }
                 )
                 next_id += 1
@@ -347,6 +377,10 @@ def _build_html(payload: dict) -> str:
 .tc{border-left:1px solid var(--line);position:relative}.slot{position:relative;min-height:40px}.wl{position:absolute;top:0;bottom:0;width:1px;background:#e4ebf5}
 .bar{position:absolute;top:10px;height:20px;border-radius:999px;border:1px solid rgba(19,71,180,.35);background:linear-gradient(180deg,#3f7bff,#2157d6);box-shadow:0 2px 6px rgba(33,87,214,.24)}.bar.project{background:linear-gradient(180deg,#3bc8de,#0b8ca8);border-color:rgba(11,140,168,.45);top:13px;height:14px;opacity:.65}.bar.no{background:#c6d3e3;border-color:#b4c3d8;box-shadow:none}
 .empty{padding:14px;color:var(--muted);font-size:.88rem}
+.rel-badge{display:inline-block;border-radius:999px;font-size:.62rem;font-weight:700;padding:2px 7px;color:#fff;vertical-align:middle;margin-right:4px}
+.rel-date{font-size:.72rem;color:#607793;vertical-align:middle}
+.rel-actual{font-size:.68rem;color:#2d7a4f;vertical-align:middle;margin-left:4px}
+.rel-none{color:#9ca3af;font-size:.78rem}
 </style>
 </head>
 <body>
@@ -418,10 +452,12 @@ const min=rr.length?Math.min(...rr.map(x=>Number(x.start_ordinal))):(Math.floor(
 const max=rr.length?Math.max(...rr.map(x=>Number(x.end_ordinal))):(Math.floor(r.b.getTime()/DAY)+719163);
 const days=Math.max(1,(max-min)+1),tw=Math.max(MINW,Math.floor(days*DAYPX)),a=new Date((min-719163)*DAY),b=new Date((max-719163)*DAY);
 const mh=monthBlocks(a,b).map(m=>`<div class='mb' style='left:${m.x}%;width:${m.w}%'>${m.l}</div>`).join(""),wb=weekBlocks(a,b),wh=wb.map(w=>`<div class='wb' style='left:${w.x}%;width:${w.w}%'>${w.l}</div>`).join(""),wln=wb.map(w=>`<span class='wl' style='left:${w.x}%'></span>`).join("");
+const STATE_COLORS={"released":"#4caf50","planned":"#2196f3","rescheduled":"#ff9800","shelfed":"#9e9e9e"};
 const rh=vr.map(x=>{const lv=Number(x.level||1),pad=Math.max(0,(lv-1)*20),tg=hasChildren(x.id)?`<button class='toggle' data-i='${x.id}' type='button'>${collapsed.has(x.id)?"+":"-"}</button>`:"<button class='toggle placeholder' type='button' disabled>+</button>",rc=x.row_kind==="project"?"row-project":(x.row_kind==="group"?"row-group":"row-epic"),gc=x.group_type==="planned"?"group-planned":(x.group_type==="not_planned"?"group-not-planned":""),chip=x.row_kind==="epic"?(x.group_type==="planned"?"<span class='ch p'>Planned</span>":"<span class='ch u'>Not Planned</span>"):"";
 let bar="";if(x.has_range&&Number.isFinite(Number(x.start_ordinal))&&Number.isFinite(Number(x.end_ordinal))){const ld=Number(x.start_ordinal)-min,sd=(Number(x.end_ordinal)-Number(x.start_ordinal))+1,l=(ld/days)*100,w=(Math.max(1,sd)/days)*100,bc=x.row_kind==="project"?"bar project":"bar";bar=`<div class='${bc}' data-bar-id='${x.id}' style='left:${l}%;width:${w}%' title='${x.rmi_label||""}'></div>`}else if(x.row_kind==="epic"&&x.group_type==="not_planned"){bar="<div class='bar no' style='left:0;width:42px' title='Not planned yet'></div>"}
 const label=(x.row_kind==="epic"||x.row_kind==="project")?`<button class='focus-link' type='button' data-focus-id='${x.id}' title='Focus timeline'>${x.rmi_label||""}</button>`:`<span class='lbl' title='${x.rmi_label||""}'>${x.rmi_label||""}</span>`;
-return `<div class='r ${rc} ${gc}' data-row-id='${x.id}'><div class='c s1'><div class='rmi' style='padding-left:${pad}px'>${tg}${label}${chip}</div></div><div class='c s2'>${fh(x.planned_hours)}</div><div class='c tc'><div class='slot' style='width:${tw}px'>${wln}${bar}</div></div></div>`}).join("");
+let relHtml="";if(x.row_kind==="epic"){if(x.release_number||x.release_state){const st=String(x.release_state||"Planned");const col=STATE_COLORS[st.toLowerCase()]||"#2196f3";const rnum=x.release_number||"—";const rdate=x.release_date?`<span class='rel-date'>&nbsp;${x.release_date}</span>`:"";const ract=x.actual_release_date?`<span class='rel-actual'>✓&nbsp;${x.actual_release_date}</span>`:"";relHtml=`<div style='margin-top:3px;padding-left:2px'><span class='rel-badge' style='background:${col}' title='Release state: ${st}'>${rnum}</span>${rdate}${ract}</div>`;}else{relHtml="<div style='margin-top:2px'><span class='rel-none'>—</span></div>";}}
+return `<div class='r ${rc} ${gc}' data-row-id='${x.id}'><div class='c s1'><div class='rmi' style='padding-left:${pad}px'>${tg}<div style='min-width:0;flex:1'>${label}${chip}${relHtml}</div></div></div><div class='c s2'>${fh(x.planned_hours)}</div><div class='c tc'><div class='slot' style='width:${tw}px'>${wln}${bar}</div></div></div>`}).join("");
 root.innerHTML=`<div style='width:calc(var(--left1)+var(--left2)+${tw}px)'><div class='r h'><div class='c s1'>RMIs</div><div class='c s2'>Planned Hours</div><div class='c th'><div class='months'>${mh}</div><div class='weeks'>${wh}</div></div></div>${rh}</div>`;
 for(const b of root.querySelectorAll("[data-i]")){b.onclick=()=>{const id=Number(b.getAttribute("data-i"));if(collapsed.has(id))collapsed.delete(id);else collapsed.add(id);render()}}
 for(const f of root.querySelectorAll("[data-focus-id]")){f.onclick=()=>{const id=Number(f.getAttribute("data-focus-id"));if(Number.isFinite(id))focusRow(id)}}
@@ -444,11 +480,12 @@ def main() -> None:
     input_path = _resolve_path(input_name, base_dir)
     work_items_path = _resolve_path(work_items_name, base_dir)
     db_path = _resolve_path(db_name, base_dir)
-    payload = _load_payload_from_canonical(db_path, canonical_run_id)
+    release_map = _load_epic_release_map(db_path)
+    payload = _load_payload_from_canonical(db_path, canonical_run_id, release_map)
     if not payload:
         if not input_path.exists():
             raise FileNotFoundError(f"Nested view workbook not found: {input_path}")
-        payload = _load_payload(input_path, work_items_path)
+        payload = _load_payload(input_path, work_items_path, release_map)
     payload["generated_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     output_path = _resolve_path(output_name, base_dir)
     output_path.write_text(_build_html(payload), encoding="utf-8")

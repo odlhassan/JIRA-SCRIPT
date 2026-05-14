@@ -315,6 +315,41 @@ def _load_current_ipp_meeting_epics(
         conn.close()
 
     em_by_key = {_as_text(r["epic_key"]).upper(): dict(r) for r in em_rows}
+
+    # Load release info for the epics via product_release_epics -> product_releases
+    release_info_by_epic_key: dict[str, dict] = {}
+    em_row_ids = [_as_text(r["id"]) for r in em_rows if _as_text(r["id"])]
+    if em_row_ids:
+        conn3 = sqlite3.connect(settings_db_path)
+        conn3.row_factory = sqlite3.Row
+        try:
+            placeholders3 = ",".join("?" for _ in em_row_ids)
+            rel_rows = conn3.execute(
+                f"""
+                SELECT em.epic_key,
+                       COALESCE(pr.release_status, '') AS release_status,
+                       COALESCE(pr.release_date, '') AS planned_release_date,
+                       COALESCE(pr.actual_release_date, '') AS actual_release_date
+                FROM product_release_epics pre
+                JOIN product_releases pr ON pr.id = pre.release_id
+                JOIN epics_management em ON em.id = pre.epic_row_id
+                WHERE pre.epic_row_id IN ({placeholders3})
+                """,
+                em_row_ids,
+            ).fetchall()
+            for rel_row in rel_rows:
+                ek = _as_text(rel_row["epic_key"]).upper()
+                if ek:
+                    release_info_by_epic_key[ek] = {
+                        "release_status": _as_text(rel_row["release_status"]),
+                        "planned_release_date": _as_text(rel_row["planned_release_date"]),
+                        "actual_release_date": _as_text(rel_row["actual_release_date"]),
+                    }
+        except Exception:
+            pass
+        finally:
+            conn3.close()
+
     selected: list[dict[str, object]] = []
     for r in rows:
         epic_key = _as_text(r["epic_key"]).upper()
@@ -343,6 +378,9 @@ def _load_current_ipp_meeting_epics(
             "issue_type": (_as_text(r["issue_type"]) or "epic").lower(),
             "source_tag": (_as_text(r["source_tag"]) or ("custom" if (_as_text(r["item_kind"]).lower() == "custom") else "epics_planner")).lower(),
             "assignee_text": _as_text(r["assignee_text"]),
+            "release_status": release_info_by_epic_key.get(epic_key, {}).get("release_status", ""),
+            "planned_release_date": release_info_by_epic_key.get(epic_key, {}).get("planned_release_date", ""),
+            "actual_release_date": release_info_by_epic_key.get(epic_key, {}).get("actual_release_date", ""),
         })
     return selected, meeting_id
 
@@ -907,6 +945,9 @@ def _build_records(
                 "plan_status": _as_text(epic.get("plan_status")),
                 "priority": _as_text(epic.get("priority")),
                 "stories": story_rows,
+                "release_status": _as_text(epic.get("release_status", "")),
+                "planned_release_date": _as_text(epic.get("planned_release_date", "")),
+                "actual_release_date": _as_text(epic.get("actual_release_date", "")),
             }
         )
     return records
@@ -1011,6 +1052,9 @@ def _rows_for_payload(records: list[dict[str, object]]) -> list[dict[str, object
                 "phase_data": phase_data,
                 "mapped_phase_data": mapped_phase_data,
                 "stories": r.get("stories", []),
+                "release_status": r.get("release_status", ""),
+                "planned_release_date": r.get("planned_release_date", ""),
+                "actual_release_date": r.get("actual_release_date", ""),
                 "roadmap": {
                     "valid": r["computed_has_valid_epic_plan"] == "Yes",
                     "axis_start_iso": roadmap_axis["axis_start"].isoformat() if roadmap_axis["has_axis"] else "",

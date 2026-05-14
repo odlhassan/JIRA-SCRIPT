@@ -650,6 +650,19 @@
         const blockingHtml = row.blocking_epic_key
           ? `<a href="${escapeHtml(row.blocking_epic_url || "#")}" target="_blank" rel="noreferrer" class="badge blocked" title="${escapeHtml(blockingText)}">${escapeHtml(row.blocking_epic_key)}</a>`
           : "";
+        const releaseStateColors = {Released:"#4caf50",Planned:"#2196f3",Rescheduled:"#ff9800",Shelfed:"#9e9e9e"};
+        const releaseHtml = (() => {
+          const state = row.release_state || "";
+          const rnum = row.release_number || "";
+          if (!state && !rnum) return "";
+          const color = releaseStateColors[state] || "#9e9e9e";
+          let parts = [];
+          if (state) parts.push(`<span style="background:${color};color:#fff;padding:1px 6px;border-radius:3px;font-size:11px">${escapeHtml(state)}</span>`);
+          if (rnum) parts.push(`<span style="font-size:11px;margin-left:4px">${escapeHtml(rnum)}</span>`);
+          if (row.release_date) parts.push(`<span style="font-size:10px;color:#555;margin-left:4px">Plan: ${escapeHtml(row.release_date)}</span>`);
+          if (row.actual_release_date) parts.push(`<span style="font-size:10px;color:#555;margin-left:4px">Actual: ${escapeHtml(row.actual_release_date)}</span>`);
+          return `<div class="subline" style="margin-top:2px;">${parts.join("")}</div>`;
+        })();
         const actualBar = actualLeft == null || actualWidth <= 0
           ? ""
           : `<div class="bar actual" style="left:${actualLeft}px;width:${actualWidth}px;" title="Actual ${escapeHtml(formatDate(row.actual_start))} to ${escapeHtml(formatDate(row.actual_complete_date))}"></div>
@@ -675,6 +688,7 @@
                 <span>Actual: ${escapeHtml(formatDate(row.actual_start))} to ${escapeHtml(formatDate(row.actual_complete_date))}</span>
                 ${blockingHtml}
               </div>
+              ${releaseHtml}
             </div>
             <div class="timeline-wrap">
               <div class="timeline-row" style="width:${widthPx}px;">

@@ -430,6 +430,33 @@
             gap: 0.42rem 0.75rem;
             margin-bottom: 0.38rem;
         }
+        .rmi-release-info {
+            margin: 0.5rem 0 0.5rem;
+            padding: 0.5rem 0.75rem;
+            border: 1px solid #dbeafe;
+            border-radius: 8px;
+            background: #f0f7ff;
+            font-size: 0.8rem;
+        }
+        .rmi-release-fields {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem 1.5rem;
+            margin-top: 0.3rem;
+        }
+        .release-status-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 0.72rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        .release-status-badge.release-status-released { background: #dcfce7; color: #166534; }
+        .release-status-badge.release-status-scheduled { background: #dbeafe; color: #1e40af; }
+        .release-status-badge.release-status-shelved { background: #f3f4f6; color: #374151; }
+        .release-status-badge.release-status-rescheduled { background: #fef3c7; color: #92400e; }
         .phase-chip-row {
             display: flex;
             flex-wrap: wrap;
@@ -3568,6 +3595,21 @@ function buildRmiDetailsHtml(row) {
         `;
     }).join("") : '<div class="muted">No mapped phases available for this RMI.</div>';
     const rmiText = asText(row.epic_name) || asText(row.epic_rmi) || "(No Epic/RMI)";
+    const relStatus = asText(row.release_status);
+    const relStatusBadge = relStatus
+        ? `<span class="release-status-badge release-status-${esc(relStatus.toLowerCase())}">${esc(relStatus.charAt(0).toUpperCase() + relStatus.slice(1))}</span>`
+        : '<span class="muted">—</span>';
+    const relPlannedDate = asText(row.planned_release_date);
+    const relActualDate = asText(row.actual_release_date);
+    const releaseInfoHtml = (relStatus || relPlannedDate || relActualDate) ? `
+        <div class="rmi-release-info">
+            <strong>Release Info</strong>
+            <div class="rmi-release-fields">
+                <span><strong>Released Status:</strong> ${relStatusBadge}</span>
+                <span><strong>Planned Release Date:</strong> ${esc(formatDisplayDate(relPlannedDate) || "—")}</span>
+                <span><strong>Actual Release Date:</strong> ${esc(formatDisplayDate(relActualDate) || "—")}</span>
+            </div>
+        </div>` : '';
     const storiesHtml = stories.length ? `
         <div class="simple-table-wrap">
             <table class="simple-table">
@@ -3621,6 +3663,7 @@ function buildRmiDetailsHtml(row) {
         <div class="rmi-meta"><strong>Input:</strong> ${esc(row.product_category || row.product || "-")}</div>
         <div class="rmi-meta"><strong>Component:</strong> ${esc(row.component || "-")}</div>
         <div class="rmi-meta"><strong>Jira:</strong> ${jira}</div>
+        ${releaseInfoHtml}
         <div class="rmi-summary">
             <div><strong>Jira Status</strong><br>${esc(jiraStatus)}</div>
             <div><strong>Jira Assignee</strong><br>${esc(jiraAssignee)}</div>
