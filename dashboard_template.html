@@ -399,7 +399,7 @@
         }
         html[data-theme="dark"] .badge-tip::after { border-color: #ef4444 transparent transparent transparent; }
 
-        :root { --releases-drawer-width: 50vw; }
+        :root { --releases-drawer-width: 60vw; }
         .releases-drawer-overlay {
             position: fixed;
             inset: 0;
@@ -453,24 +453,20 @@
         .releases-drawer-head {
             display: flex;
             align-items: center;
-            justify-content: space-between;
-            gap: .75rem;
-            padding: 1rem 1rem .75rem;
-            border-bottom: 1px solid #e5e7eb;
-            background: linear-gradient(180deg, #f8fbff 0%, #ffffff 100%);
+            gap: .5rem;
+            padding: .7rem .9rem;
+            border-bottom: 1px solid #dbe3f1;
+            background: rgba(255,255,255,.92);
+            backdrop-filter: blur(8px);
             flex: 0 0 auto;
+            flex-wrap: wrap;
         }
-        .releases-drawer-title-wrap { min-width: 0; }
+        .releases-drawer-title-wrap { flex-shrink: 0; }
         .releases-drawer-title {
             margin: 0;
             font-size: 1rem;
             font-weight: 800;
             color: #0f172a;
-        }
-        .releases-drawer-subtitle {
-            margin: .24rem 0 0;
-            font-size: .78rem;
-            color: #475569;
         }
         .releases-drawer-close {
             border: 1px solid #cbd5e1;
@@ -483,340 +479,140 @@
             cursor: pointer;
         }
         .releases-drawer-close:hover { background: #f8fafc; }
-        .releases-toolbar {
-            display: grid;
-            grid-template-columns: repeat(4, minmax(0, 1fr));
-            gap: .75rem;
-            padding: .9rem 1rem;
-            border-bottom: 1px solid #eef2f7;
-            background: #fcfdff;
-            flex: 0 0 auto;
+        /* Planned Releases drawer — embedded Release Management calendar */
+        .pr-controls {
+            display: flex; align-items: center; gap: .45rem; flex-wrap: wrap; flex: 1 1 auto; min-width: 0;
         }
-        .releases-field { display: flex; flex-direction: column; gap: .32rem; }
-        .releases-field label {
-            font-size: .72rem;
-            font-weight: 800;
-            letter-spacing: .02em;
-            text-transform: uppercase;
-            color: #475569;
+        .pr-controls select {
+            border: 1px solid #c7d2e6; border-radius: 8px; padding: 5px 10px; font-size: .8rem;
+            background: #fff; color: #0f172a; cursor: pointer; min-width: 120px;
+            box-shadow: 0 1px 3px rgba(15,23,42,.07);
         }
-        .releases-field input,
-        .releases-field select {
-            width: 100%;
-            border: 1px solid #cbd5e1;
-            border-radius: 10px;
-            background: #ffffff;
-            color: #0f172a;
-            font-size: .85rem;
-            padding: .58rem .7rem;
+        .pr-year-nav {
+            display: flex; align-items: center; gap: 2px; background: #fff;
+            border: 1px solid #c7d2e6; border-radius: 10px; padding: 3px 6px;
+            box-shadow: 0 1px 3px rgba(15,23,42,.07);
         }
-        .releases-field input:focus,
-        .releases-field select:focus {
-            outline: none;
-            border-color: #60a5fa;
-            box-shadow: 0 0 0 3px rgba(59, 130, 246, .14);
+        .pr-year-nav strong { font-size: .86rem; font-weight: 700; min-width: 38px; text-align: center; color: #0f172a; }
+        .pr-year-nav button {
+            border: none; background: none; border-radius: 5px; width: 24px; height: 24px;
+            cursor: pointer; font-size: .92rem; color: #64748b;
+            display: flex; align-items: center; justify-content: center;
         }
-        .releases-toolbar-meta {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: .6rem;
-            padding: 0 1rem .85rem;
-            border-bottom: 1px solid #eef2f7;
-            background: #fcfdff;
-            flex: 0 0 auto;
+        .pr-year-nav button:hover { background: #dbeafe; color: #2563eb; }
+        .pr-view-toggle {
+            display: flex; background: #fff; border: 1px solid #c7d2e6; border-radius: 10px;
+            overflow: hidden; box-shadow: 0 1px 3px rgba(15,23,42,.07);
         }
-        .releases-selection-note {
-            font-size: .8rem;
-            font-weight: 700;
-            color: #334155;
+        .pr-view-toggle button {
+            border: none; background: transparent; padding: 5px 12px; font-size: .76rem;
+            cursor: pointer; font-weight: 600; color: #64748b; white-space: nowrap;
         }
-        .releases-clear-date {
-            border: 1px solid #bfdbfe;
-            border-radius: 999px;
-            background: #eff6ff;
-            color: #1d4ed8;
-            font-size: .75rem;
-            font-weight: 800;
-            padding: .32rem .68rem;
-            cursor: pointer;
+        .pr-view-toggle button.active { background: #2563eb; color: #fff; }
+        .pr-view-toggle button:not(:last-child) { border-right: 1px solid #e2e8f0; }
+        .pr-main { display: flex; flex: 1 1 auto; overflow: hidden; min-height: 0; }
+        .pr-cal-pane { flex: 0 0 52%; overflow-y: auto; padding: 12px 14px; border-right: 1px solid #dbe3f1; }
+        .pr-cal-grid { display: grid; grid-template-columns: 1fr; gap: 14px; }
+        .pr-month { border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; background: #fff; box-shadow: 0 1px 3px rgba(15,23,42,.07); }
+        .pr-month-head {
+            background: linear-gradient(135deg, #eff6ff, #e8f0fe); padding: 9px 12px;
+            font-size: .9rem; font-weight: 700; text-align: center; color: #1d4ed8;
+            letter-spacing: .03em; text-transform: uppercase; border-bottom: 1px solid #e2e8f0;
         }
-        .releases-clear-date[disabled] {
-            opacity: .55;
-            cursor: default;
+        .pr-days { display: grid; grid-template-columns: repeat(7, 1fr); padding: 6px; gap: 3px; }
+        .pr-day { min-height: 38px; display: flex; flex-direction: column; align-items: center; font-size: .78rem; color: #64748b; padding: 2px 0; border-radius: 4px; }
+        .pr-day.cur-month { color: #334155; }
+        .pr-day.is-release { cursor: default; font-weight: 700; }
+        .pr-day.is-release:hover { background: #dbeafe; }
+        .pr-day.today-marker { background: #2563eb; color: #fff !important; border-radius: 50%; font-weight: 700; }
+        .pr-dots-row { display: flex; flex-wrap: wrap; gap: 3px; justify-content: center; margin-top: 2px; }
+        .pr-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; cursor: pointer; transition: transform .12s, box-shadow .12s; }
+        .pr-dot:hover { transform: scale(1.6); box-shadow: 0 0 5px rgba(0,0,0,.3); }
+        .pr-dot-extra { font-size: .6rem; font-weight: 800; color: #64748b; line-height: 8px; white-space: nowrap; align-self: center; }
+        @keyframes pr-hl-pulse {
+            0%   { box-shadow: 0 0 0 3px var(--pr-hl, #2563eb), 0 8px 28px rgba(0,0,0,.18); transform: translateY(-3px); }
+            55%  { box-shadow: 0 0 0 2px var(--pr-hl, #2563eb), 0 5px 18px rgba(0,0,0,.1); transform: translateY(-1px); }
+            100% { box-shadow: 0 1px 3px rgba(15,23,42,.07); transform: translateY(0); }
         }
-        .releases-drawer-body {
-            flex: 1 1 auto;
-            display: flex;
-            flex-direction: column;
-            gap: 1rem;
-            padding: 1rem;
-            overflow-x: hidden;
-            overflow-y: scroll;
-            scrollbar-gutter: stable;
-            scrollbar-width: thin;
-            overscroll-behavior: contain;
-            -webkit-overflow-scrolling: touch;
-            touch-action: pan-y;
-            min-height: 0;
+        .pr-list-item.pr-highlighted { animation: pr-hl-pulse 2.2s ease-out forwards; z-index: 1; position: relative; }
+        .pr-list-pane {
+            flex: 1 1 auto; overflow-y: auto; padding: 11px 13px;
+            display: flex; flex-direction: column; gap: 6px; background: #f8faff;
         }
-        .releases-drawer-body::-webkit-scrollbar {
-            width: 12px;
+        .pr-list-pane-header {
+            font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
+            color: #64748b; padding-bottom: 6px; border-bottom: 1px solid #e2e8f0; margin-bottom: 2px; flex-shrink: 0;
         }
-        .releases-drawer-body::-webkit-scrollbar-track {
-            background: #edf2f7;
-            border-radius: 999px;
+        .pr-list-item {
+            border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden;
+            background: #fff; box-shadow: 0 1px 3px rgba(15,23,42,.07); transition: box-shadow .15s, transform .12s; flex-shrink: 0;
         }
-        .releases-drawer-body::-webkit-scrollbar-thumb {
-            background: #94a3b8;
-            border-radius: 999px;
-            border: 2px solid #edf2f7;
-        }
-        .releases-calendar-panel,
-        .releases-table-panel {
-            flex: 0 0 auto;
-            border: 1px solid #e5e7eb;
-            border-radius: 16px;
-            background: #ffffff;
-            overflow: hidden;
-            min-height: 0;
-        }
-        .releases-panel-head {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: .6rem;
-            padding: .85rem 1rem;
-            border-bottom: 1px solid #eef2f7;
-            background: #fafcff;
-        }
-        .releases-panel-head h3 {
-            margin: 0;
-            font-size: .9rem;
-            color: #0f172a;
-        }
-        .releases-panel-head p {
-            margin: 0;
-            font-size: .76rem;
-            color: #64748b;
-        }
-        .releases-calendar-weekdays,
-        .releases-calendar-grid {
-            display: grid;
-            grid-template-columns: repeat(7, minmax(0, 1fr));
-        }
-        .releases-calendar-weekdays {
-            padding: .55rem .75rem 0;
-            gap: .35rem;
-        }
-        .releases-calendar-weekday {
-            text-align: center;
-            font-size: .68rem;
-            font-weight: 800;
-            letter-spacing: .02em;
-            text-transform: uppercase;
-            color: #64748b;
-        }
-        .releases-calendar-grid {
-            gap: .35rem;
-            padding: .75rem;
-        }
-        .release-calendar-day {
-            min-height: 74px;
-            border: 1px solid #e2e8f0;
-            border-radius: 14px;
-            background: #ffffff;
-            padding: .52rem;
-            display: flex;
-            flex-direction: column;
-            align-items: flex-start;
-            justify-content: space-between;
-            gap: .45rem;
-            text-align: left;
-            cursor: pointer;
-            transition: transform .14s ease, box-shadow .14s ease, border-color .14s ease, background .14s ease;
-        }
-        .release-calendar-day:hover {
-            transform: translateY(-1px);
-            border-color: #93c5fd;
-            box-shadow: 0 10px 24px rgba(59, 130, 246, .12);
-        }
-        .release-calendar-day.is-outside-month {
-            opacity: .38;
-            cursor: default;
-            box-shadow: none;
-        }
-        .release-calendar-day.is-selected {
-            border-color: #1d4ed8;
-            box-shadow: 0 0 0 2px rgba(37, 99, 235, .18);
-        }
-        .release-calendar-day.is-today {
-            border-color: #0f766e;
-            box-shadow: 0 0 0 2px rgba(15, 118, 110, .16);
-        }
-        .release-calendar-day.is-due {
-            background: linear-gradient(180deg, #fee2e2 0%, #fff1f2 100%);
-            border-color: #fca5a5;
-        }
-        .release-calendar-day.is-holiday {
-            background: linear-gradient(180deg, #fef3c7 0%, #fffbeb 100%);
-            border-color: #fcd34d;
-        }
-        .release-calendar-day.is-conflict {
-            background: linear-gradient(180deg, #fecaca 0%, #fde68a 100%);
-            border-color: #f97316;
-        }
-        .release-calendar-day-number {
-            font-size: .88rem;
-            font-weight: 800;
-            color: #0f172a;
-        }
-        .release-calendar-today-note {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            padding: .15rem .42rem;
-            border-radius: 999px;
-            background: #ccfbf1;
-            color: #115e59;
-            font-size: .62rem;
-            font-weight: 800;
-            letter-spacing: .01em;
-            line-height: 1;
-        }
-        .release-calendar-count {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            min-width: 1.55rem;
-            min-height: 1.55rem;
-            padding: 0 .42rem;
-            border-radius: 999px;
-            background: #dc2626;
-            color: #ffffff;
-            font-size: .76rem;
-            font-weight: 800;
-            line-height: 1;
-        }
-        .release-calendar-holiday-note {
-            font-size: .66rem;
-            font-weight: 700;
-            color: #92400e;
-        }
-        .releases-table-scroll { overflow: visible; }
-        .releases-table {
-            width: 100%;
-            border-collapse: collapse;
-            min-width: 0;
-            table-layout: fixed;
-        }
-        .releases-table th,
-        .releases-table td {
-            padding: .78rem .85rem;
-            border-bottom: 1px solid #eef2f7;
-            text-align: left;
-            vertical-align: top;
-            font-size: .82rem;
-            overflow-wrap: anywhere;
-        }
-        .releases-table th {
-            position: sticky;
-            top: 0;
-            z-index: 1;
-            background: #f8fafc;
-            color: #334155;
-            font-size: .74rem;
-            font-weight: 800;
-            text-transform: uppercase;
-            letter-spacing: .02em;
-        }
-        .releases-table tbody tr.release-row-holiday {
-            background: #fffbeb;
-        }
-        .releases-table tbody tr:hover {
-            background: #f8fbff;
-        }
-        .release-name-cell {
-            display: flex;
-            flex-direction: column;
-            gap: .16rem;
-        }
-        .release-name-key {
-            font-size: .7rem;
-            font-weight: 800;
-            color: #64748b;
-        }
-        .release-status-pill {
-            display: inline-flex;
-            align-items: center;
-            border-radius: 999px;
-            padding: .2rem .5rem;
-            font-size: .72rem;
-            font-weight: 800;
-            background: #e2e8f0;
-            color: #334155;
-        }
-        .release-empty {
-            padding: 1.2rem 1rem;
-            color: #64748b;
-            font-size: .84rem;
-        }
-        html[data-theme="dark"] .releases-drawer {
-            background: #0f172a;
-            border-left-color: #334155;
-            box-shadow: -16px 0 40px rgba(2, 6, 23, .55);
-        }
-        html[data-theme="dark"] .releases-drawer-head,
-        html[data-theme="dark"] .releases-toolbar,
-        html[data-theme="dark"] .releases-toolbar-meta,
-        html[data-theme="dark"] .releases-panel-head {
-            background: #111c31;
-            border-color: #25334a;
-        }
-        html[data-theme="dark"] .releases-drawer-title,
-        html[data-theme="dark"] .release-calendar-day-number,
-        html[data-theme="dark"] .releases-panel-head h3,
-        html[data-theme="dark"] .releases-table th,
-        html[data-theme="dark"] .releases-table td { color: #e2e8f0; }
-        html[data-theme="dark"] .releases-drawer-subtitle,
-        html[data-theme="dark"] .releases-panel-head p,
-        html[data-theme="dark"] .releases-selection-note,
-        html[data-theme="dark"] .release-name-key,
-        html[data-theme="dark"] .release-empty,
-        html[data-theme="dark"] .releases-calendar-weekday { color: #94a3b8; }
-        html[data-theme="dark"] .releases-calendar-panel,
-        html[data-theme="dark"] .releases-table-panel,
-        html[data-theme="dark"] .release-calendar-day,
-        html[data-theme="dark"] .releases-field input,
-        html[data-theme="dark"] .releases-field select,
-        html[data-theme="dark"] .releases-drawer-close {
-            background: #0f172a;
-            border-color: #334155;
-            color: #e2e8f0;
-        }
-        html[data-theme="dark"] .releases-table th { background: #162238; }
-        html[data-theme="dark"] .releases-table tbody tr.release-row-holiday { background: rgba(245, 158, 11, .12); }
-        html[data-theme="dark"] .releases-table tbody tr:hover { background: rgba(59, 130, 246, .12); }
-        html[data-theme="dark"] .release-calendar-day.is-today {
-            border-color: #2dd4bf;
-            box-shadow: 0 0 0 2px rgba(45, 212, 191, .18);
-        }
-        html[data-theme="dark"] .release-calendar-day.is-due { background: linear-gradient(180deg, rgba(185, 28, 28, .45) 0%, rgba(127, 29, 29, .4) 100%); }
-        html[data-theme="dark"] .release-calendar-day.is-holiday { background: linear-gradient(180deg, rgba(180, 83, 9, .34) 0%, rgba(120, 53, 15, .28) 100%); }
-        html[data-theme="dark"] .release-calendar-day.is-conflict { background: linear-gradient(180deg, rgba(185, 28, 28, .45) 0%, rgba(180, 83, 9, .45) 100%); }
-        html[data-theme="dark"] .release-calendar-today-note {
-            background: rgba(13, 148, 136, .25);
-            color: #99f6e4;
-        }
-        @media (max-width: 1100px) {
-            .releases-toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-        }
+        .pr-list-item:hover { box-shadow: 0 4px 16px rgba(15,23,42,.09); transform: translateY(-1px); }
+        .pr-list-item-row { display: grid; grid-template-columns: 1fr 18px; gap: 8px; align-items: center; padding: 9px 13px; cursor: pointer; }
+        .pr-list-item-row:hover { background: #f8faff; }
+        .pr-epics-panel { display: none; padding: 7px 11px 11px; background: #f7f9ff; border-top: 1px solid #e2e8f0; flex-direction: column; gap: 5px; }
+        .pr-epics-panel.open { display: flex; }
+        .pr-epic-item { display: flex; align-items: flex-start; gap: 7px; padding: 6px 9px; background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; flex-wrap: wrap; }
+        .pr-epic-key { font-family: ui-monospace, monospace; font-size: .68rem; font-weight: 700; color: #1d4ed8; white-space: nowrap; background: #dbeafe; padding: 1px 5px; border-radius: 4px; }
+        .pr-epic-name { font-size: .76rem; flex: 1; line-height: 1.45; min-width: 0; color: #334155; }
+        .pr-chevron { font-size: .7rem; color: #64748b; transition: transform .18s ease; justify-self: end; }
+        .pr-list-item.open .pr-chevron { transform: rotate(90deg); }
+        .pr-empty { color: #64748b; font-size: .83rem; padding: 24px 14px; text-align: center; background: #fff; border: 1px dashed #c7d2e6; border-radius: 12px; }
+        .pr-rm-wrap { flex: 1 1 auto; overflow: auto; padding: 12px 14px; }
+        .pr-rm-scroll-hint { font-size: .7rem; color: #64748b; margin-bottom: 7px; }
+        .pr-rm-table-scroll { overflow-x: auto; border-radius: 12px; box-shadow: 0 4px 16px rgba(15,23,42,.09); border: 1px solid #e2e8f0; }
+        .pr-rm-table { border-collapse: collapse; width: 100%; min-width: 800px; table-layout: fixed; background: #fff; }
+        .pr-rm-table thead tr { background: linear-gradient(135deg, #eff6ff, #e8f0fe); }
+        .pr-rm-table th { font-size: .66rem; font-weight: 700; padding: 8px 5px; border-bottom: 2px solid #c7d2e6; border-right: 1px solid #e2e8f0; text-align: center; white-space: nowrap; color: #1d4ed8; letter-spacing: .03em; text-transform: uppercase; }
+        .pr-rm-table th:last-child { border-right: none; }
+        .pr-rm-table th.pr-proj-head { text-align: left; padding-left: 11px; width: 160px; min-width: 160px; background: linear-gradient(135deg, #e8f0fe, #dbeafe); border-right: 2px solid #c7d2e6; }
+        .pr-proj-cell { font-size: .76rem; font-weight: 700; padding: 7px 11px; border-bottom: 1px solid #e2e8f0; border-right: 2px solid #c7d2e6; white-space: nowrap; background: #fff; position: sticky; left: 0; z-index: 2; max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
+        .pr-proj-cell-inner { display: flex; align-items: center; gap: 7px; min-width: 0; }
+        .pr-proj-color-bar { width: 4px; min-width: 4px; height: 2em; border-radius: 3px; flex-shrink: 0; }
+        .pr-proj-name { font-size: .76rem; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #0f172a; }
+        .pr-month-cell { border-bottom: 1px solid #e2e8f0; border-right: 1px solid #e2e8f0; padding: 4px; vertical-align: top; background: #fff; min-width: 80px; }
+        .pr-month-cell:last-child { border-right: none; }
+        .pr-chip { display: inline-flex; align-items: center; padding: 3px 7px; border-radius: 6px; font-size: .68rem; font-weight: 700; cursor: pointer; margin: 2px; white-space: nowrap; border: 1.5px solid transparent; transition: opacity .14s, transform .12s; }
+        .pr-chip:hover { opacity: .88; transform: translateY(-2px); }
+        .pr-chip.pr-chip-open { outline: 2px solid rgba(15,23,42,.5); outline-offset: 2px; transform: translateY(-1px); }
+        .pr-epics-row td { padding: 9px 13px 11px; background: #f7f9ff; border-bottom: 1px solid #e2e8f0; border-right: none; }
+        .pr-epics-row.pr-epics-hidden { display: none; }
+        .pr-month-now { background: #fffbeb !important; }
+        .pr-month-now-head { background: linear-gradient(135deg, #fef9c3, #fef3c7) !important; color: #92400e !important; }
+        html[data-theme="dark"] .releases-drawer { background: #0d1526; border-left-color: #1e293b; }
+        html[data-theme="dark"] .releases-drawer-head { background: rgba(15,23,42,.94); border-color: #1e293b; }
+        html[data-theme="dark"] .releases-drawer-title { color: #e2e8f0; }
+        html[data-theme="dark"] .releases-drawer-close { background: #1e293b; border-color: #334155; color: #cbd5e1; }
+        html[data-theme="dark"] .pr-controls select, html[data-theme="dark"] .pr-year-nav, html[data-theme="dark"] .pr-view-toggle { background: #1e293b; border-color: #334155; color: #e2e8f0; }
+        html[data-theme="dark"] .pr-year-nav strong { color: #e2e8f0; }
+        html[data-theme="dark"] .pr-view-toggle button { color: #94a3b8; }
+        html[data-theme="dark"] .pr-view-toggle button.active { background: #2563eb; color: #fff; }
+        html[data-theme="dark"] .pr-cal-pane { border-color: #1e293b; }
+        html[data-theme="dark"] .pr-list-pane { background: #0d1526; }
+        html[data-theme="dark"] .pr-list-pane-header { border-color: #1e293b; color: #475569; }
+        html[data-theme="dark"] .pr-list-item, html[data-theme="dark"] .pr-epic-item { background: #111c31; border-color: #1e293b; }
+        html[data-theme="dark"] .pr-list-item-row:hover { background: #162238; }
+        html[data-theme="dark"] .pr-epics-panel { background: #0d1526; border-color: #1e293b; }
+        html[data-theme="dark"] .pr-epic-name { color: #cbd5e1; }
+        html[data-theme="dark"] .pr-month { background: #111c31; border-color: #1e293b; }
+        html[data-theme="dark"] .pr-month-head { background: linear-gradient(135deg, #162238, #1e3a5f); color: #93c5fd; border-color: #1e293b; }
+        html[data-theme="dark"] .pr-day.cur-month { color: #94a3b8; }
+        html[data-theme="dark"] .pr-day.today-marker { background: #2563eb; color: #fff !important; }
+        html[data-theme="dark"] .pr-rm-wrap { background: #0d1526; }
+        html[data-theme="dark"] .pr-rm-table { background: #111c31; }
+        html[data-theme="dark"] .pr-rm-table th { color: #93c5fd; border-color: #1e293b; }
+        html[data-theme="dark"] .pr-rm-table th.pr-proj-head { background: linear-gradient(135deg, #162238, #1e3a5f); border-color: #1e293b; }
+        html[data-theme="dark"] .pr-proj-cell { background: #111c31; border-color: #1e293b; }
+        html[data-theme="dark"] .pr-proj-name { color: #e2e8f0; }
+        html[data-theme="dark"] .pr-month-cell { background: #111c31; border-color: #1e293b; }
+        html[data-theme="dark"] .pr-empty { background: #111c31; border-color: #334155; color: #64748b; }
         @media (max-width: 900px) {
             :root { --releases-drawer-width: 100vw; }
             .releases-drawer { width: 100vw; }
             .releases-resize-handle { display: none; }
-            .releases-toolbar { grid-template-columns: 1fr; }
-            .releases-drawer-body { padding: .8rem; }
+            .pr-main { flex-direction: column; }
+            .pr-cal-pane { flex: 0 0 auto; border-right: none; border-bottom: 1px solid #dbe3f1; }
+            .pr-list-pane { flex: 0 0 auto; max-height: 40vh; }
         }
 </style>
   <link rel="stylesheet" href="shared-nav.css">
@@ -837,7 +633,7 @@
         <div class="header-toolbar">
             <div class="header-toolbar-left"></div>
             <div class="header-toolbar-right">
-                <button id="releases-drawer-open" class="header-toggle" type="button" aria-haspopup="dialog" aria-controls="releases-drawer" aria-expanded="false">Releases</button>
+                <button id="releases-drawer-open" class="header-toggle" type="button" aria-haspopup="dialog" aria-controls="releases-drawer" aria-expanded="false">Planned Releases</button>
                 <button id="theme-toggle" class="header-toggle" type="button" aria-label="Toggle dark mode"><span class="material-icons-outlined" aria-hidden="true">dark_mode</span>Dark mode</button>
                 <button id="remove-filters-btn" class="header-toggle" type="button" aria-label="Remove all filters">remove filters</button>
                 <button id="header-toggle" class="header-toggle" type="button" aria-expanded="true" aria-controls="header-content">Collapse header</button>
@@ -970,75 +766,31 @@
     <div id="releases-drawer-resize-handle" class="releases-resize-handle" aria-hidden="true"></div>
     <div class="releases-drawer-head">
         <div class="releases-drawer-title-wrap">
-            <h2 id="releases-drawer-title" class="releases-drawer-title">Releases</h2>
-            <p class="releases-drawer-subtitle">Epic due dates, holiday overlays, and active phase visibility.</p>
+            <h2 id="releases-drawer-title" class="releases-drawer-title">Planned Releases</h2>
+        </div>
+        <div class="pr-controls">
+            <select id="pr-proj-filter"></select>
+            <div class="pr-year-nav">
+                <button id="pr-prev-yr" type="button">&#8249;</button>
+                <strong id="pr-year-label">2026</strong>
+                <button id="pr-next-yr" type="button">&#8250;</button>
+            </div>
+            <div class="pr-view-toggle">
+                <button id="pr-btn-cal" class="active" type="button">&#128197; Calendar</button>
+                <button id="pr-btn-rm" type="button">&#128506; Roadmap</button>
+            </div>
         </div>
         <button id="releases-drawer-close" class="releases-drawer-close" type="button" aria-label="Close releases drawer">Close</button>
     </div>
-    <div class="releases-toolbar">
-        <div class="releases-field">
-            <label for="releases-from-month">From</label>
-            <input id="releases-from-month" type="month">
-        </div>
-        <div class="releases-field">
-            <label for="releases-to-month">To</label>
-            <input id="releases-to-month" type="month">
-        </div>
-        <div class="releases-field">
-            <label for="releases-epic-search">Epic Search</label>
-            <input id="releases-epic-search" type="search" placeholder="Search epic, key, status">
-        </div>
-        <div class="releases-field">
-            <label for="releases-capacity-profile">Capacity Profile</label>
-            <select id="releases-capacity-profile"></select>
+    <div id="pr-cal-view" class="pr-main">
+        <div class="pr-cal-pane"><div class="pr-cal-grid" id="pr-cal-grid"></div></div>
+        <div class="pr-list-pane" id="pr-list-pane">
+            <div class="pr-list-pane-header">Releases</div>
         </div>
     </div>
-    <div class="releases-toolbar-meta">
-        <div id="releases-selection-note" class="releases-selection-note">Showing selected project releases for the current month.</div>
-        <button id="releases-clear-date" class="releases-clear-date" type="button" disabled>Clear selected date</button>
-    </div>
-    <div class="releases-drawer-body">
-        <section class="releases-calendar-panel">
-            <div class="releases-panel-head">
-                <div>
-                    <h3>Release Calendar</h3>
-                    <p id="releases-calendar-summary">Due dates in the selected release month.</p>
-                </div>
-            </div>
-            <div class="releases-calendar-weekdays">
-                <div class="releases-calendar-weekday">Sun</div>
-                <div class="releases-calendar-weekday">Mon</div>
-                <div class="releases-calendar-weekday">Tue</div>
-                <div class="releases-calendar-weekday">Wed</div>
-                <div class="releases-calendar-weekday">Thu</div>
-                <div class="releases-calendar-weekday">Fri</div>
-                <div class="releases-calendar-weekday">Sat</div>
-            </div>
-            <div id="releases-calendar-grid" class="releases-calendar-grid"></div>
-        </section>
-        <section class="releases-table-panel">
-            <div class="releases-panel-head">
-                <div>
-                    <h3>Release Details</h3>
-                    <p id="releases-table-summary">Epics due in the selected range.</p>
-                </div>
-            </div>
-            <div class="releases-table-scroll">
-                <table class="releases-table">
-                    <thead>
-                        <tr>
-                            <th>Epic Name</th>
-                            <th>Epic Status</th>
-                            <th>Production Date</th>
-                            <th>Original Estimate</th>
-                            <th>Current Phase</th>
-                            <th>Actual Hours</th>
-                        </tr>
-                    </thead>
-                    <tbody id="releases-table-body"></tbody>
-                </table>
-            </div>
-        </section>
+    <div id="pr-rm-view" class="pr-rm-wrap" style="display:none;">
+        <div class="pr-rm-scroll-hint">&#8596; Scroll horizontally to see all months</div>
+        <div id="pr-rm-content"></div>
     </div>
 </aside>
 
@@ -1075,16 +827,12 @@ let selectedStoryRisk = RISK_ALL;
 let selectedSubtaskRisk = RISK_ALL;
 const currentMonthDefault = formatMonthInputValue(new Date());
 let releasesDrawerOpen = false;
-let releasesFromMonth = currentMonthDefault;
-let releasesToMonth = currentMonthDefault;
-let releasesSelectedDate = '';
-let releasesSearchQuery = '';
-const RELEASES_NO_PROFILE = '__NONE__';
-let releasesSelectedProfileKey = RELEASES_NO_PROFILE;
-let releasesCapacityProfiles = [];
-let releasesCapacityProfilesPromise = null;
-let releasesPhaseMetadataByEpicKey = {};
-let releasesPhaseRequestToken = 0;
+// --- Planned Releases drawer ---
+let prAllReleases = [];
+let prAllProjects = [];
+let prCurYear = new Date().getFullYear();
+let prCurProj = '';
+let prCurView = 'cal';
 const epicRefreshRuns = new Map();
 const themeToggleButton = document.getElementById('theme-toggle');
 const headerContainer = document.getElementById('dashboard-header');
@@ -1097,8 +845,7 @@ const releasesDrawerCloseButton = document.getElementById('releases-drawer-close
 const releasesDrawerResizeHandle = document.getElementById('releases-drawer-resize-handle');
 const THEME_STORAGE_KEY = 'rmi-dashboard-theme';
 const HEADER_COLLAPSE_STORAGE_KEY = 'rmi-dashboard-header-collapsed';
-const RELEASES_CAPACITY_PROFILES_ENDPOINT = '/api/capacity/profiles';
-const RELEASES_PHASE_METADATA_ENDPOINT = '/api/dashboard/releases/phase-metadata';
+
 const EPIC_REFRESH_ENDPOINT_BASE = '/api/dashboard/refresh-epic';
 const RELEASES_MIN_WIDTH_VW = 32;
 const RELEASES_MAX_WIDTH_VW = 78;
@@ -1417,283 +1164,291 @@ function getStatusClass(status) {
     if (text.includes('resolved')) return 'card-status-resolved';
     return 'card-status-todo';
 }
-function normalizeReleaseMonths() {
-    if (releasesFromMonth > releasesToMonth) {
-        const tmp = releasesFromMonth;
-        releasesFromMonth = releasesToMonth;
-        releasesToMonth = tmp;
+// ---- Planned Releases drawer helpers ----
+function prEsc(v) {
+    return String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function prFmtDate(d) {
+    if (!d) return '';
+    try { return new Date(d + 'T00:00:00').toLocaleDateString(undefined, {year:'numeric',month:'short',day:'numeric'}); }
+    catch(e) { return d; }
+}
+function prFmtDateShort(d) {
+    if (!d) return '';
+    try { return new Date(d + 'T00:00:00').toLocaleDateString(undefined, {month:'short',day:'numeric'}); }
+    catch(e) { return d; }
+}
+function prProjColor(pk) {
+    const p = prAllProjects.find(x => x.project_key === pk);
+    return (p && p.color_hex) ? ('#' + String(p.color_hex).replace('#','')) : '#2563eb';
+}
+function prProjLabel(pk) {
+    const p = prAllProjects.find(x => x.project_key === pk);
+    return (p && (p.project_name || p.display_name)) || pk;
+}
+function prFiltered() {
+    return prCurProj ? prAllReleases.filter(r => r.project_key === prCurProj) : prAllReleases;
+}
+function prEpicItemsHTML(epics) {
+    if (!epics || !epics.length) return '<div style="color:#64748b;font-size:.76rem;padding:4px 0;">No epics assigned.</div>';
+    return epics.map(e => `<div class="pr-epic-item">
+      <span class="pr-epic-key">${prEsc(e.epic_key)}</span>
+      <span class="pr-epic-name">${prEsc(e.epic_name || e.epic_key)}</span>
+    </div>`).join('');
+}
+function prBuildCal(releases, year) {
+    const byDate = {};
+    for (const r of releases) {
+        const dk = r.release_date ? r.release_date.slice(0,10) : '';
+        if (dk) (byDate[dk] = byDate[dk] || []).push(r);
     }
-    const fromInput = document.getElementById('releases-from-month');
-    const toInput = document.getElementById('releases-to-month');
-    if (fromInput) fromInput.value = releasesFromMonth;
-    if (toInput) toInput.value = releasesToMonth;
-}
-function getReleaseRangeBounds() {
-    normalizeReleaseMonths();
-    return {
-        start: monthStart(releasesFromMonth) || monthStart(currentMonthDefault),
-        end: monthEnd(releasesToMonth) || monthEnd(currentMonthDefault),
-    };
-}
-function parseIsoDateString(value) {
-    const parsed = parseDateValue(value);
-    if (!parsed) return '';
-    return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}-${String(parsed.getDate()).padStart(2, '0')}`;
-}
-function formatHoursCompact(value) {
-    const hours = Number(value);
-    if (!Number.isFinite(hours)) return '-';
-    return `${String(Number(hours.toFixed(2))).replace(/\.00$/, '')}h`;
-}
-function formatReleaseEstimate(item) {
-    const literal = asText(item && item.original_estimate);
-    if (literal) return literal;
-    const numeric = Number(item && (item.original_estimate_hours ?? item.planned_hours_numeric));
-    if (Number.isFinite(numeric) && numeric > 0) return formatHoursCompact(numeric);
-    return '-';
-}
-function releaseProfileOptionValue(profile) {
-    const fromDate = asText(profile && profile.from_date);
-    const toDate = asText(profile && profile.to_date);
-    const updatedAt = asText(profile && profile.updated_at_utc);
-    return `${fromDate}|${toDate}|${updatedAt}`;
-}
-function releaseProfileLabel(profile) {
-    const fromDate = asText(profile && profile.from_date) || '?';
-    const toDate = asText(profile && profile.to_date) || '?';
-    return `${fromDate} to ${toDate}`;
-}
-function selectedReleaseProfile() {
-    if (releasesSelectedProfileKey === RELEASES_NO_PROFILE) return null;
-    return releasesCapacityProfiles.find((profile) => releaseProfileOptionValue(profile) === releasesSelectedProfileKey) || null;
-}
-function selectedReleaseHolidaySet() {
-    const profile = selectedReleaseProfile();
-    return new Set(Array.isArray(profile && profile.holiday_dates) ? profile.holiday_dates.map(parseIsoDateString).filter(Boolean) : []);
-}
-function releaseEpicDueIso(item) {
-    return parseIsoDateString(item && item.jira_end_date);
-}
-function matchesReleaseSearch(item) {
-    if (!releasesSearchQuery) return true;
-    const needle = releasesSearchQuery;
-    return [
-        asKey(item),
-        asText(item.summary),
-        itemStatus(item),
-        asText(item.assignee),
-    ].some((value) => asText(value).toLowerCase().includes(needle));
-}
-function getReleaseScopedEpics() {
-    const bounds = getReleaseRangeBounds();
-    return (allEpics || []).filter((epic) => {
-        if (!selectedProjects.has(asText(epic.project_key))) return false;
-        const dueDate = parseDateValue(epic && epic.jira_end_date);
-        if (!dueDate) return false;
-        if (!isWithinRange(dueDate, bounds.start, bounds.end)) return false;
-        return matchesReleaseSearch(epic);
-    });
-}
-function getReleaseRows() {
-    const holidaySet = selectedReleaseHolidaySet();
-    const selectedDateIso = asText(releasesSelectedDate);
-    return getReleaseScopedEpics()
-        .map((epic) => {
-            const epicKey = asKey(epic);
-            const dueIso = releaseEpicDueIso(epic);
-            const meta = releasesPhaseMetadataByEpicKey[epicKey] || {};
-            const phaseNames = Array.isArray(meta.current_phase_names) ? meta.current_phase_names : [];
-            return {
-                epicKey,
-                epicName: asText(epic.summary) || epicKey || '-',
-                status: itemStatus(epic) || '-',
-                productionDate: dueIso,
-                productionDateLabel: formatDateDisplay(epic.jira_end_date),
-                originalEstimate: formatReleaseEstimate(epic),
-                currentPhase: phaseNames.length ? phaseNames.join(', ') : '-',
-                actualHours: formatHoursCompact(Number(epic.subtask_hours_logged_total || 0)),
-                holidayDueDate: dueIso ? holidaySet.has(dueIso) : false,
-            };
-        })
-        .filter((row) => !selectedDateIso || row.productionDate === selectedDateIso)
-        .sort((a, b) => {
-            if (a.productionDate !== b.productionDate) return a.productionDate.localeCompare(b.productionDate);
-            return a.epicName.localeCompare(b.epicName, undefined, { sensitivity: 'base' });
-        });
-}
-function releaseCalendarMonthDate() {
-    const parsed = parseMonthValue(releasesFromMonth) || parseMonthValue(currentMonthDefault);
-    return new Date(parsed.year, parsed.monthIndex, 1);
-}
-function buildReleaseCalendarCells() {
-    const monthDate = releaseCalendarMonthDate();
-    const monthStartDate = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1);
-    const monthEndDate = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0);
+    const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    const DS = ['Su','Mo','Tu','We','Th','Fr','Sa'];
     const today = new Date();
-    const todayIso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-    const firstVisible = new Date(monthStartDate);
-    firstVisible.setDate(firstVisible.getDate() - firstVisible.getDay());
-    const lastVisible = new Date(monthEndDate);
-    lastVisible.setDate(lastVisible.getDate() + (6 - lastVisible.getDay()));
-    const countByDate = new Map();
-    getReleaseScopedEpics().forEach((epic) => {
-        const dueIso = releaseEpicDueIso(epic);
-        if (!dueIso) return;
-        countByDate.set(dueIso, (countByDate.get(dueIso) || 0) + 1);
-    });
-    const holidaySet = selectedReleaseHolidaySet();
-    const cells = [];
-    for (let cursor = new Date(firstVisible); cursor <= lastVisible; cursor.setDate(cursor.getDate() + 1)) {
-        const iso = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}-${String(cursor.getDate()).padStart(2, '0')}`;
-        const dueCount = countByDate.get(iso) || 0;
-        const isHoliday = holidaySet.has(iso);
-        const inMonth = cursor.getMonth() === monthDate.getMonth();
-        cells.push({
-            iso,
-            dayNumber: cursor.getDate(),
-            dueCount,
-            isHoliday,
-            inMonth,
-            isSelected: iso === asText(releasesSelectedDate),
-            isToday: iso === todayIso,
-        });
+    const todayKey = today.getFullYear() === year
+        ? `${year}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`
+        : '';
+    let html = '';
+    for (let m = 0; m < 12; m++) {
+        const first = new Date(year, m, 1).getDay();
+        const dim = new Date(year, m+1, 0).getDate();
+        let days = DS.map(d => `<div class="pr-day" style="font-weight:700;font-size:.72rem;color:#64748b;">${d}</div>`).join('');
+        for (let i = 0; i < first; i++) days += '<div class="pr-day"></div>';
+        for (let d = 1; d <= dim; d++) {
+            const dk = `${year}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+            const rlist = byDate[dk] || [];
+            let dotsHtml = '';
+            if (rlist.length) {
+                const shown = rlist.length > 4 ? rlist.slice(0,3) : rlist;
+                const extra = rlist.length > 4 ? rlist.length - 3 : 0;
+                const dots = shown.map(r =>
+                    `<div class="pr-dot" data-rid="${prEsc(r.id)}" style="background:${prEsc(prProjColor(r.project_key))};" title="${prEsc(prProjLabel(r.project_key))} \u2014 ${prEsc(prFmtDate(r.release_date))}"></div>`
+                ).join('');
+                const extraHtml = extra > 0 ? `<div class="pr-dot-extra">+${extra}</div>` : '';
+                dotsHtml = `<div class="pr-dots-row">${dots}${extraHtml}</div>`;
+            }
+            const isToday = dk === todayKey;
+            let cls = isToday ? 'pr-day cur-month today-marker' : 'pr-day cur-month';
+            if (rlist.length) cls += ' is-release';
+            const attr = rlist.length ? ` data-date="${prEsc(dk)}"` : '';
+            days += `<div class="${cls}"${attr}>${d}${dotsHtml}</div>`;
+        }
+        html += `<div class="pr-month"><div class="pr-month-head">${MONTHS[m]}</div><div class="pr-days">${days}</div></div>`;
     }
-    return { cells, monthDate, countByDate };
+    return html;
 }
-function renderReleasesCapacityProfileOptions() {
-    const select = document.getElementById('releases-capacity-profile');
-    if (!select) return;
-    const options = [
-        `<option value="${RELEASES_NO_PROFILE}">No holiday profile</option>`,
-        ...releasesCapacityProfiles.map((profile) => `<option value="${escapeHtml(releaseProfileOptionValue(profile))}">${escapeHtml(releaseProfileLabel(profile))}</option>`),
-    ];
-    select.innerHTML = options.join('');
-    select.value = releasesSelectedProfileKey;
-    if (select.value !== releasesSelectedProfileKey) {
-        releasesSelectedProfileKey = RELEASES_NO_PROFILE;
-        select.value = RELEASES_NO_PROFILE;
-    }
-}
-async function ensureReleasesCapacityProfiles() {
-    if (releasesCapacityProfilesPromise) return releasesCapacityProfilesPromise;
-    releasesCapacityProfilesPromise = fetch(RELEASES_CAPACITY_PROFILES_ENDPOINT, { headers: { 'Accept': 'application/json' } })
-        .then((response) => response.json().catch(() => ({})))
-        .then((body) => {
-            releasesCapacityProfiles = Array.isArray(body.profiles) ? body.profiles : [];
-            renderReleasesCapacityProfileOptions();
-            return releasesCapacityProfiles;
-        })
-        .catch(() => {
-            releasesCapacityProfiles = [];
-            renderReleasesCapacityProfileOptions();
-            return [];
-        })
-        .finally(() => {
-            releasesCapacityProfilesPromise = null;
-        });
-    return releasesCapacityProfilesPromise;
-}
-async function ensureReleasePhaseMetadata() {
-    const epicKeys = getReleaseScopedEpics().map((epic) => asKey(epic)).filter(Boolean);
-    const missingKeys = epicKeys.filter((epicKey) => !releasesPhaseMetadataByEpicKey[epicKey]);
-    if (!missingKeys.length) return;
-    const params = new URLSearchParams();
-    missingKeys.forEach((epicKey) => params.append('epic_key', epicKey));
-    const requestToken = ++releasesPhaseRequestToken;
-    try {
-        const response = await fetch(`${RELEASES_PHASE_METADATA_ENDPOINT}?${params.toString()}`, { headers: { 'Accept': 'application/json' } });
-        const body = await response.json().catch(() => ({}));
-        if (!response.ok) return;
-        if (requestToken !== releasesPhaseRequestToken) return;
-        const entries = Array.isArray(body.epics) ? body.epics : [];
-        entries.forEach((entry) => {
-            const epicKey = asText(entry && entry.epic_key).toUpperCase();
-            if (!epicKey) return;
-            releasesPhaseMetadataByEpicKey[epicKey] = {
-                current_phase_names: Array.isArray(entry.current_phase_names) ? entry.current_phase_names : [],
-                phase_statuses: asText(entry.phase_statuses),
-            };
-        });
-    } catch (error) {
-        return;
-    }
-}
-function renderReleasesCalendar() {
-    const host = document.getElementById('releases-calendar-grid');
-    const summary = document.getElementById('releases-calendar-summary');
-    if (!host || !summary) return;
-    const { cells, monthDate, countByDate } = buildReleaseCalendarCells();
-    const monthLabel = monthDate.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
-    const totalDueDates = Array.from(countByDate.values()).reduce((sum, value) => sum + value, 0);
-    summary.textContent = `${monthLabel} · ${totalDueDates} epic due date${totalDueDates === 1 ? '' : 's'} in view`;
-    host.innerHTML = cells.map((cell) => {
-        const classes = [
-            'release-calendar-day',
-            cell.inMonth ? '' : 'is-outside-month',
-            cell.isSelected ? 'is-selected' : '',
-            cell.isToday ? 'is-today' : '',
-            cell.dueCount > 0 ? 'is-due' : '',
-            cell.isHoliday ? 'is-holiday' : '',
-            cell.isHoliday && cell.dueCount > 0 ? 'is-conflict' : '',
-        ].filter(Boolean).join(' ');
-        const noteText = cell.isToday ? 'Today' : (cell.isHoliday ? 'Holiday' : '');
-        const noteClass = cell.isToday ? 'release-calendar-today-note' : 'release-calendar-holiday-note';
-        const holidayNote = noteText ? `<span class="${noteClass}">${noteText}</span>` : `<span class="release-calendar-holiday-note"></span>`;
-        const countChip = cell.dueCount > 0 ? `<span class="release-calendar-count">${cell.dueCount}</span>` : '<span class="release-calendar-count" style="visibility:hidden;">0</span>';
-        return `<button type="button" class="${classes}" data-release-date="${escapeHtml(cell.iso)}" ${cell.inMonth ? '' : 'tabindex="-1"'}><span class="release-calendar-day-number">${cell.dayNumber}</span>${countChip}${holidayNote}</button>`;
+function prBuildList(releases) {
+    if (!releases.length) return '<div class="pr-empty">&#128203; No releases for the selected period.</div>';
+    const sorted = [...releases].sort((a,b) => (a.release_date||'').localeCompare(b.release_date||''));
+    return sorted.map(r => {
+        const col = prProjColor(r.project_key);
+        const lbl = prProjLabel(r.project_key);
+        return `<div class="pr-list-item" data-rid="${prEsc(r.id)}" style="border-left:4px solid ${prEsc(col)};">
+      <div class="pr-list-item-row">
+        <div style="flex:1;min-width:0;">
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:2px;">
+            <span style="display:inline-flex;padding:2px 8px;border-radius:999px;font-size:.7rem;font-weight:700;background:${prEsc(col)}20;color:${prEsc(col)};border:1px solid ${prEsc(col)}50;">${prEsc(lbl)}</span>
+          </div>
+          <div style="font-size:.85rem;font-weight:700;color:#0f172a;margin-bottom:1px;">${prEsc(prFmtDate(r.release_date))}</div>
+          <div style="font-size:.72rem;color:#64748b;">${r.epics.length} epic${r.epics.length!==1?'s':''}</div>
+        </div>
+        <div class="pr-chevron">&#9658;</div>
+      </div>
+      <div class="pr-epics-panel">${prEpicItemsHTML(r.epics)}</div>
+    </div>`;
     }).join('');
-    host.querySelectorAll('[data-release-date]').forEach((button) => {
-        button.addEventListener('click', () => {
-            const iso = asText(button.getAttribute('data-release-date'));
-            if (!iso || button.classList.contains('is-outside-month')) return;
-            releasesSelectedDate = releasesSelectedDate === iso ? '' : iso;
-            renderReleasesDrawerContent();
+}
+function prBindCalClicks() {
+    document.querySelectorAll('#pr-cal-grid .is-release').forEach(cell => {
+        cell.addEventListener('click', () => {
+            const dk = cell.dataset.date;
+            if (!dk) return;
+            const matched = prFiltered().filter(r => r.release_date && r.release_date.slice(0,10) === dk);
+            const pane = document.getElementById('pr-list-pane');
+            if (!pane) return;
+            const items = matched.map(r => pane.querySelector(`.pr-list-item[data-rid="${r.id}"]`)).filter(Boolean);
+            const allOpen = items.every(item => item.querySelector('.pr-epics-panel')?.classList.contains('open'));
+            items.forEach(item => {
+                const panel = item.querySelector('.pr-epics-panel');
+                if (!panel) return;
+                if (allOpen) { panel.classList.remove('open'); item.classList.remove('open'); }
+                else { item.scrollIntoView({behavior:'smooth',block:'nearest'}); panel.classList.add('open'); item.classList.add('open'); }
+            });
         });
     });
 }
-function renderReleasesTable() {
-    const body = document.getElementById('releases-table-body');
-    const summary = document.getElementById('releases-table-summary');
-    const note = document.getElementById('releases-selection-note');
-    const clearButton = document.getElementById('releases-clear-date');
-    if (!body || !summary || !note || !clearButton) return;
-    const rows = getReleaseRows();
-    const holidayProfile = selectedReleaseProfile();
-    const selectedDateLabel = releasesSelectedDate ? formatDateDisplay(releasesSelectedDate) : '';
-    clearButton.disabled = !releasesSelectedDate;
-    note.textContent = selectedDateLabel
-        ? `Selected date: ${selectedDateLabel}`
-        : `Showing selected project releases from ${releasesFromMonth} to ${releasesToMonth}`;
-    if (!rows.length) {
-        const emptyText = releasesSelectedDate
-            ? 'No epics are due on the selected date.'
-            : (releasesSearchQuery ? 'No epics match the current release filters.' : 'No due epics found in the selected release range.');
-        summary.textContent = emptyText;
-        body.innerHTML = `<tr><td colspan="6" class="release-empty">${escapeHtml(emptyText)}</td></tr>`;
-        return;
+function prBindListClicks() {
+    document.querySelectorAll('#pr-list-pane .pr-list-item-row').forEach(row => {
+        row.addEventListener('click', () => {
+            const item = row.closest('.pr-list-item');
+            if (!item) return;
+            const panel = item.querySelector('.pr-epics-panel');
+            const wasOpen = panel && panel.classList.contains('open');
+            document.querySelectorAll('#pr-list-pane .pr-epics-panel.open').forEach(p => {
+                p.classList.remove('open'); p.closest('.pr-list-item').classList.remove('open');
+            });
+            if (!wasOpen && panel) { panel.classList.add('open'); item.classList.add('open'); }
+        });
+    });
+}
+function prClearHighlights() {
+    document.querySelectorAll('#pr-list-pane .pr-highlighted').forEach(el => {
+        el.classList.remove('pr-highlighted'); el.style.removeProperty('--pr-hl');
+    });
+}
+function prHighlightBucket(rid) {
+    prClearHighlights();
+    const pane = document.getElementById('pr-list-pane');
+    const item = pane ? pane.querySelector(`.pr-list-item[data-rid="${rid}"]`) : null;
+    if (!item) return;
+    const rel = prAllReleases.find(r => String(r.id) === String(rid));
+    const col = rel ? prProjColor(rel.project_key) : '#2563eb';
+    item.style.setProperty('--pr-hl', col);
+    item.classList.add('pr-highlighted');
+    item.scrollIntoView({behavior:'smooth', block:'nearest'});
+    if (prHighlightBucket._timer) clearTimeout(prHighlightBucket._timer);
+    prHighlightBucket._timer = setTimeout(() => {
+        item.classList.remove('pr-highlighted'); item.style.removeProperty('--pr-hl');
+    }, 2400);
+}
+function prBindDotClicks() {
+    document.querySelectorAll('#pr-cal-grid .pr-dot[data-rid]').forEach(dot => {
+        dot.addEventListener('click', e => { e.stopPropagation(); prHighlightBucket(dot.dataset.rid); });
+    });
+}
+const PR_MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function prBuildRoadmap(releases, year) {
+    if (!releases.length) return '<div style="color:#64748b;font-size:.84rem;padding:28px;text-align:center;border:1px dashed #c7d2e6;border-radius:12px;">&#128203; No releases for the selected period.</div>';
+    const now = new Date();
+    const curMonth = (now.getFullYear() === year) ? now.getMonth() : -1;
+    const projKeys = [];
+    const byProj = {};
+    for (const r of releases) {
+        const pk = r.project_key || '__none__';
+        if (!byProj[pk]) { byProj[pk] = []; projKeys.push(pk); }
+        byProj[pk].push(r);
     }
-    summary.textContent = `${rows.length} epic release${rows.length === 1 ? '' : 's'}${holidayProfile ? ' · holiday overlay active' : ''}`;
-    body.innerHTML = rows.map((row) => `
-        <tr class="${row.holidayDueDate ? 'release-row-holiday' : ''}">
-            <td>
-                <div class="release-name-cell">
-                    <strong>${escapeHtml(row.epicName)}</strong>
-                    <span class="release-name-key">${escapeHtml(row.epicKey)}</span>
-                </div>
-            </td>
-            <td><span class="release-status-pill">${escapeHtml(row.status)}</span></td>
-            <td>${escapeHtml(row.productionDateLabel)}</td>
-            <td>${escapeHtml(row.originalEstimate)}</td>
-            <td>${escapeHtml(row.currentPhase)}</td>
-            <td>${escapeHtml(row.actualHours)}</td>
-        </tr>
-    `).join('');
+    const monthCols = PR_MONTH_ABBR.map((m, i) => {
+        const isCur = i === curMonth;
+        const cls = isCur ? ' class="pr-month-now-head"' : '';
+        return `<th${cls}>${m}<br><span style="font-size:.6rem;font-weight:500;opacity:.7;">${year}</span></th>`;
+    }).join('');
+    let html = `<div class="pr-rm-table-scroll"><table class="pr-rm-table"><thead><tr>
+    <th class="pr-proj-head">Project</th>${monthCols}
+  </tr></thead><tbody>`;
+    for (const pk of projKeys) {
+        const col = prProjColor(pk);
+        const lbl = prProjLabel(pk);
+        const rels = byProj[pk];
+        const byMonth = Array.from({length:12}, () => []);
+        for (const r of rels) {
+            if (r.release_date) {
+                const m = parseInt(r.release_date.slice(5,7), 10) - 1;
+                if (m >= 0 && m < 12) byMonth[m].push(r);
+            }
+        }
+        const cells = byMonth.map((mRels, mi) => {
+            const isCur = mi === curMonth;
+            const cls = isCur ? ' pr-month-now' : '';
+            const chips = mRels.map(r =>
+                `<div class="pr-chip" data-rmid="${prEsc(r.id)}" style="background:${prEsc(col)}18;color:${prEsc(col)};border-color:${prEsc(col)}55;" title="${prEsc(prProjLabel(r.project_key))} \u2014 ${prEsc(prFmtDate(r.release_date))}">${prEsc(prFmtDateShort(r.release_date))}</div>`
+            ).join('');
+            return `<td class="pr-month-cell${cls}">${chips || '<span style="display:block;height:20px;"></span>'}</td>`;
+        }).join('');
+        html += `<tr>
+      <td class="pr-proj-cell">
+        <div class="pr-proj-cell-inner">
+          <div class="pr-proj-color-bar" style="background:${prEsc(col)};"></div>
+          <span class="pr-proj-name" title="${prEsc(lbl)}">${prEsc(lbl)}</span>
+        </div>
+      </td>${cells}
+    </tr>`;
+        html += `<tr class="pr-epics-row pr-epics-hidden" id="pr-epics-row-${prEsc(pk).replace(/[^a-z0-9]/gi,'_')}">
+      <td colspan="13"><div class="pr-epics-inner" style="display:flex;flex-direction:column;gap:5px;"></div></td>
+    </tr>`;
+    }
+    html += '</tbody></table></div>';
+    return html;
 }
-function renderReleasesDrawerContent() {
-    renderReleasesCapacityProfileOptions();
-    renderReleasesCalendar();
-    renderReleasesTable();
+function prBindRoadmapClicks() {
+    document.querySelectorAll('.pr-chip').forEach(chip => {
+        chip.addEventListener('click', () => {
+            const rid = chip.dataset.rmid;
+            const rel = prAllReleases.find(r => String(r.id) === String(rid));
+            if (!rel) return;
+            const pk = rel.project_key || '__none__';
+            const rowId = 'pr-epics-row-' + pk.replace(/[^a-z0-9]/gi,'_');
+            const row = document.getElementById(rowId);
+            if (!row) return;
+            const inner = row.querySelector('.pr-epics-inner');
+            const col = prProjColor(pk);
+            const lbl = prProjLabel(pk);
+            const isOpen = !row.classList.contains('pr-epics-hidden') && chip.classList.contains('pr-chip-open');
+            chip.closest('tr').querySelectorAll('.pr-chip').forEach(c => c.classList.remove('pr-chip-open'));
+            if (isOpen) {
+                row.classList.add('pr-epics-hidden');
+                inner.innerHTML = '';
+            } else {
+                chip.classList.add('pr-chip-open');
+                inner.innerHTML = `<div style="display:flex;align-items:center;gap:7px;margin-bottom:6px;flex-wrap:wrap;">
+                    <span style="display:inline-flex;padding:2px 8px;border-radius:999px;font-size:.7rem;font-weight:700;background:${prEsc(col)}20;color:${prEsc(col)};border:1px solid ${prEsc(col)}55;">${prEsc(lbl)}</span>
+                    <span style="font-size:.82rem;font-weight:700;color:#0f172a;">${prEsc(prFmtDate(rel.release_date))}</span>
+                    <span style="font-size:.72rem;color:#64748b;">&middot; ${rel.epics.length} epic${rel.epics.length!==1?'s':''}</span>
+                  </div>${prEpicItemsHTML(rel.epics)}`;
+                row.classList.remove('pr-epics-hidden');
+            }
+        });
+    });
 }
+function prRender() {
+    const yearLabel = document.getElementById('pr-year-label');
+    if (yearLabel) yearLabel.textContent = prCurYear;
+    const rels = prFiltered().filter(r => r.release_date && r.release_date.startsWith(String(prCurYear)));
+    if (prCurView === 'cal') {
+        const grid = document.getElementById('pr-cal-grid');
+        const pane = document.getElementById('pr-list-pane');
+        if (grid) grid.innerHTML = prBuildCal(rels, prCurYear);
+        if (pane) pane.innerHTML = '<div class="pr-list-pane-header">Releases</div>' + prBuildList(rels);
+        prBindCalClicks();
+        prBindListClicks();
+        prBindDotClicks();
+    } else {
+        const rmContent = document.getElementById('pr-rm-content');
+        if (rmContent) rmContent.innerHTML = prBuildRoadmap(rels, prCurYear);
+        prBindRoadmapClicks();
+    }
+}
+function prShowView(v) {
+    prCurView = v;
+    const isRm = v === 'rm';
+    const calView = document.getElementById('pr-cal-view');
+    const rmView = document.getElementById('pr-rm-view');
+    if (calView) calView.style.display = isRm ? 'none' : '';
+    if (rmView) rmView.style.display = isRm ? '' : 'none';
+    const btnCal = document.getElementById('pr-btn-cal');
+    const btnRm = document.getElementById('pr-btn-rm');
+    if (btnCal) btnCal.classList.toggle('active', !isRm);
+    if (btnRm) btnRm.classList.toggle('active', isRm);
+    prRender();
+}
+async function prLoadData() {
+    try {
+        const [relRes, projRes] = await Promise.all([
+            fetch('/api/product-releases'),
+            fetch('/api/projects?include_inactive=0'),
+        ]);
+        prAllReleases = (await relRes.json()).releases || [];
+        const pdata = await projRes.json();
+        prAllProjects = (pdata.projects || []).filter(p => p.is_active !== false);
+        const sel = document.getElementById('pr-proj-filter');
+        if (sel) {
+            sel.innerHTML = '<option value="">All Projects</option>' +
+                prAllProjects.map(p => `<option value="${prEsc(p.project_key)}">${prEsc(p.project_name || p.display_name || p.project_key)}</option>`).join('');
+            sel.value = prCurProj;
+        }
+    } catch(e) { console.error('Planned Releases load failed:', e); }
+}
+function renderReleasesDrawerContent() { prRender(); }
 function setReleasesDrawerWidth(widthVw) {
     const nextWidth = Math.max(RELEASES_MIN_WIDTH_VW, Math.min(RELEASES_MAX_WIDTH_VW, Number(widthVw) || 50));
     document.documentElement.style.setProperty('--releases-drawer-width', `${nextWidth.toFixed(2)}vw`);
@@ -1727,8 +1482,8 @@ async function openReleasesDrawer() {
     }
     if (releasesDrawerOpenButton) releasesDrawerOpenButton.setAttribute('aria-expanded', 'true');
     document.body.style.overflow = 'hidden';
-    await Promise.all([ensureReleasesCapacityProfiles(), ensureReleasePhaseMetadata()]);
-    renderReleasesDrawerContent();
+    await prLoadData();
+    prRender();
 }
 function closeReleasesDrawer() {
     releasesDrawerOpen = false;
@@ -2795,11 +2550,6 @@ function renderAll() {
     renderRiskFilterControls();
     renderAssigneeFilterSummary();
     renderGantt(selectedEpic);
-    if (releasesDrawerOpen) {
-        ensureReleasePhaseMetadata().finally(() => {
-            if (releasesDrawerOpen) renderReleasesDrawerContent();
-        });
-    }
     attachSelectionHandlers();
     attachCopyHandlers();
     attachRefreshHandlers();
@@ -2885,52 +2635,25 @@ if (removeFiltersButton) {
         resetAllFilters();
     });
 }
-const releasesFromInput = document.getElementById('releases-from-month');
-const releasesToInput = document.getElementById('releases-to-month');
-const releasesSearchInput = document.getElementById('releases-epic-search');
-const releasesCapacityProfileSelect = document.getElementById('releases-capacity-profile');
-const releasesClearDateButton = document.getElementById('releases-clear-date');
-if (releasesFromInput) {
-    releasesFromInput.value = releasesFromMonth;
-    releasesFromInput.addEventListener('change', async () => {
-        releasesFromMonth = releasesFromInput.value || currentMonthDefault;
-        normalizeReleaseMonths();
-        const bounds = getReleaseRangeBounds();
-        const selectedDate = parseDateValue(releasesSelectedDate);
-        if (selectedDate && !isWithinRange(selectedDate, bounds.start, bounds.end)) releasesSelectedDate = '';
-        await ensureReleasePhaseMetadata();
-        renderReleasesDrawerContent();
-    });
+const prProjFilterEl = document.getElementById('pr-proj-filter');
+const prPrevYrBtn = document.getElementById('pr-prev-yr');
+const prNextYrBtn = document.getElementById('pr-next-yr');
+const prBtnCalEl = document.getElementById('pr-btn-cal');
+const prBtnRmEl = document.getElementById('pr-btn-rm');
+if (prProjFilterEl) {
+    prProjFilterEl.addEventListener('change', () => { prCurProj = prProjFilterEl.value; prRender(); });
 }
-if (releasesToInput) {
-    releasesToInput.value = releasesToMonth;
-    releasesToInput.addEventListener('change', async () => {
-        releasesToMonth = releasesToInput.value || currentMonthDefault;
-        normalizeReleaseMonths();
-        const bounds = getReleaseRangeBounds();
-        const selectedDate = parseDateValue(releasesSelectedDate);
-        if (selectedDate && !isWithinRange(selectedDate, bounds.start, bounds.end)) releasesSelectedDate = '';
-        await ensureReleasePhaseMetadata();
-        renderReleasesDrawerContent();
-    });
+if (prPrevYrBtn) {
+    prPrevYrBtn.addEventListener('click', () => { prCurYear--; prRender(); });
 }
-if (releasesSearchInput) {
-    releasesSearchInput.addEventListener('input', () => {
-        releasesSearchQuery = asText(releasesSearchInput.value).toLowerCase();
-        renderReleasesDrawerContent();
-    });
+if (prNextYrBtn) {
+    prNextYrBtn.addEventListener('click', () => { prCurYear++; prRender(); });
 }
-if (releasesCapacityProfileSelect) {
-    releasesCapacityProfileSelect.addEventListener('change', () => {
-        releasesSelectedProfileKey = releasesCapacityProfileSelect.value || RELEASES_NO_PROFILE;
-        renderReleasesDrawerContent();
-    });
+if (prBtnCalEl) {
+    prBtnCalEl.addEventListener('click', () => prShowView('cal'));
 }
-if (releasesClearDateButton) {
-    releasesClearDateButton.addEventListener('click', () => {
-        releasesSelectedDate = '';
-        renderReleasesDrawerContent();
-    });
+if (prBtnRmEl) {
+    prBtnRmEl.addEventListener('click', () => prShowView('rm'));
 }
 if (releasesDrawerOpenButton) {
     releasesDrawerOpenButton.addEventListener('click', () => {
@@ -2956,8 +2679,7 @@ document.addEventListener('keydown', (event) => {
 window.addEventListener('resize', () => {
     if (window.innerWidth <= 900) setReleasesDrawerWidth(100);
 });
-normalizeReleaseMonths();
-setReleasesDrawerWidth(50);
+setReleasesDrawerWidth(60);
 renderAll();
 </script>
 <script src="shared-nav.js"></script>
