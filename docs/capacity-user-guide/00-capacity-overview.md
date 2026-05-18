@@ -34,6 +34,8 @@ It covers:
   - `/nested_view_report.html`
 - RnD Data Story report:
   - `/rnd_data_story.html`
+- Seating Planner:
+  - `/settings/seating-planner`
 
 ## Data Model (Profile)
 
@@ -78,3 +80,6 @@ Rules:
 - RnD Data Story:
   - Applies saved capacity profiles to the selected date range.
   - Computes six leadership KPIs for department `Research and Development (RnD)`.
+- Seating Planner:
+  - Maintains the office floor seating layout with team/product color modes.
+  - Exports the visible seating plan through a single-page A4 landscape, vector print view for saving as PDF.

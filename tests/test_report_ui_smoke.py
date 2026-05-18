@@ -13,7 +13,7 @@ from generate_phase_rmi_gantt_html import _build_html as build_team_rmi_gantt_ht
 from generate_planned_rmis_html import _build_html as build_planned_rmis_html
 from generate_rnd_data_story import _build_html as build_rnd_story_html
 from openpyxl import Workbook
-from report_server import create_report_server_app
+from report_server import _seating_planner_html, create_report_server_app
 
 
 def _write_minimal_assignee_workbook(root: Path) -> None:
@@ -62,6 +62,26 @@ def _write_epics_import_source(path: Path, *, total_override: float | None = Non
 
 
 class ReportUiSmokeTests(unittest.TestCase):
+    def test_seating_planner_pdf_export_uses_single_page_vector_print_view(self):
+        html = _seating_planner_html()
+
+        self.assertIn("@page{size:A4 landscape;margin:8mm;}", html)
+        self.assertIn('id="spPrintPage"', html)
+        self.assertIn('id="spPrintStage"', html)
+        self.assertIn("function buildVectorPrintView()", html)
+        self.assertIn("function exportSinglePagePdf()", html)
+        self.assertIn("addEventListener('click',exportSinglePagePdf)", html)
+        self.assertIn("cloneNode(true)", html)
+        self.assertIn("body > :not(#spPrintPage)", html)
+
+    def test_seating_planner_zoom_prefers_layout_zoom_for_crisp_canvas(self):
+        html = _seating_planner_html()
+
+        self.assertIn("if ('zoom' in canvas.style)", html)
+        self.assertIn("canvas.style.zoom = String(G.zoom)", html)
+        self.assertIn("zoom-transform-fallback", html)
+        self.assertIn("canvas.style.transform = `scale(${G.zoom})`", html)
+
     def test_assignee_header_and_drawer_controls_exist(self):
         payload = {
             "rows": [],

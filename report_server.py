@@ -29593,6 +29593,7 @@ def _seating_planner_html() -> str:
       background-image:radial-gradient(circle,#94a3b8 1px,transparent 1px);
       background-size:32px 32px;transform-origin:0 0;
     }}
+    .sp-canvas.zoom-transform-fallback{{will-change:transform;}}
     /* Table card */
     .sp-tbl{{
       position:absolute;background:#fff;border:2px solid var(--line);
@@ -29827,20 +29828,31 @@ def _seating_planner_html() -> str:
     .tc-legend-item{{display:flex;align-items:center;gap:7px;font-size:.76rem;font-weight:600;color:var(--ink);white-space:nowrap;cursor:pointer;border-radius:5px;padding:2px 4px;transition:background .15s;}}
     .tc-legend-item:hover{{background:rgba(15,118,110,.08);}}
     .tc-legend-item.active-filter{{background:rgba(15,118,110,.18);outline:2px solid #0f766e;}}
+    .sp-print-page{{display:none;}}
+    .sp-print-sheet{{
+      position:relative;width:281mm;height:194mm;overflow:hidden;background:#fff;
+      break-inside:avoid;page-break-inside:avoid;
+    }}
+    .sp-print-stage{{
+      position:absolute;left:0;top:0;transform-origin:0 0;
+    }}
+    .sp-print-stage .sp-tbl{{
+      box-shadow:none;
+    }}
+    .sp-print-stage .sp-tact,
+    .sp-print-stage .sp-rotate-wrap,
+    .sp-print-stage .sp-seat-tip{{
+      display:none!important;
+    }}
+    .sp-print-empty{{
+      display:flex;align-items:center;justify-content:center;width:100%;height:100%;
+      color:#64748b;font-weight:700;font-size:18px;border:1px dashed #cbd5e1;
+    }}
+    @page{{size:A4 landscape;margin:8mm;}}
     @media print{{
-      epr-nav,.sp-bar,.sp-sidebar,.sp-mode-bar,.sp-rubberband{{display:none!important;}}
-      body{{background:#fff!important;margin:0;padding:0;}}
-      #spCanvasWrap{{
-        position:static!important;left:0!important;top:0!important;
-        width:100vw!important;height:auto!important;overflow:visible!important;
-        transform:none!important;
-      }}
-      #spCanvas{{
-        transform:none!important;transform-origin:unset!important;
-        width:100%!important;min-height:unset!important;
-      }}
-      .tc-legend{{position:absolute!important;top:8px!important;right:8px!important;}}
-      .sp-tact{{display:none!important;}}
+      html,body{{background:#fff!important;margin:0!important;padding:0!important;width:100%;height:100%;overflow:hidden!important;}}
+      body > :not(#spPrintPage){{display:none!important;}}
+      #spPrintPage{{display:block!important;width:281mm;height:194mm;overflow:hidden;break-after:avoid;page-break-after:avoid;}}
     }}
   </style>
 </head>
@@ -29936,6 +29948,11 @@ def _seating_planner_html() -> str:
 
   <div class="sp-toast" id="toast"></div>
   <div class="sp-rot-lbl" id="rotLbl"></div>
+  <div class="sp-print-page" id="spPrintPage" aria-hidden="true">
+    <div class="sp-print-sheet" id="spPrintSheet">
+      <div class="sp-print-stage" id="spPrintStage"></div>
+    </div>
+  </div>
   <div id="rubberBand"></div>
   <div id="selBar">
     <strong id="selCount"></strong>
@@ -30002,7 +30019,7 @@ def _seating_planner_html() -> str:
   }};
 
   // ── Helpers ────────────────────────────────────────────────────────────────
-  const initials = n => n.split(/\s+/).filter(Boolean).slice(0,2).map(w=>w[0].toUpperCase()).join('');
+  const initials = n => n.split(/\\s+/).filter(Boolean).slice(0,2).map(w=>w[0].toUpperCase()).join('');
 
   function getAssignment(name) {{
     for (const t of G.tables) {{
@@ -30265,10 +30282,119 @@ def _seating_planner_html() -> str:
 
   // ── Zoom ───────────────────────────────────────────────────────────────────
   function setZoom(z) {{
-    G.zoom = Math.max(0.25, Math.min(2.5, z));
-    document.getElementById('canvas').style.transform = `scale(${{G.zoom}})`;
+    G.zoom = Math.round(Math.max(0.25, Math.min(2.5, z)) * 100) / 100;
+    const canvas = document.getElementById('canvas');
+    if ('zoom' in canvas.style) {{
+      canvas.classList.remove('zoom-transform-fallback');
+      canvas.style.transform = 'none';
+      canvas.style.zoom = String(G.zoom);
+    }} else {{
+      canvas.classList.add('zoom-transform-fallback');
+      canvas.style.zoom = '';
+      canvas.style.transform = `scale(${{G.zoom}})`;
+    }}
     document.getElementById('zoomLbl').textContent = Math.round(G.zoom*100)+'%';
   }}
+
+  const PRINT_PAGE_PX = {{w:1062, h:733, pad:18}};
+
+  function rotatedTableBounds(t, el) {{
+    const w = el.offsetWidth || 196;
+    const h = el.offsetHeight || 90;
+    const a = ((t.rotation || 0) * Math.PI) / 180;
+    const cx = t.x + w / 2;
+    const cy = t.y + h / 2;
+    const corners = [
+      [t.x, t.y],
+      [t.x + w, t.y],
+      [t.x + w, t.y + h],
+      [t.x, t.y + h],
+    ].map(([x,y]) => {{
+      const dx = x - cx, dy = y - cy;
+      return {{
+        x: cx + dx * Math.cos(a) - dy * Math.sin(a),
+        y: cy + dx * Math.sin(a) + dy * Math.cos(a),
+      }};
+    }});
+    return {{
+      minX: Math.min(...corners.map(p=>p.x)),
+      minY: Math.min(...corners.map(p=>p.y)),
+      maxX: Math.max(...corners.map(p=>p.x)),
+      maxY: Math.max(...corners.map(p=>p.y)),
+    }};
+  }}
+
+  function seatingPlanBounds() {{
+    const parts = [];
+    for (const t of G.tables) {{
+      const el = document.getElementById(t.id);
+      if (el) parts.push(rotatedTableBounds(t, el));
+    }}
+    if (!parts.length) return null;
+    return {{
+      minX: Math.min(...parts.map(p=>p.minX)),
+      minY: Math.min(...parts.map(p=>p.minY)),
+      maxX: Math.max(...parts.map(p=>p.maxX)),
+      maxY: Math.max(...parts.map(p=>p.maxY)),
+    }};
+  }}
+
+  function stripCloneIds(root) {{
+    root.removeAttribute('id');
+    root.querySelectorAll('[id]').forEach(el=>el.removeAttribute('id'));
+  }}
+
+  function buildVectorPrintView() {{
+    const stage = document.getElementById('spPrintStage');
+    stage.innerHTML = '';
+    const bounds = seatingPlanBounds();
+    if (!bounds) {{
+      stage.style.cssText = 'inset:18px;width:calc(100% - 36px);height:calc(100% - 36px);transform:none;';
+      const empty = document.createElement('div');
+      empty.className = 'sp-print-empty';
+      empty.textContent = 'No seating tables to export';
+      stage.appendChild(empty);
+      return;
+    }}
+
+    stage.style.cssText = '';
+    const contentW = Math.max(1, bounds.maxX - bounds.minX);
+    const contentH = Math.max(1, bounds.maxY - bounds.minY);
+    const availableW = PRINT_PAGE_PX.w - PRINT_PAGE_PX.pad * 2;
+    const availableH = PRINT_PAGE_PX.h - PRINT_PAGE_PX.pad * 2;
+    const scale = Math.min(availableW / contentW, availableH / contentH);
+    const left = Math.max(PRINT_PAGE_PX.pad, (PRINT_PAGE_PX.w - contentW * scale) / 2);
+    const top = Math.max(PRINT_PAGE_PX.pad, (PRINT_PAGE_PX.h - contentH * scale) / 2);
+    stage.style.left = left + 'px';
+    stage.style.top = top + 'px';
+    stage.style.width = contentW + 'px';
+    stage.style.height = contentH + 'px';
+    stage.style.transform = `scale(${{scale}})`;
+
+    for (const t of G.tables) {{
+      const el = document.getElementById(t.id);
+      if (!el) continue;
+      const clone = el.cloneNode(true);
+      stripCloneIds(clone);
+      clone.style.left = (t.x - bounds.minX) + 'px';
+      clone.style.top = (t.y - bounds.minY) + 'px';
+      stage.appendChild(clone);
+    }}
+  }}
+
+  function exportSinglePagePdf() {{
+    clearSelection();
+    render();
+    requestAnimationFrame(() => {{
+      buildVectorPrintView();
+      document.body.classList.add('sp-printing');
+      window.print();
+    }});
+  }}
+
+  window.addEventListener('afterprint', () => {{
+    document.body.classList.remove('sp-printing');
+  }});
 
   // ── Table Modal ────────────────────────────────────────────────────────────
   let _mMode=null, _mId=null;
@@ -30994,9 +31120,7 @@ def _seating_planner_html() -> str:
     renderLegend();
   }});
 
-  document.getElementById('exportPdfBtn').addEventListener('click',()=>{{
-    window.print();
-  }});
+  document.getElementById('exportPdfBtn').addEventListener('click',exportSinglePagePdf);
 
   document.getElementById('exportXlsBtn').addEventListener('click',()=>{{
     if(typeof XLSX==='undefined'){{ toast('Excel library not loaded','err'); return; }}
