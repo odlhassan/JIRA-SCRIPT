@@ -1,11 +1,13 @@
 """Tests for IPP Meeting Planner APIs (current meeting, history, complete, meeting epics)."""
 from __future__ import annotations
 
+import os
 import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
 
+from jira_export_db import ensure_schema, write_work_items
 from report_server import (
     IPP_MEETING_PLANNER_SETTINGS_ROUTE,
     create_report_server_app,
@@ -337,6 +339,77 @@ class IppMeetingPlannerApiTests(unittest.TestCase):
             data = _ipp_meeting_planner_search_work_items(db_path, query="O2", exclude_keys=["O2-100"])
             keys = [it["key"] for it in data.get("items") or []]
             self.assertNotIn("O2-100", keys)
+
+    def test_team_capacity_work_items_defaults_to_all_epics(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            (root / "report_html").mkdir(parents=True, exist_ok=True)
+            (root / "report_html" / "dashboard.html").write_text("<html><body>ok</body></html>", encoding="utf-8")
+
+            capacity_db = root / "assignee_hours_capacity.db"
+            _init_epics_management_db(capacity_db)
+
+            exports_db = root / "jira_exports.db"
+            conn = sqlite3.connect(exports_db)
+            try:
+                ensure_schema(conn)
+                write_work_items(
+                    conn,
+                    [
+                        [
+                            "O2",
+                            "O2-900",
+                            "O2-900",
+                            "Epic",
+                            "Epic",
+                            "",
+                            "Fallback Epic",
+                            "Open",
+                            "",
+                            "",
+                            "",
+                            "",
+                            "",
+                            0.0,
+                            "",
+                            0.0,
+                            "",
+                            "",
+                            "",
+                            "",
+                            "https://example.invalid/browse/O2-900",
+                            "",
+                            "",
+                            "",
+                            "",
+                            "",
+                            "",
+                            "",
+                        ]
+                    ],
+                )
+            finally:
+                conn.close()
+
+            old_env = os.environ.get("JIRA_EXPORTS_DB_PATH")
+            os.environ["JIRA_EXPORTS_DB_PATH"] = str(exports_db)
+            try:
+                app = create_report_server_app(base_dir=root, folder_raw="report_html")
+                with app.test_client() as client:
+                    projects = client.get("/api/team-capacity-planner/work-item-projects").get_json()
+                    self.assertTrue(projects.get("ok"))
+                    self.assertIn("O2", projects.get("projects") or [])
+                    r = client.get("/api/team-capacity-planner/work-items")
+                    self.assertEqual(r.status_code, 200)
+                    data = r.get_json()
+                    self.assertTrue(data.get("ok"))
+                    keys = [item["epic_key"] for item in data.get("work_items") or []]
+                    self.assertIn("O2-900", keys)
+            finally:
+                if old_env is None:
+                    os.environ.pop("JIRA_EXPORTS_DB_PATH", None)
+                else:
+                    os.environ["JIRA_EXPORTS_DB_PATH"] = old_env
 
     def test_add_custom_item_creates_row_with_custom_kind(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:

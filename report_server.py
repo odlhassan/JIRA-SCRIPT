@@ -31,6 +31,7 @@ from generate_assignee_hours_report import (
     _init_capacity_db,
     _list_capacity_profiles,
     _load_capacity_settings,
+    _load_leave_daily_rows,
     _load_leave_metrics,
     _read_summary_xlsx,
     _save_capacity_settings,
@@ -227,6 +228,7 @@ REPORT_FILENAME_TO_ID: dict[str, str] = {
     "original_estimates_hierarchy_report.html": "original_estimates_hierarchy",
     "delayed_epic_chain_gantt_report.html": "delayed_epic_chain_gantt",
     "monthly_epic_plan_progress_report.html": "monthly_epic_plan_progress",
+    "team_capacity_planner.html": "team_capacity_planner",
 }
 
 
@@ -332,6 +334,8 @@ EXECUTIVE_DASHBOARD_SETTINGS_ROUTE = "/settings/executive-dashboard"
 PAGE_CATEGORIES_SETTINGS_ROUTE = "/settings/page-categories"
 CANONICAL_REFRESH_SETTINGS_ROUTE = "/settings/canonical-refresh"
 SQL_CONSOLE_SETTINGS_ROUTE = "/settings/sql-console"
+TCP_SETTINGS_ROUTE = "/settings/team-capacity-planner"
+SEATING_PLANNER_SETTINGS_ROUTE = "/settings/seating-planner"
 LEGACY_PVD_PAGE_KEY = "planned_vs_dispensed_report"
 CANONICAL_PVD_PAGE_KEY = "approved_vs_planned_hours_report"
 LEGACY_PVD_HTML_FILE = "planned_vs_dispensed_report.html"
@@ -358,6 +362,7 @@ STATIC_REPORT_NAV_ITEMS: list[dict[str, object]] = [
     {"page_key": "original_estimates_hierarchy_report", "title": "Epic Estimate Report", "href": "/original_estimates_hierarchy_report.html", "icon": "schema", "file": "original_estimates_hierarchy_report.html", "default_nav_order": 130, "page_type": "report"},
     {"page_key": "delayed_epic_chain_gantt", "title": "Delayed Epic Chain Gantt", "href": "/delayed_epic_chain_gantt_report.html", "icon": "timeline", "file": "delayed_epic_chain_gantt_report.html", "default_nav_order": 140, "page_type": "report"},
     {"page_key": "monthly_epic_plan_progress", "title": "Monthly Epic Plan vs Actual", "href": "/monthly_epic_plan_progress_report.html", "icon": "event_available", "file": "monthly_epic_plan_progress_report.html", "default_nav_order": 145, "page_type": "report"},
+    {"page_key": "team_capacity_planner", "title": "Team Capacity Planner", "href": TCP_SETTINGS_ROUTE, "icon": "group_work", "path": TCP_SETTINGS_ROUTE, "default_nav_order": 147, "page_type": "configuration"},
     {"page_key": "ipp_meeting_dashboard", "title": "IPP Meeting Dashboard", "href": "/ipp_meeting_dashboard.html", "icon": "groups", "file": "ipp_meeting_dashboard.html", "default_nav_order": 150, "page_type": "report"},
 ]
 
@@ -377,6 +382,7 @@ STATIC_ADMIN_NAV_ITEMS: list[dict[str, object]] = [
     {"page_key": "page_categories", "title": "Page Categories", "href": PAGE_CATEGORIES_SETTINGS_ROUTE, "icon": "category", "path": PAGE_CATEGORIES_SETTINGS_ROUTE, "default_nav_order": 90, "page_type": "configuration"},
     {"page_key": "canonical_refresh_settings", "title": "Colossal Refresh", "href": CANONICAL_REFRESH_SETTINGS_ROUTE, "icon": "sync", "path": CANONICAL_REFRESH_SETTINGS_ROUTE, "default_nav_order": 100, "page_type": "configuration"},
     {"page_key": "sql_console", "title": "SQL Console", "href": SQL_CONSOLE_SETTINGS_ROUTE, "icon": "query_stats", "path": SQL_CONSOLE_SETTINGS_ROUTE, "default_nav_order": 110, "page_type": "configuration"},
+    {"page_key": "seating_planner", "title": "Seating Planner", "href": SEATING_PLANNER_SETTINGS_ROUTE, "icon": "chair", "path": SEATING_PLANNER_SETTINGS_ROUTE, "default_nav_order": 149, "page_type": "configuration"},
 ]
 
 
@@ -13204,6 +13210,8 @@ def _epics_management_import_html() -> str:
     .phase-grid .head { font-weight:700; color:#334155; font-size:.72rem; }
     .phase-name { font-weight:650; }
     .row-warning { margin-top:4px; color:var(--warn); font-size:.75rem; }
+    .import-dates-cell { white-space:nowrap; font-size:.78rem; min-width:120px; }
+    .import-dates-cell b { color:#1e40af; }
     .actions { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
     .existing { white-space:nowrap; }
   </style>
@@ -13234,7 +13242,7 @@ def _epics_management_import_html() -> str:
       <table>
         <thead>
           <tr>
-            <th>Include</th><th>Source</th><th>Project</th><th>Category / Component</th><th>Epic</th><th>Originator / Status</th><th>Totals</th><th>Phase Review</th><th>Existing</th>
+            <th>Include</th><th>Source</th><th>Project</th><th>Category / Component</th><th>Epic</th><th>Originator / Status</th><th>Totals</th><th>Dates</th><th>Phase Review</th><th>Existing</th>
           </tr>
         </thead>
         <tbody id="rows-body"></tbody>
@@ -13286,7 +13294,7 @@ def _epics_management_import_html() -> str:
     function renderRows() {
       const bodyEl = document.getElementById("rows-body");
       if (!previewRows.length) {
-        bodyEl.innerHTML = '<tr><td colspan="9" class="muted" style="text-align:center;padding:18px;">No importable RMI rows found.</td></tr>';
+        bodyEl.innerHTML = '<tr><td colspan="10" class="muted" style="text-align:center;padding:18px;">No importable RMI rows found.</td></tr>';
         return;
       }
       bodyEl.innerHTML = previewRows.map((row) => {
@@ -13301,6 +13309,7 @@ def _epics_management_import_html() -> str:
           + '<td><div class="mono">' + esc(row.epic_key || "") + '</div><input type="url" data-field="jira_url" value="' + esc(row.jira_url || "") + '" style="margin-top:5px;"><input type="text" data-field="epic_name" value="' + esc(row.epic_name || "") + '" style="margin-top:5px;"><textarea data-field="description" placeholder="Jira description">' + esc(row.description || "") + '</textarea></td>'
           + '<td><input type="text" data-field="originator" value="' + esc(row.originator || "") + '"><div class="muted" style="margin-top:5px;">Plan: ' + esc(row.source_plan_status || "") + '</div><div class="muted">Work: ' + esc(row.work_status || "") + '</div></td>'
           + '<td><div>Phase sum: <b class="mono">' + esc(row.phase_sum) + '</b></div><div>W total: <b class="mono">' + esc(row.man_days_total) + '</b></div><div class="' + (row.total_matches ? "ok" : "warn") + '">' + (row.total_matches ? "Total matches" : "Total mismatch") + '</div>' + warnings.map((w) => '<div class="row-warning">' + esc(w) + '</div>').join("") + '</td>'
+          + '<td class="import-dates-cell">' + (function() { const sd = row.source_dates || {}; const parts = []; if (sd.start_date) parts.push('<div><span class="muted">Start:</span> <b>' + esc(sd.start_date) + '</b></div>'); if (sd.prod_date) parts.push('<div><span class="muted">Prod:</span> <b>' + esc(sd.prod_date) + '</b></div>'); if (sd.dev_end) parts.push('<div><span class="muted">Dev end:</span> ' + esc(sd.dev_end) + '</div>'); if (sd.sqa_ho) parts.push('<div><span class="muted">SQA HO:</span> ' + esc(sd.sqa_ho) + '</div>'); return parts.length ? parts.join("") : '<span class="muted">—</span>'; })() + '</td>'
           + '<td>' + renderPhaseGrid(row) + '</td>'
           + '<td class="existing">' + (existing.exists ? ('<b>Existing</b><br>' + esc(existing.epic_name || existing.epic_key || "") + '<br>' + (existing.is_sealed ? '<span class="warn">Sealed; will re-budget</span>' : '<span class="ok">Unsealed</span>')) : '<span class="ok">New row</span>') + '</td>'
           + '</tr>';
@@ -13384,10 +13393,21 @@ def _epics_management_import_html() -> str:
       const resultRows = Array.isArray(body.rows) ? body.rows : [];
       const failedRows = resultRows.filter((r) => String(r && r.status) === "failed");
       const skippedRows = resultRows.filter((r) => String(r && r.status) === "skipped");
+      const savedRows = resultRows.filter((r) => String(r && r.status) === "updated" || String(r && r.status) === "inserted");
       const resultEl = document.getElementById("submit-result");
       const parts = [];
       parts.push('<div><b>Import complete.</b> Inserted ' + esc(body.inserted) + ', updated ' + esc(body.updated) + ', failed ' + esc(body.failed) + ', skipped ' + esc(body.skipped || 0) + ', re-budgeted ' + esc(body.rebudgeted || 0) + '.</div>');
       parts.push('<div class="muted" style="margin-top:4px;">Backup: ' + esc(body.backup_path || "not created") + '</div>');
+      if (savedRows.length) {
+        parts.push('<div style="margin-top:8px;"><b>Saved rows (' + esc(savedRows.length) + '):</b> <span class="muted">Check Epics Planner start/due dates are set correctly — refresh Epics Planner to see the latest.</span></div>');
+        parts.push('<table style="margin-top:4px;width:100%;border-collapse:collapse;font-size:.8rem;"><thead><tr><th style="text-align:left;border-bottom:1px solid var(--line);padding:4px 6px;">Epic Key</th><th style="text-align:left;border-bottom:1px solid var(--line);padding:4px 6px;">Status</th><th style="text-align:left;border-bottom:1px solid var(--line);padding:4px 6px;">Start Date</th><th style="text-align:left;border-bottom:1px solid var(--line);padding:4px 6px;">Due Date</th></tr></thead><tbody>');
+        savedRows.forEach((r) => {
+          const sdCell = r.start_date ? '<b style="color:#1e40af;">' + esc(r.start_date) + '</b>' : '<span class="muted">—</span>';
+          const ddCell = r.due_date ? '<b style="color:#1e40af;">' + esc(r.due_date) + '</b>' : '<span class="muted">—</span>';
+          parts.push('<tr><td class="mono" style="padding:4px 6px;border-bottom:1px solid #f1f5f9;">' + esc(r.epic_key || "") + '</td><td style="padding:4px 6px;border-bottom:1px solid #f1f5f9;">' + esc(r.status || "") + '</td><td style="padding:4px 6px;border-bottom:1px solid #f1f5f9;">' + sdCell + '</td><td style="padding:4px 6px;border-bottom:1px solid #f1f5f9;">' + ddCell + '</td></tr>');
+        });
+        parts.push('</tbody></table>');
+      }
       if (failedRows.length) {
         parts.push('<div style="margin-top:8px;"><b class="warn">Failed rows (' + esc(failedRows.length) + '):</b></div>');
         parts.push('<table style="margin-top:4px;width:100%;border-collapse:collapse;"><thead><tr><th style="text-align:left;border-bottom:1px solid var(--line);padding:4px 6px;">Source</th><th style="text-align:left;border-bottom:1px solid var(--line);padding:4px 6px;">Epic Key</th><th style="text-align:left;border-bottom:1px solid var(--line);padding:4px 6px;">Reason</th></tr></thead><tbody>');
@@ -13516,6 +13536,7 @@ def _epics_management_settings_html() -> str:
     .tree-epic-name-wrap .tree-title { display:inline; max-width:240px; white-space:normal; }
     .tk-epic-badge { display:inline-flex; align-items:center; border:1px solid #1e40af; color:#1e3a8a; background:#dbeafe; border-radius:999px; padding:1px 7px; font-size:.66rem; font-weight:700; letter-spacing:.03em; }
     .epr-jira-badge { display:inline-flex; align-items:center; border:1px solid #065f46; color:#047857; background:#d1fae5; border-radius:999px; padding:1px 7px; font-size:.66rem; font-weight:700; letter-spacing:.03em; }
+    .no-stories-badge { display:inline-flex; align-items:center; border:1px solid #d97706; color:#92400e; background:#fef3c7; border-radius:999px; padding:1px 7px; font-size:.66rem; font-weight:700; letter-spacing:.03em; }
     .tree-actions { display:flex; gap:4px; flex-wrap:wrap; margin-top:2px; }
     .tree.tree-epic-cell .tree-actions { position:absolute; top:0; right:0; margin-top:0; flex-wrap:nowrap; }
     .tree-toggle { border:1px solid #cbd5e1; background:#fff; color:#334155; border-radius:6px; width:20px; height:20px; line-height:1; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; }
@@ -13608,6 +13629,7 @@ def _epics_management_settings_html() -> str:
     .actions-cell { min-width:52px; }
     .release-status-cell { white-space:nowrap; }
     .release-date-cell { white-space:nowrap; font-size:.78rem; color:#065F46; text-align:center; }
+    .epic-date-cell { white-space:nowrap; font-size:.78rem; color:#1e40af; text-align:center; min-width:90px; }
     .release-status-badge { display:inline-block; padding:2px 8px; border-radius:10px; font-size:.72rem; font-weight:700; text-transform:uppercase; letter-spacing:.05em; }
     .release-status-badge.release-status-released { background:#dcfce7; color:#166534; }
     .release-status-badge.release-status-scheduled { background:#dbeafe; color:#1e40af; }
@@ -13913,6 +13935,10 @@ def _epics_management_settings_html() -> str:
       <div><label for="epic-originator">Originator</label><input id="epic-originator" type="text"></div>
       <div><label for="epic-priority">Priority</label><select id="epic-priority"><option>Low</option><option>Medium</option><option>High</option><option>Highest</option></select></div>
       <div><label for="epic-plan-status">Plan Status</label><select id="epic-plan-status"><option>Planned</option><option>Not Planned Yet</option></select></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div><label for="epic-start-date">Start Date</label><input id="epic-start-date" type="date"></div>
+        <div><label for="epic-due-date">Due Date</label><input id="epic-due-date" type="date"></div>
+      </div>
       <div><label for="epic-jira-url">Jira URL (optional)</label><input id="epic-jira-url" type="url" placeholder="https://..."></div>
       <div><label for="epic-description">Description</label><textarea id="epic-description"></textarea></div>
       <div><label for="epic-research-urs-plan-jira-url">Research/URS Plan Jira URL</label><input id="epic-research-urs-plan-jira-url" type="url" placeholder="https://..."></div>
@@ -14174,6 +14200,8 @@ def _epics_management_settings_html() -> str:
     const epicOriginatorEl = document.getElementById("epic-originator");
     const epicPriorityEl = document.getElementById("epic-priority");
     const epicPlanStatusEl = document.getElementById("epic-plan-status");
+    const epicStartDateEl = document.getElementById("epic-start-date");
+    const epicDueDateEl = document.getElementById("epic-due-date");
     const epicJiraUrlEl = document.getElementById("epic-jira-url");
     const epicDescriptionEl = document.getElementById("epic-description");
     const epicResearchUrsPlanJiraUrlEl = document.getElementById("epic-research-urs-plan-jira-url");
@@ -15024,6 +15052,8 @@ def _epics_management_settings_html() -> str:
         + "<th>Originator</th>"
         + "<th>Priority</th>"
         + "<th>Plan Status</th>"
+        + "<th>Start Date</th>"
+        + "<th>Due Date</th>"
         + "<th>Released Status</th>"
         + "<th>Planned Release Date</th>"
         + "<th>Actual Release Date</th>"
@@ -15722,10 +15752,11 @@ def _epics_management_settings_html() -> str:
       const lockHtml = showLock ? '<span class="material-symbols-outlined epic-seal-lock" title="' + esc(lockTitle) + '" aria-label="Sealed">lock</span>' : '';
       const tkBadge = row.is_tk_epic ? '<span class="tk-epic-badge" title="Marked as TK Epic">TK</span>' : '';
       const eprBadge = row.epr_jira_epic_created ? '<span class="epr-jira-badge" title="Epic issue was created via Populate Jira">EPR</span>' : '';
+      const noStoriesBadge = (typeof row.jira_child_count === 'number' && row.jira_child_count === 0) ? '<span class="no-stories-badge" title="No stories found in Jira for this epic">No Stories</span>' : '';
       const epicKey = String(row.epic_key || row.id || "").trim().toUpperCase();
       return ''
         + '<div class="tree tree-epic-cell tree-level-epic">'
-        + '  <div class="tree-line tree-epic"><button class="epic-accordion-toggle" type="button" data-epic-toggle="' + esc(epicKey) + '" aria-expanded="' + (expanded ? "true" : "false") + '" aria-label="' + (expanded ? "Collapse epic details" : "Expand epic details") + '"><span class="material-symbols-outlined" aria-hidden="true">expand_more</span></button><span class="tree-epic-name-wrap"><span class="tree-title">' + esc(row.epic_name || row.epic_key || "-") + '</span>' + tkBadge + eprBadge + lockHtml + '</span></div>'
+        + '  <div class="tree-line tree-epic"><button class="epic-accordion-toggle" type="button" data-epic-toggle="' + esc(epicKey) + '" aria-expanded="' + (expanded ? "true" : "false") + '" aria-label="' + (expanded ? "Collapse epic details" : "Expand epic details") + '"><span class="material-symbols-outlined" aria-hidden="true">expand_more</span></button><span class="tree-epic-name-wrap"><span class="tree-title">' + esc(row.epic_name || row.epic_key || "-") + '</span>' + tkBadge + eprBadge + noStoriesBadge + lockHtml + '</span></div>'
         + '  <div class="tree-actions">'
         + '    <a class="jira-open ' + (hasJira ? "" : "disabled") + '" href="' + esc(hasJira ? row.jira_url : "#") + '" target="_blank" rel="noopener noreferrer" title="' + (hasJira ? "Open Jira link" : "No Jira link set") + '">J</a>'
         + '    <button class="jira-edit" type="button" data-row-index="' + esc(row._row_index) + '" title="Set Jira link">E</button>'
@@ -15774,6 +15805,8 @@ def _epics_management_settings_html() -> str:
         + '<td contenteditable="' + ceAllowed + '" data-row-index="' + rowIndex + '" data-field="originator">' + esc(row.originator || "") + "</td>"
         + "<td>" + renderPrioritySelect(normalizePriority(row.priority), rowIndex, sealedDisable) + "</td>"
         + "<td>" + renderPlanStatusSelect(normalizePlanStatus(row.plan_status), rowIndex, sealedDisable) + "</td>"
+        + '<td class="epic-date-cell">' + (row.start_date ? esc(formatDateDisplay(row.start_date)) : '<span class="muted">—</span>') + '</td>'
+        + '<td class="epic-date-cell">' + (row.due_date ? esc(formatDateDisplay(row.due_date)) : '<span class="muted">—</span>') + '</td>'
         + '<td class="release-status-cell">' + renderReleaseStatusChip(row.release_status) + '</td>'
         + '<td class="release-date-cell">' + (row.planned_release_date ? esc(formatDateDisplay(row.planned_release_date)) : '<span class="muted">—</span>') + '</td>'
         + '<td class="release-date-cell">' + (row.actual_release_date ? esc(formatDateDisplay(row.actual_release_date)) : '<span class="muted">—</span>') + '</td>'
@@ -16572,6 +16605,8 @@ def _epics_management_settings_html() -> str:
       epicOriginatorEl.value = "";
       epicPriorityEl.value = "Low";
       epicPlanStatusEl.value = defaultPlanStatus();
+      epicStartDateEl.value = "";
+      epicDueDateEl.value = "";
       epicJiraUrlEl.value = "";
       epicDescriptionEl.value = "";
       epicResearchUrsPlanJiraUrlEl.value = "";
@@ -16603,6 +16638,8 @@ def _epics_management_settings_html() -> str:
       epicOriginatorEl.value = String(row.originator || "");
       epicPriorityEl.value = normalizePriority(row.priority || "Low");
       epicPlanStatusEl.value = normalizePlanStatus(row.plan_status || defaultPlanStatus());
+      epicStartDateEl.value = String(row.start_date || "");
+      epicDueDateEl.value = String(row.due_date || "");
       epicJiraUrlEl.value = String(row.jira_url || "");
       epicDescriptionEl.value = String(row.description || "");
       const plans = row.plans || {};
@@ -16674,6 +16711,8 @@ def _epics_management_settings_html() -> str:
         originator: String(epicOriginatorEl.value || "").trim(),
         priority: normalizePriority(epicPriorityEl.value),
         plan_status: normalizePlanStatus(epicPlanStatusEl.value),
+        start_date: String(epicStartDateEl.value || "").trim(),
+        due_date: String(epicDueDateEl.value || "").trim(),
         jira_url: jiraUrl,
         description: String(epicDescriptionEl.value || "").trim(),
         plans: plans,
@@ -16816,11 +16855,15 @@ def _epics_management_settings_html() -> str:
         plan_status: normalizePlanStatus(row.plan_status || defaultPlanStatus()),
         delivery_status: String(row.delivery_status || ""),
         planned_due_date_epic: normalizeIsoDateOrBlank(row.planned_due_date_epic || ""),
+        start_date: normalizeIsoDateOrBlank(row.start_date || ""),
+        due_date: normalizeIsoDateOrBlank(row.due_date || ""),
         jira_url: String(row.jira_url || ""),
         plans: (row.plans && typeof row.plans === "object") ? row.plans : {},
         is_sealed: row.hasOwnProperty("is_sealed") ? (Number(row.is_sealed) || 0) : 0,
         is_tk_epic: row.hasOwnProperty("is_tk_epic") ? Boolean(row.is_tk_epic) : false,
         epr_jira_epic_created: row.hasOwnProperty("epr_jira_epic_created") ? Boolean(row.epr_jira_epic_created) : false,
+        epr_created_jira_issue_count: row.hasOwnProperty("epr_created_jira_issue_count") ? Number(row.epr_created_jira_issue_count || 0) : 0,
+        jira_child_count: row.hasOwnProperty("jira_child_count") ? Number(row.jira_child_count) : -1,
         release_status: String(row.release_status || ""),
         planned_release_date: normalizeIsoDateOrBlank(row.planned_release_date || ""),
         actual_release_date: normalizeIsoDateOrBlank(row.actual_release_date || ""),
@@ -20785,7 +20828,9 @@ def _init_epics_management_db(settings_db_path: Path) -> None:
                 production_plan_json TEXT NOT NULL DEFAULT '{}',
                 is_sealed INTEGER NOT NULL DEFAULT 0,
                 is_tk_epic INTEGER NOT NULL DEFAULT 0,
-                epr_jira_epic_created INTEGER NOT NULL DEFAULT 0
+                epr_jira_epic_created INTEGER NOT NULL DEFAULT 0,
+                start_date TEXT NOT NULL DEFAULT '',
+                due_date TEXT NOT NULL DEFAULT ''
             )
             """
         )
@@ -21108,6 +21153,10 @@ def _init_epics_management_db(settings_db_path: Path) -> None:
             conn.execute("ALTER TABLE epics_management ADD COLUMN is_tk_epic INTEGER NOT NULL DEFAULT 0")
         if "epr_jira_epic_created" not in names:
             conn.execute("ALTER TABLE epics_management ADD COLUMN epr_jira_epic_created INTEGER NOT NULL DEFAULT 0")
+        if "start_date" not in names:
+            conn.execute("ALTER TABLE epics_management ADD COLUMN start_date TEXT NOT NULL DEFAULT ''")
+        if "due_date" not in names:
+            conn.execute("ALTER TABLE epics_management ADD COLUMN due_date TEXT NOT NULL DEFAULT ''")
         backfill_key = "is_tk_epic_backfilled"
         backfill_row = conn.execute(
             "SELECT meta_value FROM epics_management_meta WHERE meta_key=?",
@@ -21364,6 +21413,10 @@ def _init_epics_management_db(settings_db_path: Path) -> None:
             pass
         try:
             conn.execute("ALTER TABLE product_releases ADD COLUMN actual_release_date TEXT NOT NULL DEFAULT ''")
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE product_releases ADD COLUMN previous_release_date TEXT NOT NULL DEFAULT ''")
         except Exception:
             pass
         conn.commit()
@@ -21848,6 +21901,12 @@ def _normalize_epics_management_payload(
   actual_production_date = _to_text(raw.get("actual_production_date"))
   if actual_production_date and not _parse_iso_date(actual_production_date):
     raise ValueError("actual_production_date must be ISO date YYYY-MM-DD.")
+  start_date = _to_text(raw.get("start_date"))
+  if start_date and not _parse_iso_date(start_date):
+    raise ValueError("start_date must be ISO date YYYY-MM-DD.")
+  due_date = _to_text(raw.get("due_date"))
+  if due_date and not _parse_iso_date(due_date):
+    raise ValueError("due_date must be ISO date YYYY-MM-DD.")
   delivery_status_raw = _to_text(raw.get("delivery_status")).strip()
   delivery_status = delivery_status_raw if delivery_status_raw in ("Late", "On-track", "Yet to start") else "Yet to start"
   remarks = _to_text(raw.get("remarks"))
@@ -21893,6 +21952,8 @@ def _normalize_epics_management_payload(
     "plan_status": plan_status,
     "ipp_meeting_planned": ipp_meeting_planned,
     "actual_production_date": actual_production_date,
+    "start_date": start_date,
+    "due_date": due_date,
     "delivery_status": delivery_status,
     "remarks": remarks,
     "jira_url": jira_url,
@@ -21982,10 +22043,11 @@ def _save_epics_management_row(settings_db_path: Path, payload: dict) -> dict[st
       """
       INSERT INTO epics_management (
         id, epic_key, project_key, project_name, product_category, component, epic_name,
-        description, originator, priority, plan_status, ipp_meeting_planned, actual_production_date, delivery_status, remarks, jira_url,
+        description, originator, priority, plan_status, ipp_meeting_planned, actual_production_date,
+        start_date, due_date, delivery_status, remarks, jira_url,
         epic_plan_json, research_urs_plan_json, dds_plan_json,
         development_plan_json, sqa_plan_json, user_manual_plan_json, production_plan_json, is_sealed, is_tk_epic, epr_jira_epic_created
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       """,
       (
         row_id,
@@ -22001,6 +22063,8 @@ def _save_epics_management_row(settings_db_path: Path, payload: dict) -> dict[st
         row["plan_status"],
         row["ipp_meeting_planned"],
         row["actual_production_date"],
+        row["start_date"],
+        row["due_date"],
         row["delivery_status"],
         row["remarks"],
         row["jira_url"],
@@ -22064,7 +22128,8 @@ def _update_epics_management_row(settings_db_path: Path, row_ref: str, payload: 
       """
       UPDATE epics_management
       SET epic_key=?, project_key=?, project_name=?, product_category=?, component=?, epic_name=?,
-        description=?, originator=?, priority=?, plan_status=?, ipp_meeting_planned=?, actual_production_date=?, delivery_status=?, remarks=?, jira_url=?,
+        description=?, originator=?, priority=?, plan_status=?, ipp_meeting_planned=?, actual_production_date=?,
+        start_date=?, due_date=?, delivery_status=?, remarks=?, jira_url=?,
         epic_plan_json=?, research_urs_plan_json=?, dds_plan_json=?,
         development_plan_json=?, sqa_plan_json=?, user_manual_plan_json=?, production_plan_json=?, is_tk_epic=?
       WHERE id=?
@@ -22082,6 +22147,8 @@ def _update_epics_management_row(settings_db_path: Path, row_ref: str, payload: 
         normalized["plan_status"],
         normalized["ipp_meeting_planned"],
         normalized["actual_production_date"],
+        normalized["start_date"],
+        normalized["due_date"],
         normalized["delivery_status"],
         normalized["remarks"],
         normalized["jira_url"],
@@ -22185,12 +22252,15 @@ def _load_epics_management_rows(settings_db_path: Path) -> list[dict[str, str]]:
     is_sealed_col = "is_sealed" if "is_sealed" in col_names else "0 AS is_sealed"
     is_tk_epic_col = "is_tk_epic" if "is_tk_epic" in col_names else "0 AS is_tk_epic"
     epr_epic_col = "epr_jira_epic_created" if "epr_jira_epic_created" in col_names else "0 AS epr_jira_epic_created"
+    start_date_col = "start_date" if "start_date" in col_names else "'' AS start_date"
+    due_date_col = "due_date" if "due_date" in col_names else "'' AS due_date"
     rows = conn.execute(
       f"""
       SELECT
         id, epic_key, project_key, project_name, product_category, component, epic_name,
         description, originator, priority, plan_status, ipp_meeting_planned, actual_production_date, {delivery_status_col}, remarks, jira_url,
         {is_sealed_col}, {is_tk_epic_col}, {epr_epic_col},
+        {start_date_col}, {due_date_col},
         epic_plan_json, research_urs_plan_json, dds_plan_json,
         development_plan_json, sqa_plan_json, user_manual_plan_json, production_plan_json
       FROM epics_management
@@ -22280,6 +22350,25 @@ def _load_epics_management_rows(settings_db_path: Path) -> list[dict[str, str]]:
             }
       except Exception:
         pass
+    child_count_by_epic_key: dict[str, int] = {}
+    if epic_keys:
+      try:
+        run_id_row = conn.execute(
+          "SELECT last_success_run_id FROM canonical_refresh_state WHERE id = 1"
+        ).fetchone()
+        last_run_id = _to_text(run_id_row[0] if run_id_row else "")
+        if last_run_id:
+          ek_ph = ",".join("?" for _ in epic_keys)
+          for h_row in conn.execute(
+            f"SELECT issue_key, direct_child_count FROM canonical_hierarchy_summary"
+            f" WHERE run_id = ? AND hierarchy_level = 'epic' AND issue_key IN ({ek_ph})",
+            [last_run_id, *epic_keys],
+          ).fetchall():
+            ek = _to_text(h_row["issue_key"]).upper()
+            if ek:
+              child_count_by_epic_key[ek] = int(h_row["direct_child_count"] or 0)
+      except Exception:
+        pass
   except Exception:
     return []
   finally:
@@ -22360,6 +22449,8 @@ def _load_epics_management_rows(settings_db_path: Path) -> list[dict[str, str]]:
         "plan_status": _plan_status_for_epics_management(row["plan_status"]),
         "ipp_meeting_planned": _ipp_meeting_planned_for_epics_management(row["ipp_meeting_planned"]),
         "actual_production_date": _to_text(row["actual_production_date"]),
+        "start_date": _to_text(row["start_date"]),
+        "due_date": _to_text(row["due_date"]),
         "delivery_status": delivery_status_val,
         "planned_due_date_epic": planned_due_date_epic,
         "remarks": _to_text(row["remarks"]),
@@ -22372,6 +22463,7 @@ def _load_epics_management_rows(settings_db_path: Path) -> list[dict[str, str]]:
         "release_status": rel_info.get("release_status", ""),
         "planned_release_date": rel_info.get("planned_release_date", ""),
         "actual_release_date": rel_info.get("actual_release_date", ""),
+        "jira_child_count": child_count_by_epic_key.get(epic_key, -1),
       }
     )
   return out
@@ -24365,6 +24457,44 @@ def _find_header_col(headers: dict[str, int], *names: str) -> int:
   return 0
 
 
+def _build_ws_headers(ws) -> dict[str, int]:
+  """Build a normalised header-name → column-index map for a worksheet.
+
+  Strategy:
+  1. Row 2 values are read first (they hold phase sub-headers and most metadata
+     column names).
+  2. Row 1 is used as a fallback for columns whose row-2 cell is blank.
+     Multi-column merged spans in row 1 (group labels such as "RnD Most Likely")
+     are skipped so they don't shadow the real sub-headers in row 2.
+  3. Internal whitespace in header text is normalised to a single space so that
+     Excel cells containing embedded newlines (common when text-wrap is on)
+     still match the expected names (e.g. "Start\\nDate" → "Start Date").
+  """
+  def _norm(val: object) -> str:
+    return re.sub(r"\s+", " ", _to_text(val).strip())
+
+  merged_group_row1_cols: set[int] = set()
+  for rng in ws.merged_cells.ranges:
+    if rng.min_row <= 1 <= rng.max_row and rng.max_col > rng.min_col:
+      for c in range(rng.min_col, rng.max_col + 1):
+        merged_group_row1_cols.add(c)
+
+  headers: dict[str, int] = {}
+  for col_idx in range(1, ws.max_column + 1):
+    val = _norm(ws.cell(2, col_idx).value)
+    if val:
+      headers[val] = col_idx
+
+  for col_idx in range(1, ws.max_column + 1):
+    if col_idx in merged_group_row1_cols:
+      continue
+    val = _norm(ws.cell(1, col_idx).value)
+    if val and val not in headers:
+      headers[val] = col_idx
+
+  return headers
+
+
 def _merged_parent_value(ws, row_idx: int, col_idx: int) -> object:
   value = ws.cell(row_idx, col_idx).value
   if value not in (None, ""):
@@ -24394,7 +24524,7 @@ def _epics_import_rnd_phase_columns(ws) -> tuple[dict[str, int], int]:
   phase_cols: dict[str, int] = {}
   total_col = 0
   for col_idx in range(rnd_range.min_col, rnd_range.max_col + 1):
-    header = _to_text(ws.cell(2, col_idx).value).strip()
+    header = re.sub(r"\s+", " ", _to_text(ws.cell(2, col_idx).value).strip())
     if header.casefold() == "man days":
       total_col = col_idx
       continue
@@ -24420,11 +24550,7 @@ def _extract_epics_import_rows_from_workbook(workbook_path: Path) -> list[dict[s
       if "RMI" not in ws.title.upper():
         continue
       project_name = re.sub(r"\s*RMI\s*", "", ws.title, flags=re.IGNORECASE).strip() or ws.title
-      headers = {
-        _to_text(ws.cell(2, col_idx).value).strip(): col_idx
-        for col_idx in range(1, ws.max_column + 1)
-        if _to_text(ws.cell(2, col_idx).value).strip()
-      }
+      headers = _build_ws_headers(ws)
       category_col = _find_header_col(headers, "Category")
       component_col = _find_header_col(headers, "Components", "Component")
       roadmap_col = _find_header_col(headers, "Road Map Items", "Roadmap Items")
@@ -24432,6 +24558,10 @@ def _extract_epics_import_rows_from_workbook(workbook_path: Path) -> list[dict[s
       originator_col = _find_header_col(headers, "Originator")
       plan_status_col = _find_header_col(headers, "Plan Status")
       work_status_col = _find_header_col(headers, "Work Status")
+      start_date_col = _find_header_col(headers, "Start Date")
+      dev_end_col = _find_header_col(headers, "Dev End")
+      sqa_ho_col = _find_header_col(headers, "SQA HO")
+      prod_date_col = _find_header_col(headers, "Prod Date")
       phase_cols, total_col = _epics_import_rnd_phase_columns(ws)
       current_category = ""
       current_component = ""
@@ -24458,10 +24588,10 @@ def _extract_epics_import_rows_from_workbook(workbook_path: Path) -> list[dict[s
         if total_value != "":
           total_matches = abs(float(total_value) - phase_total) < 0.01
         source_dates = {
-          "start_date": _excel_date_to_iso(ws.cell(row_idx, _find_header_col(headers, "Start Date")).value) if _find_header_col(headers, "Start Date") else "",
-          "dev_end": _excel_date_to_iso(ws.cell(row_idx, _find_header_col(headers, "Dev End")).value) if _find_header_col(headers, "Dev End") else "",
-          "sqa_ho": _excel_date_to_iso(ws.cell(row_idx, _find_header_col(headers, "SQA HO")).value) if _find_header_col(headers, "SQA HO") else "",
-          "prod_date": _excel_date_to_iso(ws.cell(row_idx, _find_header_col(headers, "Prod Date")).value) if _find_header_col(headers, "Prod Date") else "",
+          "start_date": _excel_date_to_iso(ws.cell(row_idx, start_date_col).value) if start_date_col else "",
+          "dev_end": _excel_date_to_iso(ws.cell(row_idx, dev_end_col).value) if dev_end_col else "",
+          "sqa_ho": _excel_date_to_iso(ws.cell(row_idx, sqa_ho_col).value) if sqa_ho_col else "",
+          "prod_date": _excel_date_to_iso(ws.cell(row_idx, prod_date_col).value) if prod_date_col else "",
         }
         rows.append({
           "source_id": f"{ws.title}:{row_idx}",
@@ -24643,6 +24773,11 @@ def _build_epics_import_preview(settings_db_path: Path, workbook_path: Path, fet
 
 def _backup_epics_management_db(settings_db_path: Path) -> str:
   source = Path(settings_db_path)
+  for old_backup in source.parent.glob(f"{source.stem}.epics-import-*{source.suffix}.bak"):
+    try:
+      old_backup.unlink()
+    except OSError:
+      pass
   stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
   backup_path = source.with_name(f"{source.stem}.epics-import-{stamp}{source.suffix}.bak")
   shutil.copy2(source, backup_path)
@@ -24718,6 +24853,7 @@ def _submit_epics_import_mapping(settings_db_path: Path, payload: dict) -> dict[
             # Spreadsheet blanks mean "no new mapping provided", not "clear existing mapping".
             plan_payload["jira_url"] = existing_jira_url
         plans[plan_key] = plan_payload
+      source_dates = raw_row.get("source_dates") if isinstance(raw_row.get("source_dates"), dict) else {}
       payload_row = {
         "epic_key": epic_key,
         "project_key": _to_text(raw_row.get("project_key")).upper() or _extract_project_key(epic_key),
@@ -24731,6 +24867,8 @@ def _submit_epics_import_mapping(settings_db_path: Path, payload: dict) -> dict[
         "plan_status": "Planned",
         "jira_url": _to_text(raw_row.get("jira_url")),
         "is_tk_epic": 1,
+        "start_date": _to_text(source_dates.get("start_date")),
+        "due_date": _to_text(source_dates.get("prod_date")),
         "plans": plans,
       }
       if existing:
@@ -24739,11 +24877,11 @@ def _submit_epics_import_mapping(settings_db_path: Path, payload: dict) -> dict[
           results["rebudgeted"] += 1
         _update_epics_management_row(settings_db_path, _to_text(existing.get("id")) or epic_key, payload_row)
         results["updated"] += 1
-        results["rows"].append({"source_id": source_id, "epic_key": epic_key, "status": "updated"})
+        results["rows"].append({"source_id": source_id, "epic_key": epic_key, "status": "updated", "start_date": payload_row.get("start_date", ""), "due_date": payload_row.get("due_date", "")})
       else:
         _save_epics_management_row(settings_db_path, payload_row)
         results["inserted"] += 1
-        results["rows"].append({"source_id": source_id, "epic_key": epic_key, "status": "inserted"})
+        results["rows"].append({"source_id": source_id, "epic_key": epic_key, "status": "inserted", "start_date": payload_row.get("start_date", ""), "due_date": payload_row.get("due_date", "")})
     except Exception as exc:
       results["failed"] += 1
       results["rows"].append({"source_id": source_id, "epic_key": epic_key, "status": "failed", "message": str(exc)})
@@ -26430,14 +26568,14 @@ def _load_product_releases(settings_db_path: Path, project_key: str | None = Non
         if project_key:
             rows = conn.execute(
                 "SELECT id, project_key, release_number, release_date, notes, created_at_utc, updated_at_utc, "
-                "COALESCE(release_status,'scheduled') "
+                "COALESCE(release_status,'scheduled'), COALESCE(previous_release_date,'') "
                 "FROM product_releases WHERE project_key = ? ORDER BY release_date ASC",
                 (project_key,),
             ).fetchall()
         else:
             rows = conn.execute(
                 "SELECT id, project_key, release_number, release_date, notes, created_at_utc, updated_at_utc, "
-                "COALESCE(release_status,'scheduled') "
+                "COALESCE(release_status,'scheduled'), COALESCE(previous_release_date,'') "
                 "FROM product_releases ORDER BY project_key ASC, release_date ASC"
             ).fetchall()
         releases = []
@@ -26465,6 +26603,7 @@ def _load_product_releases(settings_db_path: Path, project_key: str | None = Non
                 "created_at_utc": _to_text(r[5]),
                 "updated_at_utc": _to_text(r[6]),
                 "release_status": _to_text(r[7]) or "scheduled",
+                "previous_release_date": _to_text(r[8]),
                 "epics": [
                     {
                         "epic_row_id": _to_text(e[1]),
@@ -26610,6 +26749,13 @@ def _record_release_action(settings_db_path: Path, release_id: str, action: str,
                 "UPDATE product_releases SET release_status = ?, actual_release_date = ?, updated_at_utc = ? WHERE id = ?",
                 (new_status, release_actual_date, now, release_id),
             )
+        elif action == "rescheduled" and actual_date:
+            old_row = conn.execute("SELECT release_date FROM product_releases WHERE id = ?", (release_id,)).fetchone()
+            old_date = _to_text(old_row[0]) if old_row else ""
+            conn.execute(
+                "UPDATE product_releases SET release_status = ?, release_date = ?, previous_release_date = ?, updated_at_utc = ? WHERE id = ?",
+                (new_status, actual_date, old_date, now, release_id),
+            )
         else:
             conn.execute(
                 "UPDATE product_releases SET release_status = ?, updated_at_utc = ? WHERE id = ?",
@@ -26626,9 +26772,15 @@ def _record_release_action(settings_db_path: Path, release_id: str, action: str,
             "FROM product_release_actions WHERE release_id = ? ORDER BY performed_at_utc DESC LIMIT 20",
             (release_id,),
         ).fetchall()
+        updated = conn.execute(
+            "SELECT release_date, COALESCE(previous_release_date,'') FROM product_releases WHERE id = ?",
+            (release_id,),
+        ).fetchone()
         return {
             "release_id": release_id,
             "release_status": new_status,
+            "release_date": _to_text(updated[0]) if updated else "",
+            "previous_release_date": _to_text(updated[1]) if updated else "",
             "actions": [
                 {"id": int(a[0]), "action": _to_text(a[1]), "actual_date": _to_text(a[2]),
                  "actor": _to_text(a[3]), "notes": _to_text(a[4]), "performed_at_utc": _to_text(a[5])}
@@ -27287,6 +27439,9 @@ function renderReleases() {
     const actualReleaseLine = isReleased && lastReleasedAction && lastReleasedAction.actual_date
       ? `<div class="actual-release-date">Actual release: ${fmtDate(lastReleasedAction.actual_date)}</div>`
       : "";
+    const prevDateLine = r.previous_release_date
+      ? `<div style="font-size:.74rem;color:#92400e;margin-top:1px;">&#8617; was ${fmtDate(r.previous_release_date)}</div>`
+      : "";
     const actionBtns = `<div class="action-btns">
       <button class="action-btn act-released${isReleased ? " active-released" : ""}" data-id="${esc(r.id)}" data-action="released" title="Mark as Released">Released</button>
       <button class="action-btn act-rescheduled${isRescheduled ? " active-rescheduled" : ""}" data-id="${esc(r.id)}" data-action="rescheduled" title="Mark as Rescheduled">Rescheduled</button>
@@ -27299,6 +27454,7 @@ function renderReleases() {
           <div style="flex:1;min-width:0;">
             <div class="rdate">${fmtDate(r.release_date)}</div>
             <div class="rnum">${esc(r.release_number)}</div>
+            ${prevDateLine}
             ${actualReleaseLine}
             <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px;align-items:center;">
               ${projBadge}${statusBadgeHtml(status)}
@@ -27503,7 +27659,12 @@ async function applyReleaseAction() {
     const data = await res.json();
     if (!res.ok) { errEl.textContent = data.error || "Failed to record action."; return; }
     const rel = allReleases.find(r => r.id === releaseId);
-    if (rel) { rel.release_status = data.release_status; rel.actions = data.actions; }
+    if (rel) {
+      rel.release_status = data.release_status;
+      rel.actions = data.actions;
+      if (data.release_date) rel.release_date = data.release_date;
+      if (data.previous_release_date !== undefined) rel.previous_release_date = data.previous_release_date;
+    }
     document.getElementById("action-modal").classList.remove("open");
     setStatus(`Marked as ${apiAction}.`, "ok");
     renderAll();
@@ -27650,7 +27811,10 @@ function buildCalHTML(releases, year) {
     for (let d = 1; d <= daysInM; d++) {
       const dk = `${year}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
       const rlist = byDate[dk] || [];
-      const dots = rlist.map(r => `<div class="rcal-dot" style="background:${esc(projColor(r.project_key))};"></div>`).join("");
+      const dots = rlist.map(r => {
+        const wasPart = r.previous_release_date ? ` (was ${fmtDate(r.previous_release_date)})` : "";
+        return `<div class="rcal-dot" style="background:${esc(projColor(r.project_key))};" title="${esc(projLabel(r.project_key) + " — " + fmtDate(r.release_date) + wasPart)}"></div>`;
+      }).join("");
       const cls = rlist.length ? "rcal-day cur-month is-release" : "rcal-day cur-month";
       const attr = rlist.length ? ` data-date="${esc(dk)}" title="${esc(rlist.map(x=>x.release_number).join(", "))}"` : "";
       days += `<div class="${cls}"${attr}>${d}${dots}</div>`;
@@ -27669,6 +27833,7 @@ function buildListHTML(releases) {
     const st = r.current_status || 'scheduled';
     const [sbg, sclr] = statusStyles[st] || statusStyles.scheduled;
     const epicCount = r.epics ? r.epics.length : 0;
+    const prevWasHtml = r.previous_release_date ? `<div style="font-size:.69rem;color:#94a3b8;margin-top:1px;">&#8617; was ${fmtDate(r.previous_release_date)}</div>` : "";
     return `<div class="rcal-list-item" data-rid="${esc(r.id)}" style="border-left:4px solid ${esc(col)};">
       <div class="rcal-list-item-row">
         <div class="rcal-list-summary">
@@ -27676,6 +27841,7 @@ function buildListHTML(releases) {
             <span class="rcal-list-title">${fmtDate(r.release_date)}</span>
             <span class="rcal-status-pill" style="background:${sbg};color:${sclr};">${esc(st.charAt(0).toUpperCase()+st.slice(1))}</span>
           </div>
+          ${prevWasHtml}
           <div class="rcal-list-meta">
             <span class="rcal-proj-pill" style="background:${esc(col)}15;color:${esc(col)};border:1px solid ${esc(col)}44;">${esc(projLabel)}</span>
             <span>${esc(r.release_number)}</span>
@@ -28353,7 +28519,7 @@ function buildCal(releases, year) {
         const dotItems = shown.map(r =>
           `<div class="rcal-dot" data-rid="${esc(r.id)}"
                style="background:${esc(projColor(r.project_key))};"
-               title="${esc(projLabel(r.project_key))} — ${esc(fmtDate(r.release_date))}"></div>`
+               title="${esc(projLabel(r.project_key))} — ${esc(fmtDate(r.release_date))}${r.previous_release_date ? ' (was ' + fmtDate(r.previous_release_date) + ')' : ''}"></div>`
         ).join("");
         const extraHtml = extra > 0 ? `<div class="rcal-dot-extra">+${extra}</div>` : "";
         dotsHtml = `<div class="rcal-dots-row">${dotItems}${extraHtml}</div>`;
@@ -28375,6 +28541,9 @@ function buildList(releases) {
   return sorted.map(r => {
     const col = projColor(r.project_key);
     const lbl = projLabel(r.project_key);
+    const prevLine = r.previous_release_date
+      ? `<div style="font-size:.73rem;color:#94a3b8;margin-top:1px;">&#8617; was ${esc(fmtDate(r.previous_release_date))}</div>`
+      : "";
     return `<div class="rcal-list-item" data-rid="${esc(r.id)}" style="border-left:5px solid ${esc(col)};">
       <div class="rcal-list-item-row">
         <div style="flex:1;min-width:0;">
@@ -28382,6 +28551,7 @@ function buildList(releases) {
             <span style="display:inline-flex;align-items:center;padding:2px 10px;border-radius:999px;font-size:.73rem;font-weight:700;white-space:nowrap;background:${esc(col)}20;color:${esc(col)};border:1.5px solid ${esc(col)}50;">${esc(lbl)}</span>
           </div>
           <div style="font-size:.88rem;font-weight:700;color:var(--text);margin-bottom:2px;">${esc(fmtDate(r.release_date))}</div>
+          ${prevLine}
           <div style="font-size:.74rem;color:var(--text-muted);">${r.epics.length} epic${r.epics.length!==1?"s":""}</div>
         </div>
         <div class="rcal-chevron">&#9658;</div>
@@ -28513,9 +28683,11 @@ function buildRoadmap(releases, year) {
       const cls = isCur ? " rm-month-now" : "";
       const chips = mRels.map(r => {
         const dateLabel = fmtDateShort(r.release_date);
+        const wasTip = r.previous_release_date ? ` (was ${fmtDate(r.previous_release_date)})` : "";
+        const reschedIcon = r.previous_release_date ? `<span style="font-size:.58rem;opacity:.7;margin-left:3px;">&#8617;</span>` : "";
         return `<div class="rm-chip" data-rmid="${esc(r.id)}"
               style="background:${esc(col)}18;color:${esc(col)};border-color:${esc(col)}55;"
-              title="${esc(projLabel(r.project_key))} — ${esc(fmtDate(r.release_date))}${r.release_number ? ' (' + r.release_number + ')' : ''}">${esc(dateLabel)}</div>`;
+              title="${esc(projLabel(r.project_key))} — ${esc(fmtDate(r.release_date))}${r.release_number ? ' (' + r.release_number + ')' : ''}${wasTip}">${esc(dateLabel)}${reschedIcon}</div>`;
       }).join("");
       return `<td class="rm-month-cell${cls}">${chips || '<span style="display:block;height:28px;"></span>'}</td>`;
     }).join("");
@@ -28562,6 +28734,7 @@ function bindRoadmapClicks() {
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap;">
             <span style="display:inline-flex;align-items:center;padding:2px 10px;border-radius:999px;font-size:.73rem;font-weight:700;background:${esc(col)}20;color:${esc(col)};border:1.5px solid ${esc(col)}55;">${esc(lbl)}</span>
             <span style="font-size:.88rem;font-weight:700;color:var(--text);">${esc(fmtDate(rel.release_date))}</span>
+            ${rel.previous_release_date ? `<span style="font-size:.75rem;color:#94a3b8;">&#8617; was ${esc(fmtDate(rel.previous_release_date))}</span>` : ""}
             ${rel.release_number ? `<span style="font-size:.75rem;color:var(--text-muted);font-style:italic;">${esc(rel.release_number)}</span>` : ""}
             <span style="font-size:.75rem;color:var(--text-muted);">&middot; ${rel.epics.length} epic${rel.epics.length!==1?"s":""}</span>
           </div>
@@ -28621,6 +28794,2241 @@ document.getElementById("btn-cal").addEventListener("click", () => showView("cal
 document.getElementById("btn-rm").addEventListener("click", () => showView("rm"));
 init();
 </script>
+</body>
+</html>"""
+
+
+def _tcp_list_capacity_profiles(db_path: Path) -> list[dict]:
+    """Return all capacity profiles ordered newest-first."""
+    try:
+        with sqlite3.connect(db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT id, from_date, to_date, employee_count, standard_hours_per_day, "
+                "ramadan_start_date, ramadan_end_date, ramadan_hours_per_day, holiday_dates_json "
+                "FROM assignee_capacity_settings ORDER BY from_date DESC"
+            ).fetchall()
+        result = []
+        for r in rows:
+            holidays: list = []
+            try:
+                raw = json.loads(_to_text(r["holiday_dates_json"]) or "[]")
+                if isinstance(raw, list):
+                    holidays = [_to_text(h) for h in raw if _to_text(h)]
+            except Exception:
+                pass
+            result.append({
+                "id": int(r["id"]),
+                "from_date": _to_text(r["from_date"]),
+                "to_date": _to_text(r["to_date"]),
+                "employee_count": int(r["employee_count"] or 0),
+                "standard_hours_per_day": float(r["standard_hours_per_day"] or 8.0),
+                "ramadan_start_date": _to_text(r["ramadan_start_date"] or ""),
+                "ramadan_end_date": _to_text(r["ramadan_end_date"] or ""),
+                "ramadan_hours_per_day": float(r["ramadan_hours_per_day"] or 6.5),
+                "holiday_dates": holidays,
+                "holiday_count": len(holidays),
+            })
+        return result
+    except Exception:
+        return []
+
+
+def _tcp_find_best_capacity_profile(
+    db_path: Path,
+    from_date: str,
+    to_date: str,
+    profile_id: int | None = None,
+) -> dict | None:
+    """Find the capacity profile that best covers [from_date, to_date]."""
+    profiles = _tcp_list_capacity_profiles(db_path)
+    if not profiles:
+        return None
+    if profile_id is not None:
+        for p in profiles:
+            if p["id"] == profile_id:
+                return p
+        return profiles[0]  # fallback to first if given ID not found
+    # Prefer profile that fully contains the requested range
+    for p in profiles:
+        if p["from_date"] <= from_date and p["to_date"] >= to_date:
+            return p
+    # Then prefer largest day-overlap
+    best: dict | None = None
+    best_overlap = -1
+    for p in profiles:
+        overlap_start = max(from_date, p["from_date"])
+        overlap_end = min(to_date, p["to_date"])
+        if overlap_end >= overlap_start:
+            try:
+                from datetime import date as _date
+                days = (_date.fromisoformat(overlap_end) - _date.fromisoformat(overlap_start)).days + 1
+            except Exception:
+                days = 0
+            if days > best_overlap:
+                best_overlap = days
+                best = p
+    return best or profiles[0]
+
+
+def _tcp_compute_per_person_capacity(profile: dict | None, from_date: str, to_date: str) -> float:
+    """Compute working hours per person for [from_date, to_date] using the given profile's schedule."""
+    if not profile:
+        try:
+            from datetime import date as _date, timedelta as _td
+            cur = _date.fromisoformat(from_date)
+            end = _date.fromisoformat(to_date)
+            wdays = sum(1 for i in range((end - cur).days + 1) if (cur + _td(days=i)).weekday() < 5)
+            return round(wdays * 8.0, 2)
+        except Exception:
+            return 0.0
+    holidays_in_range = [h for h in profile.get("holiday_dates", []) if from_date <= h <= to_date]
+    # Only pass Ramadan dates if they overlap the requested range — normalize_capacity_payload rejects non-overlapping ranges
+    ram_start = profile.get("ramadan_start_date") or ""
+    ram_end   = profile.get("ramadan_end_date")   or ""
+    if ram_start and ram_end and not (ram_start <= to_date and ram_end >= from_date):
+        ram_start = ""
+        ram_end   = ""
+    synthetic = {
+        "from_date": from_date,
+        "to_date": to_date,
+        "employee_count": 1,
+        "standard_hours_per_day": profile.get("standard_hours_per_day", 8.0),
+        "ramadan_start_date": ram_start,
+        "ramadan_end_date": ram_end,
+        "ramadan_hours_per_day": profile.get("ramadan_hours_per_day", 6.5),
+        "holiday_dates": holidays_in_range,
+    }
+    try:
+        result = calculate_capacity_metrics(synthetic)
+        return float(result.get("metrics", {}).get("available_capacity_hours") or 0)
+    except Exception:
+        return 0.0
+
+
+def _jira_key_from_url(url: str) -> str:
+    """Extract Jira issue key (e.g. FF-297) from a browse URL. Returns '' if not found."""
+    try:
+        return _to_text(extract_jira_key_from_url(url)).upper()
+    except Exception:
+        import re
+        if not url:
+            return ""
+        m = re.search(r'/browse/([A-Z][A-Z0-9]+-\d+)', url.strip())
+        return m.group(1).upper() if m else ""
+
+
+def _tcp_load_epic_details(conn: sqlite3.Connection, epic_keys: list[str], canonical_run_id: str = "") -> dict:
+    """Return dict keyed by upper(epic_key) with TK plan hours, story estimates, and subtasks."""
+    if not epic_keys:
+        return {}
+    upper_keys = [k.upper() for k in epic_keys if _to_text(k)]
+    if not upper_keys:
+        return {}
+    ph = ",".join("?" for _ in upper_keys)
+    try:
+        # First query by stored epic_key
+        rows_by_key = conn.execute(
+            f"SELECT id, epic_key, epic_name, project_key, jira_url, is_tk_epic FROM epics_management WHERE upper(epic_key) IN ({ph})",
+            upper_keys,
+        ).fetchall()
+        # Also find rows where jira_url contains any of the requested keys (handles stale stored epic_key)
+        like_clauses = " OR ".join("upper(jira_url) LIKE ?" for _ in upper_keys)
+        rows_by_url = conn.execute(
+            f"SELECT id, epic_key, epic_name, project_key, jira_url, is_tk_epic FROM epics_management WHERE {like_clauses}",
+            [f"%/{k}" for k in upper_keys],
+        ).fetchall()
+        # Merge, deduplicating by row id
+        seen_ids: set = set()
+        epic_rows = []
+        for r in list(rows_by_key) + list(rows_by_url):
+            if r[0] not in seen_ids:
+                seen_ids.add(r[0])
+                epic_rows.append(r)
+    except Exception:
+        return {}
+
+    result: dict[str, dict] = {}
+    row_id_to_ek: dict[str, str] = {}
+    for er in epic_rows:
+        raw_ek = _to_text(er[1]).upper()
+        jira_url = _to_text(er[4])
+        # Use URL-derived key as canonical, fallback to stored key
+        url_key = _jira_key_from_url(jira_url)
+        ek = url_key if url_key else raw_ek
+        row_id = _to_text(er[0])
+        if ek in result:
+            continue  # deduplicate
+        result[ek] = {
+            "epic_key": ek,
+            "epic_name": _to_text(er[2]),
+            "project_key": _to_text(er[3]),
+            "jira_url": jira_url,
+            "is_tk_epic": bool(er[5]),
+            "tk_approved_man_days": None,
+            "stories": [],
+        }
+        if row_id:
+            row_id_to_ek[row_id] = ek
+
+    row_ids = list(row_id_to_ek.keys())
+    if row_ids:
+        pv_ph = ",".join("?" for _ in row_ids)
+        try:
+            plan_rows = conn.execute(
+                f"SELECT epic_row_id, plan_json FROM epics_management_plan_values WHERE epic_row_id IN ({pv_ph})",
+                row_ids,
+            ).fetchall()
+            for pr in plan_rows:
+                ek = row_id_to_ek.get(_to_text(pr[0]), "")
+                if not ek or ek not in result:
+                    continue
+                try:
+                    plan = json.loads(_to_text(pr[1]) or "{}")
+                except Exception:
+                    plan = {}
+                tk_val = plan.get("tk_budgeted_man_days") or plan.get("man_days")
+                if tk_val not in (None, ""):
+                    try:
+                        existing = result[ek]["tk_approved_man_days"] or 0.0
+                        result[ek]["tk_approved_man_days"] = round(existing + float(tk_val), 2)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+        try:
+            story_rows = conn.execute(
+                f"SELECT epic_row_id, story_key, story_name, story_status, estimate_hours, jira_url FROM epics_management_story_sync WHERE epic_row_id IN ({pv_ph})",
+                row_ids,
+            ).fetchall()
+            for sr in story_rows:
+                ek = row_id_to_ek.get(_to_text(sr[0]), "")
+                if not ek or ek not in result:
+                    continue
+                try:
+                    est = float(sr[4] or 0)
+                except Exception:
+                    est = 0.0
+                result[ek]["stories"].append({
+                    "story_key": _to_text(sr[1]),
+                    "story_name": _to_text(sr[2]),
+                    "story_status": _to_text(sr[3]),
+                    "estimate_hours": est,
+                    "jira_url": _to_text(sr[5]),
+                })
+        except Exception:
+            pass
+
+    # Enrich stories with canonical assignee + subtasks
+    if canonical_run_id and result:
+        all_story_keys: list[str] = []
+        for ep_data in result.values():
+            for s in ep_data["stories"]:
+                sk = _to_text(s.get("story_key", ""))
+                if sk:
+                    all_story_keys.append(sk)
+        if all_story_keys:
+            sk_ph = ",".join("?" for _ in all_story_keys)
+            sk_upper = [sk.upper() for sk in all_story_keys]
+            try:
+                assignee_rows = conn.execute(
+                    f"SELECT issue_key, assignee FROM canonical_issues WHERE run_id = ? AND upper(issue_key) IN ({sk_ph})",
+                    [canonical_run_id] + sk_upper,
+                ).fetchall()
+                assignee_by_sk: dict[str, str] = {_to_text(r[0]).upper(): _to_text(r[1]) for r in assignee_rows}
+
+                subtask_rows = conn.execute(
+                    f"""SELECT issue_key, summary, status, assignee, original_estimate_hours, parent_issue_key
+                        FROM canonical_issues
+                        WHERE run_id = ? AND upper(parent_issue_key) IN ({sk_ph})
+                        AND issue_type NOT IN ('Epic', 'Story', 'Initiative')""",
+                    [canonical_run_id] + sk_upper,
+                ).fetchall()
+                subtasks_by_parent: dict[str, list] = {}
+                for r in subtask_rows:
+                    parent_upper = _to_text(r[5]).upper()
+                    subtasks_by_parent.setdefault(parent_upper, []).append({
+                        "issue_key": _to_text(r[0]),
+                        "issue_name": _to_text(r[1]),
+                        "status": _to_text(r[2]),
+                        "assignee": _to_text(r[3]),
+                        "estimate_hours": round(float(r[4] or 0), 2),
+                    })
+
+                for ep_data in result.values():
+                    for s in ep_data["stories"]:
+                        sk_u = _to_text(s.get("story_key", "")).upper()
+                        s["assignee"] = assignee_by_sk.get(sk_u, "")
+                        s["subtasks"] = subtasks_by_parent.get(sk_u, [])
+            except Exception:
+                pass
+
+    return result
+
+
+def _tcp_build_team_data(
+    db_path: Path,
+    leave_report_path: Path,
+    team_name: str,
+    from_date: str,
+    to_date: str,
+    profile_id: int | None = None,
+) -> dict:
+    """Assemble per-member capacity/leave/availability/assigned-epics payload."""
+    teams = _list_performance_teams(db_path)
+    team = next((t for t in teams if t["team_name"] == team_name), None)
+    if not team:
+        raise LookupError(f"Team not found: {team_name!r}")
+    members: list[str] = team.get("assignees") or []
+
+    profile = _tcp_find_best_capacity_profile(db_path, from_date, to_date, profile_id)
+    per_person_cap = round(_tcp_compute_per_person_capacity(profile, from_date, to_date), 2)
+
+    leave_by: dict[str, dict] = {}
+    try:
+        all_leave = _load_leave_daily_rows(leave_report_path)
+        for row in all_leave:
+            day = _to_text(row.get("period_day", ""))
+            if not (from_date <= day <= to_date):
+                continue
+            name = _to_text(row.get("assignee", ""))
+            if name not in leave_by:
+                leave_by[name] = {"planned_taken_hours": 0.0, "unplanned_taken_hours": 0.0, "planned_not_taken_hours": 0.0}
+            leave_by[name]["planned_taken_hours"] += float(row.get("planned_taken_hours") or 0)
+            leave_by[name]["unplanned_taken_hours"] += float(row.get("unplanned_taken_hours") or 0)
+            leave_by[name]["planned_not_taken_hours"] += float(row.get("planned_not_taken_hours") or 0)
+    except Exception:
+        pass
+
+    canonical_run_id = _canonical_last_success_run_id(db_path)
+    canonical_available = bool(canonical_run_id)
+
+    member_results: list[dict] = []
+    all_epic_keys: set[str] = set()
+
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        for member_name in members:
+            leave = leave_by.get(member_name, {"planned_taken_hours": 0.0, "unplanned_taken_hours": 0.0, "planned_not_taken_hours": 0.0})
+            total_leave = leave["planned_taken_hours"] + leave["unplanned_taken_hours"] + leave["planned_not_taken_hours"]
+            availability = round(per_person_cap - total_leave, 2)
+
+            epic_keys_for_member: set[str] = set()
+            planned_hours = 0.0
+            logged_hours = 0.0
+            if canonical_run_id:
+                try:
+                    issue_rows = conn.execute(
+                        """
+                        SELECT epic_key FROM canonical_issues
+                        WHERE run_id = ? AND lower(assignee) = lower(?) AND epic_key != ''
+                        """,
+                        (canonical_run_id, member_name),
+                    ).fetchall()
+                    for ir in issue_rows:
+                        ek = _to_text(ir["epic_key"]).upper()
+                        if ek:
+                            epic_keys_for_member.add(ek)
+                    # Also resolve epics for subtasks whose epic_key is blank — walk up via parent
+                    parent_rows = conn.execute(
+                        """
+                        SELECT DISTINCT parent_issue_key FROM canonical_issues
+                        WHERE run_id = ? AND lower(assignee) = lower(?)
+                          AND (epic_key IS NULL OR epic_key = '') AND parent_issue_key != ''
+                        """,
+                        (canonical_run_id, member_name),
+                    ).fetchall()
+                    parent_keys_upper = [_to_text(r["parent_issue_key"]).upper() for r in parent_rows if _to_text(r["parent_issue_key"])]
+                    if parent_keys_upper:
+                        pk_ph = ",".join("?" for _ in parent_keys_upper)
+                        parent_epic_rows = conn.execute(
+                            f"SELECT epic_key FROM canonical_issues WHERE run_id = ? AND upper(issue_key) IN ({pk_ph}) AND epic_key != ''",
+                            [canonical_run_id] + parent_keys_upper,
+                        ).fetchall()
+                        for pr in parent_epic_rows:
+                            ek = _to_text(pr["epic_key"]).upper()
+                            if ek:
+                                epic_keys_for_member.add(ek)
+                except Exception:
+                    pass
+                try:
+                    ph_row = conn.execute(
+                        """SELECT COALESCE(SUM(original_estimate_hours), 0)
+                           FROM canonical_issues
+                           WHERE run_id = ? AND lower(assignee) = lower(?)
+                             AND (lower(issue_type) LIKE '%sub-task%' OR lower(issue_type) LIKE '%subtask%')""",
+                        (canonical_run_id, member_name),
+                    ).fetchone()
+                    planned_hours = round(float(ph_row[0] or 0), 2)
+                except Exception:
+                    pass
+                try:
+                    lh_row = conn.execute(
+                        "SELECT COALESCE(SUM(hours_logged), 0) FROM canonical_worklogs WHERE run_id = ? AND lower(issue_assignee) = lower(?) AND started_date >= ? AND started_date <= ?",
+                        (canonical_run_id, member_name, from_date, to_date),
+                    ).fetchone()
+                    logged_hours = round(float(lh_row[0] or 0), 2)
+                except Exception:
+                    pass
+
+            all_epic_keys.update(epic_keys_for_member)
+            member_results.append({
+                "name": member_name,
+                "capacity_hours": per_person_cap,
+                "planned_taken_hours": round(leave["planned_taken_hours"], 2),
+                "unplanned_taken_hours": round(leave["unplanned_taken_hours"], 2),
+                "planned_not_taken_hours": round(leave["planned_not_taken_hours"], 2),
+                "total_leave_hours": round(total_leave, 2),
+                "availability_hours": availability,
+                "planned_hours": planned_hours,
+                "logged_hours": logged_hours,
+                "epic_keys": sorted(epic_keys_for_member),
+            })
+
+        epic_details = _tcp_load_epic_details(conn, list(all_epic_keys), canonical_run_id)
+
+        # Fallback names for epics not in epics_management — look up from canonical_issues
+        missing_ep_keys = [ek for ek in all_epic_keys if ek not in epic_details]
+        if missing_ep_keys and canonical_run_id:
+            try:
+                mk_ph = ",".join("?" for _ in missing_ep_keys)
+                fallback_rows = conn.execute(
+                    f"SELECT issue_key, summary FROM canonical_issues WHERE run_id = ? AND upper(issue_key) IN ({mk_ph}) LIMIT 500",
+                    [canonical_run_id] + list(missing_ep_keys),
+                ).fetchall()
+                for fr in fallback_rows:
+                    fk = _to_text(fr[0]).upper()
+                    if fk and fk not in epic_details:
+                        epic_details[fk] = {
+                            "epic_key": fk, "epic_name": _to_text(fr[1]) or fk,
+                            "project_key": "", "jira_url": "", "is_tk_epic": False,
+                            "tk_approved_man_days": None, "stories": [],
+                        }
+            except Exception:
+                pass
+
+    return {
+        "team_name": team_name,
+        "team_leader": _to_text(team.get("team_leader")),
+        "from_date": from_date,
+        "to_date": to_date,
+        "canonical_available": canonical_available,
+        "capacity_profile": profile,
+        "members": member_results,
+        "epics": epic_details,
+    }
+
+
+# ── Seating Planner ──────────────────────────────────────────────────────────
+
+def _init_seating_db(db_path: Path) -> None:
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS seating_floor_plan (
+                id INTEGER PRIMARY KEY DEFAULT 1,
+                layout_json TEXT NOT NULL DEFAULT '{\"tables\":[]}',
+                updated_at_utc TEXT NOT NULL DEFAULT ''
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS seating_wfh_employees (
+                employee_name TEXT PRIMARY KEY,
+                updated_at_utc TEXT NOT NULL DEFAULT ''
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS seating_custom_employees (
+                employee_name TEXT PRIMARY KEY,
+                created_at_utc TEXT NOT NULL DEFAULT ''
+            )
+        """)
+        conn.commit()
+
+
+def _seating_get_custom_employees(db_path: Path) -> list[str]:
+    _init_seating_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT employee_name FROM seating_custom_employees ORDER BY employee_name"
+        ).fetchall()
+    return [_to_text(r[0]) for r in rows]
+
+
+def _seating_add_custom_employee(db_path: Path, name: str) -> None:
+    _init_seating_db(db_path)
+    now = datetime.utcnow().isoformat()
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO seating_custom_employees (employee_name, created_at_utc) VALUES (?, ?)",
+            (name.strip(), now),
+        )
+        conn.commit()
+
+
+def _seating_delete_custom_employee(db_path: Path, name: str) -> None:
+    _init_seating_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("DELETE FROM seating_custom_employees WHERE employee_name = ?", (name.strip(),))
+        conn.commit()
+
+
+def _seating_rename_custom_employee(db_path: Path, old_name: str, new_name: str) -> None:
+    _init_seating_db(db_path)
+    old_name = old_name.strip()
+    new_name = new_name.strip()
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "UPDATE seating_custom_employees SET employee_name = ? WHERE employee_name = ?",
+            (new_name, old_name),
+        )
+        row = conn.execute("SELECT layout_json FROM seating_floor_plan WHERE id=1").fetchone()
+        if row:
+            try:
+                layout = json.loads(_to_text(row[0])) or {"tables": []}
+            except (json.JSONDecodeError, TypeError):
+                layout = {"tables": []}
+            changed = False
+            for t in layout.get("tables", []):
+                for idx, emp in list((t.get("seats") or {}).items()):
+                    if _to_text(emp).strip() == old_name:
+                        t["seats"][idx] = new_name
+                        changed = True
+            if changed:
+                conn.execute(
+                    "UPDATE seating_floor_plan SET layout_json=?, updated_at_utc=? WHERE id=1",
+                    (json.dumps(layout), datetime.utcnow().isoformat()),
+                )
+        # Also update WFH list if present
+        wfh_row = conn.execute("SELECT wfh_json FROM seating_wfh WHERE id=1").fetchone()
+        if wfh_row:
+            try:
+                wfh_list = json.loads(_to_text(wfh_row[0])) or []
+            except (json.JSONDecodeError, TypeError):
+                wfh_list = []
+            if old_name in wfh_list:
+                wfh_list = [new_name if n == old_name else n for n in wfh_list]
+                conn.execute(
+                    "UPDATE seating_wfh SET wfh_json=? WHERE id=1",
+                    (json.dumps(wfh_list),),
+                )
+        conn.commit()
+
+
+def _seating_get_all_employees(db_path: Path) -> list[str]:
+    _init_seating_db(db_path)
+    names: set[str] = set()
+    try:
+        with sqlite3.connect(db_path) as conn:
+            for (aj,) in conn.execute("SELECT assignees_json FROM performance_teams").fetchall():
+                try:
+                    for n in json.loads(_to_text(aj) or "[]"):
+                        v = _to_text(n).strip()
+                        if v:
+                            names.add(v)
+                except (json.JSONDecodeError, TypeError):
+                    pass
+    except sqlite3.OperationalError:
+        pass
+    for n in _seating_get_custom_employees(db_path):
+        names.add(n)
+    return sorted(names)
+
+
+def _seating_get_project_assignments(base_dir: Path, db_path: Path) -> dict:
+    """Return {assignee: [project_key, ...]} derived from subtask assignments.
+
+    canonical_issues lives in assignee_hours_capacity.db (same as canonical_refresh_state).
+    Project is derived from the subtask's project_key column, falling back to the
+    issue_key prefix (e.g. O2-123 → O2).
+
+    Primary: subtasks active and overlapping current month (or undated + not done).
+    Fallback 2: any issue type overlapping current month.
+    Fallback 3: most recent month worklogs from canonical_assignee_period_hours (jira_sync_cache.db).
+    """
+    from datetime import date as _date
+    import calendar as _cal
+    today = _date.today()
+    month_start = today.strftime("%Y-%m-01")
+    last_day = _cal.monthrange(today.year, today.month)[1]
+    month_end = today.strftime(f"%Y-%m-{last_day:02d}")
+
+    result: dict[str, list[str]] = {}
+
+    try:
+        run_id = _canonical_last_success_run_id(db_path)
+        if not run_id:
+            result["__error__"] = ["No canonical run_id found — sync may not have run yet"]
+            return result
+
+        # canonical_issues lives in the same DB as canonical_refresh_state (db_path)
+        with sqlite3.connect(db_path) as conn:
+            rows = conn.execute(
+                """
+                SELECT DISTINCT
+                    assignee,
+                    UPPER(COALESCE(NULLIF(TRIM(project_key),''),
+                          SUBSTR(issue_key, 1, INSTR(issue_key,'-')-1))) AS derived_pk
+                FROM canonical_issues
+                WHERE run_id = ?
+                  AND (LOWER(issue_type) LIKE '%sub-task%' OR LOWER(issue_type) LIKE '%subtask%')
+                  AND assignee != ''
+                  AND issue_key LIKE '%-%'
+                  AND UPPER(COALESCE(NULLIF(TRIM(project_key),''),
+                        SUBSTR(issue_key, 1, INSTR(issue_key,'-')-1))) != 'RLT'
+                  AND LOWER(status) NOT IN ('done', 'resolved', 'closed', 'cancelled', 'rejected')
+                  AND (
+                    (start_date != '' AND start_date <= ? AND (due_date = '' OR due_date >= ?))
+                    OR (start_date != '' AND start_date >= ? AND start_date <= ?)
+                    OR (due_date  != '' AND due_date  >= ? AND due_date  <= ?)
+                    OR (start_date = '' AND due_date = '')
+                  )
+                ORDER BY assignee, derived_pk
+                """,
+                (run_id, month_end, month_start, month_start, month_end, month_start, month_end),
+            ).fetchall()
+
+            if not rows:
+                # Fallback 2: any issue type overlapping current month
+                rows = conn.execute(
+                    """
+                    SELECT DISTINCT
+                        assignee,
+                        UPPER(COALESCE(NULLIF(TRIM(project_key),''),
+                              SUBSTR(issue_key, 1, INSTR(issue_key,'-')-1))) AS derived_pk
+                    FROM canonical_issues
+                    WHERE run_id = ?
+                      AND assignee != ''
+                      AND issue_key LIKE '%-%'
+                      AND UPPER(COALESCE(NULLIF(TRIM(project_key),''),
+                            SUBSTR(issue_key, 1, INSTR(issue_key,'-')-1))) != 'RLT'
+                      AND LOWER(status) NOT IN ('done', 'resolved', 'closed', 'cancelled', 'rejected')
+                      AND (
+                        (start_date != '' AND start_date <= ? AND (due_date = '' OR due_date >= ?))
+                        OR (start_date != '' AND start_date >= ? AND start_date <= ?)
+                        OR (due_date  != '' AND due_date  >= ? AND due_date  <= ?)
+                      )
+                    ORDER BY assignee, derived_pk
+                    """,
+                    (run_id, month_end, month_start, month_start, month_end, month_start, month_end),
+                ).fetchall()
+
+            if not rows:
+                # Fallback 3: most recent month worklogs from jira_sync_cache.db
+                sync_db = _canonical_sync_cache_path(base_dir)
+                try:
+                    with sqlite3.connect(sync_db) as sconn:
+                        recent = sconn.execute(
+                            """SELECT period_value FROM canonical_assignee_period_hours
+                               WHERE run_id=? AND period_type='month'
+                               ORDER BY period_value DESC LIMIT 1""",
+                            (run_id,),
+                        ).fetchone()
+                        if recent:
+                            rows = sconn.execute(
+                                """SELECT assignee, project_key
+                                   FROM canonical_assignee_period_hours
+                                   WHERE run_id=? AND period_type='month' AND period_value=?
+                                     AND UPPER(project_key)!='RLT' AND project_key!=''
+                                     AND total_hours>0
+                                   ORDER BY assignee, project_key""",
+                                (run_id, recent[0]),
+                            ).fetchall()
+                except Exception:
+                    pass
+
+        for assignee, project_key in rows:
+            a = _to_text(assignee).strip()
+            pk = _to_text(project_key).strip().upper()
+            if a and pk:
+                result.setdefault(a, [])
+                if pk not in result[a]:
+                    result[a].append(pk)
+    except Exception as exc:
+        result["__error__"] = [str(exc)]
+    return result
+
+
+def _seating_get_teams(db_path: Path) -> list[dict]:
+    """Return [{name, members}] for all performance_teams, sorted by name."""
+    try:
+        with sqlite3.connect(db_path) as conn:
+            rows = conn.execute(
+                "SELECT team_name, assignees_json FROM performance_teams ORDER BY team_name"
+            ).fetchall()
+    except sqlite3.OperationalError:
+        return []
+    result = []
+    for (team_name, aj) in rows:
+        name = _to_text(team_name).strip()
+        if not name:
+            continue
+        try:
+            members = [_to_text(n).strip() for n in json.loads(_to_text(aj) or "[]") if _to_text(n).strip()]
+        except (json.JSONDecodeError, TypeError):
+            members = []
+        result.append({"name": name, "members": members})
+    return result
+
+
+def _seating_get_project_names(db_path: Path) -> dict:
+    """Return {PROJECT_KEY: 'Human Readable Name'} from managed projects registry."""
+    try:
+        managed = list_managed_projects(db_path, include_inactive=False)
+        result = {}
+        for item in managed or []:
+            key = _to_text((item or {}).get("project_key")).strip().upper()
+            name = _to_text((item or {}).get("display_name") or (item or {}).get("project_name") or key).strip()
+            if key:
+                result[key] = name or key
+        return result
+    except Exception:
+        return {}
+
+
+def _seating_load_layout(db_path: Path) -> dict:
+    _init_seating_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        row = conn.execute("SELECT layout_json FROM seating_floor_plan WHERE id=1").fetchone()
+    if not row:
+        return {"tables": []}
+    try:
+        return json.loads(_to_text(row[0])) or {"tables": []}
+    except (json.JSONDecodeError, TypeError):
+        return {"tables": []}
+
+
+def _seating_save_layout(db_path: Path, layout: dict) -> None:
+    _init_seating_db(db_path)
+    now = datetime.utcnow().isoformat()
+    layout_json = json.dumps(layout)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO seating_floor_plan (id, layout_json, updated_at_utc)
+            VALUES (1, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                layout_json = excluded.layout_json,
+                updated_at_utc = excluded.updated_at_utc
+            """,
+            (layout_json, now),
+        )
+        conn.commit()
+
+
+def _seating_load_wfh(db_path: Path) -> list[str]:
+    _init_seating_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT employee_name FROM seating_wfh_employees ORDER BY employee_name"
+        ).fetchall()
+    return [_to_text(r[0]) for r in rows]
+
+
+def _seating_save_wfh(db_path: Path, employee_names: list[str]) -> None:
+    _init_seating_db(db_path)
+    now = datetime.utcnow().isoformat()
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("DELETE FROM seating_wfh_employees")
+        for raw in employee_names:
+            n = _to_text(raw).strip()
+            if n:
+                conn.execute(
+                    "INSERT OR REPLACE INTO seating_wfh_employees (employee_name, updated_at_utc) VALUES (?, ?)",
+                    (n, now),
+                )
+        conn.commit()
+
+
+def _seating_planner_html() -> str:
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Seating Planner</title>
+  <link rel="stylesheet" href="/shared-nav.css">
+  <link rel="stylesheet" href="/material-symbols.css">
+  <style>
+    :root {{
+      --bg:#eef4ff; --card:#fff; --line:#d4deee; --ink:#0f172a;
+      --muted:#475569; --brand:#0f766e; --brand-lt:#ccfbf1;
+      --danger:#b91c1c; --soft:#f8fbff;
+    }}
+    *{{box-sizing:border-box;margin:0;padding:0;}}
+    body{{
+      font-family:"Segoe UI",Tahoma,sans-serif;color:var(--ink);
+      background:var(--bg);display:flex;flex-direction:column;
+      height:100vh;overflow:hidden;
+    }}
+    /* Toolbar */
+    .sp-bar{{
+      display:flex;align-items:center;gap:8px;padding:10px 16px;
+      background:#fff;border-bottom:1px solid var(--line);flex-shrink:0;flex-wrap:wrap;
+    }}
+    .sp-title{{
+      display:flex;align-items:center;gap:8px;font-size:1.05rem;font-weight:700;
+      color:var(--brand);margin-right:auto;
+    }}
+    .sp-title .material-symbols-outlined{{font-size:1.4rem;}}
+    .sp-btn{{
+      display:inline-flex;align-items:center;gap:5px;padding:7px 12px;
+      border-radius:8px;font-size:.84rem;font-weight:600;cursor:pointer;
+      border:1px solid var(--line);background:#fff;color:var(--ink);transition:background .15s;
+    }}
+    .sp-btn:hover{{background:#f1f5f9;}}
+    .sp-btn.primary{{
+      background:linear-gradient(135deg,#0f766e,#0ea5a4);color:#fff;border-color:#0f766e;
+    }}
+    .sp-btn.primary:hover{{background:linear-gradient(135deg,#0e6b64,#0d9090);}}
+    .sp-btn:disabled{{opacity:.5;cursor:not-allowed;}}
+    .sp-btn .material-symbols-outlined{{font-size:1rem;}}
+    .sp-zoom-lbl{{font-size:.84rem;font-weight:600;color:var(--muted);min-width:3.2rem;text-align:center;}}
+    /* Body */
+    .sp-body{{display:flex;flex:1;overflow:hidden;}}
+    /* Canvas */
+    .sp-cw{{flex:1;overflow:auto;background:#f1f5f9;position:relative;}}
+    .sp-canvas{{
+      position:relative;width:4000px;height:3000px;
+      background-image:radial-gradient(circle,#94a3b8 1px,transparent 1px);
+      background-size:32px 32px;transform-origin:0 0;
+    }}
+    /* Table card */
+    .sp-tbl{{
+      position:absolute;background:#fff;border:2px solid var(--line);
+      border-radius:12px;box-shadow:0 4px 16px rgba(15,23,42,.08);
+      min-width:196px;user-select:none;
+    }}
+    .sp-seat-txt{{display:block;transform-origin:center center;line-height:1;}}
+    /* Snap guide lines */
+    .snap-line{{position:absolute;background:#f59e0b;opacity:.7;pointer-events:none;z-index:3000;}}
+    .snap-line.h{{height:1px;left:0;right:0;}}
+    .snap-line.v{{width:1px;top:0;bottom:0;}}
+    .sp-tbl.dragging{{box-shadow:0 16px 40px rgba(15,23,42,.22);opacity:.92;z-index:1000;}}
+    .sp-thdr{{
+      display:flex;align-items:center;gap:6px;padding:8px 10px;
+      background:linear-gradient(135deg,#0f766e,#0ea5a4);
+      border-radius:10px 10px 0 0;cursor:grab;
+    }}
+    .sp-thdr:active{{cursor:grabbing;}}
+    .sp-tname{{
+      flex:1;color:#fff;font-weight:700;font-size:.88rem;
+      white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+    }}
+    .sp-tact{{
+      background:none;border:none;color:rgba(255,255,255,.8);cursor:pointer;
+      border-radius:4px;padding:2px;display:flex;align-items:center;
+      transition:color .1s;
+    }}
+    .sp-tact:hover{{color:#fff;}}
+    .sp-tact .material-symbols-outlined{{font-size:1rem;}}
+    /* Seats */
+    .sp-seats{{display:flex;flex-wrap:wrap;gap:8px;padding:12px;max-width:260px;}}
+    .sp-seat{{
+      width:44px;height:44px;border-radius:50%;background:#e2e8f0;
+      border:2px solid #cbd5e1;display:flex;align-items:center;justify-content:center;
+      font-size:.68rem;font-weight:700;color:var(--muted);cursor:pointer;
+      transition:background .15s,border-color .15s,transform .1s;
+      position:relative;flex-shrink:0;
+    }}
+    .sp-seat.filled{{
+      background:#0f766e;border-color:#0f766e;color:#fff;
+      width:auto;height:auto;min-height:32px;border-radius:16px;
+      padding:4px 10px;white-space:nowrap;font-size:.75rem;
+    }}
+    .sp-seat:not(.filled):hover{{transform:scale(1.12);}}
+    .sp-seat.filled:hover{{filter:brightness(1.12);}}
+    .sp-seat.drag-over{{border-color:#0ea5a4;background:var(--brand-lt);}}
+    .sp-seat-tip{{
+      position:absolute;bottom:calc(100% + 6px);left:50%;transform:translateX(-50%);
+      background:#1e293b;color:#fff;font-size:.68rem;padding:4px 8px;
+      border-radius:6px;white-space:nowrap;pointer-events:none;z-index:200;
+      opacity:0;transition:opacity .15s;
+    }}
+    .sp-seat:hover .sp-seat-tip{{opacity:1;}}
+    /* Sidebar */
+    .sp-sidebar{{
+      width:272px;flex-shrink:0;background:#fff;
+      border-left:1px solid var(--line);display:flex;flex-direction:column;overflow:hidden;
+    }}
+    .sp-shdr{{
+      display:flex;align-items:center;gap:8px;padding:12px 14px;
+      font-weight:700;font-size:.9rem;color:var(--brand);
+      border-bottom:1px solid var(--line);flex-shrink:0;
+    }}
+    .sp-srch{{
+      display:flex;align-items:center;gap:6px;padding:8px 12px;
+      border-bottom:1px solid var(--line);flex-shrink:0;
+    }}
+    .sp-srch input{{border:none;outline:none;width:100%;font-size:.84rem;color:var(--ink);background:transparent;}}
+    .sp-srch .material-symbols-outlined{{font-size:1rem;color:var(--muted);}}
+    .sp-elist{{flex:1;overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:4px;}}
+    /* Employee card */
+    .emp-card{{
+      display:flex;align-items:center;gap:8px;padding:7px 8px;
+      border-radius:8px;cursor:grab;border:1px solid transparent;
+      transition:background .12s,border-color .12s;background:#f8fbff;
+    }}
+    .emp-card:hover{{background:#e2f0ff;border-color:#bfdbfe;}}
+    .emp-card.wfh{{opacity:.65;cursor:default;}}
+    .emp-card.wfh:hover{{background:#fef9ec;border-color:#fde68a;}}
+    .emp-card.assigned{{background:#f0fdf4;}}
+    .emp-av{{
+      width:32px;height:32px;border-radius:50%;background:var(--brand);color:#fff;
+      font-size:.68rem;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;
+    }}
+    .emp-card.wfh .emp-av{{background:#d97706;}}
+    .emp-info{{flex:1;overflow:hidden;}}
+    .emp-name{{font-size:.82rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}}
+    .emp-status{{font-size:.72rem;color:var(--muted);}}
+    .emp-wfh-badge{{
+      font-size:.65rem;background:#fef3c7;color:#92400e;border:1px solid #fde68a;
+      border-radius:4px;padding:1px 5px;font-weight:700;
+    }}
+    .emp-wfh-btn{{
+      background:none;border:none;cursor:pointer;color:var(--muted);border-radius:4px;
+      padding:2px;display:flex;align-items:center;flex-shrink:0;transition:color .1s;
+    }}
+    .emp-wfh-btn:hover{{color:#d97706;}}
+    .emp-wfh-btn.active{{color:#d97706;}}
+    .emp-wfh-btn .material-symbols-outlined{{font-size:.95rem;}}
+    /* Modal */
+    .sp-ov{{
+      display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);
+      z-index:5000;align-items:center;justify-content:center;
+    }}
+    .sp-ov.open{{display:flex;}}
+    .sp-modal{{
+      background:#fff;border-radius:16px;padding:24px;width:360px;
+      box-shadow:0 24px 60px rgba(0,0,0,.2);
+    }}
+    .sp-modal h3{{font-size:1.05rem;font-weight:700;color:var(--brand);margin-bottom:16px;}}
+    .sp-modal p{{font-size:.88rem;color:var(--muted);margin-bottom:16px;line-height:1.5;}}
+    .sp-modal label{{display:block;font-size:.8rem;font-weight:600;color:var(--muted);margin-bottom:4px;}}
+    .sp-modal input{{
+      width:100%;border:1px solid var(--line);border-radius:8px;
+      padding:8px 10px;font-size:.9rem;margin-bottom:12px;outline:none;color:var(--ink);
+    }}
+    .sp-modal input:focus{{border-color:var(--brand);}}
+    .sp-mact{{display:flex;justify-content:flex-end;gap:8px;margin-top:4px;}}
+    .sp-btn.dng{{color:var(--danger);border-color:#fca5a5;}}
+    .sp-btn.dng:hover{{background:#fef2f2;}}
+    /* Toast */
+    .sp-toast{{
+      position:fixed;bottom:20px;right:20px;background:#1e293b;color:#fff;
+      padding:10px 16px;border-radius:10px;font-size:.85rem;font-weight:600;
+      z-index:9000;opacity:0;transition:opacity .3s;pointer-events:none;
+    }}
+    .sp-toast.show{{opacity:1;}}
+    .sp-toast.ok{{background:#166534;}}
+    .sp-toast.err{{background:#b91c1c;}}
+    .sp-no-emp{{padding:16px;text-align:center;color:var(--muted);font-size:.82rem;line-height:1.6;}}
+    .sp-no-emp a{{color:var(--brand);}}
+    /* Add-person bar at bottom of sidebar */
+    .sp-addbar{{
+      display:flex;gap:6px;padding:8px 10px;
+      border-top:1px solid var(--line);flex-shrink:0;background:#f8fbff;
+    }}
+    .sp-addbar input{{
+      flex:1;border:1px solid var(--line);border-radius:6px;
+      padding:5px 8px;font-size:.82rem;outline:none;color:var(--ink);background:#fff;
+    }}
+    .sp-addbar input:focus{{border-color:var(--brand);}}
+    /* Employee action buttons (custom employees only) */
+    .emp-del-btn,.emp-rename-btn{{
+      background:none;border:none;cursor:pointer;color:#94a3b8;border-radius:4px;
+      padding:2px;display:flex;align-items:center;flex-shrink:0;transition:color .1s;
+    }}
+    .emp-del-btn:hover{{color:var(--danger);}}
+    .emp-rename-btn:hover{{color:var(--brand);}}
+    .emp-del-btn .material-symbols-outlined,.emp-rename-btn .material-symbols-outlined{{font-size:.9rem;}}
+    /* Single-seat centering */
+    .sp-seats.sole{{justify-content:center;min-height:60px;align-items:center;}}
+    /* Seat selection highlight */
+    .sp-seat.sel{{border-color:#f59e0b !important;background:rgba(245,158,11,.15) !important;box-shadow:0 0 0 3px rgba(245,158,11,.35);animation:sel-pulse 1.6s ease-in-out infinite;}}
+    .sp-seat.sel.filled{{background:#f59e0b !important;color:#fff !important;}}
+    @keyframes sel-pulse{{0%,100%{{box-shadow:0 0 0 3px rgba(245,158,11,.35);}}50%{{box-shadow:0 0 0 6px rgba(245,158,11,.12);}}}}
+    /* Rubber-band selection overlay */
+    #rubberBand{{position:fixed;border:2px dashed #f59e0b;background:rgba(245,158,11,.06);pointer-events:none;z-index:4000;display:none;border-radius:4px;}}
+    /* Selection status bar */
+    #selBar{{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1e293b;color:#fff;padding:9px 18px;border-radius:24px;display:none;align-items:center;gap:12px;z-index:8000;box-shadow:0 8px 28px rgba(0,0,0,.35);font-size:.84rem;}}
+    .sel-hint{{color:#94a3b8;}}
+    .sel-clear{{background:none;border:none;color:#94a3b8;cursor:pointer;font-size:1rem;line-height:1;padding:0 0 0 4px;}}
+    .sel-clear:hover{{color:#fff;}}
+    /* Ghost drag cluster */
+    #selGhost{{position:fixed;pointer-events:none;z-index:9500;display:none;align-items:center;}}
+    .sg-av{{width:36px;height:36px;border-radius:50%;background:#f59e0b;color:#fff;font-size:.68rem;font-weight:700;display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.2);margin-left:-6px;}}
+    /* Guest badge for custom employees */
+    .emp-guest-badge{{
+      font-size:.62rem;background:#ede9fe;color:#5b21b6;border:1px solid #c4b5fd;
+      border-radius:4px;padding:1px 4px;font-weight:700;
+    }}
+    .emp-card.custom .emp-av{{background:#7c3aed;}}
+    /* Rotate handle */
+    .sp-tbl .sp-rotate-wrap{{
+      position:absolute;bottom:-30px;left:50%;transform:translateX(-50%);
+      display:flex;flex-direction:column;align-items:center;
+      pointer-events:none;opacity:0;transition:opacity .2s;
+    }}
+    .sp-tbl:hover .sp-rotate-wrap{{opacity:1;}}
+    .sp-rotate-wire{{width:1px;height:12px;background:#94a3b8;}}
+    .sp-rotate-hdl{{
+      width:22px;height:22px;border-radius:50%;background:#fff;
+      border:2px solid #0f766e;display:flex;align-items:center;justify-content:center;
+      cursor:grab;pointer-events:all;box-shadow:0 2px 8px rgba(0,0,0,.15);
+      transition:background .15s,transform .15s;
+    }}
+    .sp-rotate-hdl:hover{{background:var(--brand-lt);transform:scale(1.15);}}
+    .sp-rotate-hdl:active{{cursor:grabbing;}}
+    .sp-rotate-hdl .material-symbols-outlined{{font-size:.8rem;color:#0f766e;}}
+    /* Angle badge shown while rotating */
+    .sp-rot-lbl{{
+      position:fixed;top:60px;left:50%;transform:translateX(-50%);
+      background:#1e293b;color:#fff;padding:5px 16px;border-radius:20px;
+      font-size:.85rem;font-weight:700;letter-spacing:.04em;
+      pointer-events:none;z-index:8000;display:none;
+      box-shadow:0 4px 16px rgba(0,0,0,.25);
+    }}
+    /* ── Team / Product colouring ─────────────────────────────────────────── */
+    .tc-legend{{
+      position:fixed;top:100px;right:290px;
+      background:rgba(255,255,255,.97);border:1px solid var(--line);
+      border-radius:10px;padding:10px 12px;z-index:450;
+      box-shadow:0 4px 18px rgba(15,23,42,.14);
+      display:none;flex-direction:column;gap:5px;
+      max-height:calc(100vh - 130px);overflow-y:auto;min-width:140px;
+    }}
+    .tc-legend.show{{display:flex;}}
+    .tc-legend-title{{
+      font-size:.7rem;font-weight:700;color:var(--muted);
+      letter-spacing:.07em;text-transform:uppercase;
+      padding-bottom:4px;border-bottom:1px solid var(--line);margin-bottom:2px;
+    }}
+    .tc-legend-sep{{height:1px;background:var(--line);margin:4px 0;}}
+    .tc-legend-dot{{width:11px;height:11px;border-radius:3px;flex-shrink:0;border:1px solid rgba(0,0,0,.12);}}
+    /* Mode buttons bar — centered bottom of canvas */
+    .sp-mode-bar{{
+      position:fixed;bottom:16px;
+      left:calc(50% - 136px);transform:translateX(-50%);
+      display:flex;gap:8px;z-index:350;
+    }}
+    .sp-mode-btn{{
+      background:#334155;color:#fff;border:none;border-radius:24px;
+      padding:9px 20px;font-size:.83rem;font-weight:700;cursor:pointer;
+      box-shadow:0 6px 24px rgba(0,0,0,.22);
+      display:flex;align-items:center;gap:7px;
+      letter-spacing:.02em;transition:background .2s;
+    }}
+    .sp-mode-btn:hover{{background:#475569;}}
+    .sp-mode-btn.active{{background:linear-gradient(135deg,#0f766e,#0ea5a4);}}
+    .sp-mode-btn .material-symbols-outlined{{font-size:1rem;}}
+    .sp-mode-sep{{width:1px;background:rgba(255,255,255,.2);margin:4px 0;align-self:stretch;}}
+    .sp-tbl.dimmed,.sp-seat.dimmed{{opacity:.18;filter:grayscale(.7);transition:opacity .2s,filter .2s;}}
+    .tc-legend-item{{display:flex;align-items:center;gap:7px;font-size:.76rem;font-weight:600;color:var(--ink);white-space:nowrap;cursor:pointer;border-radius:5px;padding:2px 4px;transition:background .15s;}}
+    .tc-legend-item:hover{{background:rgba(15,118,110,.08);}}
+    .tc-legend-item.active-filter{{background:rgba(15,118,110,.18);outline:2px solid #0f766e;}}
+    @media print{{
+      epr-nav,.sp-bar,.sp-sidebar,.sp-mode-bar,.sp-rubberband{{display:none!important;}}
+      body{{background:#fff!important;margin:0;padding:0;}}
+      #spCanvasWrap{{
+        position:static!important;left:0!important;top:0!important;
+        width:100vw!important;height:auto!important;overflow:visible!important;
+        transform:none!important;
+      }}
+      #spCanvas{{
+        transform:none!important;transform-origin:unset!important;
+        width:100%!important;min-height:unset!important;
+      }}
+      .tc-legend{{position:absolute!important;top:8px!important;right:8px!important;}}
+      .sp-tact{{display:none!important;}}
+    }}
+  </style>
+</head>
+<body>
+  <epr-nav active-page="seating_planner"></epr-nav>
+
+  <!-- Toolbar -->
+  <div class="sp-bar">
+    <div class="sp-title">
+      <span class="material-symbols-outlined">chair</span>
+      Seating Planner
+    </div>
+    <button class="sp-btn" id="addTableBtn">
+      <span class="material-symbols-outlined">add</span> Add Table
+    </button>
+    <button class="sp-btn" id="zoomOutBtn" title="Zoom out (Ctrl+scroll)">
+      <span class="material-symbols-outlined">zoom_out</span>
+    </button>
+    <span class="sp-zoom-lbl" id="zoomLbl">100%</span>
+    <button class="sp-btn" id="zoomInBtn" title="Zoom in (Ctrl+scroll)">
+      <span class="material-symbols-outlined">zoom_in</span>
+    </button>
+    <button class="sp-btn primary" id="saveBtn">
+      <span class="material-symbols-outlined">save</span> Save Layout
+    </button>
+  </div>
+
+  <!-- Main body -->
+  <div class="sp-body">
+    <div class="sp-cw" id="cw">
+      <div class="sp-canvas" id="canvas"></div>
+    </div>
+    <div class="sp-sidebar">
+      <div class="sp-shdr">
+        <span class="material-symbols-outlined">people</span>
+        Employees
+      </div>
+      <div class="sp-srch">
+        <span class="material-symbols-outlined">search</span>
+        <input type="text" id="srch" placeholder="Search employees…">
+      </div>
+      <div class="sp-elist" id="elist"></div>
+      <div class="sp-addbar">
+        <input type="text" id="addPersonInput" placeholder="Add person by name…" maxlength="80">
+        <button class="sp-btn primary" id="addPersonBtn" title="Add person to seating roster">
+          <span class="material-symbols-outlined">person_add</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add / Edit Table Modal -->
+  <div class="sp-ov" id="tblOv">
+    <div class="sp-modal">
+      <h3 id="tblModalTitle">Add Table</h3>
+      <label>Table name</label>
+      <input type="text" id="tblName" placeholder="e.g. Table A" maxlength="40">
+      <label>Number of seats</label>
+      <input type="number" id="tblSeats" min="1" max="20" value="6">
+      <div class="sp-mact">
+        <button class="sp-btn" id="tblCancelBtn">Cancel</button>
+        <button class="sp-btn primary" id="tblConfirmBtn">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Seat context Modal -->
+  <div class="sp-ov" id="seatOv">
+    <div class="sp-modal">
+      <h3>Seat Assignment</h3>
+      <p id="seatOvText"></p>
+      <div class="sp-mact">
+        <button class="sp-btn" id="seatOvClose">Close</button>
+        <button class="sp-btn dng" id="seatOvClear">
+          <span class="material-symbols-outlined">person_remove</span> Remove
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Rename Person Modal -->
+  <div class="sp-ov" id="renameEmpOv">
+    <div class="sp-modal">
+      <h3>Rename Person</h3>
+      <label>New name</label>
+      <input type="text" id="renameEmpInput" placeholder="Full name" maxlength="80" autocomplete="off">
+      <div class="sp-mact">
+        <button class="sp-btn" id="renameEmpCancelBtn">Cancel</button>
+        <button class="sp-btn primary" id="renameEmpConfirmBtn">Rename</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="sp-toast" id="toast"></div>
+  <div class="sp-rot-lbl" id="rotLbl"></div>
+  <div id="rubberBand"></div>
+  <div id="selBar">
+    <strong id="selCount"></strong>
+    <span class="sel-hint">· drag a selected seat to reassign ·</span>
+    <button class="sel-clear" id="selClearBtn" title="Clear selection (Esc)">&#x2715;</button>
+  </div>
+  <div id="selGhost"></div>
+
+  <!-- Team colour legend -->
+  <div class="tc-legend" id="tcLegend">
+    <div class="tc-legend-title">Teams</div>
+  </div>
+
+  <!-- Mode buttons bar -->
+  <div class="sp-mode-bar">
+    <button class="sp-mode-btn" id="teamToggleBtn">
+      <span class="material-symbols-outlined">groups</span> Team
+    </button>
+    <button class="sp-mode-btn" id="productToggleBtn">
+      <span class="material-symbols-outlined">work</span> Product
+    </button>
+    <div class="sp-mode-sep"></div>
+    <button class="sp-mode-btn active" id="legendToggleBtn" title="Show / hide legend">
+      <span class="material-symbols-outlined">legend_toggle</span> Legend
+    </button>
+    <div class="sp-mode-sep"></div>
+    <button class="sp-mode-btn" id="exportPdfBtn" title="Export to PDF">
+      <span class="material-symbols-outlined">picture_as_pdf</span> PDF
+    </button>
+    <button class="sp-mode-btn" id="exportXlsBtn" title="Export to Excel">
+      <span class="material-symbols-outlined">table_view</span> Excel
+    </button>
+  </div>
+
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <script src="/shared-nav.js"></script>
+  <script>
+  // ── State ──────────────────────────────────────────────────────────────────
+  const G = {{
+    tables: [],        // {{id,name,x,y,seatCount,seats:{{idx:name}}}}
+    wfhSet: new Set(),
+    employees: [],
+    customEmployees: new Set(), // names added manually (not from Jira/teams)
+    zoom: 1.0,
+    nextId: 1,
+    dirty: false,
+    draggingTable: null,  // {{id,sx,sy,ox,oy}}
+    draggingRotate: null, // {{id,cx,cy,startMAngle,startRot}}
+    draggingEmp: null,
+    selectedSeats: new Set(), // "tableId:idx" strings
+    rubberBand: null,         // {{x1,y1,x2,y2}} client coords while drawing
+    selDrag: null,            // {{employees,startX,startY,started}}
+    teamColorMode: false,
+    productColorMode: false,
+    legendVisible: true,    // legend shown by default when team/product mode active
+    teams: [],
+    teamColorMap: {{}},
+    teamPalette: {{}},
+    projectAssignments: {{}},  // {{name: [project_key, ...]}}
+    projectPalette: {{}},       // {{project_key: {{bg, bd, hd, tx}}}}
+    projectNames: {{}},         // {{project_key: 'Full Name'}}
+    _paLower: {{}},              // lowercase name -> [project_key, ...] for fuzzy matching
+    filterLegend: null,         // {{type:'team'|'project', key:string}} — null = no filter
+  }};
+
+  // ── Helpers ────────────────────────────────────────────────────────────────
+  const initials = n => n.split(/\s+/).filter(Boolean).slice(0,2).map(w=>w[0].toUpperCase()).join('');
+
+  function getAssignment(name) {{
+    for (const t of G.tables) {{
+      for (const [idx, emp] of Object.entries(t.seats||{{}})) {{
+        if (emp === name) return {{tableId:t.id, seatIdx:idx, tableName:t.name}};
+      }}
+    }}
+    return null;
+  }}
+
+  let _saveTimer = null;
+  function setDirty() {{
+    G.dirty = true;
+    clearTimeout(_saveTimer);
+    _saveTimer = setTimeout(()=>{{ if(G.dirty) saveAll(true); }}, 1200);
+  }}
+
+  function toast(msg, type='ok') {{
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.className = 'sp-toast show ' + type;
+    clearTimeout(el._t);
+    el._t = setTimeout(()=>el.classList.remove('show'), 3000);
+  }}
+
+  // ── Team colour helpers ────────────────────────────────────────────────────
+  const TEAM_PALETTE = [
+    {{bg:'#dbeafe',bd:'#93c5fd',hd:'#2563eb',tx:'#fff'}},
+    {{bg:'#fce7f3',bd:'#f9a8d4',hd:'#db2777',tx:'#fff'}},
+    {{bg:'#dcfce7',bd:'#86efac',hd:'#16a34a',tx:'#fff'}},
+    {{bg:'#fef3c7',bd:'#fcd34d',hd:'#b45309',tx:'#fff'}},
+    {{bg:'#ede9fe',bd:'#c4b5fd',hd:'#7c3aed',tx:'#fff'}},
+    {{bg:'#ffedd5',bd:'#fdba74',hd:'#ea580c',tx:'#fff'}},
+    {{bg:'#cffafe',bd:'#67e8f9',hd:'#0891b2',tx:'#fff'}},
+    {{bg:'#fee2e2',bd:'#fca5a5',hd:'#dc2626',tx:'#fff'}},
+    {{bg:'#f0fdf4',bd:'#6ee7b7',hd:'#059669',tx:'#fff'}},
+    {{bg:'#fdf4ff',bd:'#e879f9',hd:'#a21caf',tx:'#fff'}},
+    {{bg:'#fff7ed',bd:'#fb923c',hd:'#c2410c',tx:'#fff'}},
+    {{bg:'#f0f9ff',bd:'#38bdf8',hd:'#0369a1',tx:'#fff'}},
+  ];
+
+  // Product palette uses a different tone so it doesn't clash with team palette
+  const PRODUCT_PALETTE = [
+    {{bg:'#ecfdf5',bd:'#6ee7b7',hd:'#059669',tx:'#fff'}},
+    {{bg:'#fff1f2',bd:'#fda4af',hd:'#e11d48',tx:'#fff'}},
+    {{bg:'#fffbeb',bd:'#fbbf24',hd:'#d97706',tx:'#fff'}},
+    {{bg:'#f0f4ff',bd:'#818cf8',hd:'#4338ca',tx:'#fff'}},
+    {{bg:'#f0fdfa',bd:'#2dd4bf',hd:'#0d9488',tx:'#fff'}},
+    {{bg:'#fff4f0',bd:'#fb8c4a',hd:'#c2410c',tx:'#fff'}},
+    {{bg:'#fdf2ff',bd:'#d946ef',hd:'#86198f',tx:'#fff'}},
+    {{bg:'#f5f5ff',bd:'#a5b4fc',hd:'#3730a3',tx:'#fff'}},
+    {{bg:'#fefce8',bd:'#a3e635',hd:'#4d7c0f',tx:'#fff'}},
+    {{bg:'#fff7f0',bd:'#fdba74',hd:'#9a3412',tx:'#fff'}},
+    {{bg:'#f0faff',bd:'#7dd3fc',hd:'#0c4a6e',tx:'#fff'}},
+    {{bg:'#fdf9ff',bd:'#c084fc',hd:'#6b21a8',tx:'#fff'}},
+  ];
+
+  // Uniform color for seats occupied by people not in any RnD team
+  const GUEST_COLOR = {{bg:'#1f2937',bd:'#111827',hd:'#111827',tx:'#f9fafb'}};
+
+  function buildTeamColorMap() {{
+    G.teamColorMap = {{}};
+    G.teamPalette = {{}};
+    const sorted = [...G.teams].sort((a,b)=>a.name.localeCompare(b.name));
+    sorted.forEach((team,i)=>{{
+      const p = TEAM_PALETTE[i % TEAM_PALETTE.length];
+      G.teamPalette[team.name] = p;
+      for (const m of team.members) G.teamColorMap[m] = {{...p, teamName:team.name}};
+    }});
+  }}
+
+  function buildProjectColorMap() {{
+    G.projectPalette = {{}};
+    const projects = [...new Set(Object.values(G.projectAssignments).flat())].sort();
+    projects.forEach((pk,i)=>{{
+      G.projectPalette[pk] = PRODUCT_PALETTE[i % PRODUCT_PALETTE.length];
+    }});
+    // Build case-insensitive lookup for name matching
+    G._paLower = {{}};
+    for (const [name, projs] of Object.entries(G.projectAssignments)) {{
+      G._paLower[name.toLowerCase()] = projs;
+    }}
+  }}
+
+  function getPersonProjects(emp) {{
+    return G.projectAssignments[emp]
+        || G._paLower[(emp||'').toLowerCase()]
+        || [];
+  }}
+
+  function projectDisplayName(pk) {{
+    return G.projectNames[pk] || G.projectNames[(pk||'').toUpperCase()] || pk;
+  }}
+
+  // Returns true if this table/seat should be dimmed given the active filter
+  function isDimmed(emp) {{
+    if (!G.filterLegend) return false;
+    if (G.filterLegend.type === 'team') {{
+      if (G.filterLegend.key === '__guest__') {{
+        return !!G.teamColorMap[emp]; // dim those WITH a team (show only guests)
+      }}
+      const tc = G.teamColorMap[emp];
+      return !(tc && tc.teamName === G.filterLegend.key);
+    }}
+    if (G.filterLegend.type === 'project') {{
+      return !getPersonProjects(emp).includes(G.filterLegend.key);
+    }}
+    return false;
+  }}
+
+  function isTableDimmed(t) {{
+    if (!G.filterLegend) return false;
+    const occs = Object.values(t.seats||{{}}).filter(Boolean);
+    if (!occs.length) return false;
+    return occs.every(emp => isDimmed(emp));
+  }}
+
+  // Returns dominant team palette for a table (by seat count)
+  function tableDominantPalette(t) {{
+    const counts = {{}};
+    for (const emp of Object.values(t.seats||{{}})) {{
+      const tc = G.teamColorMap[emp];
+      if (tc) counts[tc.teamName] = (counts[tc.teamName]||0)+1;
+    }}
+    let best=null, bestN=0;
+    for (const [nm,cnt] of Object.entries(counts)) {{ if(cnt>bestN){{bestN=cnt;best=nm;}} }}
+    return best ? G.teamPalette[best] : null;
+  }}
+
+  // Returns array of distinct project palette entries for a table (by seat occurrence)
+  function tableProjectPalettes(t) {{
+    const seen = new Map();
+    for (const emp of Object.values(t.seats||{{}})) {{
+      const projs = getPersonProjects(emp);
+      for (const pk of projs) {{
+        seen.set(pk, (seen.get(pk)||0)+1);
+      }}
+    }}
+    if (!seen.size) return [];
+    const sorted = [...seen.entries()].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0]));
+    return sorted.map(([pk])=>G.projectPalette[pk]).filter(Boolean);
+  }}
+
+  function seatProjectPalettes(emp) {{
+    const projs = getPersonProjects(emp);
+    return projs.map(pk=>G.projectPalette[pk]).filter(Boolean);
+  }}
+
+  // Build a CSS background for a multi-color stripe (horizontal segments)
+  function makeStripeBackground(palettes) {{
+    if (!palettes.length) return '';
+    if (palettes.length === 1) return palettes[0].hd;
+    const pct = 100 / palettes.length;
+    const stops = palettes.map((p,i)=>`${{p.hd}} ${{i*pct}}% ${{(i+1)*pct}}%`);
+    return `linear-gradient(to right, ${{stops.join(', ')}})`;
+  }}
+
+  // Build a subtle tinted CSS background for a table card from multiple project colors
+  function makeTableProductBackground(palettes) {{
+    if (!palettes.length) return '';
+    if (palettes.length === 1) return palettes[0].bg;
+    const pct = 100 / palettes.length;
+    const stops = palettes.map((p,i)=>`${{p.bg}} ${{i*pct}}% ${{(i+1)*pct}}%`);
+    return `linear-gradient(135deg, ${{stops.join(', ')}})`;
+  }}
+
+  function renderLegend() {{
+    const el=document.getElementById('tcLegend'); if(!el) return;
+    const needTeam = G.teamColorMode && Object.keys(G.teamPalette).length;
+    const needProd = G.productColorMode && Object.keys(G.projectPalette).length;
+    if (!G.legendVisible || (!needTeam && !needProd)) {{ el.classList.remove('show'); return; }}
+    el.innerHTML='';
+
+    function makeLegendItem(type, key, color, label) {{
+      const item=document.createElement('div');
+      const isActive = G.filterLegend && G.filterLegend.type===type && G.filterLegend.key===key;
+      item.className='tc-legend-item' + (isActive?' active-filter':'');
+      const dot=document.createElement('div'); dot.className='tc-legend-dot'; dot.style.background=color;
+      const lbl=document.createElement('span'); lbl.textContent=label;
+      item.append(dot,lbl);
+      item.addEventListener('click',()=>{{
+        if(G.filterLegend && G.filterLegend.type===type && G.filterLegend.key===key){{
+          G.filterLegend=null; // toggle off
+        }} else {{
+          G.filterLegend={{type,key}};
+        }}
+        render();
+      }});
+      return item;
+    }}
+
+    if (needTeam) {{
+      const t=document.createElement('div'); t.className='tc-legend-title'; t.textContent='Teams';
+      el.appendChild(t);
+      Object.entries(G.teamPalette).sort((a,b)=>a[0].localeCompare(b[0])).forEach(([name,p])=>{{
+        el.appendChild(makeLegendItem('team', name, p.hd, name));
+      }});
+      el.appendChild(makeLegendItem('team', '__guest__', GUEST_COLOR.hd, 'Guest (Non-RnD)'));
+    }}
+    if (needTeam && needProd) {{
+      const sep=document.createElement('div'); sep.className='tc-legend-sep'; el.appendChild(sep);
+    }}
+    if (needProd) {{
+      const t=document.createElement('div'); t.className='tc-legend-title'; t.textContent='Projects';
+      el.appendChild(t);
+      Object.entries(G.projectPalette).sort((a,b)=>a[0].localeCompare(b[0])).forEach(([pk,p])=>{{
+        const label = projectDisplayName(pk);
+        el.appendChild(makeLegendItem('project', pk, p.hd, label));
+      }});
+    }}
+    el.classList.add('show');
+  }}
+
+  // ── Load / Save ────────────────────────────────────────────────────────────
+  async function load() {{
+    try {{
+      const d = await fetch('/api/seating/data').then(r=>r.json());
+      G.employees = d.employees||[];
+      G.wfhSet = new Set(d.wfh_employees||[]);
+      G.customEmployees = new Set(d.custom_employees||[]);
+      G.teams = d.teams||[];
+      G.projectAssignments = d.project_assignments||{{}};
+      G.projectNames = d.project_names||{{}};
+      if(d._pa_error && d._pa_error.length) console.warn('[Seating] project_assignments error:', d._pa_error);
+      console.log('[Seating] project_assignments loaded:', d._pa_count, 'assignees');
+      buildTeamColorMap();
+      buildProjectColorMap();
+      const layout = d.layout||{{}};
+      G.tables = (layout.tables||[]).map(t=>({{...t, seats:t.seats||{{}}, rotation:t.rotation||0}}));
+      let maxId = 0;
+      G.tables.forEach(t=>{{ const n=parseInt((t.id||'').replace('t-',''),10); if(n>maxId) maxId=n; }});
+      G.nextId = maxId+1;
+      renderLegend();
+      render();
+    }} catch(e) {{ toast('Failed to load: '+e.message,'err'); }}
+  }}
+
+  async function saveAll(silent=false) {{
+    const btn = document.getElementById('saveBtn');
+    btn.disabled = true; btn.textContent='Saving…';
+    try {{
+      const layout = {{
+        tables: G.tables.map(t=>({{
+          id:t.id, name:t.name,
+          x:Math.round(t.x), y:Math.round(t.y),
+          rotation:Math.round(((t.rotation||0)%360+360)%360),
+          seatCount:t.seatCount, seats:t.seats,
+        }})),
+      }};
+      const [r1,r2] = await Promise.all([
+        fetch('/api/seating/layout',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(layout)}}),
+        fetch('/api/seating/wfh',   {{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{wfh_employees:[...G.wfhSet]}})}}),
+      ]);
+      if (!r1.ok||!r2.ok) throw new Error('Server error');
+      G.dirty = false;
+      if(!silent) toast('Layout saved!','ok');
+    }} catch(e) {{ toast('Auto-save failed: '+e.message,'err'); }}
+    finally {{ btn.disabled=false; btn.innerHTML='<span class="material-symbols-outlined">save</span> Save'; }}
+  }}
+
+  // ── Zoom ───────────────────────────────────────────────────────────────────
+  function setZoom(z) {{
+    G.zoom = Math.max(0.25, Math.min(2.5, z));
+    document.getElementById('canvas').style.transform = `scale(${{G.zoom}})`;
+    document.getElementById('zoomLbl').textContent = Math.round(G.zoom*100)+'%';
+  }}
+
+  // ── Table Modal ────────────────────────────────────────────────────────────
+  let _mMode=null, _mId=null;
+
+  function openTblModal(mode, id=null) {{
+    _mMode=mode; _mId=id;
+    const t = id ? G.tables.find(x=>x.id===id) : null;
+    document.getElementById('tblModalTitle').textContent = mode==='add' ? 'Add Table' : 'Edit Table';
+    document.getElementById('tblName').value = t ? t.name : 'Table '+String.fromCharCode(64+G.nextId);
+    document.getElementById('tblSeats').value = t ? t.seatCount : 6;
+    document.getElementById('tblOv').classList.add('open');
+    document.getElementById('tblName').focus();
+  }}
+
+  function closeTblModal() {{
+    document.getElementById('tblOv').classList.remove('open');
+    _mMode=null; _mId=null;
+  }}
+
+  function confirmTblModal() {{
+    const name = document.getElementById('tblName').value.trim();
+    const sc = Math.max(1, Math.min(20, parseInt(document.getElementById('tblSeats').value,10)||6));
+    if (!name) {{ document.getElementById('tblName').focus(); return; }}
+    if (_mMode==='add') {{
+      const id = 't-'+G.nextId++;
+      const cw = document.getElementById('cw');
+      G.tables.push({{id, name, x:(cw.scrollLeft+80)/G.zoom, y:(cw.scrollTop+80)/G.zoom, seatCount:sc, seats:{{}}, rotation:0}});
+    }} else if (_mMode==='edit' && _mId) {{
+      const t = G.tables.find(x=>x.id===_mId);
+      if (t) {{
+        t.name=name; const prev=t.seatCount; t.seatCount=sc;
+        if (sc<prev) for(let i=sc;i<prev;i++) delete t.seats[String(i)];
+      }}
+    }}
+    setDirty(); closeTblModal(); render();
+  }}
+
+  // ── Seat Modal ─────────────────────────────────────────────────────────────
+  let _sCtx=null;
+
+  function openSeatModal(tableId, idx) {{
+    const t=G.tables.find(x=>x.id===tableId); if(!t) return;
+    const emp=t.seats[String(idx)]; if(!emp) return;
+    _sCtx={{tableId,idx}};
+    document.getElementById('seatOvText').textContent =
+      `Seat ${{parseInt(idx)+1}} of "${{t.name}}" is assigned to ${{emp}}.`;
+    document.getElementById('seatOv').classList.add('open');
+  }}
+
+  function closeSeatModal() {{ document.getElementById('seatOv').classList.remove('open'); _sCtx=null; }}
+
+  function clearSeat() {{
+    if(!_sCtx) return;
+    const t=G.tables.find(x=>x.id===_sCtx.tableId);
+    if(t){{ delete t.seats[String(_sCtx.idx)]; setDirty(); }}
+    closeSeatModal(); render();
+  }}
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+  function render() {{ renderCanvas(); renderSidebar(); renderSelBar(); renderLegend(); }}
+
+  function renderCanvas() {{
+    const canvas=document.getElementById('canvas');
+    canvas.innerHTML='';
+    for (const t of G.tables) canvas.appendChild(makeTblEl(t));
+  }}
+
+  function makeTblEl(t) {{
+    const el=document.createElement('div');
+    el.className='sp-tbl'; el.id=t.id;
+    if(isTableDimmed(t)) el.classList.add('dimmed');
+    el.style.left=t.x+'px'; el.style.top=t.y+'px';
+    if(t.rotation) el.style.transform=`rotate(${{t.rotation}}deg)`;
+
+    if(G.teamColorMode && !G.productColorMode) {{
+      const dp=tableDominantPalette(t);
+      if(dp) {{
+        el.style.background=dp.bg;
+        el.style.borderColor=dp.bd;
+      }} else {{
+        const hasOccupants = Object.values(t.seats||{{}}).some(e=>e);
+        if(hasOccupants) {{
+          el.style.background=GUEST_COLOR.bg;
+          el.style.borderColor=GUEST_COLOR.bd;
+        }}
+      }}
+    }} else if(G.productColorMode && !G.teamColorMode) {{
+      const pp=tableProjectPalettes(t);
+      if(pp.length) {{
+        el.style.background=makeTableProductBackground(pp);
+        el.style.borderColor=pp[0].bd;
+      }}
+    }} else if(G.teamColorMode && G.productColorMode) {{
+      // Combined: product bg, team border
+      const pp=tableProjectPalettes(t);
+      if(pp.length) el.style.background=makeTableProductBackground(pp);
+      const dp=tableDominantPalette(t);
+      if(dp) {{ el.style.borderColor=dp.hd; el.style.borderWidth='3px'; }}
+    }}
+
+    // Header
+    const hdr=document.createElement('div'); hdr.className='sp-thdr'; hdr.title='Drag to reposition';
+    if(G.teamColorMode && !G.productColorMode) {{
+      // Team-only: header gradient from dominant team
+      const dp=tableDominantPalette(t);
+      if(dp) {{
+        hdr.style.background=`linear-gradient(135deg,${{dp.hd}},${{dp.bd}})`;
+      }} else {{
+        const hasOccupants = Object.values(t.seats||{{}}).some(e=>e);
+        if(hasOccupants) hdr.style.background=`linear-gradient(135deg,${{GUEST_COLOR.hd}},${{GUEST_COLOR.bd}})`;
+      }}
+    }} else if(G.productColorMode) {{
+      // Product or combined: header gradient from first project color
+      const pp=tableProjectPalettes(t);
+      if(pp.length) hdr.style.background=`linear-gradient(135deg,${{pp[0].hd}},${{pp[0].bd}})`;
+    }}
+    const nm=document.createElement('span'); nm.className='sp-tname'; nm.textContent=t.name;
+    const cpBtn=document.createElement('button'); cpBtn.className='sp-tact'; cpBtn.title='Duplicate table';
+    cpBtn.innerHTML='<span class="material-symbols-outlined">content_copy</span>';
+    cpBtn.addEventListener('click',e=>{{e.stopPropagation();duplicateTable(t.id);}});
+    const eBtn=document.createElement('button'); eBtn.className='sp-tact'; eBtn.title='Edit';
+    eBtn.innerHTML='<span class="material-symbols-outlined">edit</span>';
+    eBtn.addEventListener('click',e=>{{e.stopPropagation();openTblModal('edit',t.id);}});
+    const dBtn=document.createElement('button'); dBtn.className='sp-tact'; dBtn.title='Delete';
+    dBtn.innerHTML='<span class="material-symbols-outlined">delete</span>';
+    dBtn.addEventListener('click',e=>{{
+      e.stopPropagation();
+      if(confirm(`Delete "${{t.name}}"? All seat assignments will be lost.`)){{
+        G.tables=G.tables.filter(x=>x.id!==t.id); setDirty(); render();
+      }}
+    }});
+    if(t.rotation) nm.style.transform=`rotate(${{-(t.rotation)}}deg)`;
+    hdr.append(nm,cpBtn,eBtn,dBtn);
+    el.appendChild(hdr);
+
+    // Seats
+    const occupiedCount=Object.values(t.seats||{{}}).filter(Boolean).length;
+    const sd=document.createElement('div'); sd.className='sp-seats'+(occupiedCount<=1?' sole':'');
+    for(let i=0;i<t.seatCount;i++) sd.appendChild(makeSeatEl(t,i));
+    el.appendChild(sd);
+
+    initTblDrag(hdr,t.id);
+
+    // Rotate handle (below the table, shows on hover)
+    const rw=document.createElement('div'); rw.className='sp-rotate-wrap';
+    const rl=document.createElement('div'); rl.className='sp-rotate-wire';
+    const rh=document.createElement('div'); rh.className='sp-rotate-hdl';
+    rh.title='Drag to rotate  ·  Shift = snap 45°';
+    rh.innerHTML='<span class="material-symbols-outlined">rotate_right</span>';
+    rw.append(rl,rh);
+    el.appendChild(rw);
+    initRotateDrag(rh,t.id);
+
+    return el;
+  }}
+
+  function makeSeatEl(t,idx) {{
+    const sKey=t.id+':'+idx;
+    const isSel=G.selectedSeats.has(sKey);
+    const s=document.createElement('div');
+    s.id=t.id+'-s-'+idx;
+    s.className='sp-seat'+(isSel?' sel':'');
+    const rot=t.rotation||0;
+    const emp=t.seats[String(idx)];
+    if(emp && isDimmed(emp)) s.classList.add('dimmed');
+    const lbl=document.createElement('span'); lbl.className='sp-seat-txt';
+    if(emp) {{
+      s.classList.add('filled');
+      if(G.teamColorMode && !G.productColorMode) {{
+        // Team-only mode: color by team, guests get GUEST_COLOR
+        const tc=G.teamColorMap[emp];
+        const c = tc || GUEST_COLOR;
+        s.style.background=c.hd;
+        s.style.borderColor=c.bd;
+        s.style.color=c.tx;
+      }} else if(G.productColorMode && !G.teamColorMode) {{
+        // Product-only mode: color by project stripes, no team coloring at all
+        const pp=seatProjectPalettes(emp);
+        if(pp.length) {{
+          s.style.background=makeStripeBackground(pp);
+          s.style.borderColor=pp[0].bd;
+          s.style.color='#fff';
+        }}
+        // else: no project → default seat CSS, no team color
+      }} else if(G.productColorMode && G.teamColorMode) {{
+        // Combined mode: product stripes + team outline ring
+        const pp=seatProjectPalettes(emp);
+        if(pp.length) {{
+          s.style.background=makeStripeBackground(pp);
+          s.style.borderColor=pp[0].bd;
+          s.style.color='#fff';
+          const tc=G.teamColorMap[emp];
+          const outlineColor = tc ? tc.hd : GUEST_COLOR.hd;
+          s.style.outline=`2px solid ${{outlineColor}}`;
+          s.style.outlineOffset='1px';
+        }} else {{
+          // No project but both modes on: show team color
+          const tc=G.teamColorMap[emp];
+          const c = tc || GUEST_COLOR;
+          s.style.background=c.hd; s.style.borderColor=c.bd; s.style.color=c.tx;
+        }}
+      }}
+      lbl.textContent=emp;
+      if(rot) lbl.style.transform=`rotate(${{-rot}}deg)`;
+      s.appendChild(lbl);
+      s.addEventListener('click',e=>{{
+        if(G.selectedSeats.size>0){{ e.stopPropagation(); toggleSeatSel(sKey); return; }}
+        openSeatModal(t.id,idx);
+      }});
+      s.addEventListener('mousedown',e=>{{
+        if(e.button!==0||G.draggingTable||G.draggingRotate) return;
+        if(G.selectedSeats.has(sKey)){{ e.preventDefault(); e.stopPropagation(); startSelDrag(e); }}
+      }});
+    }} else {{
+      lbl.textContent=String(idx+1);
+      if(rot) lbl.style.transform=`rotate(${{-rot}}deg)`;
+      s.appendChild(lbl);
+      s.title='Drag an employee here';
+    }}
+    s.addEventListener('dragover',e=>{{ if(G.draggingEmp){{ e.preventDefault(); s.classList.add('drag-over'); }} }});
+    s.addEventListener('dragleave',()=>s.classList.remove('drag-over'));
+    s.addEventListener('drop',e=>{{
+      e.preventDefault(); s.classList.remove('drag-over');
+      const name=e.dataTransfer.getData('text/plain'); if(!name) return;
+      if(G.wfhSet.has(name)){{ toast(name+' is marked as permanent WFH','err'); return; }}
+      // unassign from previous seat
+      const prev=getAssignment(name);
+      if(prev){{ const pt=G.tables.find(x=>x.id===prev.tableId); if(pt) delete pt.seats[prev.seatIdx]; }}
+      // assign
+      const tbl=G.tables.find(x=>x.id===t.id);
+      if(tbl){{ tbl.seats[String(idx)]=name; setDirty(); render(); }}
+    }});
+    return s;
+  }}
+
+  // ── Snap-to-table ──────────────────────────────────────────────────────────
+  const SNAP_PX = 14;
+
+  function snapPosition(draggedId, x, y) {{
+    const snapDist = SNAP_PX / G.zoom;
+    let snapX = null, bestDX = snapDist;
+    let snapY = null, bestDY = snapDist;
+    const draggedEl = document.getElementById(draggedId);
+    if (!draggedEl) return {{x, y, guideX:null, guideY:null}};
+    const dw = draggedEl.offsetWidth, dh = draggedEl.offsetHeight;
+
+    for (const t of G.tables) {{
+      if (t.id === draggedId) continue;
+      const el = document.getElementById(t.id); if (!el) continue;
+      const tw = el.offsetWidth, th = el.offsetHeight;
+
+      const dXs = [x, x+dw, x+dw/2];
+      const tXs = [t.x, t.x+tw, t.x+tw/2];
+      for (const da of dXs) for (const ta of tXs) {{
+        const d = Math.abs(da - ta);
+        if (d < bestDX) {{ bestDX = d; snapX = {{offset: x+(ta-da), guide: ta}}; }}
+      }}
+
+      const dYs = [y, y+dh, y+dh/2];
+      const tYs = [t.y, t.y+th, t.y+th/2];
+      for (const da of dYs) for (const ta of tYs) {{
+        const d = Math.abs(da - ta);
+        if (d < bestDY) {{ bestDY = d; snapY = {{offset: y+(ta-da), guide: ta}}; }}
+      }}
+    }}
+
+    return {{
+      x: snapX ? snapX.offset : x,
+      y: snapY ? snapY.offset : y,
+      guideX: snapX ? snapX.guide : null,
+      guideY: snapY ? snapY.guide : null,
+    }};
+  }}
+
+  function showSnapGuides(canvas, guideX, guideY) {{
+    canvas.querySelectorAll('.snap-line').forEach(l=>l.remove());
+    if (guideX !== null) {{
+      const l=document.createElement('div'); l.className='snap-line v';
+      l.style.left=guideX+'px'; canvas.appendChild(l);
+    }}
+    if (guideY !== null) {{
+      const l=document.createElement('div'); l.className='snap-line h';
+      l.style.top=guideY+'px'; canvas.appendChild(l);
+    }}
+  }}
+
+  // ── Table drag ─────────────────────────────────────────────────────────────
+  function initTblDrag(hdr,id) {{
+    hdr.addEventListener('mousedown',e=>{{
+      if(e.button!==0) return;
+      if(e.target.closest('.sp-tact')) return;
+      e.preventDefault();
+      const t=G.tables.find(x=>x.id===id); if(!t) return;
+      G.draggingTable={{id, sx:e.clientX, sy:e.clientY, ox:t.x, oy:t.y}};
+      document.getElementById(id)?.classList.add('dragging');
+    }});
+  }}
+
+  function initRotateDrag(handle, id){{
+    handle.addEventListener('mousedown', e=>{{
+      if(e.button!==0) return;
+      e.preventDefault(); e.stopPropagation();
+      const el=document.getElementById(id); if(!el) return;
+      const rect=el.getBoundingClientRect();
+      const cx=rect.left+rect.width/2, cy=rect.top+rect.height/2;
+      const t=G.tables.find(x=>x.id===id); if(!t) return;
+      G.draggingRotate={{
+        id, cx, cy,
+        startMAngle: Math.atan2(e.clientY-cy, e.clientX-cx)*180/Math.PI,
+        startRot: t.rotation||0,
+      }};
+      const lbl=document.getElementById('rotLbl');
+      lbl.textContent=Math.round(((t.rotation||0)%360+360)%360)+'°';
+      lbl.style.display='block';
+    }});
+  }}
+
+  document.addEventListener('mousemove',e=>{{
+    if(G.selDrag){{
+      const ghost=document.getElementById('selGhost');
+      ghost.style.left=(e.clientX+12)+'px'; ghost.style.top=(e.clientY-18)+'px';
+    }}
+    if(G.rubberBand){{ updateRubberBand(e); return; }}
+    if(G.draggingRotate){{
+      const dr=G.draggingRotate;
+      const mAngle=Math.atan2(e.clientY-dr.cy, e.clientX-dr.cx)*180/Math.PI;
+      let newRot=(dr.startRot+(mAngle-dr.startMAngle))%360;
+      if(e.shiftKey) {{
+        newRot=Math.round(newRot/45)*45;
+      }} else {{
+        const norm=((newRot%360)+360)%360;
+        const nearest=Math.round(norm/90)*90;
+        if(Math.abs(norm-nearest)<8) newRot=nearest;
+      }}
+      const t=G.tables.find(x=>x.id===dr.id); if(!t) return;
+      t.rotation=newRot;
+      const el=document.getElementById(dr.id);
+      if(el){{
+        el.style.transform=`rotate(${{newRot}}deg)`;
+        el.querySelectorAll('.sp-tname,.sp-seat-txt').forEach(tx=>{{
+          tx.style.transform=`rotate(${{-newRot}}deg)`;
+        }});
+      }}
+      const lbl=document.getElementById('rotLbl');
+      if(lbl) lbl.textContent=Math.round(((newRot%360)+360)%360)+'°';
+      return;
+    }}
+    if(!G.draggingTable) return;
+    const dt=G.draggingTable;
+    const dx=(e.clientX-dt.sx)/G.zoom, dy=(e.clientY-dt.sy)/G.zoom;
+    const t=G.tables.find(x=>x.id===dt.id); if(!t) return;
+    const raw={{x:Math.max(0,dt.ox+dx), y:Math.max(0,dt.oy+dy)}};
+    const snapped=snapPosition(dt.id, raw.x, raw.y);
+    t.x=snapped.x; t.y=snapped.y;
+    const el=document.getElementById(dt.id);
+    if(el){{ el.style.left=t.x+'px'; el.style.top=t.y+'px'; }}
+    showSnapGuides(document.getElementById('canvas'), snapped.guideX, snapped.guideY);
+  }});
+
+  document.addEventListener('mouseup',e=>{{
+    if(G.selDrag){{
+      const under=document.elementsFromPoint(e.clientX, e.clientY);
+      const tblEl=under.find(x=>x.classList&&x.classList.contains('sp-tbl'))
+               || under.map(x=>x.closest&&x.closest('.sp-tbl')).find(Boolean);
+      if(tblEl) dropSelection(tblEl.id); else endSelDrag();
+    }}
+    if(G.rubberBand) finalizeRubberBand();
+    if(G.draggingRotate){{
+      document.getElementById('rotLbl').style.display='none';
+      setDirty(); G.draggingRotate=null;
+    }}
+    if(G.draggingTable){{
+      document.getElementById(G.draggingTable.id)?.classList.remove('dragging');
+      document.getElementById('canvas').querySelectorAll('.snap-line').forEach(l=>l.remove());
+      setDirty(); G.draggingTable=null;
+    }}
+  }});
+
+  // ── Sidebar ────────────────────────────────────────────────────────────────
+  function renderSidebar() {{
+    const q=document.getElementById('srch').value.toLowerCase();
+    const list=document.getElementById('elist'); list.innerHTML='';
+    const visible=G.employees.filter(n=>n.toLowerCase().includes(q));
+    if(!visible.length){{
+      const m=document.createElement('div'); m.className='sp-no-emp';
+      m.innerHTML = G.employees.length===0
+        ? 'No employees found.<br>Add teams in <a href="/settings/performance">Performance Settings</a>.'
+        : 'No matching employees.';
+      list.appendChild(m); return;
+    }}
+    visible.forEach(n=>list.appendChild(makeEmpCard(n)));
+  }}
+
+  function makeEmpCard(name) {{
+    const isWfh=G.wfhSet.has(name), assign=getAssignment(name), isCustom=G.customEmployees.has(name);
+    const card=document.createElement('div');
+    card.className='emp-card'+(isWfh?' wfh':assign?' assigned':'')+(isCustom?' custom':'');
+
+    const av=document.createElement('div'); av.className='emp-av'; av.textContent=initials(name);
+
+    const info=document.createElement('div'); info.className='emp-info';
+    const nm=document.createElement('div'); nm.className='emp-name'; nm.textContent=name;
+    info.appendChild(nm);
+    if(isWfh){{
+      const b=document.createElement('span'); b.className='emp-wfh-badge'; b.textContent='Permanent WFH';
+      info.appendChild(b);
+    }} else if(assign){{
+      const s=document.createElement('div'); s.className='emp-status';
+      s.textContent=assign.tableName+' · Seat '+(parseInt(assign.seatIdx)+1);
+      info.appendChild(s);
+    }} else {{
+      const row=document.createElement('div'); row.style.display='flex'; row.style.gap='4px'; row.style.alignItems='center';
+      if(isCustom){{ const b=document.createElement('span'); b.className='emp-guest-badge'; b.textContent='Guest'; row.appendChild(b); }}
+      const s=document.createElement('div'); s.className='emp-status'; s.textContent='Available'; row.appendChild(s);
+      info.appendChild(row);
+    }}
+
+    const wBtn=document.createElement('button');
+    wBtn.className='emp-wfh-btn'+(isWfh?' active':'');
+    wBtn.title=isWfh?'Remove WFH flag':'Mark as permanent WFH (no seat needed)';
+    wBtn.innerHTML='<span class="material-symbols-outlined">home</span>';
+    wBtn.addEventListener('click',e=>{{e.stopPropagation();toggleWfh(name);}});
+
+    const children=[av,info,wBtn];
+    if(isCustom){{
+      const rnBtn=document.createElement('button'); rnBtn.className='emp-rename-btn';
+      rnBtn.title='Rename "'+name+'"';
+      rnBtn.innerHTML='<span class="material-symbols-outlined">edit</span>';
+      rnBtn.addEventListener('click',e=>{{e.stopPropagation();openRenameEmpModal(name);}});
+      const delBtn=document.createElement('button'); delBtn.className='emp-del-btn';
+      delBtn.title='Remove "'+name+'" from seating roster';
+      delBtn.innerHTML='<span class="material-symbols-outlined">close</span>';
+      delBtn.addEventListener('click',e=>{{e.stopPropagation();deleteCustomEmployee(name);}});
+      children.push(rnBtn,delBtn);
+    }}
+    card.append(...children);
+
+    if(!isWfh){{
+      card.setAttribute('draggable','true');
+      card.addEventListener('dragstart',e=>{{
+        G.draggingEmp=name;
+        e.dataTransfer.setData('text/plain',name);
+        e.dataTransfer.effectAllowed='copy';
+      }});
+      card.addEventListener('dragend',()=>{{G.draggingEmp=null;}});
+    }}
+    return card;
+  }}
+
+  function duplicateTable(id){{
+    const src=G.tables.find(x=>x.id===id); if(!src) return;
+    const newId='t-'+G.nextId++;
+    G.tables.push({{
+      id:newId, name:src.name+' (Copy)',
+      x:src.x+40, y:src.y+40,
+      seatCount:src.seatCount, seats:{{}},
+      rotation:src.rotation||0,
+    }});
+    setDirty(); render();
+    toast('Table duplicated – seats are empty on the copy','ok');
+  }}
+
+  async function addCustomEmployee(){{
+    const inp=document.getElementById('addPersonInput');
+    const name=inp.value.trim(); if(!name) return;
+    if(G.employees.includes(name)){{ toast('"'+name+'" is already in the list','err'); return; }}
+    try{{
+      const r=await fetch('/api/seating/employees',{{
+        method:'POST',
+        headers:{{'Content-Type':'application/json'}},
+        body:JSON.stringify({{name}}),
+      }});
+      const d=await r.json();
+      if(!r.ok) throw new Error(d.error||'Server error');
+      G.employees=d.employees; G.customEmployees=new Set(d.custom_employees);
+      inp.value=''; render();
+      toast('"'+name+'" added to seating roster','ok');
+    }} catch(e){{ toast('Failed: '+e.message,'err'); }}
+  }}
+
+  async function deleteCustomEmployee(name){{
+    if(!confirm('Remove "'+name+'" from the seating roster? They will be unassigned from any seat.')) return;
+    try{{
+      const r=await fetch('/api/seating/employees',{{
+        method:'DELETE',
+        headers:{{'Content-Type':'application/json'}},
+        body:JSON.stringify({{name}}),
+      }});
+      const d=await r.json();
+      if(!r.ok) throw new Error(d.error||'Server error');
+      G.employees=d.employees; G.customEmployees=new Set(d.custom_employees);
+      for(const t of G.tables){{
+        for(const [idx,emp] of Object.entries(t.seats)){{ if(emp===name) delete t.seats[idx]; }}
+      }}
+      G.wfhSet.delete(name);
+      setDirty(); render();
+      toast('"'+name+'" removed','ok');
+    }} catch(e){{ toast('Failed: '+e.message,'err'); }}
+  }}
+
+  let _renameEmpTarget=null;
+  function openRenameEmpModal(name){{
+    _renameEmpTarget=name;
+    const inp=document.getElementById('renameEmpInput');
+    inp.value=name;
+    document.getElementById('renameEmpOv').style.display='flex';
+    setTimeout(()=>{{inp.focus();inp.select();}},50);
+  }}
+  function closeRenameEmpModal(){{
+    document.getElementById('renameEmpOv').style.display='none';
+    _renameEmpTarget=null;
+  }}
+  async function confirmRenameEmployee(){{
+    const newName=document.getElementById('renameEmpInput').value.trim();
+    const oldName=_renameEmpTarget;
+    if(!newName||!oldName) return;
+    if(newName===oldName){{ closeRenameEmpModal(); return; }}
+    if(G.employees.includes(newName)){{ toast('"'+newName+'" already exists','err'); return; }}
+    try{{
+      const r=await fetch('/api/seating/employees',{{
+        method:'PATCH',
+        headers:{{'Content-Type':'application/json'}},
+        body:JSON.stringify({{old_name:oldName,new_name:newName}}),
+      }});
+      const d=await r.json();
+      if(!r.ok) throw new Error(d.error||'Server error');
+      G.employees=d.employees; G.customEmployees=new Set(d.custom_employees);
+      for(const t of G.tables){{
+        for(const [idx,emp] of Object.entries(t.seats)){{ if(emp===oldName) t.seats[idx]=newName; }}
+      }}
+      if(G.wfhSet.has(oldName)){{ G.wfhSet.delete(oldName); G.wfhSet.add(newName); }}
+      setDirty(); closeRenameEmpModal(); render();
+      toast('"'+oldName+'" renamed to "'+newName+'"','ok');
+    }} catch(e){{ toast('Failed: '+e.message,'err'); }}
+  }}
+
+  function toggleWfh(name){{
+    if(G.wfhSet.has(name)){{
+      G.wfhSet.delete(name);
+    }} else {{
+      G.wfhSet.add(name);
+      for(const t of G.tables) {{
+        for(const [idx,emp] of Object.entries(t.seats)){{
+          if(emp===name) delete t.seats[idx];
+        }}
+      }}
+    }}
+    setDirty(); render();
+  }}
+
+  // ── Selection ──────────────────────────────────────────────────────────────
+  function renderSelBar() {{
+    const bar=document.getElementById('selBar');
+    const cnt=G.selectedSeats.size;
+    bar.style.display=cnt>0?'flex':'none';
+    if(cnt>0) document.getElementById('selCount').textContent=cnt+' seat'+(cnt>1?'s':'')+' selected';
+  }}
+
+  function toggleSeatSel(key) {{
+    if(G.selectedSeats.has(key)) G.selectedSeats.delete(key); else G.selectedSeats.add(key);
+    render();
+  }}
+
+  function clearSelection() {{
+    G.selectedSeats.clear(); render();
+  }}
+
+  function startRubberBand(e) {{
+    G.rubberBand={{x1:e.clientX,y1:e.clientY,x2:e.clientX,y2:e.clientY}};
+    const r=document.getElementById('rubberBand');
+    r.style.left=e.clientX+'px'; r.style.top=e.clientY+'px'; r.style.width='0'; r.style.height='0'; r.style.display='block';
+  }}
+
+  function updateRubberBand(e) {{
+    const rb=G.rubberBand; if(!rb) return;
+    rb.x2=e.clientX; rb.y2=e.clientY;
+    const x=Math.min(rb.x1,rb.x2), y=Math.min(rb.y1,rb.y2);
+    const w=Math.abs(rb.x2-rb.x1), h=Math.abs(rb.y2-rb.y1);
+    const r=document.getElementById('rubberBand');
+    r.style.left=x+'px'; r.style.top=y+'px'; r.style.width=w+'px'; r.style.height=h+'px';
+  }}
+
+  function finalizeRubberBand() {{
+    const rb=G.rubberBand; if(!rb) return;
+    document.getElementById('rubberBand').style.display='none';
+    G.rubberBand=null;
+    if(Math.abs(rb.x2-rb.x1)<4 && Math.abs(rb.y2-rb.y1)<4) {{ clearSelection(); return; }}
+    const selRect={{
+      left:Math.min(rb.x1,rb.x2), right:Math.max(rb.x1,rb.x2),
+      top:Math.min(rb.y1,rb.y2),  bottom:Math.max(rb.y1,rb.y2),
+    }};
+    G.selectedSeats.clear();
+    for(const t of G.tables) {{
+      for(let i=0;i<t.seatCount;i++) {{
+        if(!t.seats[String(i)]) continue;
+        const el=document.getElementById(t.id+'-s-'+i); if(!el) continue;
+        const sr=el.getBoundingClientRect();
+        if(sr.left<selRect.right && sr.right>selRect.left && sr.top<selRect.bottom && sr.bottom>selRect.top)
+          G.selectedSeats.add(t.id+':'+i);
+      }}
+    }}
+    render();
+  }}
+
+  function startSelDrag(e) {{
+    const items=[];
+    for(const key of G.selectedSeats) {{
+      const [tid,idx]=key.split(':');
+      const t=G.tables.find(x=>x.id===tid); if(!t) continue;
+      const emp=t.seats[idx]; if(emp) items.push({{key,tid,idx,emp}});
+    }}
+    if(!items.length) return;
+    const ghost=document.getElementById('selGhost');
+    ghost.innerHTML='';
+    items.slice(0,5).forEach((item,i)=>{{
+      const av=document.createElement('div'); av.className='sg-av';
+      av.textContent=initials(item.emp);
+      av.style.zIndex=String(10-i);
+      if(i===0) av.style.marginLeft='0';
+      ghost.appendChild(av);
+    }});
+    if(items.length>5){{
+      const more=document.createElement('div'); more.className='sg-av';
+      more.textContent='+'+(items.length-5);
+      ghost.appendChild(more);
+    }}
+    ghost.style.left=(e.clientX+12)+'px'; ghost.style.top=(e.clientY-18)+'px';
+    ghost.style.display='flex';
+    G.selDrag={{items, startX:e.clientX, startY:e.clientY}};
+  }}
+
+  function dropSelection(targetTid) {{
+    if(!G.selDrag) return;
+    const tbl=G.tables.find(x=>x.id===targetTid); if(!tbl) return;
+    const items=G.selDrag.items;
+    const freeIdxs=[];
+    for(let i=0;i<tbl.seatCount && freeIdxs.length<items.length;i++) {{
+      if(!tbl.seats[String(i)]) freeIdxs.push(i);
+    }}
+    if(!freeIdxs.length){{ toast('No free seats in "'+tbl.name+'"','err'); endSelDrag(); return; }}
+    for(const item of items){{
+      const src=G.tables.find(x=>x.id===item.tid);
+      if(src) delete src.seats[item.idx];
+    }}
+    for(let i=0;i<Math.min(items.length,freeIdxs.length);i++) {{
+      tbl.seats[String(freeIdxs[i])]=items[i].emp;
+    }}
+    setDirty();
+    clearSelection();
+    endSelDrag();
+    toast(items.length+' employee'+(items.length>1?'s':'')+' moved to "'+tbl.name+'"','ok');
+  }}
+
+  function endSelDrag() {{
+    document.getElementById('selGhost').style.display='none';
+    G.selDrag=null;
+  }}
+
+  // ── Event wiring ───────────────────────────────────────────────────────────
+  document.getElementById('addTableBtn').addEventListener('click',()=>openTblModal('add'));
+  document.getElementById('saveBtn').addEventListener('click',saveAll);
+  document.getElementById('zoomInBtn').addEventListener('click',()=>setZoom(G.zoom+0.1));
+  document.getElementById('zoomOutBtn').addEventListener('click',()=>setZoom(G.zoom-0.1));
+  document.getElementById('tblCancelBtn').addEventListener('click',closeTblModal);
+  document.getElementById('tblConfirmBtn').addEventListener('click',confirmTblModal);
+  document.getElementById('seatOvClose').addEventListener('click',closeSeatModal);
+  document.getElementById('seatOvClear').addEventListener('click',clearSeat);
+  document.getElementById('srch').addEventListener('input',renderSidebar);
+  document.getElementById('addPersonBtn').addEventListener('click',addCustomEmployee);
+  document.getElementById('addPersonInput').addEventListener('keydown',e=>{{if(e.key==='Enter') addCustomEmployee();}});
+  document.getElementById('renameEmpCancelBtn').addEventListener('click',closeRenameEmpModal);
+  document.getElementById('renameEmpConfirmBtn').addEventListener('click',confirmRenameEmployee);
+  document.getElementById('renameEmpInput').addEventListener('keydown',e=>{{if(e.key==='Enter') confirmRenameEmployee(); else if(e.key==='Escape') closeRenameEmpModal();}});
+  document.getElementById('renameEmpOv').addEventListener('click',e=>{{if(e.target===document.getElementById('renameEmpOv')) closeRenameEmpModal();}});
+
+  ['tblName','tblSeats'].forEach(id=>{{
+    document.getElementById(id).addEventListener('keydown',e=>{{if(e.key==='Enter') confirmTblModal();}});
+  }});
+
+  document.getElementById('tblOv').addEventListener('click',e=>{{
+    if(e.target===document.getElementById('tblOv')) closeTblModal();
+  }});
+  document.getElementById('seatOv').addEventListener('click',e=>{{
+    if(e.target===document.getElementById('seatOv')) closeSeatModal();
+  }});
+
+  document.getElementById('cw').addEventListener('wheel',e=>{{
+    if(e.ctrlKey||e.metaKey){{ e.preventDefault(); setZoom(G.zoom+(e.deltaY<0?0.1:-0.1)); }}
+  }},{{passive:false}});
+
+  document.getElementById('cw').addEventListener('mousedown',e=>{{
+    if(e.button!==0) return;
+    if(G.selDrag) return;
+    if(e.target.closest('.sp-tbl')) return;
+    if(G.selectedSeats.size>0){{ clearSelection(); return; }}
+    startRubberBand(e);
+  }});
+
+  document.getElementById('selClearBtn').addEventListener('click',clearSelection);
+
+  document.getElementById('teamToggleBtn').addEventListener('click',()=>{{
+    G.teamColorMode=!G.teamColorMode;
+    G.filterLegend=null; // clear filter on mode change
+    document.getElementById('teamToggleBtn').classList.toggle('active',G.teamColorMode);
+    renderLegend();
+    render();
+  }});
+
+  document.getElementById('productToggleBtn').addEventListener('click',()=>{{
+    G.productColorMode=!G.productColorMode;
+    G.filterLegend=null; // clear filter on mode change
+    document.getElementById('productToggleBtn').classList.toggle('active',G.productColorMode);
+    if(G.productColorMode && !Object.keys(G.projectPalette).length){{
+      toast('No project assignment data found for this month','err');
+    }}
+    renderLegend();
+    render();
+  }});
+
+  document.getElementById('legendToggleBtn').addEventListener('click',()=>{{
+    G.legendVisible=!G.legendVisible;
+    document.getElementById('legendToggleBtn').classList.toggle('active',G.legendVisible);
+    renderLegend();
+  }});
+
+  document.getElementById('exportPdfBtn').addEventListener('click',()=>{{
+    window.print();
+  }});
+
+  document.getElementById('exportXlsBtn').addEventListener('click',()=>{{
+    if(typeof XLSX==='undefined'){{ toast('Excel library not loaded','err'); return; }}
+    const rows=[['Table','Seat #','Employee','WFH','Team','Projects']];
+    const today=new Date().toISOString().slice(0,10);
+    for(const t of G.tables){{
+      const seats=t.seats||{{}};
+      const seatCount=t.seatCount||1;
+      for(let i=0;i<seatCount;i++){{
+        const emp=seats[String(i)]||'';
+        const wfh=emp&&G.wfhSet.has(emp)?'Yes':'';
+        const tc=emp?G.teamColorMap[emp]:null;
+        const team=tc?tc.teamName:'';
+        const projs=emp?getPersonProjects(emp).map(pk=>projectDisplayName(pk)).join(', '):'';
+        rows.push([t.name,i+1,emp,wfh,team,projs]);
+      }}
+    }}
+    const ws=XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols']=[{{wch:20}},{{wch:7}},{{wch:28}},{{wch:6}},{{wch:20}},{{wch:30}}];
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,ws,'Seating');
+    XLSX.writeFile(wb,`seating-plan-${{today}}.xlsx`);
+    toast('Excel exported','ok');
+  }});
+
+  document.addEventListener('keydown',e=>{{
+    if(e.key==='Escape'){{ clearSelection(); endSelDrag(); }}
+  }});
+
+  // ── Boot ───────────────────────────────────────────────────────────────────
+  load();
+  </script>
 </body>
 </html>"""
 
@@ -30416,6 +32824,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             or req_path.startswith("/api/original-estimates/")
             or req_path.startswith("/api/delayed-epic-chain-gantt/")
             or req_path.startswith("/api/monthly-epic-plan-progress/")
+            or req_path.startswith("/api/team-capacity-planner/")
             or req_path.endswith(".html")
             or req_path.endswith(".js")
             or req_path.endswith(".css")
@@ -33276,6 +35685,9 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             except (ValueError, TypeError):
                 overdue_threshold_days = 30
             include_on_hold = request.args.get("include_on_hold", "0") in ("1", "true", "yes")
+            epic_mode_raw = _to_text(request.args.get("epic_mode", "tk_epics")).lower()
+            if epic_mode_raw not in ("tk_epics", "all_epics", "all_jira_epics"):
+                epic_mode_raw = "tk_epics"
             payload = build_monthly_epic_plan_payload(
                 capacity_paths["db_path"],
                 month,
@@ -33287,6 +35699,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 jira_base_url=BASE_URL,
                 overdue_threshold_days=overdue_threshold_days,
                 include_on_hold=include_on_hold,
+                epic_mode=epic_mode_raw,
             )
             return jsonify({"ok": True, **payload})
         except ValueError as exc:
@@ -37020,6 +39433,13 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
     def ipp_meeting_planner_settings():
         return _ipp_meeting_planner_settings_html()
 
+    @app.route(TCP_SETTINGS_ROUTE, methods=["GET"])
+    def tcp_settings_page():
+        tcp_html = report_dir / "team_capacity_planner.html"
+        if tcp_html.exists():
+            return tcp_html.read_text(encoding="utf-8"), 200, {"Content-Type": "text/html; charset=utf-8"}
+        return "<h2>Team Capacity Planner HTML not found.</h2>", 404
+
     @app.route(PRODUCT_RELEASES_SETTINGS_ROUTE, methods=["GET"])
     def product_releases_settings():
         return _product_releases_settings_html()
@@ -37027,6 +39447,253 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
     @app.route(PRODUCT_RELEASES_CALENDAR_ROUTE, methods=["GET"])
     def product_releases_calendar():
         return _product_releases_calendar_html()
+
+    # --- Seating Planner ---
+
+    @app.route(SEATING_PLANNER_SETTINGS_ROUTE, methods=["GET"])
+    def seating_planner_settings():
+        return _seating_planner_html()
+
+    @app.route("/api/seating/data", methods=["GET"])
+    def seating_data_api():
+        try:
+            db = capacity_paths["db_path"]
+            layout = _seating_load_layout(db)
+            employees = _seating_get_all_employees(db)
+            wfh = _seating_load_wfh(db)
+            custom = _seating_get_custom_employees(db)
+            teams = _seating_get_teams(db)
+            project_assignments = _seating_get_project_assignments(base_dir, db)
+            project_names = _seating_get_project_names(db)
+            return jsonify({
+                "layout": layout,
+                "employees": employees,
+                "wfh_employees": wfh,
+                "custom_employees": custom,
+                "teams": teams,
+                "project_assignments": {k: v for k, v in project_assignments.items() if not k.startswith("__")},
+                "project_names": project_names,
+                "_pa_count": len([k for k in project_assignments if not k.startswith("__")]),
+                "_pa_error": project_assignments.get("__error__", []),
+            })
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @app.route("/api/seating/debug-assignments")
+    def seating_debug_assignments_api():
+        import calendar as _cal
+        from datetime import date as _date
+        lines = []
+        def p(s=""): lines.append(str(s))
+        try:
+            today = _date.today()
+            month_start = today.strftime("%Y-%m-01")
+            last_day = _cal.monthrange(today.year, today.month)[1]
+            month_end = today.strftime(f"%Y-%m-{last_day:02d}")
+            db      = capacity_paths["db_path"]
+            sync_db = _canonical_sync_cache_path(base_dir)
+
+            p(f"Month window : {month_start} → {month_end}")
+            p(f"Settings DB  : {db}  (contains canonical_issues + canonical_refresh_state)")
+            p(f"Sync DB      : {sync_db}  (contains canonical_assignee_period_hours)")
+            p(f"Base dir     : {base_dir}")
+            p()
+
+            run_id = _canonical_last_success_run_id(db)
+            p(f"[1] run_id from settings DB: {run_id!r}")
+            if not run_id:
+                p("    *** NO RUN_ID — canonical sync has never completed successfully ***")
+                return "<pre>" + "\n".join(lines) + "</pre>"
+
+            # canonical_issues is in db_path (assignee_hours_capacity.db), not sync_db
+            with sqlite3.connect(db) as conn:
+                # 2. Does run_id exist in canonical_issues?
+                p()
+                total = conn.execute("SELECT COUNT(*) FROM canonical_issues").fetchone()[0]
+                matched = conn.execute("SELECT COUNT(*) FROM canonical_issues WHERE run_id=?", (run_id,)).fetchone()[0]
+                top_runs = [r[0] for r in conn.execute(
+                    "SELECT DISTINCT run_id FROM canonical_issues ORDER BY run_id DESC LIMIT 5").fetchall()]
+                p(f"[2] canonical_issues total rows : {total}")
+                p(f"    rows matching run_id         : {matched}")
+                p(f"    top 5 run_ids in DB          : {top_runs}")
+                if matched == 0:
+                    p("    *** RUN_ID MISMATCH — settings DB run_id not found in canonical_issues ***")
+                    p("    *** Fix: re-run the canonical sync so both DBs share the same run_id  ***")
+
+                # 3. issue_type breakdown
+                p()
+                p("[3] issue_type breakdown (matched run_id):")
+                types = conn.execute(
+                    "SELECT issue_type, COUNT(*) FROM canonical_issues WHERE run_id=? GROUP BY issue_type ORDER BY 2 DESC",
+                    (run_id,)).fetchall()
+                for itype, cnt in types:
+                    marker = " <-- SUBTASK" if "sub" in (itype or "").lower() else ""
+                    p(f"    {itype!r:30s} : {cnt}{marker}")
+
+                # 4. Active subtasks regardless of date
+                p()
+                sub_all = conn.execute("""
+                    SELECT COUNT(*) FROM canonical_issues WHERE run_id=?
+                    AND (LOWER(issue_type) LIKE '%sub-task%' OR LOWER(issue_type) LIKE '%subtask%')
+                    AND assignee != ''
+                """, (run_id,)).fetchone()[0]
+                sub_active = conn.execute("""
+                    SELECT COUNT(*) FROM canonical_issues WHERE run_id=?
+                    AND (LOWER(issue_type) LIKE '%sub-task%' OR LOWER(issue_type) LIKE '%subtask%')
+                    AND assignee != ''
+                    AND LOWER(status) NOT IN ('done','resolved','closed','cancelled','rejected')
+                """, (run_id,)).fetchone()[0]
+                sub_month = conn.execute("""
+                    SELECT COUNT(*) FROM canonical_issues WHERE run_id=?
+                    AND (LOWER(issue_type) LIKE '%sub-task%' OR LOWER(issue_type) LIKE '%subtask%')
+                    AND assignee != ''
+                    AND LOWER(status) NOT IN ('done','resolved','closed','cancelled','rejected')
+                    AND (
+                      (start_date != '' AND start_date <= ? AND (due_date = '' OR due_date >= ?))
+                      OR (start_date != '' AND start_date >= ? AND start_date <= ?)
+                      OR (due_date  != '' AND due_date  >= ? AND due_date  <= ?)
+                      OR (start_date = '' AND due_date = '')
+                    )
+                """, (run_id, month_end, month_start, month_start, month_end, month_start, month_end)).fetchone()[0]
+                p(f"[4] Assigned subtasks (any status)          : {sub_all}")
+                p(f"    Assigned subtasks (active/not-done)      : {sub_active}")
+                p(f"    Active subtasks overlapping current month : {sub_month}")
+
+                # 5. Sample subtask date ranges
+                p()
+                p("[5] Sample subtask date ranges (most recent start_date first):")
+                sample_dates = conn.execute("""
+                    SELECT start_date, due_date, status, COUNT(*) FROM canonical_issues
+                    WHERE run_id=?
+                    AND (LOWER(issue_type) LIKE '%sub-task%' OR LOWER(issue_type) LIKE '%subtask%')
+                    AND assignee != ''
+                    GROUP BY start_date, due_date, status ORDER BY start_date DESC LIMIT 15
+                """, (run_id,)).fetchall()
+                for r in sample_dates:
+                    p(f"    start={r[0]!r:14s}  due={r[1]!r:14s}  status={r[2]!r:20s}  count={r[3]}")
+
+                # 6. Sample assignees + projects (no date filter)
+                p()
+                p("[6] Sample assignee→project (active subtasks, no date filter, first 20):")
+                sample_pa = conn.execute("""
+                    SELECT DISTINCT assignee,
+                        UPPER(COALESCE(NULLIF(TRIM(project_key),''), SUBSTR(issue_key,1,INSTR(issue_key,'-')-1))) AS pk,
+                        status, start_date, due_date
+                    FROM canonical_issues WHERE run_id=?
+                    AND (LOWER(issue_type) LIKE '%sub-task%' OR LOWER(issue_type) LIKE '%subtask%')
+                    AND assignee != ''
+                    AND LOWER(status) NOT IN ('done','resolved','closed','cancelled','rejected')
+                    LIMIT 20
+                """, (run_id,)).fetchall()
+                for r in sample_pa:
+                    p(f"    {r[0]!r:30s} -> {r[1]:10s}  [{r[2]}]  {r[3]} → {r[4]}")
+                if not sample_pa:
+                    p("    (none found)")
+
+        except Exception as exc:
+            import traceback
+            p()
+            p(f"EXCEPTION: {exc}")
+            p(traceback.format_exc())
+
+        return "<pre style='font-family:monospace;font-size:13px;padding:20px'>" + "\n".join(lines) + "</pre>"
+
+    @app.route("/api/seating/employees", methods=["POST"])
+    def seating_employee_add_api():
+        try:
+            payload = request.get_json(silent=True) or {}
+            name = _to_text(payload.get("name", "")).strip()
+            if not name:
+                return jsonify({"error": "name is required"}), 400
+            db = capacity_paths["db_path"]
+            _seating_add_custom_employee(db, name)
+            return jsonify({
+                "ok": True,
+                "employees": _seating_get_all_employees(db),
+                "custom_employees": _seating_get_custom_employees(db),
+            }), 201
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @app.route("/api/seating/employees", methods=["DELETE"])
+    def seating_employee_delete_api():
+        try:
+            payload = request.get_json(silent=True) or {}
+            name = _to_text(payload.get("name", "")).strip()
+            if not name:
+                return jsonify({"error": "name is required"}), 400
+            db = capacity_paths["db_path"]
+            _seating_delete_custom_employee(db, name)
+            return jsonify({
+                "ok": True,
+                "employees": _seating_get_all_employees(db),
+                "custom_employees": _seating_get_custom_employees(db),
+            })
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @app.route("/api/seating/employees", methods=["PATCH"])
+    def seating_employee_rename_api():
+        try:
+            payload = request.get_json(silent=True) or {}
+            old_name = _to_text(payload.get("old_name", "")).strip()
+            new_name = _to_text(payload.get("new_name", "")).strip()
+            if not old_name or not new_name:
+                return jsonify({"error": "old_name and new_name are required"}), 400
+            if old_name == new_name:
+                db = capacity_paths["db_path"]
+                return jsonify({
+                    "ok": True,
+                    "employees": _seating_get_all_employees(db),
+                    "custom_employees": _seating_get_custom_employees(db),
+                })
+            db = capacity_paths["db_path"]
+            existing = _seating_get_all_employees(db)
+            if new_name in existing:
+                return jsonify({"error": f'"{new_name}" already exists'}), 409
+            _seating_rename_custom_employee(db, old_name, new_name)
+            return jsonify({
+                "ok": True,
+                "employees": _seating_get_all_employees(db),
+                "custom_employees": _seating_get_custom_employees(db),
+            })
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @app.route("/api/seating/layout", methods=["POST"])
+    def seating_layout_save_api():
+        try:
+            payload = request.get_json(silent=True) or {}
+            tables_raw = payload.get("tables", [])
+            if not isinstance(tables_raw, list):
+                return jsonify({"error": "tables must be a list"}), 400
+            clean_tables = []
+            for t in tables_raw:
+                if not isinstance(t, dict):
+                    continue
+                clean_tables.append({
+                    "id": _to_text(t.get("id", "")),
+                    "name": _to_text(t.get("name", "")).strip() or "Table",
+                    "x": float(t.get("x", 0)),
+                    "y": float(t.get("y", 0)),
+                    "rotation": float(t.get("rotation", 0)),
+                    "seatCount": max(1, min(20, int(t.get("seatCount", 6)))),
+                    "seats": {str(k): _to_text(v) for k, v in (t.get("seats") or {}).items() if _to_text(v).strip()},
+                })
+            _seating_save_layout(capacity_paths["db_path"], {"tables": clean_tables})
+            return jsonify({"ok": True, "tables_saved": len(clean_tables)})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @app.route("/api/seating/wfh", methods=["POST"])
+    def seating_wfh_save_api():
+        try:
+            payload = request.get_json(silent=True) or {}
+            names = [_to_text(n) for n in (payload.get("wfh_employees") or []) if _to_text(n).strip()]
+            _seating_save_wfh(capacity_paths["db_path"], names)
+            return jsonify({"ok": True, "wfh_count": len(names)})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
 
     # --- Product Releases API ---
 
@@ -37214,6 +39881,524 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             return send_file(target, mimetype="font/woff")
 
         return send_file(target)
+
+    # ── Team Capacity Planner ────────────────────────────────────────────────
+
+    @app.route("/api/team-capacity-planner/teams", methods=["GET"])
+    def tcp_list_teams():
+        try:
+            teams = _list_performance_teams(capacity_paths["db_path"])
+            return jsonify({
+                "ok": True,
+                "teams": [
+                    {
+                        "team_name": t["team_name"],
+                        "team_leader": t["team_leader"],
+                        "member_count": len(t.get("assignees") or []),
+                    }
+                    for t in teams
+                ],
+            })
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+
+    @app.route("/api/team-capacity-planner/capacity-profiles", methods=["GET"])
+    def tcp_capacity_profiles():
+        try:
+            profiles = _tcp_list_capacity_profiles(capacity_paths["db_path"])
+            return jsonify({"ok": True, "profiles": profiles})
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+
+    @app.route("/api/team-capacity-planner/data", methods=["GET"])
+    def tcp_team_data():
+        team_name = _to_text(request.args.get("team", "")).strip()
+        if not team_name:
+            return jsonify({"ok": False, "error": "team parameter is required"}), 400
+        from_date = _to_text(request.args.get("from", "")).strip()
+        to_date = _to_text(request.args.get("to", "")).strip()
+        if not from_date or not to_date:
+            today = _canonical_now_utc()[:10]
+            year, month = today[:4], today[5:7]
+            import calendar as _cal
+            last_day = _cal.monthrange(int(year), int(month))[1]
+            from_date = from_date or f"{year}-{month}-01"
+            to_date = to_date or f"{year}-{month}-{last_day:02d}"
+        profile_id: int | None = None
+        try:
+            raw_pid = request.args.get("profile_id", "")
+            if raw_pid:
+                profile_id = int(raw_pid)
+        except Exception:
+            pass
+        try:
+            payload = _tcp_build_team_data(
+                capacity_paths["db_path"],
+                capacity_paths["leave_report_path"],
+                team_name,
+                from_date,
+                to_date,
+                profile_id=profile_id,
+            )
+            return jsonify({"ok": True, **payload})
+        except LookupError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 404
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+
+    @app.route("/api/team-capacity-planner/work-items", methods=["GET"])
+    def tcp_work_items():
+        search  = _to_text(request.args.get("search", "")).lower().strip()
+        project = _to_text(request.args.get("project", "")).upper().strip()
+        type_f  = _to_text(request.args.get("type", "")).lower().strip()
+        try:
+            limit = min(int(request.args.get("limit", 500) or 500), 1000)
+        except Exception:
+            limit = 500
+        try:
+            with sqlite3.connect(capacity_paths["db_path"]) as conn:
+                conn.row_factory = sqlite3.Row
+                canonical_run_id = _canonical_last_success_run_id(capacity_paths["db_path"])
+
+                def _matches(item: dict[str, object]) -> bool:
+                    key = _to_text(item.get("epic_key", "")).upper()
+                    name = _to_text(item.get("epic_name", "")).lower()
+                    item_project = _to_text(item.get("project_key", "")).upper()
+                    assignee_val = _to_text(item.get("assignee", "")).lower()
+                    if project and item_project != project:
+                        return False
+                    if search and (
+                        search not in key.lower()
+                        and search not in name
+                        and search not in item_project.lower()
+                        and search not in assignee_val
+                    ):
+                        return False
+                    if type_f == "tk" and not bool(item.get("is_tk_epic")):
+                        return False
+                    if type_f == "non_tk" and bool(item.get("is_tk_epic")):
+                        return False
+                    return True
+
+                items_by_key: dict[str, dict[str, object]] = {}
+
+                planner_rows = conn.execute(
+                    """
+                    SELECT id, epic_key, project_key, epic_name, jira_url, is_tk_epic
+                    FROM epics_management
+                    ORDER BY project_key ASC, epic_name ASC
+                    """
+                ).fetchall()
+                for row in planner_rows:
+                    raw_key = _to_text(row["epic_key"]).upper()
+                    jira_url = _to_text(row["jira_url"])
+                    # Prefer key extracted from jira_url — it's always authoritative
+                    url_key = _jira_key_from_url(jira_url)
+                    epic_key = url_key if url_key else raw_key
+                    if not epic_key:
+                        continue
+                    # Derive project_key from canonical epic_key prefix (e.g. FF-297 → FF)
+                    stored_project = _to_text(row["project_key"]).upper()
+                    project_key = epic_key.split("-")[0] if "-" in epic_key else stored_project
+                    items_by_key[epic_key] = {
+                        "epic_key": epic_key,
+                        "epic_name": _to_text(row["epic_name"]) or epic_key,
+                        "project_key": project_key,
+                        "jira_url": jira_url,
+                        "is_tk_epic": bool(row["is_tk_epic"]),
+                        "source_tag": "epics_planner",
+                    }
+
+                try:
+                    jconn = jira_export_db_connect()
+                    jconn.row_factory = sqlite3.Row
+                    try:
+                        jira_rows = jconn.execute(
+                            """
+                            SELECT issue_key, project_key, summary, jira_issue_type, work_item_type, status, assignee, jira_url
+                            FROM work_items
+                            """
+                        ).fetchall()
+                    finally:
+                        jconn.close()
+                except Exception:
+                    jira_rows = []
+
+                for row in jira_rows:
+                    epic_key = _to_text(row["issue_key"]).upper()
+                    if not epic_key or epic_key in items_by_key:
+                        continue
+                    issue_type = _ipp_normalize_issue_type(_to_text(row["jira_issue_type"]) or _to_text(row["work_item_type"]))
+                    if issue_type != "epic":
+                        continue
+                    items_by_key[epic_key] = {
+                        "epic_key": epic_key,
+                        "epic_name": _to_text(row["summary"]) or epic_key,
+                        "project_key": _to_text(row["project_key"]).upper(),
+                        "jira_url": _to_text(row["jira_url"]),
+                        "is_tk_epic": False,
+                        "source_tag": "jira",
+                    }
+
+                # Also include any epics that exist only in planned assignments
+                # (e.g. manually assigned via TCP but not in epics_management or jira_exports)
+                try:
+                    assigned_keys_rows = conn.execute(
+                        "SELECT DISTINCT upper(issue_key) AS ek FROM team_capacity_planned_assignments WHERE issue_key IS NOT NULL AND issue_key != ''"
+                    ).fetchall()
+                    assigned_keys = {_to_text(r["ek"]) for r in assigned_keys_rows}
+                except Exception:
+                    assigned_keys = set()
+
+                missing_keys = assigned_keys - set(items_by_key.keys())
+                if missing_keys and canonical_run_id:
+                    # Try to resolve name/project from canonical_issues
+                    mk_ph = ",".join("?" for _ in missing_keys)
+                    try:
+                        ci_rows = conn.execute(
+                            f"SELECT issue_key, summary, project_key FROM canonical_issues WHERE run_id=? AND upper(issue_key) IN ({mk_ph})",
+                            [canonical_run_id] + list(missing_keys),
+                        ).fetchall()
+                        for ci in ci_rows:
+                            ek = _to_text(ci["issue_key"]).upper()
+                            if ek and ek not in items_by_key:
+                                pk = _to_text(ci["project_key"]).upper() or ek.split("-")[0] if "-" in ek else ""
+                                items_by_key[ek] = {
+                                    "epic_key": ek,
+                                    "epic_name": _to_text(ci["summary"]) or ek,
+                                    "project_key": pk,
+                                    "jira_url": "",
+                                    "is_tk_epic": False,
+                                    "source_tag": "assigned",
+                                }
+                    except Exception:
+                        pass
+                # For any remaining missing keys still not resolved, add with key only
+                for ek in missing_keys:
+                    if ek not in items_by_key:
+                        pk = ek.split("-")[0] if "-" in ek else ""
+                        items_by_key[ek] = {
+                            "epic_key": ek,
+                            "epic_name": ek,
+                            "project_key": pk,
+                            "jira_url": "",
+                            "is_tk_epic": False,
+                            "source_tag": "assigned",
+                        }
+
+                # Pre-fetch all assignees + dates so _matches can filter by assignee
+                all_epic_keys_pre = list(items_by_key.keys())
+                pre_assignees: dict[str, str] = {}
+                pre_start_dates: dict[str, str] = {}
+                pre_due_dates: dict[str, str] = {}
+                if canonical_run_id and all_epic_keys_pre:
+                    try:
+                        pre_ph = ",".join("?" for _ in all_epic_keys_pre)
+                        pre_rows = conn.execute(
+                            f"SELECT issue_key, assignee, start_date, due_date FROM canonical_issues WHERE run_id = ? AND upper(issue_key) IN ({pre_ph})",
+                            [canonical_run_id] + all_epic_keys_pre,
+                        ).fetchall()
+                        for r in pre_rows:
+                            uk = _to_text(r[0]).upper()
+                            pre_assignees[uk] = _to_text(r[1])
+                            pre_start_dates[uk] = _to_text(r[2])
+                            pre_due_dates[uk] = _to_text(r[3])
+                    except Exception:
+                        pass
+                for ek, item in items_by_key.items():
+                    item["assignee"]   = pre_assignees.get(ek, "")
+                    item["start_date"] = pre_start_dates.get(ek, "")
+                    item["due_date"]   = pre_due_dates.get(ek, "")
+
+                filtered_items = [item for item in items_by_key.values() if _matches(item)]
+                filtered_items.sort(key=lambda it: (
+                    _to_text(it.get("project_key", "")),
+                    _to_text(it.get("epic_name", "")),
+                    _to_text(it.get("epic_key", "")),
+                ))
+                total_rows = len(filtered_items)
+                sliced_items = filtered_items[:limit]
+                epic_keys = [_to_text(item.get("epic_key", "")).upper() for item in sliced_items]
+                details = _tcp_load_epic_details(conn, epic_keys, canonical_run_id)
+                # Assignees and dates already in pre_* dicts; reuse for the response
+                epic_assignees: dict[str, str] = {ek: pre_assignees.get(ek, "") for ek in epic_keys}
+                epic_start_dates: dict[str, str] = {ek: pre_start_dates.get(ek, "") for ek in epic_keys}
+                epic_due_dates: dict[str, str] = {ek: pre_due_dates.get(ek, "") for ek in epic_keys}
+
+            work_items: list[dict[str, object]] = []
+            for item in sliced_items:
+                epic_key = _to_text(item.get("epic_key", "")).upper()
+                detail = details.get(epic_key)
+                if detail is None:
+                    detail = {
+                        "epic_key": epic_key,
+                        "epic_name": _to_text(item.get("epic_name", "")) or epic_key,
+                        "project_key": _to_text(item.get("project_key", "")).upper(),
+                        "jira_url": _to_text(item.get("jira_url", "")),
+                        "is_tk_epic": bool(item.get("is_tk_epic")),
+                        "tk_approved_man_days": None,
+                        "stories": [],
+                        "assignee": epic_assignees.get(epic_key, ""),
+                        "start_date": epic_start_dates.get(epic_key, ""),
+                        "due_date": epic_due_dates.get(epic_key, ""),
+                    }
+                else:
+                    detail["assignee"]   = epic_assignees.get(epic_key, "")
+                    detail["start_date"] = epic_start_dates.get(epic_key, "")
+                    detail["due_date"]   = epic_due_dates.get(epic_key, "")
+                work_items.append(detail)
+
+            return jsonify({"ok": True, "work_items": work_items, "total": total_rows, "returned": len(sliced_items)})
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+
+    @app.route("/api/team-capacity-planner/work-item-projects", methods=["GET"])
+    def tcp_work_item_projects():
+        try:
+            projects: set[str] = set()
+            with sqlite3.connect(capacity_paths["db_path"]) as conn:
+                rows = conn.execute(
+                    "SELECT project_key, jira_url FROM epics_management WHERE project_key != '' OR jira_url != ''"
+                ).fetchall()
+                for r in rows:
+                    jira_url = _to_text(r[1])
+                    url_key = _jira_key_from_url(jira_url)
+                    if url_key and "-" in url_key:
+                        projects.add(url_key.split("-")[0])
+                    elif _to_text(r[0]):
+                        projects.add(_to_text(r[0]).upper())
+            try:
+                jconn = jira_export_db_connect()
+                jconn.row_factory = sqlite3.Row
+                try:
+                    rows = jconn.execute(
+                        """
+                        SELECT DISTINCT project_key, jira_issue_type, work_item_type
+                        FROM work_items
+                        """
+                    ).fetchall()
+                finally:
+                    jconn.close()
+                for row in rows:
+                    if _ipp_normalize_issue_type(_to_text(row["jira_issue_type"]) or _to_text(row["work_item_type"])) != "epic":
+                        continue
+                    project_key = _to_text(row["project_key"]).upper()
+                    if project_key:
+                        projects.add(project_key)
+            except Exception:
+                pass
+            return jsonify({"ok": True, "projects": sorted(projects)})
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+
+    @app.route("/api/team-capacity-planner/epic-children", methods=["GET"])
+    def tcp_epic_children():
+        """Lazy-load stories and subtasks for a specific epic from canonical_issues."""
+        epic_key = _to_text(request.args.get("epic_key", "")).upper().strip()
+        if not epic_key:
+            return jsonify({"ok": False, "error": "epic_key is required"}), 400
+        try:
+            with sqlite3.connect(capacity_paths["db_path"]) as conn:
+                conn.row_factory = sqlite3.Row
+                canonical_run_id = _canonical_last_success_run_id(capacity_paths["db_path"])
+                stories = []
+                if canonical_run_id:
+                    story_rows = conn.execute(
+                        """SELECT issue_key, summary, status, assignee, original_estimate_hours
+                           FROM canonical_issues
+                           WHERE run_id = ? AND upper(parent_issue_key) = ?
+                             AND issue_type NOT IN ('Epic', 'Initiative', 'Sub-task', 'Subtask', 'Sub task')
+                           ORDER BY issue_key""",
+                        (canonical_run_id, epic_key),
+                    ).fetchall()
+                    story_keys_upper = [_to_text(r["issue_key"]).upper() for r in story_rows]
+                    subtasks_by_parent: dict = {}
+                    if story_keys_upper:
+                        sk_ph = ",".join("?" for _ in story_keys_upper)
+                        sub_rows = conn.execute(
+                            f"""SELECT issue_key, summary, status, assignee, original_estimate_hours, parent_issue_key
+                                FROM canonical_issues
+                                WHERE run_id = ? AND upper(parent_issue_key) IN ({sk_ph})
+                                  AND issue_type NOT IN ('Epic', 'Story', 'Initiative')
+                                ORDER BY parent_issue_key, issue_key""",
+                            [canonical_run_id] + story_keys_upper,
+                        ).fetchall()
+                        for r in sub_rows:
+                            p = _to_text(r["parent_issue_key"]).upper()
+                            subtasks_by_parent.setdefault(p, []).append({
+                                "issue_key": _to_text(r["issue_key"]),
+                                "issue_name": _to_text(r["summary"]),
+                                "status": _to_text(r["status"]),
+                                "assignee": _to_text(r["assignee"]),
+                                "estimate_hours": round(float(r["original_estimate_hours"] or 0), 2),
+                            })
+                    for r in story_rows:
+                        sk_u = _to_text(r["issue_key"]).upper()
+                        stories.append({
+                            "story_key": _to_text(r["issue_key"]),
+                            "story_name": _to_text(r["summary"]),
+                            "story_status": _to_text(r["status"]),
+                            "assignee": _to_text(r["assignee"]),
+                            "estimate_hours": round(float(r["original_estimate_hours"] or 0), 2),
+                            "subtasks": subtasks_by_parent.get(sk_u, []),
+                        })
+                if not stories:
+                    try:
+                        fb_rows = conn.execute(
+                            """SELECT ss.story_key, ss.story_name, ss.story_status, ss.estimate_hours
+                               FROM epics_management_story_sync ss
+                               JOIN epics_management em ON em.id = ss.epic_row_id
+                               WHERE upper(em.epic_key) = ?
+                               ORDER BY ss.story_key""",
+                            (epic_key,),
+                        ).fetchall()
+                        for r in fb_rows:
+                            stories.append({
+                                "story_key": _to_text(r["story_key"]),
+                                "story_name": _to_text(r["story_name"]),
+                                "story_status": _to_text(r["story_status"]),
+                                "assignee": "",
+                                "estimate_hours": round(float(r["estimate_hours"] or 0), 2),
+                                "subtasks": [],
+                            })
+                    except Exception:
+                        pass
+            return jsonify({"ok": True, "epic_key": epic_key, "stories": stories})
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+
+    @app.route("/api/team-capacity-planner/assignments", methods=["GET"])
+    def tcp_list_assignments():
+        """List all planned assignments with their Jira sync status."""
+        try:
+            with sqlite3.connect(capacity_paths["db_path"]) as conn:
+                conn.row_factory = sqlite3.Row
+                try:
+                    rows = conn.execute(
+                        """SELECT rowid AS id, issue_key, assignee_display_name, assignee_account_id,
+                                  jira_synced, jira_error, created_at_utc, updated_at_utc
+                           FROM team_capacity_planned_assignments
+                           ORDER BY updated_at_utc DESC LIMIT 500"""
+                    ).fetchall()
+                    assignments = [dict(r) for r in rows]
+                except Exception:
+                    assignments = []
+            return jsonify({"ok": True, "assignments": assignments})
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+
+    @app.route("/api/team-capacity-planner/push-assignments-to-jira", methods=["POST"])
+    def tcp_push_assignments_to_jira():
+        """Push unsynced (or specified) planned assignments to Jira."""
+        body = request.get_json(silent=True) or {}
+        ids = body.get("ids")
+        results = []
+        try:
+            with sqlite3.connect(capacity_paths["db_path"]) as conn:
+                conn.row_factory = sqlite3.Row
+                try:
+                    if ids:
+                        ph = ",".join("?" for _ in ids)
+                        rows = conn.execute(
+                            f"""SELECT rowid AS id, issue_key, assignee_display_name, assignee_account_id
+                                FROM team_capacity_planned_assignments WHERE rowid IN ({ph})""",
+                            [int(i) for i in ids],
+                        ).fetchall()
+                    else:
+                        rows = conn.execute(
+                            """SELECT rowid AS id, issue_key, assignee_display_name, assignee_account_id
+                               FROM team_capacity_planned_assignments WHERE jira_synced = 0"""
+                        ).fetchall()
+                except Exception:
+                    rows = []
+                try:
+                    from jira_client import BASE_URL, get_write_session
+                    jira_session = get_write_session()
+                except Exception as exc:
+                    return jsonify({"ok": False, "error": f"Jira client unavailable: {exc}"}), 500
+                for row in rows:
+                    row_id = row["id"]
+                    issue_key = _to_text(row["issue_key"])
+                    assignee_account_id = _to_text(row["assignee_account_id"])
+                    assignee_display_name = _to_text(row["assignee_display_name"])
+                    jira_ok = False
+                    jira_error = ""
+                    try:
+                        url = f"{BASE_URL}/rest/api/3/issue/{issue_key}/assignee"
+                        payload = {"accountId": assignee_account_id} if assignee_account_id else {"displayName": assignee_display_name}
+                        resp = jira_session.put(url, json=payload, timeout=(10, 30))
+                        if resp.status_code in (200, 204):
+                            jira_ok = True
+                        else:
+                            jira_error = f"HTTP {resp.status_code}: {resp.text[:200]}"
+                    except Exception as exc2:
+                        jira_error = str(exc2)[:300]
+                    now_utc = _canonical_now_utc()
+                    try:
+                        conn.execute(
+                            "UPDATE team_capacity_planned_assignments SET jira_synced=?, jira_error=?, updated_at_utc=? WHERE rowid=?",
+                            (1 if jira_ok else 0, jira_error, now_utc, row_id),
+                        )
+                    except Exception:
+                        pass
+                    results.append({
+                        "id": row_id, "issue_key": issue_key,
+                        "assignee": assignee_display_name, "ok": jira_ok, "error": jira_error,
+                    })
+            return jsonify({"ok": True, "results": results, "pushed": len(results),
+                            "succeeded": sum(1 for r in results if r["ok"])})
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+
+    @app.route("/api/team-capacity-planner/assign", methods=["POST"])
+    def tcp_assign():
+        body = request.get_json(silent=True) or {}
+        issue_key = _to_text(body.get("issue_key", "")).strip().upper()
+        assignee_account_id = _to_text(body.get("assignee_account_id", "")).strip()
+        assignee_display_name = _to_text(body.get("assignee_display_name", "")).strip()
+        if not issue_key:
+            return jsonify({"ok": False, "error": "issue_key is required"}), 400
+        if not assignee_account_id and not assignee_display_name:
+            return jsonify({"ok": False, "error": "assignee_account_id or assignee_display_name is required"}), 400
+
+        jira_ok = False
+        jira_error = ""
+        try:
+            from jira_client import BASE_URL, get_write_session
+            session = get_write_session()
+            url = f"{BASE_URL}/rest/api/3/issue/{issue_key}/assignee"
+            jira_payload = {"accountId": assignee_account_id} if assignee_account_id else {"displayName": assignee_display_name}
+            resp = session.put(url, json=jira_payload, timeout=(10, 30))
+            if resp.status_code in (200, 204):
+                jira_ok = True
+            else:
+                jira_error = f"HTTP {resp.status_code}: {resp.text[:300]}"
+        except Exception as exc:
+            jira_error = str(exc)[:500]
+
+        now_utc = _canonical_now_utc()
+        try:
+            with sqlite3.connect(capacity_paths["db_path"]) as conn:
+                conn.execute(
+                    """
+                    INSERT INTO team_capacity_planned_assignments
+                      (issue_key, assignee_display_name, assignee_account_id, jira_synced, jira_error, created_at_utc, updated_at_utc)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (issue_key, assignee_display_name, assignee_account_id,
+                     1 if jira_ok else 0, jira_error, now_utc, now_utc),
+                )
+        except Exception:
+            pass
+
+        if jira_ok:
+            return jsonify({"ok": True, "jira_synced": True, "issue_key": issue_key})
+        return jsonify({
+            "ok": True,
+            "jira_synced": False,
+            "issue_key": issue_key,
+            "warning": f"Assignment saved locally only. Jira: {jira_error}",
+        }), 207
 
     return app
 

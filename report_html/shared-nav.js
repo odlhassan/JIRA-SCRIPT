@@ -38,6 +38,7 @@
         { page_key: "original_estimates_hierarchy_report", title: "Epic Estimate Report", href: resolveReportHref("original_estimates_hierarchy_report.html"), icon: "schema", file: "original_estimates_hierarchy_report.html" },
         { page_key: "delayed_epic_chain_gantt", title: "Delayed Epic Chain Gantt", href: resolveReportHref("delayed_epic_chain_gantt_report.html"), icon: "timeline", file: "delayed_epic_chain_gantt_report.html" },
         { page_key: "monthly_epic_plan_progress", title: "Monthly Epic Plan vs Actual", href: resolveReportHref("monthly_epic_plan_progress_report.html"), icon: "event_available", file: "monthly_epic_plan_progress_report.html" },
+
         { page_key: "ipp_meeting_dashboard", title: "IPP Meeting Dashboard", href: resolveReportHref("ipp_meeting_dashboard.html"), icon: "groups", file: "ipp_meeting_dashboard.html" }
       ],
       categories: []
@@ -61,8 +62,10 @@
         { page_key: "ipp_meeting_planner", title: "IPP Meeting Planner", href: "/settings/ipp-meeting-planner", icon: "groups", path: "/settings/ipp-meeting-planner" },
         { page_key: "page_categories", title: "Page Categories", href: "/settings/page-categories", icon: "category", path: "/settings/page-categories" },
         { page_key: "canonical_refresh_settings", title: "Colossal Refresh", href: "/settings/canonical-refresh", icon: "sync", path: "/settings/canonical-refresh" },
+        { page_key: "team_capacity_planner", title: "Team Capacity Planner", href: "/settings/team-capacity-planner", icon: "group_work", path: "/settings/team-capacity-planner" },
         { page_key: "sql_console", title: "SQL Console", href: "/settings/sql-console", icon: "query_stats", path: "/settings/sql-console" },
-        { page_key: "product_releases", title: "Product Releases", href: "/settings/product-releases", icon: "rocket_launch", path: "/settings/product-releases" }
+        { page_key: "product_releases", title: "Product Releases", href: "/settings/product-releases", icon: "rocket_launch", path: "/settings/product-releases" },
+        { page_key: "seating_planner", title: "Seating Planner", href: "/settings/seating-planner", icon: "chair", path: "/settings/seating-planner" }
       ],
       categories: []
     }

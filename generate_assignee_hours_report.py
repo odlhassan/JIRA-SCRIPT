@@ -856,6 +856,23 @@ def _init_capacity_db(db_path: Path) -> None:
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS team_capacity_planned_assignments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                issue_key TEXT NOT NULL,
+                assignee_display_name TEXT NOT NULL DEFAULT '',
+                assignee_account_id TEXT NOT NULL DEFAULT '',
+                jira_synced INTEGER NOT NULL DEFAULT 0,
+                jira_error TEXT NOT NULL DEFAULT '',
+                created_at_utc TEXT NOT NULL DEFAULT '',
+                updated_at_utc TEXT NOT NULL DEFAULT ''
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_tcpa_issue_key ON team_capacity_planned_assignments(issue_key)"
+        )
         conn.commit()
     finally:
         conn.close()

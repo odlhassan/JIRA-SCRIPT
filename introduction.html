@@ -1014,6 +1014,602 @@ flowchart TD
         </div>
       </article>
     </section>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         MODULE ARCHITECTURE DIAGRAMS
+         4 diagrams: (1) full layer map  (2) database connections
+                     (3) report generation pipeline  (4) server serving model
+    ═══════════════════════════════════════════════════════════════════ -->
+    <section class="architecture-stack" aria-label="Module architecture diagrams">
+      <article class="architecture-panel">
+        <span class="section-kicker">Visual module map</span>
+        <h2>Architecture diagrams</h2>
+        <p>
+          Four focused diagrams that together cover every module, database, and report in the platform. Each diagram
+          zooms into a different cross-section of the architecture so no single view becomes too cluttered to read.
+        </p>
+
+        <style>
+          .diag-2col {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin-top: 16px;
+          }
+          .diag-full {
+            margin-top: 16px;
+          }
+          .diag-label {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 8px;
+            font-size: 0.7rem;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: #1e3a8a;
+            background: #eef4ff;
+            border: 1px solid #cfe0ff;
+            border-radius: 999px;
+            padding: 4px 10px;
+          }
+          .diag-card {
+            border: 1px solid #d9e6f5;
+            border-radius: 18px;
+            background: linear-gradient(180deg, #fbfdff, #f4f8ff);
+            padding: 16px;
+          }
+          .diag-card h3 {
+            margin: 0 0 4px;
+            font-size: 1rem;
+            color: var(--ink);
+          }
+          .diag-card > p {
+            margin: 0 0 12px;
+            color: #475569;
+            font-size: 0.85rem;
+            line-height: 1.5;
+          }
+          @media (max-width: 900px) {
+            .diag-2col { grid-template-columns: 1fr; }
+          }
+        </style>
+
+        <!-- ── Diagram 1: Full Module Layer Map ── -->
+        <div class="diag-full">
+          <div class="diag-card" data-diagram-panel>
+            <span class="diag-label">Diagram 1 of 4</span>
+            <h3>Full module layer map</h3>
+            <p>All 65 modules organised into their architectural layer — from Jira data acquisition through canonical shaping, report generation, and Flask serving to the 23 HTML reports consumed by leadership.</p>
+            <div class="diagram-toolbar">
+              <p>Scroll horizontally inside the diagram panel to see all layers end-to-end.</p>
+              <div class="zoom-controls" aria-label="Diagram 1 zoom">
+                <button type="button" class="zoom-btn" data-zoom-out aria-label="Zoom out">-</button>
+                <button type="button" class="zoom-btn" data-zoom-reset aria-label="Reset zoom">Reset</button>
+                <button type="button" class="zoom-btn" data-zoom-in aria-label="Zoom in">+</button>
+                <input class="zoom-slider" type="range" min="80" max="260" step="10" value="130" data-zoom-slider aria-label="Zoom percentage">
+                <span class="zoom-readout" data-zoom-readout>130%</span>
+              </div>
+            </div>
+            <div class="mermaid-shell mermaid-shell-wide" data-zoom-shell style="margin-top:12px">
+              <div class="mermaid">
+flowchart LR
+    subgraph SRC["Source Domain"]
+        J["Jira REST API<br/>boards · issues · worklogs · leaves"]
+        P["Planning Inputs<br/>budgets · roadmaps · governance"]
+    end
+
+    subgraph L1["Layer 1 — Jira Export and Integration"]
+        jc["jira_client.py"]
+        ji["jira_incremental_cache.py"]
+        je["jira_export_db.py"]
+        e1["export_jira_work_items.py"]
+        e2["export_jira_nested_view.py"]
+        e3["export_jira_subtask_worklogs.py"]
+        e4["export_jira_subtask_worklog_rollup.py"]
+        e5["export_ipp_phase_breakdown.py"]
+        fd["fetch_jira_dashboard.py"]
+    end
+
+    subgraph L2["Layer 2 — Canonical and Registries"]
+        cr["canonical_report_data.py"]
+        mp["managed_projects_registry.py"]
+        mf["manage_fields_registry.py"]
+        re["report_entity_registry.py"]
+        iu["ipp_meeting_utils.py"]
+    end
+
+    subgraph L3["Layer 3 — Report Generators (18)"]
+        g1["generate_assignee_hours_report.py"]
+        g2["generate_employee_performance_report.py"]
+        g3["generate_gantt_chart_html.py"]
+        g4["generate_ipp_meeting_dashboard.py"]
+        g5["generate_leaves_planned_calendar_html.py"]
+        g6["generate_missed_entries_html.py"]
+        g7["generate_nested_view_html.py"]
+        g8["generate_original_estimates_hierarchy_report.py"]
+        g9["generate_phase_rmi_gantt_html.py"]
+        g10["generate_planned_actual_table_view.py"]
+        g11["generate_planned_rmis_html.py"]
+        g12["generate_planned_vs_dispensed_report.py"]
+        g13["generate_rlt_leave_report.py"]
+        g14["generate_rmi_jira_gantt_html.py"]
+        g15["generate_rnd_data_story.py"]
+        g16["monthly_epic_plan_progress_service.py"]
+        g17["delayed_epic_chain_gantt_service.py"]
+        g18["planned_actual_table_view_service.py"]
+    end
+
+    subgraph L4["Layer 4 — Server and API"]
+        rs["report_server.py<br/>Flask · all routes · sync"]
+        db["dashboard_db_enrichment.py"]
+        of["offline_html_prepare.py"]
+        sg["sync_team_rmi_gantt_sqlite.py"]
+        ws["wsgi.py"]
+        ii["init_epics_management_db.py"]
+    end
+
+    subgraph L5["Layer 5 — HTML Reports (23)"]
+        R["23 HTML reports<br/>report_html/ directory"]
+    end
+
+    subgraph AST["Shared Assets"]
+        A1["shared-nav.js"]
+        A2["shared-date-filter.js"]
+        A3["shared-nav.css"]
+        A4["material-symbols.css"]
+    end
+
+    SRC --> L1 --> L2 --> L3 --> L4 --> L5
+    L2 -.->|registries and config| L4
+    AST --> L5
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Diagrams 2 and 4 side-by-side ── -->
+        <div class="diag-2col">
+
+          <!-- Diagram 2: Database Connections -->
+          <div class="diag-card">
+            <span class="diag-label">Diagram 2 of 4</span>
+            <h3>Database and state connections</h3>
+            <p>Which modules read from and write to each of the three SQLite databases that hold the platform's persistent state.</p>
+            <div class="mermaid-shell" style="margin-top:10px">
+              <div class="mermaid">
+flowchart TD
+    subgraph DB1["jira_sync_cache.db<br/>Jira API cache"]
+        D1[("jira_sync_cache.db")]
+    end
+    subgraph DB2["assignee_hours_capacity.db<br/>Capacity and utilization"]
+        D2[("assignee_hours_capacity.db")]
+    end
+    subgraph DB3["epics_management.db<br/>Planner and IPP settings"]
+        D3[("epics_management.db")]
+    end
+
+    jic["jira_incremental_cache.py"]
+    jed["jira_export_db.py"]
+    exp["export_jira_*.py scripts"]
+    crd["canonical_report_data.py"]
+
+    gah["generate_assignee_hours_report.py"]
+    rs1["report_server.py"]
+
+    init["init_epics_management_db.py"]
+    dbe["dashboard_db_enrichment.py"]
+    rs2["report_server.py"]
+
+    jic -->|write delta cache| D1
+    jed -->|write export cache| D1
+    D1 -->|read raw data| exp
+    D1 -->|read for shaping| crd
+
+    gah -->|read and write| D2
+    D2 -->|read capacity| rs1
+
+    init -->|schema init| D3
+    dbe -->|read and write| D3
+    D3 -->|read planner data| rs2
+              </div>
+            </div>
+          </div>
+
+          <!-- Diagram 4: Server Serving Model -->
+          <div class="diag-card">
+            <span class="diag-label">Diagram 4 of 4</span>
+            <h3>Server and serving model</h3>
+            <p>How canonical source files flow through <code>sync_report_html()</code> into the Flask server, then to the browser and Azure App Service.</p>
+            <div class="mermaid-shell" style="margin-top:10px">
+              <div class="mermaid">
+flowchart TD
+    subgraph canonical["Canonical Sources — repo root"]
+        ch["Root .html files<br/>dashboard_template.html<br/>introduction.html"]
+        gen["generate_*.py output<br/>18 HTML generators"]
+        sh["shared-nav.js<br/>shared-date-filter.js<br/>shared-nav.css<br/>material-symbols.css"]
+    end
+
+    sync["sync_report_html()<br/>runs on every server start<br/>copies canonical to served"]
+
+    subgraph served["report_html/ — served directory"]
+        rh["Synced .html copies<br/>Shared asset copies"]
+    end
+
+    flask["report_server.py<br/>Flask app · port 3000-3003"]
+
+    subgraph apis["REST API endpoints"]
+        a1["/api/canonical-refresh"]
+        a2["/api/epics-management/rows"]
+        a3["/api/projects"]
+    end
+
+    browser["Browser<br/>23 reports · nav · date filter"]
+    azure["Azure App Service<br/>epreporting.azurewebsites.net"]
+
+    canonical --> sync --> served --> flask
+    flask --> apis
+    flask --> browser
+    flask -.->|wsgi.py| azure
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Diagram 3: Report Generation Pipeline ── -->
+        <div class="diag-full" style="margin-top:16px">
+          <div class="diag-card" data-diagram-panel>
+            <span class="diag-label">Diagram 3 of 4</span>
+            <h3>Report generation pipeline — all 18 generators to their HTML outputs</h3>
+            <p>Every generator module mapped to its output report, grouped by business domain. Some generators share a service layer; one report receives input from two generators.</p>
+            <div class="diagram-toolbar">
+              <p>Scroll horizontally to follow the generator-to-report connections across all four domains.</p>
+              <div class="zoom-controls" aria-label="Diagram 3 zoom">
+                <button type="button" class="zoom-btn" data-zoom-out aria-label="Zoom out">-</button>
+                <button type="button" class="zoom-btn" data-zoom-reset aria-label="Reset zoom">Reset</button>
+                <button type="button" class="zoom-btn" data-zoom-in aria-label="Zoom in">+</button>
+                <input class="zoom-slider" type="range" min="80" max="260" step="10" value="120" data-zoom-slider aria-label="Zoom percentage">
+                <span class="zoom-readout" data-zoom-readout>120%</span>
+              </div>
+            </div>
+            <div class="mermaid-shell mermaid-shell-wide" data-zoom-shell style="margin-top:12px">
+              <div class="mermaid">
+flowchart LR
+    subgraph PERF["Performance and People"]
+        pg1["generate_assignee_hours_report.py"] --> pr1(["assignee_hours_report.html"])
+        pg2["generate_employee_performance_report.py"] --> pr2(["employee_performance_report.html"])
+        pg3["generate_missed_entries_html.py"] --> pr3(["missed_entries.html"])
+        pg4["generate_rlt_leave_report.py"] --> pr4(["rlt_leave_report.html"])
+        pg5["generate_leaves_planned_calendar_html.py"] --> pr5(["leaves_planned_calendar.html"])
+    end
+
+    subgraph DELIV["Delivery and Planning"]
+        dg1["generate_gantt_chart_html.py"] --> dr1(["gantt_chart_report.html"])
+        dg2["generate_nested_view_html.py"] --> dr2(["nested_view_report.html"])
+        dg3["generate_ipp_meeting_dashboard.py"] --> dr3(["ipp_meeting_dashboard.html"])
+        dg4["monthly_epic_plan_progress_service.py"] --> dr4(["monthly_epic_plan_progress_report.html"])
+        dg5["delayed_epic_chain_gantt_service.py"] --> dr5(["delayed_epic_chain_gantt_report.html"])
+    end
+
+    subgraph FIN["Financial and Estimates"]
+        fg1["generate_planned_vs_dispensed_report.py"] --> fr1(["planned_vs_dispensed_report.html"])
+        fg2["generate_original_estimates_hierarchy_report.py"] --> fr2(["original_estimates_hierarchy_report.html"])
+        fg3["generate_planned_actual_table_view.py"] --> fr3(["planned_actual_table_view.html"])
+        fg4["planned_actual_table_view_service.py"] --> fr3
+    end
+
+    subgraph RMI["RMI and Gantt"]
+        rg1["generate_rmi_jira_gantt_html.py"] --> rr1(["rmi_jira_gantt_report.html"])
+        rg2["generate_phase_rmi_gantt_html.py"] --> rr2(["phase_rmi_gantt_report.html"])
+        rg3["generate_planned_rmis_html.py"] --> rr3(["planned_rmis_report.html"])
+        rg4["generate_rnd_data_story.py"] --> rr4(["rnd_data_story.html"])
+    end
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </article>
+    </section>
+
+    <section class="architecture-stack" aria-label="Module inventory">
+      <article class="architecture-panel" id="module-inventory">
+        <span class="section-kicker">Codebase map</span>
+        <h2>Module inventory — 65 active modules</h2>
+        <p>
+          Every functional unit in the platform, organised by architectural layer. Use this as a quick-reference map to
+          understand what each file does and which layer it belongs to — from Jira data acquisition all the way to the
+          HTML reports consumed by leadership.
+        </p>
+
+        <style>
+          .inv-grid {
+            margin-top: 20px;
+            display: grid;
+            gap: 16px;
+          }
+          .inv-layer {
+            border: 1px solid var(--line);
+            border-radius: 18px;
+            overflow: hidden;
+          }
+          .inv-layer-head {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 13px 18px;
+            background: linear-gradient(90deg, #eef4ff, #f4f7fc);
+            border-bottom: 1px solid var(--line);
+          }
+          .inv-layer-num {
+            flex: 0 0 auto;
+            width: 28px;
+            height: 28px;
+            border-radius: 9px;
+            background: #dbeafe;
+            color: #1d4ed8;
+            font-size: 0.8rem;
+            font-weight: 800;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+          }
+          .inv-layer-num.teal  { background: #d1fae5; color: #065f46; }
+          .inv-layer-num.violet{ background: #ede9fe; color: #5b21b6; }
+          .inv-layer-num.amber { background: #fef3c7; color: #92400e; }
+          .inv-layer-num.rose  { background: #ffe4e6; color: #9f1239; }
+          .inv-layer-num.slate { background: #e2e8f0; color: #1e293b; }
+          .inv-layer-head h3 {
+            margin: 0;
+            font-size: 0.97rem;
+            color: var(--ink);
+            letter-spacing: 0.005em;
+          }
+          .inv-layer-head .inv-count {
+            margin-left: auto;
+            font-size: 0.72rem;
+            font-weight: 700;
+            color: #64748b;
+            background: #ffffff;
+            border: 1px solid #d8e3f0;
+            border-radius: 999px;
+            padding: 3px 10px;
+            white-space: nowrap;
+          }
+          .inv-modules {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+            gap: 0;
+          }
+          .inv-mod {
+            padding: 11px 16px;
+            border-right: 1px solid #f0f4fa;
+            border-bottom: 1px solid #f0f4fa;
+            background: #ffffff;
+            transition: background 0.15s ease;
+          }
+          .inv-mod:hover { background: #f8fbff; }
+          .inv-mod-name {
+            font-size: 0.8rem;
+            font-weight: 700;
+            color: #1e3a8a;
+            font-family: "SF Mono", "Fira Code", "Consolas", monospace;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+          }
+          .inv-mod-desc {
+            margin-top: 3px;
+            font-size: 0.78rem;
+            color: #475569;
+            line-height: 1.45;
+          }
+          .inv-reports-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 0;
+          }
+          .inv-report-chip {
+            padding: 9px 16px;
+            border-right: 1px solid #f0f4fa;
+            border-bottom: 1px solid #f0f4fa;
+            background: #ffffff;
+            font-size: 0.79rem;
+            color: #334155;
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+            transition: background 0.15s ease;
+          }
+          .inv-report-chip:hover { background: #f8fbff; }
+          .inv-report-chip .material-symbols-outlined {
+            font-size: 15px;
+            color: #6d28d9;
+            flex: 0 0 auto;
+            margin-top: 1px;
+          }
+          .inv-summary-strip {
+            margin-top: 18px;
+            display: grid;
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+            gap: 10px;
+          }
+          .inv-stat {
+            border: 1px solid var(--line);
+            border-radius: 14px;
+            background: linear-gradient(180deg, #ffffff, #f8fbff);
+            padding: 14px 16px;
+            text-align: center;
+          }
+          .inv-stat strong {
+            display: block;
+            font-size: 1.7rem;
+            font-weight: 800;
+            color: #1d4ed8;
+            letter-spacing: -0.02em;
+          }
+          .inv-stat span {
+            font-size: 0.79rem;
+            color: #64748b;
+            line-height: 1.4;
+          }
+          @media (max-width: 980px) {
+            .inv-summary-strip { grid-template-columns: repeat(3, 1fr); }
+            .inv-modules { grid-template-columns: 1fr 1fr; }
+            .inv-reports-grid { grid-template-columns: 1fr 1fr; }
+          }
+          @media (max-width: 600px) {
+            .inv-summary-strip { grid-template-columns: 1fr 1fr; }
+            .inv-modules { grid-template-columns: 1fr; }
+            .inv-reports-grid { grid-template-columns: 1fr; }
+          }
+        </style>
+
+        <div class="inv-summary-strip" aria-label="Module count summary">
+          <div class="inv-stat"><strong>65</strong><span>Active modules</span></div>
+          <div class="inv-stat"><strong>23</strong><span>HTML reports</span></div>
+          <div class="inv-stat"><strong>18</strong><span>Report generators</span></div>
+          <div class="inv-stat"><strong>56</strong><span>Test files</span></div>
+          <div class="inv-stat"><strong>3</strong><span>SQLite databases</span></div>
+        </div>
+
+        <div class="inv-grid">
+
+          <!-- Layer 1 -->
+          <div class="inv-layer">
+            <div class="inv-layer-head">
+              <span class="inv-layer-num">1</span>
+              <h3>Jira Export &amp; Integration</h3>
+              <span class="inv-count">9 modules</span>
+            </div>
+            <div class="inv-modules">
+              <div class="inv-mod"><div class="inv-mod-name">jira_client.py</div><div class="inv-mod-desc">Core Jira REST API client — issues, boards, worklogs, subtasks</div></div>
+              <div class="inv-mod"><div class="inv-mod-name">jira_incremental_cache.py</div><div class="inv-mod-desc">Incremental sync — only fetches records changed since last run</div></div>
+              <div class="inv-mod"><div class="inv-mod-name">jira_export_db.py</div><div class="inv-mod-desc">SQLite persistence layer for Jira export cache</div></div>
+              <div class="inv-mod"><div class="inv-mod-name">export_jira_work_items.py</div><div class="inv-mod-desc">Full hierarchy export: epics → stories → subtasks</div></div>
+              <div class="inv-mod"><div class="inv-mod-name">export_jira_nested_view.py</div><div class="inv-mod-desc">Nested view structure export for hierarchical reports</div></div>
+              <div class="inv-mod"><div class="inv-mod-name">export_jira_subtask_worklogs.py</div><div class="inv-mod-desc">Subtask-level worklog extraction per assignee per date</div></div>
+              <div class="inv-mod"><div class="inv-mod-name">export_jira_subtask_worklog_rollup.py</div><div class="inv-mod-desc">Aggregates subtask worklogs up to story/epic level</div></div>
+              <div class="inv-mod"><div class="inv-mod-name">export_ipp_phase_breakdown.py</div><div class="inv-mod-desc">Phase breakdown export for IPP meeting dashboard</div></div>
+              <div class="inv-mod"><div class="inv-mod-name">fetch_jira_dashboard.py</div><div class="inv-mod-desc">Fetches Jira dashboard config, project metadata, board settings</div></div>
+            </div>
+          </div>
+
+          <!-- Layer 2 -->
+          <div class="inv-layer">
+            <div class="inv-layer-head">
+              <span class="inv-layer-num teal">2</span>
+              <h3>Canonical Data &amp; Registries</h3>
+              <span class="inv-count">5 modules</span>
+            </div>
+            <div class="inv-modules">
+              <div class="inv-mod"><div class="inv-mod-name">canonical_report_data.py</div><div class="inv-mod-desc">Single source of truth — normalizes and validates all report metrics</div></div>
+              <div class="inv-mod"><div class="inv-mod-name">managed_projects_registry.py</div><div class="inv-mod-desc">Registry of active projects with metadata, colors, and config</div></div>
+              <div class="inv-mod"><div class="inv-mod-name">manage_fields_registry.py</div><div class="inv-mod-desc">Custom Jira field mapping management; maps field IDs to human names</div></div>
+              <div class="inv-mod"><div class="inv-mod-name">report_entity_registry.py</div><div class="inv-mod-desc">Registry of all report pages, categories, nav labels, and routes</div></div>
+              <div class="inv-mod"><div class="inv-mod-name">ipp_meeting_utils.py</div><div class="inv-mod-desc">Shared utilities for IPP meeting dashboard — date math, phase aggregation</div></div>
+            </div>
+          </div>
+
+          <!-- Layer 3 -->
+          <div class="inv-layer">
+            <div class="inv-layer-head">
+              <span class="inv-layer-num violet">3</span>
+              <h3>Report Generators</h3>
+              <span class="inv-count">18 modules</span>
+            </div>
+            <div class="inv-modules">
+              <div class="inv-mod"><div class="inv-mod-name">generate_assignee_hours_report.py</div><div class="inv-mod-desc">Capacity vs logged hours per person; leave-adjusted utilization</div></div>
+              <div class="inv-mod"><div class="inv-mod-name">generate_employee_performance_report.py</div><div class="inv-mod-desc">Scorecard: productivity, penalty, discipline, utilization, resignations</div></div>
+              <div class="inv-mod"><div class="inv-mod-name">generate_gantt_chart_html.py</div><div class="inv-mod-desc">Interactive Gantt timeline from nested view; swimlanes by project</div></div>
+              <div class="inv-mod"><div class="inv-mod-name">generate_ipp_meeting_dashboard.py</div><div class="inv-mod-desc">Phase-level planning vs actuals; meeting-ready delivery status</div></div>
+              <div class="inv-mod"><div class="inv-mod-name">generate_leaves_planned_calendar_html.py</div><div class="inv-mod-desc">Leave calendar with planned vs actual; team availability heat map</div></div>
+              <div class="inv-mod"><div class="inv-mod-name">generate_missed_entries_html.py</div><div class="inv-mod-desc">Worklog data-quality gaps; missing entries by person and date</div></div>
+              <div class="inv-mod"><div class="inv-mod-name">generate_nested_view_html.py</div><div class="inv-mod-desc">Epic → story → subtask hierarchy with hours, status, and scoring</div></div>
+              <div class="inv-mod"><div class="inv-mod-name">generate_original_estimates_hierarchy_report.py</div><div class="inv-mod-desc">Original vs revised vs actual estimates by epic and project</div></div>
+              <div class="inv-mod"><div class="inv-mod-name">generate_phase_rmi_gantt_html.py</div><div class="inv-mod-desc">Phase-gated Gantt; shows RMI timing per delivery phase</div></div>
+              <div class="inv-mod"><div class="inv-mod-name">generate_planned_actual_table_view.py</div><div class="inv-mod-desc">Planned vs actual hours table with variance columns</div></div>
+              <div class="inv-mod"><div class="inv-mod-name">generate_planned_rmis_html.py</div><div class="inv-mod-desc">Resource management items planned per period with status</div></div>
+              <div class="inv-mod"><div class="inv-mod-name">generate_planned_vs_dispensed_report.py</div><div class="inv-mod-desc">Approved budget vs actual spend; financial variance per epic</div></div>
+              <div class="inv-mod"><div class="inv-mod-name">generate_rlt_leave_report.py</div><div class="inv-mod-desc">Resource leave tracking calendar; team availability view</div></div>
+              <div class="inv-mod"><div class="inv-mod-name">generate_rmi_jira_gantt_html.py</div><div class="inv-mod-desc">Integrated RMI + Jira Gantt with phase and dependency mapping</div></div>
+              <div class="inv-mod"><div class="inv-mod-name">generate_rnd_data_story.py</div><div class="inv-mod-desc">R&D narrative; investment split and delivery confidence</div></div>
+              <div class="inv-mod"><div class="inv-mod-name">monthly_epic_plan_progress_service.py</div><div class="inv-mod-desc">Month-over-month epic plan progress; commitment vs delivery trend</div></div>
+              <div class="inv-mod"><div class="inv-mod-name">delayed_epic_chain_gantt_service.py</div><div class="inv-mod-desc">Gantt of epics with delay chains; cascading impact visualization</div></div>
+              <div class="inv-mod"><div class="inv-mod-name">planned_actual_table_view_service.py</div><div class="inv-mod-desc">Service layer backing the planned vs actual table API and report</div></div>
+            </div>
+          </div>
+
+          <!-- Layer 4 -->
+          <div class="inv-layer">
+            <div class="inv-layer-head">
+              <span class="inv-layer-num amber">4</span>
+              <h3>Server &amp; API</h3>
+              <span class="inv-count">5 modules</span>
+            </div>
+            <div class="inv-modules">
+              <div class="inv-mod"><div class="inv-mod-name">report_server.py</div><div class="inv-mod-desc">Main Flask app — all routes, sync_report_html(), REST APIs, static serving</div></div>
+              <div class="inv-mod"><div class="inv-mod-name">dashboard_db_enrichment.py</div><div class="inv-mod-desc">Enriches dashboard data from epics_management.db; applies IPP fields and planner meta</div></div>
+              <div class="inv-mod"><div class="inv-mod-name">offline_html_prepare.py</div><div class="inv-mod-desc">Bundles reports into offline-distributable HTML packages</div></div>
+              <div class="inv-mod"><div class="inv-mod-name">sync_team_rmi_gantt_sqlite.py</div><div class="inv-mod-desc">Syncs team RMI Gantt data from Jira into SQLite for fast serving</div></div>
+              <div class="inv-mod"><div class="inv-mod-name">wsgi.py</div><div class="inv-mod-desc">WSGI entry point for Azure App Service deployment</div></div>
+            </div>
+          </div>
+
+          <!-- Layer 5 — HTML Reports -->
+          <div class="inv-layer">
+            <div class="inv-layer-head">
+              <span class="inv-layer-num rose">5</span>
+              <h3>HTML Reports</h3>
+              <span class="inv-count">23 reports</span>
+            </div>
+            <div class="inv-reports-grid">
+              <div class="inv-report-chip"><span class="material-symbols-outlined">home</span>introduction.html — landing page and architecture overview</div>
+              <div class="inv-report-chip"><span class="material-symbols-outlined">dashboard</span>dashboard.html — executive KPI dashboard with epic cards</div>
+              <div class="inv-report-chip"><span class="material-symbols-outlined">bar_chart</span>executive_dashboard.html — high-level executive summary</div>
+              <div class="inv-report-chip"><span class="material-symbols-outlined">groups</span>assignee_hours_report.html — capacity vs logged hours per person</div>
+              <div class="inv-report-chip"><span class="material-symbols-outlined">workspace_premium</span>employee_performance_report.html — scorecard: productivity, penalty, discipline</div>
+              <div class="inv-report-chip"><span class="material-symbols-outlined">view_timeline</span>gantt_chart_report.html — interactive project timeline</div>
+              <div class="inv-report-chip"><span class="material-symbols-outlined">event_note</span>ipp_meeting_dashboard.html — IPP meeting planner and phase status</div>
+              <div class="inv-report-chip"><span class="material-symbols-outlined">beach_access</span>leaves_planned_calendar.html — team leave calendar and availability</div>
+              <div class="inv-report-chip"><span class="material-symbols-outlined">event_busy</span>missed_entries.html — worklog data-quality gaps</div>
+              <div class="inv-report-chip"><span class="material-symbols-outlined">account_tree</span>nested_view_report.html — epic → story → subtask hierarchy</div>
+              <div class="inv-report-chip"><span class="material-symbols-outlined">straighten</span>original_estimates_hierarchy_report.html — original vs revised vs actual</div>
+              <div class="inv-report-chip"><span class="material-symbols-outlined">stacked_bar_chart</span>phase_rmi_gantt_report.html — phase-gated RMI Gantt</div>
+              <div class="inv-report-chip"><span class="material-symbols-outlined">compare_arrows</span>planned_actual_table_view.html — planned vs actual hours table</div>
+              <div class="inv-report-chip"><span class="material-symbols-outlined">list_alt</span>planned_rmis_report.html — planned resource management items</div>
+              <div class="inv-report-chip"><span class="material-symbols-outlined">savings</span>planned_vs_dispensed_report.html — budget vs actual spend variance</div>
+              <div class="inv-report-chip"><span class="material-symbols-outlined">calendar_month</span>rlt_leave_report.html — resource leave tracking calendar</div>
+              <div class="inv-report-chip"><span class="material-symbols-outlined">timeline</span>rmi_jira_gantt_report.html — RMI + Jira integrated Gantt</div>
+              <div class="inv-report-chip"><span class="material-symbols-outlined">science</span>rnd_data_story.html — R&amp;D investment narrative</div>
+              <div class="inv-report-chip"><span class="material-symbols-outlined">approval</span>approved_vs_planned_hours_report.html — approved vs planned hours</div>
+              <div class="inv-report-chip"><span class="material-symbols-outlined">warning</span>delayed_epic_chain_gantt_report.html — cascading delay chain view</div>
+              <div class="inv-report-chip"><span class="material-symbols-outlined">trending_up</span>monthly_epic_plan_progress_report.html — month-over-month epic progress</div>
+              <div class="inv-report-chip"><span class="material-symbols-outlined">people</span>team_capacity_planner.html — team capacity planning tool</div>
+              <div class="inv-report-chip"><span class="material-symbols-outlined">web</span>dashboard_template.html — executive dashboard generation template</div>
+            </div>
+          </div>
+
+          <!-- Shared Assets -->
+          <div class="inv-layer">
+            <div class="inv-layer-head">
+              <span class="inv-layer-num slate">6</span>
+              <h3>Shared Assets</h3>
+              <span class="inv-count">4 modules</span>
+            </div>
+            <div class="inv-modules">
+              <div class="inv-mod"><div class="inv-mod-name">shared-nav.js</div><div class="inv-mod-desc">Navigation bar injected into every report; active-state detection; mobile menu</div></div>
+              <div class="inv-mod"><div class="inv-mod-name">shared-date-filter.js</div><div class="inv-mod-desc">Global date range filter component; persists selection across reports</div></div>
+              <div class="inv-mod"><div class="inv-mod-name">shared-nav.css</div><div class="inv-mod-desc">Navigation bar and base layout styles shared across all reports</div></div>
+              <div class="inv-mod"><div class="inv-mod-name">material-symbols.css</div><div class="inv-mod-desc">Google Material Symbols icon font — self-hosted for offline use</div></div>
+            </div>
+          </div>
+
+        </div>
+      </article>
+    </section>
+
     <p class="page-footer">EPR Tool - Employee Performance Reporting Tool</p>
   </main>
   <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>

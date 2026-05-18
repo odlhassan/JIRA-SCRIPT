@@ -326,6 +326,7 @@ def load_report_data(db_path: Path, run_id: str = "") -> dict[str, Any]:
         "worklogs_by_issue": {},
     }
     planner_rows = [row for row in _load_epics_management_rows(planner_db) if int(row.get("is_tk_epic") or 0) == 1]
+    planner_epic_keys: set[str] = {_to_text(r.get("epic_key")).upper() for r in planner_rows if _to_text(r.get("epic_key"))}
     epic_records: list[dict[str, Any]] = []
 
     for row in planner_rows:
@@ -335,8 +336,22 @@ def load_report_data(db_path: Path, run_id: str = "") -> dict[str, Any]:
         product = _to_text(row.get("project_name")) or _to_text(row.get("project_key")) or "Unassigned"
         canonical_epic = tree["issues_by_key"].get(epic_key, {})
         epic_plan = row.get("plans", {}).get("epic_plan", {}) if isinstance(row.get("plans"), dict) else {}
-        start_date = _to_text(epic_plan.get("start_date")) or _to_text(canonical_epic.get("start_date"))
-        due_date = _to_text(epic_plan.get("due_date")) or _to_text(canonical_epic.get("due_date"))
+        _ep_start = _to_text(epic_plan.get("start_date"))
+        _row_start = _to_text(row.get("start_date"))
+        _can_start = _to_text(canonical_epic.get("start_date"))
+        _ep_due   = _to_text(epic_plan.get("due_date"))
+        _row_due  = _to_text(row.get("due_date"))
+        _can_due  = _to_text(canonical_epic.get("due_date"))
+        # Priority: planner row top-level (import dates, shown in Epics Planner UI) → TK plan → canonical Jira
+        start_date = _row_start or _ep_start or _can_start
+        due_date   = _row_due   or _ep_due   or _can_due
+        # Track which layer supplied the date for the source badge
+        if _row_start or _row_due:
+            date_source = "planner"
+        elif _ep_start or _ep_due:
+            date_source = "plan"
+        else:
+            date_source = "jira"
         stories = [_story_record(story, tree) for story in tree["stories_by_epic"].get(epic_key, [])]
         story_estimate_seconds = sum(_to_float(story.get("estimate_seconds")) for story in stories)
         subtask_estimate_seconds = sum(
@@ -378,7 +393,59 @@ def load_report_data(db_path: Path, run_id: str = "") -> dict[str, Any]:
                 "source_values": f"ML:{source_man_days} O:{source_optimistic} P:{source_pessimistic} C:{source_est_formula} TK:{source_tk_target}",
                 "epics_planner_remarks": _to_text(row.get("remarks")),
                 "stories": stories,
+                "epic_source": "planner",
+                "date_source": date_source,
                 **metrics,
+            }
+        )
+
+    # ── Canonical-only epics (not in Epics Planner) ──────────────────
+    for issue_key, issue in tree["issues_by_key"].items():
+        if _to_text(issue.get("issue_type")).lower() != "epic":
+            continue
+        if issue_key in planner_epic_keys:
+            continue
+        stories = [_story_record(story, tree) for story in tree["stories_by_epic"].get(issue_key, [])]
+        story_estimate_seconds = sum(_to_float(story.get("estimate_seconds")) for story in stories)
+        subtask_estimate_seconds = sum(
+            _to_float(child.get("estimate_seconds"))
+            for story in stories
+            for child in story.get("subtasks", [])
+        )
+        logged_seconds = sum(
+            _to_float(story.get("logged_seconds")) + sum(_to_float(child.get("logged_seconds")) for child in story.get("subtasks", []))
+            for story in stories
+        )
+        product = _to_text(issue.get("project_key")).upper() or "Unassigned"
+        epic_records.append(
+            {
+                "jira_id": issue_key,
+                "title": _to_text(issue.get("summary")) or issue_key,
+                "product": product,
+                "project_key": product,
+                "component": "",
+                "status": _to_text(issue.get("status")),
+                "priority": "",
+                "start_date": _to_text(issue.get("start_date")),
+                "due_date": _to_text(issue.get("due_date")),
+                "jira_url": _jira_url(issue_key),
+                "jira_populated": True,
+                "story_count": len(stories),
+                "story_estimate_seconds": round(story_estimate_seconds, 2),
+                "subtask_estimate_seconds": round(subtask_estimate_seconds, 2),
+                "logged_seconds": round(logged_seconds, 2),
+                "jira_original_estimate_seconds": _seconds_from_hours(issue.get("original_estimate_hours")),
+                "aggregate_estimate_seconds": round(story_estimate_seconds + subtask_estimate_seconds, 2),
+                "source_values": "",
+                "epics_planner_remarks": "",
+                "stories": stories,
+                "epic_source": "jira",
+                "date_source": "jira",
+                "most_likely_seconds": 0.0,
+                "optimistic_seconds": 0.0,
+                "pessimistic_seconds": 0.0,
+                "calculated_seconds": 0.0,
+                "tk_approved_seconds": 0.0,
             }
         )
 
@@ -1373,6 +1440,15 @@ a { color:#1d4ed8; }
 /* ── Source values cell ───────────────────────────────────────────── */
 .source-values-cell { font-size:.72rem; color:var(--muted); white-space:nowrap; }
 
+/* ── Epic / date source badges ───────────────────────────────────── */
+.badge-source { display:inline-flex; align-items:center; gap:3px; font-size:.68rem; font-weight:600; padding:1px 6px; border-radius:4px; vertical-align:middle; white-space:nowrap; }
+.badge-source-planner { background:#dbeafe; color:#1d4ed8; }
+.badge-source-plan    { background:#dcfce7; color:#166534; }
+.badge-source-jira    { background:#fef3c7; color:#92400e; }
+.badge-epic-source    { display:inline-flex; align-items:center; gap:3px; font-size:.68rem; font-weight:600; padding:1px 6px; border-radius:4px; vertical-align:middle; white-space:nowrap; }
+.badge-epic-planner   { background:#ede9fe; color:#5b21b6; }
+.badge-epic-jira      { background:#fef3c7; color:#92400e; }
+
 /* --- RMI Estimation & Scheduling Table (IPP reference layout) --- */
 .rmi-schedule-panel { margin-bottom:var(--gutter); }
 .rmi-schedule-header-bar {
@@ -1594,6 +1670,7 @@ _REPORT_JS = """
     var otherDefs    = METRIC_DEFS.filter(function (d) {
       if (d.isEstimate) return false;
       if (!diagnosticsMode && d.diagnosticsHide) return false;
+      if (!diagnosticsMode && d.isIdle) return false;
       return true;
     });
 
@@ -2087,7 +2164,7 @@ _REPORT_JS = """
       idleMeta.textContent = idleDesc;
     }
     if (tkApprovedCard) tkApprovedCard.hidden = false;
-    if (idleCard) idleCard.hidden = false;
+    if (idleCard) idleCard.hidden = !diagnosticsEnabled();
   }
 
   /* ── Month analysis ───────────────────────────────────────────────── */
@@ -2424,6 +2501,8 @@ _REPORT_JS = """
     renderCapacity();
     renderMonthAnalysis();
     renderGantt();
+    if (typeof renderRmiProductCards === "function") renderRmiProductCards();
+    if (typeof renderRmiScheduleTable === "function") renderRmiScheduleTable();
   }
 
   /* ── Row expand/collapse ──────────────────────────────────────────── */
@@ -2931,7 +3010,9 @@ _REPORT_JS = """
     var v = source.value;
     if (monthSel && monthSel !== source) monthSel.value = v;
     if (analysisMonthSel && analysisMonthSel !== source) analysisMonthSel.value = v;
-    renderCapacity(); renderMonthAnalysis();
+    renderCapacity(); renderMonthAnalysis(); renderMetrics(); renderGantt();
+    if (typeof renderRmiProductCards === "function") renderRmiProductCards();
+    if (typeof renderRmiScheduleTable === "function") renderRmiScheduleTable();
   }
   if (monthSel) monthSel.addEventListener("change", function () { syncMonthSelectors(monthSel); });
   if (analysisMonthSel) analysisMonthSel.addEventListener("change", function () { syncMonthSelectors(analysisMonthSel); });
@@ -2950,11 +3031,13 @@ _REPORT_JS = """
           if (deliveredEl) deliveredEl.disabled = false;
         }
       }
-      renderCapacity(); renderMonthAnalysis();
+      renderCapacity(); renderMonthAnalysis(); renderMetrics(); renderGantt();
+      if (typeof renderRmiProductCards === "function") renderRmiProductCards();
+      if (typeof renderRmiScheduleTable === "function") renderRmiScheduleTable();
     });
   });
   var diagnosticsToggle = document.getElementById("diagnostics-toggle-enabled");
-  if (diagnosticsToggle) diagnosticsToggle.addEventListener("change", function () { renderMetrics(); renderGantt(); });
+  if (diagnosticsToggle) diagnosticsToggle.addEventListener("change", function () { renderMetrics(); renderCapacity(); renderMonthAnalysis(); renderGantt(); });
 
   /* ── RMI Estimation & Scheduling (IPP reference layout) ─────────── */
   var rmiScheduleRecords = DATA.rmi_schedule_records || [];
@@ -2981,6 +3064,21 @@ _REPORT_JS = """
   function rmiFilteredRecords() {
     var recs = rmiScheduleRecords;
     if (rmiJiraOnly) recs = recs.filter(function (e) { return e.jira_populated; });
+    var tState = monthToggleState();
+    if (tState.anyToggle) {
+      var analysisMonthEl = document.getElementById("tk-analysis-month-select");
+      var monthEl = analysisMonthEl || document.getElementById("tk-month-select");
+      var selectedMonth = monthEl ? monthEl.value : "";
+      if (selectedMonth) {
+        recs = recs.filter(function (e) {
+          var s = String(e.start_date || "").slice(0, 7);
+          var d = String(e.due_date || "").slice(0, 7);
+          return (tState.started && s === selectedMonth)
+            || (tState.delivered && d === selectedMonth)
+            || (tState.through && s && d && s <= selectedMonth && selectedMonth <= d);
+        });
+      }
+    }
     if (rmiActiveProduct !== "all") recs = recs.filter(function (e) { return e.product === rmiActiveProduct; });
     return recs;
   }
@@ -3026,7 +3124,7 @@ _REPORT_JS = """
 
   function renderRmiProductCards() {
     if (!rmiProductCardsContainer) return;
-    var base = rmiJiraOnly ? rmiScheduleRecords.filter(function (e) { return e.jira_populated; }) : rmiScheduleRecords;
+    var base = rmiFilteredRecords();
     var tkByProduct = {};
     var countByProduct = {};
     var totalTk = 0;
@@ -3301,6 +3399,21 @@ def render_html(data: dict[str, Any]) -> str:
         product_toggles.append(f'<button class="product-toggle" data-product="{escape(p)}">{escape(p)}</button>')
 
     # ── Hierarchy table rows ─────────────────────────────────────────
+    def _source_badge(epic: dict) -> str:
+        epic_source = _to_text(epic.get("epic_source"))
+        if epic_source == "planner":
+            return '<span class="badge-epic-source badge-epic-planner" title="Managed in Epics Planner">Planner</span>'
+        return '<span class="badge-epic-source badge-epic-jira" title="From Jira canonical data">Jira</span>'
+
+    def _date_source_badge(date_source: str) -> str:
+        if date_source == "plan":
+            return '<span class="badge-source badge-source-plan" title="From TK plan">Plan</span>'
+        if date_source == "planner":
+            return '<span class="badge-source badge-source-planner" title="From Epics Planner import">Import</span>'
+        if date_source == "jira":
+            return '<span class="badge-source badge-source-jira" title="From Jira">Jira</span>'
+        return ""
+
     rows_html_parts: list[str] = []
     for epic in epics:
         eid = _to_text(epic.get("jira_id"))
@@ -3317,6 +3430,8 @@ def render_html(data: dict[str, Any]) -> str:
             _to_text(epic.get("status")),
             _to_text(epic.get("priority")),
         ]).lower()
+        date_src = _to_text(epic.get("date_source"))
+        date_badge = _date_source_badge(date_src)
         rows_html_parts.append(
             f'<tr class="epic-row" data-product="{escape(_to_text(epic.get("product")))}" '
             f'data-epic-id="{escape(eid)}" data-search="{escape(search_text)}">'
@@ -3325,8 +3440,9 @@ def render_html(data: dict[str, Any]) -> str:
             f'<td class="epic-title-text">{escape(_to_text(epic.get("title")))}</td>'
             f'<td>{escape(_to_text(epic.get("product")))}</td>'
             f'<td>{escape(_to_text(epic.get("status")))}</td>'
-            f'<td>{escape(_to_text(epic.get("start_date")))}</td>'
-            f'<td>{escape(_to_text(epic.get("due_date")))}</td>'
+            f'<td>{escape(_to_text(epic.get("start_date")))} {date_badge}</td>'
+            f'<td>{escape(_to_text(epic.get("due_date")))} {date_badge}</td>'
+            f'<td>{_source_badge(epic)}</td>'
             f'<td class="duration-value" data-seconds="{_to_float(epic.get("tk_approved_seconds"))}">{escape(_duration(epic.get("tk_approved_seconds")))}{_tk_comparison_badge(_to_float(epic.get("tk_approved_seconds")), _to_float(epic.get("jira_original_estimate_seconds")))}</td>'
             f'<td class="duration-value" data-seconds="{_to_float(epic.get("jira_original_estimate_seconds"))}">{escape(_duration(epic.get("jira_original_estimate_seconds")))}</td>'
             f'<td class="duration-value" data-seconds="{_to_float(epic.get("aggregate_estimate_seconds"))}">{escape(_duration(epic.get("aggregate_estimate_seconds")))}</td>'
@@ -3354,6 +3470,7 @@ def render_html(data: dict[str, Any]) -> str:
                 f'<td>{escape(_to_text(story.get("status")))}</td>'
                 f'<td>{escape(_to_text(story.get("start_date")))}</td>'
                 f'<td>{escape(_to_text(story.get("due_date")))}</td>'
+                f'<td></td>'
                 f'<td></td>'
                 f'<td></td>'
                 f'<td></td>'
@@ -3388,6 +3505,7 @@ def render_html(data: dict[str, Any]) -> str:
                     f'<td>{escape(_to_text(sub.get("status")))}</td>'
                     f'<td>{escape(_to_text(sub.get("start_date")))}</td>'
                     f'<td>{escape(_to_text(sub.get("due_date")))}</td>'
+                    f'<td></td>'
                     f'<td></td>'
                     f'<td></td>'
                     f'<td></td>'
@@ -3429,7 +3547,7 @@ def render_html(data: dict[str, Any]) -> str:
     parts.append(f"""
     <header>
       <h1>RMI Jira Gantt</h1>
-      <div class="subtext"><strong>Showing TK Epics only.</strong></div>
+      <div class="subtext"><strong>TK Epics from Epics Planner + additional Epics from Jira canonical data.</strong></div>
       <div class="subtext">Generated at {generated_at} from Epics Planner (SQLite) joined with canonical Jira issues/worklogs.</div>
       <div class="subtext" style="margin-top:4px">Epics Planner DB: {db_path_text} | Canonical DB: {canonical_db_text} | Run: {run_id_text}</div>
     </header>""")
@@ -3664,7 +3782,7 @@ def render_html(data: dict[str, Any]) -> str:
         <table class="epic-table">
           <thead><tr>
             <th style="width:42px"></th><th>Key</th><th>Summary</th><th>Product</th><th>Status</th>
-            <th>Start</th><th>Due</th><th>TK Approved</th><th>Jira Est.</th><th>Agg. Est.</th>
+            <th>Start</th><th>Due</th><th>Source</th><th>TK Approved</th><th>Jira Est.</th><th>Agg. Est.</th>
             <th>Story Est.</th><th>Subtask Est.</th>
             <th>Logged</th><th>Children</th><th>Source Values</th>
           </tr></thead>

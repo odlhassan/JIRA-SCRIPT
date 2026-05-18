@@ -150,6 +150,156 @@ def _load_story_planned_hours(
     return dict(planned_by_epic)
 
 
+def _load_story_gantt_data(
+    db_path: Path,
+    run_id: str,
+    epic_keys: list[str],
+) -> dict[str, list[dict[str, Any]]]:
+    """
+    Return per-epic list of story bars for the Gantt chart.
+    Each entry: {issue_key, summary, start_date, due_date, has_hours}.
+    has_hours=True when any worklog exists for that story or its subtasks.
+    No month filter — covers the full epic scope.
+    """
+    if not epic_keys or not run_id:
+        return {}
+
+    placeholders = ",".join("?" * len(epic_keys))
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        stories = conn.execute(
+            f"""
+            SELECT issue_key, epic_key, summary, start_date, due_date
+            FROM canonical_issues
+            WHERE run_id = ? AND epic_key IN ({placeholders}) AND issue_type = 'Story'
+            ORDER BY epic_key, start_date, issue_key
+            """,
+            (run_id, *epic_keys),
+        ).fetchall()
+        subtasks = conn.execute(
+            f"""
+            SELECT issue_key, story_key
+            FROM canonical_issues
+            WHERE run_id = ? AND epic_key IN ({placeholders})
+              AND issue_type IN ('Sub-task', 'Bug Subtask')
+            """,
+            (run_id, *epic_keys),
+        ).fetchall()
+
+    subtask_to_story: dict[str, str] = {}
+    story_keys_set: set[str] = set()
+    for sub in subtasks:
+        sk = _to_text(sub["story_key"]).upper()
+        ik = _to_text(sub["issue_key"]).upper()
+        if sk and ik:
+            subtask_to_story[ik] = sk
+    for s in stories:
+        story_keys_set.add(_to_text(s["issue_key"]).upper())
+
+    all_issue_keys = list(story_keys_set | set(subtask_to_story.keys()))
+    stories_with_hours: set[str] = set()
+    worklog_dates_raw: DefaultDict[str, set] = defaultdict(set)
+    if all_issue_keys:
+        with sqlite3.connect(db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            for chunk in _chunked(all_issue_keys, 400):
+                chunk_ph = ",".join("?" for _ in chunk)
+                wl_rows = conn.execute(
+                    f"""
+                    SELECT issue_key, started_date, hours_logged
+                    FROM canonical_worklogs
+                    WHERE run_id = ? AND issue_key IN ({chunk_ph})
+                      AND hours_logged > 0
+                    """,
+                    [run_id, *chunk],
+                ).fetchall()
+                for wl in wl_rows:
+                    ik = _to_text(wl["issue_key"]).upper()
+                    story_key = subtask_to_story.get(ik, ik if ik in story_keys_set else None)
+                    if story_key:
+                        stories_with_hours.add(story_key)
+                        sd = _to_text(wl["started_date"])
+                        if sd:
+                            worklog_dates_raw[story_key].add(sd[:10])
+
+    worklog_dates_by_story: dict[str, list[str]] = {
+        k: sorted(v) for k, v in worklog_dates_raw.items()
+    }
+
+    result: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for story in stories:
+        story_key = _to_text(story["issue_key"]).upper()
+        epic_key = _to_text(story["epic_key"]).upper()
+        sd = _to_text(story["start_date"])
+        dd = _to_text(story["due_date"])
+        if not sd and not dd:
+            continue
+        result[epic_key].append({
+            "issue_key": story_key,
+            "summary": _to_text(story["summary"]),
+            "start_date": sd,
+            "due_date": dd,
+            "has_hours": story_key in stories_with_hours,
+            "worklog_dates": worklog_dates_by_story.get(story_key, []),
+        })
+
+    return dict(result)
+
+
+def _load_total_planned_hours(
+    db_path: Path,
+    run_id: str,
+    epic_keys: list[str],
+) -> dict[str, float]:
+    """
+    Return total planned hours per epic across ALL stories/subtasks (no month filter).
+    Uses the same subtask-priority logic as _load_story_planned_hours but without
+    any date scoping — this gives the full epic scope estimate.
+    """
+    if not epic_keys or not run_id:
+        return {}
+
+    placeholders = ",".join("?" * len(epic_keys))
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        stories = conn.execute(
+            f"""
+            SELECT issue_key, epic_key, original_estimate_hours
+            FROM canonical_issues
+            WHERE run_id = ? AND epic_key IN ({placeholders}) AND issue_type = 'Story'
+            """,
+            (run_id, *epic_keys),
+        ).fetchall()
+        subtasks = conn.execute(
+            f"""
+            SELECT story_key, epic_key, original_estimate_hours
+            FROM canonical_issues
+            WHERE run_id = ? AND epic_key IN ({placeholders})
+              AND issue_type IN ('Sub-task', 'Bug Subtask')
+            """,
+            (run_id, *epic_keys),
+        ).fetchall()
+
+    subs_by_story: dict[str, list[float]] = defaultdict(list)
+    for sub in subtasks:
+        sk = _to_text(sub["story_key"]).upper()
+        if sk:
+            subs_by_story[sk].append(float(sub["original_estimate_hours"] or 0))
+
+    total_by_epic: dict[str, float] = defaultdict(float)
+    for story in stories:
+        story_key = _to_text(story["issue_key"]).upper()
+        epic_key  = _to_text(story["epic_key"]).upper()
+        sub_hours = subs_by_story.get(story_key, [])
+        sub_total = sum(sub_hours)
+        if sub_hours and sub_total > 0:
+            total_by_epic[epic_key] += sub_total
+        else:
+            total_by_epic[epic_key] += float(story["original_estimate_hours"] or 0)
+
+    return dict(total_by_epic)
+
+
 def _load_child_items_for_month(
     db_path: Path,
     run_id: str,
@@ -369,18 +519,20 @@ def _load_worklog_metrics(
     subtask_keys_by_epic: dict[str, set[str]],
     month_start: date,
     month_end: date,
-) -> tuple[dict[str, float], dict[str, bool], dict[str, date]]:
+) -> tuple[dict[str, float], dict[str, bool], dict[str, date], dict[str, list[str]], dict[str, float]]:
     issue_to_epic: dict[str, str] = {}
     for epic_key, issue_keys in subtask_keys_by_epic.items():
         for issue_key in issue_keys:
             issue_to_epic[issue_key] = epic_key
 
     actual_hours_by_epic: dict[str, float] = defaultdict(float)
+    total_actual_hours_by_epic: dict[str, float] = defaultdict(float)
     has_worklog_through_month_end: dict[str, bool] = defaultdict(bool)
     last_worklog_date_by_epic: dict[str, date] = {}
+    worklog_dates_by_epic: dict[str, set[str]] = defaultdict(set)
     issue_keys = sorted(issue_to_epic)
     if not issue_keys:
-        return actual_hours_by_epic, has_worklog_through_month_end, last_worklog_date_by_epic
+        return actual_hours_by_epic, has_worklog_through_month_end, last_worklog_date_by_epic, {}, total_actual_hours_by_epic
 
     today = date.today()
     with sqlite3.connect(db_path) as conn:
@@ -410,12 +562,19 @@ def _load_worklog_metrics(
                     has_worklog_through_month_end[epic_key] = True
                 if month_start <= started <= month_end:
                     actual_hours_by_epic[epic_key] += hours
+                # All-time total (any date up to today)
+                total_actual_hours_by_epic[epic_key] += hours
                 # Track the most recent worklog date across all time (up to today).
                 prev = last_worklog_date_by_epic.get(epic_key)
                 if prev is None or started > prev:
                     last_worklog_date_by_epic[epic_key] = started
+                # Collect every unique work date for the Gantt worklog bar.
+                worklog_dates_by_epic[epic_key].add(row["started_date"][:10])
 
-    return actual_hours_by_epic, has_worklog_through_month_end, last_worklog_date_by_epic
+    worklog_dates_sorted: dict[str, list[str]] = {
+        k: sorted(v) for k, v in worklog_dates_by_epic.items()
+    }
+    return actual_hours_by_epic, has_worklog_through_month_end, last_worklog_date_by_epic, worklog_dates_sorted, total_actual_hours_by_epic
 
 
 def _approved_dates(
@@ -881,6 +1040,10 @@ def _load_all_jira_epic_rows(
     has_worklog_through_month_end: dict[str, bool],
     story_planned_hours_by_epic: dict[str, float],
     last_worklog_date_by_epic: dict[str, date] | None = None,
+    worklog_dates_by_epic: dict[str, list[str]] | None = None,
+    total_planned_hours_by_epic: dict[str, float] | None = None,
+    story_gantt_by_epic: dict[str, list[dict[str, Any]]] | None = None,
+    total_actual_hours_by_epic: dict[str, float] | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Build rows and excluded_epics for the ALL JIRA EPICS mode.
 
@@ -890,6 +1053,14 @@ def _load_all_jira_epic_rows(
     """
     if last_worklog_date_by_epic is None:
         last_worklog_date_by_epic = {}
+    if worklog_dates_by_epic is None:
+        worklog_dates_by_epic = {}
+    if total_planned_hours_by_epic is None:
+        total_planned_hours_by_epic = {}
+    if story_gantt_by_epic is None:
+        story_gantt_by_epic = {}
+    if total_actual_hours_by_epic is None:
+        total_actual_hours_by_epic = {}
     today = date.today()
     with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
@@ -979,38 +1150,44 @@ def _load_all_jira_epic_rows(
             and not is_resolved
         )
 
-        # Carry-forward applies only to in-month epics (not brought-forward overdue ones).
-        # An in-month epic is carried forward when one or more risk conditions are met.
+        # Carry-forward logic:
+        # - On-hold epics are never carried forward; they stay in their own month.
+        # - Brought-forward overdue epics: carried forward only if NOT resolved in the selected month.
+        # - In-month epics: carried forward when one or more risk conditions are met.
         carry_forward_reasons: list[str] = []
-        if start_in_month or due_in_month:
-            if start_slip:
-                carry_forward_reasons.append("Start slipped — no worklog logged by month end")
-            if end_slip:
-                carry_forward_reasons.append("End slipped — not resolved by due date in selected month")
-            due_past_today = bool(
-                approved_due is not None and approved_due < today and not is_resolved
-            )
-            if due_past_today:
-                carry_forward_reasons.append(
-                    f"Due date passed ({due_text}) — epic still open"
+        if not is_on_hold:
+            if brought_forward:
+                if not is_resolved:
+                    carry_forward_reasons.append("Brought forward — not resolved in selected month")
+            elif start_in_month or due_in_month:
+                if start_slip:
+                    carry_forward_reasons.append("Start slipped — no worklog logged by month end")
+                if end_slip:
+                    carry_forward_reasons.append("End slipped — not resolved by due date in selected month")
+                due_past_today = bool(
+                    approved_due is not None and approved_due < today and not is_resolved
                 )
-            last_wl = last_worklog_date_by_epic.get(epic_key)
-            no_recent_activity = (
-                not is_resolved
-                and (last_wl is None or last_wl < today - timedelta(days=7))
-            )
-            if no_recent_activity:
-                last_wl_str = last_wl.isoformat() if last_wl else "never"
-                carry_forward_reasons.append(
-                    f"No worklog activity in last 7 days (last logged: {last_wl_str})"
+                if due_past_today:
+                    carry_forward_reasons.append(
+                        f"Due date passed ({due_text}) — epic still open"
+                    )
+                last_wl = last_worklog_date_by_epic.get(epic_key)
+                no_recent_activity = (
+                    not is_resolved
+                    and (last_wl is None or last_wl < today - timedelta(days=7))
                 )
-            if planned_hours > 0 and actual_hours > planned_hours * 1.5 and (actual_hours - planned_hours) >= 4:
-                pct = int(round(actual_hours / planned_hours * 100))
-                carry_forward_reasons.append(
-                    f"Over budget — {actual_hours:.1f}h logged vs {planned_hours:.1f}h planned ({pct}%)"
-                )
+                if no_recent_activity:
+                    last_wl_str = last_wl.isoformat() if last_wl else "never"
+                    carry_forward_reasons.append(
+                        f"No worklog activity in last 7 days (last logged: {last_wl_str})"
+                    )
+                if planned_hours > 0 and actual_hours > planned_hours * 1.5 and (actual_hours - planned_hours) >= 4:
+                    pct = int(round(actual_hours / planned_hours * 100))
+                    carry_forward_reasons.append(
+                        f"Over budget — {actual_hours:.1f}h logged vs {planned_hours:.1f}h planned ({pct}%)"
+                    )
 
-        carried_forward = bool(carry_forward_reasons) and not brought_forward
+        carried_forward = bool(carry_forward_reasons)
 
         no_stories_in_month = bool(not brought_forward and planned_hours == 0.0)
         if no_stories_in_month:
@@ -1044,6 +1221,7 @@ def _load_all_jira_epic_rows(
             "planned_days": _round_hours(planned_hours / HOURS_PER_DAY),
             "actual_hours": actual_hours,
             "actual_days": _round_hours(actual_hours / HOURS_PER_DAY),
+            "total_actual_hours": _round_hours(float(total_actual_hours_by_epic.get(epic_key, 0.0))),
             "start_slip": start_slip,
             "end_slip": end_slip,
             "brought_forward": brought_forward,
@@ -1053,6 +1231,10 @@ def _load_all_jira_epic_rows(
             "no_stories_in_month": no_stories_in_month,
             "jira_url": jira_url,
             "subtask_count": 0,
+            "worklog_dates": worklog_dates_by_epic.get(epic_key, []),
+            "total_planned_hours": _round_hours(total_planned_hours_by_epic.get(epic_key, 0.0)),
+            "total_planned_days": _round_hours(total_planned_hours_by_epic.get(epic_key, 0.0) / HOURS_PER_DAY),
+            "story_bars": story_gantt_by_epic.get(epic_key, []),
         })
 
     return rows, excluded_epics
@@ -1083,7 +1265,7 @@ def build_monthly_epic_plan_payload(
         if _to_text(project_key)
     }
     epic_meta, subtask_keys_by_epic = _load_canonical_issue_maps(db_path, run_id)
-    actual_hours_by_epic, has_worklog_through_month_end, last_worklog_date_by_epic = _load_worklog_metrics(
+    actual_hours_by_epic, has_worklog_through_month_end, last_worklog_date_by_epic, worklog_dates_by_epic, total_actual_hours_by_epic = _load_worklog_metrics(
         db_path,
         run_id,
         subtask_keys_by_epic,
@@ -1123,11 +1305,14 @@ def build_monthly_epic_plan_payload(
             if _sim or _dim or _bf:
                 all_jira_keys.append(_ek)
         story_planned_hours_by_epic = _load_story_planned_hours(db_path, run_id, all_jira_keys, month_start, month_end)
+        total_planned_hours_by_epic = _load_total_planned_hours(db_path, run_id, all_jira_keys)
+        story_gantt_by_epic = _load_story_gantt_data(db_path, run_id, all_jira_keys)
         rows, excluded_epics = _load_all_jira_epic_rows(
             db_path, run_id, selected_project_keys, month_start, month_end,
             overdue_cutoff, include_on_hold, jira_base,
             actual_hours_by_epic, has_worklog_through_month_end, story_planned_hours_by_epic,
-            last_worklog_date_by_epic,
+            last_worklog_date_by_epic, worklog_dates_by_epic, total_planned_hours_by_epic,
+            story_gantt_by_epic, total_actual_hours_by_epic,
         )
         # Build by_project and totals from rows
         by_project: DefaultDict[str, dict[str, Any]] = defaultdict(
@@ -1218,6 +1403,12 @@ def build_monthly_epic_plan_payload(
 
     story_planned_hours_by_epic: dict[str, float] = _load_story_planned_hours(
         db_path, run_id, _all_candidate_epic_keys, month_start, month_end
+    )
+    total_planned_hours_by_epic: dict[str, float] = _load_total_planned_hours(
+        db_path, run_id, _all_candidate_epic_keys
+    )
+    story_gantt_by_epic: dict[str, list[dict[str, Any]]] = _load_story_gantt_data(
+        db_path, run_id, _all_candidate_epic_keys
     )
     child_items_by_epic: dict[str, list[dict[str, Any]]] = _load_child_items_for_month(
         db_path, run_id, _all_candidate_epic_keys, month_start, month_end, jira_base
@@ -1338,38 +1529,44 @@ def build_monthly_epic_plan_payload(
             and not is_resolved
         )
 
-        # Carry-forward applies only to in-month epics (not brought-forward overdue ones).
-        # An in-month epic is carried forward when one or more risk conditions are met.
+        # Carry-forward logic:
+        # - On-hold epics are never carried forward; they stay in their own month.
+        # - Brought-forward overdue epics: carried forward only if NOT resolved in the selected month.
+        # - In-month epics: carried forward when one or more risk conditions are met.
         carry_forward_reasons: list[str] = []
-        if start_in_month or due_in_month:
-            if start_slip:
-                carry_forward_reasons.append("Start slipped — no worklog logged by month end")
-            if end_slip:
-                carry_forward_reasons.append("End slipped — not resolved by due date in selected month")
-            due_past_today = bool(
-                approved_due is not None and approved_due < today and not is_resolved
-            )
-            if due_past_today:
-                carry_forward_reasons.append(
-                    f"Due date passed ({approved_due_text}) — epic still open"
+        if not is_on_hold:
+            if brought_forward:
+                if not is_resolved:
+                    carry_forward_reasons.append("Brought forward — not resolved in selected month")
+            elif start_in_month or due_in_month:
+                if start_slip:
+                    carry_forward_reasons.append("Start slipped — no worklog logged by month end")
+                if end_slip:
+                    carry_forward_reasons.append("End slipped — not resolved by due date in selected month")
+                due_past_today = bool(
+                    approved_due is not None and approved_due < today and not is_resolved
                 )
-            last_wl = last_worklog_date_by_epic.get(epic_key)
-            no_recent_activity = (
-                not is_resolved
-                and (last_wl is None or last_wl < today - timedelta(days=7))
-            )
-            if no_recent_activity:
-                last_wl_str = last_wl.isoformat() if last_wl else "never"
-                carry_forward_reasons.append(
-                    f"No worklog activity in last 7 days (last logged: {last_wl_str})"
+                if due_past_today:
+                    carry_forward_reasons.append(
+                        f"Due date passed ({approved_due_text}) — epic still open"
+                    )
+                last_wl = last_worklog_date_by_epic.get(epic_key)
+                no_recent_activity = (
+                    not is_resolved
+                    and (last_wl is None or last_wl < today - timedelta(days=7))
                 )
-            if planned_hours > 0 and actual_hours > planned_hours * 1.5 and (actual_hours - planned_hours) >= 4:
-                pct = int(round(actual_hours / planned_hours * 100))
-                carry_forward_reasons.append(
-                    f"Over budget — {actual_hours:.1f}h logged vs {planned_hours:.1f}h planned ({pct}%)"
-                )
+                if no_recent_activity:
+                    last_wl_str = last_wl.isoformat() if last_wl else "never"
+                    carry_forward_reasons.append(
+                        f"No worklog activity in last 7 days (last logged: {last_wl_str})"
+                    )
+                if planned_hours > 0 and actual_hours > planned_hours * 1.5 and (actual_hours - planned_hours) >= 4:
+                    pct = int(round(actual_hours / planned_hours * 100))
+                    carry_forward_reasons.append(
+                        f"Over budget — {actual_hours:.1f}h logged vs {planned_hours:.1f}h planned ({pct}%)"
+                    )
 
-        carried_forward = bool(carry_forward_reasons) and not brought_forward
+        carried_forward = bool(carry_forward_reasons)
 
         # Flag in-month epics that contributed 0 planned hours (no stories in this month).
         no_stories_in_month = bool(not brought_forward and planned_hours == 0.0)
@@ -1410,6 +1607,7 @@ def build_monthly_epic_plan_payload(
                 "planned_days": _round_hours(planned_hours / HOURS_PER_DAY),
                 "actual_hours": actual_hours,
                 "actual_days": _round_hours(actual_hours / HOURS_PER_DAY),
+                "total_actual_hours": _round_hours(float(total_actual_hours_by_epic.get(epic_key, 0.0))),
                 "start_slip": start_slip,
                 "end_slip": end_slip,
                 "brought_forward": brought_forward,
@@ -1420,6 +1618,10 @@ def build_monthly_epic_plan_payload(
                 "jira_url": jira_url,
                 "subtask_count": len(subtask_keys_by_epic.get(epic_key, set())),
                 "child_items": child_items_by_epic.get(epic_key, []),
+                "worklog_dates": worklog_dates_by_epic.get(epic_key, []),
+                "total_planned_hours": _round_hours(total_planned_hours_by_epic.get(epic_key, 0.0)),
+                "total_planned_days": _round_hours(total_planned_hours_by_epic.get(epic_key, 0.0) / HOURS_PER_DAY),
+                "story_bars": story_gantt_by_epic.get(epic_key, []),
             }
         )
 

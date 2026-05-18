@@ -124,15 +124,23 @@ def _add_epic_tree(db_path: Path, epic_key: str, status: str, worklogs: list[tup
         )
         conn.execute(
             """
-            INSERT INTO canonical_issues(run_id, issue_key, project_key, issue_type, summary, status, parent_issue_key, story_key, epic_key)
-            VALUES ('run-1', ?, 'O2', 'Story', ?, 'In Progress', ?, ?, ?)
+            INSERT INTO canonical_issues(
+                run_id, issue_key, project_key, issue_type, summary, status,
+                start_date, due_date, original_estimate_hours,
+                parent_issue_key, story_key, epic_key
+            )
+            VALUES ('run-1', ?, 'O2', 'Story', ?, 'In Progress', '2026-03-01', '2026-03-31', 0, ?, ?, ?)
             """,
             (story_key, f"{epic_key} Story", epic_key, story_key, epic_key),
         )
         conn.execute(
             """
-            INSERT INTO canonical_issues(run_id, issue_key, project_key, issue_type, summary, status, parent_issue_key, story_key, epic_key)
-            VALUES ('run-1', ?, 'O2', 'Sub-task', ?, 'In Progress', ?, ?, ?)
+            INSERT INTO canonical_issues(
+                run_id, issue_key, project_key, issue_type, summary, status,
+                start_date, due_date, original_estimate_hours,
+                parent_issue_key, story_key, epic_key
+            )
+            VALUES ('run-1', ?, 'O2', 'Sub-task', ?, 'In Progress', '2026-03-01', '2026-03-31', 80, ?, ?, ?)
             """,
             (subtask_key, f"{epic_key} Task", story_key, story_key, epic_key),
         )
@@ -325,13 +333,15 @@ class MonthlyEpicPlanProgressTests(unittest.TestCase):
             self.assertTrue(rows["O2-OLD"]["brought_forward"])
             self.assertFalse(rows["O2-OLD"]["start_slip"])
             self.assertFalse(rows["O2-OLD"]["end_slip"])
-            self.assertFalse(rows["O2-OLD"]["carried_forward"])
+            # O2-OLD is "In Progress" (not resolved) and brought_forward → carried forward
+            self.assertTrue(rows["O2-OLD"]["carried_forward"])
             self.assertEqual(payload["totals"]["brought_forward_count"], 1)
             self.assertEqual(payload["totals"]["brought_forward_planned_hours"], 80.0)
-            self.assertEqual(payload["totals"]["carried_forward_planned_hours"], 160.0)
+            # carried_forward_planned_hours: O2-START(80) + O2-END(80) + O2-OLD(80) = 240
+            self.assertEqual(payload["totals"]["carried_forward_planned_hours"], 240.0)
             self.assertEqual(payload["totals"]["start_slip_count"], 1)
             self.assertEqual(payload["totals"]["end_slip_count"], 1)
-            self.assertEqual(payload["totals"]["carried_forward_count"], 2)
+            self.assertEqual(payload["totals"]["carried_forward_count"], 3)
             self.assertIn("workforce", payload)
             self.assertIn("assignee_options", payload["workforce"])
             self.assertIn("employee_options", payload["workforce"])
@@ -346,8 +356,8 @@ class MonthlyEpicPlanProgressTests(unittest.TestCase):
             self.assertEqual(by_proj["O2"]["epic_count"], 4)
             self.assertEqual(by_proj["O2"]["brought_forward_count"], 1)
             self.assertEqual(by_proj["O2"]["brought_forward_planned_hours"], 80.0)
-            self.assertEqual(by_proj["O2"]["carried_forward_count"], 2)
-            self.assertEqual(by_proj["O2"]["carried_forward_planned_hours"], 160.0)
+            self.assertEqual(by_proj["O2"]["carried_forward_count"], 3)
+            self.assertEqual(by_proj["O2"]["carried_forward_planned_hours"], 240.0)
 
     def test_delivery_status_aligns_when_jira_in_progress_but_planner_yet_to_start(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
@@ -423,7 +433,9 @@ class MonthlyEpicPlanProgressTests(unittest.TestCase):
         html_path = Path(__file__).resolve().parents[1] / "monthly_epic_plan_progress_report.html"
         html = html_path.read_text(encoding="utf-8")
 
-        self.assertIn('id="project-filter"', html)
+        self.assertIn('id="project-dropdown"', html)
+        self.assertIn('id="project-dropdown-toggle"', html)
+        self.assertIn('id="project-dropdown-list"', html)
         self.assertNotIn('id="project-select" multiple', html)
         self.assertIn("open_in_new", html)
         self.assertIn('aria-label="Open epic in Jira"', html)
@@ -445,8 +457,8 @@ class MonthlyEpicPlanProgressTests(unittest.TestCase):
         self.assertIn('id="kpi-brought-forward-planned"', html)
         self.assertIn('id="kpi-carried-forward-count"', html)
         self.assertIn('id="kpi-carried-forward-planned"', html)
-        self.assertIn("Total epics", html)
-        self.assertIn("Total planned hours", html)
+        self.assertIn("Epics in scope this month", html)
+        self.assertIn("Planned Hours", html)
         self.assertNotIn('id="kpi-start-slip"', html)
         self.assertIn("proj-card-filter", html)
         self.assertIn("filteredRowsForTable", html)

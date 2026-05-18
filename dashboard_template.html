@@ -1222,7 +1222,7 @@ function prBuildCal(releases, year) {
                 const shown = rlist.length > 4 ? rlist.slice(0,3) : rlist;
                 const extra = rlist.length > 4 ? rlist.length - 3 : 0;
                 const dots = shown.map(r =>
-                    `<div class="pr-dot" data-rid="${prEsc(r.id)}" style="background:${prEsc(prProjColor(r.project_key))};" title="${prEsc(prProjLabel(r.project_key))} \u2014 ${prEsc(prFmtDate(r.release_date))}"></div>`
+                    `<div class="pr-dot" data-rid="${prEsc(r.id)}" style="background:${prEsc(prProjColor(r.project_key))};" title="${prEsc(prProjLabel(r.project_key))} \u2014 ${prEsc(prFmtDate(r.release_date))}${r.previous_release_date ? ' (was ' + prFmtDate(r.previous_release_date) + ')' : ''}"></div>`
                 ).join('');
                 const extraHtml = extra > 0 ? `<div class="pr-dot-extra">+${extra}</div>` : '';
                 dotsHtml = `<div class="pr-dots-row">${dots}${extraHtml}</div>`;
@@ -1243,6 +1243,9 @@ function prBuildList(releases) {
     return sorted.map(r => {
         const col = prProjColor(r.project_key);
         const lbl = prProjLabel(r.project_key);
+        const prevDateHtml = r.previous_release_date
+            ? `<div style="font-size:.69rem;color:#94a3b8;margin-top:1px;">&#8617; was ${prEsc(prFmtDate(r.previous_release_date))}</div>`
+            : '';
         return `<div class="pr-list-item" data-rid="${prEsc(r.id)}" style="border-left:4px solid ${prEsc(col)};">
       <div class="pr-list-item-row">
         <div style="flex:1;min-width:0;">
@@ -1250,6 +1253,7 @@ function prBuildList(releases) {
             <span style="display:inline-flex;padding:2px 8px;border-radius:999px;font-size:.7rem;font-weight:700;background:${prEsc(col)}20;color:${prEsc(col)};border:1px solid ${prEsc(col)}50;">${prEsc(lbl)}</span>
           </div>
           <div style="font-size:.85rem;font-weight:700;color:#0f172a;margin-bottom:1px;">${prEsc(prFmtDate(r.release_date))}</div>
+          ${prevDateHtml}
           <div style="font-size:.72rem;color:#64748b;">${r.epics.length} epic${r.epics.length!==1?'s':''}</div>
         </div>
         <div class="pr-chevron">&#9658;</div>
@@ -1351,7 +1355,7 @@ function prBuildRoadmap(releases, year) {
             const isCur = mi === curMonth;
             const cls = isCur ? ' pr-month-now' : '';
             const chips = mRels.map(r =>
-                `<div class="pr-chip" data-rmid="${prEsc(r.id)}" style="background:${prEsc(col)}18;color:${prEsc(col)};border-color:${prEsc(col)}55;" title="${prEsc(prProjLabel(r.project_key))} \u2014 ${prEsc(prFmtDate(r.release_date))}">${prEsc(prFmtDateShort(r.release_date))}</div>`
+                `<div class="pr-chip" data-rmid="${prEsc(r.id)}" style="background:${prEsc(col)}18;color:${prEsc(col)};border-color:${prEsc(col)}55;" title="${prEsc(prProjLabel(r.project_key))} \u2014 ${prEsc(prFmtDate(r.release_date))}${r.previous_release_date ? ' (was ' + prFmtDate(r.previous_release_date) + ')' : ''}">${prEsc(prFmtDateShort(r.release_date))}${r.previous_release_date ? '<span style="font-size:.58rem;opacity:.7;margin-left:3px;">&#8617;</span>' : ''}</div>`
             ).join('');
             return `<td class="pr-month-cell${cls}">${chips || '<span style="display:block;height:20px;"></span>'}</td>`;
         }).join('');
@@ -1393,6 +1397,7 @@ function prBindRoadmapClicks() {
                 inner.innerHTML = `<div style="display:flex;align-items:center;gap:7px;margin-bottom:6px;flex-wrap:wrap;">
                     <span style="display:inline-flex;padding:2px 8px;border-radius:999px;font-size:.7rem;font-weight:700;background:${prEsc(col)}20;color:${prEsc(col)};border:1px solid ${prEsc(col)}55;">${prEsc(lbl)}</span>
                     <span style="font-size:.82rem;font-weight:700;color:#0f172a;">${prEsc(prFmtDate(rel.release_date))}</span>
+                    ${rel.previous_release_date ? `<span style="font-size:.72rem;color:#94a3b8;">&#8617; was ${prEsc(prFmtDate(rel.previous_release_date))}</span>` : ''}
                     <span style="font-size:.72rem;color:#64748b;">&middot; ${rel.epics.length} epic${rel.epics.length!==1?'s':''}</span>
                   </div>${prEpicItemsHTML(rel.epics)}`;
                 row.classList.remove('pr-epics-hidden');

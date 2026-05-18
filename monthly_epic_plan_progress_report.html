@@ -449,6 +449,7 @@
       position: relative;
       top: 1px;
     }
+    .kpi-br-dot.info  { background: #2563eb; }
     .kpi-br-dot.warn { background: var(--warn); }
     .kpi-br-dot.bad  { background: var(--bad); }
     .kpi-br-dot.muted { background: #94a3b8; }
@@ -510,6 +511,107 @@
       letter-spacing: 0.04em;
     }
     tbody tr:hover { background: #f8fbff; }
+    .row-toggle-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 22px;
+      flex: 0 0 auto;
+      border: 1px solid #c7d7e8;
+      border-radius: 6px;
+      background: #f0f6ff;
+      color: #1d5f8f;
+      cursor: pointer;
+      padding: 0;
+      transition: background 0.15s, border-color 0.15s, transform 0.2s;
+    }
+    .row-toggle-btn:hover { background: #dbeafe; border-color: #1d5f8f; }
+    .row-toggle-btn .material-symbols-outlined { font-size: 16px; line-height: 1; }
+    .row-toggle-btn.is-open { background: #dbeafe; border-color: #1d5f8f; }
+    .row-toggle-btn.is-open .material-symbols-outlined { transform: rotate(180deg); }
+    .child-row { display: none; }
+    .child-row.is-open { display: table-row; }
+    .child-row td { padding: 0; border-bottom: 2px solid #c7d7e8; background: #f5f9ff; }
+    .child-panel { padding: 10px 14px 14px 42px; }
+    .child-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+    .child-table th {
+      padding: 5px 8px;
+      background: #e8f0fb;
+      color: #1d4166;
+      font-weight: 700;
+      font-size: 0.74rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      border-bottom: 1px solid #c7d7e8;
+      text-align: left;
+    }
+    .child-table td { padding: 5px 8px; border-bottom: 1px solid #edf2f8; color: #334155; vertical-align: middle; }
+    .child-table tr:last-child td { border-bottom: none; }
+    .child-table .num { text-align: right; }
+    .child-table .story-group-hdr { background: #ecf4fe; }
+    .child-table .story-group-hdr td { padding: 4px 8px; font-weight: 700; color: #1a3a5c; font-size: 0.80rem; }
+    .in-month-badge {
+      display: inline-flex; align-items: center; gap: 3px;
+      font-size: 0.72rem; font-weight: 700;
+      background: #dbeafe; color: #1d4ed8;
+      border: 1px solid #bfdbfe; border-radius: 999px;
+      padding: 2px 7px;
+    }
+    .date-reason-inmonth {
+      display: inline-block;
+      background: #dbeafe; color: #1d4ed8;
+      border: 1.5px solid #93c5fd; border-radius: 6px;
+      padding: 1px 7px; font-weight: 700; white-space: nowrap;
+    }
+    .date-reason-overdue {
+      display: inline-block;
+      background: #fef3c7; color: #b45309;
+      border: 1.5px solid #fcd34d; border-radius: 6px;
+      padding: 1px 7px; font-weight: 700; white-space: nowrap;
+    }
+    .date-reason-endslip {
+      display: inline-block;
+      background: #fee2e2; color: #b91c1c;
+      border: 1.5px solid #fca5a5; border-radius: 6px;
+      padding: 1px 7px; font-weight: 700; white-space: nowrap;
+    }
+    .reason-tag {
+      display: inline-flex; align-items: center; gap: 3px;
+      font-size: 0.70rem; font-weight: 700; border-radius: 999px; padding: 2px 7px; white-space: nowrap;
+    }
+    .reason-tag.in-month  { background: #dbeafe; color: #1d4ed8; border: 1px solid #bfdbfe; }
+    .reason-tag.overdue   { background: #fef3c7; color: #b45309;  border: 1px solid #fcd34d; }
+    .reason-tag.end-slip  { background: #fee2e2; color: #b91c1c;  border: 1px solid #fca5a5; }
+    .cf-reasons-bar {
+      display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+      background: #fff8f0; border: 1px solid #fde68a; border-radius: 8px;
+      padding: 8px 12px; margin-bottom: 8px;
+    }
+    .cf-reasons-label {
+      font-size: 0.75rem; font-weight: 700; color: #92400e;
+      display: flex; align-items: center; gap: 4px; white-space: nowrap;
+    }
+    .cf-reason-chip {
+      display: inline-flex; align-items: center; gap: 4px;
+      font-size: 0.72rem; font-weight: 600; border-radius: 6px;
+      padding: 3px 8px; white-space: nowrap;
+    }
+    .cf-reason-chip.slip   { background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; }
+    .cf-reason-chip.due    { background: #fef3c7; color: #b45309; border: 1px solid #fcd34d; }
+    .cf-reason-chip.stale  { background: #f3e8ff; color: #7c3aed; border: 1px solid #d8b4fe; }
+    .cf-reason-chip.budget { background: #fff1f2; color: #be123c; border: 1px solid #fecdd3; }
+    .type-pill-story {
+      display: inline-block; font-size: 0.70rem; font-weight: 700;
+      background: #f0f9ff; color: #0369a1; border: 1px solid #bae6fd;
+      border-radius: 999px; padding: 1px 7px; white-space: nowrap;
+    }
+    .type-pill-subtask {
+      display: inline-block; font-size: 0.70rem; font-weight: 700;
+      background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe;
+      border-radius: 999px; padding: 1px 7px; white-space: nowrap;
+    }
+    .child-empty { color: #64748b; font-style: italic; }
     .num { text-align: right; font-variant-numeric: tabular-nums; }
     .epic-cell {
       display: flex;
@@ -765,6 +867,782 @@
     @media (max-width: 900px) {
       .controls { grid-template-columns: 1fr; }
     }
+
+    /* ── See excluded epics button ───────────────────────────────── */
+    .excl-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 7px 14px;
+      border-radius: 10px;
+      border: 1px solid #f97316;
+      background: #fff7ed;
+      color: #c2410c;
+      font-size: 0.84rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+      white-space: nowrap;
+    }
+    .excl-btn:hover { background: #ffedd5; border-color: #ea580c; }
+    .excl-btn .excl-count {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 20px;
+      height: 20px;
+      border-radius: 999px;
+      background: #f97316;
+      color: #fff;
+      font-size: 0.72rem;
+      font-weight: 800;
+      padding: 0 6px;
+    }
+    .excl-btn[hidden] { display: none; }
+
+    /* ── Right-side drawer ───────────────────────────────────────── */
+    .excl-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(14, 30, 50, 0.38);
+      z-index: 1200;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.22s ease;
+    }
+    .excl-overlay.is-open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .excl-drawer {
+      position: fixed;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      width: min(680px, 96vw);
+      background: #fff;
+      box-shadow: -8px 0 40px rgba(14, 30, 50, 0.18);
+      z-index: 1201;
+      display: flex;
+      flex-direction: column;
+      transform: translateX(100%);
+      transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .excl-overlay.is-open .excl-drawer {
+      transform: translateX(0);
+    }
+    .excl-drawer-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 18px 20px 14px;
+      border-bottom: 1px solid #e2eaf4;
+      flex: 0 0 auto;
+    }
+    .excl-drawer-title {
+      font-size: 1.05rem;
+      font-weight: 800;
+      color: #162840;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+    }
+    .excl-drawer-title .material-symbols-outlined {
+      font-size: 22px;
+      color: #f97316;
+    }
+    .excl-drawer-close {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      border: 1px solid #d7e2ee;
+      background: #f8fbff;
+      color: #5c6b7a;
+      cursor: pointer;
+      font-size: 0;
+      transition: background 0.14s, border-color 0.14s;
+      flex: 0 0 auto;
+    }
+    .excl-drawer-close:hover { background: #fef2f2; border-color: #fecaca; color: #b91c1c; }
+    .excl-drawer-close .material-symbols-outlined { font-size: 20px; }
+    .excl-drawer-subtitle {
+      padding: 10px 20px 8px;
+      font-size: 0.82rem;
+      color: #5c6b7a;
+      border-bottom: 1px solid #eef3f9;
+      flex: 0 0 auto;
+      line-height: 1.45;
+    }
+    .excl-drawer-body {
+      flex: 1 1 auto;
+      overflow-y: auto;
+      padding: 14px 20px 24px;
+    }
+    .excl-drawer-empty {
+      padding: 36px 20px;
+      text-align: center;
+      color: #5c6b7a;
+      font-size: 0.92rem;
+    }
+    .excl-group-label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.75rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #5c6b7a;
+      margin: 16px 0 8px;
+      padding-bottom: 5px;
+      border-bottom: 1px solid #e8eef5;
+    }
+    .excl-group-label:first-child { margin-top: 4px; }
+    .excl-group-label .material-symbols-outlined { font-size: 16px; }
+    .excl-card {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding: 11px 14px;
+      border: 1px solid #e2eaf4;
+      border-radius: 12px;
+      margin-bottom: 8px;
+      background: #fafcff;
+      transition: background 0.12s;
+    }
+    .excl-card:hover { background: #f0f6ff; }
+    .excl-card-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .excl-card-name {
+      font-weight: 700;
+      color: #12314f;
+      font-size: 0.89rem;
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+    .excl-card-link {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 26px;
+      height: 26px;
+      flex: 0 0 auto;
+      border: 1px solid #c7d7e8;
+      border-radius: 8px;
+      color: #155e91;
+      background: #f8fbff;
+      text-decoration: none;
+    }
+    .excl-card-link:hover { border-color: #155e91; background: #eef7ff; }
+    .excl-card-link .material-symbols-outlined { font-size: 15px; line-height: 1; }
+    .excl-card-meta {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 6px;
+      font-size: 0.78rem;
+      color: #5c6b7a;
+    }
+    .excl-card-meta .sep { color: #c4cfd8; }
+
+    /* ── View mode toggle (Table / Gantt) ─────────────────────────── */
+    .view-mode-btns {
+      display: flex;
+      border: 1px solid #c0ccd8;
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    .view-mode-btn {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      border: none;
+      background: #fff;
+      color: #5c6b7a;
+      font-size: 0.82rem;
+      font-weight: 700;
+      cursor: pointer;
+      padding: 7px 13px;
+      border-right: 1px solid #c0ccd8;
+      transition: background 0.14s, color 0.14s;
+    }
+    .view-mode-btn:last-child { border-right: none; }
+    .view-mode-btn .material-symbols-outlined { font-size: 17px; }
+    .view-mode-btn.active { background: var(--accent); color: #fff; }
+    /* Story mode toggle buttons */
+    .gantt-story-btn {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      border: 1px solid #c0ccd8;
+      border-radius: 8px;
+      background: #fff;
+      color: #5c6b7a;
+      font-size: 0.76rem;
+      font-weight: 700;
+      cursor: pointer;
+      padding: 5px 10px;
+      transition: background 0.14s, color 0.14s, border-color 0.14s;
+    }
+    .gantt-story-btn .material-symbols-outlined { font-size: 15px; }
+    .gantt-story-btn.active { background: #2563eb; color: #fff; border-color: #1d4ed8; }
+
+    /* ── Gantt chart ───────────────────────────────────────────────── */
+    .gantt-wrap {
+      overflow-x: auto;
+      overflow-y: visible;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      position: relative;
+    }
+    .gantt-inner {
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+    }
+    .gantt-header-row,
+    .gantt-row,
+    .gantt-group-row {
+      display: flex;
+      align-items: stretch;
+    }
+    .gantt-header-row {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: #f0f5fb;
+      border-bottom: 2px solid #c5d5e8;
+    }
+    .gantt-info-cell {
+      flex: 0 0 auto;
+      width: 400px;
+      min-width: 400px;
+      padding: 7px 10px;
+      border-right: 2px solid #c5d5e8;
+      background: inherit;
+      position: sticky;
+      left: 0;
+      z-index: 10;
+    }
+    .gantt-header-row .gantt-info-cell { z-index: 21; background: #f0f5fb; }
+    .gantt-timeline-cell {
+      flex: 0 0 auto;
+      position: relative;
+      overflow: hidden;
+    }
+    .gantt-row .gantt-timeline-cell { min-height: 68px; }
+    .gantt-row {
+      border-bottom: 1px solid #e8eef5;
+    }
+    .gantt-row:hover { background: #f7fbff; }
+    .gantt-row:hover .gantt-info-cell { background: #f7fbff; }
+    .gantt-row .gantt-info-cell { background: #fff; }
+    .gantt-group-row .gantt-info-cell {
+      background: var(--group-bg, #f0f5fb);
+      color: var(--group-text, #2a3a4d);
+      font-weight: 800;
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      border-top: 2px solid var(--group-border, #94a3b8);
+      border-bottom: 1px solid var(--group-line, #d0dbe8);
+    }
+    .gantt-group-row .gantt-timeline-cell {
+      background: var(--group-bg, #f0f5fb);
+      border-top: 2px solid var(--group-border, #94a3b8);
+      border-bottom: 1px solid var(--group-line, #d0dbe8);
+      min-height: 36px;
+    }
+    .gantt-group-row.group-bf {
+      --group-bg: linear-gradient(90deg, #fff3e0 0%, #fafafa 60%);
+      --group-text: #7c3500;
+      --group-border: #f97316;
+      --group-line: #fddcb5;
+    }
+    .gantt-group-row.group-month {
+      --group-bg: linear-gradient(90deg, #e8f0fe 0%, #fafbff 60%);
+      --group-text: #1a3560;
+      --group-border: #2563eb;
+      --group-line: #bfdbfe;
+    }
+    .gantt-group-row.group-cf {
+      --group-bg: linear-gradient(90deg, #fef0f0 0%, #fafafa 60%);
+      --group-text: #7f1d1d;
+      --group-border: #ef4444;
+      --group-line: #fecaca;
+    }
+    /* Info cell content */
+    .gantt-info-epic { margin-bottom: 3px; }
+    .gantt-epic-link {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+      color: #155e91;
+      text-decoration: none;
+    }
+    .gantt-epic-link:hover .gantt-epic-name { text-decoration: underline; }
+    .gantt-epic-link-plain { display: flex; flex-direction: column; gap: 1px; }
+    .gantt-epic-name {
+      font-weight: 700;
+      font-size: 0.82rem;
+      line-height: 1.3;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      color: inherit;
+    }
+    .gantt-epic-key { font-size: 0.7rem; color: var(--muted); font-weight: 600; }
+    .gantt-info-meta {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 3px;
+      margin-bottom: 3px;
+    }
+    .gantt-info-hours {
+      display: flex;
+      gap: 10px;
+      font-size: 0.74rem;
+      color: var(--muted);
+      flex-wrap: wrap;
+    }
+    .gantt-info-hours strong { color: var(--text); font-weight: 700; }
+    .gantt-total-plan { color: #7c8fa8; font-style: italic; }
+    /* Header info */
+    .gantt-col-header {
+      font-size: 0.75rem;
+      font-weight: 800;
+      color: #324559;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-bottom: 2px;
+    }
+    .gantt-col-subheader { font-size: 0.71rem; color: var(--muted); font-weight: 600; margin-bottom: 4px; }
+    .gantt-legend {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 0.68rem;
+      color: var(--muted);
+      font-weight: 600;
+    }
+    .gantt-legend-bar {
+      display: inline-block;
+      width: 24px;
+      height: 10px;
+      border-radius: 3px;
+      background: #7c3aed;
+      opacity: 0.75;
+      flex: 0 0 auto;
+    }
+    .gantt-legend-line {
+      display: inline-block;
+      width: 2px;
+      height: 14px;
+      background: #dc2626;
+      flex: 0 0 auto;
+    }
+    .gantt-legend-today {
+      display: inline-block;
+      width: 2px;
+      height: 14px;
+      background: #0f766e;
+      flex: 0 0 auto;
+    }
+    /* Timeline header rows */
+    .gantt-month-row,
+    .gantt-week-row { display: flex; }
+    .gantt-month-label {
+      font-size: 0.74rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #2a3a4d;
+      padding: 5px 6px 3px;
+      border-right: 1px solid #c5d5e8;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      background: #eef4fb;
+      flex: 0 0 auto;
+    }
+    .gantt-month-label.is-sel-month { background: #dbeafe; color: #1e40af; }
+    .gantt-week-label {
+      font-size: 0.66rem;
+      color: #6b7f93;
+      padding: 2px 3px 3px;
+      border-right: 1px dashed #d0dbe8;
+      text-align: center;
+      background: #f8fbff;
+      flex: 0 0 auto;
+      white-space: nowrap;
+    }
+    /* Grid and overlays */
+    .gantt-grid-line {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 1px;
+      background: #e8eef5;
+      z-index: 0;
+    }
+    .gantt-sel-month-bg {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      background: rgba(219, 234, 254, 0.32);
+      border-left: 1px solid rgba(147, 197, 253, 0.7);
+      border-right: 1px solid rgba(147, 197, 253, 0.7);
+      pointer-events: none;
+      z-index: 0;
+    }
+    .gantt-today-line {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 2px;
+      background: #0f766e;
+      z-index: 5;
+      pointer-events: none;
+    }
+    .gantt-today-line::after {
+      content: "Today";
+      position: absolute;
+      top: 2px;
+      left: 4px;
+      font-size: 0.6rem;
+      font-weight: 800;
+      color: #0f766e;
+      white-space: nowrap;
+      letter-spacing: 0.03em;
+    }
+    /* Gantt bar */
+    .gantt-bar {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      height: 20px;
+      border-radius: 4px;
+      z-index: 2;
+      display: flex;
+      align-items: center;
+      overflow: hidden;
+      cursor: default;
+      opacity: 0.82;
+      transition: opacity 0.12s, z-index 0s;
+      min-width: 4px;
+    }
+    .gantt-bar:hover { opacity: 1; z-index: 3; }
+    .gantt-bar-label {
+      padding: 0 5px;
+      font-size: 0.66rem;
+      font-weight: 700;
+      color: #fff;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.35);
+      pointer-events: none;
+    }
+    /* Completion line */
+    .gantt-completion-line {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 2px;
+      background: #dc2626;
+      z-index: 4;
+      cursor: default;
+    }
+    .gantt-completion-dot {
+      position: absolute;
+      top: 4px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #dc2626;
+      border: 2px solid #fff;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+    }
+    /* Worklog activity bar */
+    .gantt-worklog-seg {
+      position: absolute;
+      bottom: 8px;
+      height: 8px;
+      border-radius: 3px;
+      background: #16a34a;
+      opacity: 0.82;
+      z-index: 2;
+      cursor: default;
+      min-width: 3px;
+      transition: opacity 0.12s;
+    }
+    .gantt-worklog-seg:hover { opacity: 1; z-index: 3; }
+    .gantt-legend-worklog {
+      display: inline-block;
+      width: 22px;
+      height: 7px;
+      border-radius: 3px;
+      background: #16a34a;
+      opacity: 0.85;
+      vertical-align: middle;
+      margin-bottom: 1px;
+    }
+    /* Story date bars — top/left are always set via inline style from JS */
+    .gantt-story-bar {
+      position: absolute;
+      height: 6px;
+      border-radius: 2px;
+      background: #2563eb;
+      opacity: 0.60;
+      z-index: 2;
+      cursor: default;
+      min-width: 2px;
+      transition: opacity 0.12s;
+    }
+    .gantt-row { cursor: pointer; }
+
+    /* ── Epic Detail Drawer ───────────────────────────────────────── */
+    .epic-detail-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(15,23,42,0.45);
+      z-index: 600;
+      display: none;
+      align-items: stretch;
+      justify-content: flex-end;
+    }
+    .epic-detail-overlay.open { display: flex; }
+    .epic-detail-drawer {
+      width: 72%;
+      max-width: 1120px;
+      background: #f8fafc;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      box-shadow: -8px 0 40px rgba(0,0,0,0.18);
+      animation: slideInRight 0.22s ease;
+    }
+    @keyframes slideInRight { from { transform: translateX(100%); } to { transform: translateX(0); } }
+    .epic-detail-header {
+      background: #fff;
+      border-bottom: 2px solid #e2e8f0;
+      padding: 16px 22px 12px;
+      flex: 0 0 auto;
+    }
+    .epic-detail-header-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+    .epic-detail-epic-name {
+      font-size: 1.1rem;
+      font-weight: 800;
+      color: #1a2535;
+      line-height: 1.3;
+    }
+    .epic-detail-epic-key {
+      font-size: 0.78rem;
+      color: #7c3aed;
+      font-weight: 700;
+      font-family: monospace;
+      margin-top: 2px;
+    }
+    .epic-detail-close {
+      border: none;
+      background: #f1f5f9;
+      color: #5c6b7a;
+      border-radius: 8px;
+      width: 36px;
+      height: 36px;
+      cursor: pointer;
+      font-size: 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 auto;
+      transition: background 0.14s;
+    }
+    .epic-detail-close:hover { background: #e2e8f0; color: #1a2535; }
+    .epic-detail-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .epic-detail-jira-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      color: #155e91;
+      text-decoration: none;
+      font-size: 0.76rem;
+      font-weight: 600;
+      padding: 3px 10px;
+      border: 1px solid #bfdbfe;
+      border-radius: 7px;
+      background: #eff6ff;
+      transition: background 0.14s;
+    }
+    .epic-detail-jira-link:hover { background: #dbeafe; }
+    .epic-detail-jira-link .material-symbols-outlined { font-size: 13px; }
+    .epic-detail-content {
+      flex: 1 1 0;
+      overflow-y: auto;
+      padding: 18px 22px 36px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    /* KPI row */
+    .epic-kpi-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+    }
+    .epic-kpi-card {
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 13px 16px 11px;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .epic-kpi-label {
+      font-size: 0.67rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: #94a3b8;
+    }
+    .epic-kpi-value { font-size: 1.55rem; font-weight: 800; line-height: 1.1; }
+    .epic-kpi-sub { font-size: 0.7rem; color: #64748b; }
+    /* Charts grid */
+    .epic-charts-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .epic-detail-card {
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 14px 18px;
+    }
+    .epic-detail-card-title {
+      font-size: 0.68rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: #64748b;
+      margin-bottom: 11px;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    /* Timeline */
+    .epic-timeline-item {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      padding: 5px 0;
+      border-bottom: 1px solid #f1f5f9;
+      font-size: 0.81rem;
+    }
+    .epic-timeline-item:last-child { border-bottom: none; }
+    .epic-timeline-label { font-weight: 600; color: #64748b; min-width: 120px; flex: 0 0 auto; }
+    .epic-timeline-value { color: #1a2535; font-weight: 500; }
+    .epic-slip-ok  { display:inline-block; padding:1px 8px; border-radius:6px; font-size:0.7rem; font-weight:700; background:#dcfce7; color:#15803d; }
+    .epic-slip-bad { display:inline-block; padding:1px 8px; border-radius:6px; font-size:0.7rem; font-weight:700; background:#fee2e2; color:#b91c1c; }
+    .epic-slip-cat { display:inline-block; padding:1px 8px; border-radius:6px; font-size:0.7rem; font-weight:700; background:#f3f0ff; color:#6d28d9; }
+    /* Donut */
+    .epic-donut-wrap { display: flex; align-items: center; gap: 20px; }
+    .epic-donut-legend { display: flex; flex-direction: column; gap: 8px; }
+    .epic-donut-legend-item { display: flex; align-items: center; gap: 8px; font-size: 0.78rem; }
+    .epic-donut-dot { width: 12px; height: 12px; border-radius: 3px; flex: 0 0 auto; }
+    /* Status stacked bar */
+    .epic-status-bar { display: flex; height: 20px; border-radius: 7px; overflow: hidden; gap: 2px; margin-bottom: 10px; }
+    .epic-status-seg { height: 100%; min-width: 3px; transition: opacity 0.12s; cursor: default; }
+    .epic-status-seg:hover { opacity: 0.75; }
+    .epic-status-labels { display: flex; gap: 14px; flex-wrap: wrap; font-size: 0.74rem; color: #64748b; }
+    .epic-status-dot { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:4px; vertical-align:middle; }
+    /* Worklog activity mini-chart */
+    .epic-wl-chart { display: flex; align-items: flex-end; gap: 3px; height: 64px; }
+    .epic-wl-col { display: flex; flex-direction: column; align-items: center; gap: 2px; flex: 1; min-width: 0; }
+    .epic-wl-bar { width: 100%; background: #16a34a; border-radius: 2px 2px 0 0; opacity: 0.78; min-height: 2px; }
+    .epic-wl-lbl { font-size: 0.55rem; color: #94a3b8; white-space: nowrap; overflow: hidden; max-width: 32px; }
+    /* Detail table */
+    .epic-detail-table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+    .epic-detail-table th {
+      background: #f8fafc;
+      font-size: 0.66rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #64748b;
+      padding: 7px 10px;
+      text-align: left;
+      border-bottom: 2px solid #e2e8f0;
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+    .epic-detail-table td { padding: 6px 10px; border-bottom: 1px solid #f1f5f9; color: #374151; vertical-align: top; }
+    .epic-detail-table tr:last-child td { border-bottom: none; }
+    .epic-detail-table tr:hover td { background: #f8fafc; }
+    .epic-detail-table .story-group-hdr { background: #ecf4fe; }
+    .epic-detail-table .story-group-hdr td { padding: 5px 10px; font-weight: 700; color: #1a3a5c; font-size: 0.80rem; border-bottom: 1px solid #bfdbfe; }
+    .epic-detail-table .story-group-hdr:hover td { background: #dbeafe; }
+    .epic-detail-table .subtask-row td:first-child { padding-left: 24px; }
+    .epic-detail-table .subtask-row td { background: #fafcff; font-size: 0.77rem; }
+    .epic-detail-table .subtask-row:hover td { background: #eff6ff; }
+    /* CF reasons */
+    .epic-cf-box { background: #fff7ed; border: 1px solid #fed7aa; border-radius: 10px; padding: 12px 18px; }
+    .epic-cf-box-title { font-size: 0.68rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.07em; color: #c2410c; margin-bottom: 8px; display:flex; align-items:center; gap:5px; }
+    .epic-cf-box li { font-size: 0.8rem; color: #7c2d12; margin-bottom: 4px; line-height: 1.5; }
+    .gantt-story-bar:hover { opacity: 0.92; z-index: 3; }
+    .gantt-legend-story {
+      display: inline-block;
+      width: 22px;
+      height: 6px;
+      border-radius: 2px;
+      background: #2563eb;
+      opacity: 0.65;
+      vertical-align: middle;
+      margin-bottom: 1px;
+    }
+    /* Per-story worklog bars (paired beneath each story bar in minimal/diagnostic mode) */
+    .gantt-story-worklog-seg {
+      position: absolute;
+      height: 5px;
+      border-radius: 2px;
+      background: #16a34a;
+      opacity: 0.78;
+      z-index: 2;
+      cursor: default;
+      min-width: 2px;
+      transition: opacity 0.12s;
+    }
+    .gantt-story-worklog-seg:hover { opacity: 1; z-index: 3; }
+    .gantt-legend-story-worklog {
+      display: inline-block;
+      width: 22px;
+      height: 5px;
+      border-radius: 2px;
+      background: #16a34a;
+      opacity: 0.82;
+      vertical-align: middle;
+      margin-bottom: 1px;
+    }
   </style>
 </head>
 <body>
@@ -829,6 +1707,7 @@
           <div class="epic-mode-btns">
             <button type="button" class="epic-mode-btn active" id="mode-tk-epics" data-mode="tk_epics">TK EPICS</button>
             <button type="button" class="epic-mode-btn" id="mode-all-epics" data-mode="all_epics">ALL EPICS</button>
+            <button type="button" class="epic-mode-btn" id="mode-all-jira-epics" data-mode="all_jira_epics">ALL JIRA EPICS</button>
           </div>
           <div class="only-planner-wrap" id="only-planner-row" style="display:none;">
             <input type="checkbox" id="only-from-planner">
@@ -890,12 +1769,24 @@
     </section>
 
     <section class="panel">
-      <h2 class="section-title">Executive summary</h2>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
+        <h2 class="section-title" style="margin:0;">Executive summary</h2>
+        <button class="excl-btn" id="see-excluded-btn" hidden>
+          <span class="material-symbols-outlined" aria-hidden="true" style="font-size:17px;">block</span>
+          See excluded epics
+          <span class="excl-count" id="excl-btn-count">0</span>
+        </button>
+      </div>
       <div class="cards">
         <div class="card">
           <div class="label">Epics in scope this month</div>
           <div class="value" id="kpi-epics">0</div>
           <div class="kpi-breakdown">
+            <div class="kpi-br-row">
+              <span class="kpi-br-dot info"></span>
+              <span class="kpi-br-count" id="kpi-in-month-count">0</span>
+              <span class="kpi-br-label">planned in this month</span>
+            </div>
             <div class="kpi-br-row">
               <span class="kpi-br-dot warn"></span>
               <span class="kpi-br-count" id="kpi-brought-forward-count">0</span>
@@ -905,6 +1796,11 @@
               <span class="kpi-br-dot bad"></span>
               <span class="kpi-br-count" id="kpi-carried-forward-count">0</span>
               <span class="kpi-br-label">carrying forward to next month</span>
+            </div>
+            <div class="kpi-br-row" style="border-top:1px solid #e0e0e0;margin-top:4px;padding-top:4px;">
+              <span class="kpi-br-dot muted"></span>
+              <span class="kpi-br-count" id="kpi-epics-total" style="font-weight:600">0</span>
+              <span class="kpi-br-label" style="font-weight:600">Total (this month + overdue)</span>
             </div>
           </div>
         </div>
@@ -970,7 +1866,19 @@
       <p class="field-hint" style="margin:-4px 0 12px;">Click a card to narrow the epic table below. Use <strong>All projects</strong> to clear the card filter.</p>      <div class="project-cards" id="project-cards" aria-live="polite"></div>
     </section>
 
-    <section class="panel">
+    <section class="panel" id="epic-data-panel">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
+        <h2 class="section-title" style="margin:0;">Epics</h2>
+        <div class="view-mode-btns">
+          <button type="button" class="view-mode-btn active" id="view-table-btn">
+            <span class="material-symbols-outlined">table_rows</span> Table
+          </button>
+          <button type="button" class="view-mode-btn" id="view-gantt-btn">
+            <span class="material-symbols-outlined">view_timeline</span> Gantt
+          </button>
+        </div>
+      </div>
+      <div id="table-view-wrap">
       <div class="table-wrap">
         <table>
           <thead>
@@ -979,6 +1887,7 @@
               <th>Project</th>
               <th>Approved Start</th>
               <th>Approved Due</th>
+              <th>Actual Completed</th>
               <th>Delivery Status</th>
               <th>Jira Status</th>
               <th class="num effort-head">Planned Hours</th>
@@ -1000,7 +1909,56 @@
         End slip means the approved due date is inside the selected month and the current Jira epic status is not resolved.
         Historical months use the latest canonical Jira status, so old-month completion status is approximate unless Jira snapshots are added later.
       </div>
+      </div><!-- /table-view-wrap -->
+      <div id="gantt-view-wrap" style="display:none;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
+          <span style="font-size:0.75rem;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">Stories:</span>
+          <button type="button" class="gantt-story-btn" id="gantt-story-diagnostics-btn" title="Show planned dates for all stories">
+            <span class="material-symbols-outlined">analytics</span> Diagnostics
+          </button>
+          <button type="button" class="gantt-story-btn" id="gantt-story-minimal-btn" title="Show only stories with hours logged">
+            <span class="material-symbols-outlined">filter_alt</span> Minimal
+          </button>
+        </div>
+        <div class="gantt-wrap">
+          <div class="gantt-inner" id="gantt-body"></div>
+        </div>
+        <div class="caption" style="margin-top:10px;">
+          Week-by-week view across the previous, selected, and next month. <span style="display:inline-block;width:18px;height:10px;border-radius:3px;background:#7c3aed;opacity:0.82;vertical-align:middle;margin:0 3px;"></span><strong>Purple</strong> = epic plan bar. <span style="display:inline-block;width:18px;height:6px;border-radius:2px;background:#2563eb;opacity:0.65;vertical-align:middle;margin:0 3px;"></span><strong>Blue</strong> = story bars (Diagnostics/Minimal). <span style="display:inline-block;width:18px;height:6px;border-radius:3px;background:#16a34a;opacity:0.85;vertical-align:middle;margin:0 3px;"></span><strong>Green</strong> = hours logged. The <span style="display:inline-block;width:2px;height:11px;background:#dc2626;vertical-align:middle;margin:0 2px;"></span><strong>red line</strong> marks actual completion. <span style="display:inline-block;width:2px;height:11px;background:#0f766e;vertical-align:middle;margin:0 2px;"></span><strong>Teal line</strong> = today. Shaded column = selected month.
+        </div>
+      </div>
     </section>
+
+  </div>
+
+  <!-- Epic Postmortem Drawer -->
+  <div class="epic-detail-overlay" id="epic-detail-overlay">
+    <div class="epic-detail-drawer" id="epic-detail-drawer">
+      <div class="epic-detail-header" id="epic-detail-header"></div>
+      <div class="epic-detail-content" id="epic-detail-content"></div>
+    </div>
+  </div>
+
+  <!-- Right-side excluded epics drawer -->
+  <div class="excl-overlay" id="excl-overlay"role="dialog" aria-modal="true" aria-labelledby="excl-drawer-title-text">
+    <div class="excl-drawer" id="excl-drawer">
+      <div class="excl-drawer-header">
+        <div class="excl-drawer-title">
+          <span class="material-symbols-outlined" aria-hidden="true">block</span>
+          <span id="excl-drawer-title-text">Excluded Epics</span>
+          <span id="excl-drawer-badge" class="excl-count" style="font-size:0.8rem;"></span>
+        </div>
+        <button class="excl-drawer-close" id="excl-drawer-close" aria-label="Close excluded epics panel">
+          <span class="material-symbols-outlined">close</span>
+        </button>
+      </div>
+      <div class="excl-drawer-subtitle">
+        These epics have dates that overlap the selected month but are excluded from scope. They do not count toward planned or actual hours.
+      </div>
+      <div class="excl-drawer-body" id="excl-drawer-body">
+        <div class="excl-drawer-empty">No excluded epics for this view.</div>
+      </div>
+    </div>
   </div>
 
   <script src="shared-nav.js"></script>
@@ -1036,10 +1994,12 @@
       runMeta: document.getElementById("run-meta"),
       rows: document.getElementById("rows"),
       kpiEpics: document.getElementById("kpi-epics"),
+      kpiEpicsTotal: document.getElementById("kpi-epics-total"),
       kpiPlanned: document.getElementById("kpi-planned"),
       kpiActual: document.getElementById("kpi-actual"),
       kpiPlannedLabel: document.getElementById("kpi-planned-label"),
       kpiActualLabel: document.getElementById("kpi-actual-label"),
+      kpiInMonthCount: document.getElementById("kpi-in-month-count"),
       kpiBroughtForwardCount: document.getElementById("kpi-brought-forward-count"),
       kpiBroughtForwardPlanned: document.getElementById("kpi-brought-forward-planned"),
       kpiCarriedForwardCount: document.getElementById("kpi-carried-forward-count"),
@@ -1066,6 +2026,7 @@
       capacityProfile: document.getElementById("capacity-profile-select"),
       modeTkEpics: document.getElementById("mode-tk-epics"),
       modeAllEpics: document.getElementById("mode-all-epics"),
+      modeAllJiraEpics: document.getElementById("mode-all-jira-epics"),
       onlyPlannerRow: document.getElementById("only-planner-row"),
       onlyFromPlanner: document.getElementById("only-from-planner"),
       overdueThreshold: document.getElementById("overdue-threshold-input"),
@@ -1468,6 +2429,10 @@
       const totalPlanned = plannedVal + bh;
       els.kpiPlanned.textContent = formatNumber(plannedVal);
       els.kpiActual.textContent = formatNumber(actualVal);
+      const bfCount = totals.brought_forward_count || 0;
+      const inMonthCount = Math.max(0, (totals.epic_count || 0) - bfCount);
+      if (els.kpiInMonthCount) els.kpiInMonthCount.textContent = String(inMonthCount);
+      if (els.kpiEpicsTotal) els.kpiEpicsTotal.textContent = String(inMonthCount + bfCount);
       if (els.kpiBroughtForwardCount) els.kpiBroughtForwardCount.textContent = String(totals.brought_forward_count || 0);
       if (els.kpiBroughtForwardPlanned) els.kpiBroughtForwardPlanned.textContent = formatNumber(bh) + " " + suffixShort;
       if (els.kpiCarriedForwardCount) els.kpiCarriedForwardCount.textContent = String(totals.carried_forward_count || 0);
@@ -1483,6 +2448,7 @@
       if (!latestPayload) return;
       const filtered = filteredRowsForTable(latestPayload.rows || []);
       renderRows(filtered);
+      if (ganttVisible) renderGantt(filtered, els.month ? els.month.value : "");
       updateKpiCards(recomputeKpiTotalsFromRows(filtered));
     }
 
@@ -1659,6 +2625,10 @@
       const totalPlanned = plannedVal + bh;
       els.kpiPlanned.textContent = formatNumber(plannedVal);
       els.kpiActual.textContent = formatNumber(actualVal);
+      const bfCount = totals.brought_forward_count || 0;
+      const inMonthCount = Math.max(0, (totals.epic_count || 0) - bfCount);
+      if (els.kpiInMonthCount) els.kpiInMonthCount.textContent = String(inMonthCount);
+      if (els.kpiEpicsTotal) els.kpiEpicsTotal.textContent = String(inMonthCount + bfCount);
       if (els.kpiBroughtForwardCount) els.kpiBroughtForwardCount.textContent = String(totals.brought_forward_count || 0);
       if (els.kpiBroughtForwardPlanned) els.kpiBroughtForwardPlanned.textContent = formatNumber(bh) + " " + suffixShort;
       if (els.kpiCarriedForwardCount) els.kpiCarriedForwardCount.textContent = String(totals.carried_forward_count || 0);
@@ -1674,9 +2644,11 @@
       renderProjectCards(latestPayload.by_project || []);
       const filteredRows = filteredRowsForTable(latestPayload.rows || []);
       renderRows(filteredRows);
+      if (ganttVisible) renderGantt(filteredRows, els.month ? els.month.value : "");
       updateKpiCards(recomputeKpiTotalsFromRows(filteredRows));
       renderEmployeeDropdown(latestPayload.workforce || {});
       renderWorkforce(latestPayload.workforce || {});
+      renderExcludedEpics(latestPayload.excluded_epics || []);
       els.runMeta.textContent = latestPayload.canonical_run_id
         ? "Canonical run: " + latestPayload.canonical_run_id
         : "No canonical run loaded.";
@@ -1804,23 +2776,148 @@
       els.projectCards.innerHTML = parts.join("");
     }
 
+    function childItemTypePill(type) {
+      const t = (type || "").toLowerCase();
+      if (t.includes("sub") || t.includes("bug")) return '<span class="type-pill-subtask">Subtask</span>';
+      return '<span class="type-pill-story">Story</span>';
+    }
+
+    function childRowHtml(row) {
+      const items = Array.isArray(row.child_items) ? row.child_items : [];
+      const reasons = Array.isArray(row.carry_forward_reasons) ? row.carry_forward_reasons : [];
+      const isCarriedForward = !!row.carried_forward && !row.brought_forward;
+
+      // Build carry-forward reasons banner.
+      let reasonsBanner = "";
+      if (isCarriedForward && reasons.length) {
+        const reasonChip = function(text) {
+          const t = text.toLowerCase();
+          let cls = "slip";
+          if (t.includes("due date passed") || t.includes("end slipped")) cls = "due";
+          else if (t.includes("no worklog") || t.includes("no activity")) cls = "stale";
+          else if (t.includes("over budget")) cls = "budget";
+          return '<span class="cf-reason-chip ' + cls + '">'
+            + '<span class="material-symbols-outlined" style="font-size:13px;vertical-align:middle;">'
+            + (cls === "slip" ? "schedule" : cls === "due" ? "event_busy" : cls === "stale" ? "hourglass_empty" : "trending_up")
+            + '</span>'
+            + esc(text) + '</span>';
+        };
+        reasonsBanner = '<div class="cf-reasons-bar">'
+          + '<span class="cf-reasons-label">'
+          + '<span class="material-symbols-outlined" style="font-size:14px;">warning</span>'
+          + 'Carry-forward reasons:</span>'
+          + reasons.map(reasonChip).join("")
+          + '</div>';
+      }
+
+      if (!items.length) {
+        return '<div class="child-panel">' + reasonsBanner
+          + '<table class="child-table"><tbody>'
+          + '<tr><td colspan="9" class="child-empty">No story or subtask data available for this epic.</td></tr>'
+          + '</tbody></table></div>';
+      }
+
+      const isBroughtForward = !!row.brought_forward;
+      const startSlip = !!row.start_slip;
+      const endSlip = !!row.end_slip;
+      const monthYm = els.month ? String(els.month.value || "").trim() : "";
+
+      function dateCell(dateStr, highlightClass) {
+        const disp = esc(formatDisplayDate(dateStr));
+        if (dateStr && highlightClass) {
+          return '<td><span class="' + highlightClass + '">' + disp + '</span></td>';
+        }
+        return '<td>' + (disp || '<span style="color:#94a3b8;">—</span>') + '</td>';
+      }
+
+      function reasonTag(item) {
+        if (isBroughtForward) {
+          const duePre = item.due_date && item.due_date.slice(0, 7) <= monthYm;
+          if (duePre) return '<span class="reason-tag overdue">Overdue</span>';
+          return '<span style="color:#94a3b8;font-size:0.78rem;">—</span>';
+        }
+        if (item.start_in_month || item.due_in_month) {
+          const label = item.start_in_month && item.due_in_month
+            ? 'Start &amp; Due' : item.start_in_month ? 'Start' : 'Due';
+          const cls = endSlip && item.due_in_month ? 'end-slip' : 'in-month';
+          return '<span class="reason-tag ' + cls + '">' + label + ' in month</span>';
+        }
+        return '<span style="color:#94a3b8;font-size:0.78rem;">—</span>';
+      }
+
+      let body = "";
+      let lastStory = null;
+      items.forEach(function (item) {
+        const ps = item.parent_story_key || "";
+        if (ps && ps !== lastStory) {
+          lastStory = ps;
+          const storyLink = item.story_jira_url
+            ? '<a href="' + esc(item.story_jira_url) + '" target="_blank" rel="noopener" style="color:#155e91;font-weight:700;">' + esc(ps) + '</a>'
+            : '<strong>' + esc(ps) + '</strong>';
+          const storySummary = item.parent_story_summary ? ' &ndash; ' + esc(item.parent_story_summary) : '';
+          body += '<tr class="story-group-hdr"><td colspan="9">'
+            + '<span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle;margin-right:4px;color:#0369a1;">task_alt</span>'
+            + storyLink + storySummary + '</td></tr>';
+        } else if (!ps) {
+          lastStory = null;
+        }
+
+        let startClass = "";
+        let dueClass = "";
+        if (isBroughtForward) {
+          if (item.due_date && item.due_date.slice(0, 7) <= monthYm) dueClass = "date-reason-overdue";
+        } else {
+          if (item.start_in_month) startClass = "date-reason-inmonth";
+          if (item.due_in_month)   dueClass = endSlip ? "date-reason-endslip" : "date-reason-inmonth";
+        }
+
+        const keyLink = item.jira_url
+          ? '<a href="' + esc(item.jira_url) + '" target="_blank" rel="noopener" style="color:#155e91;">' + esc(item.issue_key) + '</a>'
+          : esc(item.issue_key);
+        const statusStyle = 'color:#475569;font-size:0.78rem;';
+        body += '<tr>'
+          + '<td>' + childItemTypePill(item.issue_type) + '</td>'
+          + '<td>' + keyLink + '</td>'
+          + '<td>' + esc(item.summary) + '</td>'
+          + '<td><span style="' + statusStyle + '">' + esc(item.status) + '</span></td>'
+          + dateCell(item.start_date, startClass)
+          + dateCell(item.due_date, dueClass)
+          + '<td>' + (item.actual_completed_date ? esc(formatDisplayDate(item.actual_completed_date)) : '<span style="color:#94a3b8;">—</span>') + '</td>'
+          + '<td class="num">' + formatNumber(item.planned_hours) + '</td>'
+          + '<td>' + reasonTag(item) + '</td>'
+          + '</tr>';
+      });
+      return '<div class="child-panel">' + reasonsBanner + '<table class="child-table">'
+        + '<thead><tr><th>Type</th><th>Key</th><th>Summary</th><th>Status</th>'
+        + '<th>Start</th><th>Due</th><th>Actual Completed</th><th class="num">Hrs</th><th>Reason</th></tr></thead>'
+        + '<tbody>' + body + '</tbody></table></div>';
+    }
+
     function rowToHtml(row) {
-      const epicTitle = esc(row.epic_name || row.epic_key);
+      const epicKey = row.epic_key || "";
+      const childId = "child-" + epicKey.replace(/[^A-Za-z0-9]/g, "_");
+      const hasChildren = Array.isArray(row.child_items) && row.child_items.length > 0;
+      const toggleBtn = hasChildren
+        ? '<button class="row-toggle-btn" aria-label="Expand stories" data-child-id="' + childId + '">'
+          + '<span class="material-symbols-outlined">expand_more</span></button>'
+        : '<span style="width:22px;display:inline-block;flex:0 0 auto;"></span>';
+      const epicTitle = esc(row.epic_name || epicKey);
       const epicCell = row.jira_url
-        ? '<div class="epic-cell"><div><div class="epic-title">' + epicTitle + '</div></div>'
+        ? '<div class="epic-cell">' + toggleBtn + '<div><div class="epic-title">' + epicTitle + '</div></div>'
           + '<a class="epic-open-link" href="' + esc(row.jira_url) + '" target="_blank" rel="noopener" aria-label="Open epic in Jira">'
           + '<span class="material-symbols-outlined" aria-hidden="true">open_in_new</span></a></div>'
-        : '<div class="epic-title">' + epicTitle + '</div>';
+        : '<div class="epic-cell">' + toggleBtn + '<div class="epic-title">' + epicTitle + '</div></div>';
       const projectKey = String(row.project_key || "").toUpperCase();
       const projectHex = projectColor(projectKey);
       const projectStyle = '--project-color:' + projectHex + ';--project-bg:' + colorToSoftBg(projectHex);
       const projectName = projectDisplayName(projectKey, row.project_name);
       const projectCell = '<div class="project-cell"><span class="project-chip" style="' + esc(projectStyle) + '">' + esc(projectName) + '</span></div>';
-      return '<tr>'
+      const epicRow = '<tr>'
         + '<td>' + epicCell + '</td>'
         + '<td>' + projectCell + '</td>'
         + '<td>' + esc(formatDisplayDate(row.approved_start)) + '</td>'
         + '<td>' + esc(formatDisplayDate(row.approved_due)) + '</td>'
+        + '<td>' + (row.actual_completed_date ? esc(formatDisplayDate(row.actual_completed_date)) : '<span style="color:#94a3b8;">—</span>') + '</td>'
         + '<td>' + statusPill(row.delivery_status, row.approved_start) + '</td>'
         + '<td>' + statusPill(row.jira_status || "Not in canonical data", row.approved_start) + '</td>'
         + '<td class="num">' + formatNumber(effortValue(row, "planned")) + '</td>'
@@ -1828,8 +2925,30 @@
         + '<td>' + (row.brought_forward ? '<span class="pill info">Brought forward</span>' : '<span class="pill good">No</span>') + '</td>'
         + '<td>' + flagPill(row.start_slip, "Could not start", "Started/OK") + '</td>'
         + '<td>' + flagPill(row.end_slip, "Could not end", "Completed/OK") + '</td>'
-        + '<td>' + (row.carried_forward ? '<span class="pill warn">Carried forward</span>' : '<span class="pill good">No</span>') + '</td>'
+        + '<td>' + (function() {
+            if (!row.carried_forward) return '<span class="pill good">No</span>';
+            const reasons = Array.isArray(row.carry_forward_reasons) ? row.carry_forward_reasons : [];
+            const badge = reasons.length ? ' <span style="background:#b91c1c;color:#fff;border-radius:999px;padding:1px 6px;font-size:0.7rem;font-weight:700;margin-left:4px;">' + reasons.length + '</span>' : '';
+            return '<span class="pill warn" title="' + esc((reasons).join(" | ")) + '">Carried forward' + badge + '</span>';
+          })() + '</td>'
         + '</tr>';
+      const childRow = '<tr class="child-row" id="' + childId + '">'
+        + '<td colspan="13">' + childRowHtml(row) + '</td></tr>';
+      return epicRow + childRow;
+    }
+
+    // Sort order: Completed → In Progress → To Do → On Hold
+    function statusSortPriority(row) {
+      const s = String(row.jira_status || "").toLowerCase().replace(/[_\-]+/g, " ").trim();
+      if (["resolved", "done", "closed", "complete", "completed", "resolved!"].includes(s)) return 0;
+      if (s.includes("progress")) return 1;
+      if (["to do", "open", "yet to start", "todo"].includes(s)) return 2;
+      if (["on hold", "hold", "paused", "deferred"].includes(s)) return 3;
+      return 2; // unknown → treat as To Do
+    }
+
+    function sortByStatus(rows) {
+      return rows.slice().sort(function(a, b) { return statusSortPriority(a) - statusSortPriority(b); });
     }
 
     function renderRows(rows) {
@@ -1838,20 +2957,20 @@
         const fk = String(tableProjectFilterKey || "").trim();
         const hint = fk ? ' Try "All projects" or another project card.' : "";
         els.rows.innerHTML =
-          '<tr><td colspan="12"><div class="empty">No epics to show for this view.'
+          '<tr><td colspan="13"><div class="empty">No epics to show for this view.'
           + esc(hint)
           + "</div></td></tr>";
         return;
       }
 
-      const bfRows = displayRows.filter((r) => r.brought_forward);
-      const cfRows = displayRows.filter((r) => !r.brought_forward && r.carried_forward);
-      const monthRows = displayRows.filter((r) => !r.brought_forward && !r.carried_forward);
+      const bfRows = sortByStatus(displayRows.filter((r) => r.brought_forward));
+      const cfRows = sortByStatus(displayRows.filter((r) => !r.brought_forward && r.carried_forward));
+      const monthRows = sortByStatus(displayRows.filter((r) => !r.brought_forward && !r.carried_forward));
       const monthName = monthDisplayName(els.month ? els.month.value : "");
 
       function groupHeader(cls, iconName, label, count) {
         return '<tr class="group-header-row ' + cls + '">'
-          + '<td colspan="12"><div class="group-label">'
+          + '<td colspan="13"><div class="group-label">'
           + '<span class="group-icon material-symbols-outlined" aria-hidden="true">' + iconName + '</span>'
           + '<span class="group-title">' + esc(label) + '</span>'
           + '<span class="group-badge">' + count + '</span>'
@@ -1873,6 +2992,131 @@
       }
 
       els.rows.innerHTML = parts.join("");
+    }
+
+    /* ── Excluded epics drawer ──────────────────────────────────── */
+    (function () {
+      const overlay = document.getElementById("excl-overlay");
+      const closeBtn = document.getElementById("excl-drawer-close");
+      function openDrawer() {
+        if (!overlay) return;
+        overlay.classList.add("is-open");
+        document.body.style.overflow = "hidden";
+      }
+      function closeDrawer() {
+        if (!overlay) return;
+        overlay.classList.remove("is-open");
+        document.body.style.overflow = "";
+      }
+      if (closeBtn) closeBtn.addEventListener("click", closeDrawer);
+      if (overlay) overlay.addEventListener("click", (e) => {
+        if (e.target === overlay) closeDrawer();
+      });
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && overlay && overlay.classList.contains("is-open")) closeDrawer();
+      });
+      const seeBtn = document.getElementById("see-excluded-btn");
+      if (seeBtn) seeBtn.addEventListener("click", openDrawer);
+    }());
+
+    function renderExcludedEpics(excludedList) {
+      const body = document.getElementById("excl-drawer-body");
+      const badge = document.getElementById("excl-drawer-badge");
+      const btnCount = document.getElementById("excl-btn-count");
+      const seeBtn = document.getElementById("see-excluded-btn");
+      const list = Array.isArray(excludedList) ? excludedList : [];
+
+      if (btnCount) btnCount.textContent = String(list.length);
+      if (badge) badge.textContent = String(list.length);
+      if (seeBtn) {
+        if (list.length) seeBtn.removeAttribute("hidden");
+        else seeBtn.setAttribute("hidden", "");
+      }
+
+      if (!body) return;
+      if (!list.length) {
+        body.innerHTML = '<div class="excl-drawer-empty">No excluded epics for this view.</div>';
+        return;
+      }
+
+      const REASON_ORDER = [
+        "Epic is resolved / completed",
+        "Epic is on hold (enable 'Include On Hold' to see it)",
+        "No stories planned in this month",
+      ];
+      const reasonIcon = {
+        "Epic is resolved / completed": "check_circle",
+        "Epic is on hold (enable 'Include On Hold' to see it)": "pause_circle",
+        "No stories planned in this month": "event_busy",
+      };
+      const reasonPillCls = {
+        "Epic is resolved / completed": "good",
+        "Epic is on hold (enable 'Include On Hold' to see it)": "bad",
+        "No stories planned in this month": "warn",
+      };
+
+      const grouped = {};
+      list.forEach((item) => {
+        const reasons = Array.isArray(item.exclusion_reasons) && item.exclusion_reasons.length
+          ? item.exclusion_reasons : ["Other"];
+        const key = reasons[0];
+        if (!grouped[key]) grouped[key] = [];
+        grouped[key].push(item);
+      });
+
+      const parts = [];
+      const groupKeys = REASON_ORDER.filter((k) => grouped[k]).concat(
+        Object.keys(grouped).filter((k) => !REASON_ORDER.includes(k))
+      );
+
+      groupKeys.forEach((reason) => {
+        const items = grouped[reason] || [];
+        const icon = reasonIcon[reason] || "info";
+        const pillCls = reasonPillCls[reason] || "warn";
+        parts.push(
+          '<div class="excl-group-label">'
+          + '<span class="material-symbols-outlined" aria-hidden="true">' + icon + '</span>'
+          + esc(reason) + ' <span style="opacity:.6;font-weight:600;">(' + items.length + ')</span>'
+          + '</div>'
+        );
+        items.forEach((item) => {
+          const projectKey = String(item.project_key || "").toUpperCase();
+          const projectHex = projectColor(projectKey);
+          const projectStyle = "--project-color:" + projectHex + ";--project-bg:" + colorToSoftBg(projectHex);
+          const projectName = projectDisplayName(projectKey, item.project_name);
+          const epicTitle = esc(item.epic_name || item.epic_key || "");
+          const linkEl = item.jira_url
+            ? '<a class="excl-card-link" href="' + esc(item.jira_url) + '" target="_blank" rel="noopener" aria-label="Open in Jira">'
+              + '<span class="material-symbols-outlined">open_in_new</span></a>'
+            : "";
+          const startFmt = item.approved_start ? esc(formatDisplayDate(item.approved_start)) : "—";
+          const dueFmt = item.approved_due ? esc(formatDisplayDate(item.approved_due)) : "—";
+          const jiraStatus = esc(item.jira_status || "Unknown");
+          const reasons = Array.isArray(item.exclusion_reasons) ? item.exclusion_reasons : [reason];
+          const reasonPills = reasons.map((r) => {
+            const cls = reasonPillCls[r] || "warn";
+            return '<span class="pill ' + cls + '">' + esc(r) + '</span>';
+          }).join(" ");
+          parts.push(
+            '<div class="excl-card">'
+            + '<div class="excl-card-top">'
+            + '<div class="excl-card-name">' + epicTitle + '</div>'
+            + linkEl
+            + '</div>'
+            + '<div class="excl-card-meta">'
+            + '<span class="project-chip" style="' + esc(projectStyle) + '">' + esc(projectName) + '</span>'
+            + '<span class="sep">·</span>'
+            + '<span>' + startFmt + ' → ' + dueFmt + '</span>'
+            + '<span class="sep">·</span>'
+            + statusPill(item.jira_status || "Unknown", item.approved_start)
+            + '</div>'
+            + '<div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:2px;">' + reasonPills + '</div>'
+            + '</div>'
+          );
+        });
+      });
+
+      body.innerHTML = parts.join("");
     }
 
     async function loadSummary() {
@@ -1900,7 +3144,8 @@
       } catch (err) {
         latestPayload = null;
         tableProjectFilterKey = "";
-        els.rows.innerHTML = '<tr><td colspan="12"><div class="empty">' + esc(err.message || err) + '</div></td></tr>';
+        els.rows.innerHTML = '<tr><td colspan="13"><div class="empty">' + esc(err.message || err) + '</div></td></tr>';
+        renderExcludedEpics([]);
         if (els.projectCards) els.projectCards.innerHTML = '<div class="empty" style="grid-column:1/-1;">Could not load data.</div>';
         const suffixShort = unit === "days" ? "days" : "hours";
         if (els.kpiEpics) els.kpiEpics.textContent = "0";
@@ -1908,6 +3153,8 @@
         if (els.kpiActualLabel) els.kpiActualLabel.textContent = "Logged this month (" + suffixShort + ")";
         if (els.kpiPlanned) els.kpiPlanned.textContent = formatNumber(0);
         if (els.kpiActual) els.kpiActual.textContent = formatNumber(0);
+        if (els.kpiInMonthCount) els.kpiInMonthCount.textContent = "0";
+        if (els.kpiEpicsTotal) els.kpiEpicsTotal.textContent = "0";
         if (els.kpiBroughtForwardCount) els.kpiBroughtForwardCount.textContent = "0";
         if (els.kpiBroughtForwardPlanned) els.kpiBroughtForwardPlanned.textContent = formatNumber(0) + " " + suffixShort;
         if (els.kpiCarriedForwardCount) els.kpiCarriedForwardCount.textContent = "0";
@@ -1928,14 +3175,15 @@
         if (latestPayload) renderSummary(latestPayload, { resetTableProjectFilter: false });
       });
     });
-    [els.modeTkEpics, els.modeAllEpics].forEach((btn) => {
+    [els.modeTkEpics, els.modeAllEpics, els.modeAllJiraEpics].forEach((btn) => {
       if (!btn) return;
       btn.addEventListener("click", () => {
         epicMode = btn.dataset.mode;
         els.modeTkEpics.classList.toggle("active", epicMode === "tk_epics");
         els.modeAllEpics.classList.toggle("active", epicMode === "all_epics");
+        if (els.modeAllJiraEpics) els.modeAllJiraEpics.classList.toggle("active", epicMode === "all_jira_epics");
         if (els.onlyPlannerRow) els.onlyPlannerRow.style.display = epicMode === "all_epics" ? "" : "none";
-        if (epicMode === "tk_epics" && els.onlyFromPlanner) els.onlyFromPlanner.checked = false;
+        if (epicMode !== "all_epics" && els.onlyFromPlanner) els.onlyFromPlanner.checked = false;
         loadSummary();
       });
     });
@@ -1977,6 +3225,19 @@
     document.addEventListener("click", (e) => {
       if (els.projDd && !els.projDd.contains(e.target)) setProjectDropdownOpen(false);
     });
+
+    /* ── Expand/collapse story rows ──────────────────────────────── */
+    document.addEventListener("click", (e) => {
+      const btn = e.target.closest(".row-toggle-btn");
+      if (!btn) return;
+      const childId = btn.dataset.childId;
+      if (!childId) return;
+      const childRow = document.getElementById(childId);
+      if (!childRow) return;
+      const isOpen = childRow.classList.toggle("is-open");
+      btn.classList.toggle("is-open", isOpen);
+      btn.setAttribute("aria-label", isOpen ? "Collapse stories" : "Expand stories");
+    });
     if (els.projDdSearch) {
       els.projDdSearch.addEventListener("input", filterProjectDropdownList);
     }
@@ -2011,7 +3272,723 @@
       });
     }
     els.month.value = monthNow();
+
+    /* ── Gantt chart ─────────────────────────────────────────────────── */
+    let ganttVisible = false;
+    let storyMode = "none"; // "none" | "diagnostics" | "minimal"
+    const epicRowDataMap = {}; // keyed by epic_key, populated on each renderGantt
+
+    function ganttMonthRange(monthStr) {
+      if (!monthStr || monthStr.length < 7) {
+        const now = new Date();
+        monthStr = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0");
+      }
+      const selYear = parseInt(monthStr.slice(0, 4), 10);
+      const selMon = parseInt(monthStr.slice(5, 7), 10);
+      const prevMon = selMon === 1 ? 12 : selMon - 1;
+      const prevYear = selMon === 1 ? selYear - 1 : selYear;
+      const nextMon = selMon === 12 ? 1 : selMon + 1;
+      const nextYear = selMon === 12 ? selYear + 1 : selYear;
+      const start = new Date(prevYear, prevMon - 1, 1);
+      const end = new Date(nextYear, nextMon, 0);
+      const totalDays = Math.round((end.getTime() - start.getTime()) / 86400000) + 1;
+      return { prevYear, prevMon, selYear, selMon, nextYear, nextMon, start, end, totalDays };
+    }
+
+    function renderGantt(rows, monthStr) {
+      const container = document.getElementById("gantt-body");
+      if (!container) return;
+      const displayRows = Array.isArray(rows) ? rows : [];
+      const range = ganttMonthRange(monthStr || (els.month ? els.month.value : ""));
+      const INFO_W = 400;
+      const ganttWrap = container.closest(".gantt-wrap");
+      const availTimelineW = Math.max(360, (ganttWrap ? ganttWrap.clientWidth : 900) - INFO_W - 4);
+      const MONTHS_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+      // Collect week column start dates
+      const weeks = [];
+      const cur = new Date(range.start);
+      while (cur <= range.end) {
+        weeks.push(new Date(cur));
+        cur.setDate(cur.getDate() + 7);
+      }
+      const WEEK_W = Math.max(44, Math.floor(availTimelineW / weeks.length));
+      const totalTimelineW = WEEK_W * weeks.length;
+
+      function dateToPx(d) {
+        const days = (d.getTime() - range.start.getTime()) / 86400000;
+        return Math.round(days / range.totalDays * totalTimelineW);
+      }
+
+      // Paired-story layout constants (used to position story pairs below the epic bar)
+      const EPIC_BAR_TOP = 4;   // px from cell top where epic bar starts (paired mode)
+      const EPIC_BAR_H  = 20;   // same as .gantt-bar height
+      const STORIES_START = EPIC_BAR_TOP + EPIC_BAR_H + 4; // 28px — first story starts here
+      const STORY_BAR_H = 6;    // story plan bar height (matches .gantt-story-bar height)
+      const STORY_WL_H  = 5;    // story worklog bar height
+      const STORY_WL_GAP = 2;   // gap between story plan bar and its worklog bar
+      const STORY_SEP   = 5;    // gap between story pairs
+      const STORY_PAIR_H = STORY_BAR_H + STORY_WL_GAP + STORY_WL_H + STORY_SEP; // 18px per pair
+
+      // Shared background overlays per row
+      const selMonStart = new Date(range.selYear, range.selMon - 1, 1);
+      const selMonEnd = new Date(range.selYear, range.selMon, 0);
+      const selMonLeft = Math.max(0, dateToPx(selMonStart));
+      const selMonRight = Math.min(totalTimelineW, dateToPx(selMonEnd) + Math.round(86400000 / 86400000 / range.totalDays * totalTimelineW) + 1);
+      const selMonWidth = Math.max(0, selMonRight - selMonLeft + Math.round(WEEK_W / 7));
+      const selMonBg = '<div class="gantt-sel-month-bg" style="left:' + selMonLeft + 'px;width:' + selMonWidth + 'px;"></div>';
+
+      const todayD = new Date();
+      let todayLine = "";
+      if (todayD >= range.start && todayD <= range.end) {
+        todayLine = '<div class="gantt-today-line" style="left:' + dateToPx(todayD) + 'px;"></div>';
+      }
+
+      function gridLines() {
+        return weeks.map((_, i) => '<div class="gantt-grid-line" style="left:' + (i * WEEK_W) + 'px;"></div>').join("");
+      }
+
+      // Month header spans
+      const monthSpans = [
+        { year: range.prevYear, mon: range.prevMon },
+        { year: range.selYear, mon: range.selMon },
+        { year: range.nextYear, mon: range.nextMon },
+      ];
+      const monthHeaderParts = monthSpans.map(function(m) {
+        const mStart = new Date(m.year, m.mon - 1, 1);
+        const mEnd = new Date(m.year, m.mon, 0);
+        const effStart = new Date(Math.max(mStart.getTime(), range.start.getTime()));
+        const effEnd = new Date(Math.min(mEnd.getTime(), range.end.getTime()));
+        const wPx = Math.max(0, dateToPx(effEnd) - dateToPx(effStart) + Math.round(86400000 / 86400000 / range.totalDays * totalTimelineW) + 1);
+        const isSel = m.year === range.selYear && m.mon === range.selMon;
+        return '<div class="gantt-month-label' + (isSel ? " is-sel-month" : "") + '" style="width:' + wPx + 'px;">'
+          + esc(MONTHS_SHORT[m.mon - 1] + " " + m.year) + '</div>';
+      });
+      const weekHeaderParts = weeks.map(function(w) {
+        return '<div class="gantt-week-label" style="width:' + WEEK_W + 'px;">'
+          + String(w.getDate()).padStart(2, "0") + "/" + String(w.getMonth() + 1).padStart(2, "0") + '</div>';
+      });
+
+      const bfRows = sortByStatus(displayRows.filter(function(r) { return r.brought_forward; }));
+      const cfRows = sortByStatus(displayRows.filter(function(r) { return !r.brought_forward && r.carried_forward; }));
+      const monthRows = sortByStatus(displayRows.filter(function(r) { return !r.brought_forward && !r.carried_forward; }));
+      const curMonthName = monthDisplayName(monthStr || (els.month ? els.month.value : ""));
+      // Populate lookup map for drawer
+      displayRows.forEach(function(r) { if (r.epic_key) epicRowDataMap[r.epic_key] = r; });
+
+      function groupRowHtml(cls, icon, label, count) {
+        return '<div class="gantt-group-row ' + cls + '">'
+          + '<div class="gantt-info-cell gantt-group-info"><div class="group-label">'
+          + '<span class="group-icon material-symbols-outlined" aria-hidden="true">' + esc(icon) + '</span>'
+          + '<span class="group-title">' + esc(label) + '</span>'
+          + '<span class="group-badge">' + count + '</span>'
+          + '</div></div>'
+          + '<div class="gantt-timeline-cell" style="width:' + totalTimelineW + 'px;min-height:36px;">'
+          + gridLines() + selMonBg
+          + '</div></div>';
+      }
+
+      // Build worklog activity bar HTML (teal segments, gaps = discontinuous logging)
+      // In paired story mode the aggregate is hidden — worklogs are shown per-story instead.
+      function worklogSegmentsHtml(row) {
+        if (storyMode !== "none") return "";
+        const dates = (row.worklog_dates || []);
+        if (!dates.length) return "";
+        const GAP_THRESHOLD_MS = 3 * 86400000; // 3 days — bridge weekends
+        // Group sorted dates into continuous segments within the visible range
+        const segments = [];
+        let segStart = null, segEnd = null;
+        for (let i = 0; i < dates.length; i++) {
+          const d = new Date(dates[i] + "T00:00:00");
+          if (d < range.start || d > range.end) {
+            // Out-of-range date can extend current segment to edge; skip isolated ones
+            continue;
+          }
+          if (segStart === null) {
+            segStart = segEnd = d;
+          } else {
+            const gap = d.getTime() - segEnd.getTime();
+            if (gap <= GAP_THRESHOLD_MS) {
+              segEnd = d;
+            } else {
+              segments.push([segStart, segEnd]);
+              segStart = segEnd = d;
+            }
+          }
+        }
+        if (segStart !== null) segments.push([segStart, segEnd]);
+        if (!segments.length) return "";
+
+        let html = "";
+        for (let s = 0; s < segments.length; s++) {
+          const sDate = segments[s][0], eDate = segments[s][1];
+          const clampedS = new Date(Math.max(sDate.getTime(), range.start.getTime()));
+          const clampedE = new Date(Math.min(eDate.getTime(), range.end.getTime()));
+          const leftPx = Math.max(0, dateToPx(clampedS));
+          const rightPx = Math.min(totalTimelineW, dateToPx(clampedE) + Math.round(totalTimelineW / range.totalDays));
+          const widthPx = Math.max(3, rightPx - leftPx);
+          const firstIso = sDate.toISOString().slice(0, 10);
+          const lastIso = eDate.toISOString().slice(0, 10);
+          const tip = firstIso === lastIso
+            ? "Worklog: " + firstIso
+            : "Worklog: " + firstIso + " \u2192 " + lastIso;
+          html += '<div class="gantt-worklog-seg" style="left:' + leftPx + 'px;width:' + widthPx + 'px;" title="' + esc(tip) + '"></div>';
+        }
+        return html;
+      }
+
+      function storyBarsHtml(row) {
+        if (!storyMode || storyMode === "none") return "";
+        const stories = (row.story_bars || []);
+        if (!stories.length) return "";
+        const toPlot = storyMode === "minimal"
+          ? stories.filter(function(s) { return s.has_hours; })
+          : stories;
+        if (!toPlot.length) return "";
+
+        const GAP_THRESHOLD_MS = 3 * 86400000; // 3-day bridge for story worklog segments
+
+        function storyWlSegsHtml(wlDates, topPx, storyLabel) {
+          if (!wlDates || !wlDates.length) return "";
+          const segments = [];
+          let segStart = null, segEnd = null;
+          for (let k = 0; k < wlDates.length; k++) {
+            const d = new Date(wlDates[k] + "T00:00:00");
+            if (d < range.start || d > range.end) continue;
+            if (segStart === null) { segStart = segEnd = d; }
+            else {
+              const gap = d.getTime() - segEnd.getTime();
+              if (gap <= GAP_THRESHOLD_MS) { segEnd = d; }
+              else { segments.push([segStart, segEnd]); segStart = segEnd = d; }
+            }
+          }
+          if (segStart !== null) segments.push([segStart, segEnd]);
+          if (!segments.length) return "";
+          let sh = "";
+          for (let s = 0; s < segments.length; s++) {
+            const sDate = segments[s][0], eDate = segments[s][1];
+            const clampedS = new Date(Math.max(sDate.getTime(), range.start.getTime()));
+            const clampedE = new Date(Math.min(eDate.getTime(), range.end.getTime()));
+            const leftPx  = Math.max(0, dateToPx(clampedS));
+            const rightPx = Math.min(totalTimelineW, dateToPx(clampedE) + Math.round(totalTimelineW / range.totalDays));
+            const widthPx = Math.max(2, rightPx - leftPx);
+            const firstIso = sDate.toISOString().slice(0, 10);
+            const lastIso  = eDate.toISOString().slice(0, 10);
+            const tip = (storyLabel ? esc(storyLabel) + " — " : "") + "Logged: "
+              + firstIso + (firstIso !== lastIso ? " \u2192 " + lastIso : "");
+            sh += '<div class="gantt-story-worklog-seg" style="top:' + topPx + 'px;left:' + leftPx + 'px;width:' + widthPx + 'px;" title="' + tip + '"></div>';
+          }
+          return sh;
+        }
+
+        let html = "";
+        for (let i = 0; i < toPlot.length; i++) {
+          const s = toPlot[i];
+          const sd = s.start_date, ed = s.due_date;
+          if (!sd && !ed) continue;
+          const barStartD = new Date(((sd || ed) + "T00:00:00"));
+          const barEndD   = new Date(((ed || sd) + "T00:00:00"));
+          const clampedS  = new Date(Math.max(barStartD.getTime(), range.start.getTime()));
+          const clampedE  = new Date(Math.min(barEndD.getTime(), range.end.getTime()));
+          if (clampedS.getTime() > range.end.getTime() || clampedE.getTime() < range.start.getTime()) continue;
+          const leftPx  = Math.max(0, dateToPx(clampedS));
+          const rightPx = Math.min(totalTimelineW, dateToPx(clampedE) + Math.round(totalTimelineW / range.totalDays));
+          const widthPx = Math.max(2, rightPx - leftPx);
+          const tip = s.issue_key + (s.summary ? " \u2014 " + s.summary : "") + " | " + (sd || "?") + " \u2192 " + (ed || "?");
+          // Story plan bar — positioned below the epic bar
+          const storyTop = STORIES_START + i * STORY_PAIR_H;
+          html += '<div class="gantt-story-bar" style="top:' + storyTop + 'px;left:' + leftPx + 'px;width:' + widthPx + 'px;" title="' + esc(tip) + '"></div>';
+          // Paired story worklog bar — immediately beneath the story plan bar
+          const wlTop = storyTop + STORY_BAR_H + STORY_WL_GAP;
+          html += storyWlSegsHtml(s.worklog_dates, wlTop, s.issue_key);
+        }
+        return html;
+      }
+
+      function epicRowHtml(row) {
+        const epicKey = row.epic_key || "";
+        const epicName = row.epic_name || epicKey;
+        const projectKey = String(row.project_key || "").toUpperCase();
+        const projectHex = projectColor(projectKey);
+        const projectName = projectDisplayName(projectKey, row.project_name);
+        const projectStyle = "--project-color:" + projectHex + ";--project-bg:" + colorToSoftBg(projectHex);
+        const plannedVal = effortValue(row, "planned");
+        const actualVal = effortValue(row, "actual");
+        const totalPlanVal = unit === "days"
+          ? (parseFloat(row.total_planned_days) || 0)
+          : (parseFloat(row.total_planned_hours) || 0);
+        const sfx = unit === "days" ? "d" : "h";
+
+        const linkContent = '<span class="gantt-epic-name">' + esc(epicName) + '</span>'
+          + '<span class="gantt-epic-key">' + esc(epicKey) + '</span>';
+        const epicLinkHtml = row.jira_url
+          ? '<a class="gantt-epic-link" href="' + esc(row.jira_url) + '" target="_blank" rel="noopener">' + linkContent + '</a>'
+          : '<div class="gantt-epic-link-plain">' + linkContent + '</div>';
+
+        const infoHtml = '<div class="gantt-info-cell">'
+          + '<div class="gantt-info-epic">' + epicLinkHtml + '</div>'
+          + '<div class="gantt-info-meta">'
+          + '<span class="project-chip" style="' + esc(projectStyle) + '">' + esc(projectName) + '</span>'
+          + statusPill(row.delivery_status || "-", row.approved_start)
+          + statusPill(row.jira_status || "-", row.approved_start)
+          + '</div>'
+          + '<div class="gantt-info-hours">'
+          + '<span title="Planned hours in selected month">Month Plan&nbsp;<strong>' + formatNumber(plannedVal) + '&nbsp;' + sfx + '</strong></span>'
+          + (totalPlanVal > 0
+              ? '<span class="gantt-total-plan" title="Total planned hours across full epic scope">Total Plan&nbsp;<strong>' + formatNumber(totalPlanVal) + '&nbsp;' + sfx + '</strong></span>'
+              : '')
+          + '<span>Act&nbsp;<strong>' + formatNumber(actualVal) + '&nbsp;' + sfx + '</strong></span>'
+          + '</div>'
+          + '</div>';
+
+        // Compute how many story pairs will be shown for layout calculations
+        const allStoryBars = (row.story_bars || []);
+        const visibleStories = storyMode === "none" ? 0
+          : storyMode === "minimal"
+            ? allStoryBars.filter(function(s) { return s.has_hours; }).length
+            : allStoryBars.length;
+        const hasPairedStories = visibleStories > 0;
+        // Row height grows to fit story pairs (each pair is STORY_PAIR_H px tall)
+        const rowMinH = hasPairedStories
+          ? Math.max(68, STORIES_START + visibleStories * STORY_PAIR_H + 6)
+          : 68;
+
+        // Approved start → due bar
+        let barHtml = "";
+        const startStr = row.approved_start;
+        const endStr = row.approved_due;
+        if (startStr || endStr) {
+          const barStartD = new Date(((startStr || endStr) + "").slice(0, 10));
+          const barEndD = new Date(((endStr || startStr) + "").slice(0, 10));
+          const clampedStart = new Date(Math.max(barStartD.getTime(), range.start.getTime()));
+          const clampedEnd = new Date(Math.min(barEndD.getTime(), range.end.getTime()));
+          if (clampedStart.getTime() <= range.end.getTime() && clampedEnd.getTime() >= range.start.getTime()) {
+            const leftPx = Math.max(0, dateToPx(clampedStart));
+            const rightPx = Math.min(totalTimelineW, dateToPx(clampedEnd) + Math.round(totalTimelineW / range.totalDays));
+            const widthPx = Math.max(4, rightPx - leftPx);
+            const barColor = "#7c3aed"; // epic = purple always
+            // When stories are present, pin the epic bar to the top; otherwise keep it centred
+            const epicBarStyle = hasPairedStories
+              ? 'top:' + EPIC_BAR_TOP + 'px;transform:none;'
+              : '';
+            barHtml = '<div class="gantt-bar" style="' + epicBarStyle + 'left:' + leftPx + 'px;width:' + widthPx + 'px;background:' + barColor + ';"'
+              + ' title="' + esc(epicKey + ": " + (startStr || "?") + " \u2192 " + (endStr || "?")) + '">'
+              + '<span class="gantt-bar-label">' + esc(epicKey) + '</span>'
+              + '</div>';
+          }
+        }
+
+        // Actual completion — red vertical line
+        let completionHtml = "";
+        if (row.actual_completed_date) {
+          const compD = new Date((row.actual_completed_date + "").slice(0, 10));
+          if (!isNaN(compD.getTime()) && compD >= range.start && compD <= range.end) {
+            const compPx = dateToPx(compD);
+            completionHtml = '<div class="gantt-completion-line" style="left:' + compPx + 'px;"'
+              + ' title="Completed: ' + esc(formatDisplayDate(row.actual_completed_date)) + '">'
+              + '<div class="gantt-completion-dot"></div>'
+              + '</div>';
+          }
+        }
+
+        return '<div class="gantt-row" onclick="if(!event.target.closest(\'a\'))openEpicDetail(\'' + esc(epicKey).replace(/'/g,"&#39;") + '\')">'
+          + infoHtml
+          + '<div class="gantt-timeline-cell" style="width:' + totalTimelineW + 'px;min-height:' + rowMinH + 'px;">'
+          + gridLines() + selMonBg + todayLine + barHtml + completionHtml + worklogSegmentsHtml(row) + storyBarsHtml(row)
+          + '</div></div>';
+      }
+
+      const parts = [];
+
+      // Sticky header row
+      parts.push(
+        '<div class="gantt-header-row">'
+        + '<div class="gantt-info-cell gantt-header-info">'
+        + '<div class="gantt-col-header">Epic / Project / Status</div>'
+        + '<div class="gantt-col-subheader">Planned &amp; Actual ' + (unit === "days" ? "Days" : "Hours") + '</div>'
+        + '<div class="gantt-legend">'
+        + '<span class="gantt-legend-bar" style="background:#7c3aed;"></span>&thinsp;Epic plan'
+        + (storyMode !== "none" ? '&nbsp;&nbsp;<span class="gantt-legend-story"></span>&thinsp;Story plan' : '')
+        + (storyMode !== "none" ? '&nbsp;&nbsp;<span class="gantt-legend-story-worklog"></span>&thinsp;Story hours' : '&nbsp;&nbsp;<span class="gantt-legend-worklog"></span>&thinsp;Hours logged')
+        + '&nbsp;&nbsp;<span class="gantt-legend-line"></span>&thinsp;Completion date'
+        + '&nbsp;&nbsp;<span class="gantt-legend-today"></span>&thinsp;Today'
+        + '</div>'
+        + '</div>'
+        + '<div class="gantt-timeline-cell gantt-header-timeline" style="width:' + totalTimelineW + 'px;">'
+        + '<div class="gantt-month-row">' + monthHeaderParts.join("") + '</div>'
+        + '<div class="gantt-week-row">' + weekHeaderParts.join("") + '</div>'
+        + selMonBg
+        + '</div></div>'
+      );
+
+      if (!displayRows.length) {
+        parts.push('<div style="padding:28px;text-align:center;color:var(--muted);font-size:0.9rem;">No epics to show in Gantt view.</div>');
+      } else {
+        if (bfRows.length) {
+          parts.push(groupRowHtml("group-bf", "history", "Brought Forward — Overdue Epics", bfRows.length));
+          bfRows.forEach(function(r) { parts.push(epicRowHtml(r)); });
+        }
+        if (monthRows.length) {
+          parts.push(groupRowHtml("group-month", "calendar_month", curMonthName + " Epics", monthRows.length));
+          monthRows.forEach(function(r) { parts.push(epicRowHtml(r)); });
+        }
+        if (cfRows.length) {
+          parts.push(groupRowHtml("group-cf", "trending_flat", "Carried Forward — Slipping Epics", cfRows.length));
+          cfRows.forEach(function(r) { parts.push(epicRowHtml(r)); });
+        }
+      }
+
+      container.innerHTML = parts.join("");
+    }
+
+    function toggleGanttView(show) {
+      ganttVisible = !!show;
+      const tableWrap = document.getElementById("table-view-wrap");
+      const ganttWrap = document.getElementById("gantt-view-wrap");
+      const tableBtn = document.getElementById("view-table-btn");
+      const ganttBtn = document.getElementById("view-gantt-btn");
+      if (tableWrap) tableWrap.style.display = show ? "none" : "";
+      if (ganttWrap) ganttWrap.style.display = show ? "" : "none";
+      if (tableBtn) tableBtn.classList.toggle("active", !show);
+      if (ganttBtn) ganttBtn.classList.toggle("active", show);
+      if (show && latestPayload) {
+        const filtered = filteredRowsForTable(latestPayload.rows || []);
+        renderGantt(filtered, els.month ? els.month.value : "");
+      }
+    }
+
+    const _viewTableBtn = document.getElementById("view-table-btn");
+    const _viewGanttBtn = document.getElementById("view-gantt-btn");
+    if (_viewTableBtn) _viewTableBtn.addEventListener("click", function() { toggleGanttView(false); });
+    if (_viewGanttBtn) _viewGanttBtn.addEventListener("click", function() { toggleGanttView(true); });
+
+    function setStoryMode(mode) {
+      storyMode = storyMode === mode ? "none" : mode; // toggle off if clicking same button
+      const diagBtn = document.getElementById("gantt-story-diagnostics-btn");
+      const minBtn = document.getElementById("gantt-story-minimal-btn");
+      if (diagBtn) diagBtn.classList.toggle("active", storyMode === "diagnostics");
+      if (minBtn) minBtn.classList.toggle("active", storyMode === "minimal");
+      if (ganttVisible && latestPayload) {
+        const filtered = filteredRowsForTable(latestPayload.rows || []);
+        renderGantt(filtered, els.month ? els.month.value : "");
+      }
+    }
+    const _diagBtn = document.getElementById("gantt-story-diagnostics-btn");
+    const _minBtn = document.getElementById("gantt-story-minimal-btn");
+    if (_diagBtn) _diagBtn.addEventListener("click", function() { setStoryMode("diagnostics"); });
+    if (_minBtn) _minBtn.addEventListener("click", function() { setStoryMode("minimal"); });
+
+    let _ganttResizeTimer = null;
+    window.addEventListener("resize", function() {
+      if (!ganttVisible || !latestPayload) return;
+      clearTimeout(_ganttResizeTimer);
+      _ganttResizeTimer = setTimeout(function() {
+        const filtered = filteredRowsForTable(latestPayload.rows || []);
+        renderGantt(filtered, els.month ? els.month.value : "");
+      }, 120);
+    });
+
     loadProjects().then(loadSummary);
+
+    /* ── Epic Postmortem Drawer ─────────────────────────────────── */
+    function closeEpicDetail() {
+      const overlay = document.getElementById("epic-detail-overlay");
+      if (overlay) overlay.classList.remove("open");
+      document.body.style.overflow = "";
+    }
+
+    function _donutSvg(segments, size) {
+      // segments: [{color, pct, label}]  pct in 0-100
+      const r = (size - 10) / 2;
+      const cx = size / 2, cy = size / 2;
+      const circ = 2 * Math.PI * r;
+      let offset = 0;
+      const filled = segments.filter(function(s) { return s.pct > 0; });
+      if (!filled.length) {
+        return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 ' + size + ' ' + size + '">'
+          + '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="none" stroke="#e2e8f0" stroke-width="14"/>'
+          + '</svg>';
+      }
+      let paths = '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="none" stroke="#f1f5f9" stroke-width="14"/>';
+      for (let i = 0; i < filled.length; i++) {
+        const seg = filled[i];
+        const dash = Math.max(0.5, seg.pct / 100 * circ);
+        const gap = circ - dash;
+        const rot = -90 + offset / circ * 360;
+        paths += '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="none"'
+          + ' stroke="' + seg.color + '" stroke-width="14"'
+          + ' stroke-dasharray="' + dash.toFixed(2) + ' ' + gap.toFixed(2) + '"'
+          + ' stroke-dashoffset="0"'
+          + ' transform="rotate(' + rot.toFixed(1) + ' ' + cx + ' ' + cy + ')"'
+          + ' style="transition:stroke-dasharray 0.3s;"'
+          + '><title>' + esc(seg.label) + ': ' + seg.pct.toFixed(1) + '%</title></circle>';
+        offset += dash;
+      }
+      return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 ' + size + ' ' + size + '">' + paths + '</svg>';
+    }
+
+    function openEpicDetail(epicKey) {
+      const row = epicRowDataMap[epicKey];
+      if (!row) return;
+      document.body.style.overflow = "hidden";
+      const overlay = document.getElementById("epic-detail-overlay");
+      overlay.classList.add("open");
+
+      // ── Header ──────────────────────────────────────────────────
+      const projectKey = String(row.project_key || "").toUpperCase();
+      const projectHex = projectColor(projectKey);
+      const projectName = projectDisplayName(projectKey, row.project_name);
+      const projectStyle = "--project-color:" + projectHex + ";--project-bg:" + colorToSoftBg(projectHex);
+
+      const jiraLinkHtml = row.jira_url
+        ? '<a class="epic-detail-jira-link" href="' + esc(row.jira_url) + '" target="_blank" rel="noopener">'
+          + '<span class="material-symbols-outlined">open_in_new</span>Open in Jira</a>'
+        : "";
+
+      let catBadge = "";
+      if (row.brought_forward) catBadge = '<span class="pill warn" style="font-size:0.72rem;">Brought Forward</span>';
+      else if (row.carried_forward) catBadge = '<span class="pill danger" style="font-size:0.72rem;">Carried Forward</span>';
+      else catBadge = '<span class="pill info" style="font-size:0.72rem;">This Month</span>';
+
+      document.getElementById("epic-detail-header").innerHTML =
+        '<div class="epic-detail-header-top">'
+        + '<div>'
+          + '<div class="epic-detail-epic-name">' + esc(row.epic_name || epicKey) + '</div>'
+          + '<div class="epic-detail-epic-key">' + esc(epicKey) + '</div>'
+        + '</div>'
+        + '<button class="epic-detail-close" onclick="closeEpicDetail()" title="Close">&times;</button>'
+        + '</div>'
+        + '<div class="epic-detail-meta">'
+          + '<span class="project-chip" style="' + esc(projectStyle) + '">' + esc(projectName) + '</span>'
+          + statusPill(row.delivery_status || "-", row.approved_start)
+          + statusPill(row.jira_status || "-", row.approved_start)
+          + catBadge
+          + jiraLinkHtml
+        + '</div>';
+
+      // ── Metrics ───────────────────────────────────────────────────
+      const sfx = unit === "days" ? "d" : "h";
+      const plannedVal   = effortValue(row, "planned");
+      const actualVal    = effortValue(row, "actual");  // hours logged in selected month
+      const totalActualVal = parseFloat(row.total_actual_hours) || 0; // all-time hours logged
+      const totalPlanVal = unit === "days"
+        ? (parseFloat(row.total_planned_days) || 0)
+        : (parseFloat(row.total_planned_hours) || 0);
+      const pctDone = totalPlanVal > 0 ? Math.min(100, totalActualVal / totalPlanVal * 100) : 0;
+
+      // ── KPI row — 5 cards ─────────────────────────────────────────
+      const kpiHtml = '<div class="epic-kpi-row" style="grid-template-columns:repeat(5,1fr);">'
+        + _kpiCard("Month Plan",     formatNumber(plannedVal) + sfx,     "Effort planned for selected month",            "#7c3aed")
+        + _kpiCard("Total Plan",     formatNumber(totalPlanVal) + sfx,   "Full epic planned effort",                     "#2563eb")
+        + _kpiCard("Month Actual",   formatNumber(actualVal) + sfx,      "Hours logged in the selected month",           "#16a34a")
+        + _kpiCard("Total Invested", formatNumber(totalActualVal) + sfx, "All-time hours logged across the full epic",   "#0891b2")
+        + _kpiCard("Progress",       pctDone.toFixed(0) + "%",           "Total Invested vs Total Plan",                 pctDone >= 100 ? "#16a34a" : pctDone >= 60 ? "#2563eb" : "#f59e0b")
+        + '</div>';
+
+      // ── Timeline card ─────────────────────────────────────────────
+      const slipStart = _slipDays(row.approved_start, row.actual_start || row.approved_start);
+      const slipDue = _slipDays(row.approved_due, row.actual_completed_date || null);
+      const timelineHtml = '<div class="epic-detail-card">'
+        + '<div class="epic-detail-card-title"><span class="material-symbols-outlined" style="font-size:14px;">timeline</span>Timeline &amp; Dates</div>'
+        + _timelineRow("Approved Start", row.approved_start, null)
+        + _timelineRow("Approved Due", row.approved_due, null)
+        + _timelineRow("Actual Start", row.actual_start || "—", null)
+        + _timelineRow("Completion Date", row.actual_completed_date || "—", row.actual_completed_date ? 0 : null)
+        + (slipDue !== null
+            ? '<div class="epic-timeline-item"><span class="epic-timeline-label">Schedule Slip</span>'
+              + '<span class="' + (slipDue <= 0 ? "epic-slip-ok" : "epic-slip-bad") + '">'
+              + (slipDue <= 0 ? "On time" : "+" + slipDue + " days late") + '</span></div>'
+            : "")
+        + '</div>';
+
+      // ── Donut chart (hours breakdown) ────────────────────────────
+      const monthActPct  = totalPlanVal > 0 ? Math.min(100, actualVal / totalPlanVal * 100) : 0;
+      const priorActPct  = totalPlanVal > 0 ? Math.min(100, Math.max(0, (totalActualVal - actualVal) / totalPlanVal * 100)) : 0;
+      const remainPct    = Math.max(0, 100 - monthActPct - priorActPct);
+      const donutSegs = [
+        { color: "#16a34a", pct: monthActPct, label: "Month actual (" + formatNumber(actualVal) + sfx + ")" },
+        { color: "#0891b2", pct: priorActPct, label: "Prior invested (" + formatNumber(Math.max(0, totalActualVal - actualVal)) + sfx + ")" },
+        { color: "#cbd5e1", pct: remainPct,   label: "Remaining plan" },
+      ];
+      const donutHtml = '<div class="epic-detail-card">'
+        + '<div class="epic-detail-card-title"><span class="material-symbols-outlined" style="font-size:14px;">donut_large</span>Hours Breakdown</div>'
+        + '<div class="epic-donut-wrap">'
+          + _donutSvg(donutSegs, 110)
+          + '<div class="epic-donut-legend">'
+            + donutSegs.map(function(s) {
+                return '<div class="epic-donut-legend-item"><span class="epic-donut-dot" style="background:' + s.color + ';"></span><span>' + esc(s.label) + '</span></div>';
+              }).join("")
+          + '</div>'
+        + '</div>'
+        + '</div>';
+
+      // ── Story status bar ──────────────────────────────────────────
+      const stories = Array.isArray(row.child_items) ? row.child_items
+        : Array.isArray(row.story_bars) ? row.story_bars : [];
+      const statusCount = { done: 0, inprogress: 0, todo: 0, hold: 0 };
+      stories.forEach(function(s) {
+        const cat = _classifyStatus(s.jira_status || s.status || "");
+        if (statusCount[cat] !== undefined) statusCount[cat]++;
+        else statusCount.todo++;
+      });
+      const totalStories = stories.length || 1;
+      const statusColors = { done: "#16a34a", inprogress: "#2563eb", todo: "#94a3b8", hold: "#f59e0b" };
+      const statusLabels = { done: "Done", inprogress: "In Progress", todo: "To Do", hold: "On Hold" };
+      const storyBarSegs = Object.keys(statusCount).map(function(k) {
+        const pct = statusCount[k] / totalStories * 100;
+        return pct > 0 ? '<div class="epic-status-seg" style="background:' + statusColors[k] + ';flex:' + pct.toFixed(1) + ';" title="' + statusLabels[k] + ': ' + statusCount[k] + '"></div>' : "";
+      }).join("");
+      const storyLegendItems = Object.keys(statusCount).filter(function(k) { return statusCount[k] > 0; }).map(function(k) {
+        return '<span><span class="epic-status-dot" style="background:' + statusColors[k] + ';"></span>' + statusLabels[k] + '&nbsp;<strong>' + statusCount[k] + '</strong></span>';
+      }).join("");
+      const storyStatusHtml = '<div class="epic-detail-card">'
+        + '<div class="epic-detail-card-title"><span class="material-symbols-outlined" style="font-size:14px;">bar_chart</span>Story Status ('+ stories.length +' stories)</div>'
+        + '<div class="epic-status-bar">' + storyBarSegs + '</div>'
+        + '<div class="epic-status-labels">' + storyLegendItems + '</div>'
+        + '</div>';
+
+      // ── Worklog activity mini bar chart ───────────────────────────
+      const wlDates = Array.isArray(row.worklog_dates) ? row.worklog_dates : [];
+      const weeklyHours = {};
+      wlDates.forEach(function(d) {
+        const dt = new Date(d + "T00:00:00");
+        const day = dt.getDay(); // 0=Sun
+        const monday = new Date(dt);
+        monday.setDate(dt.getDate() - ((day === 0 ? 7 : day) - 1));
+        const wk = monday.toISOString().slice(0, 10);
+        weeklyHours[wk] = (weeklyHours[wk] || 0) + 1; // count days, not hours
+      });
+      const wlWeeks = Object.keys(weeklyHours).sort();
+      const maxWlVal = Math.max(1, ...wlWeeks.map(function(w) { return weeklyHours[w]; }));
+      const wlBarsHtml = wlWeeks.length
+        ? '<div class="epic-wl-chart">'
+          + wlWeeks.map(function(w) {
+              const h = weeklyHours[w];
+              const barH = Math.max(4, Math.round(h / maxWlVal * 56));
+              return '<div class="epic-wl-col">'
+                + '<div class="epic-wl-bar" style="height:' + barH + 'px;" title="Week of ' + w + ': ' + h + ' day(s) logged"></div>'
+                + '<div class="epic-wl-lbl">' + esc(w.slice(5)) + '</div>'
+                + '</div>';
+            }).join("")
+          + '</div>'
+        : '<p style="color:#94a3b8;font-size:0.8rem;margin:0;">No worklog activity recorded.</p>';
+      const wlHtml = '<div class="epic-detail-card">'
+        + '<div class="epic-detail-card-title"><span class="material-symbols-outlined" style="font-size:14px;">pending_actions</span>Worklog Activity (weeks with logged days)</div>'
+        + wlBarsHtml
+        + '</div>';
+
+      // ── Stories detail table ──────────────────────────────────────
+      let storyTableHtml = "";
+      if (stories.length) {
+        let tableBody = "";
+        let lastParentKey = null;
+        stories.forEach(function(s) {
+          const isChildItem = ("parent_story_key" in s);
+          const ps = isChildItem ? (s.parent_story_key || "") : "";
+          // Story group header (synthetic row) when a new parent story starts
+          if (ps && ps !== lastParentKey) {
+            lastParentKey = ps;
+            const psLink = s.story_jira_url
+              ? '<a href="' + esc(s.story_jira_url) + '" target="_blank" rel="noopener" style="color:#155e91;font-weight:700;">' + esc(ps) + '</a>'
+              : '<strong>' + esc(ps) + '</strong>';
+            const psSummary = s.parent_story_summary ? ' &ndash; ' + esc(s.parent_story_summary) : '';
+            tableBody += '<tr class="story-group-hdr"><td colspan="6">'
+              + '<span class="material-symbols-outlined" style="font-size:13px;vertical-align:middle;margin-right:4px;color:#0369a1;">task_alt</span>'
+              + psLink + psSummary + '</td></tr>';
+          } else if (!ps) {
+            lastParentKey = null;
+          }
+
+          const isSubtask = !!ps;
+          const cat = _classifyStatus(s.jira_status || s.status || "");
+          const dotStyle = 'style="display:inline-block;width:8px;height:8px;border-radius:2px;background:' + statusColors[cat] + ';margin-right:5px;vertical-align:middle;"';
+          const stKey = s.issue_key || s.key || "";
+          const stLink = s.jira_url
+            ? '<a href="' + esc(s.jira_url) + '" target="_blank" rel="noopener" style="color:#155e91;text-decoration:none;font-family:monospace;font-size:0.75rem;">' + esc(stKey) + '</a>'
+            : '<span style="font-family:monospace;font-size:0.75rem;color:#64748b;">' + esc(stKey) + '</span>';
+          const stStatus = s.jira_status || s.status || "\u2014";
+          const stStart  = s.start_date  || s.approved_start || "\u2014";
+          const stDue    = s.due_date    || s.approved_due   || "\u2014";
+          const stHours  = s.planned_hours != null ? formatNumber(parseFloat(s.planned_hours) || 0) + "h" : (s.has_hours ? "\u2713" : "\u2014");
+          const typePill = isSubtask
+            ? '<span style="display:inline-block;font-size:0.68rem;font-weight:700;background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;border-radius:999px;padding:1px 6px;margin-right:6px;white-space:nowrap;">Sub-task</span>'
+            : '<span style="display:inline-block;font-size:0.68rem;font-weight:700;background:#f0f9ff;color:#0369a1;border:1px solid #bae6fd;border-radius:999px;padding:1px 6px;margin-right:6px;white-space:nowrap;">Story</span>';
+          tableBody += '<tr class="' + (isSubtask ? 'subtask-row' : '') + '">'
+            + '<td>' + stLink + '</td>'
+            + '<td>' + typePill + esc(s.summary || s.name || "") + '</td>'
+            + '<td><span ' + dotStyle + '></span>' + esc(stStatus) + '</td>'
+            + '<td style="color:#64748b;">' + esc(stStart) + '</td>'
+            + '<td style="color:#64748b;">' + esc(stDue) + '</td>'
+            + '<td style="text-align:right;">' + esc(stHours) + '</td>'
+            + '</tr>';
+        });
+        storyTableHtml = '<div class="epic-detail-card" style="overflow:auto;max-height:420px;">'
+          + '<div class="epic-detail-card-title"><span class="material-symbols-outlined" style="font-size:14px;">list</span>Stories &amp; Tasks</div>'
+          + '<table class="epic-detail-table"><thead><tr>'
+          + '<th>Key</th><th>Summary</th><th>Status</th><th>Start</th><th>Due</th><th style="text-align:right;">Hours</th>'
+          + '</tr></thead><tbody>' + tableBody + '</tbody></table>'
+          + '</div>';
+      }
+
+      // ── Carry-forward reasons ─────────────────────────────────────
+      let cfBox = "";
+      const cfReasons = Array.isArray(row.carry_forward_reasons) ? row.carry_forward_reasons : [];
+      if (cfReasons.length) {
+        cfBox = '<div class="epic-cf-box">'
+          + '<div class="epic-cf-box-title"><span class="material-symbols-outlined" style="font-size:14px;">warning</span>Carry Forward Reasons</div>'
+          + '<ul style="margin:0;padding-left:18px;">' + cfReasons.map(function(r) { return '<li>' + esc(r) + '</li>'; }).join("") + '</ul>'
+          + '</div>';
+      }
+
+      // ── Assemble content ──────────────────────────────────────────
+      document.getElementById("epic-detail-content").innerHTML =
+        kpiHtml
+        + '<div class="epic-charts-row">' + timelineHtml + donutHtml + '</div>'
+        + '<div class="epic-charts-row">' + storyStatusHtml + wlHtml + '</div>'
+        + storyTableHtml
+        + cfBox;
+    }
+
+    function _kpiCard(label, value, sub, color) {
+      return '<div class="epic-kpi-card">'
+        + '<div class="epic-kpi-label">' + esc(label) + '</div>'
+        + '<div class="epic-kpi-value" style="color:' + (color || "#1a2535") + ';">' + esc(value) + '</div>'
+        + (sub ? '<div class="epic-kpi-sub">' + esc(sub) + '</div>' : '')
+        + '</div>';
+    }
+
+    function _timelineRow(label, value, slipDays) {
+      const valFmt = value && value !== "—" ? esc(formatDisplayDate(value)) : "—";
+      return '<div class="epic-timeline-item">'
+        + '<span class="epic-timeline-label">' + esc(label) + '</span>'
+        + '<span class="epic-timeline-value">' + valFmt + '</span>'
+        + (slipDays !== null && slipDays !== undefined && slipDays === 0 ? '&nbsp;<span class="epic-slip-ok">✓ Completed</span>' : "")
+        + '</div>';
+    }
+
+    function _slipDays(plannedStr, actualStr) {
+      if (!plannedStr || !actualStr) return null;
+      const planned = new Date(plannedStr.slice(0, 10));
+      const actual = new Date(actualStr.slice(0, 10));
+      if (isNaN(planned) || isNaN(actual)) return null;
+      return Math.round((actual - planned) / 86400000);
+    }
+
+    function _classifyStatus(statusStr) {
+      const s = String(statusStr).toLowerCase();
+      if (s.includes("done") || s.includes("closed") || s.includes("resolved") || s.includes("complete")) return "done";
+      if (s.includes("progress") || s.includes("active") || s.includes("review") || s.includes("testing")) return "inprogress";
+      if (s.includes("hold") || s.includes("block") || s.includes("wait") || s.includes("deferred")) return "hold";
+      return "todo";
+    }
+
+    // Close on overlay backdrop click
+    document.getElementById("epic-detail-overlay").addEventListener("click", function(e) {
+      if (e.target === this) closeEpicDetail();
+    });
+    document.addEventListener("keydown", function(e) {
+      if (e.key === "Escape") closeEpicDetail();
+    });
   </script>
 </body>
 </html>
