@@ -4645,9 +4645,15 @@
       } catch (err) {
         latestPayload = null;
         tableProjectFilterKey = "";
-        els.rows.innerHTML = '<tr><td colspan="14"><div class="empty">' + esc(err.message || err) + '</div></td></tr>';
+        const isCanonicalMissing = (err.message || "").includes("No successful canonical refresh found");
+        const tableMsg = isCanonicalMissing
+          ? 'Jira data not synced yet on this server. <a href="/settings/canonical-refresh" style="color:var(--primary,#3b82f6);font-weight:600;">Run a Canonical Refresh →</a>'
+          : esc(err.message || err);
+        els.rows.innerHTML = '<tr><td colspan="14"><div class="empty">' + tableMsg + '</div></td></tr>';
         renderExcludedEpics([]);
-        if (els.projectCards) els.projectCards.innerHTML = '<div class="empty" style="grid-column:1/-1;">Could not load data.</div>';
+        if (els.projectCards) els.projectCards.innerHTML = '<div class="empty" style="grid-column:1/-1;">'
+          + (isCanonicalMissing ? 'Jira data not synced. <a href="/settings/canonical-refresh">Run Canonical Refresh →</a>' : 'Could not load data.')
+          + '</div>';
         const suffixShort = unit === "days" ? "days" : "hours";
         if (els.kpiEpics) els.kpiEpics.textContent = "0";
         if (els.kpiPlannedLabel) els.kpiPlannedLabel.textContent = "Planned Hours (" + suffixShort + ")";
@@ -4666,8 +4672,13 @@
         renderWorkforce({});
         renderEmployeeDropdown({});
         renderSupportTeam({});
-        els.status.textContent = "Could not load report.";
-        els.runMeta.textContent = "No data loaded.";
+        if (isCanonicalMissing) {
+          els.status.innerHTML = 'Jira data not synced. <a href="/settings/canonical-refresh" style="color:var(--primary,#3b82f6);font-weight:600;">Run Canonical Refresh →</a>';
+          els.runMeta.textContent = "No Jira data on this server yet.";
+        } else {
+          els.status.textContent = "Could not load report.";
+          els.runMeta.textContent = "No data loaded.";
+        }
       }
     }
 
