@@ -2603,17 +2603,17 @@
             <tr>
               <th>Epic</th>
               <th>Project</th>
-              <th>Approved Start</th>
-              <th>Approved Due</th>
-              <th>Actual Completed</th>
-              <th>Delivery Status</th>
+              <th>Planned Start</th>
+              <th>Planned Due</th>
+              <th>Done Date</th>
+              <th>Delivery Health</th>
               <th>Jira Status</th>
-              <th class="num effort-head">Planned Hours</th>
-              <th class="num effort-head">Actual Hours</th>
-              <th>Brought Forward</th>
-              <th>Start</th>
-              <th>End</th>
-              <th>Carry Forward</th>
+              <th class="num effort-head">Planned Hrs</th>
+              <th class="num effort-head">Actual Hrs</th>
+              <th>Carry-In</th>
+              <th>Start Signal</th>
+              <th>End Signal</th>
+              <th>Carry-Out</th>
               <th>Overburn</th>
             </tr>
           </thead>
@@ -4342,7 +4342,7 @@
       });
       return '<div class="child-panel">' + reasonsBanner + '<table class="child-table">'
         + '<thead><tr><th>Type</th><th>Key</th><th>Summary</th><th>Status</th>'
-        + '<th>Start</th><th>Due</th><th>Actual Completed</th><th class="num">Hrs</th><th>Reason</th></tr></thead>'
+        + '<th>Planned Start</th><th>Planned Due</th><th>Done Date</th><th class="num">Hrs</th><th>Reason</th></tr></thead>'
         + '<tbody>' + body + '</tbody></table></div>';
     }
 
@@ -5025,8 +5025,9 @@
           + '<div class="gantt-info-epic">' + epicLinkHtml + '</div>'
           + '<div class="gantt-info-meta">'
           + '<span class="project-chip" style="' + esc(projectStyle) + '">' + esc(projectName) + '</span>'
-          + statusPill(row.delivery_status || "-", row.approved_start)
           + statusPill(row.jira_status || "-", row.approved_start)
+          + (monthOverburn ? '<span class="overburn-pill ob-month" title="Month overburn: ' + formatNumber(actualVal) + sfx + ' actual vs ' + formatNumber(plannedVal) + sfx + ' planned (+' + mPctG + '%)">⚠ Month +' + mPctG + '%</span>' : '')
+          + (totalOverburn ? '<span class="overburn-pill ob-total" title="Total overburn: ' + formatNumber(tActualVal) + sfx + ' actual vs ' + formatNumber(totalPlanVal) + sfx + ' planned (+' + tPctG + '%)">⚠ Total +' + tPctG + '%</span>' : '')
           + '</div>'
           + '<div class="gantt-info-hours">'
           + '<span title="Planned hours in selected month">Month Plan&nbsp;<strong>' + formatNumber(plannedVal) + '&nbsp;' + sfx + '</strong></span>'
@@ -5034,7 +5035,6 @@
               ? '<span class="gantt-total-plan" title="Total planned hours across full epic scope">Total Plan&nbsp;<strong>' + formatNumber(totalPlanVal) + '&nbsp;' + sfx + '</strong></span>'
               : '')
           + '<span' + actTip + '>Act&nbsp;<strong' + actClass + '>' + formatNumber(actualVal) + '&nbsp;' + sfx + '</strong></span>'
-          + (totalOverburnBadge ? '<span>' + totalOverburnBadge + '</span>' : '')
           + '</div>'
           + '</div>';
 
