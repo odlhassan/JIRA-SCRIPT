@@ -17330,6 +17330,7 @@ def _resolve_report_html_sources(base_dir: Path) -> dict[str, Path]:
         "monthly_epic_plan_progress_report.html": _resolve_output_html_path(
             "JIRA_MONTHLY_EPIC_PLAN_PROGRESS_HTML_PATH", "monthly_epic_plan_progress_report.html", base_dir
         ),
+        "team_capacity_planner.html": base_dir / "team_capacity_planner.html",
     }
 
 

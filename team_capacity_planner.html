@@ -1,0 +1,1824 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Team Capacity Planner</title>
+  <link rel="stylesheet" href="/material-symbols.css" />
+  <link rel="stylesheet" href="/shared-nav.css" />
+  <style>
+    :root {
+      --bg: #eef3f7;
+      --panel: #ffffff;
+      --line: #d7e0e8;
+      --text: #1f2937;
+      --muted: #64748b;
+      --accent: #0f4c5c;
+      --accent-h: #0a3342;
+      --avail: #16a34a;
+      --leave-p: #d97706;
+      --leave-u: #dc2626;
+      --leave-n: #f59e0b;
+      --chip-bg: #e2edf3;
+      --shadow: 0 1px 4px rgba(0,0,0,.08);
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    /* ── Top bar ──────────────────────────────────────────────────────── */
+    .top-bar {
+      position: sticky;
+      top: 0;
+      z-index: 200;
+      background: var(--accent);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 0 20px;
+      height: 56px;
+      box-shadow: 0 2px 8px rgba(0,0,0,.18);
+    }
+    .top-bar h1 {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+    }
+    .top-bar h1 .material-symbols-outlined { font-size: 20px; }
+    .top-controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-left: auto;
+      flex-wrap: wrap;
+    }
+    .ctrl-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .ctrl-group label {
+      font-size: 12px;
+      opacity: .8;
+      white-space: nowrap;
+    }
+    .ctrl-group select,
+    .ctrl-group input[type="date"] {
+      background: rgba(255,255,255,.12);
+      border: 1px solid rgba(255,255,255,.3);
+      color: #fff;
+      border-radius: 6px;
+      padding: 4px 8px;
+      font-size: 13px;
+      outline: none;
+      height: 32px;
+    }
+    .ctrl-group select option { background: #082b37; color: #fff; }
+    .ctrl-group input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); }
+    .btn-load {
+      background: rgba(255,255,255,.18);
+      border: 1px solid rgba(255,255,255,.4);
+      color: #fff;
+      border-radius: 6px;
+      padding: 0 14px;
+      height: 32px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      transition: background .15s;
+    }
+    .btn-load:hover { background: rgba(255,255,255,.28); }
+    .btn-load:disabled { opacity: .5; cursor: not-allowed; }
+    .spinner {
+      width: 14px; height: 14px;
+      border: 2px solid rgba(255,255,255,.4);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      display: none;
+    }
+    .btn-load.loading .spinner { display: block; }
+    .btn-load.loading .load-label { display: none; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Page layout ─────────────────────────────────────────────────── */
+    .page-root {
+      display: flex;
+      flex-direction: column;
+      height: calc(100vh - 56px);
+      overflow: hidden;
+    }
+    .notice-bar {
+      background: #fef3c7;
+      border-bottom: 1px solid #fcd34d;
+      color: #92400e;
+      padding: 8px 20px;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .notice-bar.hidden { display: none; }
+    .split {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+      gap: 0;
+    }
+
+    /* ── Members panel ───────────────────────────────────────────────── */
+    .members-panel {
+      width: 380px;
+      min-width: 280px;
+      max-width: 480px;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid var(--line);
+      background: var(--bg);
+      overflow: hidden;
+    }
+    .panel-head {
+      padding: 12px 16px 8px;
+      background: var(--panel);
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .panel-head-title {
+      font-weight: 600;
+      font-size: 13px;
+      color: var(--accent);
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .panel-head-title .material-symbols-outlined { font-size: 18px; }
+    .badge {
+      background: var(--chip-bg);
+      color: var(--muted);
+      border-radius: 20px;
+      padding: 1px 8px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .members-scroll {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    /* ── Member card ─────────────────────────────────────────────────── */
+    .member-card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: var(--shadow);
+    }
+    .member-card-head {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px 8px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .member-card-head:hover { background: #f8fafb; }
+    .avatar {
+      width: 38px; height: 38px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fff;
+      font-size: 14px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      letter-spacing: -0.5px;
+    }
+    .member-info { flex: 1; min-width: 0; }
+    .member-name {
+      font-weight: 600;
+      font-size: 13px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .lead-star { color: #f59e0b; font-size: 14px; }
+    .avail-text { font-size: 11px; color: var(--muted); margin-top: 1px; }
+    .avail-text .avail-hrs { color: var(--avail); font-weight: 600; }
+    .avail-text .leave-hrs { color: var(--leave-p); }
+    .expand-icon {
+      color: var(--muted);
+      font-size: 20px;
+      transition: transform .2s;
+      flex-shrink: 0;
+    }
+    .member-card.expanded .expand-icon { transform: rotate(180deg); }
+
+    /* ── Capacity bar ────────────────────────────────────────────────── */
+    .cap-bar-wrap { padding: 0 12px 10px; }
+    .cap-bar {
+      height: 8px;
+      border-radius: 4px;
+      background: #e5e7eb;
+      display: flex;
+      overflow: hidden;
+    }
+    .cap-seg {
+      height: 100%;
+      transition: width .4s ease;
+    }
+    .seg-unplanned { background: var(--leave-u); }
+    .seg-planned   { background: var(--leave-p); }
+    .seg-not-taken { background: var(--leave-n); }
+    .seg-avail     { background: var(--avail); }
+    .cap-legend {
+      display: flex;
+      gap: 10px;
+      margin-top: 4px;
+      flex-wrap: wrap;
+    }
+    .leg-item {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      font-size: 10px;
+      color: var(--muted);
+    }
+    .leg-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    /* ── Epic list inside member card ────────────────────────────────── */
+    .epic-list {
+      border-top: 1px solid var(--line);
+      padding: 0 12px 10px;
+      display: none;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .member-card.expanded .epic-list { display: flex; }
+    .epic-list-head {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      padding: 8px 0 4px;
+      user-select: none;
+    }
+    .epic-list-head:hover { color: var(--accent); }
+    .epic-list-toggle-icon {
+      font-size: 16px;
+      color: var(--muted);
+      transition: transform .2s;
+      flex-shrink: 0;
+    }
+    .epic-list.epics-open .epic-list-toggle-icon { transform: rotate(180deg); }
+    .epic-chips-body {
+      display: none;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .epic-list.epics-open .epic-chips-body { display: flex; }
+    .epic-chip {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--chip-bg);
+      border-radius: 6px;
+      padding: 4px 8px;
+      font-size: 12px;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: border-color .15s, background .15s;
+      gap: 6px;
+    }
+    .epic-chip:hover { border-color: var(--accent); background: rgba(15,76,92,.06); }
+    .epic-chip:hover .epic-chip-key::after { content: ' ↗'; font-size: 9px; opacity: .7; }
+    .epic-chip.highlighted { border-color: var(--accent); background: #d4eaf0; }
+    .epic-chip-key { font-weight: 700; color: var(--accent); white-space: nowrap; }
+    .epic-chip-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .epic-chip-tk {
+      font-size: 11px;
+      color: var(--muted);
+      white-space: nowrap;
+      background: rgba(15,76,92,.08);
+      padding: 1px 5px;
+      border-radius: 4px;
+    }
+    .epic-empty { font-size: 12px; color: var(--muted); font-style: italic; }
+
+    /* ── Work items panel ────────────────────────────────────────────── */
+    .wi-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background: var(--bg);
+    }
+    .wi-head {
+      padding: 10px 16px 8px;
+      background: var(--panel);
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .wi-head-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .wi-head-title {
+      font-weight: 600;
+      font-size: 13px;
+      color: var(--accent);
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      white-space: nowrap;
+    }
+    .wi-head-title .material-symbols-outlined { font-size: 18px; }
+    .wi-filter-select {
+      height: 30px;
+      padding: 0 8px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      font-size: 12px;
+      color: var(--text);
+      background: var(--bg);
+      outline: none;
+      cursor: pointer;
+      transition: border-color .15s;
+    }
+    .wi-filter-select:focus { border-color: var(--accent); }
+    .search-wrap {
+      flex: 1;
+      position: relative;
+    }
+    .search-wrap .material-symbols-outlined {
+      position: absolute;
+      left: 8px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 16px;
+      color: var(--muted);
+      pointer-events: none;
+    }
+    #wi-search {
+      width: 100%;
+      padding: 5px 10px 5px 28px;
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      font-size: 13px;
+      outline: none;
+      background: var(--bg);
+      color: var(--text);
+      transition: border-color .15s;
+      height: 30px;
+    }
+    #wi-search:focus { border-color: var(--accent); }
+    .wi-count {
+      font-size: 11px;
+      color: var(--muted);
+      white-space: nowrap;
+      margin-left: auto;
+    }
+    .wi-scroll {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    /* ── Epic row ────────────────────────────────────────────────────── */
+    .epic-row {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: var(--shadow);
+      transition: border-color .15s;
+      flex: 0 0 auto;
+    }
+    .epic-row.highlight-target {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(15,76,92,.18), var(--shadow);
+    }
+    @keyframes epic-flash {
+      0%   { background: rgba(15,76,92,.13); }
+      60%  { background: rgba(15,76,92,.07); }
+      100% { background: transparent; }
+    }
+    .epic-row.highlight-target .epic-row-head { animation: epic-flash 1.6s ease forwards; }
+    .epic-row-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px;
+      cursor: pointer;
+    }
+    .epic-row-head:hover { background: #f8fafb; }
+    .epic-type-badge {
+      background: #e0f0f5;
+      color: var(--accent);
+      border-radius: 4px;
+      padding: 2px 6px;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+    .epic-row-key {
+      font-weight: 700;
+      color: var(--accent);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    .epic-row-name {
+      flex: 1;
+      font-size: 13px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .epic-row-tk {
+      font-size: 12px;
+      color: var(--muted);
+      white-space: nowrap;
+      background: var(--chip-bg);
+      border-radius: 4px;
+      padding: 2px 6px;
+    }
+    .epic-row-tk .tk-val { font-weight: 700; color: var(--accent); }
+    .btn-assign {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 4px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      transition: background .15s;
+      flex-shrink: 0;
+    }
+    .btn-assign:hover { background: var(--accent-h); }
+    .btn-assign .material-symbols-outlined { font-size: 14px; }
+    .epic-row-expand {
+      color: var(--muted);
+      font-size: 18px;
+      transition: transform .2s;
+      flex-shrink: 0;
+    }
+    .epic-row.open .epic-row-expand { transform: rotate(180deg); }
+    .story-list {
+      border-top: 1px solid var(--line);
+      padding: 6px 12px 8px 24px;
+      display: none;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .epic-row.open .story-list { display: flex; }
+    /* ── Profile banner ──────────────────────────────────────────────── */
+    .profile-banner {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: #e0f0f5;
+      border: 1px solid #b6d9e6;
+      border-radius: 8px;
+      padding: 6px 10px;
+      font-size: 11px;
+      color: var(--accent);
+      margin-bottom: 2px;
+    }
+    .profile-mode-chip {
+      margin-left: auto;
+      background: var(--accent);
+      color: #fff;
+      border-radius: 10px;
+      padding: 1px 7px;
+      font-size: 10px;
+      font-weight: 600;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    /* ── Member stats ────────────────────────────────────────────────── */
+    .member-stats {
+      display: flex;
+      gap: 10px;
+      padding: 0 12px 8px;
+      flex-wrap: wrap;
+    }
+    .stat-pill {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 11px;
+      background: var(--chip-bg);
+      border-radius: 20px;
+      padding: 2px 8px;
+      color: var(--muted);
+    }
+    .stat-pill .stat-val { font-weight: 700; color: var(--text); }
+    .stat-pill .stat-dot {
+      width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+    }
+
+    /* ── Stories ─────────────────────────────────────────────────────── */
+    .story-wrap {
+      border-radius: 6px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      flex: 0 0 auto;
+    }
+    .story-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 8px;
+      background: var(--bg);
+    }
+    .story-item.has-subtasks { cursor: pointer; }
+    .story-item.has-subtasks:hover { background: #f0f4f8; }
+    .story-badge {
+      background: #dbeafe;
+      color: #1d4ed8;
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-size: 10px;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+    .story-key {
+      font-size: 11px;
+      font-weight: 700;
+      color: #1d4ed8;
+      white-space: nowrap;
+    }
+    .story-name {
+      flex: 1;
+      font-size: 12px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .story-assignee {
+      font-size: 11px;
+      color: var(--muted);
+      white-space: nowrap;
+      max-width: 90px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .story-est {
+      font-size: 11px;
+      color: var(--muted);
+      background: var(--chip-bg);
+      border-radius: 4px;
+      padding: 1px 5px;
+      white-space: nowrap;
+    }
+    .story-status {
+      font-size: 10px;
+      border-radius: 4px;
+      padding: 1px 5px;
+      white-space: nowrap;
+      font-weight: 600;
+    }
+    .story-status.done { background: #dcfce7; color: #15803d; }
+    .story-status.inprog { background: #dbeafe; color: #1d4ed8; }
+    .story-status.todo { background: #f1f5f9; color: var(--muted); }
+    .story-expand-icon {
+      color: var(--muted);
+      font-size: 16px;
+      transition: transform .2s;
+      flex-shrink: 0;
+    }
+    .story-wrap.open .story-expand-icon { transform: rotate(180deg); }
+    .subtask-list {
+      border-top: 1px solid var(--line);
+      padding: 4px 8px 6px 20px;
+      display: none;
+      flex-direction: column;
+      gap: 3px;
+      background: #f8fafc;
+    }
+    .story-wrap.open .subtask-list { display: flex; }
+    .subtask-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 6px;
+      border-radius: 5px;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      flex: 0 0 auto;
+    }
+    .subtask-badge {
+      background: #ede9fe;
+      color: #6d28d9;
+      border-radius: 4px;
+      padding: 1px 4px;
+      font-size: 9px;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+    .subtask-key {
+      font-size: 10px;
+      font-weight: 700;
+      color: #6d28d9;
+      white-space: nowrap;
+    }
+    .subtask-name {
+      flex: 1;
+      font-size: 11px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .subtask-assignee {
+      font-size: 10px;
+      color: var(--muted);
+      white-space: nowrap;
+      max-width: 80px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .subtask-est {
+      font-size: 10px;
+      color: var(--muted);
+      background: var(--chip-bg);
+      border-radius: 3px;
+      padding: 1px 4px;
+      white-space: nowrap;
+    }
+    .btn-assign-story {
+      background: transparent;
+      color: var(--accent);
+      border: 1px solid var(--accent);
+      border-radius: 5px;
+      padding: 2px 7px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      transition: background .15s, color .15s;
+      flex-shrink: 0;
+      white-space: nowrap;
+    }
+    .btn-assign-story:hover { background: var(--accent); color: #fff; }
+    .btn-assign-subtask {
+      background: transparent;
+      color: #6d28d9;
+      border: 1px solid #6d28d9;
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-size: 10px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      transition: background .15s, color .15s;
+      flex-shrink: 0;
+      white-space: nowrap;
+    }
+    .btn-assign-subtask:hover { background: #6d28d9; color: #fff; }
+
+    /* ── Empty / loading states ──────────────────────────────────────── */
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 40px 20px;
+      color: var(--muted);
+      text-align: center;
+    }
+    .empty-state .material-symbols-outlined { font-size: 40px; opacity: .4; }
+    .empty-state p { margin: 0; font-size: 13px; }
+
+    /* ── Assignment modal ────────────────────────────────────────────── */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.45);
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .modal-overlay[hidden] { display: none; }
+    .modal-card {
+      background: var(--panel);
+      border-radius: 14px;
+      padding: 24px;
+      width: 100%;
+      max-width: 440px;
+      box-shadow: 0 8px 32px rgba(0,0,0,.22);
+    }
+    .modal-card h2 {
+      margin: 0 0 4px;
+      font-size: 17px;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      color: var(--accent);
+    }
+    .modal-card h2 .material-symbols-outlined { font-size: 20px; }
+    .modal-issue-name {
+      font-size: 13px;
+      color: var(--muted);
+      margin: 0 0 18px;
+      background: var(--chip-bg);
+      border-radius: 6px;
+      padding: 6px 10px;
+    }
+    .modal-issue-name strong { color: var(--accent); }
+    .modal-field label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      margin-bottom: 5px;
+      text-transform: uppercase;
+      letter-spacing: .4px;
+    }
+    .modal-field select {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      font-size: 14px;
+      color: var(--text);
+      background: var(--bg);
+      outline: none;
+      margin-bottom: 20px;
+    }
+    .modal-field select:focus { border-color: var(--accent); }
+    .modal-actions {
+      display: flex;
+      gap: 10px;
+      justify-content: flex-end;
+    }
+    .btn-confirm {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 8px 20px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background .15s;
+    }
+    .btn-confirm:hover { background: var(--accent-h); }
+    .btn-confirm:disabled { opacity: .5; cursor: not-allowed; }
+    .btn-ghost {
+      background: transparent;
+      color: var(--muted);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 8px 16px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    .btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* ── Toast ───────────────────────────────────────────────────────── */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      z-index: 2000;
+      background: #1f2937;
+      color: #fff;
+      border-radius: 10px;
+      padding: 10px 16px;
+      font-size: 13px;
+      max-width: 360px;
+      box-shadow: 0 4px 16px rgba(0,0,0,.25);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      opacity: 0;
+      transform: translateY(10px);
+      transition: opacity .25s, transform .25s;
+      pointer-events: none;
+    }
+    .toast.visible { opacity: 1; transform: translateY(0); pointer-events: auto; }
+    .toast.ok { background: #15803d; }
+    .toast.warn { background: #b45309; }
+    .toast.error { background: #b91c1c; }
+    .toast .material-symbols-outlined { font-size: 18px; flex-shrink: 0; }
+
+    /* ── Scrollbar ───────────────────────────────────────────────────── */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #c5d2dd; border-radius: 3px; }
+
+    /* ── Member card (no flex shrink) ───────────────────────────────── */
+    .member-card { flex: 0 0 auto; }
+
+    /* ── Assignee chips on work items ───────────────────────────────── */
+    .epic-assignee-chip {
+      font-size: 10px; color: var(--muted); background: var(--chip-bg);
+      border-radius: 20px; padding: 2px 7px; white-space: nowrap;
+      max-width: 130px; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0;
+    }
+    .epic-assignee-chip.no-assignee { color: #dc2626; background: #fef2f2; font-style: italic; }
+    .story-assignee.no-assignee { color: #dc2626; font-style: italic; font-size: 10px; }
+    .subtask-assignee.no-assignee { color: #dc2626; font-style: italic; font-size: 10px; }
+    .epic-date-chip {
+      display: inline-flex; align-items: center; gap: 3px;
+      font-size: 10px; color: var(--muted); background: var(--chip-bg);
+      border-radius: 4px; padding: 1px 6px; white-space: nowrap; flex-shrink: 0;
+    }
+    .epic-date-chip .material-symbols-outlined { font-size: 11px; }
+    .epic-date-chip.overdue { color: #dc2626; background: #fef2f2; }
+
+    /* ── Planned / Logged / Available bars in member card ───────────── */
+    .work-bars { padding: 0 12px 10px; display: flex; flex-direction: column; gap: 5px; }
+    .work-bar-row { display: flex; align-items: center; gap: 6px; font-size: 11px; }
+    .work-bar-label { width: 60px; color: var(--muted); text-align: right; flex-shrink: 0; }
+    .work-bar-track { flex: 1; height: 6px; background: #e5e7eb; border-radius: 3px; overflow: hidden; }
+    .work-bar-fill { height: 100%; border-radius: 3px; transition: width .4s ease; min-width: 2px; }
+    .wb-planned { background: #3b82f6; }
+    .wb-logged  { background: #8b5cf6; }
+    .wb-avail   { background: var(--avail); }
+    .work-bar-val { min-width: 44px; font-size: 11px; font-weight: 600; color: var(--text); text-align: right; }
+
+    /* ── Sync to Jira button ─────────────────────────────────────────── */
+    .btn-sync-jira {
+      background: transparent; color: var(--accent); border: 1px solid var(--accent);
+      border-radius: 6px; padding: 3px 10px; font-size: 12px; font-weight: 600;
+      cursor: pointer; display: flex; align-items: center; gap: 4px;
+      transition: background .15s, color .15s; flex-shrink: 0; white-space: nowrap;
+    }
+    .btn-sync-jira:hover { background: var(--accent); color: #fff; }
+    .btn-sync-jira .material-symbols-outlined { font-size: 14px; }
+
+    /* ── Jira sync modal ─────────────────────────────────────────────── */
+    .modal-wide { max-width: 680px !important; }
+    .jira-asgn-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 0; }
+    .jira-asgn-scroll { max-height: 320px; overflow-y: auto; border: 1px solid var(--line); border-radius: 0 0 6px 6px; }
+    .jira-asgn-table th, .jira-asgn-table td { padding: 6px 8px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: middle; }
+    .jira-asgn-table th { background: var(--chip-bg); font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; position: sticky; top: 0; }
+    .jira-asgn-table td.chk-col, .jira-asgn-table th.chk-col { width: 28px; padding: 6px 4px 6px 8px; }
+    .jira-asgn-table tr.synced td { background: #f0fdf4; }
+    .jira-asgn-table tr.unsynced td { background: #fff7ed; }
+    .jira-asgn-table tr.failed td { background: #fef2f2; }
+    .jira-asgn-table tr.selected td { outline: 2px solid var(--accent); outline-offset: -1px; }
+    .sync-status-chip { display: inline-flex; align-items: center; gap: 3px; border-radius: 4px; padding: 1px 6px; font-size: 10px; font-weight: 700; }
+    .sync-status-chip.ok { background: #dcfce7; color: #15803d; }
+    .sync-status-chip.pending { background: #fef3c7; color: #92400e; }
+    .sync-status-chip.error { background: #fef2f2; color: #991b1b; }
+    .jira-sel-toolbar {
+      display: flex; align-items: center; gap: 10px;
+      padding: 6px 10px; background: var(--chip-bg);
+      border: 1px solid var(--line); border-bottom: none; border-radius: 6px 6px 0 0;
+      font-size: 12px; color: var(--muted);
+    }
+    .jira-sel-toolbar .sel-count { font-weight: 700; color: var(--accent); }
+    .jira-sel-actions { display: flex; gap: 6px; margin-left: auto; }
+    .btn-sel-quick { background: transparent; border: 1px solid var(--line); border-radius: 5px; padding: 2px 8px; font-size: 11px; cursor: pointer; color: var(--muted); }
+    .btn-sel-quick:hover { border-color: var(--accent); color: var(--accent); }
+  </style>
+</head>
+<body>
+
+<div class="top-bar">
+  <h1><span class="material-symbols-outlined">groups</span>Team Capacity Planner</h1>
+  <div class="top-controls">
+    <div class="ctrl-group">
+      <label>Team</label>
+      <select id="team-select"><option value="">— loading —</option></select>
+    </div>
+    <div class="ctrl-group">
+      <label>From</label>
+      <input type="date" id="from-date" />
+    </div>
+    <div class="ctrl-group">
+      <label>To</label>
+      <input type="date" id="to-date" />
+    </div>
+    <script>
+      (function() {
+        var now = new Date();
+        var y = now.getFullYear();
+        var m = String(now.getMonth() + 1).padStart(2, '0');
+        var last = new Date(y, now.getMonth() + 1, 0).getDate();
+        document.getElementById('from-date').value = y + '-' + m + '-01';
+        document.getElementById('to-date').value   = y + '-' + m + '-' + String(last).padStart(2, '0');
+      })();
+    </script>
+    <div class="ctrl-group">
+      <label>Capacity Profile</label>
+      <select id="profile-select"><option value="">Auto (best match)</option></select>
+    </div>
+    <button class="btn-load" id="load-btn">
+      <span class="spinner"></span>
+      <span class="load-label">Load</span>
+    </button>
+  </div>
+</div>
+
+<div class="page-root">
+  <div class="notice-bar hidden" id="canonical-notice">
+    <span class="material-symbols-outlined" style="font-size:16px">info</span>
+    Epic assignment data is unavailable — run a Canonical Refresh first. Capacity and leave data is still shown.
+  </div>
+
+  <div class="split">
+
+    <!-- Members -->
+    <div class="members-panel">
+      <div class="panel-head">
+        <div class="panel-head-title">
+          <span class="material-symbols-outlined">person</span>
+          Team Members
+        </div>
+        <span class="badge" id="member-badge">0</span>
+      </div>
+      <div class="members-scroll" id="members-container">
+        <div class="empty-state">
+          <span class="material-symbols-outlined">groups</span>
+          <p>Select a team and date range,<br>then click Load.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Work items -->
+    <div class="wi-panel">
+      <div class="wi-head">
+        <div class="wi-head-row">
+          <div class="wi-head-title">
+            <span class="material-symbols-outlined">task_alt</span>
+            Work Items (Epics)
+          </div>
+          <span class="wi-count" id="wi-badge"></span>
+          <button class="btn-sync-jira" id="sync-jira-btn" title="View and sync assignments to Jira">
+            <span class="material-symbols-outlined">cloud_sync</span>
+            Sync to Jira
+          </button>
+        </div>
+        <div class="wi-head-row">
+          <select id="wi-project-filter" class="wi-filter-select">
+            <option value="">All Projects</option>
+          </select>
+          <select id="wi-type-filter" class="wi-filter-select">
+            <option value="">All Types</option>
+            <option value="tk">TK Epics</option>
+            <option value="non_tk">Non-TK Epics</option>
+          </select>
+          <div class="search-wrap" style="flex:1">
+            <span class="material-symbols-outlined">search</span>
+            <input type="text" id="wi-search" placeholder="Search by name, key, project or assignee…" />
+          </div>
+        </div>
+      </div>
+      <div class="wi-scroll" id="wi-container">
+        <div class="empty-state">
+          <span class="material-symbols-outlined">hourglass_empty</span>
+          <p>Loading work items…</p>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Assignment modal -->
+<div id="assign-modal" class="modal-overlay" hidden>
+  <div class="modal-card">
+    <h2><span class="material-symbols-outlined">assignment_ind</span>Assign Work Item</h2>
+    <p class="modal-issue-name" id="modal-issue-name"></p>
+    <div class="modal-field">
+      <label>Assign to</label>
+      <select id="modal-member-select"></select>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-ghost" id="assign-cancel-btn">Cancel</button>
+      <button class="btn-confirm" id="assign-confirm-btn">
+        <span class="material-symbols-outlined" style="font-size:15px;vertical-align:middle">check</span>
+        Confirm Assignment
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Jira sync modal -->
+<div id="jira-sync-modal" class="modal-overlay" hidden>
+  <div class="modal-card modal-wide">
+    <h2><span class="material-symbols-outlined">cloud_sync</span>Sync Assignments to Jira</h2>
+    <p style="font-size:13px;color:var(--muted);margin:0 0 14px">Review planned assignments and push unsynced ones to Jira.</p>
+    <div id="jira-sync-content">
+      <div class="empty-state"><span class="material-symbols-outlined">hourglass_empty</span><p>Loading…</p></div>
+    </div>
+    <div id="jira-sync-result" hidden style="margin-top:12px;padding:10px 12px;border-radius:8px;font-size:13px;"></div>
+    <div class="modal-actions" style="margin-top:16px">
+      <button class="btn-ghost" id="jira-sync-close-btn">Close</button>
+      <button class="btn-confirm" id="jira-sync-push-btn">
+        <span class="material-symbols-outlined" style="font-size:15px;vertical-align:middle">cloud_upload</span>
+        Push Unsynced to Jira
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast">
+  <span class="material-symbols-outlined" id="toast-icon">check_circle</span>
+  <span id="toast-msg"></span>
+</div>
+
+<script src="/shared-date-filter.js"></script>
+  <script src="/shared-nav.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  // ── State ──────────────────────────────────────────────────────────────
+  const S = {
+    teams: [],
+    profiles: [],
+    teamData: null,
+    workItems: [],
+    pendingIssue: null,
+    wiSearch: '',
+    loading: false,
+    epicChildrenCache: {},
+  };
+
+  // ── DOM refs ───────────────────────────────────────────────────────────
+  const $teamSel    = document.getElementById('team-select');
+  const $fromDate   = document.getElementById('from-date');
+  const $toDate     = document.getElementById('to-date');
+  const $profileSel = document.getElementById('profile-select');
+  const $loadBtn    = document.getElementById('load-btn');
+  const $members    = document.getElementById('members-container');
+  const $wiCont     = document.getElementById('wi-container');
+  const $mbadge     = document.getElementById('member-badge');
+  const $wiSearch     = document.getElementById('wi-search');
+  const $wiProjectSel = document.getElementById('wi-project-filter');
+  const $wiTypeSel    = document.getElementById('wi-type-filter');
+  const $wiBadge      = document.getElementById('wi-badge');
+  const $notice       = document.getElementById('canonical-notice');
+  const $modal      = document.getElementById('assign-modal');
+  const $modalName  = document.getElementById('modal-issue-name');
+  const $modalSel   = document.getElementById('modal-member-select');
+  const $confirmBtn = document.getElementById('assign-confirm-btn');
+  const $cancelBtn  = document.getElementById('assign-cancel-btn');
+  const $toast      = document.getElementById('toast');
+  const $toastMsg   = document.getElementById('toast-msg');
+  const $toastIcon  = document.getElementById('toast-icon');
+  const $syncJiraBtn     = document.getElementById('sync-jira-btn');
+  const $jiraSyncModal   = document.getElementById('jira-sync-modal');
+  const $jiraSyncContent = document.getElementById('jira-sync-content');
+  const $jiraSyncResult  = document.getElementById('jira-sync-result');
+  const $jiraSyncClose   = document.getElementById('jira-sync-close-btn');
+  const $jiraSyncPush    = document.getElementById('jira-sync-push-btn');
+
+  // ── Init ───────────────────────────────────────────────────────────────
+  function initDates() {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const lastDay = new Date(y, now.getMonth() + 1, 0).getDate();
+    $fromDate.value = `${y}-${m}-01`;
+    $toDate.value   = `${y}-${m}-${String(lastDay).padStart(2, '0')}`;
+  }
+
+  async function init() {
+    initDates();
+    await Promise.all([loadTeams(), loadProfiles(), loadWorkItemProjects()]);
+    loadWorkItems();
+  }
+
+  // ── Capacity profiles ──────────────────────────────────────────────────
+  async function loadProfiles() {
+    try {
+      const res  = await fetch('/api/team-capacity-planner/capacity-profiles');
+      const data = await res.json();
+      S.profiles = data.profiles || [];
+      $profileSel.innerHTML = '<option value="">Auto (best match)</option>' +
+        S.profiles.map(p => {
+          const label = `${p.from_date} → ${p.to_date}  |  ${p.employee_count} emp  |  ${p.standard_hours_per_day}h/day`;
+          return `<option value="${p.id}">${esc(label)}</option>`;
+        }).join('');
+    } catch (e) {
+      // non-fatal — "Auto" remains the only option
+    }
+  }
+
+  // ── Work item projects ─────────────────────────────────────────────────
+  async function loadWorkItemProjects() {
+    try {
+      const res  = await fetch('/api/team-capacity-planner/work-item-projects');
+      const data = await res.json();
+      if (!data.ok) return;
+      const opts = (data.projects || []).map(p => `<option value="${esc(p)}">${esc(p)}</option>`).join('');
+      $wiProjectSel.innerHTML = '<option value="">All Projects</option>' + opts;
+    } catch (e) {
+      // non-fatal
+    }
+  }
+
+  // ── Teams ──────────────────────────────────────────────────────────────
+  async function loadTeams() {
+    try {
+      const res = await fetch('/api/team-capacity-planner/teams');
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || 'Failed to load teams');
+      S.teams = data.teams || [];
+      $teamSel.innerHTML = S.teams.length
+        ? S.teams.map(t => `<option value="${esc(t.team_name)}">${esc(t.team_name)} (${t.member_count})</option>`).join('')
+        : '<option value="">No teams configured</option>';
+      if (S.teams.length) loadTeamData();
+    } catch (e) {
+      $teamSel.innerHTML = '<option value="">Error loading teams</option>';
+      showToast('Failed to load teams: ' + e.message, 'error');
+    }
+  }
+
+  // ── Team data ──────────────────────────────────────────────────────────
+  async function loadTeamData() {
+    const team      = $teamSel.value;
+    const from      = $fromDate.value;
+    const to        = $toDate.value;
+    const profileId = $profileSel.value;
+    if (!team || !from || !to) return;
+
+    setLoading(true);
+    try {
+      let url = `/api/team-capacity-planner/data?team=${encodeURIComponent(team)}&from=${from}&to=${to}`;
+      if (profileId) url += `&profile_id=${encodeURIComponent(profileId)}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || 'Load failed');
+      S.teamData = data;
+      $notice.classList.toggle('hidden', data.canonical_available !== false);
+      renderMembers();
+    } catch (e) {
+      showToast('Error: ' + e.message, 'error');
+      $members.innerHTML = emptyState('error', 'Failed to load team data.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // ── Work items ─────────────────────────────────────────────────────────
+  async function loadWorkItems(search) {
+    const q       = search !== undefined ? search : S.wiSearch;
+    const project = $wiProjectSel.value;
+    const type    = $wiTypeSel.value;
+    S.wiSearch = q;
+    $wiCont.innerHTML = `<div class="empty-state"><span class="material-symbols-outlined">hourglass_empty</span><p>Loading…</p></div>`;
+    try {
+      let url = '/api/team-capacity-planner/work-items?limit=500';
+      if (q)       url += `&search=${encodeURIComponent(q)}`;
+      if (project) url += `&project=${encodeURIComponent(project)}`;
+      if (type)    url += `&type=${encodeURIComponent(type)}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error);
+      S.workItems = data.work_items || [];
+      const total    = data.total    ?? S.workItems.length;
+      const returned = data.returned ?? S.workItems.length;
+      $wiBadge.textContent = returned < total ? `${returned} of ${total}` : `${total}`;
+      renderWorkItems();
+    } catch (e) {
+      $wiBadge.textContent = '';
+      $wiCont.innerHTML = emptyState('error', 'Failed to load work items.');
+    }
+  }
+
+  // ── Render members ─────────────────────────────────────────────────────
+  function profileBanner(d) {
+    const p = d.capacity_profile;
+    if (!p) return '';
+    const selectedId = $profileSel.value;
+    const mode = selectedId ? 'Manual' : 'Auto-matched';
+    const holidays = p.holiday_count != null ? p.holiday_count : (p.holiday_dates || []).length;
+    const ramadan = p.ramadan_start_date ? ` · Ramadan ${p.ramadan_start_date} → ${p.ramadan_end_date} (${p.ramadan_hours_per_day}h/d)` : '';
+    return `<div class="profile-banner">
+      <span class="material-symbols-outlined" style="font-size:14px;flex-shrink:0">tune</span>
+      <span><strong>${esc(p.from_date)} → ${esc(p.to_date)}</strong> · ${p.standard_hours_per_day}h/day · ${holidays} holidays${ramadan}</span>
+      <span class="profile-mode-chip">${esc(mode)}</span>
+    </div>`;
+  }
+
+  function renderMembers() {
+    const d = S.teamData;
+    if (!d || !d.members || !d.members.length) {
+      $members.innerHTML = emptyState('group_off', 'No team members found.');
+      $mbadge.textContent = '0';
+      return;
+    }
+    $mbadge.textContent = d.members.length;
+    $members.innerHTML = profileBanner(d) + d.members.map(m => memberCard(m, d)).join('');
+    $members.querySelectorAll('.member-card-head').forEach(h => {
+      h.addEventListener('click', () => {
+        const card = h.closest('.member-card');
+        card.classList.toggle('expanded');
+      });
+    });
+    $members.querySelectorAll('.epic-list-head').forEach(head => {
+      head.addEventListener('click', e => {
+        e.stopPropagation();
+        head.closest('.epic-list').classList.toggle('epics-open');
+      });
+    });
+    $members.querySelectorAll('.epic-chip[data-ek]').forEach(chip => {
+      chip.addEventListener('click', e => {
+        e.stopPropagation();
+        highlightEpic(chip.dataset.ek);
+      });
+    });
+  }
+
+  function memberCard(m, d) {
+    const cap = m.capacity_hours || 0;
+    const pu  = m.unplanned_taken_hours || 0;
+    const pp  = m.planned_taken_hours || 0;
+    const pn  = m.planned_not_taken_hours || 0;
+    const av  = Math.max(0, m.availability_hours || 0);
+    const total = pu + pp + pn + av || 1;
+    const pPU = pct(pu, total);
+    const pPP = pct(pp, total);
+    const pPN = pct(pn, total);
+    const isLead = d.team_leader && normName(d.team_leader) === normName(m.name);
+    const initials = m.name.split(' ').slice(0, 2).map(w => w[0] || '').join('').toUpperCase();
+    const epicsHtml = m.epic_keys && m.epic_keys.length
+      ? m.epic_keys.map(ek => {
+          const ep = d.epics && d.epics[ek];
+          const epName = ep ? ep.epic_name : ek;
+          const tkText = ep && ep.tk_approved_man_days != null
+            ? `${ep.tk_approved_man_days}d TK` : '';
+          return `<div class="epic-chip" data-ek="${esc(ek)}" title="${esc(epName)}">
+            <span class="epic-chip-key">${esc(ek)}</span>
+            <span class="epic-chip-name">${esc(epName)}</span>
+            ${tkText ? `<span class="epic-chip-tk">${esc(tkText)}</span>` : ''}
+          </div>`;
+        }).join('')
+      : `<div class="epic-empty">No epics assigned.</div>`;
+
+    const leaveTotal = pp + pu + pn;
+    const availHrsFmt = fmtHrs(av);
+    const leaveFmt = leaveTotal > 0 ? ` · ${fmtHrs(leaveTotal)} leave` : '';
+    const plannedHrs = m.planned_hours || 0;
+    const loggedHrs  = m.logged_hours  || 0;
+
+    const workRef = Math.max(plannedHrs, av, loggedHrs, 1);
+    const wbPlanned = Math.min(100, Math.round(plannedHrs / workRef * 100));
+    const wbLogged  = Math.min(100, Math.round(loggedHrs  / workRef * 100));
+    const wbAvail   = Math.min(100, Math.round(av          / workRef * 100));
+    const workBarsHtml = `<div class="work-bars">
+      <div class="work-bar-row">
+        <div class="work-bar-label">Planned</div>
+        <div class="work-bar-track"><div class="work-bar-fill wb-planned" style="width:${wbPlanned}%"></div></div>
+        <div class="work-bar-val">${fmtHrs(plannedHrs)}</div>
+      </div>
+      <div class="work-bar-row">
+        <div class="work-bar-label">Logged</div>
+        <div class="work-bar-track"><div class="work-bar-fill wb-logged" style="width:${wbLogged}%"></div></div>
+        <div class="work-bar-val">${fmtHrs(loggedHrs)}</div>
+      </div>
+      <div class="work-bar-row">
+        <div class="work-bar-label">Available</div>
+        <div class="work-bar-track"><div class="work-bar-fill wb-avail" style="width:${wbAvail}%"></div></div>
+        <div class="work-bar-val">${availHrsFmt}</div>
+      </div>
+    </div>`;
+
+    return `<div class="member-card" id="mc-${esc(m.name.replace(/\s/g,'_'))}">
+      <div class="member-card-head">
+        <div class="avatar">${esc(initials)}</div>
+        <div class="member-info">
+          <div class="member-name">
+            ${esc(m.name)}${isLead ? '<span class="lead-star" title="Team Lead">★</span>' : ''}
+          </div>
+          <div class="avail-text">
+            <span class="avail-hrs">${availHrsFmt} avail</span><span class="leave-hrs">${leaveFmt}</span>
+            · ${fmtHrs(cap)} capacity
+          </div>
+        </div>
+        <span class="material-symbols-outlined expand-icon">expand_more</span>
+      </div>
+      <div class="cap-bar-wrap">
+        <div class="cap-bar" title="${fmtHrs(av)} available · ${fmtHrs(pu)} unplanned · ${fmtHrs(pp)} planned taken · ${fmtHrs(pn)} planned upcoming">
+          <div class="cap-seg seg-unplanned" style="width:${pPU}%"></div>
+          <div class="cap-seg seg-planned"   style="width:${pPP}%"></div>
+          <div class="cap-seg seg-not-taken" style="width:${pPN}%"></div>
+          <div class="cap-seg seg-avail"     style="flex:1"></div>
+        </div>
+        <div class="cap-legend">
+          <div class="leg-item"><div class="leg-dot" style="background:var(--avail)"></div>Available</div>
+          ${pp > 0 ? `<div class="leg-item"><div class="leg-dot" style="background:var(--leave-p)"></div>Leave taken</div>` : ''}
+          ${pn > 0 ? `<div class="leg-item"><div class="leg-dot" style="background:var(--leave-n)"></div>Planned upcoming</div>` : ''}
+          ${pu > 0 ? `<div class="leg-item"><div class="leg-dot" style="background:var(--leave-u)"></div>Unplanned</div>` : ''}
+        </div>
+      </div>
+      ${workBarsHtml}
+      <div class="epic-list" id="epl-${esc(m.name.replace(/\s/g,'_'))}">
+        <div class="epic-list-head">
+          <span>Assigned Epics (${m.epic_keys ? m.epic_keys.length : 0})</span>
+          <span class="material-symbols-outlined epic-list-toggle-icon">expand_more</span>
+        </div>
+        <div class="epic-chips-body">
+          ${epicsHtml}
+        </div>
+      </div>
+    </div>`;
+  }
+
+  // ── Render work items ──────────────────────────────────────────────────
+  function renderWorkItems() {
+    if (!S.workItems.length) {
+      $wiCont.innerHTML = emptyState('inventory_2', S.wiSearch ? 'No epics match your search.' : 'No epics found in the planner.');
+      return;
+    }
+    $wiCont.innerHTML = S.workItems.map(ep => epicRow(ep)).join('');
+    $wiCont.querySelectorAll('.epic-row-head').forEach(h => {
+      h.addEventListener('click', e => {
+        if (e.target.closest('.btn-assign')) return;
+        const row = h.closest('.epic-row');
+        if (row.dataset.loaded === 'loading') return;
+        if (row.dataset.loaded === 'false') {
+          row.dataset.loaded = 'loading';
+          const epicKey = row.dataset.ek;
+          const storyList = row.querySelector('.story-list');
+          storyList.innerHTML = `<div style="padding:8px 0 4px;font-size:12px;color:var(--muted);display:flex;align-items:center;gap:5px"><span class="material-symbols-outlined" style="font-size:14px;animation:spin .7s linear infinite">sync</span>Loading stories…</div>`;
+          row.classList.add('open');
+          loadEpicChildren(epicKey).then(stories => {
+            row.dataset.loaded = 'true';
+            if (stories.length) {
+              storyList.innerHTML = stories.map(s => storyItem(s)).join('');
+              attachStoryListeners(row);
+            } else {
+              storyList.innerHTML = `<div style="padding:8px 0 4px;font-size:12px;color:var(--muted);font-style:italic">No child stories found. Run a Canonical Refresh to load child issues.</div>`;
+            }
+          }).catch(() => {
+            row.dataset.loaded = 'false';
+            storyList.innerHTML = `<div style="padding:8px 0 4px;font-size:12px;color:#b91c1c">Failed to load stories. Click to retry.</div>`;
+            row.classList.remove('open');
+          });
+        } else {
+          row.classList.toggle('open');
+        }
+      });
+    });
+    $wiCont.querySelectorAll('.btn-assign[data-key]').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        openAssignModal(btn.dataset.key, btn.dataset.name);
+      });
+    });
+    attachStoryListeners($wiCont);
+  }
+
+  function epicRow(ep) {
+    const tkText = ep.tk_approved_man_days != null
+      ? `<span class="tk-val">${ep.tk_approved_man_days}</span>d TK` : '—';
+    const preloaded = ep.stories && ep.stories.length > 0;
+    const storiesHtml = preloaded ? (ep.stories || []).map(s => storyItem(s)).join('') : '';
+    const assigneeHtml = ep.assignee
+      ? `<span class="epic-assignee-chip" title="${esc(ep.assignee)}">${esc(ep.assignee)}</span>`
+      : `<span class="epic-assignee-chip no-assignee" title="No assignee set on Jira">No assignee on Jira</span>`;
+    const today = new Date().toISOString().slice(0, 10);
+    const startHtml = ep.start_date
+      ? `<span class="epic-date-chip" title="Start date"><span class="material-symbols-outlined">calendar_today</span>${esc(fmtDate(ep.start_date))}</span>`
+      : '';
+    const dueOverdue = ep.due_date && ep.due_date < today;
+    const dueHtml = ep.due_date
+      ? `<span class="epic-date-chip${dueOverdue ? ' overdue' : ''}" title="Due date${dueOverdue ? ' — overdue' : ''}"><span class="material-symbols-outlined">event</span>${esc(fmtDate(ep.due_date))}</span>`
+      : '';
+    return `<div class="epic-row" id="ep-${esc(ep.epic_key)}" data-ek="${esc(ep.epic_key)}" data-loaded="${preloaded ? 'true' : 'false'}">
+      <div class="epic-row-head">
+        <span class="epic-type-badge">Epic</span>
+        <span class="epic-row-key">${esc(ep.epic_key)}</span>
+        <span class="epic-row-name" title="${esc(ep.epic_name)}">${esc(ep.epic_name)}</span>
+        ${assigneeHtml}
+        ${startHtml}${dueHtml}
+        <span class="epic-row-tk">${tkText}</span>
+        <button class="btn-assign" data-key="${esc(ep.epic_key)}" data-name="${esc(ep.epic_name)}">
+          <span class="material-symbols-outlined">person_add</span>Assign
+        </button>
+        <span class="material-symbols-outlined epic-row-expand">expand_more</span>
+      </div>
+      <div class="story-list">${storiesHtml}</div>
+    </div>`;
+  }
+
+  function storyItem(s) {
+    const est = s.estimate_hours ? `${s.estimate_hours}h` : '—';
+    const st = (s.story_status || '').toLowerCase();
+    const statusCls = st.includes('done') || st.includes('closed') ? 'done'
+      : (st.includes('progress') || st.includes('review')) ? 'inprog' : 'todo';
+    const subtasks = (s.subtasks || []);
+    const hasSubtasks = subtasks.length > 0;
+    const assigneeHtml = s.assignee
+      ? `<span class="story-assignee" title="${esc(s.assignee)}">${esc(s.assignee.split(' ')[0])}</span>`
+      : `<span class="story-assignee no-assignee" title="No assignee on Jira">No assignee</span>`;
+    const subtaskSection = hasSubtasks
+      ? `<div class="subtask-list">${subtasks.map(t => subtaskItem(t)).join('')}</div>` : '';
+    const expandIcon = hasSubtasks
+      ? `<span class="material-symbols-outlined story-expand-icon">expand_more</span>` : '';
+    return `<div class="story-wrap${hasSubtasks ? ' has-subtasks' : ''}">
+      <div class="story-item${hasSubtasks ? ' has-subtasks' : ''}">
+        <span class="story-badge">Story</span>
+        <span class="story-key">${esc(s.story_key)}</span>
+        <span class="story-name" title="${esc(s.story_name)}">${esc(s.story_name)}</span>
+        ${assigneeHtml}
+        <span class="story-est">${esc(est)}</span>
+        <span class="story-status ${statusCls}">${esc(s.story_status || 'To Do')}</span>
+        <button class="btn-assign-story" data-key="${esc(s.story_key)}" data-name="${esc(s.story_name)}">
+          <span class="material-symbols-outlined" style="font-size:12px">person_add</span>Assign
+        </button>
+        ${expandIcon}
+      </div>
+      ${subtaskSection}
+    </div>`;
+  }
+
+  function subtaskItem(t) {
+    const est = t.estimate_hours ? `${t.estimate_hours}h` : '—';
+    const assigneeHtml = t.assignee
+      ? `<span class="subtask-assignee" title="${esc(t.assignee)}">${esc(t.assignee.split(' ')[0])}</span>`
+      : `<span class="subtask-assignee no-assignee" title="No assignee on Jira">No assignee</span>`;
+    return `<div class="subtask-item">
+      <span class="subtask-badge">Sub</span>
+      <span class="subtask-key">${esc(t.issue_key)}</span>
+      <span class="subtask-name" title="${esc(t.issue_name)}">${esc(t.issue_name)}</span>
+      ${assigneeHtml}
+      <span class="subtask-est">${esc(est)}</span>
+      <button class="btn-assign-subtask" data-key="${esc(t.issue_key)}" data-name="${esc(t.issue_name)}">
+        <span class="material-symbols-outlined" style="font-size:10px">person_add</span>Re-assign
+      </button>
+    </div>`;
+  }
+
+  // ── Highlight epic in work items from member card ──────────────────────
+  async function highlightEpic(epicKey) {
+    // Remove previous highlights
+    document.querySelectorAll('.epic-row.highlight-target').forEach(el => {
+      el.classList.remove('highlight-target');
+      el.querySelector('.epic-row-head')?.style.removeProperty('animation');
+    });
+    document.querySelectorAll('.epic-chip.highlighted').forEach(el => el.classList.remove('highlighted'));
+
+    // If epic not in current view, clear filters and reload
+    let epRow = document.getElementById('ep-' + epicKey);
+    if (!epRow) {
+      // Clear search/project filter and reload all, then retry
+      $wiSearch.value = '';
+      $wiProjectSel.value = '';
+      S.wiSearch = '';
+      await loadWorkItems('');
+      epRow = document.getElementById('ep-' + epicKey);
+    }
+
+    if (epRow) {
+      epRow.classList.add('highlight-target');
+      // Scroll within the wi-scroll container
+      const container = $wiCont; // the scrollable div
+      const rowTop = epRow.offsetTop - container.offsetTop;
+      const rowH   = epRow.offsetHeight;
+      const contH  = container.clientHeight;
+      const target = rowTop - (contH / 2) + (rowH / 2);
+      container.scrollTo({ top: Math.max(0, target), behavior: 'smooth' });
+      // Re-trigger animation by forcing a reflow
+      void epRow.offsetWidth;
+    }
+
+    // Highlight all member chips for this epic
+    document.querySelectorAll(`.epic-chip[data-ek="${CSS.escape(epicKey)}"]`).forEach(c => c.classList.add('highlighted'));
+  }
+
+  // ── Assignment modal ───────────────────────────────────────────────────
+  function openAssignModal(issueKey, issueName) {
+    S.pendingIssue = { key: issueKey, name: issueName };
+    $modalName.innerHTML = `<strong>${esc(issueKey)}</strong> — ${esc(issueName)}`;
+    const members = S.teamData ? (S.teamData.members || []) : [];
+    $modalSel.innerHTML = members.length
+      ? members.map(m => `<option value="${esc(m.name)}">${esc(m.name)}</option>`).join('')
+      : '<option value="">No team members</option>';
+    $modal.hidden = false;
+  }
+
+  function closeModal() {
+    $modal.hidden = true;
+    S.pendingIssue = null;
+  }
+
+  async function submitAssignment() {
+    if (!S.pendingIssue) return;
+    const assigneeName = $modalSel.value;
+    if (!assigneeName) { showToast('Please select a team member.', 'warn'); return; }
+    $confirmBtn.disabled = true;
+    try {
+      const res = await fetch('/api/team-capacity-planner/assign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          issue_key: S.pendingIssue.key,
+          assignee_display_name: assigneeName,
+          assignee_account_id: '',
+        }),
+      });
+      const data = await res.json();
+      closeModal();
+      if (res.status === 207 || !data.jira_synced) {
+        showToast(data.warning || 'Assignment saved locally (Jira sync pending).', 'warn');
+      } else {
+        showToast(`Assigned ${S.pendingIssue ? S.pendingIssue.key : ''} to ${assigneeName}.`, 'ok');
+      }
+    } catch (e) {
+      showToast('Assignment failed: ' + e.message, 'error');
+    } finally {
+      $confirmBtn.disabled = false;
+    }
+  }
+
+  // ── Toast ──────────────────────────────────────────────────────────────
+  let toastTimer;
+  function showToast(msg, type) {
+    $toastMsg.textContent = msg;
+    $toast.className = 'toast ' + (type || 'ok');
+    $toastIcon.textContent = type === 'error' ? 'error' : type === 'warn' ? 'warning' : 'check_circle';
+    requestAnimationFrame(() => $toast.classList.add('visible'));
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => $toast.classList.remove('visible'), 4500);
+  }
+
+  // ── Helpers ────────────────────────────────────────────────────────────
+  const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
+  function pct(v, total) { return total > 0 ? Math.min(100, Math.round(v / total * 100)) : 0; }
+  function fmtHrs(h) { if (!h) return '0h'; if (h >= 8) return `${(h / 8).toFixed(1).replace(/\.0$/, '')}d`; return `${Math.round(h)}h`; }
+  function fmtDate(d) {
+    if (!d) return '';
+    const dt = new Date(d + 'T00:00:00');
+    if (isNaN(dt)) return d;
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return `${String(dt.getDate()).padStart(2,'0')}-${months[dt.getMonth()]}-${String(dt.getFullYear()).slice(-2)}`;
+  }
+  function normName(n) { return (n || '').toLowerCase().replace(/\s+/g, ' ').trim(); }
+  function esc(s) {
+    return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+  function emptyState(icon, msg) {
+    return `<div class="empty-state"><span class="material-symbols-outlined">${esc(icon)}</span><p>${esc(msg)}</p></div>`;
+  }
+  function setLoading(v) {
+    S.loading = v;
+    $loadBtn.classList.toggle('loading', v);
+    $loadBtn.disabled = v;
+  }
+
+  // ── Epic children lazy load ────────────────────────────────────────────
+  async function loadEpicChildren(epicKey) {
+    const cacheKey = epicKey.toUpperCase();
+    if (S.epicChildrenCache[cacheKey]) return S.epicChildrenCache[cacheKey];
+    const res = await fetch(`/api/team-capacity-planner/epic-children?epic_key=${encodeURIComponent(epicKey)}`);
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'Failed to load children');
+    const stories = data.stories || [];
+    S.epicChildrenCache[cacheKey] = stories;
+    return stories;
+  }
+
+  function attachStoryListeners(container) {
+    container.querySelectorAll('.btn-assign-story[data-key]').forEach(btn => {
+      btn.addEventListener('click', e => { e.stopPropagation(); openAssignModal(btn.dataset.key, btn.dataset.name); });
+    });
+    container.querySelectorAll('.story-wrap.has-subtasks .story-item').forEach(row => {
+      row.addEventListener('click', e => {
+        if (e.target.closest('.btn-assign-story')) return;
+        row.closest('.story-wrap').classList.toggle('open');
+      });
+    });
+    container.querySelectorAll('.btn-assign-subtask[data-key]').forEach(btn => {
+      btn.addEventListener('click', e => { e.stopPropagation(); openAssignModal(btn.dataset.key, btn.dataset.name); });
+    });
+  }
+
+  // ── Jira sync modal ────────────────────────────────────────────────────
+  function _jiraSyncSelectedIds() {
+    return Array.from($jiraSyncContent.querySelectorAll('input.jira-row-chk:checked'))
+      .map(cb => parseInt(cb.dataset.id, 10));
+  }
+
+  function _jiraSyncUpdatePushBtn() {
+    const selected = _jiraSyncSelectedIds();
+    if (!selected.length) {
+      $jiraSyncPush.disabled = true;
+      $jiraSyncPush.innerHTML = '<span class="material-symbols-outlined" style="font-size:15px;vertical-align:middle">cloud_upload</span> Push Selected to Jira';
+    } else {
+      $jiraSyncPush.disabled = false;
+      $jiraSyncPush.innerHTML = `<span class="material-symbols-outlined" style="font-size:15px;vertical-align:middle">cloud_upload</span> Push ${selected.length} Selected to Jira`;
+    }
+    const selCount = $jiraSyncContent.querySelector('.sel-count');
+    if (selCount) selCount.textContent = `${selected.length} selected`;
+  }
+
+  async function openJiraSyncModal() {
+    $jiraSyncModal.hidden = false;
+    $jiraSyncResult.hidden = true;
+    $jiraSyncPush.disabled = true;
+    $jiraSyncPush.innerHTML = '<span class="material-symbols-outlined" style="font-size:15px;vertical-align:middle">cloud_upload</span> Push Selected to Jira';
+    $jiraSyncContent.innerHTML = emptyState('hourglass_empty', 'Loading assignments…');
+    try {
+      const res = await fetch('/api/team-capacity-planner/assignments');
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || 'Failed to load');
+      const asgns = data.assignments || [];
+      if (!asgns.length) {
+        $jiraSyncContent.innerHTML = emptyState('assignment_ind', 'No assignments yet. Use the Assign button on work items.');
+        return;
+      }
+      $jiraSyncContent.innerHTML = `
+        <div class="jira-sel-toolbar">
+          <input type="checkbox" id="jira-sel-all" title="Select / deselect all" />
+          <label for="jira-sel-all" style="cursor:pointer">Select all</label>
+          <span class="sel-count">0 selected</span>
+          <div class="jira-sel-actions">
+            <button class="btn-sel-quick" id="sel-unsynced-btn">Select Unsynced</button>
+            <button class="btn-sel-quick" id="sel-all-btn">All</button>
+            <button class="btn-sel-quick" id="sel-none-btn">None</button>
+          </div>
+        </div>
+        <div class="jira-asgn-scroll"><table class="jira-asgn-table">
+          <thead><tr>
+            <th class="chk-col"></th>
+            <th>Issue</th><th>Assignee</th><th>Jira Status</th><th>Updated</th>
+          </tr></thead>
+          <tbody>${asgns.map(a => {
+            const cls = a.jira_synced ? 'synced' : (a.jira_error ? 'failed' : 'unsynced');
+            const chip = a.jira_synced
+              ? '<span class="sync-status-chip ok">✓ Synced</span>'
+              : (a.jira_error
+                ? `<span class="sync-status-chip error" title="${esc(a.jira_error)}">✗ Failed</span>`
+                : '<span class="sync-status-chip pending">⟳ Pending</span>');
+            const errDetail = a.jira_error && !a.jira_synced ? `<br><small style="color:#991b1b;display:block;margin-top:2px">${esc(a.jira_error.slice(0, 80))}</small>` : '';
+            const dt = a.updated_at_utc ? fmtDate(a.updated_at_utc.slice(0, 10)) : '—';
+            const defaultChecked = !a.jira_synced;
+            return `<tr class="${cls}" data-id="${a.id}">
+              <td class="chk-col"><input type="checkbox" class="jira-row-chk" data-id="${a.id}"${defaultChecked ? ' checked' : ''} /></td>
+              <td><strong style="color:var(--accent)">${esc(a.issue_key)}</strong></td>
+              <td>${esc(a.assignee_display_name || a.assignee_account_id || '—')}</td>
+              <td>${chip}${errDetail}</td>
+              <td style="white-space:nowrap;font-size:11px;color:var(--muted)">${esc(dt)}</td>
+            </tr>`;
+          }).join('')}</tbody>
+        </table></div>`;
+
+      _jiraSyncUpdatePushBtn();
+
+      $jiraSyncContent.querySelectorAll('input.jira-row-chk').forEach(cb => {
+        cb.addEventListener('change', _jiraSyncUpdatePushBtn);
+      });
+      const $selAll    = document.getElementById('jira-sel-all');
+      const $selAllBtn = document.getElementById('sel-all-btn');
+      const $selNone   = document.getElementById('sel-none-btn');
+      const $selUnsync = document.getElementById('sel-unsynced-btn');
+      const allCbs = () => Array.from($jiraSyncContent.querySelectorAll('input.jira-row-chk'));
+
+      $selAll.addEventListener('change', () => {
+        allCbs().forEach(cb => { cb.checked = $selAll.checked; });
+        _jiraSyncUpdatePushBtn();
+      });
+      $selAllBtn.addEventListener('click', () => {
+        allCbs().forEach(cb => { cb.checked = true; });
+        $selAll.checked = true;
+        _jiraSyncUpdatePushBtn();
+      });
+      $selNone.addEventListener('click', () => {
+        allCbs().forEach(cb => { cb.checked = false; });
+        $selAll.checked = false;
+        _jiraSyncUpdatePushBtn();
+      });
+      $selUnsync.addEventListener('click', () => {
+        allCbs().forEach(cb => {
+          const row = cb.closest('tr');
+          cb.checked = row && (row.classList.contains('unsynced') || row.classList.contains('failed'));
+        });
+        $selAll.checked = false;
+        _jiraSyncUpdatePushBtn();
+      });
+    } catch(e) {
+      $jiraSyncContent.innerHTML = emptyState('error', 'Failed to load: ' + e.message);
+    }
+  }
+
+  function closeJiraSyncModal() {
+    $jiraSyncModal.hidden = true;
+  }
+
+  async function pushAssignmentsToJira() {
+    const ids = _jiraSyncSelectedIds();
+    if (!ids.length) { showToast('No assignments selected.', 'warn'); return; }
+    $jiraSyncPush.disabled = true;
+    $jiraSyncPush.innerHTML = '<span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle;animation:spin .7s linear infinite">sync</span> Pushing…';
+    $jiraSyncResult.hidden = true;
+    try {
+      const res = await fetch('/api/team-capacity-planner/push-assignments-to-jira', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || 'Push failed');
+      const succeeded = data.succeeded || 0;
+      const failed = (data.pushed || 0) - succeeded;
+      const msg = data.pushed === 0
+        ? 'No assignments were pushed.'
+        : succeeded > 0
+          ? `✓ Pushed ${succeeded} assignment(s) to Jira.${failed > 0 ? ` ${failed} failed — see table.` : ''}`
+          : `✗ All ${failed} push(es) failed. Check Jira connectivity.`;
+      $jiraSyncResult.hidden = false;
+      const ok = succeeded > 0 && failed === 0;
+      $jiraSyncResult.style.cssText = `margin-top:12px;padding:10px 12px;border-radius:8px;font-size:13px;background:${ok ? '#dcfce7;color:#15803d;border:1px solid #bbf7d0' : '#fff7ed;color:#92400e;border:1px solid #fcd34d'}`;
+      $jiraSyncResult.textContent = msg;
+      showToast(msg, succeeded > 0 ? 'ok' : 'warn');
+      await openJiraSyncModal();
+    } catch(e) {
+      showToast('Push failed: ' + e.message, 'error');
+      $jiraSyncPush.disabled = false;
+      $jiraSyncPush.innerHTML = '<span class="material-symbols-outlined" style="font-size:15px;vertical-align:middle">cloud_upload</span> Push Selected to Jira';
+    }
+  }
+
+  // ── Event listeners ────────────────────────────────────────────────────
+  $loadBtn.addEventListener('click', loadTeamData);
+  $teamSel.addEventListener('change', loadTeamData);
+  $profileSel.addEventListener('change', loadTeamData);
+
+  $wiSearch.addEventListener('input', debounce(e => loadWorkItems(e.target.value.trim()), 250));
+  $wiProjectSel.addEventListener('change', () => loadWorkItems());
+  $wiTypeSel.addEventListener('change', () => loadWorkItems());
+
+  $cancelBtn.addEventListener('click', closeModal);
+  $confirmBtn.addEventListener('click', submitAssignment);
+  $modal.addEventListener('click', e => { if (e.target === $modal) closeModal(); });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      if (!$modal.hidden) closeModal();
+      if (!$jiraSyncModal.hidden) closeJiraSyncModal();
+    }
+  });
+  $syncJiraBtn.addEventListener('click', openJiraSyncModal);
+  $jiraSyncClose.addEventListener('click', closeJiraSyncModal);
+  $jiraSyncPush.addEventListener('click', pushAssignmentsToJira);
+  $jiraSyncModal.addEventListener('click', e => { if (e.target === $jiraSyncModal) closeJiraSyncModal(); });
+
+  // ── Boot ───────────────────────────────────────────────────────────────
+  init();
+})();
+</script>
+
+</body>
+</html>
