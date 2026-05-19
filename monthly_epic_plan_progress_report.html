@@ -4428,7 +4428,10 @@
             if (!row.carried_forward) return '<span class="pill good">No</span>';
             const reasons = Array.isArray(row.carry_forward_reasons) ? row.carry_forward_reasons : [];
             const badge = reasons.length ? ' <span style="background:#b91c1c;color:#fff;border-radius:999px;padding:1px 6px;font-size:0.7rem;font-weight:700;margin-left:4px;">' + reasons.length + '</span>' : '';
-            return '<span class="pill warn" title="' + esc((reasons).join(" | ")) + '">Carried forward' + badge + '</span>';
+            const tip = esc(reasons.join(" | "));
+            if (row.brought_forward)
+              return '<span class="pill bad" title="' + tip + '">Persisting Overdue' + badge + '</span>';
+            return '<span class="pill warn" title="' + tip + '">Carried Forward' + badge + '</span>';
           })() + '</td>'
         + '<td>' + overburnHtml + '</td>'
         + '</tr>';
@@ -4464,7 +4467,7 @@
       }
 
       const bfRows = sortByStatus(displayRows.filter((r) => r.brought_forward));
-      const cfRows = sortByStatus(displayRows.filter((r) => !r.brought_forward && r.carried_forward));
+      const cfRows = sortByStatus(displayRows.filter((r) => r.carried_forward));
       const monthRows = sortByStatus(displayRows.filter((r) => !r.brought_forward && !r.carried_forward));
       const monthName = monthDisplayName(els.month ? els.month.value : "");
 
