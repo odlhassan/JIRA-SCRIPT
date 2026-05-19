@@ -1643,6 +1643,629 @@
       vertical-align: middle;
       margin-bottom: 1px;
     }
+
+    /* ── Overburn badges ──────────────────────────────────────────── */
+    .overburn-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      font-size: 0.71rem;
+      font-weight: 700;
+      border-radius: 999px;
+      padding: 2px 7px;
+      white-space: nowrap;
+      cursor: default;
+    }
+    .overburn-pill.ob-month { background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; }
+    .overburn-pill.ob-total { background: #fff1f2; color: #9f1239; border: 1px solid #fda4af; }
+    tbody tr.row-overburn-month { background: #fff5f5; }
+    tbody tr.row-overburn-month:hover { background: #fee2e2 !important; }
+    tbody tr.row-overburn-month td:first-child { box-shadow: inset 3px 0 0 #dc2626; }
+    tbody tr.row-overburn-total:not(.row-overburn-month) { background: #fff8f8; }
+    .num.cell-overburn-month { color: #b91c1c; font-weight: 800; }
+    .gantt-act-overburn { color: #dc2626 !important; font-weight: 800 !important; }
+
+    /* ── Employee stat cards ──────────────────────────────────────── */
+    .emp-stat-section-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+    .clickable-stat-card {
+      cursor: pointer;
+      transition: box-shadow 0.16s, border-color 0.16s, background 0.16s;
+      border-color: var(--line);
+    }
+    .clickable-stat-card:hover {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(29, 95, 143, 0.12), 0 6px 22px rgba(15, 23, 42, 0.09);
+      background: #f4f9ff;
+    }
+    .clickable-stat-card:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+    .clickable-stat-value {
+      color: var(--accent);
+      text-decoration: underline;
+      text-decoration-style: dotted;
+      text-underline-offset: 3px;
+    }
+    .emp-stat-hint {
+      margin-top: 5px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--accent);
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      opacity: 0.82;
+    }
+    .emp-stat-hint .material-symbols-outlined { font-size: 13px; }
+
+    /* ── Head Count / Leaves shared drawer styles ─────────────────── */
+    .stat-drawer-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(14, 30, 50, 0.38);
+      z-index: 1200;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.22s ease;
+    }
+    .stat-drawer-overlay.is-open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .stat-drawer {
+      position: fixed;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      width: min(700px, 96vw);
+      background: #fff;
+      box-shadow: -8px 0 40px rgba(14, 30, 50, 0.18);
+      z-index: 1201;
+      display: flex;
+      flex-direction: column;
+      transform: translateX(100%);
+      transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .stat-drawer-overlay.is-open .stat-drawer { transform: translateX(0); }
+    .stat-drawer-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 18px 20px 14px;
+      border-bottom: 1px solid #e2eaf4;
+      flex: 0 0 auto;
+    }
+    .stat-drawer-title {
+      font-size: 1.05rem;
+      font-weight: 800;
+      color: #162840;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+    }
+    .stat-drawer-title .material-symbols-outlined { font-size: 22px; color: var(--accent); }
+    .stat-drawer-close {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      border: 1px solid #d7e2ee;
+      background: #f8fbff;
+      color: #5c6b7a;
+      cursor: pointer;
+      transition: background 0.14s, border-color 0.14s;
+      flex: 0 0 auto;
+    }
+    .stat-drawer-close:hover { background: #fef2f2; border-color: #fecaca; color: #b91c1c; }
+    .stat-drawer-close .material-symbols-outlined { font-size: 20px; }
+    .stat-drawer-subtitle {
+      padding: 10px 20px 8px;
+      font-size: 0.82rem;
+      color: #5c6b7a;
+      border-bottom: 1px solid #eef3f9;
+      flex: 0 0 auto;
+      line-height: 1.45;
+    }
+    .stat-drawer-body {
+      flex: 1 1 auto;
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding: 0 0 24px;
+    }
+    .stat-drawer-footer {
+      flex: 0 0 auto;
+      padding: 12px 20px;
+      border-top: 1px solid #e2eaf4;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      background: #f8fbff;
+    }
+
+    /* ── Head Count drawer specifics ──────────────────────────────── */
+    .hc-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 20px;
+      border-bottom: 1px solid #eef3f9;
+      background: linear-gradient(180deg, #fbfdff, #f4f8fc);
+      flex: 0 0 auto;
+    }
+    .hc-toolbar button {
+      background: #ffffff;
+      border: 1px solid #c8d7e5;
+      border-radius: 999px;
+      padding: 4px 12px;
+      color: var(--accent);
+      cursor: pointer;
+      font: inherit;
+      font-size: 0.8rem;
+      font-weight: 700;
+    }
+    .hc-toolbar button:hover { color: #164a71; border-color: #9db7ce; background: #edf6fd; }
+    .hc-search-wrap {
+      flex: 1 1 160px;
+      position: relative;
+    }
+    .hc-search {
+      width: 100%;
+      min-height: 32px;
+      border: 1px solid #c9d6e3;
+      border-radius: 8px;
+      padding: 5px 10px 5px 28px;
+      font-size: 0.84rem;
+      color: #142230;
+      background:
+        radial-gradient(circle at 12px 50%, #64748b 0 2px, transparent 2.5px),
+        #ffffff;
+    }
+    .hc-search:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(29,95,143,0.12); }
+    .hc-tree { padding: 10px 16px 10px; display: flex; flex-direction: column; gap: 8px; }
+    .hc-team-block {
+      border: 1px solid #e2eaf4;
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .hc-team-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      background: linear-gradient(180deg, #f4f8fc, #eef4fa);
+      border-bottom: 1px solid #e2eaf4;
+      cursor: pointer;
+    }
+    .hc-team-header input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px; flex: 0 0 auto; }
+    .hc-team-name { font-weight: 750; font-size: 0.85rem; color: var(--title); flex: 1 1 auto; min-width: 0; }
+    .hc-team-lead { font-size: 0.76rem; color: var(--muted); font-weight: 500; }
+    .hc-team-meta { font-size: 0.72rem; font-weight: 700; color: var(--muted); white-space: nowrap; flex: 0 0 auto; margin-left: auto; }
+    .hc-members { display: flex; flex-direction: column; }
+    .hc-member-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 12px 6px 28px;
+      border-bottom: 1px solid #f1f5f9;
+      transition: background 0.1s;
+      cursor: pointer;
+    }
+    .hc-member-row:last-child { border-bottom: none; }
+    .hc-member-row:hover { background: #f0f7fc; }
+    .hc-member-row input[type="checkbox"] { accent-color: var(--accent); width: 14px; height: 14px; flex: 0 0 auto; }
+    .hc-member-name { font-size: 0.83rem; font-weight: 600; color: #0f172a; flex: 1 1 auto; min-width: 0; }
+    .hc-member-status {
+      font-size: 0.64rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      border-radius: 999px;
+      padding: 2px 7px;
+      flex: 0 0 auto;
+    }
+    .hc-member-status.active { color: #0f766e; background: #f0fdf4; border: 1px solid #a7f3d0; }
+    .hc-member-status.resigned { color: #9a3412; background: #fff7ed; border: 1px solid #fdba74; }
+    .hc-member-leaves {
+      font-size: 0.74rem;
+      font-weight: 700;
+      color: var(--muted);
+      white-space: nowrap;
+      flex: 0 0 auto;
+      font-variant-numeric: tabular-nums;
+    }
+    .hc-member-leaves.has-leave { color: #b45309; }
+    .hc-empty { padding: 28px; text-align: center; color: var(--muted); font-size: 0.88rem; }
+
+    /* ── Leaves drawer specifics ──────────────────────────────────── */
+    .lv-summary-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 18px;
+      padding: 12px 20px;
+      border-bottom: 1px solid #eef3f9;
+      background: linear-gradient(180deg, #fbfdff, #f4f8fc);
+      flex: 0 0 auto;
+    }
+    .lv-summary-stat {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+    }
+    .lv-summary-stat .lv-s-label {
+      font-size: 0.70rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+    }
+    .lv-summary-stat .lv-s-value {
+      font-size: 1.1rem;
+      font-weight: 800;
+      color: var(--title);
+      font-variant-numeric: tabular-nums;
+    }
+    .lv-search-wrap {
+      padding: 10px 20px;
+      border-bottom: 1px solid #eef3f9;
+      flex: 0 0 auto;
+    }
+    .lv-search {
+      width: 100%;
+      min-height: 34px;
+      border: 1px solid #c9d6e3;
+      border-radius: 8px;
+      padding: 6px 10px 6px 30px;
+      font-size: 0.84rem;
+      color: #142230;
+      background:
+        radial-gradient(circle at 14px 50%, #64748b 0 2px, transparent 2.5px),
+        #ffffff;
+    }
+    .lv-search:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(29,95,143,0.12); }
+    .lv-content { padding: 12px 20px; display: flex; flex-direction: column; gap: 14px; }
+    .lv-person-block {
+      border: 1px solid #e2eaf4;
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .lv-person-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 10px 14px;
+      background: linear-gradient(180deg, #f4f8fc, #eef4fa);
+      border-bottom: 1px solid #e2eaf4;
+      cursor: pointer;
+      user-select: none;
+    }
+    .lv-person-name { font-weight: 750; font-size: 0.9rem; color: var(--title); flex: 1 1 auto; }
+    .lv-person-total {
+      font-size: 0.82rem;
+      font-weight: 800;
+      color: #b45309;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+    .lv-expand-icon {
+      font-size: 16px;
+      color: var(--muted);
+      transition: transform 0.2s;
+      flex: 0 0 auto;
+    }
+    .lv-person-block.is-open .lv-expand-icon { transform: rotate(180deg); }
+    .lv-days-table { display: none; width: 100%; border-collapse: collapse; }
+    .lv-person-block.is-open .lv-days-table { display: table; }
+    .lv-days-table th {
+      padding: 6px 10px;
+      background: #f8fafc;
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #4a5568;
+      border-bottom: 1px solid #e2eaf4;
+      text-align: left;
+    }
+    .lv-days-table td {
+      padding: 6px 10px;
+      font-size: 0.82rem;
+      border-bottom: 1px solid #f1f5f9;
+      color: #334155;
+      vertical-align: middle;
+    }
+    .lv-days-table tr:last-child td { border-bottom: none; }
+    .lv-days-table tr:hover td { background: #f8fbff; }
+    .lv-type-tag {
+      display: inline-block;
+      font-size: 0.66rem;
+      font-weight: 700;
+      border-radius: 6px;
+      padding: 2px 7px;
+      background: #fef9c3;
+      color: #a16207;
+      border: 1px solid #fde68a;
+      white-space: nowrap;
+    }
+    .lv-empty { padding: 28px; text-align: center; color: var(--muted); font-size: 0.88rem; }
+
+    /* ── Support Team section ─────────────────────────────────────── */
+    .support-team-section {
+      margin-top: 20px;
+      border-top: 1px solid var(--line);
+      padding-top: 16px;
+    }
+    .support-team-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+    .support-team-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.95rem;
+      font-weight: 800;
+      color: var(--title);
+    }
+    .support-team-title .material-symbols-outlined { font-size: 20px; color: #7c3aed; }
+    .support-team-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 20px;
+      height: 20px;
+      border-radius: 999px;
+      background: #7c3aed;
+      color: #fff;
+      font-size: 0.7rem;
+      font-weight: 800;
+      padding: 0 6px;
+    }
+    .support-team-controls {
+      display: flex;
+      align-items: end;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .support-emp-dd {
+      position: relative;
+      min-width: min(400px, 100%);
+      flex: 1 1 280px;
+    }
+    .support-emp-dd-toggle {
+      width: 100%;
+      min-height: 38px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 7px 12px 7px 14px;
+      border: 1px solid #c0ccd8;
+      border-radius: 10px;
+      background: linear-gradient(180deg, #ffffff, #f8fbff);
+      font-size: 0.88rem;
+      cursor: pointer;
+      text-align: left;
+      color: #142230;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+    }
+    .support-emp-dd-toggle:hover { border-color: #9db0c2; background: #fff; }
+    .support-emp-dd-toggle:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(29,95,143,0.14); }
+    .support-emp-dd-toggle .caret { flex: 0 0 auto; font-size: 0.72rem; color: var(--muted); transition: transform 0.15s; }
+    .support-emp-dd.is-open .support-emp-dd-toggle .caret { transform: rotate(180deg); }
+    .support-emp-dd-panel {
+      display: none;
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: calc(100% + 5px);
+      z-index: 60;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      box-shadow: 0 20px 50px rgba(15,23,42,0.18);
+      flex-direction: column;
+      max-height: min(420px, 70vh);
+      min-height: 0;
+      overflow: hidden;
+    }
+    .support-emp-dd.is-open .support-emp-dd-panel { display: flex; }
+    .support-emp-dd-actions {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(180deg, #fbfdff, #f4f8fc);
+      flex: 0 0 auto;
+    }
+    .support-emp-dd-actions button {
+      background: #fff;
+      border: 1px solid #c8d7e5;
+      border-radius: 999px;
+      padding: 3px 10px;
+      color: var(--accent);
+      cursor: pointer;
+      font: inherit;
+      font-size: 0.78rem;
+      font-weight: 700;
+    }
+    .support-emp-dd-actions button:hover { color: #164a71; border-color: #9db7ce; background: #edf6fd; }
+    .support-emp-dd-search-wrap { padding: 7px 10px; border-bottom: 1px solid #e5edf5; flex: 0 0 auto; }
+    .support-emp-dd-search {
+      width: 100%;
+      min-height: 32px;
+      border: 1px solid #c9d6e3;
+      border-radius: 8px;
+      padding: 5px 10px 5px 28px;
+      font-size: 0.83rem;
+      color: #142230;
+      background: radial-gradient(circle at 12px 50%, #64748b 0 2px, transparent 2.5px), #fff;
+    }
+    .support-emp-dd-search:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(29,95,143,0.12); }
+    .support-emp-dd-list {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-x: hidden;
+      overflow-y: auto;
+      padding: 5px 8px 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .support-emp-dd-group {
+      border-radius: 10px;
+      border: 1px solid #e5edf5;
+      background: #fff;
+      overflow: hidden;
+    }
+    .support-emp-dd-team-row {
+      font-weight: 750;
+      color: var(--title);
+      background: #f4f9fc;
+      border-bottom: 1px solid #e8eef5;
+      padding: 5px 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .support-emp-dd-members { padding: 0 6px 4px 22px; display: flex; flex-direction: column; }
+    .support-emp-dd-members[hidden] { display: none !important; }
+    .support-emp-dd-member-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 6px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.82rem;
+    }
+    .support-emp-dd-member-row:hover { background: #eef6fb; }
+    .support-emp-dd-member-row input { width: 14px; height: 14px; margin: 0; flex: 0 0 auto; accent-color: #7c3aed; }
+    .support-emp-dd-name { flex: 1 1 auto; font-weight: 600; color: #0f172a; }
+    .support-emp-dd-empty { padding: 16px 10px; text-align: center; color: var(--muted); font-size: 0.83rem; display: none; }
+    .support-emp-dd-empty.is-visible { display: block; }
+
+    /* Support team member table */
+    .support-team-table-wrap {
+      margin-top: 14px;
+      border: 1px solid #e2eaf4;
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .support-team-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+    }
+    .support-team-table th {
+      padding: 8px 12px;
+      background: linear-gradient(180deg, #f5f0ff, #ede9fe);
+      color: #5b21b6;
+      font-size: 0.74rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      border-bottom: 1px solid #ddd6fe;
+      text-align: left;
+    }
+    .support-team-table th.num { text-align: right; }
+    .support-team-table td {
+      padding: 8px 12px;
+      border-bottom: 1px solid #f1f5f9;
+      color: #334155;
+      vertical-align: middle;
+    }
+    .support-team-table tr:last-child td { border-bottom: none; }
+    .support-team-table tr:hover td { background: #faf5ff; }
+    .support-team-table td.num { text-align: right; font-variant-numeric: tabular-nums; font-weight: 700; }
+    .support-team-table .tfoot-row td {
+      border-top: 2px solid #ddd6fe;
+      background: linear-gradient(180deg, #faf5ff, #f5f0ff);
+      font-weight: 800;
+      color: #5b21b6;
+      border-bottom: none;
+    }
+    .support-category-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 0.68rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      border-radius: 999px;
+      padding: 2px 9px;
+      background: #ede9fe;
+      color: #7c3aed;
+      border: 1px solid #ddd6fe;
+      white-space: nowrap;
+    }
+    .support-category-badge .material-symbols-outlined { font-size: 12px; }
+
+    /* Summary cards row for Available Hours for New Features */
+    .features-cards {
+      margin-top: 14px;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 10px;
+    }
+    .features-card {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 14px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }
+    .features-card.highlight {
+      background: linear-gradient(135deg, #f5f0ff 0%, #ede9fe 100%);
+      border-color: #c4b5fd;
+    }
+    .features-card.good-highlight {
+      background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+      border-color: #86efac;
+    }
+    .features-card .label { color: var(--muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 700; }
+    .features-card.highlight .label { color: #7c3aed; }
+    .features-card.good-highlight .label { color: #15803d; }
+    .features-card .value { margin-top: 3px; font-size: 1.4rem; font-weight: 800; color: var(--title); font-variant-numeric: tabular-nums; }
+    .features-card.highlight .value { color: #6d28d9; }
+    .features-card.good-highlight .value { color: #15803d; }
+    .features-card .detail { margin-top: 5px; font-size: 0.82rem; font-weight: 600; color: var(--muted); line-height: 1.3; }
+
+    .support-empty {
+      padding: 18px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.86rem;
+      font-style: italic;
+    }
+    .support-save-status {
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--good);
+      min-height: 18px;
+      white-space: nowrap;
+    }
+    .support-save-status.error { color: var(--bad); }
   </style>
 </head>
 <body>
@@ -1841,24 +2464,119 @@
       </div>
     </section>
 
-    <section class="panel">
-      <h2 class="section-title">Workforce capacity (RLT)</h2>
-      <div class="workforce-cap-toolbar">
-        <div class="control">
-          <label for="capacity-profile-select">Capacity profile</label>
-          <select id="capacity-profile-select" autocomplete="off" aria-describedby="workforce-caption">
-          </select>
-          <p class="field-hint">Auto picks the saved profile that overlaps most of this month. <a href="/settings/capacity">Manage profiles</a></p>
+    <section class="panel" id="workforce-panel">
+      <div class="emp-stat-section-title">
+        <h2 class="section-title" style="margin:0;">Employee Stats</h2>
+        <div class="workforce-cap-toolbar" style="margin-bottom:0;">
+          <div class="control" style="min-width:min(320px,100%);flex:1 1 200px;">
+            <label for="capacity-profile-select">Capacity profile</label>
+            <select id="capacity-profile-select" autocomplete="off" aria-describedby="workforce-caption"></select>
+            <p class="field-hint">Auto picks the saved profile that overlaps most of this month. <a href="/settings/capacity">Manage profiles</a></p>
+          </div>
         </div>
       </div>
       <div class="cards">
-        <div class="card"><div class="label">Team (capacity profile)</div><div class="value" id="kpi-wf-team">0</div></div>
-        <div class="card"><div class="label" id="kpi-wf-scope-label">Employees in scope</div><div class="value" id="kpi-wf-scope">0</div></div>
-        <div class="card"><div class="label" id="kpi-wf-capacity-label">Capacity</div><div class="value" id="kpi-wf-capacity">0.00</div></div>
-        <div class="card"><div class="label" id="kpi-wf-leave-label">Leave load</div><div class="value" id="kpi-wf-leave">0.00</div></div>
-        <div class="card"><div class="label" id="kpi-wf-avail-label">Availability</div><div class="value" id="kpi-wf-availability">0.00</div></div>
+        <!-- Card 1: Head Count (clickable) -->
+        <div class="card clickable-stat-card" id="headcount-card" role="button" tabindex="0" aria-haspopup="dialog" title="Click to view team roster and select employees">
+          <div class="label">Head Count</div>
+          <div class="value clickable-stat-value" id="kpi-headcount">0</div>
+          <div class="detail" id="kpi-headcount-detail">employees</div>
+          <div class="emp-stat-hint"><span class="material-symbols-outlined">groups</span> View roster &amp; filter</div>
+        </div>
+        <!-- Card 2: Capacity -->
+        <div class="card">
+          <div class="label" id="kpi-wf-capacity-label">Capacity (hours)</div>
+          <div class="value" id="kpi-wf-capacity">0.00</div>
+          <div class="detail" id="kpi-wf-cap-detail"></div>
+        </div>
+        <!-- Card 3: Total Leaves (clickable) -->
+        <div class="card clickable-stat-card" id="leaves-card" role="button" tabindex="0" aria-haspopup="dialog" title="Click to view day-wise leave breakdown">
+          <div class="label" id="kpi-wf-leave-label">Total Leaves (hours)</div>
+          <div class="value clickable-stat-value" id="kpi-wf-leave">0.00</div>
+          <div class="detail" id="kpi-wf-leave-detail">in selected month</div>
+          <div class="emp-stat-hint"><span class="material-symbols-outlined">event_busy</span> View day-wise details</div>
+        </div>
+        <!-- Card 4: Availability -->
+        <div class="card">
+          <div class="label" id="kpi-wf-avail-label">Availability (hours)</div>
+          <div class="value" id="kpi-wf-availability">0.00</div>
+          <div class="detail">capacity − leaves</div>
+        </div>
       </div>
       <p class="caption" id="workforce-caption">Availability = capacity minus leave hours from the RLT snapshot for the month.</p>
+
+      <!-- ── Support Team ─────────────────────────────────────────── -->
+      <div class="support-team-section" id="support-team-section">
+        <div class="support-team-header">
+          <div class="support-team-title">
+            <span class="material-symbols-outlined" aria-hidden="true">support_agent</span>
+            Technical Support Team
+            <span class="support-team-badge" id="support-team-count">0</span>
+          </div>
+          <div class="support-team-controls">
+            <div class="support-emp-dd" id="support-emp-dd">
+              <button type="button" class="support-emp-dd-toggle" id="support-emp-dd-toggle" aria-expanded="false" aria-haspopup="listbox" aria-controls="support-emp-dd-panel">
+                <span id="support-emp-dd-summary">Select support team members…</span>
+                <span class="caret" aria-hidden="true">▼</span>
+              </button>
+              <div class="support-emp-dd-panel" id="support-emp-dd-panel" role="listbox" aria-multiselectable="true">
+                <div class="support-emp-dd-actions">
+                  <button type="button" id="support-select-all">Select all</button>
+                  <button type="button" id="support-clear-all">Clear all</button>
+                </div>
+                <div class="support-emp-dd-search-wrap">
+                  <input type="search" class="support-emp-dd-search" id="support-emp-dd-search" placeholder="Search teams or employees…" autocomplete="off">
+                </div>
+                <div class="support-emp-dd-list" id="support-emp-dd-list"></div>
+                <div class="support-emp-dd-empty" id="support-emp-dd-empty">No teams or employees match your search.</div>
+              </div>
+            </div>
+            <button type="button" class="btn" id="support-save-btn" style="white-space:nowrap;">Save team</button>
+            <span class="support-save-status" id="support-save-status"></span>
+          </div>
+        </div>
+
+        <!-- Member rows table -->
+        <div id="support-team-table-wrap" style="display:none;">
+          <div class="support-team-table-wrap">
+            <table class="support-team-table">
+              <thead>
+                <tr>
+                  <th>Employee</th>
+                  <th>Category</th>
+                  <th class="num">Capacity</th>
+                  <th class="num">Leaves</th>
+                  <th class="num">Available Hours</th>
+                </tr>
+              </thead>
+              <tbody id="support-team-tbody"></tbody>
+            </table>
+          </div>
+
+          <!-- Summary cards row -->
+          <div class="features-cards">
+            <div class="features-card">
+              <div class="label">Available Hours</div>
+              <div class="value" id="kpi-avail-reprinted">0.00</div>
+              <div class="detail">total team availability this month</div>
+            </div>
+            <div class="features-card highlight">
+              <div class="label">Technical Support Hours</div>
+              <div class="value" id="kpi-support-avail">0.00</div>
+              <div class="detail" id="kpi-support-avail-detail">across support team members</div>
+            </div>
+            <div class="features-card good-highlight">
+              <div class="label">Available Hours for New Features</div>
+              <div class="value" id="kpi-features-avail">0.00</div>
+              <div class="detail">Available − Technical Support</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="support-empty" id="support-team-empty">
+          No support team configured. Select employees from the dropdown and click <strong>Save team</strong>.
+        </div>
+      </div>
     </section>
 
     <section class="panel">
@@ -1896,6 +2614,7 @@
               <th>Start</th>
               <th>End</th>
               <th>Carry Forward</th>
+              <th>Overburn</th>
             </tr>
           </thead>
           <tbody id="rows"></tbody>
@@ -1961,6 +2680,62 @@
     </div>
   </div>
 
+  <!-- Head Count Drawer -->
+  <div class="stat-drawer-overlay" id="headcount-overlay" role="dialog" aria-modal="true" aria-labelledby="hc-drawer-title-text">
+    <div class="stat-drawer" id="headcount-drawer">
+      <div class="stat-drawer-header">
+        <div class="stat-drawer-title">
+          <span class="material-symbols-outlined" aria-hidden="true">groups</span>
+          <span id="hc-drawer-title-text">Team Roster</span>
+        </div>
+        <button class="stat-drawer-close" id="hc-drawer-close" aria-label="Close head count panel">
+          <span class="material-symbols-outlined">close</span>
+        </button>
+      </div>
+      <div class="stat-drawer-subtitle" id="hc-drawer-subtitle">
+        Select employees to include in capacity and leave calculations. Deselecting reduces capacity proportionally.
+      </div>
+      <div class="hc-toolbar">
+        <button type="button" id="hc-select-all">Select all</button>
+        <button type="button" id="hc-clear-all">Clear all</button>
+        <div class="hc-search-wrap">
+          <input type="search" class="hc-search" id="hc-search" placeholder="Search teams or employees…" autocomplete="off" aria-label="Search teams or employees">
+        </div>
+      </div>
+      <div class="stat-drawer-body">
+        <div class="hc-tree" id="hc-tree"></div>
+      </div>
+      <div class="stat-drawer-footer">
+        <button type="button" class="btn" id="hc-apply-btn">Apply selection</button>
+        <button type="button" class="btn alt" id="hc-all-employees-btn">All employees</button>
+        <span style="flex:1 1 auto;"></span>
+        <button type="button" class="btn alt" id="hc-cancel-btn">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Total Leaves Drawer -->
+  <div class="stat-drawer-overlay" id="leaves-overlay" role="dialog" aria-modal="true" aria-labelledby="lv-drawer-title-text">
+    <div class="stat-drawer" id="leaves-drawer">
+      <div class="stat-drawer-header">
+        <div class="stat-drawer-title">
+          <span class="material-symbols-outlined" aria-hidden="true">event_busy</span>
+          <span id="lv-drawer-title-text">Leave Details</span>
+        </div>
+        <button class="stat-drawer-close" id="lv-drawer-close" aria-label="Close leaves panel">
+          <span class="material-symbols-outlined">close</span>
+        </button>
+      </div>
+      <div class="lv-summary-bar" id="lv-summary-bar"></div>
+      <div class="lv-search-wrap">
+        <input type="search" class="lv-search" id="lv-search" placeholder="Search by employee name…" autocomplete="off" aria-label="Search employees">
+      </div>
+      <div class="stat-drawer-body">
+        <div class="lv-content" id="lv-content"></div>
+      </div>
+    </div>
+  </div>
+
   <script src="shared-nav.js"></script>
   <script>
     const API_SUMMARY = "/api/monthly-epic-plan-progress/summary";
@@ -2013,16 +2788,53 @@
       dfToggleStartWrap: document.getElementById("df-toggle-start-wrap"),
       dfToggleEndWrap: document.getElementById("df-toggle-end-wrap"),
       projectCards: document.getElementById("project-cards"),
-      kpiWfTeam: document.getElementById("kpi-wf-team"),
-      kpiWfScope: document.getElementById("kpi-wf-scope"),
-      kpiWfScopeLabel: document.getElementById("kpi-wf-scope-label"),
+      kpiHeadcount: document.getElementById("kpi-headcount"),
+      kpiHeadcountDetail: document.getElementById("kpi-headcount-detail"),
+      headcountCard: document.getElementById("headcount-card"),
+      leavesCard: document.getElementById("leaves-card"),
       kpiWfCapacity: document.getElementById("kpi-wf-capacity"),
+      kpiWfCapDetail: document.getElementById("kpi-wf-cap-detail"),
       kpiWfLeave: document.getElementById("kpi-wf-leave"),
+      kpiWfLeaveDetail: document.getElementById("kpi-wf-leave-detail"),
       kpiWfAvailability: document.getElementById("kpi-wf-availability"),
       kpiWfCapacityLabel: document.getElementById("kpi-wf-capacity-label"),
       kpiWfLeaveLabel: document.getElementById("kpi-wf-leave-label"),
       kpiWfAvailLabel: document.getElementById("kpi-wf-avail-label"),
       workforceCaption: document.getElementById("workforce-caption"),
+      headcountOverlay: document.getElementById("headcount-overlay"),
+      hcDrawerSubtitle: document.getElementById("hc-drawer-subtitle"),
+      hcDrawerClose: document.getElementById("hc-drawer-close"),
+      hcSelectAll: document.getElementById("hc-select-all"),
+      hcClearAll: document.getElementById("hc-clear-all"),
+      hcSearch: document.getElementById("hc-search"),
+      hcTree: document.getElementById("hc-tree"),
+      hcApplyBtn: document.getElementById("hc-apply-btn"),
+      hcAllEmployeesBtn: document.getElementById("hc-all-employees-btn"),
+      hcCancelBtn: document.getElementById("hc-cancel-btn"),
+      leavesOverlay: document.getElementById("leaves-overlay"),
+      lvDrawerClose: document.getElementById("lv-drawer-close"),
+      lvSummaryBar: document.getElementById("lv-summary-bar"),
+      lvSearch: document.getElementById("lv-search"),
+      lvContent: document.getElementById("lv-content"),
+      supportEmpDd: document.getElementById("support-emp-dd"),
+      supportEmpDdToggle: document.getElementById("support-emp-dd-toggle"),
+      supportEmpDdPanel: document.getElementById("support-emp-dd-panel"),
+      supportEmpDdList: document.getElementById("support-emp-dd-list"),
+      supportEmpDdSummary: document.getElementById("support-emp-dd-summary"),
+      supportEmpDdSearch: document.getElementById("support-emp-dd-search"),
+      supportEmpDdEmpty: document.getElementById("support-emp-dd-empty"),
+      supportSelectAll: document.getElementById("support-select-all"),
+      supportClearAll: document.getElementById("support-clear-all"),
+      supportSaveBtn: document.getElementById("support-save-btn"),
+      supportSaveStatus: document.getElementById("support-save-status"),
+      supportTeamCount: document.getElementById("support-team-count"),
+      supportTeamTableWrap: document.getElementById("support-team-table-wrap"),
+      supportTeamTbody: document.getElementById("support-team-tbody"),
+      supportTeamEmpty: document.getElementById("support-team-empty"),
+      kpiAvailReprinted: document.getElementById("kpi-avail-reprinted"),
+      kpiSupportAvail: document.getElementById("kpi-support-avail"),
+      kpiSupportAvailDetail: document.getElementById("kpi-support-avail-detail"),
+      kpiFeaturesAvail: document.getElementById("kpi-features-avail"),
       capacityProfile: document.getElementById("capacity-profile-select"),
       modeTkEpics: document.getElementById("mode-tk-epics"),
       modeAllEpics: document.getElementById("mode-all-epics"),
@@ -2648,6 +3460,8 @@
       updateKpiCards(recomputeKpiTotalsFromRows(filteredRows));
       renderEmployeeDropdown(latestPayload.workforce || {});
       renderWorkforce(latestPayload.workforce || {});
+      renderSupportTeam(latestPayload.workforce || {});
+      loadAndRenderSupportDd();
       renderExcludedEpics(latestPayload.excluded_epics || []);
       els.runMeta.textContent = latestPayload.canonical_run_id
         ? "Canonical run: " + latestPayload.canonical_run_id
@@ -2656,22 +3470,31 @@
 
     function renderWorkforce(wf) {
       const payload = wf || {};
-      if (els.kpiWfTeam) els.kpiWfTeam.textContent = String(payload.employee_count_profile != null ? payload.employee_count_profile : 0);
-      if (els.kpiWfScope) els.kpiWfScope.textContent = String(payload.selected_employee_count != null ? payload.selected_employee_count : 0);
-      if (els.kpiWfScopeLabel) {
-        els.kpiWfScopeLabel.textContent = payload.assignee_filter_active ? "Selected employees" : "Employees in scope";
-      }
       const dayMode = unit === "days";
       const cap = dayMode ? Number(payload.capacity_days || 0) : Number(payload.capacity_hours || 0);
       const lv = dayMode ? Number(payload.leave_days || 0) : Number(payload.leave_hours || 0);
       const av = dayMode ? Number(payload.availability_days || 0) : Number(payload.availability_hours || 0);
       const lab = dayMode ? "days" : "hours";
+      const n = Number(payload.employee_count_profile != null ? payload.employee_count_profile : 0);
+      const kSel = Number(payload.selected_employee_count != null ? payload.selected_employee_count : 0);
+      const filterActive = !!payload.assignee_filter_active;
+      const monthStr = els.month ? els.month.value : "";
+
+      if (els.kpiHeadcount) els.kpiHeadcount.textContent = filterActive ? String(kSel) : String(n);
+      if (els.kpiHeadcountDetail) {
+        els.kpiHeadcountDetail.textContent = filterActive
+          ? kSel + " selected of " + n + " employees"
+          : "employees in capacity profile";
+      }
       if (els.kpiWfCapacityLabel) els.kpiWfCapacityLabel.textContent = "Capacity (" + lab + ")";
-      if (els.kpiWfLeaveLabel) els.kpiWfLeaveLabel.textContent = "Leave load (" + lab + ")";
-      if (els.kpiWfAvailLabel) els.kpiWfAvailLabel.textContent = "Availability (" + lab + ")";
       if (els.kpiWfCapacity) els.kpiWfCapacity.textContent = formatNumber(cap);
+      if (els.kpiWfCapDetail) els.kpiWfCapDetail.textContent = n > 0 ? n + " employees × profile rate" : "";
+      if (els.kpiWfLeaveLabel) els.kpiWfLeaveLabel.textContent = "Total Leaves (" + lab + ")";
       if (els.kpiWfLeave) els.kpiWfLeave.textContent = formatNumber(lv);
+      if (els.kpiWfLeaveDetail) els.kpiWfLeaveDetail.textContent = "in " + monthDisplayName(monthStr);
+      if (els.kpiWfAvailLabel) els.kpiWfAvailLabel.textContent = "Availability (" + lab + ")";
       if (els.kpiWfAvailability) els.kpiWfAvailability.textContent = formatNumber(av);
+
       renderCapacityProfileDropdown(payload);
       if (els.workforceCaption) {
         const meta = payload.meta || {};
@@ -2692,6 +3515,636 @@
         els.workforceCaption.textContent = capLine + " " + leaveLine + " Availability = capacity minus leave load.";
       }
     }
+
+    // ── Head Count Drawer ────────────────────────────────────────────
+    function openHeadcountDrawer() {
+      const wf = (latestPayload && latestPayload.workforce) || {};
+      renderHeadcountDrawerContent(wf);
+      if (els.headcountOverlay) els.headcountOverlay.classList.add("is-open");
+      document.body.style.overflow = "hidden";
+      if (els.hcSearch) { els.hcSearch.value = ""; filterHcTree(""); }
+    }
+
+    function closeHeadcountDrawer() {
+      if (els.headcountOverlay) els.headcountOverlay.classList.remove("is-open");
+      document.body.style.overflow = "";
+    }
+
+    function renderHeadcountDrawerContent(wf) {
+      const payload = wf || {};
+      const tree = payload.employee_tree || {};
+      const teams = Array.isArray(tree.teams) ? tree.teams : [];
+      const ungrouped = Array.isArray(tree.ungrouped) ? tree.ungrouped : [];
+      const active = !!payload.assignee_filter_active;
+      const selected = new Set(Array.isArray(payload.selected_assignees) ? payload.selected_assignees : []);
+      const monthStr = els.month ? els.month.value : "";
+      const n = Number(payload.employee_count_profile || 0);
+      if (els.hcDrawerSubtitle) {
+        els.hcDrawerSubtitle.textContent =
+          (n ? n + " employees in capacity profile · " : "") +
+          monthDisplayName(monthStr) + " · Leave hours shown per employee for the month.";
+      }
+
+      function memberHtml(m) {
+        const name = String((m && m.name) || "").trim();
+        if (!name) return "";
+        const rid = m.resigned === true || m.resigned === 1;
+        const lv = Number(m.leave_hours || 0);
+        const checked = active && selected.has(name);
+        const rdate = m.resignation_date ? String(m.resignation_date).slice(0, 10) : "";
+        return (
+          '<label class="hc-member-row" data-hc-name="' + esc(name.toLowerCase()) + '">'
+          + '<input type="checkbox" class="hc-leaf" value="' + esc(name) + '"' + (checked ? " checked" : "") + ">"
+          + '<span class="hc-member-name">' + esc(name) + "</span>"
+          + '<span class="hc-member-status ' + (rid ? "resigned" : "active") + '">'
+          + (rid ? ("Resigned" + (rdate ? " · " + rdate : "")) : "Active") + "</span>"
+          + (lv > 0
+            ? '<span class="hc-member-leaves has-leave">' + formatNumber(lv) + " h leave</span>"
+            : '<span class="hc-member-leaves">—</span>')
+          + "</label>"
+        );
+      }
+
+      const parts = [];
+      for (let ti = 0; ti < teams.length; ti++) {
+        const team = teams[ti];
+        const teamName = String((team && team.team_name) || "").trim() || ("Team " + (ti + 1));
+        const leader = String((team && team.team_leader) || "").trim();
+        const members = Array.isArray(team.members) ? team.members : [];
+        const membersHtml = members.map(memberHtml).join("");
+        if (!membersHtml) continue;
+        const teamLv = members.reduce((s, m) => s + Number(m.leave_hours || 0), 0);
+        parts.push(
+          '<div class="hc-team-block" data-hc-team="' + esc((teamName + " " + leader).toLowerCase()) + '">'
+          + '<div class="hc-team-header">'
+          + '<input type="checkbox" class="hc-team-cb" title="Select all in ' + esc(teamName) + '">'
+          + '<span class="hc-team-name">' + esc(teamName)
+          + (leader ? ' <span class="hc-team-lead">· ' + esc(leader) + "</span>" : "") + "</span>"
+          + '<span class="hc-team-meta">' + members.length + " · "
+          + (teamLv > 0 ? formatNumber(teamLv) + " h leave" : "no leave") + "</span>"
+          + "</div>"
+          + '<div class="hc-members">' + membersHtml + "</div>"
+          + "</div>"
+        );
+      }
+      if (ungrouped.length) {
+        const ugHtml = ungrouped.map(memberHtml).join("");
+        if (ugHtml) {
+          const ugLv = ungrouped.reduce((s, m) => s + Number(m.leave_hours || 0), 0);
+          parts.push(
+            '<div class="hc-team-block" data-hc-team="others ungrouped not mapped to a team">'
+            + '<div class="hc-team-header">'
+            + '<input type="checkbox" class="hc-team-cb" title="Select all ungrouped">'
+            + '<span class="hc-team-name">Others <span class="hc-team-lead">· not mapped to a team</span></span>'
+            + '<span class="hc-team-meta">' + ungrouped.length + " · "
+            + (ugLv > 0 ? formatNumber(ugLv) + " h leave" : "no leave") + "</span>"
+            + "</div>"
+            + '<div class="hc-members">' + ugHtml + "</div>"
+            + "</div>"
+          );
+        }
+      }
+      if (els.hcTree) {
+        els.hcTree.innerHTML = parts.length
+          ? parts.join("")
+          : '<div class="hc-empty">No employee data available for this month.</div>';
+        bindHcTreeEvents();
+      }
+    }
+
+    function bindHcTreeEvents() {
+      if (!els.hcTree) return;
+      els.hcTree.querySelectorAll(".hc-team-cb").forEach(function (teamCb) {
+        teamCb.addEventListener("change", function () {
+          const block = this.closest(".hc-team-block");
+          if (!block) return;
+          block.querySelectorAll(".hc-leaf").forEach(function (leaf) { leaf.checked = teamCb.checked; });
+        });
+      });
+      els.hcTree.querySelectorAll(".hc-leaf").forEach(function (leaf) {
+        leaf.addEventListener("change", function () {
+          const block = this.closest(".hc-team-block");
+          if (!block) return;
+          const teamCb = block.querySelector(".hc-team-cb");
+          if (!teamCb) return;
+          const leaves = block.querySelectorAll(".hc-leaf");
+          const checked = block.querySelectorAll(".hc-leaf:checked").length;
+          teamCb.indeterminate = false;
+          if (checked === 0) teamCb.checked = false;
+          else if (checked === leaves.length) teamCb.checked = true;
+          else { teamCb.checked = false; teamCb.indeterminate = true; }
+        });
+      });
+      els.hcTree.querySelectorAll(".hc-team-block").forEach(function (block) {
+        const teamCb = block.querySelector(".hc-team-cb");
+        if (!teamCb) return;
+        const leaves = block.querySelectorAll(".hc-leaf");
+        const checked = block.querySelectorAll(".hc-leaf:checked").length;
+        teamCb.indeterminate = false;
+        if (checked === 0) teamCb.checked = false;
+        else if (checked === leaves.length) teamCb.checked = true;
+        else { teamCb.checked = false; teamCb.indeterminate = true; }
+      });
+    }
+
+    function selectAllHcDrawer() {
+      if (!els.hcTree) return;
+      els.hcTree.querySelectorAll(".hc-leaf").forEach(function (cb) { cb.checked = true; });
+      els.hcTree.querySelectorAll(".hc-team-cb").forEach(function (cb) { cb.checked = true; cb.indeterminate = false; });
+    }
+
+    function clearHcDrawerFilter() {
+      if (!els.hcTree) return;
+      els.hcTree.querySelectorAll(".hc-leaf").forEach(function (cb) { cb.checked = false; });
+      els.hcTree.querySelectorAll(".hc-team-cb").forEach(function (cb) { cb.checked = false; cb.indeterminate = false; });
+    }
+
+    function filterHcTree(q) {
+      if (!els.hcTree) return;
+      const query = q.trim().toLowerCase();
+      els.hcTree.querySelectorAll(".hc-team-block").forEach(function (block) {
+        const teamSearch = String(block.getAttribute("data-hc-team") || "");
+        let anyVisible = false;
+        block.querySelectorAll(".hc-member-row").forEach(function (row) {
+          const nameSearch = String(row.getAttribute("data-hc-name") || "");
+          const match = !query || nameSearch.includes(query) || teamSearch.includes(query);
+          row.style.display = match ? "" : "none";
+          if (match) anyVisible = true;
+        });
+        block.style.display = anyVisible || (!query) || teamSearch.includes(query) ? "" : "none";
+      });
+    }
+
+    function applyHcDrawerFilter() {
+      if (!els.hcTree) { closeHeadcountDrawer(); return; }
+      const checked = Array.from(els.hcTree.querySelectorAll(".hc-leaf:checked"))
+        .map(function (cb) { return String(cb.value || "").trim(); })
+        .filter(Boolean);
+      if (els.employeeDdList) {
+        els.employeeDdList.querySelectorAll(".emp-dd-leaf").forEach(function (cb) {
+          cb.checked = checked.includes(String(cb.value || "").trim());
+        });
+        els.employeeDdList.querySelectorAll(".emp-dd-group").forEach(syncTeamCheckboxForGroup);
+      }
+      updateEmployeeDropdownSummary();
+      closeHeadcountDrawer();
+      if (els.apply) els.apply.click();
+    }
+
+    // ── Leaves Drawer ────────────────────────────────────────────────
+    function openLeavesDrawer() {
+      const wf = (latestPayload && latestPayload.workforce) || {};
+      renderLeavesDrawerContent(wf);
+      if (els.leavesOverlay) els.leavesOverlay.classList.add("is-open");
+      document.body.style.overflow = "hidden";
+      if (els.lvSearch) els.lvSearch.value = "";
+    }
+
+    function closeLeavesDrawer() {
+      if (els.leavesOverlay) els.leavesOverlay.classList.remove("is-open");
+      document.body.style.overflow = "";
+    }
+
+    function buildLeavesIndex(wf) {
+      const dailyLeaves = Array.isArray((wf || {}).daily_leaves) ? wf.daily_leaves : [];
+      const byAssignee = Object.create(null);
+      dailyLeaves.forEach(function (row) {
+        const name = String(row.assignee || "").trim();
+        if (!name) return;
+        if (!byAssignee[name]) byAssignee[name] = { name, total: 0, days: [] };
+        byAssignee[name].total += Number(row.hours || 0);
+        byAssignee[name].days.push(row);
+      });
+      const sortedNames = Object.keys(byAssignee).sort(function (a, b) {
+        return byAssignee[b].total - byAssignee[a].total;
+      });
+      return { byAssignee, sortedNames };
+    }
+
+    function renderLeavesDrawerContent(wf) {
+      const { byAssignee, sortedNames } = buildLeavesIndex(wf);
+      const monthStr = els.month ? els.month.value : "";
+      const dayMode = unit === "days";
+      const lab = dayMode ? "days" : "hours";
+      const totalH = sortedNames.reduce(function (s, n) { return s + byAssignee[n].total; }, 0);
+      const totalD = totalH / 8;
+      const monthName = monthDisplayName(monthStr);
+      const titleEl = document.getElementById("lv-drawer-title-text");
+      if (titleEl) titleEl.textContent = "Leave Details — " + monthName;
+      if (els.lvSummaryBar) {
+        const countWithLeave = sortedNames.length;
+        const avgH = countWithLeave > 0 ? totalH / countWithLeave : 0;
+        const avgD = avgH / 8;
+        els.lvSummaryBar.innerHTML =
+          '<div class="lv-summary-stat"><span class="lv-s-label">Total Leave</span><span class="lv-s-value">'
+          + formatNumber(dayMode ? totalD : totalH) + " " + lab + "</span></div>"
+          + '<div class="lv-summary-stat"><span class="lv-s-label">Employees</span><span class="lv-s-value">'
+          + countWithLeave + "</span></div>"
+          + (countWithLeave > 0
+            ? '<div class="lv-summary-stat"><span class="lv-s-label">Avg / Person</span><span class="lv-s-value">'
+              + formatNumber(dayMode ? avgD : avgH) + " " + lab + "</span></div>"
+            : "")
+          + '<div class="lv-summary-stat"><span class="lv-s-label">Month</span>'
+          + '<span class="lv-s-value" style="font-size:0.88rem;">' + esc(monthName) + "</span></div>";
+      }
+      renderLeavesContent(sortedNames, byAssignee, dayMode, "");
+    }
+
+    function renderLeavesContent(sortedNames, byAssignee, dayMode, q) {
+      if (!els.lvContent) return;
+      const query = q.trim().toLowerCase();
+      const lab = dayMode ? "days" : "h";
+      const parts = [];
+      for (let i = 0; i < sortedNames.length; i++) {
+        const name = sortedNames[i];
+        if (query && !name.toLowerCase().includes(query)) continue;
+        const rec = byAssignee[name];
+        const totalShow = dayMode ? rec.total / 8 : rec.total;
+        const daysHtml = rec.days
+          .slice()
+          .sort(function (a, b) { return String(a.date || "").localeCompare(String(b.date || "")); })
+          .map(function (d) {
+            const dShow = dayMode ? Number(d.hours || 0) / 8 : Number(d.hours || 0);
+            const typeTag = d.leave_type
+              ? '<span class="lv-type-tag">' + esc(d.leave_type) + "</span> "
+              : "";
+            const note = d.summary
+              ? '<span style="font-size:0.76rem;color:var(--muted);">' + esc(d.summary) + "</span>"
+              : "";
+            return "<tr>"
+              + "<td>" + esc(String(d.date || "")) + "</td>"
+              + "<td>" + typeTag + note + "</td>"
+              + '<td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:700;color:#b45309;">'
+              + formatNumber(dShow) + " " + lab + "</td>"
+              + "</tr>";
+          })
+          .join("");
+        parts.push(
+          '<div class="lv-person-block" id="lv-block-' + i + '">'
+          + '<div class="lv-person-header" onclick="document.getElementById(\'lv-block-' + i + '\').classList.toggle(\'is-open\')">'
+          + '<span class="lv-person-name">' + esc(name) + "</span>"
+          + '<span class="lv-person-total">' + formatNumber(totalShow) + " " + lab + " total</span>"
+          + '<span class="material-symbols-outlined lv-expand-icon">expand_more</span>'
+          + "</div>"
+          + '<table class="lv-days-table"><thead><tr><th>Date</th><th>Type / Note</th>'
+          + '<th style="text-align:right;">Amount</th></tr></thead>'
+          + "<tbody>" + daysHtml + "</tbody></table>"
+          + "</div>"
+        );
+      }
+      els.lvContent.innerHTML = parts.length
+        ? parts.join("")
+        : '<div class="lv-empty">'
+          + (query ? "No employees match your search." : "No leave data for this month.")
+          + "</div>";
+    }
+
+    // ── Drawer event wiring (runs once on page load) ─────────────────
+    (function wireDrawerEvents() {
+      // Head Count card click
+      if (els.headcountCard) {
+        els.headcountCard.addEventListener("click", openHeadcountDrawer);
+        els.headcountCard.addEventListener("keydown", function (e) {
+          if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openHeadcountDrawer(); }
+        });
+      }
+      // Leaves card click
+      if (els.leavesCard) {
+        els.leavesCard.addEventListener("click", openLeavesDrawer);
+        els.leavesCard.addEventListener("keydown", function (e) {
+          if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openLeavesDrawer(); }
+        });
+      }
+      // Head Count drawer controls
+      if (els.hcDrawerClose) els.hcDrawerClose.addEventListener("click", closeHeadcountDrawer);
+      if (els.hcCancelBtn) els.hcCancelBtn.addEventListener("click", closeHeadcountDrawer);
+      if (els.hcApplyBtn) els.hcApplyBtn.addEventListener("click", applyHcDrawerFilter);
+      if (els.hcAllEmployeesBtn) {
+        els.hcAllEmployeesBtn.addEventListener("click", function () {
+          clearHcDrawerFilter();
+          if (els.employeeDdList) {
+            els.employeeDdList.querySelectorAll(".emp-dd-leaf").forEach(function (cb) { cb.checked = false; });
+            els.employeeDdList.querySelectorAll(".emp-dd-group").forEach(syncTeamCheckboxForGroup);
+          }
+          updateEmployeeDropdownSummary();
+          closeHeadcountDrawer();
+          if (els.apply) els.apply.click();
+        });
+      }
+      if (els.hcSelectAll) els.hcSelectAll.addEventListener("click", selectAllHcDrawer);
+      if (els.hcClearAll) els.hcClearAll.addEventListener("click", clearHcDrawerFilter);
+      if (els.hcSearch) els.hcSearch.addEventListener("input", function () { filterHcTree(this.value); });
+      if (els.headcountOverlay) {
+        els.headcountOverlay.addEventListener("click", function (e) {
+          if (e.target === els.headcountOverlay) closeHeadcountDrawer();
+        });
+      }
+      // Leaves drawer controls
+      if (els.lvDrawerClose) els.lvDrawerClose.addEventListener("click", closeLeavesDrawer);
+      if (els.leavesOverlay) {
+        els.leavesOverlay.addEventListener("click", function (e) {
+          if (e.target === els.leavesOverlay) closeLeavesDrawer();
+        });
+      }
+      if (els.lvSearch) {
+        els.lvSearch.addEventListener("input", function () {
+          const wf = (latestPayload && latestPayload.workforce) || {};
+          const { byAssignee, sortedNames } = buildLeavesIndex(wf);
+          renderLeavesContent(sortedNames, byAssignee, unit === "days", this.value);
+        });
+      }
+      // Escape key closes any open drawer
+      document.addEventListener("keydown", function (e) {
+        if (e.key !== "Escape") return;
+        if (els.headcountOverlay && els.headcountOverlay.classList.contains("is-open")) closeHeadcountDrawer();
+        if (els.leavesOverlay && els.leavesOverlay.classList.contains("is-open")) closeLeavesDrawer();
+      });
+    })();
+
+    // ── Support Team ─────────────────────────────────────────────────
+    const API_SUPPORT_TEAM = "/api/monthly-epic-plan-progress/support-team";
+    let supportDdOpen = false;
+    let supportDdInteractionBound = false;
+
+    function setSupportDdOpen(open) {
+      if (!els.supportEmpDd || !els.supportEmpDdToggle || !els.supportEmpDdPanel) return;
+      supportDdOpen = open;
+      els.supportEmpDd.classList.toggle("is-open", open);
+      els.supportEmpDdToggle.setAttribute("aria-expanded", open ? "true" : "false");
+    }
+
+    function updateSupportDdSummary() {
+      if (!els.supportEmpDdList || !els.supportEmpDdSummary) return;
+      const checked = els.supportEmpDdList.querySelectorAll(".support-leaf:checked");
+      if (!checked.length) {
+        els.supportEmpDdSummary.textContent = "Select support team members…";
+      } else if (checked.length === 1) {
+        els.supportEmpDdSummary.textContent = "1 member selected";
+      } else {
+        els.supportEmpDdSummary.textContent = checked.length + " members selected";
+      }
+    }
+
+    function filterSupportDdList(q) {
+      if (!els.supportEmpDdList) return;
+      const query = q.trim().toLowerCase();
+      let visible = 0;
+      els.supportEmpDdList.querySelectorAll(".support-emp-dd-group").forEach(function (group) {
+        const teamSearch = String(group.getAttribute("data-search") || "");
+        let anyMember = false;
+        group.querySelectorAll(".support-emp-dd-member-row").forEach(function (row) {
+          const nameSearch = String(row.getAttribute("data-search") || "");
+          const match = !query || nameSearch.includes(query) || teamSearch.includes(query);
+          row.style.display = match ? "" : "none";
+          if (match) anyMember = true;
+        });
+        const show = anyMember || (!query);
+        group.style.display = show ? "" : "none";
+        if (show) visible++;
+      });
+      if (els.supportEmpDdEmpty) els.supportEmpDdEmpty.classList.toggle("is-visible", visible === 0 && !!query);
+    }
+
+    function renderSupportDdFromTree(wf, savedMembers) {
+      if (!els.supportEmpDdList) return;
+      const tree = (wf && wf.employee_tree) || {};
+      const teams = Array.isArray(tree.teams) ? tree.teams : [];
+      const ungrouped = Array.isArray(tree.ungrouped) ? tree.ungrouped : [];
+      const savedSet = new Set(Array.isArray(savedMembers) ? savedMembers : []);
+      let rowSeq = 0;
+      let teamSeq = 0;
+
+      function memberRowHtml(m) {
+        const name = String((m && m.name) || "").trim();
+        if (!name) return "";
+        const rid = m.resigned === true || m.resigned === 1;
+        const checked = savedSet.has(name);
+        const bid = "sup-cb-" + (rowSeq++);
+        return (
+          '<label class="support-emp-dd-member-row" data-search="' + esc(name.toLowerCase()) + '">'
+          + '<input type="checkbox" class="support-leaf" id="' + esc(bid) + '" value="' + esc(name) + '"'
+          + (checked ? " checked" : "") + ">"
+          + '<span class="support-emp-dd-name">' + esc(name) + "</span>"
+          + (rid ? '<span class="emp-dd-res" data-resigned="1" style="font-size:0.62rem;">Resigned</span>' : "")
+          + "</label>"
+        );
+      }
+
+      const parts = [];
+      teams.forEach(function (team) {
+        const teamName = String((team && team.team_name) || "").trim();
+        const leader = String((team && team.team_leader) || "").trim();
+        const members = Array.isArray(team.members) ? team.members : [];
+        const membersHtml = members.map(memberRowHtml).join("");
+        if (!membersHtml) return;
+        const tid = "sup-team-" + (teamSeq++);
+        parts.push(
+          '<div class="support-emp-dd-group" data-search="' + esc((teamName + " " + leader).toLowerCase()) + '">'
+          + '<label class="support-emp-dd-team-row" style="display:flex;align-items:center;gap:6px;font-size:0.82rem;">'
+          + '<input type="checkbox" class="support-team-cb" id="' + esc(tid) + '" style="accent-color:#7c3aed;width:14px;height:14px;">'
+          + '<span style="font-weight:750;color:var(--title);">' + esc(teamName)
+          + (leader ? ' <span style="font-weight:500;color:var(--muted);">· ' + esc(leader) + "</span>" : "")
+          + "</span></label>"
+          + '<div class="support-emp-dd-members">' + membersHtml + "</div>"
+          + "</div>"
+        );
+      });
+      if (ungrouped.length) {
+        const ugHtml = ungrouped.map(memberRowHtml).join("");
+        if (ugHtml) {
+          const tid = "sup-team-" + (teamSeq++);
+          parts.push(
+            '<div class="support-emp-dd-group" data-search="others ungrouped">'
+            + '<label class="support-emp-dd-team-row" style="display:flex;align-items:center;gap:6px;font-size:0.82rem;">'
+            + '<input type="checkbox" class="support-team-cb" id="' + esc(tid) + '" style="accent-color:#7c3aed;width:14px;height:14px;">'
+            + '<span style="font-weight:750;color:var(--title);">Others <span style="font-weight:500;color:var(--muted);">· not mapped to a team</span></span>'
+            + "</label>"
+            + '<div class="support-emp-dd-members">' + ugHtml + "</div>"
+            + "</div>"
+          );
+        }
+      }
+      els.supportEmpDdList.innerHTML = parts.join("") || '<div style="padding:14px;text-align:center;color:var(--muted);font-size:0.84rem;">No employee data loaded yet.</div>';
+      bindSupportDdEvents();
+      updateSupportDdSummary();
+    }
+
+    function bindSupportDdEvents() {
+      if (!els.supportEmpDdList) return;
+      els.supportEmpDdList.querySelectorAll(".support-team-cb").forEach(function (teamCb) {
+        teamCb.addEventListener("change", function () {
+          const group = this.closest(".support-emp-dd-group");
+          if (!group) return;
+          group.querySelectorAll(".support-leaf").forEach(function (leaf) { leaf.checked = teamCb.checked; });
+          updateSupportDdSummary();
+        });
+      });
+      els.supportEmpDdList.querySelectorAll(".support-leaf").forEach(function (leaf) {
+        leaf.addEventListener("change", function () {
+          const group = this.closest(".support-emp-dd-group");
+          if (!group) return;
+          const teamCb = group.querySelector(".support-team-cb");
+          if (!teamCb) return;
+          const leaves = group.querySelectorAll(".support-leaf");
+          const checked = group.querySelectorAll(".support-leaf:checked").length;
+          teamCb.indeterminate = false;
+          if (checked === 0) teamCb.checked = false;
+          else if (checked === leaves.length) teamCb.checked = true;
+          else { teamCb.checked = false; teamCb.indeterminate = true; }
+          updateSupportDdSummary();
+        });
+      });
+      // sync team cbs on render
+      els.supportEmpDdList.querySelectorAll(".support-emp-dd-group").forEach(function (group) {
+        const teamCb = group.querySelector(".support-team-cb");
+        if (!teamCb) return;
+        const leaves = group.querySelectorAll(".support-leaf");
+        const checked = group.querySelectorAll(".support-leaf:checked").length;
+        teamCb.indeterminate = false;
+        if (checked === 0) teamCb.checked = false;
+        else if (checked === leaves.length) teamCb.checked = true;
+        else { teamCb.checked = false; teamCb.indeterminate = true; }
+      });
+    }
+
+    function getCheckedSupportMembers() {
+      if (!els.supportEmpDdList) return [];
+      return Array.from(els.supportEmpDdList.querySelectorAll(".support-leaf:checked"))
+        .map(function (cb) { return String(cb.value || "").trim(); })
+        .filter(Boolean);
+    }
+
+    function renderSupportTeam(wf) {
+      const st = (wf && wf.support_team) || {};
+      const rows = Array.isArray(st.member_rows) ? st.member_rows : [];
+      const dayMode = unit === "days";
+      const lab = dayMode ? "days" : "h";
+
+      if (els.supportTeamCount) els.supportTeamCount.textContent = String(rows.length);
+
+      const hasMembers = rows.length > 0;
+      if (els.supportTeamTableWrap) els.supportTeamTableWrap.style.display = hasMembers ? "" : "none";
+      if (els.supportTeamEmpty) els.supportTeamEmpty.style.display = hasMembers ? "none" : "";
+
+      if (hasMembers && els.supportTeamTbody) {
+        const rowsHtml = rows.map(function (r) {
+          const cap = dayMode ? Number(r.capacity_days || 0) : Number(r.capacity_hours || 0);
+          const lv = dayMode ? Number(r.leave_days || 0) : Number(r.leave_hours || 0);
+          const av = dayMode ? Number(r.availability_days || 0) : Number(r.availability_hours || 0);
+          return "<tr>"
+            + "<td><strong>" + esc(String(r.name || "")) + "</strong></td>"
+            + '<td><span class="support-category-badge"><span class="material-symbols-outlined">support_agent</span>Technical Support</span></td>'
+            + '<td class="num">' + formatNumber(cap) + " " + lab + "</td>"
+            + '<td class="num">' + formatNumber(lv) + " " + lab + "</td>"
+            + '<td class="num">' + formatNumber(av) + " " + lab + "</td>"
+            + "</tr>";
+        }).join("");
+        const totCap = dayMode ? Number(st.total_capacity_days || 0) : Number(st.total_capacity_hours || 0);
+        const totLv = dayMode ? Number(st.total_leave_days || 0) : Number(st.total_leave_hours || 0);
+        const totAv = dayMode ? Number(st.total_availability_days || 0) : Number(st.total_availability_hours || 0);
+        els.supportTeamTbody.innerHTML = rowsHtml
+          + '<tr class="tfoot-row">'
+          + "<td><strong>Total Technical Support</strong></td>"
+          + '<td><span class="support-category-badge"><span class="material-symbols-outlined">support_agent</span>' + rows.length + " members</span></td>"
+          + '<td class="num">' + formatNumber(totCap) + " " + lab + "</td>"
+          + '<td class="num">' + formatNumber(totLv) + " " + lab + "</td>"
+          + '<td class="num">' + formatNumber(totAv) + " " + lab + "</td>"
+          + "</tr>";
+      }
+
+      // Summary cards
+      const totAvail = dayMode ? Number(wf.availability_days || 0) : Number(wf.availability_hours || 0);
+      const suppAvail = dayMode ? Number(st.total_availability_days || 0) : Number(st.total_availability_hours || 0);
+      const featAvail = dayMode ? Number(st.availability_for_features_days || 0) : Number(st.availability_for_features_hours || 0);
+      const fullLab = dayMode ? "days" : "hours";
+      if (els.kpiAvailReprinted) els.kpiAvailReprinted.textContent = formatNumber(totAvail);
+      if (els.kpiSupportAvail) els.kpiSupportAvail.textContent = formatNumber(suppAvail);
+      if (els.kpiSupportAvailDetail) {
+        els.kpiSupportAvailDetail.textContent = rows.length
+          ? rows.length + " member" + (rows.length === 1 ? "" : "s") + " · available " + fullLab + " for support"
+          : "no support team members";
+      }
+      if (els.kpiFeaturesAvail) els.kpiFeaturesAvail.textContent = formatNumber(featAvail);
+    }
+
+    async function saveSupportTeam() {
+      const members = getCheckedSupportMembers();
+      if (els.supportSaveStatus) { els.supportSaveStatus.className = "support-save-status"; els.supportSaveStatus.textContent = "Saving…"; }
+      try {
+        const resp = await fetch(API_SUPPORT_TEAM, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ members }),
+        });
+        const body = await resp.json().catch(function () { return {}; });
+        if (!resp.ok || !body.ok) throw new Error(body.error || "Save failed");
+        if (els.supportSaveStatus) {
+          els.supportSaveStatus.className = "support-save-status";
+          els.supportSaveStatus.textContent = "✓ Saved (" + members.length + " member" + (members.length === 1 ? "" : "s") + ")";
+        }
+        setSupportDdOpen(false);
+        // Re-fetch summary to get updated support_team payload
+        if (els.apply) els.apply.click();
+      } catch (err) {
+        if (els.supportSaveStatus) {
+          els.supportSaveStatus.className = "support-save-status error";
+          els.supportSaveStatus.textContent = "Error: " + String(err.message || err);
+        }
+      }
+    }
+
+    async function loadAndRenderSupportDd() {
+      const wf = (latestPayload && latestPayload.workforce) || {};
+      try {
+        const resp = await fetch(API_SUPPORT_TEAM, { cache: "no-store" });
+        const body = await resp.json().catch(function () { return {}; });
+        const savedMembers = Array.isArray(body.members) ? body.members : [];
+        renderSupportDdFromTree(wf, savedMembers);
+      } catch (_e) {
+        renderSupportDdFromTree(wf, []);
+      }
+    }
+
+    (function wireSupportTeamEvents() {
+      // Toggle dropdown
+      if (els.supportEmpDdToggle) {
+        els.supportEmpDdToggle.addEventListener("click", function () {
+          const opening = !supportDdOpen;
+          setSupportDdOpen(opening);
+          if (opening && els.supportEmpDdSearch) els.supportEmpDdSearch.value = "";
+          if (opening) filterSupportDdList("");
+        });
+      }
+      // Close on outside click
+      document.addEventListener("click", function (e) {
+        if (!els.supportEmpDd || !supportDdOpen) return;
+        if (!els.supportEmpDd.contains(e.target)) setSupportDdOpen(false);
+      });
+      // Search
+      if (els.supportEmpDdSearch) {
+        els.supportEmpDdSearch.addEventListener("input", function () { filterSupportDdList(this.value); });
+      }
+      // Select all / Clear all
+      if (els.supportSelectAll) {
+        els.supportSelectAll.addEventListener("click", function () {
+          if (!els.supportEmpDdList) return;
+          els.supportEmpDdList.querySelectorAll(".support-leaf").forEach(function (cb) { cb.checked = true; });
+          els.supportEmpDdList.querySelectorAll(".support-team-cb").forEach(function (cb) { cb.checked = true; cb.indeterminate = false; });
+          updateSupportDdSummary();
+        });
+      }
+      if (els.supportClearAll) {
+        els.supportClearAll.addEventListener("click", function () {
+          if (!els.supportEmpDdList) return;
+          els.supportEmpDdList.querySelectorAll(".support-leaf").forEach(function (cb) { cb.checked = false; });
+          els.supportEmpDdList.querySelectorAll(".support-team-cb").forEach(function (cb) { cb.checked = false; cb.indeterminate = false; });
+          updateSupportDdSummary();
+        });
+      }
+      // Save button
+      if (els.supportSaveBtn) els.supportSaveBtn.addEventListener("click", saveSupportTeam);
+    })();
+
     function renderProjectCards(byProject) {
       if (!els.projectCards) return;
       bindProjectCardFilterDelegation();
@@ -2912,7 +4365,31 @@
       const projectStyle = '--project-color:' + projectHex + ';--project-bg:' + colorToSoftBg(projectHex);
       const projectName = projectDisplayName(projectKey, row.project_name);
       const projectCell = '<div class="project-cell"><span class="project-chip" style="' + esc(projectStyle) + '">' + esc(projectName) + '</span></div>';
-      const epicRow = '<tr>'
+
+      // ── Overburn detection ───────────────────────────────────────
+      const isDay = (unit === "days");
+      const mPlanned = parseFloat(row[isDay ? "planned_days" : "planned_hours"]) || 0;
+      const mActual  = parseFloat(row[isDay ? "actual_days"  : "actual_hours"])  || 0;
+      const tPlanned = parseFloat(row[isDay ? "total_planned_days" : "total_planned_hours"]) || 0;
+      const tActual  = isDay
+        ? (parseFloat(row.total_actual_hours) || 0) / 8
+        : (parseFloat(row.total_actual_hours) || 0);
+      const monthOverburn = mPlanned > 0 && mActual > mPlanned;
+      const totalOverburn = tPlanned > 0 && tActual > tPlanned;
+      const mPct  = monthOverburn ? Math.round((mActual / mPlanned - 1) * 100) : 0;
+      const tPct  = totalOverburn ? Math.round((tActual / tPlanned - 1) * 100) : 0;
+      const mTip  = 'Month: ' + formatNumber(mActual) + ' actual vs ' + formatNumber(mPlanned) + ' planned';
+      const tTip  = 'Total: ' + formatNumber(tActual) + ' actual vs ' + formatNumber(tPlanned) + ' planned';
+      const overburnHtml = (function() {
+        let h = '';
+        if (monthOverburn) h += '<span class="overburn-pill ob-month" title="' + esc(mTip) + '">⚠ Month +' + mPct + '%</span> ';
+        if (totalOverburn) h += '<span class="overburn-pill ob-total" title="' + esc(tTip) + '">⚠ Total +' + tPct + '%</span>';
+        return h || '<span style="color:#94a3b8;">—</span>';
+      })();
+      const rowClass = monthOverburn ? ' class="row-overburn-month"' : (totalOverburn ? ' class="row-overburn-total"' : '');
+      const actualCellClass = monthOverburn ? 'num cell-overburn-month' : 'num';
+
+      const epicRow = '<tr' + rowClass + '>'
         + '<td>' + epicCell + '</td>'
         + '<td>' + projectCell + '</td>'
         + '<td>' + esc(formatDisplayDate(row.approved_start)) + '</td>'
@@ -2921,7 +4398,7 @@
         + '<td>' + statusPill(row.delivery_status, row.approved_start) + '</td>'
         + '<td>' + statusPill(row.jira_status || "Not in canonical data", row.approved_start) + '</td>'
         + '<td class="num">' + formatNumber(effortValue(row, "planned")) + '</td>'
-        + '<td class="num">' + formatNumber(effortValue(row, "actual")) + '</td>'
+        + '<td class="' + actualCellClass + '">' + formatNumber(effortValue(row, "actual")) + '</td>'
         + '<td>' + (row.brought_forward ? '<span class="pill info">Brought forward</span>' : '<span class="pill good">No</span>') + '</td>'
         + '<td>' + flagPill(row.start_slip, "Could not start", "Started/OK") + '</td>'
         + '<td>' + flagPill(row.end_slip, "Could not end", "Completed/OK") + '</td>'
@@ -2931,9 +4408,10 @@
             const badge = reasons.length ? ' <span style="background:#b91c1c;color:#fff;border-radius:999px;padding:1px 6px;font-size:0.7rem;font-weight:700;margin-left:4px;">' + reasons.length + '</span>' : '';
             return '<span class="pill warn" title="' + esc((reasons).join(" | ")) + '">Carried forward' + badge + '</span>';
           })() + '</td>'
+        + '<td>' + overburnHtml + '</td>'
         + '</tr>';
       const childRow = '<tr class="child-row" id="' + childId + '">'
-        + '<td colspan="13">' + childRowHtml(row) + '</td></tr>';
+        + '<td colspan="14">' + childRowHtml(row) + '</td></tr>';
       return epicRow + childRow;
     }
 
@@ -2957,7 +4435,7 @@
         const fk = String(tableProjectFilterKey || "").trim();
         const hint = fk ? ' Try "All projects" or another project card.' : "";
         els.rows.innerHTML =
-          '<tr><td colspan="13"><div class="empty">No epics to show for this view.'
+          '<tr><td colspan="14"><div class="empty">No epics to show for this view.'
           + esc(hint)
           + "</div></td></tr>";
         return;
@@ -2970,7 +4448,7 @@
 
       function groupHeader(cls, iconName, label, count) {
         return '<tr class="group-header-row ' + cls + '">'
-          + '<td colspan="13"><div class="group-label">'
+          + '<td colspan="14"><div class="group-label">'
           + '<span class="group-icon material-symbols-outlined" aria-hidden="true">' + iconName + '</span>'
           + '<span class="group-title">' + esc(label) + '</span>'
           + '<span class="group-badge">' + count + '</span>'
@@ -3144,7 +4622,7 @@
       } catch (err) {
         latestPayload = null;
         tableProjectFilterKey = "";
-        els.rows.innerHTML = '<tr><td colspan="13"><div class="empty">' + esc(err.message || err) + '</div></td></tr>';
+        els.rows.innerHTML = '<tr><td colspan="14"><div class="empty">' + esc(err.message || err) + '</div></td></tr>';
         renderExcludedEpics([]);
         if (els.projectCards) els.projectCards.innerHTML = '<div class="empty" style="grid-column:1/-1;">Could not load data.</div>';
         const suffixShort = unit === "days" ? "days" : "hours";
@@ -3164,6 +4642,7 @@
         if (els.kpiCompletionBar) els.kpiCompletionBar.style.width = "0%";
         renderWorkforce({});
         renderEmployeeDropdown({});
+        renderSupportTeam({});
         els.status.textContent = "Could not load report.";
         els.runMeta.textContent = "No data loaded.";
       }
@@ -3517,13 +4996,30 @@
         const totalPlanVal = unit === "days"
           ? (parseFloat(row.total_planned_days) || 0)
           : (parseFloat(row.total_planned_hours) || 0);
+        const tActualVal = unit === "days"
+          ? (parseFloat(row.total_actual_hours) || 0) / 8
+          : (parseFloat(row.total_actual_hours) || 0);
         const sfx = unit === "days" ? "d" : "h";
+
+        // Overburn flags
+        const monthOverburn = plannedVal > 0 && actualVal > plannedVal;
+        const totalOverburn = totalPlanVal > 0 && tActualVal > totalPlanVal;
+        const mPctG = monthOverburn ? Math.round((actualVal / plannedVal - 1) * 100) : 0;
+        const tPctG = totalOverburn ? Math.round((tActualVal / totalPlanVal - 1) * 100) : 0;
 
         const linkContent = '<span class="gantt-epic-name">' + esc(epicName) + '</span>'
           + '<span class="gantt-epic-key">' + esc(epicKey) + '</span>';
         const epicLinkHtml = row.jira_url
           ? '<a class="gantt-epic-link" href="' + esc(row.jira_url) + '" target="_blank" rel="noopener">' + linkContent + '</a>'
           : '<div class="gantt-epic-link-plain">' + linkContent + '</div>';
+
+        const actClass = monthOverburn ? ' class="gantt-act-overburn"' : '';
+        const actTip = monthOverburn
+          ? ' title="Month overburn: ' + formatNumber(actualVal) + sfx + ' actual vs ' + formatNumber(plannedVal) + sfx + ' planned (+' + mPctG + '%)"'
+          : '';
+        const totalOverburnBadge = totalOverburn
+          ? '<span class="overburn-pill ob-total" style="margin-top:3px;" title="Total overburn: ' + formatNumber(tActualVal) + sfx + ' actual vs ' + formatNumber(totalPlanVal) + sfx + ' planned (+' + tPctG + '%)">⚠ Total +' + tPctG + '%</span>'
+          : '';
 
         const infoHtml = '<div class="gantt-info-cell">'
           + '<div class="gantt-info-epic">' + epicLinkHtml + '</div>'
@@ -3537,7 +5033,8 @@
           + (totalPlanVal > 0
               ? '<span class="gantt-total-plan" title="Total planned hours across full epic scope">Total Plan&nbsp;<strong>' + formatNumber(totalPlanVal) + '&nbsp;' + sfx + '</strong></span>'
               : '')
-          + '<span>Act&nbsp;<strong>' + formatNumber(actualVal) + '&nbsp;' + sfx + '</strong></span>'
+          + '<span' + actTip + '>Act&nbsp;<strong' + actClass + '>' + formatNumber(actualVal) + '&nbsp;' + sfx + '</strong></span>'
+          + (totalOverburnBadge ? '<span>' + totalOverburnBadge + '</span>' : '')
           + '</div>'
           + '</div>';
 

@@ -43,7 +43,7 @@ def _resolve_rmi_canonical_db_path(planner_db: Path) -> Path:
 
 
 def _to_text(value: Any) -> str:
-    return "" if value is None else str(value).strip()
+    return "" if value is None else str(value).strip().replace("\x00", "")
 
 
 def _to_float(value: Any) -> float:
@@ -3849,8 +3849,12 @@ def render_html(data: dict[str, Any]) -> str:
 def generate_html_report(db_path: Path, output_path: Path, run_id: str = "") -> Path:
     data = load_report_data(db_path, run_id)
     html = render_html(data)
+    # Strip null bytes — Jira text fields can contain \x00 which causes
+    # OSError: [Errno 22] Invalid argument on Windows when writing via pathlib.
+    html = html.replace("\x00", "")
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(html, encoding="utf-8")
+    with open(output_path, "w", encoding="utf-8") as fh:
+        fh.write(html)
     return output_path
 
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import calendar
+import json
 import sqlite3
 from collections import defaultdict
 from datetime import date, timedelta
@@ -884,6 +885,7 @@ def build_workforce_month_payload(
                 "name": name,
                 "resigned": bool(rec.get("resigned")),
                 "resignation_date": rec.get("resignation_date"),
+                "leave_hours": _round_hours(float(leave_by_lower.get(name.lower(), 0.0))),
             }
         )
     for row in assignee_rows:
@@ -913,6 +915,7 @@ def build_workforce_month_payload(
                     "name": disp_name,
                     "resigned": bool(rec_m.get("resigned")),
                     "resignation_date": rec_m.get("resignation_date"),
+                    "leave_hours": _round_hours(float(leave_by_lower.get(lk, 0.0))),
                 }
             )
             grouped_name_lower.add(disp_name.casefold())
@@ -928,6 +931,45 @@ def build_workforce_month_payload(
 
     tree_ungrouped = [dict(e) for e in employee_options if _to_text(e.get("name")).casefold() not in grouped_name_lower]
     employee_tree = {"teams": teams_sections, "ungrouped": tree_ungrouped}
+
+    daily_leaves: list[dict[str, Any]] = []
+    dist_rows = list(snapshot.get("distributed_subtasks") or [])
+    if dist_rows:
+        for _row in dist_rows:
+            if not isinstance(_row, dict):
+                continue
+            _bucket = _parse_iso_date(_to_text(_row.get("planned_date_for_bucket") or _row.get("start_date")))
+            if _bucket is None or not (month_start <= _bucket <= month_end):
+                continue
+            _ph = max(0.0, float(_row.get("original_estimate_hours") or 0.0))
+            if _ph <= 0:
+                continue
+            daily_leaves.append({
+                "assignee": _to_text(_row.get("assignee")),
+                "date": _bucket.isoformat(),
+                "hours": _round_hours(_ph),
+                "leave_type": _to_text(_row.get("leave_type_raw")),
+                "summary": _to_text(_row.get("summary")),
+            })
+    else:
+        for _row in list(snapshot.get("daily") or []):
+            if not isinstance(_row, dict):
+                continue
+            _day = _parse_iso_date(_to_text(_row.get("period_day")))
+            if _day is None or not (month_start <= _day <= month_end):
+                continue
+            _pt = float(_row.get("planned_taken_hours") or 0.0)
+            _pn = float(_row.get("planned_not_taken_hours") or 0.0)
+            _total = _pt + _pn
+            if _total <= 0:
+                continue
+            daily_leaves.append({
+                "assignee": _to_text(_row.get("assignee") or ""),
+                "date": _day.isoformat(),
+                "hours": _round_hours(_total),
+                "leave_type": "",
+                "summary": "",
+            })
 
     if profile_hint == "selected_profile":
         cap_basis = (
@@ -980,6 +1022,10 @@ def build_workforce_month_payload(
         "assignee_options": option_names,
         "employee_options": employee_options,
         "employee_tree": employee_tree,
+        "daily_leaves": daily_leaves,
+        "support_team": _build_support_team_payload(
+            db_path, leave_by_lower, display_by_lower, per_person_cap, availability_hours,
+        ),
         "meta": {
             "capacity_basis": cap_basis,
             "leave_basis": leave_basis_by_src.get(leave_aggregate_source, leave_basis_by_src["none"]),
@@ -1171,9 +1217,11 @@ def _load_all_jira_epic_rows(
                     carry_forward_reasons.append(
                         f"Due date passed ({due_text}) — epic still open"
                     )
+                due_within_or_before_month = approved_due is None or approved_due <= month_end
                 last_wl = last_worklog_date_by_epic.get(epic_key)
                 no_recent_activity = (
-                    not is_resolved
+                    due_within_or_before_month
+                    and not is_resolved
                     and (last_wl is None or last_wl < today - timedelta(days=7))
                 )
                 if no_recent_activity:
@@ -1181,7 +1229,7 @@ def _load_all_jira_epic_rows(
                     carry_forward_reasons.append(
                         f"No worklog activity in last 7 days (last logged: {last_wl_str})"
                     )
-                if planned_hours > 0 and actual_hours > planned_hours * 1.5 and (actual_hours - planned_hours) >= 4:
+                if due_within_or_before_month and not is_resolved and planned_hours > 0 and actual_hours > planned_hours * 1.5 and (actual_hours - planned_hours) >= 4:
                     pct = int(round(actual_hours / planned_hours * 100))
                     carry_forward_reasons.append(
                         f"Over budget — {actual_hours:.1f}h logged vs {planned_hours:.1f}h planned ({pct}%)"
@@ -1238,6 +1286,89 @@ def _load_all_jira_epic_rows(
         })
 
     return rows, excluded_epics
+
+
+def _build_support_team_payload(
+    db_path: Path,
+    leave_by_lower: dict[str, float],
+    display_by_lower: dict[str, str],
+    per_person_cap: float,
+    total_availability_hours: float,
+) -> dict[str, Any]:
+    members = load_support_team(db_path)
+    member_rows: list[dict[str, Any]] = []
+    for name in members:
+        lk = name.lower()
+        lv = _round_hours(float(leave_by_lower.get(lk, 0.0)))
+        cap = per_person_cap
+        avail = _round_hours(cap - lv)
+        display = display_by_lower.get(lk) or name
+        member_rows.append({
+            "name": display,
+            "capacity_hours": cap,
+            "capacity_days": _round_hours(cap / HOURS_PER_DAY),
+            "leave_hours": lv,
+            "leave_days": _round_hours(lv / HOURS_PER_DAY),
+            "availability_hours": avail,
+            "availability_days": _round_hours(avail / HOURS_PER_DAY),
+        })
+    total_support_cap = _round_hours(sum(r["capacity_hours"] for r in member_rows))
+    total_support_leave = _round_hours(sum(r["leave_hours"] for r in member_rows))
+    total_support_avail = _round_hours(sum(r["availability_hours"] for r in member_rows))
+    avail_for_features = _round_hours(total_availability_hours - total_support_avail)
+    return {
+        "saved_members": members,
+        "member_rows": member_rows,
+        "total_capacity_hours": total_support_cap,
+        "total_capacity_days": _round_hours(total_support_cap / HOURS_PER_DAY),
+        "total_leave_hours": total_support_leave,
+        "total_leave_days": _round_hours(total_support_leave / HOURS_PER_DAY),
+        "total_availability_hours": total_support_avail,
+        "total_availability_days": _round_hours(total_support_avail / HOURS_PER_DAY),
+        "availability_for_features_hours": avail_for_features,
+        "availability_for_features_days": _round_hours(avail_for_features / HOURS_PER_DAY),
+    }
+
+
+_SUPPORT_TEAM_TABLE = """
+CREATE TABLE IF NOT EXISTS support_team_config (
+    key TEXT PRIMARY KEY,
+    members_json TEXT NOT NULL DEFAULT '[]',
+    updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+)
+"""
+
+
+def load_support_team(db_path: Path) -> list[str]:
+    try:
+        with sqlite3.connect(db_path) as conn:
+            conn.execute(_SUPPORT_TEAM_TABLE)
+            row = conn.execute(
+                "SELECT members_json FROM support_team_config WHERE key = 'members'"
+            ).fetchone()
+        if not row:
+            return []
+        parsed = json.loads(row[0])
+        return [_to_text(n) for n in parsed if _to_text(n)]
+    except Exception:
+        return []
+
+
+def save_support_team(db_path: Path, members: list[str]) -> list[str]:
+    cleaned = [_to_text(n) for n in (members or []) if _to_text(n)]
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(_SUPPORT_TEAM_TABLE)
+        conn.execute(
+            """
+            INSERT INTO support_team_config (key, members_json, updated_at)
+            VALUES ('members', ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+            ON CONFLICT(key) DO UPDATE SET
+                members_json = excluded.members_json,
+                updated_at   = excluded.updated_at
+            """,
+            (json.dumps(cleaned),),
+        )
+    return cleaned
 
 
 def build_monthly_epic_plan_payload(
@@ -1550,9 +1681,11 @@ def build_monthly_epic_plan_payload(
                     carry_forward_reasons.append(
                         f"Due date passed ({approved_due_text}) — epic still open"
                     )
+                due_within_or_before_month = approved_due is None or approved_due <= month_end
                 last_wl = last_worklog_date_by_epic.get(epic_key)
                 no_recent_activity = (
-                    not is_resolved
+                    due_within_or_before_month
+                    and not is_resolved
                     and (last_wl is None or last_wl < today - timedelta(days=7))
                 )
                 if no_recent_activity:
@@ -1560,7 +1693,7 @@ def build_monthly_epic_plan_payload(
                     carry_forward_reasons.append(
                         f"No worklog activity in last 7 days (last logged: {last_wl_str})"
                     )
-                if planned_hours > 0 and actual_hours > planned_hours * 1.5 and (actual_hours - planned_hours) >= 4:
+                if due_within_or_before_month and not is_resolved and planned_hours > 0 and actual_hours > planned_hours * 1.5 and (actual_hours - planned_hours) >= 4:
                     pct = int(round(actual_hours / planned_hours * 100))
                     carry_forward_reasons.append(
                         f"Over budget — {actual_hours:.1f}h logged vs {planned_hours:.1f}h planned ({pct}%)"

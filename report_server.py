@@ -190,6 +190,8 @@ from delayed_epic_chain_gantt_service import (
 )
 from monthly_epic_plan_progress_service import (
     build_monthly_epic_plan_payload,
+    load_support_team,
+    save_support_team,
 )
 from jira_incremental_cache import (
     get_db_path as incremental_cache_db_path,
@@ -29227,7 +29229,7 @@ def _init_seating_db(db_path: Path) -> None:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS seating_floor_plan (
                 id INTEGER PRIMARY KEY DEFAULT 1,
-                layout_json TEXT NOT NULL DEFAULT '{\"tables\":[]}',
+                layout_json TEXT NOT NULL DEFAULT '{\"floors\":[]}',
                 updated_at_utc TEXT NOT NULL DEFAULT ''
             )
         """)
@@ -29240,36 +29242,90 @@ def _init_seating_db(db_path: Path) -> None:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS seating_custom_employees (
                 employee_name TEXT PRIMARY KEY,
+                color TEXT NOT NULL DEFAULT '#000000',
+                icon TEXT NOT NULL DEFAULT 'person',
+                team TEXT NOT NULL DEFAULT 'Guest',
                 created_at_utc TEXT NOT NULL DEFAULT ''
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS seating_custom_teams (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                color TEXT NOT NULL DEFAULT '#6366f1',
+                created_at_utc TEXT NOT NULL DEFAULT ''
+            )
+        """)
+        for col, default in [("color", "#000000"), ("icon", "person"), ("team", "Guest")]:
+            try:
+                conn.execute(f"ALTER TABLE seating_custom_employees ADD COLUMN {col} TEXT NOT NULL DEFAULT '{default}'")
+            except sqlite3.OperationalError:
+                pass
         conn.commit()
 
 
-def _seating_get_custom_employees(db_path: Path) -> list[str]:
+def _seating_get_custom_employees(db_path: Path) -> list[dict]:
     _init_seating_db(db_path)
     with sqlite3.connect(db_path) as conn:
         rows = conn.execute(
-            "SELECT employee_name FROM seating_custom_employees ORDER BY employee_name"
+            "SELECT employee_name, color, icon, team FROM seating_custom_employees ORDER BY employee_name"
         ).fetchall()
-    return [_to_text(r[0]) for r in rows]
+    return [
+        {
+            "name": _to_text(r[0]),
+            "color": _to_text(r[1]) or "#000000",
+            "icon": _to_text(r[2]) or "person",
+            "team": _to_text(r[3]) or "Guest",
+        }
+        for r in rows
+    ]
 
 
-def _seating_add_custom_employee(db_path: Path, name: str) -> None:
+def _seating_add_custom_employee(
+    db_path: Path,
+    name: str,
+    color: str = "#000000",
+    icon: str = "person",
+    team: str = "Guest",
+) -> None:
     _init_seating_db(db_path)
     now = datetime.utcnow().isoformat()
     with sqlite3.connect(db_path) as conn:
         conn.execute(
-            "INSERT OR IGNORE INTO seating_custom_employees (employee_name, created_at_utc) VALUES (?, ?)",
-            (name.strip(), now),
+            "INSERT OR IGNORE INTO seating_custom_employees (employee_name, color, icon, team, created_at_utc) VALUES (?, ?, ?, ?, ?)",
+            (name.strip(), color.strip() or "#000000", icon.strip() or "person", team.strip() or "Guest", now),
         )
         conn.commit()
 
 
 def _seating_delete_custom_employee(db_path: Path, name: str) -> None:
     _init_seating_db(db_path)
+    name = name.strip()
     with sqlite3.connect(db_path) as conn:
-        conn.execute("DELETE FROM seating_custom_employees WHERE employee_name = ?", (name.strip(),))
+        conn.execute("DELETE FROM seating_custom_employees WHERE employee_name = ?", (name,))
+        row = conn.execute("SELECT layout_json FROM seating_floor_plan WHERE id=1").fetchone()
+        if row:
+            try:
+                layout = json.loads(_to_text(row[0])) or {}
+            except (json.JSONDecodeError, TypeError):
+                layout = {}
+            changed = False
+            for floor in layout.get("floors", []):
+                for t in floor.get("tables", []):
+                    for idx, emp in list((t.get("seats") or {}).items()):
+                        if _to_text(emp).strip() == name:
+                            del t["seats"][idx]
+                            changed = True
+            for t in layout.get("tables", []):
+                for idx, emp in list((t.get("seats") or {}).items()):
+                    if _to_text(emp).strip() == name:
+                        del t["seats"][idx]
+                        changed = True
+            if changed:
+                conn.execute(
+                    "UPDATE seating_floor_plan SET layout_json=?, updated_at_utc=? WHERE id=1",
+                    (json.dumps(layout), datetime.utcnow().isoformat()),
+                )
         conn.commit()
 
 
@@ -29285,10 +29341,16 @@ def _seating_rename_custom_employee(db_path: Path, old_name: str, new_name: str)
         row = conn.execute("SELECT layout_json FROM seating_floor_plan WHERE id=1").fetchone()
         if row:
             try:
-                layout = json.loads(_to_text(row[0])) or {"tables": []}
+                layout = json.loads(_to_text(row[0])) or {}
             except (json.JSONDecodeError, TypeError):
-                layout = {"tables": []}
+                layout = {}
             changed = False
+            for floor in layout.get("floors", []):
+                for t in floor.get("tables", []):
+                    for idx, emp in list((t.get("seats") or {}).items()):
+                        if _to_text(emp).strip() == old_name:
+                            t["seats"][idx] = new_name
+                            changed = True
             for t in layout.get("tables", []):
                 for idx, emp in list((t.get("seats") or {}).items()):
                     if _to_text(emp).strip() == old_name:
@@ -29298,19 +29360,6 @@ def _seating_rename_custom_employee(db_path: Path, old_name: str, new_name: str)
                 conn.execute(
                     "UPDATE seating_floor_plan SET layout_json=?, updated_at_utc=? WHERE id=1",
                     (json.dumps(layout), datetime.utcnow().isoformat()),
-                )
-        # Also update WFH list if present
-        wfh_row = conn.execute("SELECT wfh_json FROM seating_wfh WHERE id=1").fetchone()
-        if wfh_row:
-            try:
-                wfh_list = json.loads(_to_text(wfh_row[0])) or []
-            except (json.JSONDecodeError, TypeError):
-                wfh_list = []
-            if old_name in wfh_list:
-                wfh_list = [new_name if n == old_name else n for n in wfh_list]
-                conn.execute(
-                    "UPDATE seating_wfh SET wfh_json=? WHERE id=1",
-                    (json.dumps(wfh_list),),
                 )
         conn.commit()
 
@@ -29330,9 +29379,79 @@ def _seating_get_all_employees(db_path: Path) -> list[str]:
                     pass
     except sqlite3.OperationalError:
         pass
-    for n in _seating_get_custom_employees(db_path):
-        names.add(n)
+    for emp in _seating_get_custom_employees(db_path):
+        names.add(emp["name"])
     return sorted(names)
+
+
+def _seating_get_custom_teams(db_path: Path) -> list[dict]:
+    _init_seating_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT id, name, color FROM seating_custom_teams ORDER BY name"
+        ).fetchall()
+    return [
+        {"id": _to_text(r[0]), "name": _to_text(r[1]), "color": _to_text(r[2]) or "#6366f1"}
+        for r in rows
+    ]
+
+
+def _seating_create_custom_team(db_path: Path, name: str, color: str = "#6366f1") -> str:
+    import uuid as _uuid
+    _init_seating_db(db_path)
+    team_id = "ct-" + _uuid.uuid4().hex[:8]
+    now = datetime.utcnow().isoformat()
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "INSERT INTO seating_custom_teams (id, name, color, created_at_utc) VALUES (?, ?, ?, ?)",
+            (team_id, name.strip(), color.strip() or "#6366f1", now),
+        )
+        conn.commit()
+    return team_id
+
+
+def _seating_update_custom_team(db_path: Path, team_id: str, new_name: str, new_color: str) -> None:
+    _init_seating_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        row = conn.execute("SELECT name FROM seating_custom_teams WHERE id = ?", (team_id,)).fetchone()
+        if not row:
+            return
+        old_name = _to_text(row[0])
+        conn.execute(
+            "UPDATE seating_custom_teams SET name = ?, color = ? WHERE id = ?",
+            (new_name.strip(), new_color.strip() or "#6366f1", team_id),
+        )
+        if old_name != new_name.strip():
+            conn.execute(
+                "UPDATE seating_custom_employees SET team = ? WHERE team = ?",
+                (new_name.strip(), old_name),
+            )
+        conn.commit()
+
+
+def _seating_delete_custom_team(db_path: Path, team_id: str) -> None:
+    _init_seating_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        row = conn.execute("SELECT name FROM seating_custom_teams WHERE id = ?", (team_id,)).fetchone()
+        if not row:
+            return
+        team_name = _to_text(row[0])
+        conn.execute("DELETE FROM seating_custom_teams WHERE id = ?", (team_id,))
+        conn.execute(
+            "UPDATE seating_custom_employees SET team = 'Guest' WHERE team = ?",
+            (team_name,),
+        )
+        conn.commit()
+
+
+def _seating_assign_employee_team(db_path: Path, employee_name: str, team_name: str) -> None:
+    _init_seating_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "UPDATE seating_custom_employees SET team = ? WHERE employee_name = ?",
+            (team_name.strip() or "Guest", employee_name.strip()),
+        )
+        conn.commit()
 
 
 def _seating_get_project_assignments(base_dir: Path, db_path: Path) -> dict:
@@ -29450,15 +29569,15 @@ def _seating_get_project_assignments(base_dir: Path, db_path: Path) -> dict:
 
 
 def _seating_get_teams(db_path: Path) -> list[dict]:
-    """Return [{name, members}] for all performance_teams, sorted by name."""
+    """Return [{name, members}] for all performance_teams plus custom-employee teams, sorted by name."""
     try:
         with sqlite3.connect(db_path) as conn:
             rows = conn.execute(
                 "SELECT team_name, assignees_json FROM performance_teams ORDER BY team_name"
             ).fetchall()
     except sqlite3.OperationalError:
-        return []
-    result = []
+        rows = []
+    teams: dict[str, dict] = {}
     for (team_name, aj) in rows:
         name = _to_text(team_name).strip()
         if not name:
@@ -29467,8 +29586,14 @@ def _seating_get_teams(db_path: Path) -> list[dict]:
             members = [_to_text(n).strip() for n in json.loads(_to_text(aj) or "[]") if _to_text(n).strip()]
         except (json.JSONDecodeError, TypeError):
             members = []
-        result.append({"name": name, "members": members})
-    return result
+        teams[name] = {"name": name, "members": members}
+    for emp in _seating_get_custom_employees(db_path):
+        team_name = emp.get("team") or "Guest"
+        if team_name not in teams:
+            teams[team_name] = {"name": team_name, "members": []}
+        if emp["name"] not in teams[team_name]["members"]:
+            teams[team_name]["members"].append(emp["name"])
+    return sorted(teams.values(), key=lambda x: x["name"])
 
 
 def _seating_get_project_names(db_path: Path) -> dict:
@@ -29491,11 +29616,16 @@ def _seating_load_layout(db_path: Path) -> dict:
     with sqlite3.connect(db_path) as conn:
         row = conn.execute("SELECT layout_json FROM seating_floor_plan WHERE id=1").fetchone()
     if not row:
-        return {"tables": []}
+        return {"floors": [{"id": "f-1", "name": "Floor 1", "tables": []}]}
     try:
-        return json.loads(_to_text(row[0])) or {"tables": []}
+        data = json.loads(_to_text(row[0])) or {}
     except (json.JSONDecodeError, TypeError):
-        return {"tables": []}
+        data = {}
+    if "tables" in data and "floors" not in data:
+        return {"floors": [{"id": "f-1", "name": "Floor 1", "tables": data["tables"]}]}
+    if "floors" not in data:
+        return {"floors": [{"id": "f-1", "name": "Floor 1", "tables": []}]}
+    return data
 
 
 def _seating_save_layout(db_path: Path, layout: dict) -> None:
@@ -29848,6 +29978,118 @@ def _seating_planner_html() -> str:
       display:flex;align-items:center;justify-content:center;width:100%;height:100%;
       color:#64748b;font-weight:700;font-size:18px;border:1px dashed #cbd5e1;
     }}
+    /* ── Floor tabs ───────────────────────────────────────────────────────────── */
+    .sp-floors{{
+      display:flex;align-items:center;gap:2px;padding:0 12px;
+      background:#f8fbff;border-bottom:1px solid var(--line);flex-shrink:0;
+      overflow-x:auto;min-height:38px;
+    }}
+    .sp-floor-tab{{
+      display:inline-flex;align-items:center;gap:5px;padding:7px 13px;
+      font-size:.82rem;font-weight:600;cursor:pointer;border:none;
+      background:transparent;color:var(--muted);border-bottom:2px solid transparent;
+      transition:color .15s,border-color .15s;white-space:nowrap;outline:none;
+      border-radius:4px 4px 0 0;
+    }}
+    .sp-floor-tab:hover{{color:var(--ink);background:rgba(15,118,110,.05);}}
+    .sp-floor-tab.active{{color:var(--brand);border-bottom-color:var(--brand);}}
+    .sp-floor-del{{
+      background:none;border:none;color:#94a3b8;cursor:pointer;
+      font-size:.72rem;margin-left:2px;padding:0 1px;line-height:1;
+      border-radius:3px;transition:color .1s;
+    }}
+    .sp-floor-del:hover{{color:var(--danger);}}
+    .sp-floor-add{{
+      margin-left:6px;padding:4px 9px;font-size:.78rem;flex-shrink:0;
+    }}
+    /* ── Icon picker ─────────────────────────────────────────────────────────── */
+    .sp-icon-grid{{
+      display:grid;grid-template-columns:repeat(6,1fr);gap:5px;margin-top:8px;
+      max-height:220px;overflow-y:auto;
+    }}
+    .sp-icon-item{{
+      display:flex;flex-direction:column;align-items:center;gap:2px;
+      padding:7px 3px;border-radius:6px;cursor:pointer;
+      border:2px solid transparent;transition:background .12s,border-color .12s;
+    }}
+    .sp-icon-item:hover{{background:#e2f0ff;}}
+    .sp-icon-item.selected{{border-color:var(--brand);background:var(--brand-lt);}}
+    .sp-icon-item .material-symbols-outlined{{font-size:1.3rem;}}
+    .sp-icon-item .lbl{{font-size:.58rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:44px;}}
+    /* ── Add-person form fields ──────────────────────────────────────────────── */
+    .sp-form-row{{display:flex;align-items:center;gap:8px;margin-bottom:12px;}}
+    .sp-form-row input[type=color]{{width:36px;height:28px;border:1px solid var(--line);border-radius:4px;cursor:pointer;padding:1px;flex-shrink:0;}}
+    .sp-icon-preview-btn{{
+      display:inline-flex;align-items:center;justify-content:center;
+      width:32px;height:32px;border-radius:50%;background:var(--brand);color:#fff;
+      cursor:pointer;border:2px solid var(--line);flex-shrink:0;transition:opacity .15s;
+    }}
+    .sp-icon-preview-btn:hover{{opacity:.85;}}
+    .sp-icon-preview-btn .material-symbols-outlined{{font-size:1rem;}}
+    .sp-modal select{{
+      width:100%;border:1px solid var(--line);border-radius:8px;
+      padding:8px 10px;font-size:.9rem;margin-bottom:12px;outline:none;
+      color:var(--ink);background:#fff;
+    }}
+    .sp-modal select:focus{{border-color:var(--brand);}}
+    /* ── Seat empty state ────────────────────────────────────────────────────── */
+    .sp-seat-empty-lbl{{font-size:.58rem;font-style:italic;color:#94a3b8;}}
+    /* ── Teams manager ───────────────────────────────────────────────────────── */
+    .sp-team-row{{
+      display:flex;align-items:center;gap:8px;padding:7px 2px;
+      border-bottom:1px solid #f1f5f9;
+    }}
+    .sp-team-row:last-child{{border-bottom:none;}}
+    .sp-team-swatch{{width:18px;height:18px;border-radius:4px;flex-shrink:0;border:1px solid rgba(0,0,0,.12);cursor:pointer;}}
+    .sp-team-name-txt{{flex:1;font-size:.84rem;font-weight:600;}}
+    .sp-team-edit-input{{
+      flex:1;border:1px solid var(--brand);border-radius:5px;
+      padding:3px 7px;font-size:.84rem;font-weight:600;outline:none;color:var(--ink);
+    }}
+    .sp-team-act{{
+      background:none;border:none;cursor:pointer;color:#94a3b8;
+      border-radius:4px;padding:2px;display:flex;align-items:center;transition:color .1s;
+    }}
+    .sp-team-act:hover{{color:var(--brand);}}
+    .sp-team-act.dng:hover{{color:var(--danger);}}
+    .sp-team-act .material-symbols-outlined{{font-size:.9rem;}}
+    .sp-tm-addrow{{display:flex;gap:6px;margin-top:10px;padding-top:8px;border-top:1px solid var(--line);}}
+    .sp-tm-addrow input[type=text]{{
+      flex:1;border:1px solid var(--line);border-radius:6px;
+      padding:6px 9px;font-size:.84rem;outline:none;color:var(--ink);
+    }}
+    .sp-tm-addrow input[type=text]:focus{{border-color:var(--brand);}}
+    .sp-tm-addrow input[type=color]{{
+      width:32px;height:32px;border:1px solid var(--line);border-radius:4px;
+      cursor:pointer;padding:1px;flex-shrink:0;
+    }}
+    .sp-teams-list{{max-height:260px;overflow-y:auto;}}
+    /* ── Team badge on employee card ─────────────────────────────────────────── */
+    .emp-team-badge{{
+      display:inline-flex;align-items:center;gap:3px;
+      font-size:.62rem;border-radius:4px;padding:2px 6px;font-weight:700;
+      cursor:pointer;border:1px solid transparent;transition:filter .12s,opacity .12s;
+      white-space:nowrap;
+    }}
+    .emp-team-badge:hover{{filter:brightness(1.08);}}
+    .emp-team-badge .material-symbols-outlined{{font-size:.7rem;}}
+    /* ── Quick Team Assign modal ─────────────────────────────────────────────── */
+    .sp-qta-list{{display:flex;flex-direction:column;gap:4px;margin-top:8px;max-height:260px;overflow-y:auto;}}
+    .sp-qta-item{{
+      display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:7px;
+      cursor:pointer;border:2px solid transparent;transition:background .12s,border-color .12s;
+    }}
+    .sp-qta-item:hover{{background:#f1f5f9;}}
+    .sp-qta-item.active{{background:var(--brand-lt);border-color:var(--brand);}}
+    .sp-qta-dot{{width:14px;height:14px;border-radius:4px;flex-shrink:0;border:1px solid rgba(0,0,0,.1);}}
+    .sp-qta-lbl{{font-size:.85rem;font-weight:600;flex:1;}}
+    .sp-qta-check{{color:var(--brand);font-size:.9rem;}}
+    .sp-sidebar-team-btn{{
+      background:none;border:none;cursor:pointer;color:var(--muted);
+      display:flex;align-items:center;padding:2px 4px;border-radius:4px;
+      font-size:.78rem;font-weight:600;gap:3px;transition:color .1s;
+    }}
+    .sp-sidebar-team-btn:hover{{color:var(--brand);}}
     @page{{size:A4 landscape;margin:8mm;}}
     @media print{{
       html,body{{background:#fff!important;margin:0!important;padding:0!important;width:100%;height:100%;overflow:hidden!important;}}
@@ -29880,6 +30122,9 @@ def _seating_planner_html() -> str:
     </button>
   </div>
 
+  <!-- Floor tabs -->
+  <div class="sp-floors" id="floorsBar"></div>
+
   <!-- Main body -->
   <div class="sp-body">
     <div class="sp-cw" id="cw">
@@ -29889,6 +30134,9 @@ def _seating_planner_html() -> str:
       <div class="sp-shdr">
         <span class="material-symbols-outlined">people</span>
         Employees
+        <button class="sp-sidebar-team-btn" id="manageTeamsBtn" title="Manage custom teams" style="margin-left:auto;">
+          <span class="material-symbols-outlined" style="font-size:.9rem">group_add</span> Teams
+        </button>
       </div>
       <div class="sp-srch">
         <span class="material-symbols-outlined">search</span>
@@ -29896,9 +30144,8 @@ def _seating_planner_html() -> str:
       </div>
       <div class="sp-elist" id="elist"></div>
       <div class="sp-addbar">
-        <input type="text" id="addPersonInput" placeholder="Add person by name…" maxlength="80">
-        <button class="sp-btn primary" id="addPersonBtn" title="Add person to seating roster">
-          <span class="material-symbols-outlined">person_add</span>
+        <button class="sp-btn primary" id="addPersonBtn" style="width:100%;justify-content:center;">
+          <span class="material-symbols-outlined">person_add</span> Add Person
         </button>
       </div>
     </div>
@@ -29924,8 +30171,15 @@ def _seating_planner_html() -> str:
     <div class="sp-modal">
       <h3>Seat Assignment</h3>
       <p id="seatOvText"></p>
+      <div id="seatOvTeamRow" style="display:none;margin-bottom:10px;">
+        <label style="font-size:.78rem;font-weight:600;color:var(--muted);display:block;margin-bottom:4px;">Team</label>
+        <select id="seatOvTeamSel" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-size:.88rem;outline:none;color:var(--ink);background:#fff;"></select>
+      </div>
       <div class="sp-mact">
         <button class="sp-btn" id="seatOvClose">Close</button>
+        <button class="sp-btn" id="seatOvAssignTeamBtn" style="display:none;">
+          <span class="material-symbols-outlined">group</span> Change Team
+        </button>
         <button class="sp-btn dng" id="seatOvClear">
           <span class="material-symbols-outlined">person_remove</span> Remove
         </button>
@@ -29942,6 +30196,85 @@ def _seating_planner_html() -> str:
       <div class="sp-mact">
         <button class="sp-btn" id="renameEmpCancelBtn">Cancel</button>
         <button class="sp-btn primary" id="renameEmpConfirmBtn">Rename</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add Person Modal -->
+  <div class="sp-ov" id="addPersonOv">
+    <div class="sp-modal" style="width:400px;">
+      <h3>Add Person</h3>
+      <label>Name</label>
+      <input type="text" id="apName" placeholder="Full name" maxlength="80" autocomplete="off">
+      <label>Appearance</label>
+      <div class="sp-form-row" style="margin-bottom:12px;">
+        <input type="color" id="apColor" value="#0f766e" title="Avatar colour">
+        <button class="sp-icon-preview-btn" id="apIconPreviewBtn" title="Click to choose icon">
+          <span class="material-symbols-outlined" id="apIconPreviewIcon">person</span>
+        </button>
+        <span style="font-size:.78rem;color:var(--muted);">Colour · Icon (click to change)</span>
+      </div>
+      <label>Team</label>
+      <select id="apTeam">
+        <option value="Guest">Guest</option>
+      </select>
+      <div class="sp-mact">
+        <button class="sp-btn" id="apCancelBtn">Cancel</button>
+        <button class="sp-btn primary" id="apConfirmBtn">Add Person</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Icon Picker Modal -->
+  <div class="sp-ov" id="iconPickerOv">
+    <div class="sp-modal" style="width:390px;">
+      <h3>Choose Icon</h3>
+      <div class="sp-icon-grid" id="iconGrid"></div>
+      <div class="sp-mact" style="margin-top:10px;">
+        <button class="sp-btn" id="iconPickerCancelBtn">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Rename Floor Modal -->
+  <div class="sp-ov" id="renameFloorOv">
+    <div class="sp-modal">
+      <h3>Rename Floor</h3>
+      <label>Floor name</label>
+      <input type="text" id="renameFloorInput" placeholder="e.g. Ground Floor" maxlength="60" autocomplete="off">
+      <div class="sp-mact">
+        <button class="sp-btn" id="renameFloorCancelBtn">Cancel</button>
+        <button class="sp-btn primary" id="renameFloorConfirmBtn">Rename</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Teams Manager Modal -->
+  <div class="sp-ov" id="teamsManagerOv">
+    <div class="sp-modal" style="width:420px;">
+      <h3>Manage Custom Teams</h3>
+      <p style="font-size:.8rem;color:var(--muted);margin-bottom:10px;">These teams are only for manually added persons. Assign them from any employee card.</p>
+      <div class="sp-teams-list" id="teamsManagerList"></div>
+      <div class="sp-tm-addrow">
+        <input type="color" id="tmNewColor" value="#6366f1" title="Team colour">
+        <input type="text" id="tmNewName" placeholder="New team name…" maxlength="60" autocomplete="off">
+        <button class="sp-btn primary" id="tmAddBtn">
+          <span class="material-symbols-outlined">add</span>
+        </button>
+      </div>
+      <div class="sp-mact" style="margin-top:10px;">
+        <button class="sp-btn primary" id="teamsManagerCloseBtn">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Quick Team Assign Modal -->
+  <div class="sp-ov" id="quickTeamOv">
+    <div class="sp-modal" style="width:320px;">
+      <h3 id="qtaTitle">Assign Team</h3>
+      <div class="sp-qta-list" id="qtaList"></div>
+      <div class="sp-mact" style="margin-top:10px;">
+        <button class="sp-btn" id="qtaCancelBtn">Cancel</button>
       </div>
     </div>
   </div>
@@ -29992,10 +30325,15 @@ def _seating_planner_html() -> str:
   <script>
   // ── State ──────────────────────────────────────────────────────────────────
   const G = {{
-    tables: [],        // {{id,name,x,y,seatCount,seats:{{idx:name}}}}
+    tables: [],        // active floor's tables: {{id,name,x,y,seatCount,seats:{{idx:name}}}}
+    floors: [],        // [{{id,name,tables:[]}}]
+    activeFloorId: null,
+    floorNextId: 1,
     wfhSet: new Set(),
     employees: [],
-    customEmployees: new Set(), // names added manually (not from Jira/teams)
+    customEmployees: new Set(), // names added manually
+    customEmployeeMeta: {{}},    // name -> {{color,icon,team}}
+    customTeams: [],            // [{{id,name,color}}] — user-managed teams for custom employees
     zoom: 1.0,
     nextId: 1,
     dirty: false,
@@ -30007,15 +30345,15 @@ def _seating_planner_html() -> str:
     selDrag: null,            // {{employees,startX,startY,started}}
     teamColorMode: false,
     productColorMode: false,
-    legendVisible: true,    // legend shown by default when team/product mode active
+    legendVisible: true,
     teams: [],
     teamColorMap: {{}},
     teamPalette: {{}},
-    projectAssignments: {{}},  // {{name: [project_key, ...]}}
-    projectPalette: {{}},       // {{project_key: {{bg, bd, hd, tx}}}}
-    projectNames: {{}},         // {{project_key: 'Full Name'}}
-    _paLower: {{}},              // lowercase name -> [project_key, ...] for fuzzy matching
-    filterLegend: null,         // {{type:'team'|'project', key:string}} — null = no filter
+    projectAssignments: {{}},
+    projectPalette: {{}},
+    projectNames: {{}},
+    _paLower: {{}},
+    filterLegend: null,
   }};
 
   // ── Helpers ────────────────────────────────────────────────────────────────
@@ -30080,12 +30418,21 @@ def _seating_planner_html() -> str:
   // Uniform color for seats occupied by people not in any RnD team
   const GUEST_COLOR = {{bg:'#1f2937',bd:'#111827',hd:'#111827',tx:'#f9fafb'}};
 
+  function hexToPalette(hex) {{
+    const h = hex||'#6366f1';
+    return {{bg:h+'22', bd:h+'88', hd:h, tx:'#fff'}};
+  }}
+
   function buildTeamColorMap() {{
     G.teamColorMap = {{}};
     G.teamPalette = {{}};
+    // Build a name→color lookup from custom teams
+    const ctColors = {{}};
+    (G.customTeams||[]).forEach(ct=>{{ ctColors[ct.name] = hexToPalette(ct.color); }});
     const sorted = [...G.teams].sort((a,b)=>a.name.localeCompare(b.name));
-    sorted.forEach((team,i)=>{{
-      const p = TEAM_PALETTE[i % TEAM_PALETTE.length];
+    let paletteIdx = 0;
+    sorted.forEach(team=>{{
+      const p = ctColors[team.name] || TEAM_PALETTE[paletteIdx++ % TEAM_PALETTE.length];
       G.teamPalette[team.name] = p;
       for (const m of team.members) G.teamColorMap[m] = {{...p, teamName:team.name}};
     }});
@@ -30233,44 +30580,77 @@ def _seating_planner_html() -> str:
     el.classList.add('show');
   }}
 
+  // ── Helpers for custom employee meta ───────────────────────────────────────
+  function _applyCustomMeta(customArr) {{
+    G.customEmployees = new Set(customArr.map(c=>typeof c==='string'?c:c.name));
+    G.customEmployeeMeta = {{}};
+    customArr.forEach(c=>{{
+      if(typeof c==='object' && c.name) {{
+        G.customEmployeeMeta[c.name] = {{color:c.color||'#000000', icon:c.icon||'person', team:c.team||'Guest'}};
+      }} else if(typeof c==='string') {{
+        G.customEmployeeMeta[c] = {{color:'#000000', icon:'person', team:'Guest'}};
+      }}
+    }});
+  }}
+
   // ── Load / Save ────────────────────────────────────────────────────────────
   async function load() {{
     try {{
       const d = await fetch('/api/seating/data').then(r=>r.json());
       G.employees = d.employees||[];
       G.wfhSet = new Set(d.wfh_employees||[]);
-      G.customEmployees = new Set(d.custom_employees||[]);
+      _applyCustomMeta(d.custom_employees||[]);
       G.teams = d.teams||[];
+      G.customTeams = d.custom_teams||[];
       G.projectAssignments = d.project_assignments||{{}};
       G.projectNames = d.project_names||{{}};
       if(d._pa_error && d._pa_error.length) console.warn('[Seating] project_assignments error:', d._pa_error);
-      console.log('[Seating] project_assignments loaded:', d._pa_count, 'assignees');
       buildTeamColorMap();
       buildProjectColorMap();
       const layout = d.layout||{{}};
-      G.tables = (layout.tables||[]).map(t=>({{...t, seats:t.seats||{{}}, rotation:t.rotation||0}}));
-      let maxId = 0;
-      G.tables.forEach(t=>{{ const n=parseInt((t.id||'').replace('t-',''),10); if(n>maxId) maxId=n; }});
+      G.floors = (layout.floors||[]).map(f=>{{
+        const fid = (f.id||'').toString() || ('f-'+Math.random().toString(36).slice(2,7));
+        return {{
+          id: fid,
+          name: f.name||'Floor',
+          tables: (f.tables||[]).map(t=>({{...t, seats:t.seats||{{}}, rotation:t.rotation||0}})),
+        }};
+      }});
+      if(!G.floors.length) G.floors = [{{id:'f-1', name:'Floor 1', tables:[]}}];
+      G.activeFloorId = G.floors[0].id;
+      G.tables = G.floors[0].tables;
+      let maxId=0, maxFid=0;
+      G.floors.forEach(f=>{{
+        const fn=parseInt((f.id||'').replace('f-',''),10); if(!isNaN(fn)&&fn>maxFid) maxFid=fn;
+        f.tables.forEach(t=>{{ const n=parseInt((t.id||'').replace('t-',''),10); if(!isNaN(n)&&n>maxId) maxId=n; }});
+      }});
       G.nextId = maxId+1;
+      G.floorNextId = maxFid+1;
+      renderFloors();
       renderLegend();
       render();
     }} catch(e) {{ toast('Failed to load: '+e.message,'err'); }}
   }}
 
   async function saveAll(silent=false) {{
+    const cf = G.floors.find(f=>f.id===G.activeFloorId);
+    if(cf) cf.tables = G.tables;
     const btn = document.getElementById('saveBtn');
     btn.disabled = true; btn.textContent='Saving…';
     try {{
-      const layout = {{
-        tables: G.tables.map(t=>({{
-          id:t.id, name:t.name,
-          x:Math.round(t.x), y:Math.round(t.y),
-          rotation:Math.round(((t.rotation||0)%360+360)%360),
-          seatCount:t.seatCount, seats:t.seats,
-        }})),
-      }};
+      const floors = G.floors.map(floor=>{{
+        const tables = (floor.id===G.activeFloorId ? G.tables : floor.tables).map(t=>{{
+          return {{
+            id:t.id, name:t.name,
+            x:Math.round(t.x), y:Math.round(t.y),
+            rotation:Math.round(((t.rotation||0)%360+360)%360),
+            seatCount:t.seatCount, seats:t.seats,
+          }};
+        }});
+        return {{id:floor.id, name:floor.name, tables}};
+      }});
       const [r1,r2] = await Promise.all([
-        fetch('/api/seating/layout',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(layout)}}),
+        fetch('/api/seating/layout',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{floors}})}}),
         fetch('/api/seating/wfh',   {{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{wfh_employees:[...G.wfhSet]}})}}),
       ]);
       if (!r1.ok||!r2.ok) throw new Error('Server error');
@@ -30396,6 +30776,371 @@ def _seating_planner_html() -> str:
     document.body.classList.remove('sp-printing');
   }});
 
+  // ── Teams Manager ─────────────────────────────────────────────────────────
+  function openTeamsManager() {{
+    renderTeamsManagerList();
+    document.getElementById('teamsManagerOv').classList.add('open');
+    setTimeout(()=>document.getElementById('tmNewName').focus(), 80);
+  }}
+  function closeTeamsManager() {{
+    document.getElementById('teamsManagerOv').classList.remove('open');
+  }}
+
+  function renderTeamsManagerList() {{
+    const list = document.getElementById('teamsManagerList');
+    list.innerHTML = '';
+    if (!G.customTeams.length) {{
+      const empty = document.createElement('div');
+      empty.style.cssText = 'text-align:center;color:var(--muted);font-size:.82rem;padding:16px 0;';
+      empty.textContent = 'No custom teams yet. Add one below.';
+      list.appendChild(empty);
+      return;
+    }}
+    G.customTeams.forEach(ct=>{{
+      const row = document.createElement('div');
+      row.className = 'sp-team-row';
+      row.dataset.id = ct.id;
+
+      const swatch = document.createElement('input');
+      swatch.type = 'color'; swatch.value = ct.color||'#6366f1';
+      swatch.className = 'sp-team-swatch';
+      swatch.title = 'Change team colour';
+      swatch.style.width = '22px'; swatch.style.height = '22px';
+      swatch.style.cssText += 'border:1px solid rgba(0,0,0,.12);border-radius:4px;cursor:pointer;padding:1px;flex-shrink:0;';
+
+      const nameSpan = document.createElement('span');
+      nameSpan.className = 'sp-team-name-txt';
+      nameSpan.textContent = ct.name;
+
+      const editBtn = document.createElement('button');
+      editBtn.className = 'sp-team-act'; editBtn.title = 'Rename';
+      editBtn.innerHTML = '<span class="material-symbols-outlined">edit</span>';
+
+      const delBtn = document.createElement('button');
+      delBtn.className = 'sp-team-act dng'; delBtn.title = 'Delete team';
+      delBtn.innerHTML = '<span class="material-symbols-outlined">delete</span>';
+
+      // Inline rename flow
+      editBtn.addEventListener('click', ()=>{{
+        const inp = document.createElement('input');
+        inp.type = 'text'; inp.className = 'sp-team-edit-input';
+        inp.value = ct.name; inp.maxLength = 60;
+        row.replaceChild(inp, nameSpan);
+        editBtn.style.display = 'none';
+        inp.focus(); inp.select();
+
+        const saveBtn = document.createElement('button');
+        saveBtn.className = 'sp-team-act'; saveBtn.title = 'Save';
+        saveBtn.innerHTML = '<span class="material-symbols-outlined">check</span>';
+        row.insertBefore(saveBtn, delBtn);
+
+        async function doSave() {{
+          const newName = inp.value.trim();
+          if(!newName) return;
+          const newColor = swatch.value;
+          try {{
+            const r = await fetch('/api/seating/custom-teams', {{
+              method:'PATCH',
+              headers:{{'Content-Type':'application/json'}},
+              body: JSON.stringify({{id:ct.id, name:newName, color:newColor}}),
+            }});
+            const d = await r.json(); if(!r.ok) throw new Error(d.error||'Error');
+            G.customTeams = d.custom_teams||G.customTeams;
+            if(d.teams){{ G.teams=d.teams; buildTeamColorMap(); }}
+            if(d.custom_employees) _applyCustomMeta(d.custom_employees);
+            renderTeamsManagerList(); render();
+            toast('Team updated','ok');
+          }} catch(e) {{ toast('Failed: '+e.message,'err'); }}
+        }}
+        saveBtn.addEventListener('click', doSave);
+        inp.addEventListener('keydown', e=>{{ if(e.key==='Enter') doSave(); else if(e.key==='Escape') {{ renderTeamsManagerList(); }} }});
+      }});
+
+      swatch.addEventListener('change', async ()=>{{
+        try {{
+          const r = await fetch('/api/seating/custom-teams', {{
+            method:'PATCH', headers:{{'Content-Type':'application/json'}},
+            body: JSON.stringify({{id:ct.id, name:ct.name, color:swatch.value}}),
+          }});
+          const d = await r.json(); if(!r.ok) throw new Error(d.error||'Error');
+          G.customTeams = d.custom_teams||G.customTeams;
+          if(d.teams){{ G.teams=d.teams; buildTeamColorMap(); }}
+          renderTeamsManagerList(); render();
+        }} catch(e) {{ toast('Failed: '+e.message,'err'); }}
+      }});
+
+      delBtn.addEventListener('click', async ()=>{{
+        const count = G.employees.filter(n=>G.customEmployeeMeta[n]&&G.customEmployeeMeta[n].team===ct.name).length;
+        const warn = count>0 ? ` ${{count}} person(s) will be moved to Guest.` : '';
+        if(!confirm(`Delete team "${{ct.name}}"?${{warn}}`)) return;
+        try {{
+          const r = await fetch('/api/seating/custom-teams', {{
+            method:'DELETE', headers:{{'Content-Type':'application/json'}},
+            body: JSON.stringify({{id:ct.id}}),
+          }});
+          const d = await r.json(); if(!r.ok) throw new Error(d.error||'Error');
+          G.customTeams = d.custom_teams||G.customTeams;
+          if(d.teams){{ G.teams=d.teams; buildTeamColorMap(); }}
+          if(d.custom_employees) _applyCustomMeta(d.custom_employees);
+          renderTeamsManagerList(); render();
+          toast('Team deleted','ok');
+        }} catch(e) {{ toast('Failed: '+e.message,'err'); }}
+      }});
+
+      row.append(swatch, nameSpan, editBtn, delBtn);
+      list.appendChild(row);
+    }});
+  }}
+
+  async function tmAddTeam() {{
+    const name = document.getElementById('tmNewName').value.trim();
+    if(!name) {{ document.getElementById('tmNewName').focus(); return; }}
+    const color = document.getElementById('tmNewColor').value || '#6366f1';
+    if(G.customTeams.some(ct=>ct.name.toLowerCase()===name.toLowerCase())) {{
+      toast('A team with this name already exists','err'); return;
+    }}
+    try {{
+      const r = await fetch('/api/seating/custom-teams', {{
+        method:'POST', headers:{{'Content-Type':'application/json'}},
+        body: JSON.stringify({{name, color}}),
+      }});
+      const d = await r.json(); if(!r.ok) throw new Error(d.error||'Error');
+      G.customTeams = d.custom_teams||G.customTeams;
+      if(d.teams){{ G.teams=d.teams; buildTeamColorMap(); }}
+      document.getElementById('tmNewName').value = '';
+      renderTeamsManagerList(); render();
+      toast('"'+name+'" team created','ok');
+    }} catch(e) {{ toast('Failed: '+e.message,'err'); }}
+  }}
+
+  // ── Quick Team Assign ──────────────────────────────────────────────────────
+  let _qtaTarget = null; // employee name to reassign
+
+  function openQuickTeamAssign(employeeName) {{
+    _qtaTarget = employeeName;
+    document.getElementById('qtaTitle').textContent = 'Assign Team — '+employeeName;
+    renderQtaList(employeeName);
+    document.getElementById('quickTeamOv').classList.add('open');
+  }}
+  function closeQuickTeamAssign() {{
+    document.getElementById('quickTeamOv').classList.remove('open');
+    _qtaTarget = null;
+  }}
+
+  function renderQtaList(employeeName) {{
+    const meta = G.customEmployeeMeta[employeeName]||{{}};
+    const current = meta.team||'Guest';
+    const list = document.getElementById('qtaList');
+    list.innerHTML = '';
+    // Build full team list: Guest + custom teams
+    const allTeams = [{{id:'__guest__', name:'Guest', color:'#94a3b8'}}, ...G.customTeams];
+    allTeams.forEach(t=>{{
+      const item = document.createElement('div');
+      item.className = 'sp-qta-item' + (t.name===current?' active':'');
+      const dot = document.createElement('div');
+      dot.className = 'sp-qta-dot';
+      dot.style.background = t.color||'#94a3b8';
+      const lbl = document.createElement('span'); lbl.className = 'sp-qta-lbl'; lbl.textContent = t.name;
+      const chk = document.createElement('span'); chk.className = 'material-symbols-outlined sp-qta-check';
+      chk.textContent = 'check'; chk.style.visibility = t.name===current?'visible':'hidden';
+      item.append(dot, lbl, chk);
+      item.addEventListener('click', ()=>assignTeamQuick(employeeName, t.name));
+      list.appendChild(item);
+    }});
+  }}
+
+  async function assignTeamQuick(employeeName, teamName) {{
+    try {{
+      const r = await fetch('/api/seating/employees/team', {{
+        method:'PATCH', headers:{{'Content-Type':'application/json'}},
+        body: JSON.stringify({{name:employeeName, team:teamName}}),
+      }});
+      const d = await r.json(); if(!r.ok) throw new Error(d.error||'Error');
+      _applyCustomMeta(d.custom_employees||[]);
+      if(d.teams){{ G.teams=d.teams; buildTeamColorMap(); }}
+      closeQuickTeamAssign();
+      render();
+      toast('"'+employeeName+'" → '+teamName,'ok');
+    }} catch(e) {{ toast('Failed: '+e.message,'err'); }}
+  }}
+
+  // ── Floor management ──────────────────────────────────────────────────────
+  function renderFloors() {{
+    const bar = document.getElementById('floorsBar');
+    if(!bar) return;
+    bar.innerHTML = '';
+    G.floors.forEach(floor=>{{
+      const tab = document.createElement('button');
+      tab.className = 'sp-floor-tab' + (floor.id===G.activeFloorId?' active':'');
+      const nm = document.createElement('span');
+      nm.textContent = floor.name;
+      tab.appendChild(nm);
+      if(G.floors.length > 1) {{
+        const del = document.createElement('span');
+        del.className = 'sp-floor-del material-symbols-outlined';
+        del.textContent = 'close';
+        del.title = 'Delete floor';
+        del.addEventListener('click', e=>{{ e.stopPropagation(); deleteFloor(floor.id); }});
+        tab.appendChild(del);
+      }}
+      tab.addEventListener('click', ()=>switchFloor(floor.id));
+      tab.addEventListener('dblclick', e=>{{ e.stopPropagation(); openRenameFloorModal(floor.id); }});
+      bar.appendChild(tab);
+    }});
+    const addBtn = document.createElement('button');
+    addBtn.className = 'sp-btn sp-floor-add';
+    addBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size:.9rem">add</span>';
+    addBtn.title = 'Add new floor';
+    addBtn.addEventListener('click', addFloor);
+    bar.appendChild(addBtn);
+  }}
+
+  function switchFloor(floorId) {{
+    if(floorId === G.activeFloorId) return;
+    const cf = G.floors.find(f=>f.id===G.activeFloorId);
+    if(cf) cf.tables = G.tables;
+    const nf = G.floors.find(f=>f.id===floorId);
+    if(!nf) return;
+    G.activeFloorId = floorId;
+    G.tables = nf.tables;
+    G.selectedSeats.clear();
+    renderFloors();
+    render();
+  }}
+
+  function addFloor() {{
+    const id = 'f-' + G.floorNextId++;
+    const name = 'Floor ' + G.floors.length + 1;
+    G.floors.push({{id, name, tables:[]}});
+    setDirty();
+    switchFloor(id);
+  }}
+
+  function deleteFloor(id) {{
+    if(G.floors.length <= 1) {{ toast('Cannot delete the last floor','err'); return; }}
+    const floor = G.floors.find(f=>f.id===id);
+    if(!floor) return;
+    if(!confirm('Delete "'+floor.name+'"? All tables on it will be lost.')) return;
+    const idx = G.floors.findIndex(f=>f.id===id);
+    G.floors.splice(idx, 1);
+    if(G.activeFloorId === id) {{
+      const nf = G.floors[Math.max(0, idx-1)];
+      G.activeFloorId = nf.id;
+      G.tables = nf.tables;
+      G.selectedSeats.clear();
+    }}
+    setDirty();
+    renderFloors();
+    render();
+  }}
+
+  let _renameFloorTarget = null;
+  function openRenameFloorModal(id) {{
+    _renameFloorTarget = id;
+    const floor = G.floors.find(f=>f.id===id);
+    if(!floor) return;
+    const inp = document.getElementById('renameFloorInput');
+    inp.value = floor.name;
+    document.getElementById('renameFloorOv').classList.add('open');
+    setTimeout(()=>{{ inp.focus(); inp.select(); }}, 50);
+  }}
+  function closeRenameFloorModal() {{
+    document.getElementById('renameFloorOv').classList.remove('open');
+    _renameFloorTarget = null;
+  }}
+  function confirmRenameFloor() {{
+    const name = document.getElementById('renameFloorInput').value.trim();
+    if(!name || !_renameFloorTarget) return;
+    const floor = G.floors.find(f=>f.id===_renameFloorTarget);
+    if(floor) {{ floor.name = name; setDirty(); renderFloors(); }}
+    closeRenameFloorModal();
+  }}
+
+  // ── Icon picker ────────────────────────────────────────────────────────────
+  const ICON_LIBRARY = [
+    {{id:'person',lbl:'Person'}},{{id:'person_2',lbl:'Person 2'}},{{id:'face',lbl:'Face'}},
+    {{id:'face_2',lbl:'Face 2'}},{{id:'face_3',lbl:'Face 3'}},{{id:'engineering',lbl:'Engineer'}},
+    {{id:'design_services',lbl:'Design'}},{{id:'manage_accounts',lbl:'Manage'}},
+    {{id:'support_agent',lbl:'Support'}},{{id:'code',lbl:'Code'}},
+    {{id:'developer_mode',lbl:'Dev'}},{{id:'science',lbl:'Science'}},
+    {{id:'psychology',lbl:'Psychology'}},{{id:'business_center',lbl:'Business'}},
+    {{id:'work',lbl:'Work'}},{{id:'badge',lbl:'Badge'}},
+    {{id:'star',lbl:'Star'}},{{id:'bolt',lbl:'Bolt'}},
+    {{id:'groups',lbl:'Groups'}},{{id:'supervisor_account',lbl:'Manager'}},
+    {{id:'admin_panel_settings',lbl:'Admin'}},{{id:'security',lbl:'Security'}},
+    {{id:'coffee',lbl:'Coffee'}},{{id:'sports_esports',lbl:'Gaming'}},
+    {{id:'palette',lbl:'Art'}},{{id:'calculate',lbl:'Math'}},
+    {{id:'analytics',lbl:'Analytics'}},{{id:'construction',lbl:'Construct'}},
+    {{id:'local_shipping',lbl:'Shipping'}},{{id:'storefront',lbl:'Store'}},
+  ];
+
+  let _iconPickerCb = null;
+  function openIconPicker(currentIcon, cb) {{
+    _iconPickerCb = cb;
+    const grid = document.getElementById('iconGrid');
+    grid.innerHTML = '';
+    ICON_LIBRARY.forEach(item=>{{
+      const div = document.createElement('div');
+      div.className = 'sp-icon-item' + (item.id===currentIcon?' selected':'');
+      div.innerHTML = `<span class="material-symbols-outlined">${{item.id}}</span><span class="lbl">${{item.lbl}}</span>`;
+      div.addEventListener('click', ()=>{{
+        if(_iconPickerCb) _iconPickerCb(item.id);
+        document.getElementById('iconPickerOv').classList.remove('open');
+        _iconPickerCb = null;
+      }});
+      grid.appendChild(div);
+    }});
+    document.getElementById('iconPickerOv').classList.add('open');
+  }}
+
+  // ── Add Person Modal ───────────────────────────────────────────────────────
+  let _apCurrentIcon = 'person';
+
+  function openAddPersonModal() {{
+    _apCurrentIcon = 'person';
+    document.getElementById('apName').value = '';
+    document.getElementById('apColor').value = '#0f766e';
+    document.getElementById('apIconPreviewIcon').textContent = 'person';
+    document.getElementById('apIconPreviewBtn').style.background = '#0f766e';
+    const sel = document.getElementById('apTeam');
+    sel.innerHTML = '<option value="Guest">Guest</option>';
+    G.customTeams.forEach(ct=>{{
+      const opt = document.createElement('option');
+      opt.value = ct.name; opt.textContent = ct.name;
+      sel.appendChild(opt);
+    }});
+    document.getElementById('addPersonOv').classList.add('open');
+    setTimeout(()=>document.getElementById('apName').focus(), 50);
+  }}
+
+  function closeAddPersonModal() {{
+    document.getElementById('addPersonOv').classList.remove('open');
+  }}
+
+  async function confirmAddPerson() {{
+    const name = document.getElementById('apName').value.trim();
+    if(!name) {{ document.getElementById('apName').focus(); return; }}
+    if(G.employees.includes(name)) {{ toast('"'+name+'" is already in the list','err'); return; }}
+    const color = document.getElementById('apColor').value || '#000000';
+    const icon = _apCurrentIcon || 'person';
+    const team = document.getElementById('apTeam').value || 'Guest';
+    try {{
+      const r = await fetch('/api/seating/employees',{{
+        method:'POST',
+        headers:{{'Content-Type':'application/json'}},
+        body: JSON.stringify({{name, color, icon, team}}),
+      }});
+      const d = await r.json();
+      if(!r.ok) throw new Error(d.error||'Server error');
+      G.employees = d.employees;
+      _applyCustomMeta(d.custom_employees||[]);
+      if(d.teams) {{ G.teams = d.teams; buildTeamColorMap(); }}
+      closeAddPersonModal();
+      render();
+      toast('"'+name+'" added to seating roster','ok');
+    }} catch(e) {{ toast('Failed: '+e.message,'err'); }}
+  }}
+
   // ── Table Modal ────────────────────────────────────────────────────────────
   let _mMode=null, _mId=null;
 
@@ -30438,9 +31183,29 @@ def _seating_planner_html() -> str:
   function openSeatModal(tableId, idx) {{
     const t=G.tables.find(x=>x.id===tableId); if(!t) return;
     const emp=t.seats[String(idx)]; if(!emp) return;
-    _sCtx={{tableId,idx}};
+    _sCtx={{tableId,idx,emp}};
     document.getElementById('seatOvText').textContent =
       `Seat ${{parseInt(idx)+1}} of "${{t.name}}" is assigned to ${{emp}}.`;
+    const isCustom = G.customEmployees.has(emp);
+    const teamRow = document.getElementById('seatOvTeamRow');
+    const assignBtn = document.getElementById('seatOvAssignTeamBtn');
+    if(isCustom) {{
+      // Populate team select
+      const sel = document.getElementById('seatOvTeamSel');
+      sel.innerHTML = '<option value="Guest">Guest</option>';
+      G.customTeams.forEach(ct=>{{
+        const opt = document.createElement('option');
+        opt.value = ct.name; opt.textContent = ct.name;
+        sel.appendChild(opt);
+      }});
+      const meta = G.customEmployeeMeta[emp]||{{}};
+      sel.value = meta.team||'Guest';
+      teamRow.style.display = 'block';
+      assignBtn.style.display = 'inline-flex';
+    }} else {{
+      teamRow.style.display = 'none';
+      assignBtn.style.display = 'none';
+    }}
     document.getElementById('seatOv').classList.add('open');
   }}
 
@@ -30454,7 +31219,7 @@ def _seating_planner_html() -> str:
   }}
 
   // ── Render ─────────────────────────────────────────────────────────────────
-  function render() {{ renderCanvas(); renderSidebar(); renderSelBar(); renderLegend(); }}
+  function render() {{ renderCanvas(); renderSidebar(); renderSelBar(); renderLegend(); renderFloors(); }}
 
   function renderCanvas() {{
     const canvas=document.getElementById('canvas');
@@ -30609,7 +31374,8 @@ def _seating_planner_html() -> str:
         if(G.selectedSeats.has(sKey)){{ e.preventDefault(); e.stopPropagation(); startSelDrag(e); }}
       }});
     }} else {{
-      lbl.textContent=String(idx+1);
+      lbl.textContent='empty';
+      lbl.className='sp-seat-txt sp-seat-empty-lbl';
       if(rot) lbl.style.transform=`rotate(${{-rot}}deg)`;
       s.appendChild(lbl);
       s.title='Drag an employee here';
@@ -30790,10 +31556,17 @@ def _seating_planner_html() -> str:
 
   function makeEmpCard(name) {{
     const isWfh=G.wfhSet.has(name), assign=getAssignment(name), isCustom=G.customEmployees.has(name);
+    const meta = isCustom ? (G.customEmployeeMeta[name]||{{}}) : null;
     const card=document.createElement('div');
     card.className='emp-card'+(isWfh?' wfh':assign?' assigned':'')+(isCustom?' custom':'');
 
-    const av=document.createElement('div'); av.className='emp-av'; av.textContent=initials(name);
+    const av=document.createElement('div'); av.className='emp-av';
+    if(meta && meta.icon) {{
+      av.innerHTML=`<span class="material-symbols-outlined" style="font-size:.95rem">${{meta.icon}}</span>`;
+      av.style.background = meta.color || '#000000';
+    }} else {{
+      av.textContent=initials(name);
+    }}
 
     const info=document.createElement('div'); info.className='emp-info';
     const nm=document.createElement('div'); nm.className='emp-name'; nm.textContent=name;
@@ -30806,10 +31579,23 @@ def _seating_planner_html() -> str:
       s.textContent=assign.tableName+' · Seat '+(parseInt(assign.seatIdx)+1);
       info.appendChild(s);
     }} else {{
-      const row=document.createElement('div'); row.style.display='flex'; row.style.gap='4px'; row.style.alignItems='center';
-      if(isCustom){{ const b=document.createElement('span'); b.className='emp-guest-badge'; b.textContent='Guest'; row.appendChild(b); }}
-      const s=document.createElement('div'); s.className='emp-status'; s.textContent='Available'; row.appendChild(s);
-      info.appendChild(row);
+      const s=document.createElement('div'); s.className='emp-status'; s.textContent='Available';
+      info.appendChild(s);
+    }}
+    // Team badge for custom employees (always visible, clickable to reassign)
+    if(isCustom) {{
+      const teamName = (meta&&meta.team) || 'Guest';
+      const ct = G.customTeams.find(t=>t.name===teamName);
+      const badgeColor = ct ? ct.color : '#94a3b8';
+      const badge = document.createElement('span');
+      badge.className = 'emp-team-badge';
+      badge.style.background = badgeColor+'22';
+      badge.style.color = badgeColor;
+      badge.style.borderColor = badgeColor+'66';
+      badge.innerHTML = `<span class="material-symbols-outlined">group</span>${{teamName}}`;
+      badge.title = 'Click to change team';
+      badge.addEventListener('click', e=>{{ e.stopPropagation(); openQuickTeamAssign(name); }});
+      info.appendChild(badge);
     }}
 
     const wBtn=document.createElement('button');
@@ -30857,23 +31643,6 @@ def _seating_planner_html() -> str:
     toast('Table duplicated – seats are empty on the copy','ok');
   }}
 
-  async function addCustomEmployee(){{
-    const inp=document.getElementById('addPersonInput');
-    const name=inp.value.trim(); if(!name) return;
-    if(G.employees.includes(name)){{ toast('"'+name+'" is already in the list','err'); return; }}
-    try{{
-      const r=await fetch('/api/seating/employees',{{
-        method:'POST',
-        headers:{{'Content-Type':'application/json'}},
-        body:JSON.stringify({{name}}),
-      }});
-      const d=await r.json();
-      if(!r.ok) throw new Error(d.error||'Server error');
-      G.employees=d.employees; G.customEmployees=new Set(d.custom_employees);
-      inp.value=''; render();
-      toast('"'+name+'" added to seating roster','ok');
-    }} catch(e){{ toast('Failed: '+e.message,'err'); }}
-  }}
 
   async function deleteCustomEmployee(name){{
     if(!confirm('Remove "'+name+'" from the seating roster? They will be unassigned from any seat.')) return;
@@ -30885,7 +31654,9 @@ def _seating_planner_html() -> str:
       }});
       const d=await r.json();
       if(!r.ok) throw new Error(d.error||'Server error');
-      G.employees=d.employees; G.customEmployees=new Set(d.custom_employees);
+      G.employees=d.employees;
+      _applyCustomMeta(d.custom_employees||[]);
+      if(d.teams){{ G.teams=d.teams; buildTeamColorMap(); }}
       for(const t of G.tables){{
         for(const [idx,emp] of Object.entries(t.seats)){{ if(emp===name) delete t.seats[idx]; }}
       }}
@@ -30921,7 +31692,9 @@ def _seating_planner_html() -> str:
       }});
       const d=await r.json();
       if(!r.ok) throw new Error(d.error||'Server error');
-      G.employees=d.employees; G.customEmployees=new Set(d.custom_employees);
+      G.employees=d.employees;
+      _applyCustomMeta(d.custom_employees||[]);
+      if(d.teams){{ G.teams=d.teams; buildTeamColorMap(); }}
       for(const t of G.tables){{
         for(const [idx,emp] of Object.entries(t.seats)){{ if(emp===oldName) t.seats[idx]=newName; }}
       }}
@@ -31062,13 +31835,62 @@ def _seating_planner_html() -> str:
   document.getElementById('tblConfirmBtn').addEventListener('click',confirmTblModal);
   document.getElementById('seatOvClose').addEventListener('click',closeSeatModal);
   document.getElementById('seatOvClear').addEventListener('click',clearSeat);
+  document.getElementById('seatOvAssignTeamBtn').addEventListener('click',()=>{{
+    if(!_sCtx) return;
+    const teamName = document.getElementById('seatOvTeamSel').value;
+    assignTeamQuick(_sCtx.emp, teamName);
+    closeSeatModal();
+  }});
   document.getElementById('srch').addEventListener('input',renderSidebar);
-  document.getElementById('addPersonBtn').addEventListener('click',addCustomEmployee);
-  document.getElementById('addPersonInput').addEventListener('keydown',e=>{{if(e.key==='Enter') addCustomEmployee();}});
   document.getElementById('renameEmpCancelBtn').addEventListener('click',closeRenameEmpModal);
   document.getElementById('renameEmpConfirmBtn').addEventListener('click',confirmRenameEmployee);
   document.getElementById('renameEmpInput').addEventListener('keydown',e=>{{if(e.key==='Enter') confirmRenameEmployee(); else if(e.key==='Escape') closeRenameEmpModal();}});
   document.getElementById('renameEmpOv').addEventListener('click',e=>{{if(e.target===document.getElementById('renameEmpOv')) closeRenameEmpModal();}});
+
+  // Add Person modal
+  document.getElementById('addPersonBtn').addEventListener('click', openAddPersonModal);
+  document.getElementById('apCancelBtn').addEventListener('click', closeAddPersonModal);
+  document.getElementById('apConfirmBtn').addEventListener('click', confirmAddPerson);
+  document.getElementById('apName').addEventListener('keydown',e=>{{if(e.key==='Enter') confirmAddPerson(); else if(e.key==='Escape') closeAddPersonModal();}});
+  document.getElementById('addPersonOv').addEventListener('click',e=>{{if(e.target===document.getElementById('addPersonOv')) closeAddPersonModal();}});
+  document.getElementById('apColor').addEventListener('input',e=>{{
+    document.getElementById('apIconPreviewBtn').style.background = e.target.value;
+  }});
+  document.getElementById('apIconPreviewBtn').addEventListener('click',()=>{{
+    openIconPicker(_apCurrentIcon, icon=>{{
+      _apCurrentIcon = icon;
+      document.getElementById('apIconPreviewIcon').textContent = icon;
+    }});
+  }});
+
+  // Icon picker modal
+  document.getElementById('iconPickerCancelBtn').addEventListener('click',()=>{{
+    document.getElementById('iconPickerOv').classList.remove('open');
+    _iconPickerCb = null;
+  }});
+  document.getElementById('iconPickerOv').addEventListener('click',e=>{{
+    if(e.target===document.getElementById('iconPickerOv')){{
+      document.getElementById('iconPickerOv').classList.remove('open');
+      _iconPickerCb = null;
+    }}
+  }});
+
+  // Rename Floor modal
+  document.getElementById('renameFloorCancelBtn').addEventListener('click', closeRenameFloorModal);
+  document.getElementById('renameFloorConfirmBtn').addEventListener('click', confirmRenameFloor);
+  document.getElementById('renameFloorInput').addEventListener('keydown',e=>{{if(e.key==='Enter') confirmRenameFloor(); else if(e.key==='Escape') closeRenameFloorModal();}});
+  document.getElementById('renameFloorOv').addEventListener('click',e=>{{if(e.target===document.getElementById('renameFloorOv')) closeRenameFloorModal();}});
+
+  // Teams Manager
+  document.getElementById('manageTeamsBtn').addEventListener('click', openTeamsManager);
+  document.getElementById('teamsManagerCloseBtn').addEventListener('click', closeTeamsManager);
+  document.getElementById('teamsManagerOv').addEventListener('click',e=>{{if(e.target===document.getElementById('teamsManagerOv')) closeTeamsManager();}});
+  document.getElementById('tmAddBtn').addEventListener('click', tmAddTeam);
+  document.getElementById('tmNewName').addEventListener('keydown',e=>{{if(e.key==='Enter') tmAddTeam();}});
+
+  // Quick Team Assign
+  document.getElementById('qtaCancelBtn').addEventListener('click', closeQuickTeamAssign);
+  document.getElementById('quickTeamOv').addEventListener('click',e=>{{if(e.target===document.getElementById('quickTeamOv')) closeQuickTeamAssign();}});
 
   ['tblName','tblSeats'].forEach(id=>{{
     document.getElementById(id).addEventListener('keydown',e=>{{if(e.key==='Enter') confirmTblModal();}});
@@ -35833,6 +36655,26 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         except Exception as exc:
             return jsonify({"ok": False, "error": f"Failed to load monthly epic plan progress: {exc}"}), 500
 
+    @app.route("/api/monthly-epic-plan-progress/support-team", methods=["GET"])
+    def get_support_team():
+        try:
+            members = load_support_team(capacity_paths["db_path"])
+            return jsonify({"ok": True, "members": members})
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+
+    @app.route("/api/monthly-epic-plan-progress/support-team", methods=["POST"])
+    def save_support_team_route():
+        try:
+            body = request.get_json(silent=True) or {}
+            raw = body.get("members", [])
+            if not isinstance(raw, list):
+                return jsonify({"ok": False, "error": "members must be a list"}), 400
+            saved = save_support_team(capacity_paths["db_path"], raw)
+            return jsonify({"ok": True, "members": saved})
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+
     @app.route(f"{CANONICAL_PVD_API_PREFIX}/ui-settings", methods=["GET"])
     @app.route(f"{LEGACY_PVD_API_PREFIX}/ui-settings", methods=["GET"])
     def get_pvd_ui_settings():
@@ -39587,6 +40429,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             wfh = _seating_load_wfh(db)
             custom = _seating_get_custom_employees(db)
             teams = _seating_get_teams(db)
+            custom_teams = _seating_get_custom_teams(db)
             project_assignments = _seating_get_project_assignments(base_dir, db)
             project_names = _seating_get_project_names(db)
             return jsonify({
@@ -39595,6 +40438,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 "wfh_employees": wfh,
                 "custom_employees": custom,
                 "teams": teams,
+                "custom_teams": custom_teams,
                 "project_assignments": {k: v for k, v in project_assignments.items() if not k.startswith("__")},
                 "project_names": project_names,
                 "_pa_count": len([k for k in project_assignments if not k.startswith("__")]),
@@ -39729,12 +40573,16 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             name = _to_text(payload.get("name", "")).strip()
             if not name:
                 return jsonify({"error": "name is required"}), 400
+            color = _to_text(payload.get("color", "#000000")).strip() or "#000000"
+            icon = _to_text(payload.get("icon", "person")).strip() or "person"
+            team = _to_text(payload.get("team", "Guest")).strip() or "Guest"
             db = capacity_paths["db_path"]
-            _seating_add_custom_employee(db, name)
+            _seating_add_custom_employee(db, name, color=color, icon=icon, team=team)
             return jsonify({
                 "ok": True,
                 "employees": _seating_get_all_employees(db),
                 "custom_employees": _seating_get_custom_employees(db),
+                "teams": _seating_get_teams(db),
             }), 201
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
@@ -39752,6 +40600,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 "ok": True,
                 "employees": _seating_get_all_employees(db),
                 "custom_employees": _seating_get_custom_employees(db),
+                "teams": _seating_get_teams(db),
             })
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
@@ -39764,14 +40613,14 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             new_name = _to_text(payload.get("new_name", "")).strip()
             if not old_name or not new_name:
                 return jsonify({"error": "old_name and new_name are required"}), 400
+            db = capacity_paths["db_path"]
             if old_name == new_name:
-                db = capacity_paths["db_path"]
                 return jsonify({
                     "ok": True,
                     "employees": _seating_get_all_employees(db),
                     "custom_employees": _seating_get_custom_employees(db),
+                    "teams": _seating_get_teams(db),
                 })
-            db = capacity_paths["db_path"]
             existing = _seating_get_all_employees(db)
             if new_name in existing:
                 return jsonify({"error": f'"{new_name}" already exists'}), 409
@@ -39780,6 +40629,88 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 "ok": True,
                 "employees": _seating_get_all_employees(db),
                 "custom_employees": _seating_get_custom_employees(db),
+                "teams": _seating_get_teams(db),
+            })
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @app.route("/api/seating/custom-teams", methods=["GET"])
+    def seating_custom_teams_list_api():
+        try:
+            return jsonify({"ok": True, "custom_teams": _seating_get_custom_teams(capacity_paths["db_path"])})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @app.route("/api/seating/custom-teams", methods=["POST"])
+    def seating_custom_team_create_api():
+        try:
+            payload = request.get_json(silent=True) or {}
+            name = _to_text(payload.get("name", "")).strip()
+            if not name:
+                return jsonify({"error": "name is required"}), 400
+            color = _to_text(payload.get("color", "#6366f1")).strip() or "#6366f1"
+            db = capacity_paths["db_path"]
+            _seating_create_custom_team(db, name, color)
+            return jsonify({
+                "ok": True,
+                "custom_teams": _seating_get_custom_teams(db),
+                "teams": _seating_get_teams(db),
+            }), 201
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @app.route("/api/seating/custom-teams", methods=["PATCH"])
+    def seating_custom_team_update_api():
+        try:
+            payload = request.get_json(silent=True) or {}
+            team_id = _to_text(payload.get("id", "")).strip()
+            new_name = _to_text(payload.get("name", "")).strip()
+            new_color = _to_text(payload.get("color", "#6366f1")).strip() or "#6366f1"
+            if not team_id or not new_name:
+                return jsonify({"error": "id and name are required"}), 400
+            db = capacity_paths["db_path"]
+            _seating_update_custom_team(db, team_id, new_name, new_color)
+            return jsonify({
+                "ok": True,
+                "custom_teams": _seating_get_custom_teams(db),
+                "teams": _seating_get_teams(db),
+                "custom_employees": _seating_get_custom_employees(db),
+            })
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @app.route("/api/seating/custom-teams", methods=["DELETE"])
+    def seating_custom_team_delete_api():
+        try:
+            payload = request.get_json(silent=True) or {}
+            team_id = _to_text(payload.get("id", "")).strip()
+            if not team_id:
+                return jsonify({"error": "id is required"}), 400
+            db = capacity_paths["db_path"]
+            _seating_delete_custom_team(db, team_id)
+            return jsonify({
+                "ok": True,
+                "custom_teams": _seating_get_custom_teams(db),
+                "teams": _seating_get_teams(db),
+                "custom_employees": _seating_get_custom_employees(db),
+            })
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @app.route("/api/seating/employees/team", methods=["PATCH"])
+    def seating_employee_assign_team_api():
+        try:
+            payload = request.get_json(silent=True) or {}
+            name = _to_text(payload.get("name", "")).strip()
+            team = _to_text(payload.get("team", "Guest")).strip() or "Guest"
+            if not name:
+                return jsonify({"error": "name is required"}), 400
+            db = capacity_paths["db_path"]
+            _seating_assign_employee_team(db, name, team)
+            return jsonify({
+                "ok": True,
+                "custom_employees": _seating_get_custom_employees(db),
+                "teams": _seating_get_teams(db),
             })
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
@@ -39788,14 +40719,11 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
     def seating_layout_save_api():
         try:
             payload = request.get_json(silent=True) or {}
-            tables_raw = payload.get("tables", [])
-            if not isinstance(tables_raw, list):
-                return jsonify({"error": "tables must be a list"}), 400
-            clean_tables = []
-            for t in tables_raw:
+
+            def _clean_table(t: dict) -> dict | None:
                 if not isinstance(t, dict):
-                    continue
-                clean_tables.append({
+                    return None
+                return {
                     "id": _to_text(t.get("id", "")),
                     "name": _to_text(t.get("name", "")).strip() or "Table",
                     "x": float(t.get("x", 0)),
@@ -39803,9 +40731,36 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                     "rotation": float(t.get("rotation", 0)),
                     "seatCount": max(1, min(20, int(t.get("seatCount", 6)))),
                     "seats": {str(k): _to_text(v) for k, v in (t.get("seats") or {}).items() if _to_text(v).strip()},
-                })
-            _seating_save_layout(capacity_paths["db_path"], {"tables": clean_tables})
-            return jsonify({"ok": True, "tables_saved": len(clean_tables)})
+                }
+
+            if "floors" in payload:
+                floors_raw = payload.get("floors", [])
+                if not isinstance(floors_raw, list):
+                    return jsonify({"error": "floors must be a list"}), 400
+                clean_floors = []
+                for f in floors_raw:
+                    if not isinstance(f, dict):
+                        continue
+                    tables = [ct for t in (f.get("tables") or []) if (ct := _clean_table(t)) is not None]
+                    clean_floors.append({
+                        "id": _to_text(f.get("id", "")),
+                        "name": _to_text(f.get("name", "")).strip() or "Floor",
+                        "tables": tables,
+                    })
+                _seating_save_layout(capacity_paths["db_path"], {"floors": clean_floors})
+                total = sum(len(f["tables"]) for f in clean_floors)
+                return jsonify({"ok": True, "floors_saved": len(clean_floors), "tables_saved": total})
+            else:
+                tables_raw = payload.get("tables", [])
+                if not isinstance(tables_raw, list):
+                    return jsonify({"error": "tables must be a list"}), 400
+                clean_tables = [ct for t in tables_raw if (ct := _clean_table(t)) is not None]
+                existing = _seating_load_layout(capacity_paths["db_path"])
+                floors = existing.get("floors", [{"id": "f-1", "name": "Floor 1", "tables": []}])
+                if floors:
+                    floors[0]["tables"] = clean_tables
+                _seating_save_layout(capacity_paths["db_path"], {"floors": floors})
+                return jsonify({"ok": True, "tables_saved": len(clean_tables)})
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
 
