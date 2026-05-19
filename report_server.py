@@ -40402,7 +40402,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
 
     @app.route(TCP_SETTINGS_ROUTE, methods=["GET"])
     def tcp_settings_page():
-        tcp_html = report_dir / "team_capacity_planner.html"
+        tcp_html = _promote_report_html_if_newer(base_dir, report_dir, "team_capacity_planner.html")
         if tcp_html.exists():
             return tcp_html.read_text(encoding="utf-8"), 200, {"Content-Type": "text/html; charset=utf-8"}
         return "<h2>Team Capacity Planner HTML not found.</h2>", 404

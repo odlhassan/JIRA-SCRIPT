@@ -74,7 +74,14 @@ Open (production example):
 ```text
 https://epreporting.azurewebsites.net/introduction.html
 https://epreporting.azurewebsites.net/dashboard.html
+https://epreporting.azurewebsites.net/settings/team-capacity-planner
 ```
+
+The Team Capacity Planner route serves from `REPORT_HTML_DIR` but promotes the
+tracked root `team_capacity_planner.html` into that directory if the published
+copy is missing or stale. Commit the root HTML source and the server route
+change before pushing to `main`; do not rely on an untracked local
+`report_html/team_capacity_planner.html` copy for Azure.
 
 Stream logs:
 

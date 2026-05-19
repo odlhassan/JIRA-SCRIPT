@@ -10,6 +10,7 @@ from pathlib import Path
 from jira_export_db import ensure_schema, write_work_items
 from report_server import (
     IPP_MEETING_PLANNER_SETTINGS_ROUTE,
+    TCP_SETTINGS_ROUTE,
     create_report_server_app,
     _init_epics_management_db,
     _ipp_meeting_planner_get_current_meeting,
@@ -301,6 +302,25 @@ class IppMeetingPlannerApiTests(unittest.TestCase):
                 self.assertIn(b"IPP Builder", r.data)
                 self.assertIn(b"Work List", r.data)
                 self.assertIn(b"History", r.data)
+
+    def test_team_capacity_settings_page_promotes_root_html_when_report_copy_missing(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            root_html = root / "team_capacity_planner.html"
+            report_html = root / "report_html" / "team_capacity_planner.html"
+            root_html.write_text(
+                "<html><body><h1>Team Capacity Planner</h1><p>root copy</p></body></html>",
+                encoding="utf-8",
+            )
+
+            app = create_report_server_app(base_dir=root, folder_raw="report_html")
+            with app.test_client() as client:
+                r = client.get(TCP_SETTINGS_ROUTE)
+
+            self.assertEqual(r.status_code, 200)
+            self.assertIn(b"Team Capacity Planner", r.data)
+            self.assertTrue(report_html.exists())
+            self.assertIn("root copy", report_html.read_text(encoding="utf-8"))
 
     def test_search_work_items_returns_epics_planner_epic(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
