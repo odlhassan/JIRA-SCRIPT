@@ -431,32 +431,6 @@ def _is_on_hold_status_text(value: Any) -> bool:
     return text in {"on hold", "hold", "paused", "deferred"}
 
 
-def _normalize_planner_delivery_status(value: Any) -> str:
-    raw = _to_text(value).strip()
-    low = raw.lower().replace("-", " ").replace("_", " ").strip()
-    if low in {"", "yet to start"}:
-        return "Yet to start"
-    if low in {"on track", "ontrack"}:
-        return "On-track"
-    if low == "late":
-        return "Late"
-    return raw if raw else "Yet to start"
-
-
-def _delivery_status_view(planner_delivery: Any, jira_status: Any) -> str:
-    """Planner delivery_status can lag Jira; align display when planner still says Yet to start."""
-    planner = _normalize_planner_delivery_status(planner_delivery)
-    if planner != "Yet to start":
-        return planner
-    jira_raw = _to_text(jira_status)
-    if not jira_raw:
-        return planner
-    if _is_resolved_status_text(jira_raw):
-        return "On-track"
-    jira_low = jira_raw.lower().replace("-", " ").replace("_", " ")
-    if "progress" in jira_low:
-        return "On-track"
-    return planner
 
 
 def _chunked(items: list[str], chunk_size: int) -> list[list[str]]:
@@ -1263,7 +1237,6 @@ def _load_all_jira_epic_rows(
             "approved_start": start_text,
             "approved_due": due_text,
             "actual_completed_date": actual_completed_text,
-            "delivery_status": _delivery_status_view(None, jira_status),
             "jira_status": jira_status,
             "planned_hours": _round_hours(planned_hours),
             "planned_days": _round_hours(planned_hours / HOURS_PER_DAY),
@@ -1734,7 +1707,6 @@ def build_monthly_epic_plan_payload(
                 "approved_start": approved_start_text,
                 "approved_due": approved_due_text,
                 "actual_completed_date": actual_completed_text,
-                "delivery_status": _delivery_status_view(planner_row.get("delivery_status"), jira_status),
                 "jira_status": jira_status,
                 "planned_hours": _round_hours(planned_hours),
                 "planned_days": _round_hours(planned_hours / HOURS_PER_DAY),

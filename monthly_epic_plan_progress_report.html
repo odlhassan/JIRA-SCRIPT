@@ -2607,7 +2607,6 @@
               <th>Planned Start</th>
               <th>Planned Due</th>
               <th>Done Date</th>
-              <th>Delivery Health</th>
               <th>Jira Status</th>
               <th class="num effort-head">Planned Hrs</th>
               <th class="num effort-head">Actual Hrs</th>
@@ -2623,7 +2622,6 @@
       </div>
       <div class="caption">
         Rows include epics whose approved start <strong>or</strong> approved due falls inside the selected month (TK planner), plus unresolved brought-forward epics whose approved due was before that month.
-        Delivery status comes from Epics planner; if it is still Yet to start while Jira shows the epic in progress or resolved, this report displays <strong>On-track</strong> so delivery reflects execution reality.
         Brought forward means the approved due date is before the selected month and the latest Jira epic status is still unresolved.
         Start slip means the approved start date is inside the selected month and no subtask worklog exists through month end.
         End slip means the approved due date is inside the selected month and the current Jira epic status is not resolved.
@@ -4396,7 +4394,6 @@
         + '<td>' + esc(formatDisplayDate(row.approved_start)) + '</td>'
         + '<td>' + esc(formatDisplayDate(row.approved_due)) + '</td>'
         + '<td>' + (row.actual_completed_date ? esc(formatDisplayDate(row.actual_completed_date)) : '<span style="color:#94a3b8;">—</span>') + '</td>'
-        + '<td>' + statusPill(row.delivery_status, row.approved_start) + '</td>'
         + '<td>' + statusPill(row.jira_status || "Not in canonical data", row.approved_start) + '</td>'
         + '<td class="num">' + formatNumber(effortValue(row, "planned")) + '</td>'
         + '<td class="' + actualCellClass + '">' + formatNumber(effortValue(row, "actual")) + '</td>'
@@ -5282,7 +5279,6 @@
         + '</div>'
         + '<div class="epic-detail-meta">'
           + '<span class="project-chip" style="' + esc(projectStyle) + '">' + esc(projectName) + '</span>'
-          + statusPill(row.delivery_status || "-", row.approved_start)
           + statusPill(row.jira_status || "-", row.approved_start)
           + catBadge
           + jiraLinkHtml
