@@ -671,6 +671,7 @@
     .pill.info { color: #1d4ed8; background: #eff6ff; border-color: #bfdbfe; }
     .pill.warn { color: var(--warn); background: #fffbeb; border-color: #fde68a; }
     .pill.bad { color: var(--bad); background: #fef2f2; border-color: #fecaca; }
+    .pill.neutral { color: #64748b; background: #f1f5f9; border-color: #cbd5e1; }
     .caption {
       margin-top: 12px;
       color: var(--muted);
@@ -4400,8 +4401,29 @@
         + '<td class="num">' + formatNumber(effortValue(row, "planned")) + '</td>'
         + '<td class="' + actualCellClass + '">' + formatNumber(effortValue(row, "actual")) + '</td>'
         + '<td>' + (row.brought_forward ? '<span class="pill info">Brought forward</span>' : '<span class="pill good">No</span>') + '</td>'
-        + '<td>' + flagPill(row.start_slip, "Could not start", "Started/OK") + '</td>'
-        + '<td>' + flagPill(row.end_slip, "Could not end", "Completed/OK") + '</td>'
+        + '<td>' + (function() {
+            // Start Signal: start was in this month — did the epic actually begin?
+            if (!row.approved_start || row.approved_start.slice(0, 7) > monthYm)
+              return '<span class="pill neutral">Not This Month</span>';
+            if (row.start_slip)
+              return '<span class="pill bad">Could Not Start</span>';
+            return '<span class="pill good">Started on Time</span>';
+          })() + '</td>'
+        + '<td>' + (function() {
+            // End Signal — four states
+            const due = (row.approved_due || "").slice(0, 7);
+            const actual = row.actual_completed_date || "";
+            const approved = row.approved_due || "";
+            if (due > monthYm)
+              return '<span class="pill neutral" title="Due date is in a future month">Future Planned</span>';
+            if (actual && actual <= approved)
+              return '<span class="pill good" title="Resolved on or before planned due date">Completed in Time</span>';
+            if (actual && actual > approved)
+              return '<span class="pill warn" title="Completed ' + esc(formatDisplayDate(actual)) + ', due was ' + esc(formatDisplayDate(approved)) + '">Completed Late</span>';
+            if (row.end_slip)
+              return '<span class="pill bad">Could Not End</span>';
+            return '<span style="color:#94a3b8;">—</span>';
+          })() + '</td>'
         + '<td>' + (function() {
             if (!row.carried_forward) return '<span class="pill good">No</span>';
             const reasons = Array.isArray(row.carry_forward_reasons) ? row.carry_forward_reasons : [];
