@@ -312,7 +312,7 @@ def _load_child_items_for_month(
     """
     Return per-epic list of story/subtask items that drove the epic's appearance in the
     selected month. Stories with real subtask estimates surface their subtasks;
-    stories without subtasks appear directly. All items include in_month flags.
+    stories without subtasks appear directly. All items include in_month flags and worklogs.
     """
     if not epic_keys or not run_id:
         return {}
@@ -341,6 +341,41 @@ def _load_child_items_for_month(
             """,
             (run_id, *epic_keys),
         ).fetchall()
+
+        # Load worklogs for all issues in these epics (both stories and subtasks)
+        # Use latest run_id from canonical_worklogs (may differ from issues run_id)
+        try:
+            wl_latest_run = conn.execute(
+                "SELECT run_id FROM canonical_worklogs ORDER BY run_id DESC LIMIT 1"
+            ).fetchone()
+            wl_run_id = wl_latest_run[0] if wl_latest_run else run_id
+            worklogs_raw = conn.execute(
+                f"""
+                SELECT issue_key, worklog_author, started_date, hours_logged
+                FROM canonical_worklogs
+                WHERE run_id = ?
+                  AND started_date >= ? AND started_date <= ?
+                  AND issue_key IN (
+                      SELECT issue_key FROM canonical_issues
+                      WHERE run_id = ? AND epic_key IN ({placeholders})
+                        AND issue_type IN ('Story', 'Sub-task', 'Bug Subtask')
+                  )
+                ORDER BY issue_key, started_date
+                """,
+                (wl_run_id, month_start.isoformat(), month_end.isoformat(), run_id, *epic_keys),
+            ).fetchall()
+        except Exception:
+            worklogs_raw = []
+
+    # Group worklogs by issue_key
+    worklogs_by_issue: dict[str, list[dict]] = defaultdict(list)
+    for wl in worklogs_raw:
+        ik = _to_text(wl["issue_key"]).upper()
+        worklogs_by_issue[ik].append({
+            "date": _to_text(wl["started_date"]),
+            "author": _to_text(wl["worklog_author"]),
+            "hours": _round_hours(float(wl["hours_logged"] or 0)),
+        })
 
     subs_by_story: dict[str, list[dict]] = defaultdict(list)
     for sub in subtasks:
@@ -379,6 +414,7 @@ def _load_child_items_for_month(
                     "in_month": sim or dim,
                     "jira_url": f"{jira_base}/browse/{sub_key}" if jira_base and sub_key else "",
                     "story_jira_url": story_url,
+                    "worklogs": worklogs_by_issue.get(sub_key, []),
                 })
         else:
             sd = _to_text(story["start_date"])
@@ -401,6 +437,7 @@ def _load_child_items_for_month(
                 "in_month": sim or dim,
                 "jira_url": story_url,
                 "story_jira_url": "",
+                "worklogs": worklogs_by_issue.get(story_key, []),
             })
 
     return dict(result)
@@ -676,18 +713,32 @@ def _nested_aligned_leave_by_assignee(
     snapshot: dict[str, Any],
     month_start: date,
     month_end: date,
-) -> tuple[dict[str, str], dict[str, float], str]:
-    """Match Nested View Total Leaves Planned: distributed buckets first, else daily planned buckets, else raw overlap."""
+) -> tuple[dict[str, str], dict[str, float], dict[str, float], str]:
+    """
+    Returns (display_by_lower, planned_by_lower, unplanned_by_lower, source).
+    planned_by_lower is used for availability (reduces capacity).
+    unplanned_by_lower is shown in the UI but does NOT reduce capacity.
+    "Unknown" classification is treated as planned (conservative).
+    """
     display_by_lower: dict[str, str] = {}
-    leave_by_lower: DefaultDict[str, float] = defaultdict(float)
+    planned_by_lower: DefaultDict[str, float] = defaultdict(float)
+    unplanned_by_lower: DefaultDict[str, float] = defaultdict(float)
 
-    def track(name_raw: Any, hours: float) -> None:
+    def track(name_raw: Any, hours: float, classification: str = "Planned") -> None:
         raw_name = _to_text(name_raw)
         if not raw_name or hours <= 0:
             return
         key = raw_name.lower()
         display_by_lower.setdefault(key, raw_name)
-        leave_by_lower[key] += hours
+        if classification == "Unplanned":
+            unplanned_by_lower[key] += hours
+        else:
+            planned_by_lower[key] += hours
+
+    def _round_both() -> None:
+        for d in (planned_by_lower, unplanned_by_lower):
+            for lk in list(d.keys()):
+                d[lk] = _round_hours(float(d[lk]))
 
     distributed = list(snapshot.get("distributed_subtasks") or [])
     dist_used = False
@@ -702,12 +753,12 @@ def _nested_aligned_leave_by_assignee(
         if planned_h <= 0 and actual_h <= 0:
             continue
         dist_used = True
-        track(row.get("assignee"), planned_h)
+        clf = _to_text(row.get("leave_classification"))
+        track(row.get("assignee"), planned_h, clf)
 
     if dist_used:
-        for lk in leave_by_lower:
-            leave_by_lower[lk] = _round_hours(float(leave_by_lower[lk]))
-        return display_by_lower, dict(leave_by_lower), "distributed_subtasks"
+        _round_both()
+        return display_by_lower, dict(planned_by_lower), dict(unplanned_by_lower), "distributed_subtasks"
 
     daily = list(snapshot.get("daily") or [])
     embedded_used = False
@@ -722,12 +773,11 @@ def _nested_aligned_leave_by_assignee(
         if pt + pn <= 0:
             continue
         embedded_used = True
-        track(row.get("assignee"), pt + pn)
+        track(row.get("assignee"), pt + pn, "Planned")
 
     if embedded_used:
-        for lk in leave_by_lower:
-            leave_by_lower[lk] = _round_hours(float(leave_by_lower[lk]))
-        return display_by_lower, dict(leave_by_lower), "daily_planned_buckets"
+        _round_both()
+        return display_by_lower, dict(planned_by_lower), dict(unplanned_by_lower), "daily_planned_buckets"
 
     raw_tasks = list(snapshot.get("raw_subtasks") or [])
     raw_used = False
@@ -750,11 +800,11 @@ def _nested_aligned_leave_by_assignee(
         if planned_h <= 0 and actual_h <= 0:
             continue
         raw_used = True
-        track(row.get("assignee"), planned_h)
+        clf = _to_text(row.get("leave_classification"))
+        track(row.get("assignee"), planned_h, clf)
 
-    for lk in leave_by_lower:
-        leave_by_lower[lk] = _round_hours(float(leave_by_lower[lk]))
-    return display_by_lower, dict(leave_by_lower), ("raw_subtasks_overlap" if raw_used else "none")
+    _round_both()
+    return display_by_lower, dict(planned_by_lower), dict(unplanned_by_lower), ("raw_subtasks_overlap" if raw_used else "none")
 
 
 def build_workforce_month_payload(
@@ -765,6 +815,7 @@ def build_workforce_month_payload(
     *,
     selected_assignees: set[str] | None = None,
     capacity_profile_key: str | None = None,
+    jira_base: str = "",
 ) -> dict[str, Any]:
     requested_prof_key = _to_text(capacity_profile_key).strip()
     settings, profile_hint, applied_profile_key = _capacity_settings_for_calendar_month(
@@ -789,11 +840,16 @@ def build_workforce_month_payload(
         if run_id
         else {"daily": []}
     )
-    display_by_lower, leave_by_lower, leave_aggregate_source = _nested_aligned_leave_by_assignee(
+    display_by_lower, planned_by_lower, unplanned_by_lower, leave_aggregate_source = _nested_aligned_leave_by_assignee(
         snapshot,
         month_start,
         month_end,
     )
+    # Combined total for display purposes only; availability uses planned leaves only.
+    leave_by_lower: dict[str, float] = {
+        lk: _round_hours(planned_by_lower.get(lk, 0.0) + unplanned_by_lower.get(lk, 0.0))
+        for lk in set(planned_by_lower) | set(unplanned_by_lower)
+    }
     known_keys = sorted(display_by_lower.keys(), key=lambda k: display_by_lower[k].lower())
 
     filter_lowers: set[str] | None = None
@@ -803,25 +859,30 @@ def build_workforce_month_payload(
     if filter_lowers is None:
         k_sel = n_team
         capacity_hours = _round_hours(team_capacity_hours)
-        leave_hours = _round_hours(sum(float(leave_by_lower.get(k, 0.0)) for k in known_keys))
+        leave_hours = _round_hours(sum(float(planned_by_lower.get(k, 0.0)) for k in known_keys))
+        unplanned_leave_hours = _round_hours(sum(float(unplanned_by_lower.get(k, 0.0)) for k in known_keys))
         active_for_rows = list(known_keys)
     else:
         active_for_rows = sorted(filter_lowers, key=lambda k: display_by_lower.get(k, k).lower())
         k_sel = len(active_for_rows)
         capacity_hours = _round_hours(team_capacity_hours * (k_sel / n_team)) if n_team > 0 else 0.0
-        leave_hours = _round_hours(
-            sum(float(leave_by_lower.get(k, 0.0)) for k in filter_lowers)
-        )
+        leave_hours = _round_hours(sum(float(planned_by_lower.get(k, 0.0)) for k in filter_lowers))
+        unplanned_leave_hours = _round_hours(sum(float(unplanned_by_lower.get(k, 0.0)) for k in filter_lowers))
 
     assignee_rows: list[dict[str, Any]] = []
     for lk in active_for_rows:
         display = display_by_lower.get(lk) or lk
-        lev = float(leave_by_lower.get(lk, 0.0))
+        planned_lv = float(planned_by_lower.get(lk, 0.0))
+        unplanned_lv = float(unplanned_by_lower.get(lk, 0.0))
+        lev = planned_lv  # only planned leaves reduce availability
         assignee_rows.append(
             {
                 "name": display,
                 "leave_hours": _round_hours(lev),
                 "leave_days": _round_hours(lev / HOURS_PER_DAY),
+                "planned_leave_hours": _round_hours(planned_lv),
+                "unplanned_leave_hours": _round_hours(unplanned_lv),
+                "total_leave_hours": _round_hours(planned_lv + unplanned_lv),
                 "per_person_capacity_hours": per_person_cap,
                 "per_person_availability_hours": _round_hours(per_person_cap - lev),
             }
@@ -854,12 +915,15 @@ def build_workforce_month_payload(
     employee_options: list[dict[str, Any]] = []
     for name in option_names:
         rec = resignation_by_name.get(name) or {}
+        _nlk = name.lower()
         employee_options.append(
             {
                 "name": name,
                 "resigned": bool(rec.get("resigned")),
                 "resignation_date": rec.get("resignation_date"),
-                "leave_hours": _round_hours(float(leave_by_lower.get(name.lower(), 0.0))),
+                "leave_hours": _round_hours(float(planned_by_lower.get(_nlk, 0.0))),
+                "planned_leave_hours": _round_hours(float(planned_by_lower.get(_nlk, 0.0))),
+                "unplanned_leave_hours": _round_hours(float(unplanned_by_lower.get(_nlk, 0.0))),
             }
         )
     for row in assignee_rows:
@@ -889,7 +953,9 @@ def build_workforce_month_payload(
                     "name": disp_name,
                     "resigned": bool(rec_m.get("resigned")),
                     "resignation_date": rec_m.get("resignation_date"),
-                    "leave_hours": _round_hours(float(leave_by_lower.get(lk, 0.0))),
+                    "leave_hours": _round_hours(float(planned_by_lower.get(lk, 0.0))),
+                    "planned_leave_hours": _round_hours(float(planned_by_lower.get(lk, 0.0))),
+                    "unplanned_leave_hours": _round_hours(float(unplanned_by_lower.get(lk, 0.0))),
                 }
             )
             grouped_name_lower.add(disp_name.casefold())
@@ -906,6 +972,7 @@ def build_workforce_month_payload(
     tree_ungrouped = [dict(e) for e in employee_options if _to_text(e.get("name")).casefold() not in grouped_name_lower]
     employee_tree = {"teams": teams_sections, "ungrouped": tree_ungrouped}
 
+    _jira_base = _to_text(jira_base).rstrip("/")
     daily_leaves: list[dict[str, Any]] = []
     dist_rows = list(snapshot.get("distributed_subtasks") or [])
     if dist_rows:
@@ -918,12 +985,16 @@ def build_workforce_month_payload(
             _ph = max(0.0, float(_row.get("original_estimate_hours") or 0.0))
             if _ph <= 0:
                 continue
+            _ik = _to_text(_row.get("issue_key")).upper()
             daily_leaves.append({
                 "assignee": _to_text(_row.get("assignee")),
                 "date": _bucket.isoformat(),
                 "hours": _round_hours(_ph),
                 "leave_type": _to_text(_row.get("leave_type_raw")),
+                "leave_classification": _to_text(_row.get("leave_classification")),
                 "summary": _to_text(_row.get("summary")),
+                "issue_key": _ik,
+                "jira_url": f"{_jira_base}/browse/{_ik}" if _jira_base and _ik else "",
             })
     else:
         for _row in list(snapshot.get("daily") or []):
@@ -942,7 +1013,10 @@ def build_workforce_month_payload(
                 "date": _day.isoformat(),
                 "hours": _round_hours(_total),
                 "leave_type": "",
+                "leave_classification": "Planned",
                 "summary": "",
+                "issue_key": "",
+                "jira_url": "",
             })
 
     if profile_hint == "selected_profile":
@@ -989,6 +1063,12 @@ def build_workforce_month_payload(
         "capacity_days": _round_hours(capacity_hours / HOURS_PER_DAY),
         "leave_hours": leave_hours,
         "leave_days": _round_hours(leave_hours / HOURS_PER_DAY),
+        "planned_leave_hours": leave_hours,
+        "planned_leave_days": _round_hours(leave_hours / HOURS_PER_DAY),
+        "unplanned_leave_hours": unplanned_leave_hours,
+        "unplanned_leave_days": _round_hours(unplanned_leave_hours / HOURS_PER_DAY),
+        "total_leave_hours": _round_hours(leave_hours + unplanned_leave_hours),
+        "total_leave_days": _round_hours((leave_hours + unplanned_leave_hours) / HOURS_PER_DAY),
         "leave_aggregate_source": leave_aggregate_source,
         "availability_hours": availability_hours,
         "availability_days": _round_hours(availability_hours / HOURS_PER_DAY),
@@ -998,7 +1078,7 @@ def build_workforce_month_payload(
         "employee_tree": employee_tree,
         "daily_leaves": daily_leaves,
         "support_team": _build_support_team_payload(
-            db_path, leave_by_lower, display_by_lower, per_person_cap, availability_hours,
+            db_path, planned_by_lower, unplanned_by_lower, display_by_lower, per_person_cap, availability_hours,
         ),
         "meta": {
             "capacity_basis": cap_basis,
@@ -1263,7 +1343,8 @@ def _load_all_jira_epic_rows(
 
 def _build_support_team_payload(
     db_path: Path,
-    leave_by_lower: dict[str, float],
+    planned_by_lower: dict[str, float],
+    unplanned_by_lower: dict[str, float],
     display_by_lower: dict[str, str],
     per_person_cap: float,
     total_availability_hours: float,
@@ -1272,7 +1353,9 @@ def _build_support_team_payload(
     member_rows: list[dict[str, Any]] = []
     for name in members:
         lk = name.lower()
-        lv = _round_hours(float(leave_by_lower.get(lk, 0.0)))
+        planned_lv = _round_hours(float(planned_by_lower.get(lk, 0.0)))
+        unplanned_lv = _round_hours(float(unplanned_by_lower.get(lk, 0.0)))
+        lv = planned_lv  # only planned leaves reduce availability
         cap = per_person_cap
         avail = _round_hours(cap - lv)
         display = display_by_lower.get(lk) or name
@@ -1282,11 +1365,15 @@ def _build_support_team_payload(
             "capacity_days": _round_hours(cap / HOURS_PER_DAY),
             "leave_hours": lv,
             "leave_days": _round_hours(lv / HOURS_PER_DAY),
+            "planned_leave_hours": planned_lv,
+            "unplanned_leave_hours": unplanned_lv,
+            "total_leave_hours": _round_hours(planned_lv + unplanned_lv),
             "availability_hours": avail,
             "availability_days": _round_hours(avail / HOURS_PER_DAY),
         })
     total_support_cap = _round_hours(sum(r["capacity_hours"] for r in member_rows))
     total_support_leave = _round_hours(sum(r["leave_hours"] for r in member_rows))
+    total_support_unplanned = _round_hours(sum(r["unplanned_leave_hours"] for r in member_rows))
     total_support_avail = _round_hours(sum(r["availability_hours"] for r in member_rows))
     avail_for_features = _round_hours(total_availability_hours - total_support_avail)
     return {
@@ -1296,6 +1383,8 @@ def _build_support_team_payload(
         "total_capacity_days": _round_hours(total_support_cap / HOURS_PER_DAY),
         "total_leave_hours": total_support_leave,
         "total_leave_days": _round_hours(total_support_leave / HOURS_PER_DAY),
+        "total_planned_leave_hours": total_support_leave,
+        "total_unplanned_leave_hours": total_support_unplanned,
         "total_availability_hours": total_support_avail,
         "total_availability_days": _round_hours(total_support_avail / HOURS_PER_DAY),
         "availability_for_features_hours": avail_for_features,
@@ -1461,7 +1550,7 @@ def build_monthly_epic_plan_payload(
         excluded_epics.sort(key=lambda e: (_to_text(e.get("project_name")).lower(), _to_text(e.get("approved_start")), _to_text(e.get("epic_key"))))
         by_project_rows = _build_by_project_rows(by_project)
         rounded_totals = _round_totals(totals)
-        workforce = build_workforce_month_payload(db_path, month_start, month_end, run_id, selected_assignees=selected_assignees, capacity_profile_key=capacity_profile_key)
+        workforce = build_workforce_month_payload(db_path, month_start, month_end, run_id, selected_assignees=selected_assignees, capacity_profile_key=capacity_profile_key, jira_base=jira_base)
         return {
             "month": month, "from_date": month_start.isoformat(), "to_date": month_end.isoformat(),
             "canonical_run_id": run_id, "selected_projects": sorted(selected_project_keys),
@@ -1762,6 +1851,7 @@ def build_monthly_epic_plan_payload(
         db_path, month_start, month_end, run_id,
         selected_assignees=selected_assignees,
         capacity_profile_key=capacity_profile_key,
+        jira_base=jira_base,
     )
     return {
         "month": month,

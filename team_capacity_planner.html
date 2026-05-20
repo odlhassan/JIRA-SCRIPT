@@ -890,6 +890,10 @@
     .wb-planned { background: #3b82f6; }
     .wb-logged  { background: #8b5cf6; }
     .wb-avail   { background: var(--avail); }
+    .wb-remaining-pos { background: #22c55e; }
+    .wb-remaining-neg { background: #ef4444; }
+    .work-bar-val.val-over { color: #dc2626; }
+    .work-bar-val.val-ok   { color: #16a34a; }
     .work-bar-val { min-width: 44px; font-size: 11px; font-weight: 600; color: var(--text); text-align: right; }
     .stat-toggle { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: #f8fafc; }
     .stat-toggle button {
@@ -1329,10 +1333,18 @@
     const plannedHrs = m.subtask_planned_hours != null ? m.subtask_planned_hours : (m.planned_hours || 0);
     const loggedHrs  = m.logged_hours  || 0;
 
-    const workRef = Math.max(plannedHrs, av, loggedHrs, 1);
-    const wbPlanned = Math.min(100, Math.round(plannedHrs / workRef * 100));
-    const wbLogged  = Math.min(100, Math.round(loggedHrs  / workRef * 100));
-    const wbAvail   = Math.min(100, Math.round(av          / workRef * 100));
+    const remaining  = av - plannedHrs;
+    const workRef = Math.max(plannedHrs, av, loggedHrs, Math.abs(remaining), 1);
+    const wbPlanned   = Math.min(100, Math.round(plannedHrs          / workRef * 100));
+    const wbLogged    = Math.min(100, Math.round(loggedHrs           / workRef * 100));
+    const wbRemaining = Math.min(100, Math.round(Math.abs(remaining) / workRef * 100));
+    const remainingClass = remaining >= 0 ? 'wb-remaining-pos' : 'wb-remaining-neg';
+    const remainingValClass = remaining >= 0 ? 'val-ok' : 'val-over';
+    const remainingSign = remaining >= 0 ? '+' : '−';
+    const remainingFmt = `${remainingSign}${fmtStatHrs(Math.abs(remaining), d)}`;
+    const remainingTitle = remaining >= 0
+      ? `${fmtStatHrs(remaining, d)} remaining after planned work`
+      : `${fmtStatHrs(Math.abs(remaining), d)} over capacity`;
     const workBarsHtml = `<div class="work-bars">
       <div class="work-bar-row">
         <div class="work-bar-label">Planned</div>
@@ -1345,9 +1357,9 @@
         <div class="work-bar-val">${fmtStatHrs(loggedHrs, d)}</div>
       </div>
       <div class="work-bar-row">
-        <div class="work-bar-label">Available</div>
-        <div class="work-bar-track"><div class="work-bar-fill wb-avail" style="width:${wbAvail}%"></div></div>
-        <div class="work-bar-val">${availHrsFmt}</div>
+        <div class="work-bar-label">Remaining</div>
+        <div class="work-bar-track"><div class="work-bar-fill ${remainingClass}" style="width:${wbRemaining}%" title="${remainingTitle}"></div></div>
+        <div class="work-bar-val ${remainingValClass}" title="${remainingTitle}">${remainingFmt}</div>
       </div>
     </div>`;
 

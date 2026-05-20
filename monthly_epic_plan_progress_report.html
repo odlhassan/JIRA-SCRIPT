@@ -2220,6 +2220,16 @@
       white-space: nowrap;
     }
     .support-category-badge .material-symbols-outlined { font-size: 12px; }
+    .support-leave-link {
+      cursor: pointer;
+      color: #b45309;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      border-bottom: 1px dashed #f59e0b;
+      text-decoration: none;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .support-leave-link:hover { color: #92400e; border-color: #92400e; }
 
     /* Summary cards row for Available Hours for New Features */
     .features-cards {
@@ -3489,9 +3499,16 @@
       if (els.kpiWfCapacityLabel) els.kpiWfCapacityLabel.textContent = "Capacity (" + lab + ")";
       if (els.kpiWfCapacity) els.kpiWfCapacity.textContent = formatNumber(cap);
       if (els.kpiWfCapDetail) els.kpiWfCapDetail.textContent = n > 0 ? n + " employees × profile rate" : "";
-      if (els.kpiWfLeaveLabel) els.kpiWfLeaveLabel.textContent = "Total Leaves (" + lab + ")";
-      if (els.kpiWfLeave) els.kpiWfLeave.textContent = formatNumber(lv);
-      if (els.kpiWfLeaveDetail) els.kpiWfLeaveDetail.textContent = "in " + monthDisplayName(monthStr);
+      const plannedLv = dayMode ? Number(payload.planned_leave_days || 0) : Number(payload.planned_leave_hours || 0);
+      const unplannedLv = dayMode ? Number(payload.unplanned_leave_days || 0) : Number(payload.unplanned_leave_hours || 0);
+      const totalLv = dayMode ? Number(payload.total_leave_days || 0) : Number(payload.total_leave_hours || 0);
+      if (els.kpiWfLeaveLabel) els.kpiWfLeaveLabel.textContent = "Leaves (" + lab + ")";
+      if (els.kpiWfLeave) els.kpiWfLeave.textContent = formatNumber(plannedLv);
+      if (els.kpiWfLeaveDetail) {
+        const parts = ["planned · deducts from availability"];
+        if (unplannedLv > 0) parts.push(formatNumber(unplannedLv) + " " + lab + " unplanned (not deducted)");
+        els.kpiWfLeaveDetail.textContent = parts.join(" | ");
+      }
       if (els.kpiWfAvailLabel) els.kpiWfAvailLabel.textContent = "Availability (" + lab + ")";
       if (els.kpiWfAvailability) els.kpiWfAvailability.textContent = formatNumber(av);
 
@@ -3705,6 +3722,27 @@
       document.body.style.overflow = "";
     }
 
+    function openSupportMemberLeavesDrawer(memberName) {
+      const wf = (latestPayload && latestPayload.workforce) || {};
+      const dailyLeaves = Array.isArray(wf.daily_leaves) ? wf.daily_leaves : [];
+      const memberLower = memberName.trim().toLowerCase();
+      const filtered = dailyLeaves.filter(function (row) {
+        return String(row.assignee || "").trim().toLowerCase() === memberLower;
+      });
+      // Build a synthetic wf object with only this member's leaves
+      const syntheticWf = Object.assign({}, wf, { daily_leaves: filtered });
+      renderLeavesDrawerContent(syntheticWf);
+      // Override the title to show the member name
+      const titleEl = document.getElementById("lv-drawer-title-text");
+      if (titleEl) {
+        const monthName = els.month ? monthDisplayName(els.month.value) : "";
+        titleEl.textContent = "Leaves — " + memberName + (monthName ? " · " + monthName : "");
+      }
+      if (els.leavesOverlay) els.leavesOverlay.classList.add("is-open");
+      document.body.style.overflow = "hidden";
+      if (els.lvSearch) els.lvSearch.value = "";
+    }
+
     function buildLeavesIndex(wf) {
       const dailyLeaves = Array.isArray((wf || {}).daily_leaves) ? wf.daily_leaves : [];
       const byAssignee = Object.create(null);
@@ -3729,6 +3767,21 @@
       const totalH = sortedNames.reduce(function (s, n) { return s + byAssignee[n].total; }, 0);
       const totalD = totalH / 8;
       const monthName = monthDisplayName(monthStr);
+
+      // Compute planned/unplanned totals from individual rows
+      const allDays = sortedNames.reduce(function (acc, n) { return acc.concat(byAssignee[n].days); }, []);
+      const plannedH = allDays.reduce(function (s, d) {
+        const cls = String(d.leave_classification || "").toLowerCase();
+        return cls === "unplanned" ? s : s + Number(d.hours || 0);
+      }, 0);
+      const unplannedH = allDays.reduce(function (s, d) {
+        const cls = String(d.leave_classification || "").toLowerCase();
+        return cls === "unplanned" ? s + Number(d.hours || 0) : s;
+      }, 0);
+      const plannedVal = dayMode ? plannedH / 8 : plannedH;
+      const unplannedVal = dayMode ? unplannedH / 8 : unplannedH;
+      const totalVal = dayMode ? totalD : totalH;
+
       const titleEl = document.getElementById("lv-drawer-title-text");
       if (titleEl) titleEl.textContent = "Leave Details — " + monthName;
       if (els.lvSummaryBar) {
@@ -3737,7 +3790,13 @@
         const avgD = avgH / 8;
         els.lvSummaryBar.innerHTML =
           '<div class="lv-summary-stat"><span class="lv-s-label">Total Leave</span><span class="lv-s-value">'
-          + formatNumber(dayMode ? totalD : totalH) + " " + lab + "</span></div>"
+          + formatNumber(totalVal) + " " + lab + "</span></div>"
+          + '<div class="lv-summary-stat" title="Only planned leaves deduct from capacity"><span class="lv-s-label" style="color:#059669;">✓ Planned</span><span class="lv-s-value" style="color:#059669;">'
+          + formatNumber(plannedVal) + " " + lab + "</span></div>"
+          + (unplannedH > 0
+            ? '<div class="lv-summary-stat" title="Unplanned leaves do not deduct from capacity"><span class="lv-s-label" style="color:#d97706;">⚠ Unplanned</span><span class="lv-s-value" style="color:#d97706;">'
+              + formatNumber(unplannedVal) + " " + lab + "</span></div>"
+            : "")
           + '<div class="lv-summary-stat"><span class="lv-s-label">Employees</span><span class="lv-s-value">'
           + countWithLeave + "</span></div>"
           + (countWithLeave > 0
@@ -3768,12 +3827,24 @@
             const typeTag = d.leave_type
               ? '<span class="lv-type-tag">' + esc(d.leave_type) + "</span> "
               : "";
+            const clsBadge = (function() {
+              const cls = String(d.leave_classification || "").toLowerCase();
+              if (cls === "unplanned") return '<span style="display:inline-block;padding:1px 5px;border-radius:9px;font-size:0.68rem;font-weight:700;background:#fef3c7;color:#b45309;border:1px solid #fde68a;margin-left:4px;">Unplanned</span>';
+              if (cls === "planned") return '<span style="display:inline-block;padding:1px 5px;border-radius:9px;font-size:0.68rem;font-weight:700;background:#d1fae5;color:#065f46;border:1px solid #a7f3d0;margin-left:4px;">Planned</span>';
+              return "";
+            })();
             const note = d.summary
               ? '<span style="font-size:0.76rem;color:var(--muted);">' + esc(d.summary) + "</span>"
               : "";
+            const jiraKeyHtml = d.issue_key
+              ? (d.jira_url
+                  ? '<a href="' + esc(d.jira_url) + '" target="_blank" rel="noopener" style="color:#155e91;font-family:monospace;font-size:0.78rem;font-weight:700;text-decoration:none;" title="Open in Jira">' + esc(d.issue_key) + ' <span style="font-size:0.65rem;opacity:0.7;">↗</span></a>'
+                  : '<span style="font-family:monospace;font-size:0.78rem;color:var(--muted);">' + esc(d.issue_key) + "</span>")
+              : '<span style="color:#bbb;font-size:0.75rem;">—</span>';
             return "<tr>"
               + "<td>" + esc(String(d.date || "")) + "</td>"
-              + "<td>" + typeTag + note + "</td>"
+              + "<td>" + jiraKeyHtml + "</td>"
+              + "<td>" + typeTag + clsBadge + " " + note + "</td>"
               + '<td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:700;color:#b45309;">'
               + formatNumber(dShow) + " " + lab + "</td>"
               + "</tr>";
@@ -3786,7 +3857,7 @@
           + '<span class="lv-person-total">' + formatNumber(totalShow) + " " + lab + " total</span>"
           + '<span class="material-symbols-outlined lv-expand-icon">expand_more</span>'
           + "</div>"
-          + '<table class="lv-days-table"><thead><tr><th>Date</th><th>Type / Note</th>'
+          + '<table class="lv-days-table"><thead><tr><th>Date</th><th>Jira Key</th><th>Type / Note</th>'
           + '<th style="text-align:right;">Amount</th></tr></thead>'
           + "<tbody>" + daysHtml + "</tbody></table>"
           + "</div>"
@@ -4029,27 +4100,49 @@
       if (hasMembers && els.supportTeamTbody) {
         const rowsHtml = rows.map(function (r) {
           const cap = dayMode ? Number(r.capacity_days || 0) : Number(r.capacity_hours || 0);
-          const lv = dayMode ? Number(r.leave_days || 0) : Number(r.leave_hours || 0);
+          const plannedLv = dayMode ? Number(r.planned_leave_hours || 0) / 8 : Number(r.planned_leave_hours || 0);
+          const unplannedLv = dayMode ? Number(r.unplanned_leave_hours || 0) / 8 : Number(r.unplanned_leave_hours || 0);
+          const lv = plannedLv; // availability uses planned only
           const av = dayMode ? Number(r.availability_days || 0) : Number(r.availability_hours || 0);
+          const lvBreakdown = unplannedLv > 0
+            ? formatNumber(plannedLv) + " " + lab + " planned + " + formatNumber(unplannedLv) + " " + lab + " unplanned"
+            : formatNumber(plannedLv) + " " + lab + " (all planned)";
+          const lvCell = (plannedLv + unplannedLv) > 0
+            ? '<td class="num"><span class="support-leave-link" data-member="' + esc(String(r.name || "")) + '" title="View leave subtasks · ' + lvBreakdown + '">'
+              + formatNumber(plannedLv) + " " + lab
+              + (unplannedLv > 0 ? ' <span style="font-size:0.7rem;color:#d97706;" title="' + formatNumber(unplannedLv) + ' ' + lab + ' unplanned">+' + formatNumber(unplannedLv) + "⚠</span>" : "")
+              + "</span></td>"
+            : '<td class="num">' + formatNumber(lv) + " " + lab + "</td>";
           return "<tr>"
             + "<td><strong>" + esc(String(r.name || "")) + "</strong></td>"
             + '<td><span class="support-category-badge"><span class="material-symbols-outlined">support_agent</span>Technical Support</span></td>'
             + '<td class="num">' + formatNumber(cap) + " " + lab + "</td>"
-            + '<td class="num">' + formatNumber(lv) + " " + lab + "</td>"
+            + lvCell
             + '<td class="num">' + formatNumber(av) + " " + lab + "</td>"
             + "</tr>";
         }).join("");
         const totCap = dayMode ? Number(st.total_capacity_days || 0) : Number(st.total_capacity_hours || 0);
-        const totLv = dayMode ? Number(st.total_leave_days || 0) : Number(st.total_leave_hours || 0);
+        const totPlannedLv = dayMode ? Number(st.total_planned_leave_hours || 0) / 8 : Number(st.total_planned_leave_hours || 0);
+        const totUnplannedLv = dayMode ? Number(st.total_unplanned_leave_hours || 0) / 8 : Number(st.total_unplanned_leave_hours || 0);
+        const totLv = totPlannedLv;
         const totAv = dayMode ? Number(st.total_availability_days || 0) : Number(st.total_availability_hours || 0);
+        const totLvLabel = totUnplannedLv > 0
+          ? formatNumber(totPlannedLv) + " " + lab + " <span style='font-size:0.7rem;color:#d97706;'>+" + formatNumber(totUnplannedLv) + "⚠</span>"
+          : formatNumber(totPlannedLv) + " " + lab;
         els.supportTeamTbody.innerHTML = rowsHtml
           + '<tr class="tfoot-row">'
           + "<td><strong>Total Technical Support</strong></td>"
           + '<td><span class="support-category-badge"><span class="material-symbols-outlined">support_agent</span>' + rows.length + " members</span></td>"
           + '<td class="num">' + formatNumber(totCap) + " " + lab + "</td>"
-          + '<td class="num">' + formatNumber(totLv) + " " + lab + "</td>"
+          + '<td class="num">' + totLvLabel + "</td>"
           + '<td class="num">' + formatNumber(totAv) + " " + lab + "</td>"
           + "</tr>";
+        // Wire up leave-link clicks (event delegation)
+        els.supportTeamTbody.querySelectorAll(".support-leave-link").forEach(function (el) {
+          el.addEventListener("click", function () {
+            openSupportMemberLeavesDrawer(String(this.getAttribute("data-member") || ""));
+          });
+        });
       }
 
       // Summary cards
@@ -5408,56 +5501,154 @@
         + wlBarsHtml
         + '</div>';
 
-      // ── Stories detail table ──────────────────────────────────────
+      // ── Stories detail table — nested story → subtask → worklogs ────
       let storyTableHtml = "";
       if (stories.length) {
-        let tableBody = "";
-        let lastParentKey = null;
+        // Group: story key → { storyRow, subtasks[] }
+        // Items that have parent_story_key are subtasks; items without are stories
+        const storyGroups = []; // [{storyItem, subtasks:[]}]
+        const storyMap = Object.create(null); // storyKey → index in storyGroups
+
         stories.forEach(function(s) {
-          const isChildItem = ("parent_story_key" in s);
-          const ps = isChildItem ? (s.parent_story_key || "") : "";
-          // Story group header (synthetic row) when a new parent story starts
-          if (ps && ps !== lastParentKey) {
-            lastParentKey = ps;
-            const psLink = s.story_jira_url
-              ? '<a href="' + esc(s.story_jira_url) + '" target="_blank" rel="noopener" style="color:#155e91;font-weight:700;">' + esc(ps) + '</a>'
-              : '<strong>' + esc(ps) + '</strong>';
-            const psSummary = s.parent_story_summary ? ' &ndash; ' + esc(s.parent_story_summary) : '';
-            tableBody += '<tr class="story-group-hdr"><td colspan="6">'
-              + '<span class="material-symbols-outlined" style="font-size:13px;vertical-align:middle;margin-right:4px;color:#0369a1;">task_alt</span>'
-              + psLink + psSummary + '</td></tr>';
-          } else if (!ps) {
-            lastParentKey = null;
+          const ps = String(s.parent_story_key || "").trim();
+          if (!ps) {
+            // standalone story (no subtasks)
+            const idx = storyGroups.length;
+            storyGroups.push({ storyItem: s, subtasks: [] });
+            storyMap[String(s.issue_key || "").toUpperCase()] = idx;
+          } else {
+            if (storyMap[ps.toUpperCase()] === undefined) {
+              // create group header from meta on this subtask
+              const idx = storyGroups.length;
+              storyGroups.push({
+                storyItem: {
+                  issue_key: ps,
+                  summary: s.parent_story_summary || "",
+                  jira_url: s.story_jira_url || "",
+                  status: "",
+                  start_date: "",
+                  due_date: "",
+                  planned_hours: null,
+                  actual_completed_date: "",
+                  issue_type: "Story",
+                  worklogs: [],
+                },
+                subtasks: [],
+              });
+              storyMap[ps.toUpperCase()] = idx;
+            }
+            storyGroups[storyMap[ps.toUpperCase()]].subtasks.push(s);
+          }
+        });
+
+        const epicDetailId = epicKey.replace(/[^a-zA-Z0-9]/g, "_");
+        let tableBody = "";
+        storyGroups.forEach(function(grp, gi) {
+          const si = grp.storyItem;
+          const subs = grp.subtasks;
+          const hasExpand = subs.length > 0;
+          const storyId = epicDetailId + "_sg_" + gi;
+
+          const siKey = String(si.issue_key || "");
+          const siLink = si.jira_url
+            ? '<a href="' + esc(si.jira_url) + '" target="_blank" rel="noopener" style="color:#155e91;text-decoration:none;font-family:monospace;font-size:0.75rem;font-weight:700;">' + esc(siKey) + '</a>'
+            : '<span style="font-family:monospace;font-size:0.75rem;color:#0369a1;font-weight:700;">' + esc(siKey) + '</span>';
+
+          const siStatus = String(si.status || "").trim();
+          const siCat = _classifyStatus(siStatus);
+          const siDot = siStatus
+            ? '<span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:' + statusColors[siCat] + ';margin-right:5px;vertical-align:middle;"></span>'
+            : '';
+          const siHours = si.planned_hours != null ? formatNumber(parseFloat(si.planned_hours) || 0) + "h" : "—";
+          const siDoneDate = si.actual_completed_date || "—";
+
+          // worklog total for story itself
+          const siWls = Array.isArray(si.worklogs) ? si.worklogs : [];
+          const siWlTotal = siWls.reduce(function(acc, w) { return acc + Number(w.hours || 0); }, 0);
+
+          const expandBtn = hasExpand
+            ? '<button class="epic-expand-btn" onclick="toggleEpicGroup(\'' + storyId + '\')" id="' + storyId + '_btn" title="Expand/collapse subtasks" style="background:none;border:none;cursor:pointer;padding:0 4px;color:#0369a1;font-size:0.8rem;line-height:1;vertical-align:middle;">▶</button> '
+            : '<span style="display:inline-block;width:18px;"></span> ';
+
+          // Story row
+          tableBody += '<tr class="story-hdr-row" style="background:#f0f7ff;">'
+            + '<td style="white-space:nowrap;">' + expandBtn + siLink + '</td>'
+            + '<td><span style="font-size:0.68rem;font-weight:700;background:#e0f2fe;color:#0369a1;border:1px solid #bae6fd;border-radius:999px;padding:1px 6px;margin-right:5px;">Story</span>' + esc(si.summary || "") + '</td>'
+            + '<td>' + siDot + esc(siStatus || "—") + '</td>'
+            + '<td style="color:#64748b;">' + esc(si.start_date || "—") + '</td>'
+            + '<td style="color:#64748b;">' + esc(si.due_date || "—") + '</td>'
+            + '<td style="color:#64748b;">' + esc(siDoneDate) + '</td>'
+            + '<td style="text-align:right;">' + siHours
+              + (siWlTotal > 0 ? '<br><span style="color:#16a34a;font-size:0.7rem;">' + formatNumber(siWlTotal) + 'h logged</span>' : '')
+            + '</td>'
+            + '</tr>';
+
+          // Story-level worklogs (if any)
+          if (siWls.length) {
+            const wlId = storyId + "_wl_story";
+            siWls.forEach(function(wl, wi) {
+              tableBody += '<tr class="wl-row" id="' + wlId + '_' + wi + '" style="display:none;background:#f9fffe;">'
+                + '<td colspan="2" style="padding-left:32px;font-size:0.75rem;color:#334155;">'
+                  + '<span style="color:#94a3b8;font-size:0.7rem;font-family:monospace;">📅 ' + esc(wl.date || "") + '</span>'
+                  + ' · <span style="color:#0f766e;">' + esc(wl.author || "") + '</span>'
+                + '</td>'
+                + '<td colspan="4" style="text-align:right;font-size:0.75rem;color:#16a34a;font-weight:700;">' + formatNumber(Number(wl.hours || 0)) + 'h</td>'
+                + '</tr>';
+            });
           }
 
-          const isSubtask = !!ps;
-          const cat = _classifyStatus(s.jira_status || s.status || "");
-          const dotStyle = 'style="display:inline-block;width:8px;height:8px;border-radius:2px;background:' + statusColors[cat] + ';margin-right:5px;vertical-align:middle;"';
-          const stKey = s.issue_key || s.key || "";
-          const stLink = s.jira_url
-            ? '<a href="' + esc(s.jira_url) + '" target="_blank" rel="noopener" style="color:#155e91;text-decoration:none;font-family:monospace;font-size:0.75rem;">' + esc(stKey) + '</a>'
-            : '<span style="font-family:monospace;font-size:0.75rem;color:#64748b;">' + esc(stKey) + '</span>';
-          const stStatus = s.jira_status || s.status || "\u2014";
-          const stStart  = s.start_date  || s.approved_start || "\u2014";
-          const stDue    = s.due_date    || s.approved_due   || "\u2014";
-          const stHours  = s.planned_hours != null ? formatNumber(parseFloat(s.planned_hours) || 0) + "h" : (s.has_hours ? "\u2713" : "\u2014");
-          const typePill = isSubtask
-            ? '<span style="display:inline-block;font-size:0.68rem;font-weight:700;background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;border-radius:999px;padding:1px 6px;margin-right:6px;white-space:nowrap;">Sub-task</span>'
-            : '<span style="display:inline-block;font-size:0.68rem;font-weight:700;background:#f0f9ff;color:#0369a1;border:1px solid #bae6fd;border-radius:999px;padding:1px 6px;margin-right:6px;white-space:nowrap;">Story</span>';
-          tableBody += '<tr class="' + (isSubtask ? 'subtask-row' : '') + '">'
-            + '<td>' + stLink + '</td>'
-            + '<td>' + typePill + esc(s.summary || s.name || "") + '</td>'
-            + '<td><span ' + dotStyle + '></span>' + esc(stStatus) + '</td>'
-            + '<td style="color:#64748b;">' + esc(stStart) + '</td>'
-            + '<td style="color:#64748b;">' + esc(stDue) + '</td>'
-            + '<td style="text-align:right;">' + esc(stHours) + '</td>'
-            + '</tr>';
+          // Subtask rows
+          subs.forEach(function(sub, sti) {
+            const subId = storyId + "_sub_" + sti;
+            const subKey = String(sub.issue_key || "");
+            const subLink = sub.jira_url
+              ? '<a href="' + esc(sub.jira_url) + '" target="_blank" rel="noopener" style="color:#155e91;text-decoration:none;font-family:monospace;font-size:0.73rem;">' + esc(subKey) + '</a>'
+              : '<span style="font-family:monospace;font-size:0.73rem;color:#64748b;">' + esc(subKey) + '</span>';
+
+            const subStatus = String(sub.status || "").trim();
+            const subCat = _classifyStatus(subStatus);
+            const subDot = '<span style="display:inline-block;width:7px;height:7px;border-radius:2px;background:' + statusColors[subCat] + ';margin-right:5px;vertical-align:middle;"></span>';
+            const subHours = sub.planned_hours != null ? formatNumber(parseFloat(sub.planned_hours) || 0) + "h" : "—";
+            const subDoneDate = sub.actual_completed_date || "—";
+
+            const subWls = Array.isArray(sub.worklogs) ? sub.worklogs : [];
+            const subWlTotal = subWls.reduce(function(acc, w) { return acc + Number(w.hours || 0); }, 0);
+            const hasSubWls = subWls.length > 0;
+            const subExpandBtn = hasSubWls
+              ? '<button class="epic-expand-btn" onclick="toggleEpicSubGroup(\'' + subId + '\')" id="' + subId + '_btn" title="Expand/collapse worklogs" style="background:none;border:none;cursor:pointer;padding:0 3px;color:#7c3aed;font-size:0.72rem;line-height:1;vertical-align:middle;">▶</button> '
+              : '<span style="display:inline-block;width:16px;"></span> ';
+
+            tableBody += '<tr class="subtask-row epic-group-row" data-group="' + storyId + '" style="display:none;background:#fafbff;">'
+              + '<td style="white-space:nowrap;padding-left:20px;">' + subExpandBtn + subLink + '</td>'
+              + '<td style="padding-left:4px;"><span style="font-size:0.66rem;font-weight:700;background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;border-radius:999px;padding:1px 5px;margin-right:4px;white-space:nowrap;">Sub-task</span>' + esc(sub.summary || "") + '</td>'
+              + '<td>' + subDot + esc(subStatus || "—") + '</td>'
+              + '<td style="color:#64748b;">' + esc(sub.start_date || "—") + '</td>'
+              + '<td style="color:#64748b;">' + esc(sub.due_date || "—") + '</td>'
+              + '<td style="color:#64748b;">' + esc(subDoneDate) + '</td>'
+              + '<td style="text-align:right;">' + subHours
+                + (subWlTotal > 0 ? '<br><span style="color:#16a34a;font-size:0.7rem;">' + formatNumber(subWlTotal) + 'h logged</span>' : '')
+              + '</td>'
+              + '</tr>';
+
+            // Worklog rows for this subtask
+            subWls.forEach(function(wl, wi) {
+              tableBody += '<tr class="wl-row epic-group-row epic-subwl-row" data-group="' + storyId + '" data-subgroup="' + subId + '" style="display:none;background:#fffbeb;">'
+                + '<td colspan="2" style="padding-left:44px;font-size:0.73rem;color:#334155;">'
+                  + '<span style="color:#94a3b8;font-size:0.7rem;font-family:monospace;">📅 ' + esc(wl.date || "") + '</span>'
+                  + ' · <span style="color:#7c3aed;">' + esc(wl.author || "") + '</span>'
+                + '</td>'
+                + '<td colspan="4" style="text-align:right;font-size:0.73rem;color:#16a34a;font-weight:700;">' + formatNumber(Number(wl.hours || 0)) + 'h</td>'
+                + '</tr>';
+            });
+          });
         });
-        storyTableHtml = '<div class="epic-detail-card" style="overflow:auto;max-height:420px;">'
-          + '<div class="epic-detail-card-title"><span class="material-symbols-outlined" style="font-size:14px;">list</span>Stories &amp; Tasks</div>'
+
+        storyTableHtml = '<div class="epic-detail-card" style="overflow:auto;max-height:500px;">'
+          + '<div class="epic-detail-card-title"><span class="material-symbols-outlined" style="font-size:14px;">list</span>Stories &amp; Tasks'
+          + ' <span style="font-size:0.72rem;font-weight:400;color:#64748b;margin-left:8px;">▶ = expand subtasks / worklogs</span></div>'
           + '<table class="epic-detail-table"><thead><tr>'
-          + '<th>Key</th><th>Summary</th><th>Status</th><th>Start</th><th>Due</th><th style="text-align:right;">Hours</th>'
-          + '</tr></thead><tbody>' + tableBody + '</tbody></table>'
+          + '<th>Key</th><th>Summary</th><th>Status</th><th>Start</th><th>Due</th><th>Done Date</th><th style="text-align:right;">Hours</th>'
+          + '</tr></thead><tbody id="epic-detail-tbody-' + epicDetailId + '">' + tableBody + '</tbody></table>'
           + '</div>';
       }
 
@@ -5478,6 +5669,25 @@
         + '<div class="epic-charts-row">' + storyStatusHtml + wlHtml + '</div>'
         + storyTableHtml
         + cfBox;
+    }
+
+    function toggleEpicGroup(groupId) {
+      const btn = document.getElementById(groupId + "_btn");
+      const rows = document.querySelectorAll(".epic-group-row[data-group='" + groupId + "']");
+      const isOpen = btn && btn.textContent.trim() === "▼";
+      rows.forEach(function(r) {
+        const isSubwl = r.classList.contains("epic-subwl-row");
+        r.style.display = (isOpen || isSubwl) ? "none" : "";
+      });
+      if (btn) btn.textContent = isOpen ? "▶" : "▼";
+    }
+
+    function toggleEpicSubGroup(subId) {
+      const btn = document.getElementById(subId + "_btn");
+      const rows = document.querySelectorAll(".epic-subwl-row[data-subgroup='" + subId + "']");
+      const isOpen = btn && btn.textContent.trim() === "▼";
+      rows.forEach(function(r) { r.style.display = isOpen ? "none" : ""; });
+      if (btn) btn.textContent = isOpen ? "▶" : "▼";
     }
 
     function _kpiCard(label, value, sub, color) {
