@@ -509,6 +509,36 @@ class MonthlyEpicPlanProgressTests(unittest.TestCase):
         self.assertIsNotNone(row_to_html)
         self.assertIn('const monthYm = els.month ? String(els.month.value || "").trim() : "";', row_to_html.group("body"))
 
+    def test_resource_planning_panel_present_in_html(self):
+        html_path = Path(__file__).resolve().parents[1] / "monthly_epic_plan_progress_report.html"
+        html = html_path.read_text(encoding="utf-8")
+
+        self.assertIn('id="res-summary-panel"', html)
+        self.assertIn('id="res-total-headcount"', html)
+        self.assertIn('id="res-total-capacity"', html)
+        self.assertIn('id="res-dev-headcount"', html)
+        self.assertIn('id="res-dev-capacity"', html)
+        self.assertIn('id="res-dev-leaves"', html)
+        self.assertIn('id="res-dev-avail"', html)
+        self.assertIn('id="res-support-group"', html)
+        self.assertIn('id="res-support-headcount"', html)
+        self.assertIn('id="res-support-avail"', html)
+        self.assertIn("function renderResourceSummary", html)
+        self.assertIn("_resSummaryState", html)
+        self.assertIn("Resource Planning", html)
+        self.assertIn("Total resources", html)
+        self.assertIn("Dev Resources", html)
+        self.assertIn("Support Resources", html)
+
+    def test_process_team_auto_exclusion_present_in_html(self):
+        html_path = Path(__file__).resolve().parents[1] / "monthly_epic_plan_progress_report.html"
+        html = html_path.read_text(encoding="utf-8")
+
+        self.assertIn("Auto-exclude Process team when no explicit filter is active", html)
+        self.assertIn(".includes(\"process\")", html)
+        self.assertIn("_didAutoExclude", html)
+        self.assertIn("setTimeout(loadSummary, 0)", html)
+
 
 if __name__ == "__main__":
     unittest.main()

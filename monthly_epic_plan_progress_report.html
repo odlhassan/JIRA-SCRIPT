@@ -2262,6 +2262,113 @@
     .features-card.good-highlight .value { color: #15803d; }
     .features-card .detail { margin-top: 5px; font-size: 0.82rem; font-weight: 600; color: var(--muted); line-height: 1.3; }
 
+    /* ── Resource Summary cards ───────────────────────────────────── */
+    .res-summary-body {
+      display: grid;
+      grid-template-columns: 1fr 1px 1fr;
+      gap: 0 24px;
+      margin-top: 6px;
+      align-items: start;
+    }
+    .res-summary-divider { background: var(--line); align-self: stretch; }
+    @media (max-width: 860px) {
+      .res-summary-body { grid-template-columns: 1fr; }
+      .res-summary-divider { height: 1px; width: 100%; }
+    }
+    .res-summary { display: flex; flex-direction: column; gap: 20px; }
+    .res-summary-right { display: flex; flex-direction: column; gap: 14px; }
+    .res-epic-heading { font-size: 1.05rem; font-weight: 700; color: #2d6aad; margin-bottom: 6px; }
+    .res-epic-grid { display: flex; flex-direction: column; gap: 12px; }
+    .res-epic-card {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 14px 18px;
+      background: var(--soft);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .res-epic-card.bf-card {
+      background: linear-gradient(135deg, #fff7ed 0%, #fef3e8 100%);
+      border-color: #fed7aa;
+    }
+    .res-epic-card.cf-card {
+      background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);
+      border-color: #fecaca;
+    }
+    .res-epic-card-label {
+      font-size: 0.72rem;
+      font-weight: 800;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .res-epic-card.bf-card .res-epic-card-label { color: #92400e; }
+    .res-epic-card.cf-card .res-epic-card-label { color: #991b1b; }
+    .res-epic-card-stats {
+      display: flex;
+      gap: 20px;
+      align-items: flex-end;
+      flex-wrap: wrap;
+    }
+    .res-epic-card-stat { display: flex; flex-direction: column; gap: 3px; }
+    .res-epic-card-stat-value {
+      font-size: 1.7rem;
+      font-weight: 700;
+      color: var(--title);
+      font-variant-numeric: tabular-nums;
+      line-height: 1;
+    }
+    .res-epic-card.bf-card .res-epic-card-stat-value { color: #c2410c; }
+    .res-epic-card.cf-card .res-epic-card-stat-value { color: #b91c1c; }
+    .res-epic-card-stat-sub {
+      font-size: 0.69rem;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      white-space: nowrap;
+    }
+    .res-epic-card-stat-sep {
+      width: 1px;
+      background: var(--line);
+      align-self: stretch;
+      margin: 2px 0;
+    }
+    .res-total-heading { font-size: 1.05rem; font-weight: 700; color: #2d6aad; margin-bottom: 10px; }
+    .res-total-cards { display: flex; flex-wrap: wrap; gap: 12px; }
+    .res-total-card {
+      background: #2d6aad;
+      color: #fff;
+      border-radius: 14px;
+      padding: 18px 28px;
+      min-width: 155px;
+      flex: 1 1 155px;
+      max-width: 230px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 5px;
+    }
+    .res-total-value { font-size: 1.9rem; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+    .res-card-sublabel { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.08em; opacity: 0.88; text-align: center; text-transform: uppercase; }
+    .res-group-heading { font-size: 0.8rem; font-weight: 800; letter-spacing: 0.06em; color: var(--text); margin-bottom: 10px; text-transform: uppercase; }
+    .res-group-cards { display: flex; flex-wrap: wrap; gap: 10px; }
+    .res-group-card {
+      background: #7aa8cf;
+      color: #fff;
+      border-radius: 14px;
+      padding: 14px 20px;
+      min-width: 130px;
+      flex: 1 1 130px;
+      max-width: 200px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 5px;
+    }
+    .res-group-value { font-size: 1.5rem; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+
     .support-empty {
       padding: 18px;
       text-align: center;
@@ -2590,6 +2697,145 @@
       </div>
     </section>
 
+    <section class="panel" id="res-summary-panel">
+      <h2 class="section-title">Resource Planning</h2>
+      <div class="res-summary-body">
+        <!-- LEFT: Resource data -->
+        <div class="res-summary-left">
+          <div class="res-summary">
+            <!-- Total resources -->
+            <div>
+              <div class="res-total-heading">Total resources</div>
+              <div class="res-total-cards">
+                <div class="res-total-card">
+                  <div class="res-total-value" id="res-total-headcount">0</div>
+                  <div class="res-card-sublabel">Head Count</div>
+                </div>
+                <div class="res-total-card">
+                  <div class="res-total-value" id="res-total-capacity">0</div>
+                  <div class="res-card-sublabel" id="res-total-capacity-label">Capacity (h)</div>
+                </div>
+              </div>
+            </div>
+            <!-- Dev resources -->
+            <div>
+              <div class="res-group-heading">Dev Resources</div>
+              <div class="res-group-cards">
+                <div class="res-group-card">
+                  <div class="res-group-value" id="res-dev-headcount">0</div>
+                  <div class="res-card-sublabel">Head Count</div>
+                </div>
+                <div class="res-group-card">
+                  <div class="res-group-value" id="res-dev-capacity">0</div>
+                  <div class="res-card-sublabel" id="res-dev-capacity-label">Capacity (h)</div>
+                </div>
+                <div class="res-group-card">
+                  <div class="res-group-value" id="res-dev-leaves">0</div>
+                  <div class="res-card-sublabel" id="res-dev-leaves-label">Leaves (h)</div>
+                </div>
+                <div class="res-group-card">
+                  <div class="res-group-value" id="res-dev-avail">0</div>
+                  <div class="res-card-sublabel" id="res-dev-avail-label">Availability (h)</div>
+                </div>
+              </div>
+            </div>
+            <!-- Support resources -->
+            <div id="res-support-group" style="display:none;">
+              <div class="res-group-heading">Support Resources</div>
+              <div class="res-group-cards">
+                <div class="res-group-card">
+                  <div class="res-group-value" id="res-support-headcount">0</div>
+                  <div class="res-card-sublabel">Head Count</div>
+                </div>
+                <div class="res-group-card">
+                  <div class="res-group-value" id="res-support-capacity">0</div>
+                  <div class="res-card-sublabel" id="res-support-capacity-label">Capacity (h)</div>
+                </div>
+                <div class="res-group-card">
+                  <div class="res-group-value" id="res-support-leaves">0</div>
+                  <div class="res-card-sublabel" id="res-support-leaves-label">Leaves (h)</div>
+                </div>
+                <div class="res-group-card">
+                  <div class="res-group-value" id="res-support-avail">0</div>
+                  <div class="res-card-sublabel" id="res-support-avail-label">Availability (h)</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- DIVIDER -->
+        <div class="res-summary-divider"></div>
+
+        <!-- RIGHT: Epic work stats -->
+        <div class="res-summary-right">
+          <div class="res-epic-heading">Epic Work Summary</div>
+          <div class="res-epic-grid">
+            <!-- Epics planned this month -->
+            <div class="res-epic-card">
+              <div class="res-epic-card-label">Planned This Month</div>
+              <div class="res-epic-card-stats">
+                <div class="res-epic-card-stat">
+                  <div class="res-epic-card-stat-value" id="res-epic-inmonth-count">0</div>
+                  <div class="res-epic-card-stat-sub">Epics</div>
+                </div>
+                <div class="res-epic-card-stat-sep"></div>
+                <div class="res-epic-card-stat">
+                  <div class="res-epic-card-stat-value" id="res-epic-inmonth-planned">0.00</div>
+                  <div class="res-epic-card-stat-sub" id="res-epic-inmonth-planned-label">Planned</div>
+                </div>
+                <div class="res-epic-card-stat-sep"></div>
+                <div class="res-epic-card-stat">
+                  <div class="res-epic-card-stat-value" id="res-epic-inmonth-actual">0.00</div>
+                  <div class="res-epic-card-stat-sub" id="res-epic-inmonth-actual-label">Actual</div>
+                </div>
+              </div>
+            </div>
+            <!-- Brought forward epics -->
+            <div class="res-epic-card bf-card">
+              <div class="res-epic-card-label">Brought Forward</div>
+              <div class="res-epic-card-stats">
+                <div class="res-epic-card-stat">
+                  <div class="res-epic-card-stat-value" id="res-epic-bf-count">0</div>
+                  <div class="res-epic-card-stat-sub">Epics</div>
+                </div>
+                <div class="res-epic-card-stat-sep"></div>
+                <div class="res-epic-card-stat">
+                  <div class="res-epic-card-stat-value" id="res-epic-bf-planned">0.00</div>
+                  <div class="res-epic-card-stat-sub" id="res-epic-bf-planned-label">Planned</div>
+                </div>
+                <div class="res-epic-card-stat-sep"></div>
+                <div class="res-epic-card-stat">
+                  <div class="res-epic-card-stat-value" id="res-epic-bf-actual">0.00</div>
+                  <div class="res-epic-card-stat-sub" id="res-epic-bf-actual-label">Actual</div>
+                </div>
+              </div>
+            </div>
+            <!-- Carry-forward from this month -->
+            <div class="res-epic-card cf-card">
+              <div class="res-epic-card-label">Carrying to Next Month</div>
+              <div class="res-epic-card-stats">
+                <div class="res-epic-card-stat">
+                  <div class="res-epic-card-stat-value" id="res-epic-cf-count">0</div>
+                  <div class="res-epic-card-stat-sub">Epics</div>
+                </div>
+                <div class="res-epic-card-stat-sep"></div>
+                <div class="res-epic-card-stat">
+                  <div class="res-epic-card-stat-value" id="res-epic-cf-planned">0.00</div>
+                  <div class="res-epic-card-stat-sub" id="res-epic-cf-planned-label">Planned</div>
+                </div>
+                <div class="res-epic-card-stat-sep"></div>
+                <div class="res-epic-card-stat">
+                  <div class="res-epic-card-stat-value" id="res-epic-cf-actual">0.00</div>
+                  <div class="res-epic-card-stat-sub" id="res-epic-cf-actual-label">Actual</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <section class="panel">
       <h2 class="section-title">By project</h2>
       <p class="field-hint" style="margin:-4px 0 12px;">Click a card to narrow the epic table below. Use <strong>All projects</strong> to clear the card filter.</p>      <div class="project-cards" id="project-cards" aria-live="polite"></div>
@@ -2845,6 +3091,41 @@
       kpiSupportAvail: document.getElementById("kpi-support-avail"),
       kpiSupportAvailDetail: document.getElementById("kpi-support-avail-detail"),
       kpiFeaturesAvail: document.getElementById("kpi-features-avail"),
+      // Resource Summary panel
+      resTotalHeadcount: document.getElementById("res-total-headcount"),
+      resTotalCapacity: document.getElementById("res-total-capacity"),
+      resTotalCapacityLabel: document.getElementById("res-total-capacity-label"),
+      resDevHeadcount: document.getElementById("res-dev-headcount"),
+      resDevCapacity: document.getElementById("res-dev-capacity"),
+      resDevCapacityLabel: document.getElementById("res-dev-capacity-label"),
+      resDevLeaves: document.getElementById("res-dev-leaves"),
+      resDevLeavesLabel: document.getElementById("res-dev-leaves-label"),
+      resDevAvail: document.getElementById("res-dev-avail"),
+      resDevAvailLabel: document.getElementById("res-dev-avail-label"),
+      resSupportGroup: document.getElementById("res-support-group"),
+      resSupportHeadcount: document.getElementById("res-support-headcount"),
+      resSupportCapacity: document.getElementById("res-support-capacity"),
+      resSupportCapacityLabel: document.getElementById("res-support-capacity-label"),
+      resSupportLeaves: document.getElementById("res-support-leaves"),
+      resSupportLeavesLabel: document.getElementById("res-support-leaves-label"),
+      resSupportAvail: document.getElementById("res-support-avail"),
+      resSupportAvailLabel: document.getElementById("res-support-avail-label"),
+      // Epic work summary (right half)
+      resEpicInmonthCount: document.getElementById("res-epic-inmonth-count"),
+      resEpicInmonthPlanned: document.getElementById("res-epic-inmonth-planned"),
+      resEpicInmonthPlannedLabel: document.getElementById("res-epic-inmonth-planned-label"),
+      resEpicInmonthActual: document.getElementById("res-epic-inmonth-actual"),
+      resEpicInmonthActualLabel: document.getElementById("res-epic-inmonth-actual-label"),
+      resEpicBfCount: document.getElementById("res-epic-bf-count"),
+      resEpicBfPlanned: document.getElementById("res-epic-bf-planned"),
+      resEpicBfPlannedLabel: document.getElementById("res-epic-bf-planned-label"),
+      resEpicBfActual: document.getElementById("res-epic-bf-actual"),
+      resEpicBfActualLabel: document.getElementById("res-epic-bf-actual-label"),
+      resEpicCfCount: document.getElementById("res-epic-cf-count"),
+      resEpicCfPlanned: document.getElementById("res-epic-cf-planned"),
+      resEpicCfPlannedLabel: document.getElementById("res-epic-cf-planned-label"),
+      resEpicCfActual: document.getElementById("res-epic-cf-actual"),
+      resEpicCfActualLabel: document.getElementById("res-epic-cf-actual-label"),
       capacityProfile: document.getElementById("capacity-profile-select"),
       modeTkEpics: document.getElementById("mode-tk-epics"),
       modeAllEpics: document.getElementById("mode-all-epics"),
@@ -2857,6 +3138,7 @@
     const STORAGE_CAPACITY_PROFILE_KEY = "monthly_epic_plan_capacity_profile_key";
     let latestPayload = null;
     let employeeDropdownInteractionsBound = false;
+    let _resSummaryState = { total: {}, support: {}, epics: {} };
 
     function getCheckedEmployeeNames() {
       if (!els.employeeDdList) return [];
@@ -3081,10 +3363,24 @@
       els.employeeDdList.innerHTML = inner;
       if (els.employeeDdSearch) els.employeeDdSearch.value = "";
       if (els.employeeDdEmpty) els.employeeDdEmpty.classList.remove("is-visible");
+
+      // Auto-exclude Process team when no explicit filter is active
+      let _didAutoExclude = false;
+      if (!active) {
+        const processGrp = Array.from(els.employeeDdList.querySelectorAll(".emp-dd-group"))
+          .find(function(g) { return (g.getAttribute("aria-label") || "").toLowerCase().includes("process"); });
+        if (processGrp) {
+          els.employeeDdList.querySelectorAll(".emp-dd-leaf").forEach(function(cb) { cb.checked = true; });
+          processGrp.querySelectorAll(".emp-dd-leaf").forEach(function(cb) { cb.checked = false; });
+          _didAutoExclude = true;
+        }
+      }
+
       els.employeeDdList.querySelectorAll(".emp-dd-group").forEach((grp) => { syncTeamCheckboxForGroup(grp); });
       applyEmployeeDropdownFilter();
       updateEmployeeDropdownSummary();
       setEmployeeDropdownOpen(false);
+      if (_didAutoExclude) setTimeout(loadSummary, 0);
     }
     let unit = "hours";
     const projectMetaByKey = new Map();
@@ -3216,6 +3512,11 @@
       let epic_count = 0, planned_hours = 0, planned_days = 0, actual_hours = 0, actual_days = 0;
       let brought_forward_count = 0, brought_forward_planned_hours = 0, brought_forward_planned_days = 0;
       let carried_forward_count = 0, carried_forward_planned_hours = 0, carried_forward_planned_days = 0;
+      let in_month_epic_count = 0, in_month_planned_hours = 0, in_month_planned_days = 0;
+      let in_month_actual_hours = 0, in_month_actual_days = 0;
+      let bf_actual_hours = 0, bf_actual_days = 0;
+      let in_month_cf_count = 0, in_month_cf_planned_hours = 0, in_month_cf_planned_days = 0;
+      let in_month_cf_actual_hours = 0, in_month_cf_actual_days = 0;
       for (const r of (rows || [])) {
         epic_count++;
         planned_hours += Number(r.planned_hours || 0);
@@ -3226,6 +3527,21 @@
           brought_forward_count++;
           brought_forward_planned_hours += Number(r.planned_hours || 0);
           brought_forward_planned_days += Number(r.planned_days || 0);
+          bf_actual_hours += Number(r.actual_hours || 0);
+          bf_actual_days += Number(r.actual_days || 0);
+        } else {
+          in_month_epic_count++;
+          in_month_planned_hours += Number(r.planned_hours || 0);
+          in_month_planned_days += Number(r.planned_days || 0);
+          in_month_actual_hours += Number(r.actual_hours || 0);
+          in_month_actual_days += Number(r.actual_days || 0);
+          if (r.carried_forward) {
+            in_month_cf_count++;
+            in_month_cf_planned_hours += Number(r.planned_hours || 0);
+            in_month_cf_planned_days += Number(r.planned_days || 0);
+            in_month_cf_actual_hours += Number(r.actual_hours || 0);
+            in_month_cf_actual_days += Number(r.actual_days || 0);
+          }
         }
         if (r.carried_forward) {
           carried_forward_count++;
@@ -3237,6 +3553,11 @@
         epic_count, planned_hours, planned_days, actual_hours, actual_days,
         brought_forward_count, brought_forward_planned_hours, brought_forward_planned_days,
         carried_forward_count, carried_forward_planned_hours, carried_forward_planned_days,
+        in_month_epic_count, in_month_planned_hours, in_month_planned_days,
+        in_month_actual_hours, in_month_actual_days,
+        bf_actual_hours, bf_actual_days,
+        in_month_cf_count, in_month_cf_planned_hours, in_month_cf_planned_days,
+        in_month_cf_actual_hours, in_month_cf_actual_days,
       };
     }
 
@@ -3264,6 +3585,26 @@
       const pctText = totalPlanned > 0 ? pct.toFixed(1) + "%" : "—";
       if (els.kpiCompletionPct) els.kpiCompletionPct.textContent = pctText;
       if (els.kpiCompletionBar) els.kpiCompletionBar.style.width = pct.toFixed(1) + "%";
+
+      // Store epic work stats for the Resource Planning right panel
+      _resSummaryState.epics = {
+        in_month_count: Number(totals.in_month_epic_count || inMonthCount),
+        in_month_planned_hours: Number(totals.in_month_planned_hours || 0),
+        in_month_planned_days: Number(totals.in_month_planned_days || 0),
+        in_month_actual_hours: Number(totals.in_month_actual_hours || 0),
+        in_month_actual_days: Number(totals.in_month_actual_days || 0),
+        bf_count: bfCount,
+        bf_planned_hours: Number(totals.brought_forward_planned_hours || 0),
+        bf_planned_days: Number(totals.brought_forward_planned_days || 0),
+        bf_actual_hours: Number(totals.bf_actual_hours || 0),
+        bf_actual_days: Number(totals.bf_actual_days || 0),
+        cf_count: Number(totals.in_month_cf_count || 0),
+        cf_planned_hours: Number(totals.in_month_cf_planned_hours || 0),
+        cf_planned_days: Number(totals.in_month_cf_planned_days || 0),
+        cf_actual_hours: Number(totals.in_month_cf_actual_hours || 0),
+        cf_actual_days: Number(totals.in_month_cf_actual_days || 0),
+      };
+      renderResourceSummary();
     }
 
     function applyClientFilter() {
@@ -3512,6 +3853,17 @@
       if (els.kpiWfAvailLabel) els.kpiWfAvailLabel.textContent = "Availability (" + lab + ")";
       if (els.kpiWfAvailability) els.kpiWfAvailability.textContent = formatNumber(av);
 
+      _resSummaryState.total = {
+        headcount: filterActive ? kSel : n,
+        capacity_hours: Number(payload.capacity_hours || 0),
+        capacity_days: Number(payload.capacity_days || 0),
+        planned_leave_hours: Number(payload.planned_leave_hours || 0),
+        planned_leave_days: Number(payload.planned_leave_days || 0),
+        availability_hours: Number(payload.availability_hours || 0),
+        availability_days: Number(payload.availability_days || 0),
+      };
+      renderResourceSummary();
+
       renderCapacityProfileDropdown(payload);
       if (els.workforceCaption) {
         const meta = payload.meta || {};
@@ -3534,6 +3886,77 @@
     }
 
     // ── Head Count Drawer ────────────────────────────────────────────
+    function renderResourceSummary() {
+      const dayMode = unit === "days";
+      const unitLabel = dayMode ? "d" : "h";
+      const t = _resSummaryState.total;
+      const s = _resSummaryState.support;
+
+      const totalHC = Number(t.headcount || 0);
+      const totalCap = dayMode ? Number(t.capacity_days || 0) : Number(t.capacity_hours || 0);
+      const totalLeaves = dayMode ? Number(t.planned_leave_days || 0) : Number(t.planned_leave_hours || 0);
+      const totalAvail = dayMode ? Number(t.availability_days || 0) : Number(t.availability_hours || 0);
+
+      const suppHC = Number(s.headcount || 0);
+      const suppCap = dayMode ? Number(s.capacity_days || 0) : Number(s.capacity_hours || 0);
+      const suppLeaves = dayMode ? Number(s.leaves_days || 0) : Number(s.leaves_hours || 0);
+      const suppAvail = dayMode ? Number(s.availability_days || 0) : Number(s.availability_hours || 0);
+
+      const devHC = Math.max(0, totalHC - suppHC);
+      const devCap = Math.max(0, totalCap - suppCap);
+      const devLeaves = Math.max(0, totalLeaves - suppLeaves);
+      const devAvail = Math.max(0, totalAvail - suppAvail);
+
+      function setTxt(el, val) { if (els[el]) els[el].textContent = val; }
+      setTxt("resTotalHeadcount", String(totalHC));
+      setTxt("resTotalCapacity", formatNumber(totalCap));
+      setTxt("resTotalCapacityLabel", "Capacity (" + unitLabel + ")");
+      setTxt("resDevHeadcount", String(devHC));
+      setTxt("resDevCapacity", formatNumber(devCap));
+      setTxt("resDevCapacityLabel", "Capacity (" + unitLabel + ")");
+      setTxt("resDevLeaves", formatNumber(devLeaves));
+      setTxt("resDevLeavesLabel", "Leaves (" + unitLabel + ")");
+      setTxt("resDevAvail", formatNumber(devAvail));
+      setTxt("resDevAvailLabel", "Availability (" + unitLabel + ")");
+      setTxt("resSupportHeadcount", String(suppHC));
+      setTxt("resSupportCapacity", formatNumber(suppCap));
+      setTxt("resSupportCapacityLabel", "Capacity (" + unitLabel + ")");
+      setTxt("resSupportLeaves", formatNumber(suppLeaves));
+      setTxt("resSupportLeavesLabel", "Leaves (" + unitLabel + ")");
+      setTxt("resSupportAvail", formatNumber(suppAvail));
+      setTxt("resSupportAvailLabel", "Availability (" + unitLabel + ")");
+      if (els.resSupportGroup) els.resSupportGroup.style.display = suppHC > 0 ? "" : "none";
+
+      // ── Right half: Epic Work Summary ─────────────────────────────
+      const e = _resSummaryState.epics;
+      const efLabel = dayMode ? "days" : "hours";
+
+      const inMonthPlanned = dayMode ? Number(e.in_month_planned_days || 0) : Number(e.in_month_planned_hours || 0);
+      const inMonthActual  = dayMode ? Number(e.in_month_actual_days  || 0) : Number(e.in_month_actual_hours  || 0);
+      const bfPlanned      = dayMode ? Number(e.bf_planned_days || 0)       : Number(e.bf_planned_hours || 0);
+      const bfActual       = dayMode ? Number(e.bf_actual_days  || 0)       : Number(e.bf_actual_hours  || 0);
+      const cfPlanned      = dayMode ? Number(e.cf_planned_days || 0)       : Number(e.cf_planned_hours || 0);
+      const cfActual       = dayMode ? Number(e.cf_actual_days  || 0)       : Number(e.cf_actual_hours  || 0);
+
+      setTxt("resEpicInmonthCount", String(Number(e.in_month_count || 0)));
+      setTxt("resEpicInmonthPlanned", formatNumber(inMonthPlanned));
+      setTxt("resEpicInmonthPlannedLabel", "Planned (" + efLabel + ")");
+      setTxt("resEpicInmonthActual", formatNumber(inMonthActual));
+      setTxt("resEpicInmonthActualLabel", "Actual (" + efLabel + ")");
+
+      setTxt("resEpicBfCount", String(Number(e.bf_count || 0)));
+      setTxt("resEpicBfPlanned", formatNumber(bfPlanned));
+      setTxt("resEpicBfPlannedLabel", "Planned (" + efLabel + ")");
+      setTxt("resEpicBfActual", formatNumber(bfActual));
+      setTxt("resEpicBfActualLabel", "Actual (" + efLabel + ")");
+
+      setTxt("resEpicCfCount", String(Number(e.cf_count || 0)));
+      setTxt("resEpicCfPlanned", formatNumber(cfPlanned));
+      setTxt("resEpicCfPlannedLabel", "Planned (" + efLabel + ")");
+      setTxt("resEpicCfActual", formatNumber(cfActual));
+      setTxt("resEpicCfActualLabel", "Actual (" + efLabel + ")");
+    }
+
     function openHeadcountDrawer() {
       const wf = (latestPayload && latestPayload.workforce) || {};
       renderHeadcountDrawerContent(wf);
@@ -4158,6 +4581,17 @@
           : "no support team members";
       }
       if (els.kpiFeaturesAvail) els.kpiFeaturesAvail.textContent = formatNumber(featAvail);
+
+      _resSummaryState.support = {
+        headcount: rows.length,
+        capacity_hours: Number(st.total_capacity_hours || 0),
+        capacity_days: Number(st.total_capacity_days || 0),
+        leaves_hours: Number(st.total_planned_leave_hours || 0),
+        leaves_days: Number(st.total_planned_leave_hours || 0) / 8,
+        availability_hours: Number(st.total_availability_hours || 0),
+        availability_days: Number(st.total_availability_days || 0),
+      };
+      renderResourceSummary();
     }
 
     async function saveSupportTeam() {

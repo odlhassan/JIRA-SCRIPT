@@ -9,6 +9,7 @@ import json
 import os
 import re
 import sqlite3
+import tempfile
 import uuid
 from collections import defaultdict
 from dataclasses import dataclass
@@ -1217,7 +1218,29 @@ def _write_xlsx(
         "verification_note",
     ], _verification_rows_from_subtasks(subtasks))
 
-    wb.save(output_path)
+    # Write to a temp file in the same directory first, then replace the target.
+    # This avoids OSError 22 / WinError 32 when the file is open in Excel.
+    target = Path(output_path)
+    tmp_fd, tmp_path = tempfile.mkstemp(suffix=".xlsx", dir=target.parent)
+    try:
+        os.close(tmp_fd)
+        wb.save(tmp_path)
+        try:
+            os.replace(tmp_path, target)
+        except OSError:
+            # Target is still locked — leave the temp file as a fallback and warn.
+            import warnings
+            warnings.warn(
+                f"Could not replace {target} (file may be open in another application). "
+                f"New data saved to: {tmp_path}",
+                stacklevel=2,
+            )
+    except Exception:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
 
 def _markdown_table(headers: list[str], rows: list[list[str]]) -> str:
     head = "| " + " | ".join(headers) + " |"

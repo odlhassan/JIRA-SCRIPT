@@ -29097,6 +29097,7 @@ def _tcp_build_team_data(
     per_person_cap = round(_tcp_compute_per_person_capacity(profile, from_date, to_date), 2)
 
     leave_by: dict[str, dict] = {}
+    leave_rows_by: dict[str, list] = {}
     try:
         all_leave = _load_leave_daily_rows(leave_report_path)
         for row in all_leave:
@@ -29109,6 +29110,19 @@ def _tcp_build_team_data(
             leave_by[name]["planned_taken_hours"] += float(row.get("planned_taken_hours") or 0)
             leave_by[name]["unplanned_taken_hours"] += float(row.get("unplanned_taken_hours") or 0)
             leave_by[name]["planned_not_taken_hours"] += float(row.get("planned_not_taken_hours") or 0)
+            pt = round(float(row.get("planned_taken_hours") or 0), 2)
+            pu = round(float(row.get("unplanned_taken_hours") or 0), 2)
+            pn = round(float(row.get("planned_not_taken_hours") or 0), 2)
+            if pt or pu or pn:
+                if name not in leave_rows_by:
+                    leave_rows_by[name] = []
+                leave_rows_by[name].append({
+                    "period_day": day,
+                    "planned_taken_hours": pt,
+                    "unplanned_taken_hours": pu,
+                    "planned_not_taken_hours": pn,
+                    "jira_task_ids": _to_text(row.get("jira_task_ids", "")),
+                })
     except Exception:
         pass
 
@@ -29169,6 +29183,7 @@ def _tcp_build_team_data(
                            FROM canonical_issues
                            WHERE run_id = ? AND lower(assignee) = lower(?)
                              AND {_tcp_issue_type_is_subtask_sql()}
+                             AND upper(project_key) != 'RLT'
                              AND (
                                (start_date != '' AND start_date >= ? AND start_date <= ?)
                                OR
@@ -29181,7 +29196,7 @@ def _tcp_build_team_data(
                     pass
                 try:
                     lh_row = conn.execute(
-                        "SELECT COALESCE(SUM(hours_logged), 0) FROM canonical_worklogs WHERE run_id = ? AND lower(issue_assignee) = lower(?) AND started_date >= ? AND started_date <= ?",
+                        "SELECT COALESCE(SUM(hours_logged), 0) FROM canonical_worklogs WHERE run_id = ? AND lower(issue_assignee) = lower(?) AND upper(project_key) != 'RLT' AND started_date >= ? AND started_date <= ?",
                         (canonical_run_id, member_name, from_date, to_date),
                     ).fetchone()
                     logged_hours = round(float(lh_row[0] or 0), 2)
@@ -29201,6 +29216,7 @@ def _tcp_build_team_data(
                 "subtask_planned_hours": subtask_planned_hours,
                 "logged_hours": logged_hours,
                 "epic_keys": sorted(epic_keys_for_member),
+                "leave_rows": leave_rows_by.get(member_name, []),
             })
 
         epic_details = _tcp_load_epic_details(conn, list(all_epic_keys), canonical_run_id)
@@ -41059,6 +41075,14 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                     name = _to_text(item.get("epic_name", "")).lower()
                     item_project = _to_text(item.get("project_key", "")).upper()
                     assignee_val = _to_text(item.get("assignee", "")).lower()
+                    has_preloaded = bool(item.get("preloaded_stories"))
+                    if type_f in ("story", "sub_task"):
+                        # Only show epics that have matching children from child search
+                        if not has_preloaded:
+                            return False
+                        if project and item_project != project:
+                            return False
+                        return True
                     if project and item_project != project:
                         return False
                     if search and (
@@ -41066,6 +41090,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                         and search not in name
                         and search not in item_project.lower()
                         and search not in assignee_val
+                        and not has_preloaded
                     ):
                         return False
                     if type_f == "tk" and not bool(item.get("is_tk_epic")):
@@ -41204,6 +41229,176 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                     item["start_date"] = pre_start_dates.get(ek, "")
                     item["due_date"]   = pre_due_dates.get(ek, "")
 
+                # ── Child-issue search: find stories/subtasks matching search term ──
+                if canonical_run_id and search and type_f in ("", "story", "sub_task"):
+                    if type_f == "story":
+                        child_type_cond = (
+                            "AND lower(issue_type) NOT LIKE '%sub%task%' "
+                            "AND lower(issue_type) NOT IN ('epic','initiative','epic link')"
+                        )
+                    elif type_f == "sub_task":
+                        child_type_cond = f"AND {_tcp_issue_type_is_subtask_sql()}"
+                    else:
+                        child_type_cond = "AND lower(issue_type) NOT IN ('epic','initiative','epic link')"
+                    try:
+                        child_search_rows = conn.execute(
+                            f"""SELECT issue_key, summary, status, assignee,
+                                       original_estimate_hours, parent_issue_key,
+                                       epic_key, issue_type, project_key
+                                FROM canonical_issues
+                                WHERE run_id = ?
+                                  AND (lower(issue_key) LIKE ? OR lower(summary) LIKE ? OR lower(assignee) LIKE ?)
+                                  {child_type_cond}
+                                  AND upper(project_key) != 'RLT'
+                                LIMIT 500""",
+                            (canonical_run_id, f"%{search}%", f"%{search}%", f"%{search}%"),
+                        ).fetchall()
+                    except Exception:
+                        child_search_rows = []
+
+                    if child_search_rows:
+                        # Gather parent keys we need to look up (subtasks and stories with no epic_key)
+                        parent_keys_needed: set[str] = set()
+                        for _cr in child_search_rows:
+                            if not _to_text(_cr["epic_key"]).upper():
+                                _pk = _to_text(_cr["parent_issue_key"]).upper()
+                                if _pk:
+                                    parent_keys_needed.add(_pk)
+
+                        parent_to_epic: dict[str, str] = {}
+                        if parent_keys_needed:
+                            _pp_ph = ",".join("?" for _ in parent_keys_needed)
+                            try:
+                                _pr_rows = conn.execute(
+                                    f"SELECT issue_key, epic_key, parent_issue_key FROM canonical_issues WHERE run_id = ? AND upper(issue_key) IN ({_pp_ph})",
+                                    [canonical_run_id] + list(parent_keys_needed),
+                                ).fetchall()
+                                for _pr in _pr_rows:
+                                    _pk_u = _to_text(_pr["issue_key"]).upper()
+                                    _ek_u = _to_text(_pr["epic_key"]).upper()
+                                    _pik_u = _to_text(_pr["parent_issue_key"]).upper()
+                                    parent_to_epic[_pk_u] = _ek_u or _pik_u
+                            except Exception:
+                                pass
+
+                        # preloaded_by_epic: epic_key → {story_key_upper → story_dict}
+                        preloaded_by_epic: dict[str, dict] = {}
+                        for _cr in child_search_rows:
+                            _iss_key = _to_text(_cr["issue_key"])
+                            _iss_key_u = _iss_key.upper()
+                            _itype = _to_text(_cr["issue_type"]).lower()
+                            _parent_u = _to_text(_cr["parent_issue_key"]).upper()
+                            _ek_direct = _to_text(_cr["epic_key"]).upper()
+                            _proj_u = _to_text(_cr["project_key"]).upper()
+
+                            if _ek_direct:
+                                _root_epic = _ek_direct
+                            elif _parent_u:
+                                _root_epic = parent_to_epic.get(_parent_u, _parent_u)
+                            else:
+                                continue
+                            if not _root_epic:
+                                continue
+
+                            _is_subtask = ("sub" in _itype) and ("task" in _itype)
+
+                            if _is_subtask:
+                                _story_key_u = _parent_u
+                                if not _story_key_u:
+                                    continue
+                                preloaded_by_epic.setdefault(_root_epic, {})
+                                preloaded_by_epic[_root_epic].setdefault(_story_key_u, {
+                                    "story_key": _parent_u,
+                                    "story_name": "",
+                                    "story_status": "",
+                                    "assignee": "",
+                                    "estimate_hours": 0.0,
+                                    "subtasks": [],
+                                    "matched": False,
+                                })
+                                preloaded_by_epic[_root_epic][_story_key_u]["subtasks"].append({
+                                    "issue_key": _iss_key,
+                                    "issue_name": _to_text(_cr["summary"]),
+                                    "status": _to_text(_cr["status"]),
+                                    "assignee": _to_text(_cr["assignee"]),
+                                    "estimate_hours": round(float(_cr["original_estimate_hours"] or 0), 2),
+                                    "matched": True,
+                                })
+                            else:
+                                preloaded_by_epic.setdefault(_root_epic, {})
+                                preloaded_by_epic[_root_epic][_iss_key_u] = {
+                                    "story_key": _iss_key,
+                                    "story_name": _to_text(_cr["summary"]),
+                                    "story_status": _to_text(_cr["status"]),
+                                    "assignee": _to_text(_cr["assignee"]),
+                                    "estimate_hours": round(float(_cr["original_estimate_hours"] or 0), 2),
+                                    "subtasks": [],
+                                    "matched": True,
+                                }
+
+                        # Fill story names for subtask-parent stories that lack them
+                        _stories_to_fill = [
+                            _sk for _ek, _sd in preloaded_by_epic.items()
+                            for _sk, _sv in _sd.items() if not _sv["story_name"]
+                        ]
+                        if _stories_to_fill:
+                            _sf_ph = ",".join("?" for _ in _stories_to_fill)
+                            try:
+                                _sf_rows = conn.execute(
+                                    f"SELECT issue_key, summary, status, assignee, original_estimate_hours FROM canonical_issues WHERE run_id = ? AND upper(issue_key) IN ({_sf_ph})",
+                                    [canonical_run_id] + _stories_to_fill,
+                                ).fetchall()
+                                _sf_map = {_to_text(_r["issue_key"]).upper(): _r for _r in _sf_rows}
+                                for _ek, _sd in preloaded_by_epic.items():
+                                    for _sk, _sv in _sd.items():
+                                        if not _sv["story_name"]:
+                                            _fill = _sf_map.get(_sk)
+                                            if _fill:
+                                                _sv["story_name"] = _to_text(_fill["summary"])
+                                                _sv["story_status"] = _to_text(_fill["status"])
+                                                _sv["assignee"] = _to_text(_fill["assignee"])
+                                                _sv["estimate_hours"] = round(float(_fill["original_estimate_hours"] or 0), 2)
+                            except Exception:
+                                pass
+
+                        # Add missing epics from child search + tag all with preloaded_stories
+                        new_child_epic_keys: list[str] = []
+                        for _ek in preloaded_by_epic:
+                            if _ek not in items_by_key:
+                                _pk = _ek.split("-")[0] if "-" in _ek else ""
+                                items_by_key[_ek] = {
+                                    "epic_key": _ek,
+                                    "epic_name": _ek,
+                                    "project_key": _pk,
+                                    "jira_url": "",
+                                    "is_tk_epic": False,
+                                    "source_tag": "child_search",
+                                    "assignee": "",
+                                    "start_date": "",
+                                    "due_date": "",
+                                }
+                                new_child_epic_keys.append(_ek)
+                            items_by_key[_ek]["preloaded_stories"] = list(preloaded_by_epic[_ek].values())
+
+                        # Resolve epic names + assignees for newly added child-search epics
+                        if new_child_epic_keys:
+                            try:
+                                _ne_ph = ",".join("?" for _ in new_child_epic_keys)
+                                _ne_rows = conn.execute(
+                                    f"SELECT issue_key, summary, project_key, assignee, start_date, due_date FROM canonical_issues WHERE run_id = ? AND upper(issue_key) IN ({_ne_ph})",
+                                    [canonical_run_id] + new_child_epic_keys,
+                                ).fetchall()
+                                for _ne in _ne_rows:
+                                    _nek = _to_text(_ne["issue_key"]).upper()
+                                    if _nek in items_by_key:
+                                        items_by_key[_nek]["epic_name"] = _to_text(_ne["summary"]) or _nek
+                                        items_by_key[_nek]["project_key"] = _to_text(_ne["project_key"]).upper() or (_nek.split("-")[0] if "-" in _nek else "")
+                                        items_by_key[_nek]["assignee"] = _to_text(_ne["assignee"])
+                                        items_by_key[_nek]["start_date"] = _to_text(_ne["start_date"])
+                                        items_by_key[_nek]["due_date"] = _to_text(_ne["due_date"])
+                            except Exception:
+                                pass
+
                 filtered_items = [item for item in items_by_key.values() if _matches(item)]
                 filtered_items.sort(key=lambda it: (
                     _to_text(it.get("project_key", "")),
@@ -41222,6 +41417,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             work_items: list[dict[str, object]] = []
             for item in sliced_items:
                 epic_key = _to_text(item.get("epic_key", "")).upper()
+                preloaded = item.get("preloaded_stories")
                 detail = details.get(epic_key)
                 if detail is None:
                     detail = {
@@ -41240,6 +41436,9 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                     detail["assignee"]   = epic_assignees.get(epic_key, "")
                     detail["start_date"] = epic_start_dates.get(epic_key, "")
                     detail["due_date"]   = epic_due_dates.get(epic_key, "")
+                # Overlay preloaded stories (from child search) if present
+                if preloaded:
+                    detail["stories"] = preloaded
                 work_items.append(detail)
 
             return jsonify({"ok": True, "work_items": work_items, "total": total_rows, "returned": len(sliced_items)})

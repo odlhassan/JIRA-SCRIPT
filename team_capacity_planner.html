@@ -864,6 +864,83 @@
     /* ── Member card (no flex shrink) ───────────────────────────────── */
     .member-card { flex: 0 0 auto; }
 
+    /* ── Leave details section in member card ────────────────────────── */
+    .leave-list {
+      border-top: 1px solid var(--line);
+      padding: 0 12px 10px;
+      display: none;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .member-card.expanded .leave-list { display: flex; }
+    .leave-list-head {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      padding: 8px 0 4px;
+      user-select: none;
+    }
+    .leave-list-head:hover { color: var(--accent); }
+    .leave-list-toggle-icon {
+      font-size: 16px;
+      color: var(--muted);
+      transition: transform .2s;
+      flex-shrink: 0;
+    }
+    .leave-list.leave-open .leave-list-toggle-icon { transform: rotate(180deg); }
+    .leave-list-body {
+      display: none;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .leave-list.leave-open .leave-list-body { display: flex; }
+    .leave-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 6px;
+      background: #fafbfc;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      font-size: 11px;
+      flex-wrap: wrap;
+    }
+    .leave-row-day {
+      font-weight: 600;
+      color: var(--text);
+      white-space: nowrap;
+      min-width: 84px;
+    }
+    .leave-tag {
+      border-radius: 4px;
+      padding: 1px 6px;
+      font-size: 10px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .leave-tag.planned-tag  { background: #fef3c7; color: #b45309; }
+    .leave-tag.unpln-tag    { background: #fee2e2; color: #b91c1c; }
+    .leave-tag.future-tag   { background: #fef9c3; color: #854d0e; }
+    .leave-jira-ids {
+      font-size: 10px;
+      color: var(--accent);
+      font-family: monospace;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 140px;
+    }
+
+    /* ── Match highlight for child-search results ────────────────────── */
+    .story-item.search-matched { border-left: 3px solid #1d4ed8; background: rgba(29,78,216,.04); }
+    .subtask-item.search-matched { border-left: 3px solid #6d28d9; background: rgba(109,40,217,.04); }
+
     /* ── Assignee chips on work items ───────────────────────────────── */
     .epic-assignee-chip {
       font-size: 10px; color: var(--muted); background: var(--chip-bg);
@@ -1015,7 +1092,7 @@
         <div class="wi-head-row">
           <div class="wi-head-title">
             <span class="material-symbols-outlined">task_alt</span>
-            Work Items (Epics)
+            Work Items
           </div>
           <span class="wi-count" id="wi-badge"></span>
           <button class="btn-sync-jira" id="sync-jira-btn" title="View and sync assignments to Jira">
@@ -1029,12 +1106,15 @@
           </select>
           <select id="wi-type-filter" class="wi-filter-select">
             <option value="">All Types</option>
+            <option value="epic">Epic</option>
+            <option value="story">Story</option>
+            <option value="sub_task">Sub-task</option>
             <option value="tk">TK Epics</option>
             <option value="non_tk">Non-TK Epics</option>
           </select>
           <div class="search-wrap" style="flex:1">
             <span class="material-symbols-outlined">search</span>
-            <input type="text" id="wi-search" placeholder="Search by name, key, project or assignee…" />
+            <input type="text" id="wi-search" placeholder="Search epics, stories, subtasks, assignees…" />
           </div>
         </div>
       </div>
@@ -1299,6 +1379,12 @@
         highlightEpic(chip.dataset.ek);
       });
     });
+    $members.querySelectorAll('.leave-list-head').forEach(head => {
+      head.addEventListener('click', e => {
+        e.stopPropagation();
+        head.closest('.leave-list').classList.toggle('leave-open');
+      });
+    });
   }
 
   function memberCard(m, d) {
@@ -1401,13 +1487,42 @@
           ${epicsHtml}
         </div>
       </div>
+      ${leaveListHtml(m)}
+    </div>`;
+  }
+
+  function leaveListHtml(m) {
+    const rows = (m.leave_rows || []).filter(r => r.planned_taken_hours || r.unplanned_taken_hours || r.planned_not_taken_hours);
+    if (!rows.length) return '';
+    const rowsHtml = rows.map(r => {
+      const pt = r.planned_taken_hours || 0;
+      const pu = r.unplanned_taken_hours || 0;
+      const pn = r.planned_not_taken_hours || 0;
+      return `<div class="leave-row">
+        <span class="leave-row-day">${esc(r.period_day)}</span>
+        ${pt > 0 ? `<span class="leave-tag planned-tag">${pt}h taken</span>` : ''}
+        ${pu > 0 ? `<span class="leave-tag unpln-tag">${pu}h unplanned</span>` : ''}
+        ${pn > 0 ? `<span class="leave-tag future-tag">${pn}h upcoming</span>` : ''}
+        ${r.jira_task_ids ? `<span class="leave-jira-ids" title="${esc(r.jira_task_ids)}">${esc(r.jira_task_ids)}</span>` : ''}
+      </div>`;
+    }).join('');
+    return `<div class="leave-list" id="lvl-${esc(m.name.replace(/\s/g,'_'))}">
+      <div class="leave-list-head">
+        <span>Leave Days (${rows.length})</span>
+        <span class="material-symbols-outlined leave-list-toggle-icon">expand_more</span>
+      </div>
+      <div class="leave-list-body">${rowsHtml}</div>
     </div>`;
   }
 
   // ── Render work items ──────────────────────────────────────────────────
   function renderWorkItems() {
     if (!S.workItems.length) {
-      $wiCont.innerHTML = emptyState('inventory_2', S.wiSearch ? 'No epics match your search.' : 'No epics found in the planner.');
+      const typeLabel = $wiTypeSel.value;
+      const hint = S.wiSearch
+        ? 'No work items match your search.'
+        : (typeLabel ? 'No items found for the selected type.' : 'No work items found in the planner.');
+      $wiCont.innerHTML = emptyState('inventory_2', hint);
       return;
     }
     $wiCont.innerHTML = S.workItems.map(ep => epicRow(ep)).join('');
@@ -1454,6 +1569,7 @@
       ? `<span class="tk-val">${ep.tk_approved_man_days}</span>d TK` : '—';
     const preloaded = ep.stories && ep.stories.length > 0;
     const storiesHtml = preloaded ? (ep.stories || []).map(s => storyItem(s)).join('') : '';
+    const hasMatches = preloaded && ep.stories.some(s => s.matched || (s.subtasks && s.subtasks.some(t => t.matched)));
     const assigneeHtml = ep.assignee
       ? `<span class="epic-assignee-chip" title="${esc(ep.assignee)}">${esc(ep.assignee)}</span>`
       : `<span class="epic-assignee-chip no-assignee" title="No assignee set on Jira">No assignee on Jira</span>`;
@@ -1465,7 +1581,7 @@
     const dueHtml = ep.due_date
       ? `<span class="epic-date-chip${dueOverdue ? ' overdue' : ''}" title="Due date${dueOverdue ? ' — overdue' : ''}"><span class="material-symbols-outlined">event</span>${esc(fmtDate(ep.due_date))}</span>`
       : '';
-    return `<div class="epic-row" id="ep-${esc(ep.epic_key)}" data-ek="${esc(ep.epic_key)}" data-loaded="${preloaded ? 'true' : 'false'}">
+    return `<div class="epic-row${hasMatches ? ' open' : ''}" id="ep-${esc(ep.epic_key)}" data-ek="${esc(ep.epic_key)}" data-loaded="${preloaded ? 'true' : 'false'}">
       <div class="epic-row-head">
         <span class="epic-type-badge">Epic</span>
         <span class="epic-row-key">${esc(ep.epic_key)}</span>
@@ -1489,6 +1605,8 @@
       : (st.includes('progress') || st.includes('review')) ? 'inprog' : 'todo';
     const subtasks = (s.subtasks || []);
     const hasSubtasks = subtasks.length > 0;
+    const isMatched = !!s.matched;
+    const hasMatchedSubs = subtasks.some(t => t.matched);
     const assigneeHtml = s.assignee
       ? `<span class="story-assignee" title="${esc(s.assignee)}">${esc(s.assignee.split(' ')[0])}</span>`
       : `<span class="story-assignee no-assignee" title="No assignee on Jira">No assignee</span>`;
@@ -1496,8 +1614,9 @@
       ? `<div class="subtask-list">${subtasks.map(t => subtaskItem(t)).join('')}</div>` : '';
     const expandIcon = hasSubtasks
       ? `<span class="material-symbols-outlined story-expand-icon">expand_more</span>` : '';
-    return `<div class="story-wrap${hasSubtasks ? ' has-subtasks' : ''}">
-      <div class="story-item${hasSubtasks ? ' has-subtasks' : ''}">
+    const autoOpen = hasSubtasks && hasMatchedSubs;
+    return `<div class="story-wrap${hasSubtasks ? ' has-subtasks' : ''}${autoOpen ? ' open' : ''}">
+      <div class="story-item${hasSubtasks ? ' has-subtasks' : ''}${isMatched ? ' search-matched' : ''}">
         <span class="story-badge">Story</span>
         <span class="story-key">${esc(s.story_key)}</span>
         <span class="story-name" title="${esc(s.story_name)}">${esc(s.story_name)}</span>
@@ -1515,10 +1634,11 @@
 
   function subtaskItem(t) {
     const est = t.estimate_hours ? `${t.estimate_hours}h` : '—';
+    const isMatched = !!t.matched;
     const assigneeHtml = t.assignee
       ? `<span class="subtask-assignee" title="${esc(t.assignee)}">${esc(t.assignee.split(' ')[0])}</span>`
       : `<span class="subtask-assignee no-assignee" title="No assignee on Jira">No assignee</span>`;
-    return `<div class="subtask-item">
+    return `<div class="subtask-item${isMatched ? ' search-matched' : ''}">
       <span class="subtask-badge">Sub</span>
       <span class="subtask-key">${esc(t.issue_key)}</span>
       <span class="subtask-name" title="${esc(t.issue_name)}">${esc(t.issue_name)}</span>
