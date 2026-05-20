@@ -29070,6 +29070,14 @@ def _tcp_load_epic_details(conn: sqlite3.Connection, epic_keys: list[str], canon
     return result
 
 
+def _tcp_issue_type_is_subtask_sql(alias: str = "") -> str:
+    prefix = f"{alias}." if alias else ""
+    return (
+        f"(lower({prefix}issue_type) LIKE '%sub-task%' "
+        f"OR lower({prefix}issue_type) LIKE '%subtask%')"
+    )
+
+
 def _tcp_build_team_data(
     db_path: Path,
     leave_report_path: Path,
@@ -29118,7 +29126,7 @@ def _tcp_build_team_data(
             availability = round(per_person_cap - total_leave, 2)
 
             epic_keys_for_member: set[str] = set()
-            planned_hours = 0.0
+            subtask_planned_hours = 0.0
             logged_hours = 0.0
             if canonical_run_id:
                 try:
@@ -29157,13 +29165,18 @@ def _tcp_build_team_data(
                     pass
                 try:
                     ph_row = conn.execute(
-                        """SELECT COALESCE(SUM(original_estimate_hours), 0)
+                        f"""SELECT COALESCE(SUM(original_estimate_hours), 0)
                            FROM canonical_issues
                            WHERE run_id = ? AND lower(assignee) = lower(?)
-                             AND (lower(issue_type) LIKE '%sub-task%' OR lower(issue_type) LIKE '%subtask%')""",
-                        (canonical_run_id, member_name),
+                             AND {_tcp_issue_type_is_subtask_sql()}
+                             AND (
+                               (start_date != '' AND start_date >= ? AND start_date <= ?)
+                               OR
+                               (due_date != '' AND due_date >= ? AND due_date <= ?)
+                             )""",
+                        (canonical_run_id, member_name, from_date, to_date, from_date, to_date),
                     ).fetchone()
-                    planned_hours = round(float(ph_row[0] or 0), 2)
+                    subtask_planned_hours = round(float(ph_row[0] or 0), 2)
                 except Exception:
                     pass
                 try:
@@ -29184,7 +29197,8 @@ def _tcp_build_team_data(
                 "planned_not_taken_hours": round(leave["planned_not_taken_hours"], 2),
                 "total_leave_hours": round(total_leave, 2),
                 "availability_hours": availability,
-                "planned_hours": planned_hours,
+                "planned_hours": subtask_planned_hours,
+                "subtask_planned_hours": subtask_planned_hours,
                 "logged_hours": logged_hours,
                 "epic_keys": sorted(epic_keys_for_member),
             })

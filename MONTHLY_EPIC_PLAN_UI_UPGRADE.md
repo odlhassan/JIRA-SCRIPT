@@ -269,3 +269,9 @@ Phase 4 (Polish — after Phase 2 & 3)
 |---|---|
 | `monthly_epic_plan_progress_report.html` | CSS variables, controls HTML, focus ring, font sizes, button classes, drawer width, toggle markup |
 | `monthly_epic_plan_progress_service.py` | Template/generator sections if controls HTML is generated here |
+
+---
+
+## Change Notes
+
+- 2026-05-20: Fixed the report table renderer so the Start Signal and End Signal cells read the selected month inside `rowToHtml`. Without that local month value, the API response loaded successfully but rendering failed with `monthYm is not defined`, leaving the page in the "Could not load report" state and clearing employee data.

@@ -891,6 +891,12 @@
     .wb-logged  { background: #8b5cf6; }
     .wb-avail   { background: var(--avail); }
     .work-bar-val { min-width: 44px; font-size: 11px; font-weight: 600; color: var(--text); text-align: right; }
+    .stat-toggle { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: #f8fafc; }
+    .stat-toggle button {
+      border: 0; background: transparent; color: var(--muted); padding: 6px 10px;
+      font-size: 12px; font-weight: 700; cursor: pointer; min-width: 48px;
+    }
+    .stat-toggle button.active { background: var(--accent); color: #fff; }
 
     /* ── Sync to Jira button ─────────────────────────────────────────── */
     .btn-sync-jira {
@@ -959,6 +965,13 @@
     <div class="ctrl-group">
       <label>Capacity Profile</label>
       <select id="profile-select"><option value="">Auto (best match)</option></select>
+    </div>
+    <div class="ctrl-group">
+      <label>Stats</label>
+      <div class="stat-toggle" id="stat-unit-toggle" role="group" aria-label="Show resource stats in days or hours">
+        <button type="button" data-unit="days" class="active" aria-pressed="true">Days</button>
+        <button type="button" data-unit="hours" aria-pressed="false">Hours</button>
+      </div>
     </div>
     <button class="btn-load" id="load-btn">
       <span class="spinner"></span>
@@ -1092,6 +1105,7 @@
     wiSearch: '',
     loading: false,
     epicChildrenCache: {},
+    statUnit: localStorage.getItem('tcp-stat-unit') === 'hours' ? 'hours' : 'days',
   };
 
   // ── DOM refs ───────────────────────────────────────────────────────────
@@ -1108,6 +1122,7 @@
   const $wiTypeSel    = document.getElementById('wi-type-filter');
   const $wiBadge      = document.getElementById('wi-badge');
   const $notice       = document.getElementById('canonical-notice');
+  const $statUnitToggle = document.getElementById('stat-unit-toggle');
   const $modal      = document.getElementById('assign-modal');
   const $modalName  = document.getElementById('modal-issue-name');
   const $modalSel   = document.getElementById('modal-member-select');
@@ -1135,6 +1150,7 @@
 
   async function init() {
     initDates();
+    syncStatUnitToggle();
     await Promise.all([loadTeams(), loadProfiles(), loadWorkItemProjects()]);
     loadWorkItems();
   }
@@ -1308,9 +1324,9 @@
       : `<div class="epic-empty">No epics assigned.</div>`;
 
     const leaveTotal = pp + pu + pn;
-    const availHrsFmt = fmtHrs(av);
-    const leaveFmt = leaveTotal > 0 ? ` · ${fmtHrs(leaveTotal)} leave` : '';
-    const plannedHrs = m.planned_hours || 0;
+    const availHrsFmt = fmtStatHrs(av, d);
+    const leaveFmt = leaveTotal > 0 ? ` · ${fmtStatHrs(leaveTotal, d)} leave` : '';
+    const plannedHrs = m.subtask_planned_hours != null ? m.subtask_planned_hours : (m.planned_hours || 0);
     const loggedHrs  = m.logged_hours  || 0;
 
     const workRef = Math.max(plannedHrs, av, loggedHrs, 1);
@@ -1320,13 +1336,13 @@
     const workBarsHtml = `<div class="work-bars">
       <div class="work-bar-row">
         <div class="work-bar-label">Planned</div>
-        <div class="work-bar-track"><div class="work-bar-fill wb-planned" style="width:${wbPlanned}%"></div></div>
-        <div class="work-bar-val">${fmtHrs(plannedHrs)}</div>
+        <div class="work-bar-track"><div class="work-bar-fill wb-planned" style="width:${wbPlanned}%" title="Assigned subtask estimates only"></div></div>
+        <div class="work-bar-val" title="Sum of subtask estimates assigned to this resource; epic and story estimates are ignored.">${fmtStatHrs(plannedHrs, d)}</div>
       </div>
       <div class="work-bar-row">
         <div class="work-bar-label">Logged</div>
         <div class="work-bar-track"><div class="work-bar-fill wb-logged" style="width:${wbLogged}%"></div></div>
-        <div class="work-bar-val">${fmtHrs(loggedHrs)}</div>
+        <div class="work-bar-val">${fmtStatHrs(loggedHrs, d)}</div>
       </div>
       <div class="work-bar-row">
         <div class="work-bar-label">Available</div>
@@ -1344,13 +1360,13 @@
           </div>
           <div class="avail-text">
             <span class="avail-hrs">${availHrsFmt} avail</span><span class="leave-hrs">${leaveFmt}</span>
-            · ${fmtHrs(cap)} capacity
+            · ${fmtStatHrs(cap, d)} capacity
           </div>
         </div>
         <span class="material-symbols-outlined expand-icon">expand_more</span>
       </div>
       <div class="cap-bar-wrap">
-        <div class="cap-bar" title="${fmtHrs(av)} available · ${fmtHrs(pu)} unplanned · ${fmtHrs(pp)} planned taken · ${fmtHrs(pn)} planned upcoming">
+        <div class="cap-bar" title="${fmtStatHrs(av, d)} available · ${fmtStatHrs(pu, d)} unplanned · ${fmtStatHrs(pp, d)} planned taken · ${fmtStatHrs(pn, d)} planned upcoming">
           <div class="cap-seg seg-unplanned" style="width:${pPU}%"></div>
           <div class="cap-seg seg-planned"   style="width:${pPP}%"></div>
           <div class="cap-seg seg-not-taken" style="width:${pPN}%"></div>
@@ -1598,7 +1614,25 @@
   // ── Helpers ────────────────────────────────────────────────────────────
   const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
   function pct(v, total) { return total > 0 ? Math.min(100, Math.round(v / total * 100)) : 0; }
+  function statHoursPerDay(d) {
+    const v = d && d.capacity_profile ? Number(d.capacity_profile.standard_hours_per_day) : 8;
+    return Number.isFinite(v) && v > 0 ? v : 8;
+  }
+  function fmtStatHrs(h, d) {
+    const val = Number(h || 0);
+    if (!val) return S.statUnit === 'hours' ? '0h' : '0d';
+    if (S.statUnit === 'hours') return `${Number(val.toFixed(2)).toString()}h`;
+    return `${Number((val / statHoursPerDay(d)).toFixed(2)).toString()}d`;
+  }
   function fmtHrs(h) { if (!h) return '0h'; if (h >= 8) return `${(h / 8).toFixed(1).replace(/\.0$/, '')}d`; return `${Math.round(h)}h`; }
+  function syncStatUnitToggle() {
+    if (!$statUnitToggle) return;
+    $statUnitToggle.querySelectorAll('button[data-unit]').forEach(btn => {
+      const active = btn.dataset.unit === S.statUnit;
+      btn.classList.toggle('active', active);
+      btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+  }
   function fmtDate(d) {
     if (!d) return '';
     const dt = new Date(d + 'T00:00:00');
@@ -1796,6 +1830,16 @@
   $loadBtn.addEventListener('click', loadTeamData);
   $teamSel.addEventListener('change', loadTeamData);
   $profileSel.addEventListener('change', loadTeamData);
+  if ($statUnitToggle) {
+    $statUnitToggle.addEventListener('click', e => {
+      const btn = e.target.closest('button[data-unit]');
+      if (!btn) return;
+      S.statUnit = btn.dataset.unit === 'hours' ? 'hours' : 'days';
+      localStorage.setItem('tcp-stat-unit', S.statUnit);
+      syncStatUnitToggle();
+      renderMembers();
+    });
+  }
 
   $wiSearch.addEventListener('input', debounce(e => loadWorkItems(e.target.value.trim()), 250));
   $wiProjectSel.addEventListener('change', () => loadWorkItems());

@@ -36,6 +36,8 @@ It covers:
   - `/rnd_data_story.html`
 - Seating Planner:
   - `/settings/seating-planner`
+- Team Capacity Planner:
+  - `/settings/team-capacity-planner`
 
 ## Data Model (Profile)
 
@@ -83,3 +85,7 @@ Rules:
 - Seating Planner:
   - Maintains the office floor seating layout with team/product color modes.
   - Exports the visible seating plan through a single-page A4 landscape, vector print view for saving as PDF.
+- Team Capacity Planner:
+  - Shows per-resource capacity, leave, logged work, and planned work for a selected team/date range.
+  - The resource planned-work bar uses only assigned canonical subtasks in the selected range. Epic and story estimates are ignored even when those work items are assigned to the same resource.
+  - The Stats toggle switches resource values between days and hours without reloading data.

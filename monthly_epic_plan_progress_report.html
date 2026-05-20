@@ -4347,6 +4347,7 @@
     }
 
     function rowToHtml(row) {
+      const monthYm = els.month ? String(els.month.value || "").trim() : "";
       const epicKey = row.epic_key || "";
       const childId = "child-" + epicKey.replace(/[^A-Za-z0-9]/g, "_");
       const hasChildren = Array.isArray(row.child_items) && row.child_items.length > 0;

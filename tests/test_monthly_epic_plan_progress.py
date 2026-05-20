@@ -3,6 +3,7 @@ from __future__ import annotations
 import sqlite3
 import tempfile
 import unittest
+import re
 from pathlib import Path
 
 from datetime import date
@@ -12,6 +13,7 @@ from monthly_epic_plan_progress_service import (
     build_monthly_epic_plan_payload,
 )
 from report_server import _init_epics_management_db, create_report_server_app
+from report_server import sync_report_html
 
 
 def _planner_row(
@@ -429,6 +431,25 @@ class MonthlyEpicPlanProgressTests(unittest.TestCase):
             self.assertEqual(html_resp.status_code, 200)
             self.assertIn("monthly", html_resp.get_data(as_text=True))
 
+    def test_report_html_sync_copies_monthly_source_report(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            source = root / "monthly_epic_plan_progress_report.html"
+            source.write_text(
+                '<html><script>function rowToHtml(row) {'
+                'const monthYm = els.month ? String(els.month.value || "").trim() : "";'
+                'return monthYm;}</script></html>',
+                encoding="utf-8",
+            )
+
+            synced = sync_report_html(root, "report_html")
+
+            served = root / "report_html" / "monthly_epic_plan_progress_report.html"
+            self.assertGreaterEqual(synced, 1)
+            self.assertTrue(served.exists())
+            self.assertIn("function rowToHtml(row)", served.read_text(encoding="utf-8"))
+            self.assertIn('const monthYm = els.month ? String(els.month.value || "").trim() : "";', served.read_text(encoding="utf-8"))
+
     def test_report_ui_has_project_filter_and_icon_only_epic_opener(self):
         html_path = Path(__file__).resolve().parents[1] / "monthly_epic_plan_progress_report.html"
         html = html_path.read_text(encoding="utf-8")
@@ -484,6 +505,9 @@ class MonthlyEpicPlanProgressTests(unittest.TestCase):
         self.assertIn("emp-dd-meta", html)
         self.assertIn("Brought Forward", html)
         self.assertIn("Brought forward", html)
+        row_to_html = re.search(r"function rowToHtml\(row\) \{(?P<body>.*?)\n    // Sort order:", html, re.S)
+        self.assertIsNotNone(row_to_html)
+        self.assertIn('const monthYm = els.month ? String(els.month.value || "").trim() : "";', row_to_html.group("body"))
 
 
 if __name__ == "__main__":

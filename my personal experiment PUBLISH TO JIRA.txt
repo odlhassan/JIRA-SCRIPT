@@ -1,0 +1,6 @@
+PUBLISH TO JIRA:
+Attachment pic with each Checklist (, audio, video, pdf, etc)
+DEV - Chiller (ChilloWatt)
+Integrate Monaco Editor For SQL Support
+Support for SQL Language in Batch (Features Supported by adx)
+Support for SQL Language in BPM (Features Supported by adx)

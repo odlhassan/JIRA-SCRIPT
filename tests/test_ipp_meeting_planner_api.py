@@ -12,7 +12,9 @@ from report_server import (
     IPP_MEETING_PLANNER_SETTINGS_ROUTE,
     TCP_SETTINGS_ROUTE,
     create_report_server_app,
+    _init_canonical_refresh_db,
     _init_epics_management_db,
+    _init_performance_settings_db,
     _ipp_meeting_planner_get_current_meeting,
     _ipp_meeting_planner_list_meetings,
     _ipp_meeting_planner_complete_meeting,
@@ -21,6 +23,7 @@ from report_server import (
     _ipp_meeting_planner_remove_epic,
     _ipp_meeting_planner_search_work_items,
     _ipp_meeting_planner_add_custom_item,
+    _tcp_build_team_data,
 )
 
 
@@ -430,6 +433,72 @@ class IppMeetingPlannerApiTests(unittest.TestCase):
                     os.environ.pop("JIRA_EXPORTS_DB_PATH", None)
                 else:
                     os.environ["JIRA_EXPORTS_DB_PATH"] = old_env
+
+    def test_team_capacity_member_planned_hours_counts_only_assigned_subtasks(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            db_path = root / "assignee_hours_capacity.db"
+            _init_epics_management_db(db_path)
+            _init_performance_settings_db(db_path)
+            _init_canonical_refresh_db(db_path)
+
+            conn = sqlite3.connect(db_path)
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO performance_teams(team_name, team_leader, assignees_json, updated_at)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    ("Alpha", "Resource One", '["Resource One"]', "2026-05-20T00:00:00+00:00"),
+                )
+                conn.execute(
+                    """
+                    INSERT INTO canonical_refresh_runs(run_id, started_at_utc, status, updated_at_utc)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    ("run-1", "2026-05-20T00:00:00+00:00", "success", "2026-05-20T00:00:00+00:00"),
+                )
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO canonical_refresh_state(id, active_run_id, last_success_run_id, updated_at_utc)
+                    VALUES (1, ?, ?, ?)
+                    """,
+                    ("run-1", "run-1", "2026-05-20T00:00:00+00:00"),
+                )
+                rows = [
+                    ("run-1", "EP-1", "EP", "Epic", "Resource One", "2026-05-01", "2026-05-31", 80.0, "", "", ""),
+                    ("run-1", "EP-2", "EP", "Story", "Resource One", "2026-05-01", "2026-05-31", 40.0, "EP-1", "", "EP-1"),
+                    ("run-1", "EP-3", "EP", "Sub-task", "Resource One", "2026-05-02", "2026-05-03", 6.0, "EP-2", "EP-2", "EP-1"),
+                    ("run-1", "EP-4", "EP", "Bug Subtask", "Resource One", "2026-05-04", "2026-05-05", 2.5, "EP-2", "EP-2", "EP-1"),
+                    ("run-1", "EP-5", "EP", "Sub-task", "Other Resource", "2026-05-04", "2026-05-05", 9.0, "EP-2", "EP-2", "EP-1"),
+                    ("run-1", "EP-6", "EP", "Sub-task", "Resource One", "2026-06-01", "2026-06-02", 7.0, "EP-2", "EP-2", "EP-1"),
+                ]
+                conn.executemany(
+                    """
+                    INSERT INTO canonical_issues(
+                        run_id, issue_key, project_key, issue_type, assignee,
+                        start_date, due_date, original_estimate_hours,
+                        parent_issue_key, story_key, epic_key
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    rows,
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            data = _tcp_build_team_data(
+                db_path,
+                root / "missing_leave_report.xlsx",
+                "Alpha",
+                "2026-05-01",
+                "2026-05-31",
+            )
+
+            member = data["members"][0]
+            self.assertEqual(member["planned_hours"], 8.5)
+            self.assertEqual(member["subtask_planned_hours"], 8.5)
 
     def test_add_custom_item_creates_row_with_custom_kind(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
