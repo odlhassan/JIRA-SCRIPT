@@ -343,10 +343,14 @@ def _load_child_items_for_month(
         ).fetchall()
 
         # Load worklogs for all issues in these epics (both stories and subtasks)
-        # Use latest run_id from canonical_worklogs (may differ from issues run_id)
+        # Pick the most-recently-inserted run from canonical_worklogs. Sorting by run_id
+        # lexicographically is wrong: prefixes like "canonical-epic-*" / "canonical-assignee-*"
+        # sort above "canonical-<ts>-*" even when the latter is the newer full refresh, which
+        # caused the report to read worklogs from a partial/older run that doesn't contain the
+        # subtask's logged hours. rowid grows monotonically with insertion order.
         try:
             wl_latest_run = conn.execute(
-                "SELECT run_id FROM canonical_worklogs ORDER BY run_id DESC LIMIT 1"
+                "SELECT run_id FROM canonical_worklogs ORDER BY rowid DESC LIMIT 1"
             ).fetchone()
             wl_run_id = wl_latest_run[0] if wl_latest_run else run_id
             worklogs_raw = conn.execute(
@@ -532,23 +536,46 @@ def _load_worklog_metrics(
     month_start: date,
     month_end: date,
 ) -> tuple[dict[str, float], dict[str, bool], dict[str, date], dict[str, list[str]], dict[str, float]]:
-    issue_to_epic: dict[str, str] = {}
-    for epic_key, issue_keys in subtask_keys_by_epic.items():
-        for issue_key in issue_keys:
-            issue_to_epic[issue_key] = epic_key
-
     actual_hours_by_epic: dict[str, float] = defaultdict(float)
     total_actual_hours_by_epic: dict[str, float] = defaultdict(float)
     has_worklog_through_month_end: dict[str, bool] = defaultdict(bool)
     last_worklog_date_by_epic: dict[str, date] = {}
     worklog_dates_by_epic: dict[str, set[str]] = defaultdict(set)
+
+    epic_keys = sorted(subtask_keys_by_epic.keys())
+    if not epic_keys:
+        return actual_hours_by_epic, has_worklog_through_month_end, last_worklog_date_by_epic, {}, total_actual_hours_by_epic
+
+    # Use the pre-computed subtask→epic mapping (subtask_keys_by_epic). It already resolves
+    # an epic for every subtask via the chain epic_key → story_key → parent_issue_key, so it
+    # captures subtasks whose canonical_issues row has a NULL/blank epic_key but whose parent
+    # story belongs to a known epic. Re-querying canonical_issues with `epic_key IN (...)` alone
+    # would silently drop those subtasks and their worklogs from the epic's actual hours.
+    issue_to_epic: dict[str, str] = {}
+    for ek, sk_set in subtask_keys_by_epic.items():
+        ek_up = _to_text(ek).upper()
+        if not ek_up:
+            continue
+        for sk in sk_set:
+            sk_up = _to_text(sk).upper()
+            if sk_up:
+                issue_to_epic[sk_up] = ek_up
+    today = date.today()
+
     issue_keys = sorted(issue_to_epic)
     if not issue_keys:
         return actual_hours_by_epic, has_worklog_through_month_end, last_worklog_date_by_epic, {}, total_actual_hours_by_epic
 
-    today = date.today()
     with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
+        # Use latest worklog run by insertion order (rowid). The report's canonical issues
+        # run_id may belong to an epic-only or older partial refresh whose canonical_worklogs
+        # rows don't cover all subtasks; reading from the newest worklog run avoids missing
+        # worklogs that were captured by a later full refresh.
+        wl_latest = conn.execute(
+            "SELECT run_id FROM canonical_worklogs ORDER BY rowid DESC LIMIT 1"
+        ).fetchone()
+        wl_run_id = wl_latest[0] if wl_latest else run_id
         for chunk in _chunked(issue_keys, 400):
             placeholders = ",".join("?" for _ in chunk)
             rows = conn.execute(
@@ -559,7 +586,7 @@ def _load_worklog_metrics(
                   AND issue_key IN ({placeholders})
                   AND started_date <= ?
                 """,
-                [run_id, *chunk, today.isoformat()],
+                [wl_run_id, *chunk, today.isoformat()],
             ).fetchall()
             for row in rows:
                 issue_key = _to_text(row["issue_key"]).upper()

@@ -132,6 +132,8 @@ def _load_rows(input_path: Path) -> tuple[list[dict], str, str]:
                 "jira_due_date": jira_due_date,
                 "original_estimate": original_estimate,
                 "resource_logged_hours": "Yes" if total_hours_logged > 0 else "No",
+                "hours_logged": total_hours_logged,
+                "epic_key": "",
                 "jira_url": jira_url,
             }
         )
@@ -166,6 +168,8 @@ def _load_rows_from_canonical_db(db_path: Path, run_id: str = "") -> tuple[list[
                 "jira_due_date": _normalize_date_text(source.get("due_date")),
                 "original_estimate": round(_to_float(source.get("original_estimate_hours")), 2),
                 "resource_logged_hours": "Yes" if total_hours_logged > 0 else "No",
+                "hours_logged": total_hours_logged,
+                "epic_key": _to_text(source.get("epic_key")).upper(),
                 "jira_url": f"{base_url}/browse/{issue_key}",
             }
         )
@@ -462,6 +466,10 @@ def _build_html(payload: dict) -> str:
           <label class="field-option"><input type="checkbox" class="field-checkbox" value="jira_due_date" checked> Jira Planned Due Date</label>
           <label class="field-option"><input type="checkbox" class="field-checkbox" value="original_estimate" checked> Original Estimates</label>
         </div>
+        <div class="control-block">
+          <span class="control-label">Filters</span>
+          <label class="field-option"><input type="checkbox" id="exclude-bug-subtasks" checked> Exclude Bug Subtasks</label>
+        </div>
       </div>
     </section>
 
@@ -479,6 +487,7 @@ def _build_html(payload: dict) -> str:
               <th class="num">Planned Start Missing</th>
               <th class="num">Planned Due Missing</th>
               <th class="num">Original Estimate Missing</th>
+              <th class="num">Subtasks w/o Logged Hours</th>
             </tr>
           </thead>
           <tbody id="summary-rows"></tbody>
@@ -508,6 +517,7 @@ def _build_html(payload: dict) -> str:
     const totalMissedCountNode = document.getElementById("total-missed-count");
     const summaryRowsNode = document.getElementById("summary-rows");
     const fieldCheckboxes = Array.from(document.querySelectorAll(".field-checkbox"));
+    const excludeBugSubtasksCheckbox = document.getElementById("exclude-bug-subtasks");
 
     const DEFAULT_DATE_FROM_MONTH = reportData.default_date_from || "2026-01";
     const DEFAULT_DATE_TO_MONTH = reportData.default_date_to || "2026-02";
@@ -573,7 +583,7 @@ def _build_html(payload: dict) -> str:
       const start = parseDateValue(row.jira_start_date);
       const due = parseDateValue(row.jira_due_date);
       if (!start && !due) {{
-        return false;
+        return true;
       }}
       const rowStart = start || due;
       const rowEnd = due || start;
@@ -608,13 +618,39 @@ def _build_html(payload: dict) -> str:
       return text;
     }}
 
+    function isSubtask(row) {{
+      return asText(row.issue_type).toLowerCase().includes("sub");
+    }}
+
+    function isBugSubtask(row) {{
+      const t = asText(row.issue_type).toLowerCase();
+      return t.includes("bug") && t.includes("sub");
+    }}
+
+    function shouldExcludeBugSubtasks() {{
+      return excludeBugSubtasksCheckbox && excludeBugSubtasksCheckbox.checked;
+    }}
+
+    function getAllSubtasksForAssignee(assigneeName) {{
+      return rows.filter(function(row) {{
+        if (normalizeAssignee(row.assignee) !== assigneeName) return false;
+        if (!isSubtask(row)) return false;
+        if (shouldExcludeBugSubtasks() && isBugSubtask(row)) return false;
+        return true;
+      }});
+    }}
+
     function buildFilteredRows() {{
       const selectedFields = selectedFieldKeys();
       if (!selectedFields.length) {{
         return [];
       }}
+      const excludeBugs = shouldExcludeBugSubtasks();
       const filtered = [];
       for (const row of rows) {{
+        if (excludeBugs && isBugSubtask(row)) {{
+          continue;
+        }}
         if (!matchesDateRange(row)) {{
           continue;
         }}
@@ -651,7 +687,15 @@ def _build_html(payload: dict) -> str:
         entry.rows.push(row);
       }}
 
-      const rowsOut = Array.from(byAssignee.values()).sort((a, b) => {{
+      for (const [assignee, entry] of byAssignee.entries()) {{
+        const allSubtasks = getAllSubtasksForAssignee(assignee);
+        entry.allSubtasks = allSubtasks;
+        entry.noHoursSubtaskCount = allSubtasks.filter(function(r) {{
+          return Number(r.hours_logged || 0) === 0;
+        }}).length;
+      }}
+
+      const rowsOut = Array.from(byAssignee.values()).sort(function(a, b) {{
         const byTotal = b.total - a.total;
         if (byTotal !== 0) return byTotal;
         return a.assignee.localeCompare(b.assignee);
@@ -662,7 +706,7 @@ def _build_html(payload: dict) -> str:
       if (!rowsOut.length) {{
         const tr = document.createElement("tr");
         const td = document.createElement("td");
-        td.colSpan = 5;
+        td.colSpan = 6;
         td.className = "empty";
         td.textContent = "No missed entries for current filters.";
         tr.appendChild(td);
@@ -673,66 +717,96 @@ def _build_html(payload: dict) -> str:
       for (const entry of rowsOut) {{
         const assigneeId = "assignee-" + entry.assignee.toLowerCase().replace(/[^a-z0-9]+/g, "-");
         const tr = document.createElement("tr");
-        tr.innerHTML = `
-          <td><button type="button" class="assignee-toggle" data-target="${{assigneeId}}">${{entry.assignee}}</button></td>
-          <td class="num">${{entry.total}}</td>
-          <td class="num">${{entry.jira_start_date}}</td>
-          <td class="num">${{entry.jira_due_date}}</td>
-          <td class="num">${{entry.original_estimate}}</td>
-        `;
+        const noHoursStyle = entry.noHoursSubtaskCount > 0 ? ' style="color:#991b1b;font-weight:700"' : '';
+        tr.innerHTML =
+          '<td><button type="button" class="assignee-toggle" data-target="' + assigneeId + '">' + entry.assignee + '</button></td>' +
+          '<td class="num">' + entry.total + '</td>' +
+          '<td class="num">' + entry.jira_start_date + '</td>' +
+          '<td class="num">' + entry.jira_due_date + '</td>' +
+          '<td class="num">' + entry.original_estimate + '</td>' +
+          '<td class="num"' + noHoursStyle + '>' + entry.noHoursSubtaskCount + '</td>';
         summaryRowsNode.appendChild(tr);
+
+        const epicMap = new Map();
+        for (const sub of entry.allSubtasks) {{
+          const epicKey = asText(sub.epic_key) || "(No Epic)";
+          if (!epicMap.has(epicKey)) epicMap.set(epicKey, 0);
+          epicMap.set(epicKey, epicMap.get(epicKey) + Number(sub.hours_logged || 0));
+        }}
+        const noHoursEpics = [];
+        for (const [eKey, eHours] of epicMap.entries()) {{
+          if (eHours === 0) noHoursEpics.push(eKey);
+        }}
+
+        let noHoursEpicHtml = "";
+        if (noHoursEpics.length > 0) {{
+          const epicBadges = noHoursEpics.map(function(k) {{
+            return '<span class="missed-field">' + k + '</span>';
+          }}).join(" ");
+          noHoursEpicHtml =
+            '<div style="margin-bottom:10px;">' +
+            '<strong style="font-size:0.82rem;color:#7c2d12;">Epics with No Logged Hours (' + noHoursEpics.length + '):</strong> ' +
+            epicBadges + '</div>';
+        }}
+
+        const selectedFieldsNow = selectedFieldKeys();
+        const subtaskItemsHtml = entry.allSubtasks.slice().sort(function(a, b) {{
+          return asText(a.issue_key).localeCompare(asText(b.issue_key));
+        }}).map(function(sub) {{
+          const link = asText(sub.jira_url);
+          const issue = asText(sub.issue_key);
+          const issueHtml = link
+            ? '<a class="jira-link" href="' + link + '" target="_blank" rel="noopener noreferrer">' + issue + '</a>'
+            : issue;
+          const hasHours = Number(sub.hours_logged || 0) > 0 || asText(sub.resource_logged_hours).toLowerCase() === "yes";
+          const hoursChip = hasHours
+            ? '<span class="status-chip status-yes">Yes</span>'
+            : '<span class="status-chip status-no">No</span>';
+          const epicKeyText = asText(sub.epic_key);
+          const jiraBase = link ? link.split("/browse/")[0] : "";
+          const epicHtml = epicKeyText && jiraBase
+            ? '<a class="jira-link" href="' + jiraBase + '/browse/' + epicKeyText + '" target="_blank" rel="noopener noreferrer">' + epicKeyText + '</a>'
+            : (epicKeyText || "-");
+          const subMisses = selectedFieldsNow.length ? missingFields(sub, selectedFieldsNow) : [];
+          const missesHtml = subMisses.length
+            ? subMisses.map(function(f) {{ return '<span class="missed-field">' + (fieldLabels[f] || f) + '</span>'; }}).join("")
+            : '<span class="empty">None</span>';
+          const summaryText = asText(sub.summary);
+          return '<tr>' +
+            '<td>' + issueHtml + '</td>' +
+            '<td>' + (asText(sub.issue_type) || "-") + '</td>' +
+            '<td>' + epicHtml + '</td>' +
+            '<td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + summaryText.replace(/"/g, "&quot;") + '">' + summaryText + '</td>' +
+            '<td>' + missesHtml + '</td>' +
+            '<td>' + hoursChip + '</td>' +
+            '</tr>';
+        }}).join("");
 
         const detailRow = document.createElement("tr");
         detailRow.className = "assignee-detail-row";
         detailRow.id = assigneeId;
-        const itemsHtml = entry.rows
-          .slice()
-          .sort((a, b) => asText(a.issue_key).localeCompare(asText(b.issue_key)))
-          .map((row) => {{
-            const link = asText(row.jira_url);
-            const misses = (row._misses || [])
-              .map((field) => `<span class="missed-field">${{fieldLabels[field] || field}}</span>`)
-              .join("");
-            const issue = asText(row.issue_key);
-            const issueHtml = link
-              ? `<a class="jira-link" href="${{link}}" target="_blank" rel="noopener noreferrer">${{issue}}</a>`
-              : issue;
-            const hoursLogged = asText(row.resource_logged_hours).toLowerCase() === "yes";
-            const hoursChip = hoursLogged
-              ? '<span class="status-chip status-yes">Yes</span>'
-              : '<span class="status-chip status-no">No</span>';
-            return `
-              <tr>
-                <td>${{issueHtml}}</td>
-                <td>${{asText(row.issue_type) || "-"}}</td>
-                <td>${{misses || '<span class="empty">None</span>'}}</td>
-                <td>${{hoursChip}}</td>
-              </tr>
-            `;
-          }})
-          .join("");
-        detailRow.innerHTML = `
-          <td colspan="5" class="assignee-detail-cell">
-            <table class="detail-workitem-table">
-              <thead>
-                <tr>
-                  <th>Work Item</th>
-                  <th>Issue Type</th>
-                  <th>Missing Fields</th>
-                  <th>Resource Logged Hours</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${{itemsHtml || '<tr><td colspan="4" class="assignee-jira-item empty">No Jira rows.</td></tr>'}}
-              </tbody>
-            </table>
-          </td>
-        `;
+        detailRow.innerHTML =
+          '<td colspan="6" class="assignee-detail-cell">' +
+          noHoursEpicHtml +
+          (entry.allSubtasks.length > 0
+            ? '<table class="detail-workitem-table">' +
+              '<thead><tr>' +
+              '<th style="width:10%">Work Item</th>' +
+              '<th style="width:10%">Issue Type</th>' +
+              '<th style="width:10%">Epic</th>' +
+              '<th style="width:35%">Summary</th>' +
+              '<th style="width:25%">Missing Fields</th>' +
+              '<th style="width:10%">Hours Logged</th>' +
+              '</tr></thead>' +
+              '<tbody>' + (subtaskItemsHtml || '<tr><td colspan="6" class="empty">No subtask items.</td></tr>') + '</tbody>' +
+              '</table>'
+            : '<p class="empty" style="margin:8px 0">No subtask items assigned.</p>') +
+          '</td>';
         summaryRowsNode.appendChild(detailRow);
       }}
 
-      summaryRowsNode.querySelectorAll(".assignee-toggle").forEach((button) => {{
-        button.addEventListener("click", () => {{
+      summaryRowsNode.querySelectorAll(".assignee-toggle").forEach(function(button) {{
+        button.addEventListener("click", function() {{
           const targetId = button.getAttribute("data-target");
           const row = document.getElementById(targetId);
           if (!row) return;
@@ -760,7 +834,12 @@ def _build_html(payload: dict) -> str:
           entry[field] += 1;
         }}
       }}
-      return Array.from(byAssignee.values()).sort((a, b) => {{
+      for (const [assignee, entry] of byAssignee.entries()) {{
+        entry.no_hours_subtask_count = getAllSubtasksForAssignee(assignee).filter(function(r) {{
+          return Number(r.hours_logged || 0) === 0;
+        }}).length;
+      }}
+      return Array.from(byAssignee.values()).sort(function(a, b) {{
         const byTotal = b.total - a.total;
         if (byTotal !== 0) return byTotal;
         return a.assignee.localeCompare(b.assignee);
@@ -787,6 +866,7 @@ def _build_html(payload: dict) -> str:
             "Assignee": normalizeAssignee(row.assignee),
             "Work Item": asText(row.issue_key),
             "Issue Type": asText(row.issue_type),
+            "Epic": asText(row.epic_key) || "-",
             "Missing Fields": misses,
             "Resource Logged Hours": asText(row.resource_logged_hours),
             "Jira Planned Start Date": asText(row.jira_start_date),
@@ -803,6 +883,7 @@ def _build_html(payload: dict) -> str:
         "Planned Start Missing": entry.jira_start_date,
         "Planned Due Missing": entry.jira_due_date,
         "Original Estimate Missing": entry.original_estimate,
+        "Subtasks w/o Logged Hours": entry.no_hours_subtask_count || 0,
       }}));
 
       const wb = XLSX.utils.book_new();
@@ -846,6 +927,11 @@ def _build_html(payload: dict) -> str:
         rerender();
       }});
     }});
+    if (excludeBugSubtasksCheckbox) {{
+      excludeBugSubtasksCheckbox.addEventListener("change", () => {{
+        rerender();
+      }});
+    }}
     exportExcelButton.addEventListener("click", () => {{
       exportToExcel();
     }});

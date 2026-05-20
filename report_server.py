@@ -5086,7 +5086,8 @@ def _canonical_build_missed_entries_rows(db_path: Path, run_id: str) -> tuple[li
                 i.start_date,
                 i.due_date,
                 i.original_estimate_hours,
-                i.total_hours_logged
+                i.total_hours_logged,
+                COALESCE(i.epic_key, '') AS epic_key
             FROM canonical_issues i
             WHERE i.run_id = ?
             ORDER BY i.project_key ASC, i.issue_key ASC
@@ -5096,6 +5097,7 @@ def _canonical_build_missed_entries_rows(db_path: Path, run_id: str) -> tuple[li
     out: list[dict[str, object]] = []
     for row in rows:
         issue_key = _to_text(row["issue_key"]).upper()
+        hours_logged = float(row["total_hours_logged"] or 0)
         out.append(
             {
                 "issue_key": issue_key,
@@ -5105,7 +5107,9 @@ def _canonical_build_missed_entries_rows(db_path: Path, run_id: str) -> tuple[li
                 "jira_start_date": _to_text(row["start_date"]),
                 "jira_due_date": _to_text(row["due_date"]),
                 "original_estimate": _round_hours(float(row["original_estimate_hours"] or 0)),
-                "resource_logged_hours": "Yes" if float(row["total_hours_logged"] or 0) > 0 else "No",
+                "resource_logged_hours": "Yes" if hours_logged > 0 else "No",
+                "hours_logged": hours_logged,
+                "epic_key": _to_text(row["epic_key"]).upper(),
                 "jira_url": f"{BASE_URL}/browse/{issue_key}" if issue_key else "",
             }
         )
@@ -29036,13 +29040,15 @@ def _tcp_load_epic_details(conn: sqlite3.Connection, epic_keys: list[str], canon
             sk_upper = [sk.upper() for sk in all_story_keys]
             try:
                 assignee_rows = conn.execute(
-                    f"SELECT issue_key, assignee FROM canonical_issues WHERE run_id = ? AND upper(issue_key) IN ({sk_ph})",
+                    f"SELECT issue_key, assignee, start_date, total_hours_logged FROM canonical_issues WHERE run_id = ? AND upper(issue_key) IN ({sk_ph})",
                     [canonical_run_id] + sk_upper,
                 ).fetchall()
                 assignee_by_sk: dict[str, str] = {_to_text(r[0]).upper(): _to_text(r[1]) for r in assignee_rows}
+                planned_start_by_sk: dict[str, str] = {_to_text(r[0]).upper(): _to_text(r[2]) for r in assignee_rows}
+                actual_hours_by_sk: dict[str, float] = {_to_text(r[0]).upper(): round(float(r[3] or 0), 2) for r in assignee_rows}
 
                 subtask_rows = conn.execute(
-                    f"""SELECT issue_key, summary, status, assignee, original_estimate_hours, parent_issue_key
+                    f"""SELECT issue_key, summary, status, assignee, original_estimate_hours, total_hours_logged, start_date, parent_issue_key
                         FROM canonical_issues
                         WHERE run_id = ? AND upper(parent_issue_key) IN ({sk_ph})
                         AND issue_type NOT IN ('Epic', 'Story', 'Initiative')""",
@@ -29050,19 +29056,24 @@ def _tcp_load_epic_details(conn: sqlite3.Connection, epic_keys: list[str], canon
                 ).fetchall()
                 subtasks_by_parent: dict[str, list] = {}
                 for r in subtask_rows:
-                    parent_upper = _to_text(r[5]).upper()
+                    parent_upper = _to_text(r[7]).upper()
                     subtasks_by_parent.setdefault(parent_upper, []).append({
                         "issue_key": _to_text(r[0]),
                         "issue_name": _to_text(r[1]),
                         "status": _to_text(r[2]),
                         "assignee": _to_text(r[3]),
                         "estimate_hours": round(float(r[4] or 0), 2),
+                        "jira_url": _jira_browse_url(_to_text(r[0]).upper()),
+                        "actual_hours": round(float(r[5] or 0), 2),
+                        "planned_start": _to_text(r[6]),
                     })
 
                 for ep_data in result.values():
                     for s in ep_data["stories"]:
                         sk_u = _to_text(s.get("story_key", "")).upper()
                         s["assignee"] = assignee_by_sk.get(sk_u, "")
+                        s["planned_start"] = planned_start_by_sk.get(sk_u, "")
+                        s["actual_hours"] = actual_hours_by_sk.get(sk_u, 0.0)
                         s["subtasks"] = subtasks_by_parent.get(sk_u, [])
             except Exception:
                 pass
@@ -29250,6 +29261,7 @@ def _tcp_build_team_data(
         "capacity_profile": profile,
         "members": member_results,
         "epics": epic_details,
+        "jira_base_url": _to_text(BASE_URL).rstrip("/"),
     }
 
 
@@ -41243,8 +41255,8 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                     try:
                         child_search_rows = conn.execute(
                             f"""SELECT issue_key, summary, status, assignee,
-                                       original_estimate_hours, parent_issue_key,
-                                       epic_key, issue_type, project_key
+                                       original_estimate_hours, total_hours_logged, start_date,
+                                       parent_issue_key, epic_key, issue_type, project_key
                                 FROM canonical_issues
                                 WHERE run_id = ?
                                   AND (lower(issue_key) LIKE ? OR lower(summary) LIKE ? OR lower(assignee) LIKE ?)
@@ -41322,6 +41334,13 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                                     "status": _to_text(_cr["status"]),
                                     "assignee": _to_text(_cr["assignee"]),
                                     "estimate_hours": round(float(_cr["original_estimate_hours"] or 0), 2),
+                                    "jira_url": _jira_browse_url(_iss_key.upper()),
+                                    "matched": True,
+                                    "status": _to_text(_cr["status"]),
+                                    "assignee": _to_text(_cr["assignee"]),
+                                    "estimate_hours": round(float(_cr["original_estimate_hours"] or 0), 2),
+                                    "actual_hours": round(float(_cr["total_hours_logged"] or 0), 2),
+                                    "planned_start": _to_text(_cr["start_date"]),
                                     "matched": True,
                                 })
                             else:
@@ -41332,6 +41351,14 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                                     "story_status": _to_text(_cr["status"]),
                                     "assignee": _to_text(_cr["assignee"]),
                                     "estimate_hours": round(float(_cr["original_estimate_hours"] or 0), 2),
+                                    "jira_url": _jira_browse_url(_iss_key.upper()),
+                                    "subtasks": [],
+                                    "matched": True,
+                                    "story_status": _to_text(_cr["status"]),
+                                    "assignee": _to_text(_cr["assignee"]),
+                                    "estimate_hours": round(float(_cr["original_estimate_hours"] or 0), 2),
+                                    "actual_hours": round(float(_cr["total_hours_logged"] or 0), 2),
+                                    "planned_start": _to_text(_cr["start_date"]),
                                     "subtasks": [],
                                     "matched": True,
                                 }
@@ -41345,7 +41372,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                             _sf_ph = ",".join("?" for _ in _stories_to_fill)
                             try:
                                 _sf_rows = conn.execute(
-                                    f"SELECT issue_key, summary, status, assignee, original_estimate_hours FROM canonical_issues WHERE run_id = ? AND upper(issue_key) IN ({_sf_ph})",
+                                    f"SELECT issue_key, summary, status, assignee, original_estimate_hours, total_hours_logged, start_date FROM canonical_issues WHERE run_id = ? AND upper(issue_key) IN ({_sf_ph})",
                                     [canonical_run_id] + _stories_to_fill,
                                 ).fetchall()
                                 _sf_map = {_to_text(_r["issue_key"]).upper(): _r for _r in _sf_rows}
@@ -41358,6 +41385,9 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                                                 _sv["story_status"] = _to_text(_fill["status"])
                                                 _sv["assignee"] = _to_text(_fill["assignee"])
                                                 _sv["estimate_hours"] = round(float(_fill["original_estimate_hours"] or 0), 2)
+                                                _sv["jira_url"] = _jira_browse_url(_sk)
+                                                _sv["actual_hours"] = round(float(_fill["total_hours_logged"] or 0), 2)
+                                                _sv["planned_start"] = _to_text(_fill["start_date"])
                             except Exception:
                                 pass
 
@@ -41441,7 +41471,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                     detail["stories"] = preloaded
                 work_items.append(detail)
 
-            return jsonify({"ok": True, "work_items": work_items, "total": total_rows, "returned": len(sliced_items)})
+            return jsonify({"ok": True, "work_items": work_items, "total": total_rows, "returned": len(sliced_items), "jira_base_url": _to_text(BASE_URL).rstrip("/")})
         except Exception as exc:
             return jsonify({"ok": False, "error": str(exc)}), 500
 
@@ -41497,7 +41527,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 stories = []
                 if canonical_run_id:
                     story_rows = conn.execute(
-                        """SELECT issue_key, summary, status, assignee, original_estimate_hours
+                        """SELECT issue_key, summary, status, assignee, original_estimate_hours, total_hours_logged, start_date
                            FROM canonical_issues
                            WHERE run_id = ? AND upper(parent_issue_key) = ?
                              AND issue_type NOT IN ('Epic', 'Initiative', 'Sub-task', 'Subtask', 'Sub task')
@@ -41509,7 +41539,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                     if story_keys_upper:
                         sk_ph = ",".join("?" for _ in story_keys_upper)
                         sub_rows = conn.execute(
-                            f"""SELECT issue_key, summary, status, assignee, original_estimate_hours, parent_issue_key
+                            f"""SELECT issue_key, summary, status, assignee, original_estimate_hours, total_hours_logged, start_date, parent_issue_key
                                 FROM canonical_issues
                                 WHERE run_id = ? AND upper(parent_issue_key) IN ({sk_ph})
                                   AND issue_type NOT IN ('Epic', 'Story', 'Initiative')
@@ -41524,6 +41554,9 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                                 "status": _to_text(r["status"]),
                                 "assignee": _to_text(r["assignee"]),
                                 "estimate_hours": round(float(r["original_estimate_hours"] or 0), 2),
+                                "jira_url": _jira_browse_url(_to_text(r["issue_key"]).upper()),
+                                "actual_hours": round(float(r["total_hours_logged"] or 0), 2),
+                                "planned_start": _to_text(r["start_date"]),
                             })
                     for r in story_rows:
                         sk_u = _to_text(r["issue_key"]).upper()
@@ -41533,7 +41566,10 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                             "story_status": _to_text(r["status"]),
                             "assignee": _to_text(r["assignee"]),
                             "estimate_hours": round(float(r["original_estimate_hours"] or 0), 2),
+                            "actual_hours": round(float(r["total_hours_logged"] or 0), 2),
+                            "planned_start": _to_text(r["start_date"]),
                             "subtasks": subtasks_by_parent.get(sk_u, []),
+                            "jira_url": _jira_browse_url(_to_text(r["issue_key"]).upper()),
                         })
                 if not stories:
                     try:

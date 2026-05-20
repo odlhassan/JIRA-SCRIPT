@@ -3512,6 +3512,7 @@
       let epic_count = 0, planned_hours = 0, planned_days = 0, actual_hours = 0, actual_days = 0;
       let brought_forward_count = 0, brought_forward_planned_hours = 0, brought_forward_planned_days = 0;
       let carried_forward_count = 0, carried_forward_planned_hours = 0, carried_forward_planned_days = 0;
+      let carried_forward_actual_hours = 0, carried_forward_actual_days = 0;
       let in_month_epic_count = 0, in_month_planned_hours = 0, in_month_planned_days = 0;
       let in_month_actual_hours = 0, in_month_actual_days = 0;
       let bf_actual_hours = 0, bf_actual_days = 0;
@@ -3547,12 +3548,15 @@
           carried_forward_count++;
           carried_forward_planned_hours += Number(r.planned_hours || 0);
           carried_forward_planned_days += Number(r.planned_days || 0);
+          carried_forward_actual_hours += Number(r.actual_hours || 0);
+          carried_forward_actual_days += Number(r.actual_days || 0);
         }
       }
       return {
         epic_count, planned_hours, planned_days, actual_hours, actual_days,
         brought_forward_count, brought_forward_planned_hours, brought_forward_planned_days,
         carried_forward_count, carried_forward_planned_hours, carried_forward_planned_days,
+        carried_forward_actual_hours, carried_forward_actual_days,
         in_month_epic_count, in_month_planned_hours, in_month_planned_days,
         in_month_actual_hours, in_month_actual_days,
         bf_actual_hours, bf_actual_days,
@@ -3598,11 +3602,11 @@
         bf_planned_days: Number(totals.brought_forward_planned_days || 0),
         bf_actual_hours: Number(totals.bf_actual_hours || 0),
         bf_actual_days: Number(totals.bf_actual_days || 0),
-        cf_count: Number(totals.in_month_cf_count || 0),
-        cf_planned_hours: Number(totals.in_month_cf_planned_hours || 0),
-        cf_planned_days: Number(totals.in_month_cf_planned_days || 0),
-        cf_actual_hours: Number(totals.in_month_cf_actual_hours || 0),
-        cf_actual_days: Number(totals.in_month_cf_actual_days || 0),
+        cf_count: Number(totals.carried_forward_count || 0),
+        cf_planned_hours: Number(totals.carried_forward_planned_hours || 0),
+        cf_planned_days: Number(totals.carried_forward_planned_days || 0),
+        cf_actual_hours: Number(totals.carried_forward_actual_hours || 0),
+        cf_actual_days: Number(totals.carried_forward_actual_days || 0),
       };
       renderResourceSummary();
     }
@@ -4793,7 +4797,7 @@
       if (!items.length) {
         return '<div class="child-panel">' + reasonsBanner
           + '<table class="child-table"><tbody>'
-          + '<tr><td colspan="9" class="child-empty">No story or subtask data available for this epic.</td></tr>'
+          + '<tr><td colspan="10" class="child-empty">No story or subtask data available for this epic.</td></tr>'
           + '</tbody></table></div>';
       }
 
@@ -4835,7 +4839,7 @@
             ? '<a href="' + esc(item.story_jira_url) + '" target="_blank" rel="noopener" style="color:#155e91;font-weight:700;">' + esc(ps) + '</a>'
             : '<strong>' + esc(ps) + '</strong>';
           const storySummary = item.parent_story_summary ? ' &ndash; ' + esc(item.parent_story_summary) : '';
-          body += '<tr class="story-group-hdr"><td colspan="9">'
+          body += '<tr class="story-group-hdr"><td colspan="10">'
             + '<span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle;margin-right:4px;color:#0369a1;">task_alt</span>'
             + storyLink + storySummary + '</td></tr>';
         } else if (!ps) {
@@ -4855,6 +4859,18 @@
           ? '<a href="' + esc(item.jira_url) + '" target="_blank" rel="noopener" style="color:#155e91;">' + esc(item.issue_key) + '</a>'
           : esc(item.issue_key);
         const statusStyle = 'color:#475569;font-size:0.78rem;';
+
+        const wls = Array.isArray(item.worklogs) ? item.worklogs : [];
+        const actualSum = wls.reduce(function(a, w) { return a + (Number(w.hours) || 0); }, 0);
+        const wlRowId = "wl-" + String(item.issue_key || "").replace(/[^A-Za-z0-9]/g, "_") + "-" + Math.random().toString(36).slice(2, 8);
+        const actualCellHtml = (actualSum > 0 && wls.length)
+          ? '<a href="#" class="actual-hrs-link" data-target="' + wlRowId + '" '
+            + 'style="color:#16a34a;font-weight:700;text-decoration:underline dotted;cursor:pointer;" '
+            + 'title="Click to see worklog entries">' + formatNumber(actualSum) + '</a>'
+          : (actualSum > 0
+              ? '<span style="color:#16a34a;font-weight:700;">' + formatNumber(actualSum) + '</span>'
+              : '<span style="color:#94a3b8;">—</span>');
+
         body += '<tr>'
           + '<td>' + childItemTypePill(item.issue_type) + '</td>'
           + '<td>' + keyLink + '</td>'
@@ -4864,12 +4880,38 @@
           + dateCell(item.due_date, dueClass)
           + '<td>' + (item.actual_completed_date ? esc(formatDisplayDate(item.actual_completed_date)) : '<span style="color:#94a3b8;">—</span>') + '</td>'
           + '<td class="num">' + formatNumber(item.planned_hours) + '</td>'
+          + '<td class="num">' + actualCellHtml + '</td>'
           + '<td>' + reasonTag(item) + '</td>'
           + '</tr>';
+
+        if (wls.length) {
+          let wlBody = '<table style="width:100%;border-collapse:collapse;font-size:0.75rem;">'
+            + '<thead><tr style="background:#f1f5f9;">'
+            + '<th style="text-align:left;padding:4px 8px;border-bottom:1px solid #e2e8f0;">Date</th>'
+            + '<th style="text-align:left;padding:4px 8px;border-bottom:1px solid #e2e8f0;">Author</th>'
+            + '<th style="text-align:right;padding:4px 8px;border-bottom:1px solid #e2e8f0;">Hours</th>'
+            + '</tr></thead><tbody>';
+          wls.forEach(function(w) {
+            wlBody += '<tr>'
+              + '<td style="padding:3px 8px;border-bottom:1px solid #f1f5f9;font-family:monospace;color:#475569;">' + esc(w.date || "") + '</td>'
+              + '<td style="padding:3px 8px;border-bottom:1px solid #f1f5f9;color:#0f766e;">' + esc(w.author || "") + '</td>'
+              + '<td style="padding:3px 8px;border-bottom:1px solid #f1f5f9;text-align:right;color:#16a34a;font-weight:600;">' + formatNumber(Number(w.hours) || 0) + '</td>'
+              + '</tr>';
+          });
+          wlBody += '<tr><td colspan="2" style="padding:4px 8px;text-align:right;font-weight:700;color:#475569;">Total</td>'
+            + '<td style="padding:4px 8px;text-align:right;font-weight:700;color:#16a34a;">' + formatNumber(actualSum) + '</td></tr>';
+          wlBody += '</tbody></table>';
+          body += '<tr class="wl-detail-row" id="' + wlRowId + '" style="display:none;background:#fffbeb;">'
+            + '<td></td><td colspan="9" style="padding:8px 12px;">' + wlBody + '</td>'
+            + '</tr>';
+        }
       });
       return '<div class="child-panel">' + reasonsBanner + '<table class="child-table">'
         + '<thead><tr><th>Type</th><th>Key</th><th>Summary</th><th>Status</th>'
-        + '<th>Planned Start</th><th>Planned Due</th><th>Done Date</th><th class="num">Hrs</th><th>Reason</th></tr></thead>'
+        + '<th>Planned Start</th><th>Planned Due</th><th>Done Date</th>'
+        + '<th class="num" title="Original estimate from Jira">Planned Hrs</th>'
+        + '<th class="num" title="Sum of worklog hours logged on this issue. Click a value to see individual worklog entries.">Actual Hrs</th>'
+        + '<th>Reason</th></tr></thead>'
         + '<tbody>' + body + '</tbody></table></div>';
     }
 
@@ -5278,6 +5320,18 @@
       const isOpen = childRow.classList.toggle("is-open");
       btn.classList.toggle("is-open", isOpen);
       btn.setAttribute("aria-label", isOpen ? "Collapse stories" : "Expand stories");
+    });
+
+    /* ── Subtask actual-hrs worklog detail toggle ────────────────── */
+    document.addEventListener("click", (e) => {
+      const link = e.target.closest(".actual-hrs-link");
+      if (!link) return;
+      e.preventDefault();
+      const targetId = link.dataset.target;
+      if (!targetId) return;
+      const detailRow = document.getElementById(targetId);
+      if (!detailRow) return;
+      detailRow.style.display = (detailRow.style.display === "none" || !detailRow.style.display) ? "" : "none";
     });
     if (els.projDdSearch) {
       els.projDdSearch.addEventListener("input", filterProjectDropdownList);

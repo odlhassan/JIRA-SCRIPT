@@ -603,14 +603,22 @@
       white-space: nowrap;
     }
     .story-assignee {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
       font-size: 11px;
       color: var(--muted);
+      background: var(--chip-bg);
+      border-radius: 4px;
+      padding: 1px 5px;
       white-space: nowrap;
-      max-width: 90px;
-      overflow: hidden;
-      text-overflow: ellipsis;
+      flex-shrink: 0;
     }
+    .story-assignee .material-symbols-outlined { font-size: 12px; }
     .story-est {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
       font-size: 11px;
       color: var(--muted);
       background: var(--chip-bg);
@@ -618,6 +626,22 @@
       padding: 1px 5px;
       white-space: nowrap;
     }
+    .story-est .material-symbols-outlined { font-size: 12px; }
+    .wi-icon-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      font-size: 11px;
+      color: var(--muted);
+      background: var(--chip-bg);
+      border-radius: 4px;
+      padding: 1px 5px;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .wi-icon-chip .material-symbols-outlined { font-size: 12px; }
+    .subtask-item .wi-icon-chip { font-size: 10px; padding: 1px 4px; border-radius: 3px; }
+    .subtask-item .wi-icon-chip .material-symbols-outlined { font-size: 11px; }
     .story-status {
       font-size: 10px;
       border-radius: 4px;
@@ -677,14 +701,22 @@
       white-space: nowrap;
     }
     .subtask-assignee {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
       font-size: 10px;
       color: var(--muted);
+      background: var(--chip-bg);
+      border-radius: 3px;
+      padding: 1px 4px;
       white-space: nowrap;
-      max-width: 80px;
-      overflow: hidden;
-      text-overflow: ellipsis;
+      flex-shrink: 0;
     }
+    .subtask-assignee .material-symbols-outlined { font-size: 11px; }
     .subtask-est {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
       font-size: 10px;
       color: var(--muted);
       background: var(--chip-bg);
@@ -692,6 +724,7 @@
       padding: 1px 4px;
       white-space: nowrap;
     }
+    .subtask-est .material-symbols-outlined { font-size: 11px; }
     .btn-assign-story {
       background: transparent;
       color: var(--accent);
@@ -941,6 +974,24 @@
     .story-item.search-matched { border-left: 3px solid #1d4ed8; background: rgba(29,78,216,.04); }
     .subtask-item.search-matched { border-left: 3px solid #6d28d9; background: rgba(109,40,217,.04); }
 
+    /* ── Jira external link button ───────────────────────────────────── */
+    .btn-jira-link {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px; height: 22px;
+      border-radius: 4px;
+      border: 1px solid var(--line);
+      background: transparent;
+      color: #0052cc;
+      cursor: pointer;
+      text-decoration: none;
+      flex-shrink: 0;
+      transition: background .15s, border-color .15s;
+    }
+    .btn-jira-link:hover { background: rgba(0,82,204,.08); border-color: #0052cc; }
+    .btn-jira-link .material-symbols-outlined { font-size: 13px; }
+
     /* ── Assignee chips on work items ───────────────────────────────── */
     .epic-assignee-chip {
       font-size: 10px; color: var(--muted); background: var(--chip-bg);
@@ -1014,6 +1065,296 @@
     .jira-sel-actions { display: flex; gap: 6px; margin-left: auto; }
     .btn-sel-quick { background: transparent; border: 1px solid var(--line); border-radius: 5px; padding: 2px 8px; font-size: 11px; cursor: pointer; color: var(--muted); }
     .btn-sel-quick:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* ── Analytics icon button in top bar ───────────────────────────────── */
+    .btn-analytics {
+      background: linear-gradient(135deg, #f59e0b 0%, #f97316 100%);
+      border: none;
+      color: #fff;
+      border-radius: 8px;
+      height: 32px;
+      padding: 0 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+      cursor: pointer;
+      flex-shrink: 0;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .3px;
+      white-space: nowrap;
+      box-shadow: 0 2px 8px rgba(249,115,22,.45), inset 0 1px 0 rgba(255,255,255,.25);
+      transition: filter .15s, transform .15s, box-shadow .15s;
+    }
+    .btn-analytics:hover {
+      filter: brightness(1.1);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 14px rgba(249,115,22,.55), inset 0 1px 0 rgba(255,255,255,.25);
+    }
+    .btn-analytics:active { transform: translateY(0); filter: brightness(.97); }
+    .btn-analytics .material-symbols-outlined { font-size: 16px; }
+
+    /* ── Analytics drawer backdrop ──────────────────────────────────────── */
+    .analytics-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.38);
+      z-index: 700;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .25s;
+    }
+    .analytics-backdrop.open { opacity: 1; pointer-events: auto; }
+
+    /* ── Analytics drawer ───────────────────────────────────────────────── */
+    .analytics-drawer {
+      position: fixed;
+      top: 0;
+      right: 0;
+      width: 400px;
+      max-width: 100vw;
+      height: 100vh;
+      background: #f4f8fb;
+      z-index: 800;
+      box-shadow: -6px 0 32px rgba(0,0,0,.16);
+      display: flex;
+      flex-direction: column;
+      transform: translateX(100%);
+      transition: transform .3s cubic-bezier(.4,0,.2,1);
+      overflow: hidden;
+    }
+    .analytics-drawer.open { transform: translateX(0); }
+
+    .analytics-drawer-header {
+      background: linear-gradient(135deg, var(--accent) 0%, #1a6b82 100%);
+      color: #fff;
+      padding: 20px 20px 16px;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+    .analytics-drawer-title {
+      font-size: 17px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      margin: 0 0 3px;
+    }
+    .analytics-drawer-title .material-symbols-outlined { font-size: 20px; opacity: .9; }
+    .analytics-drawer-subtitle {
+      font-size: 12px;
+      opacity: .75;
+      margin: 0;
+    }
+    .analytics-close-btn {
+      background: rgba(255,255,255,.18);
+      border: 1px solid rgba(255,255,255,.3);
+      border-radius: 6px;
+      color: #fff;
+      width: 30px;
+      height: 30px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: background .15s;
+      margin-top: 2px;
+    }
+    .analytics-close-btn:hover { background: rgba(255,255,255,.32); }
+    .analytics-close-btn .material-symbols-outlined { font-size: 18px; }
+
+    .analytics-drawer-body {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    /* ── Analytics team pill ─────────────────────────────────────────────── */
+    .analytics-team-pill {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-size: 13px;
+    }
+    .analytics-team-pill .material-symbols-outlined { font-size: 18px; color: var(--accent); flex-shrink: 0; }
+    .analytics-team-pill strong { color: var(--accent); }
+    .analytics-team-pill .atp-meta { font-size: 11px; color: var(--muted); margin-top: 1px; }
+
+    /* ── Analytics stat grid ─────────────────────────────────────────────── */
+    .analytics-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .astat-card {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 14px 14px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      box-shadow: 0 1px 3px rgba(0,0,0,.05);
+      transition: box-shadow .15s;
+      position: relative;
+      overflow: hidden;
+    }
+    .astat-card:hover { box-shadow: 0 3px 10px rgba(0,0,0,.09); }
+    .astat-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 3px;
+      border-radius: 12px 12px 0 0;
+    }
+    .astat-card.ac-capacity::before  { background: #3b82f6; }
+    .astat-card.ac-leave-p::before   { background: var(--leave-p); }
+    .astat-card.ac-leave-u::before   { background: var(--leave-u); }
+    .astat-card.ac-avail::before     { background: var(--avail); }
+    .astat-card.ac-planned::before   { background: #6366f1; }
+    .astat-card.ac-logged::before    { background: #8b5cf6; }
+    .astat-card.ac-epics::before     { background: #0ea5e9; }
+    .astat-card.ac-wide {
+      grid-column: 1 / -1;
+    }
+    .astat-icon-wrap {
+      width: 32px; height: 32px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      margin-bottom: 2px;
+    }
+    .astat-icon-wrap .material-symbols-outlined { font-size: 17px; }
+    .ac-capacity  .astat-icon-wrap { background: #eff6ff; color: #3b82f6; }
+    .ac-leave-p   .astat-icon-wrap { background: #fffbeb; color: var(--leave-p); }
+    .ac-leave-u   .astat-icon-wrap { background: #fef2f2; color: var(--leave-u); }
+    .ac-avail     .astat-icon-wrap { background: #f0fdf4; color: var(--avail); }
+    .ac-planned   .astat-icon-wrap { background: #eef2ff; color: #6366f1; }
+    .ac-logged    .astat-icon-wrap { background: #f5f3ff; color: #8b5cf6; }
+    .ac-epics     .astat-icon-wrap { background: #f0f9ff; color: #0ea5e9; }
+    .astat-value {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.1;
+      white-space: nowrap;
+    }
+    .astat-label {
+      font-size: 11px;
+      color: var(--muted);
+      font-weight: 500;
+      line-height: 1.3;
+    }
+    .astat-sub {
+      font-size: 10px;
+      color: var(--muted);
+      opacity: .75;
+    }
+
+    /* ── Analytics utilization bar ───────────────────────────────────────── */
+    .analytics-util-card {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      box-shadow: 0 1px 3px rgba(0,0,0,.05);
+    }
+    .analytics-util-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: .5px;
+    }
+    .util-bar-row {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .util-bar-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+    }
+    .util-bar-name { color: var(--text); font-weight: 500; display: flex; align-items: center; gap: 4px; }
+    .util-bar-name .material-symbols-outlined { font-size: 13px; }
+    .util-bar-pct  { font-weight: 700; font-size: 12px; }
+    .util-bar-track {
+      height: 8px;
+      background: #e5e7eb;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .util-bar-fill {
+      height: 100%;
+      border-radius: 4px;
+      transition: width .5s ease;
+    }
+    .util-planned-fill { background: #6366f1; }
+    .util-logged-fill  { background: #8b5cf6; }
+
+    /* ── Analytics member table ──────────────────────────────────────────── */
+    .analytics-members-card {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 1px 3px rgba(0,0,0,.05);
+    }
+    .analytics-members-head {
+      padding: 10px 14px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      border-bottom: 1px solid var(--line);
+      background: #f8fafc;
+    }
+    .analytics-member-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 14px;
+      border-bottom: 1px solid var(--line);
+      font-size: 12px;
+    }
+    .analytics-member-row:last-child { border-bottom: none; }
+    .anm-avatar {
+      width: 26px; height: 26px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fff;
+      font-size: 10px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .anm-name { flex: 1; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .anm-avail { color: var(--avail); font-weight: 700; white-space: nowrap; font-size: 11px; }
+    .anm-planned { color: #6366f1; font-weight: 600; white-space: nowrap; font-size: 11px; }
+    .anm-logged  { color: #8b5cf6; font-weight: 600; white-space: nowrap; font-size: 11px; }
   </style>
 </head>
 <body>
@@ -1054,6 +1395,10 @@
         <button type="button" data-unit="hours" aria-pressed="false">Hours</button>
       </div>
     </div>
+    <button class="btn-analytics" id="analytics-btn" title="Team Analytics">
+      <span class="material-symbols-outlined">analytics</span>
+      <span>Analytics</span>
+    </button>
     <button class="btn-load" id="load-btn">
       <span class="spinner"></span>
       <span class="load-label">Load</span>
@@ -1167,6 +1512,28 @@
   </div>
 </div>
 
+<!-- Analytics Drawer -->
+<div class="analytics-backdrop" id="analytics-backdrop"></div>
+<div class="analytics-drawer" id="analytics-drawer" role="dialog" aria-label="Team Analytics">
+  <div class="analytics-drawer-header">
+    <div>
+      <h2 class="analytics-drawer-title">
+        <span class="material-symbols-outlined">analytics</span>Team Analytics
+      </h2>
+      <p class="analytics-drawer-subtitle" id="analytics-drawer-subtitle">—</p>
+    </div>
+    <button class="analytics-close-btn" id="analytics-close-btn" title="Close">
+      <span class="material-symbols-outlined">close</span>
+    </button>
+  </div>
+  <div class="analytics-drawer-body" id="analytics-drawer-body">
+    <div class="empty-state">
+      <span class="material-symbols-outlined">bar_chart</span>
+      <p>Load a team to see analytics.</p>
+    </div>
+  </div>
+</div>
+
 <!-- Toast -->
 <div class="toast" id="toast">
   <span class="material-symbols-outlined" id="toast-icon">check_circle</span>
@@ -1190,6 +1557,7 @@
     loading: false,
     epicChildrenCache: {},
     statUnit: localStorage.getItem('tcp-stat-unit') === 'hours' ? 'hours' : 'days',
+    jiraBaseUrl: '',
   };
 
   // ── DOM refs ───────────────────────────────────────────────────────────
@@ -1301,8 +1669,10 @@
       const data = await res.json();
       if (!data.ok) throw new Error(data.error || 'Load failed');
       S.teamData = data;
+      if (data.jira_base_url) S.jiraBaseUrl = data.jira_base_url;
       $notice.classList.toggle('hidden', data.canonical_available !== false);
       renderMembers();
+      if ($analyticsDrawer && $analyticsDrawer.classList.contains('open')) renderAnalyticsStats();
     } catch (e) {
       showToast('Error: ' + e.message, 'error');
       $members.innerHTML = emptyState('error', 'Failed to load team data.');
@@ -1327,6 +1697,7 @@
       const data = await res.json();
       if (!data.ok) throw new Error(data.error);
       S.workItems = data.work_items || [];
+      if (data.jira_base_url) S.jiraBaseUrl = data.jira_base_url;
       const total    = data.total    ?? S.workItems.length;
       const returned = data.returned ?? S.workItems.length;
       $wiBadge.textContent = returned < total ? `${returned} of ${total}` : `${total}`;
@@ -1529,6 +1900,7 @@
     $wiCont.querySelectorAll('.epic-row-head').forEach(h => {
       h.addEventListener('click', e => {
         if (e.target.closest('.btn-assign')) return;
+        if (e.target.closest('.btn-jira-link')) return;
         const row = h.closest('.epic-row');
         if (row.dataset.loaded === 'loading') return;
         if (row.dataset.loaded === 'false') {
@@ -1586,6 +1958,7 @@
         <span class="epic-type-badge">Epic</span>
         <span class="epic-row-key">${esc(ep.epic_key)}</span>
         <span class="epic-row-name" title="${esc(ep.epic_name)}">${esc(ep.epic_name)}</span>
+        ${jiraUrl(ep.epic_key, ep.jira_url) ? `<a class="btn-jira-link" href="${esc(jiraUrl(ep.epic_key, ep.jira_url))}" target="_blank" rel="noopener" title="Open in Jira" onclick="event.stopPropagation()"><span class="material-symbols-outlined">open_in_new</span></a>` : ''}
         ${assigneeHtml}
         ${startHtml}${dueHtml}
         <span class="epic-row-tk">${tkText}</span>
@@ -1608,8 +1981,14 @@
     const isMatched = !!s.matched;
     const hasMatchedSubs = subtasks.some(t => t.matched);
     const assigneeHtml = s.assignee
-      ? `<span class="story-assignee" title="${esc(s.assignee)}">${esc(s.assignee.split(' ')[0])}</span>`
-      : `<span class="story-assignee no-assignee" title="No assignee on Jira">No assignee</span>`;
+      ? `<span class="story-assignee" title="Assignee: ${esc(s.assignee)}"><span class="material-symbols-outlined">person</span>${esc(s.assignee.split(' ')[0])}</span>`
+      : `<span class="story-assignee no-assignee" title="No assignee on Jira"><span class="material-symbols-outlined">person_off</span>—</span>`;
+    const startHtml = s.planned_start
+      ? `<span class="wi-icon-chip" title="Planned start: ${esc(s.planned_start)}"><span class="material-symbols-outlined">event</span>${esc(fmtDate(s.planned_start))}</span>`
+      : '';
+    const estHtml = `<span class="story-est" title="Planned hours"><span class="material-symbols-outlined">schedule</span>${esc(est)}</span>`;
+    const actualH = s.actual_hours ? `${s.actual_hours}h` : '—';
+    const actualHtml = `<span class="wi-icon-chip" title="Actual hours logged"><span class="material-symbols-outlined">timer</span>${esc(actualH)}</span>`;
     const subtaskSection = hasSubtasks
       ? `<div class="subtask-list">${subtasks.map(t => subtaskItem(t)).join('')}</div>` : '';
     const expandIcon = hasSubtasks
@@ -1619,9 +1998,12 @@
       <div class="story-item${hasSubtasks ? ' has-subtasks' : ''}${isMatched ? ' search-matched' : ''}">
         <span class="story-badge">Story</span>
         <span class="story-key">${esc(s.story_key)}</span>
+        ${jiraUrl(s.story_key, s.jira_url) ? `<a class="btn-jira-link" href="${esc(jiraUrl(s.story_key, s.jira_url))}" target="_blank" rel="noopener" title="Open in Jira" onclick="event.stopPropagation()"><span class="material-symbols-outlined">open_in_new</span></a>` : ''}
         <span class="story-name" title="${esc(s.story_name)}">${esc(s.story_name)}</span>
         ${assigneeHtml}
-        <span class="story-est">${esc(est)}</span>
+        ${startHtml}
+        ${estHtml}
+        ${actualHtml}
         <span class="story-status ${statusCls}">${esc(s.story_status || 'To Do')}</span>
         <button class="btn-assign-story" data-key="${esc(s.story_key)}" data-name="${esc(s.story_name)}">
           <span class="material-symbols-outlined" style="font-size:12px">person_add</span>Assign
@@ -1636,14 +2018,23 @@
     const est = t.estimate_hours ? `${t.estimate_hours}h` : '—';
     const isMatched = !!t.matched;
     const assigneeHtml = t.assignee
-      ? `<span class="subtask-assignee" title="${esc(t.assignee)}">${esc(t.assignee.split(' ')[0])}</span>`
-      : `<span class="subtask-assignee no-assignee" title="No assignee on Jira">No assignee</span>`;
+      ? `<span class="subtask-assignee" title="Assignee: ${esc(t.assignee)}"><span class="material-symbols-outlined">person</span>${esc(t.assignee.split(' ')[0])}</span>`
+      : `<span class="subtask-assignee no-assignee" title="No assignee on Jira"><span class="material-symbols-outlined">person_off</span>—</span>`;
+    const startHtml = t.planned_start
+      ? `<span class="wi-icon-chip" title="Planned start: ${esc(t.planned_start)}"><span class="material-symbols-outlined">event</span>${esc(fmtDate(t.planned_start))}</span>`
+      : '';
+    const estHtml = `<span class="subtask-est" title="Planned hours"><span class="material-symbols-outlined">schedule</span>${esc(est)}</span>`;
+    const actualH = t.actual_hours ? `${t.actual_hours}h` : '—';
+    const actualHtml = `<span class="wi-icon-chip" title="Actual hours logged"><span class="material-symbols-outlined">timer</span>${esc(actualH)}</span>`;
     return `<div class="subtask-item${isMatched ? ' search-matched' : ''}">
       <span class="subtask-badge">Sub</span>
       <span class="subtask-key">${esc(t.issue_key)}</span>
+      ${jiraUrl(t.issue_key, t.jira_url) ? `<a class="btn-jira-link" href="${esc(jiraUrl(t.issue_key, t.jira_url))}" target="_blank" rel="noopener" title="Open in Jira"><span class="material-symbols-outlined">open_in_new</span></a>` : ''}
       <span class="subtask-name" title="${esc(t.issue_name)}">${esc(t.issue_name)}</span>
       ${assigneeHtml}
-      <span class="subtask-est">${esc(est)}</span>
+      ${startHtml}
+      ${estHtml}
+      ${actualHtml}
       <button class="btn-assign-subtask" data-key="${esc(t.issue_key)}" data-name="${esc(t.issue_name)}">
         <span class="material-symbols-outlined" style="font-size:10px">person_add</span>Re-assign
       </button>
@@ -1776,6 +2167,10 @@
   function esc(s) {
     return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
+  function jiraUrl(key, fallback) {
+    if (fallback) return fallback;
+    return S.jiraBaseUrl ? S.jiraBaseUrl + '/browse/' + encodeURIComponent(key) : '';
+  }
   function emptyState(icon, msg) {
     return `<div class="empty-state"><span class="material-symbols-outlined">${esc(icon)}</span><p>${esc(msg)}</p></div>`;
   }
@@ -1804,6 +2199,7 @@
     container.querySelectorAll('.story-wrap.has-subtasks .story-item').forEach(row => {
       row.addEventListener('click', e => {
         if (e.target.closest('.btn-assign-story')) return;
+        if (e.target.closest('.btn-jira-link')) return;
         row.closest('.story-wrap').classList.toggle('open');
       });
     });
@@ -1958,6 +2354,190 @@
     }
   }
 
+  // ── Analytics Drawer ───────────────────────────────────────────────────
+  const $analyticsBtn      = document.getElementById('analytics-btn');
+  const $analyticsDrawer   = document.getElementById('analytics-drawer');
+  const $analyticsBackdrop = document.getElementById('analytics-backdrop');
+  const $analyticsClose    = document.getElementById('analytics-close-btn');
+  const $analyticsBody     = document.getElementById('analytics-drawer-body');
+  const $analyticsSubtitle = document.getElementById('analytics-drawer-subtitle');
+
+  function openAnalyticsDrawer() {
+    renderAnalyticsStats();
+    $analyticsDrawer.classList.add('open');
+    $analyticsBackdrop.classList.add('open');
+  }
+
+  function closeAnalyticsDrawer() {
+    $analyticsDrawer.classList.remove('open');
+    $analyticsBackdrop.classList.remove('open');
+  }
+
+  function renderAnalyticsStats() {
+    const d = S.teamData;
+    if (!d || !d.members || !d.members.length) {
+      $analyticsSubtitle.textContent = 'No data loaded';
+      $analyticsBody.innerHTML = `<div class="empty-state">
+        <span class="material-symbols-outlined">bar_chart</span>
+        <p>Load a team and click Load to see analytics.</p>
+      </div>`;
+      return;
+    }
+
+    const teamName = $teamSel.value || 'Team';
+    const from = $fromDate.value;
+    const to = $toDate.value;
+    $analyticsSubtitle.textContent = `${teamName}  ·  ${fmtDate(from)} → ${fmtDate(to)}`;
+
+    const members = d.members;
+    let totalCapacity       = 0;
+    let totalPlannedLeaves  = 0;
+    let totalUnplannedLeaves = 0;
+    let totalAvailability   = 0;
+    let totalPlannedHours   = 0;
+    let totalLoggedHours    = 0;
+    const epicSet = new Set();
+
+    members.forEach(m => {
+      totalCapacity        += m.capacity_hours || 0;
+      totalPlannedLeaves   += (m.planned_taken_hours || 0) + (m.planned_not_taken_hours || 0);
+      totalUnplannedLeaves += m.unplanned_taken_hours || 0;
+      totalAvailability    += Math.max(0, m.availability_hours || 0);
+      totalPlannedHours    += m.subtask_planned_hours != null ? m.subtask_planned_hours : (m.planned_hours || 0);
+      totalLoggedHours     += m.logged_hours || 0;
+      (m.epic_keys || []).forEach(ek => epicSet.add(ek));
+    });
+
+    const totalEpics = epicSet.size;
+    const plannedUtilPct = totalAvailability > 0 ? Math.min(100, Math.round(totalPlannedHours / totalAvailability * 100)) : 0;
+    const loggedUtilPct  = totalAvailability > 0 ? Math.min(100, Math.round(totalLoggedHours  / totalAvailability * 100)) : 0;
+    const leaveRatePct   = totalCapacity > 0 ? Math.min(100, Math.round((totalPlannedLeaves + totalUnplannedLeaves) / totalCapacity * 100)) : 0;
+
+    const fv = v => fmtStatHrs(v, d);
+    const statsGrid = `
+    <div class="analytics-team-pill">
+      <span class="material-symbols-outlined">groups</span>
+      <div>
+        <div><strong>${esc(teamName)}</strong> &nbsp;·&nbsp; ${esc(String(members.length))} member${members.length !== 1 ? 's' : ''}</div>
+        <div class="atp-meta">${esc(fmtDate(from))} → ${esc(fmtDate(to))}</div>
+      </div>
+    </div>
+
+    <div class="analytics-grid">
+
+      <div class="astat-card ac-capacity">
+        <div class="astat-icon-wrap"><span class="material-symbols-outlined">battery_full</span></div>
+        <div class="astat-value">${esc(fv(totalCapacity))}</div>
+        <div class="astat-label">Total Capacity</div>
+        <div class="astat-sub">Gross working time</div>
+      </div>
+
+      <div class="astat-card ac-avail">
+        <div class="astat-icon-wrap"><span class="material-symbols-outlined">event_available</span></div>
+        <div class="astat-value">${esc(fv(totalAvailability))}</div>
+        <div class="astat-label">Total Availability</div>
+        <div class="astat-sub">After all leaves</div>
+      </div>
+
+      <div class="astat-card ac-leave-p">
+        <div class="astat-icon-wrap"><span class="material-symbols-outlined">event_busy</span></div>
+        <div class="astat-value">${esc(fv(totalPlannedLeaves))}</div>
+        <div class="astat-label">Total Planned Leaves</div>
+        <div class="astat-sub">Taken + upcoming</div>
+      </div>
+
+      <div class="astat-card ac-leave-u">
+        <div class="astat-icon-wrap"><span class="material-symbols-outlined">sick</span></div>
+        <div class="astat-value">${esc(fv(totalUnplannedLeaves))}</div>
+        <div class="astat-label">Total Unplanned Leaves</div>
+        <div class="astat-sub">Unscheduled absences</div>
+      </div>
+
+      <div class="astat-card ac-planned">
+        <div class="astat-icon-wrap"><span class="material-symbols-outlined">schedule</span></div>
+        <div class="astat-value">${esc(fv(totalPlannedHours))}</div>
+        <div class="astat-label">Total Planned Hours</div>
+        <div class="astat-sub">Sum of subtask estimates</div>
+      </div>
+
+      <div class="astat-card ac-logged">
+        <div class="astat-icon-wrap"><span class="material-symbols-outlined">timer</span></div>
+        <div class="astat-value">${esc(fv(totalLoggedHours))}</div>
+        <div class="astat-label">Total Logged Hours</div>
+        <div class="astat-sub">Actual time recorded</div>
+      </div>
+
+      <div class="astat-card ac-epics ac-wide">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div class="astat-icon-wrap"><span class="material-symbols-outlined">auto_stories</span></div>
+          <div>
+            <div class="astat-value" style="font-size:28px">${esc(String(totalEpics))}</div>
+            <div class="astat-label">Total Epics Assigned</div>
+            <div class="astat-sub">Unique epics across all team members</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="analytics-util-card">
+      <div class="analytics-util-title">Utilization vs Availability</div>
+      <div class="util-bar-row">
+        <div class="util-bar-meta">
+          <span class="util-bar-name"><span class="material-symbols-outlined">schedule</span>Planned</span>
+          <span class="util-bar-pct" style="color:#6366f1">${plannedUtilPct}%</span>
+        </div>
+        <div class="util-bar-track">
+          <div class="util-bar-fill util-planned-fill" style="width:${plannedUtilPct}%"></div>
+        </div>
+      </div>
+      <div class="util-bar-row">
+        <div class="util-bar-meta">
+          <span class="util-bar-name"><span class="material-symbols-outlined">timer</span>Logged</span>
+          <span class="util-bar-pct" style="color:#8b5cf6">${loggedUtilPct}%</span>
+        </div>
+        <div class="util-bar-track">
+          <div class="util-bar-fill util-logged-fill" style="width:${loggedUtilPct}%"></div>
+        </div>
+      </div>
+      <div class="util-bar-row">
+        <div class="util-bar-meta">
+          <span class="util-bar-name"><span class="material-symbols-outlined">event_busy</span>Leave rate</span>
+          <span class="util-bar-pct" style="color:var(--leave-p)">${leaveRatePct}%</span>
+        </div>
+        <div class="util-bar-track">
+          <div class="util-bar-fill" style="width:${leaveRatePct}%;background:var(--leave-p)"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="analytics-members-card">
+      <div class="analytics-members-head">Per Member Breakdown</div>
+      ${members.map(m => {
+        const av = Math.max(0, m.availability_hours || 0);
+        const pl = m.subtask_planned_hours != null ? m.subtask_planned_hours : (m.planned_hours || 0);
+        const lg = m.logged_hours || 0;
+        const initials = m.name.split(' ').slice(0, 2).map(w => w[0] || '').join('').toUpperCase();
+        return `<div class="analytics-member-row">
+          <div class="anm-avatar">${esc(initials)}</div>
+          <div class="anm-name" title="${esc(m.name)}">${esc(m.name)}</div>
+          <span class="anm-avail" title="Availability">${esc(fv(av))}</span>
+          <span class="anm-planned" title="Planned">${esc(fv(pl))}</span>
+          <span class="anm-logged" title="Logged">${esc(fv(lg))}</span>
+        </div>`;
+      }).join('')}
+    </div>`;
+
+    $analyticsBody.innerHTML = statsGrid;
+  }
+
+  $analyticsBtn.addEventListener('click', openAnalyticsDrawer);
+  $analyticsClose.addEventListener('click', closeAnalyticsDrawer);
+  $analyticsBackdrop.addEventListener('click', closeAnalyticsDrawer);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && $analyticsDrawer.classList.contains('open')) closeAnalyticsDrawer();
+  });
+
   // ── Event listeners ────────────────────────────────────────────────────
   $loadBtn.addEventListener('click', loadTeamData);
   $teamSel.addEventListener('change', loadTeamData);
@@ -1970,6 +2550,7 @@
       localStorage.setItem('tcp-stat-unit', S.statUnit);
       syncStatUnitToggle();
       renderMembers();
+      if ($analyticsDrawer && $analyticsDrawer.classList.contains('open')) renderAnalyticsStats();
     });
   }
 
