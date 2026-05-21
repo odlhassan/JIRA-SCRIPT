@@ -8534,6 +8534,114 @@
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 <!-- codex-info-drawer-start -->
 <!-- codex-info-drawer-v1 -->
 <style>
@@ -9039,6 +9147,167 @@ body.report-info-drawer-open { overflow: hidden; }
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+.rw-busy-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+.rw-busy-overlay[aria-hidden="false"] { display: flex; }
+.rw-busy-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(2px);
+}
+.rw-busy-dialog {
+  position: relative;
+  background: #ffffff;
+  border: 1px solid #d4deee;
+  border-radius: 18px;
+  padding: 22px;
+  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.12);
+  max-width: 460px;
+  width: 100%;
+  max-height: 90vh;
+  overflow: auto;
+}
+.rw-busy-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 8px;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+.rw-busy-subtitle {
+  margin: 0 0 14px;
+  color: #475569;
+  font-size: .88rem;
+}
+.rw-busy-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  padding: 5px 12px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #1d4ed8;
+  font-size: .82rem;
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+.rw-busy-pulse {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 14px;
+}
+.rw-busy-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #22c55e;
+  animation: rw-pulse 1.4s ease-in-out infinite;
+}
+@keyframes rw-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: .4; transform: scale(.7); }
+}
+.rw-busy-pct-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 4px;
+}
+.rw-busy-pct-label {
+  font-size: .78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: #64748b;
+}
+.rw-busy-pct-val {
+  font-size: .88rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+.rw-busy-bar {
+  width: 100%;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(148,163,184,.2);
+  overflow: hidden;
+  border: 1px solid rgba(148,163,184,.18);
+  margin-bottom: 16px;
+}
+.rw-busy-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #22c55e 0%, #06b6d4 100%);
+  transition: width .5s ease;
+}
+.rw-busy-stat-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.rw-busy-stat {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #f8fbff;
+  border: 1px solid #d4deee;
+}
+.rw-busy-stat strong {
+  display: block;
+  font-size: .72rem;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: #64748b;
+  margin-bottom: 4px;
+}
+.rw-busy-stat span {
+  display: block;
+  font-size: .92rem;
+  color: #0f172a;
+  word-break: break-word;
+}
+.rw-busy-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 4px;
+}
+.rw-busy-note {
+  font-size: .78rem;
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.rw-busy-dismiss {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #d4deee;
+  background: #fff;
+  color: #0f172a;
+  border-radius: 10px;
+  padding: 8px 16px;
+  cursor: pointer;
+  font-size: .88rem;
+  font-weight: 700;
+  font-family: inherit;
+}
+.rw-busy-dismiss:hover { background: #f8fbff; border-color: #0f766e; }
 </style>
 <div id="codex-refresh-wrap" aria-live="polite">
   <button id="codex-refresh-btn" type="button">
@@ -9047,6 +9316,39 @@ body.report-info-drawer-open { overflow: hidden; }
   </button>
   <button id="codex-refresh-cancel-btn" type="button">Cancel Refresh Run</button>
   <div id="codex-refresh-status"></div>
+</div>
+<div id="rw-busy-modal" class="rw-busy-overlay" aria-hidden="true" role="dialog" aria-modal="true">
+  <div class="rw-busy-backdrop"></div>
+  <div class="rw-busy-dialog">
+    <div class="rw-busy-title">
+      <span class="material-symbols-outlined" style="color:#0f766e;font-size:1.5rem;">sync</span>
+      Refresh Already In Progress
+    </div>
+    <p class="rw-busy-subtitle">Only one refresh can run at a time across all users. Please wait for the current one to finish.</p>
+    <div><span id="rw-busy-badge" class="rw-busy-badge">Report Refresh</span></div>
+    <div class="rw-busy-pulse">
+      <span class="rw-busy-dot"></span>
+      <span style="font-size:.82rem;color:#475569;">In progress</span>
+    </div>
+    <div class="rw-busy-pct-row">
+      <span class="rw-busy-pct-label">Progress</span>
+      <span id="rw-busy-pct" class="rw-busy-pct-val">0%</span>
+    </div>
+    <div class="rw-busy-bar"><div id="rw-busy-fill" class="rw-busy-fill"></div></div>
+    <div class="rw-busy-stat-grid">
+      <div class="rw-busy-stat"><strong>Elapsed Time</strong><span id="rw-busy-elapsed">-</span></div>
+      <div class="rw-busy-stat"><strong>Est. Time Remaining</strong><span id="rw-busy-eta">Calculating...</span></div>
+      <div class="rw-busy-stat"><strong>Current Step</strong><span id="rw-busy-step">-</span></div>
+      <div class="rw-busy-stat"><strong>Report</strong><span id="rw-busy-report">-</span></div>
+    </div>
+    <div class="rw-busy-footer">
+      <span class="rw-busy-note">
+        <span class="material-symbols-outlined" style="font-size:1rem;">autorenew</span>
+        Updates every 5 seconds
+      </span>
+      <button class="rw-busy-dismiss" type="button" id="rw-busy-dismiss">Got it</button>
+    </div>
+  </div>
 </div>
 <script>
 (function () {
@@ -9063,6 +9365,7 @@ body.report-info-drawer-open { overflow: hidden; }
   if (!wrap || !btn || !btnLabel || !status || !reportId) return;
   let activeRunId = "";
   let pollTimer = 0;
+  let rwBusyModalTimer = 0;
 
   if (!usesAsyncProgress && cancelBtn) {
     cancelBtn.style.display = "none";
@@ -9428,6 +9731,11 @@ body.report-info-drawer-open { overflow: hidden; }
         });
         const response = result.response;
         const payload = result.payload || {};
+        if (response.status === 409 && payload.run) {
+          setBusy(false);
+          rwOpenModal(payload.run);
+          return;
+        }
         if (!response.ok || !payload.ok) {
           const msg = payload.error || "Refresh failed.";
           setStatus(msg);
@@ -9512,6 +9820,91 @@ body.report-info-drawer-open { overflow: hidden; }
       }
     }
   });
+
+  function rwParseUtc(value) {
+    const raw = String(value || "").trim();
+    if (!raw) return null;
+    const norm = /[zZ]$|[+-]\d{2}:\d{2}$/.test(raw) ? raw : raw.includes("T") ? raw + "Z" : raw.replace(" ", "T") + "Z";
+    const d = new Date(norm);
+    return isNaN(d.getTime()) ? null : d;
+  }
+
+  function rwFmtDur(sec) {
+    const s = Math.round(Math.max(0, sec));
+    if (s < 60) return s + "s";
+    const m = Math.floor(s / 60), rs = s % 60;
+    if (m < 60) return rs > 0 ? m + "m " + rs + "s" : m + "m";
+    const h = Math.floor(m / 60), rm = m % 60;
+    return rm > 0 ? h + "h " + rm + "m" : h + "h";
+  }
+
+  function rwFmtLabel(v) {
+    return String(v || "").replace(/_/g, " ").replace(/\b\w/g, function (c) { return c.toUpperCase(); });
+  }
+
+  function rwUpdateModal(run) {
+    if (!run) return;
+    const pct = Math.max(0, Math.min(100, Number(run.progress_pct || 0)));
+    const step = String(run.progress_step || "-");
+    const rid = String(run.report_id || reportId || "-");
+    const st = String(run.status || "").toLowerCase();
+    const isActive = st === "running" || st === "cancel_requested";
+    const startedAt = rwParseUtc(run.started_at_utc);
+    const elapsedSec = startedAt ? (Date.now() - startedAt.getTime()) / 1000 : 0;
+    const elapsedText = startedAt ? rwFmtDur(elapsedSec) : "-";
+    let etaText = "Calculating...";
+    if (!isActive) {
+      etaText = st === "success" ? "Completed ✓" : rwFmtLabel(st);
+    } else if (pct > 0 && elapsedSec > 0) {
+      const rem = (elapsedSec / (pct / 100)) - elapsedSec;
+      etaText = rem <= 2 ? "Almost done..." : rwFmtDur(rem);
+    }
+    const badge = document.getElementById("rw-busy-badge");
+    const pctEl = document.getElementById("rw-busy-pct");
+    const fillEl = document.getElementById("rw-busy-fill");
+    const elEl = document.getElementById("rw-busy-elapsed");
+    const etaEl = document.getElementById("rw-busy-eta");
+    const stEl = document.getElementById("rw-busy-step");
+    const rEl = document.getElementById("rw-busy-report");
+    if (badge) badge.textContent = rwFmtLabel(rid);
+    if (pctEl) pctEl.textContent = pct + "%";
+    if (fillEl) fillEl.style.width = pct + "%";
+    if (elEl) elEl.textContent = elapsedText;
+    if (etaEl) etaEl.textContent = etaText;
+    if (stEl) stEl.textContent = rwFmtLabel(step);
+    if (rEl) rEl.textContent = rwFmtLabel(rid);
+  }
+
+  function rwClearTimer() {
+    if (rwBusyModalTimer) { window.clearInterval(rwBusyModalTimer); rwBusyModalTimer = 0; }
+  }
+
+  function rwCloseModal() {
+    rwClearTimer();
+    const modal = document.getElementById("rw-busy-modal");
+    if (modal) modal.setAttribute("aria-hidden", "true");
+  }
+
+  function rwOpenModal(run) {
+    rwUpdateModal(run);
+    const modal = document.getElementById("rw-busy-modal");
+    if (modal) modal.setAttribute("aria-hidden", "false");
+    const dismissBtn = document.getElementById("rw-busy-dismiss");
+    if (dismissBtn) dismissBtn.onclick = rwCloseModal;
+    rwClearTimer();
+    rwBusyModalTimer = window.setInterval(async function () {
+      try {
+        const path = "/api/report-refresh/current?report=" + encodeURIComponent(reportId);
+        const result = await requestJson(path, { method: "GET", headers: { "Accept": "application/json" } });
+        const freshRun = ((result.payload) || {}).run || null;
+        if (freshRun) {
+          rwUpdateModal(freshRun);
+          const st = String(freshRun.status || "").toLowerCase();
+          if (st !== "running" && st !== "cancel_requested") rwClearTimer();
+        }
+      } catch (e) { /* ignore poll errors in busy modal */ }
+    }, 5000);
+  }
 
   if (usesAsyncProgress && cancelBtn) {
     cancelBtn.addEventListener("click", async function () {

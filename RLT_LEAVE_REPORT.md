@@ -8,17 +8,17 @@
 ## Executive Summary
 - Planned Taken (hours): `572.00`
 - Unplanned Taken (hours): `59.00`
-- Unknown Taken (hours): `248.00`
+- Unknown Taken (hours): `264.00`
 - Planned Not Yet Taken (hours): `368.00`
 - Planned Not Yet Taken (No Entry count): `1`
-- Defective subtasks listed: `108`
+- Defective subtasks listed: `110`
 - Clubbed leave subtasks: `27`
 
 ## Assignee-wise Summary
 | Assignee | Planned Taken (h) | Unplanned Taken (h) | Unknown Taken (h) | Planned Not Yet Taken (h) | No Entry Count | Unknown Count |
 | --- | --- | --- | --- | --- | --- | --- |
 | Ameer Hamza Khan | 24.00 | 0.00 | 0.00 | 0.00 | 0 | 0 |
-| Arsalan Zafar Khan | 0.00 | 0.00 | 8.00 | 0.00 | 0 | 2 |
+| Arsalan Zafar Khan | 0.00 | 0.00 | 24.00 | 0.00 | 0 | 4 |
 | awais akhter | 0.00 | 0.00 | 0.00 | 0.00 | 0 | 4 |
 | Danish Rashid | 8.00 | 0.00 | 0.00 | 0.00 | 0 | 0 |
 | DANIYAL AHMAD | 0.00 | 0.00 | 16.00 | 0.00 | 0 | 2 |

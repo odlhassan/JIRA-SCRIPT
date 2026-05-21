@@ -84,6 +84,13 @@
       outline: none;
       height: 32px;
     }
+    /* Compact date inputs to make room for the Epic-mode pill toggle */
+    .ctrl-group.range-group { gap: 4px; }
+    .ctrl-group.range-group .range-label-arrow { opacity: .7; font-size: 12px; padding: 0 2px; }
+    .ctrl-group.range-group input[type="date"] {
+      padding: 4px 4px; font-size: 12px; height: 30px;
+      width: 122px; min-width: 0;
+    }
     .ctrl-group select option { background: #082b37; color: #fff; }
     .ctrl-group input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); }
     .btn-load {
@@ -1022,13 +1029,188 @@
     .wb-remaining-neg { background: #ef4444; }
     .work-bar-val.val-over { color: #dc2626; }
     .work-bar-val.val-ok   { color: #16a34a; }
-    .work-bar-val { min-width: 44px; font-size: 11px; font-weight: 600; color: var(--text); text-align: right; }
-    .stat-toggle { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: #f8fafc; }
-    .stat-toggle button {
-      border: 0; background: transparent; color: var(--muted); padding: 6px 10px;
-      font-size: 12px; font-weight: 700; cursor: pointer; min-width: 48px;
+    .work-bar-row.clickable { cursor: pointer; padding: 1px 4px; margin: 0 -4px; border-radius: 4px; transition: background .12s; }
+    .work-bar-row.clickable:hover { background: #eef2ff; }
+    .work-bar-row.clickable:hover .work-bar-label { color: var(--accent); font-weight: 600; }
+    .work-bar-row.clickable .work-bar-label::after {
+      content: '\1F50D'; margin-left: 4px; opacity: 0; font-size: 9px; transition: opacity .12s;
     }
-    .stat-toggle button.active { background: var(--accent); color: #fff; }
+    .work-bar-row.clickable:hover .work-bar-label::after { opacity: .55; }
+
+    /* ── Subtask Drawer ─────────────────────────────────────────────── */
+    .st-backdrop {
+      position: fixed; inset: 0; background: rgba(0,0,0,.38);
+      z-index: 850; opacity: 0; pointer-events: none; transition: opacity .25s;
+    }
+    .st-backdrop.open { opacity: 1; pointer-events: auto; }
+    .st-drawer {
+      position: fixed; top: 0; right: 0; width: 760px; max-width: 100vw;
+      height: 100vh; background: #f4f8fb; z-index: 900;
+      box-shadow: -6px 0 32px rgba(0,0,0,.18);
+      display: flex; flex-direction: column;
+      transform: translateX(100%); transition: transform .3s cubic-bezier(.4,0,.2,1);
+      overflow: hidden;
+    }
+    .st-drawer.open { transform: translateX(0); }
+    .st-drawer-header {
+      background: linear-gradient(135deg, var(--accent) 0%, #1a6b82 100%);
+      color: #fff; padding: 16px 20px;
+      display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+      flex-shrink: 0;
+    }
+    .st-drawer-title { font-size: 16px; font-weight: 700; display: flex; align-items: center; gap: 7px; margin: 0 0 4px; }
+    .st-drawer-title .material-symbols-outlined { font-size: 19px; opacity: .9; }
+    .st-drawer-subtitle { font-size: 11.5px; opacity: .85; margin: 0; line-height: 1.45; }
+    .st-drawer-close {
+      background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.4);
+      color: #fff; width: 30px; height: 30px; border-radius: 6px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+    .st-drawer-close:hover { background: rgba(255,255,255,.32); }
+    .st-drawer-totals {
+      display: flex; gap: 16px; padding: 10px 20px; background: #fff;
+      border-bottom: 1px solid var(--line); font-size: 12px; color: var(--muted);
+      flex-shrink: 0;
+    }
+    .st-drawer-totals strong { color: var(--text); }
+    .st-drawer-body { flex: 1; overflow-y: auto; padding: 14px 16px; }
+    .st-table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: var(--shadow); }
+    .st-table th { background: #eef2ff; color: #1e293b; font-weight: 600; font-size: 11px; text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+    .st-table td { padding: 8px 10px; border-bottom: 1px solid #f1f5f9; font-size: 12px; vertical-align: top; }
+    .st-table tr:last-child td { border-bottom: none; }
+    .st-table tbody tr.expand-toggle { cursor: pointer; }
+    .st-table tbody tr.expand-toggle:hover { background: #f8fafc; }
+    .st-key { font-family: Consolas, monospace; font-weight: 600; color: var(--accent); font-size: 11.5px; }
+    .st-summary { color: var(--text); }
+    .st-parent { color: var(--muted); font-size: 10.5px; line-height: 1.4; margin-top: 2px; }
+    .st-parent .pkey { font-family: Consolas, monospace; color: #6366f1; font-weight: 600; }
+    .st-date { font-family: Consolas, monospace; font-size: 11px; color: var(--muted); white-space: nowrap; }
+    .st-hours { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+    .st-wl-row td { background: #f9fafb; padding: 0; border-bottom: 1px solid #e5e7eb; }
+    .st-wl-wrap { padding: 6px 10px 8px 28px; }
+    .st-wl-title { font-size: 10.5px; color: var(--muted); margin-bottom: 4px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+    .st-wl-table { width: 100%; border-collapse: collapse; }
+    .st-wl-table th, .st-wl-table td { padding: 4px 8px; font-size: 11px; }
+    .st-wl-table th { background: #eef2ff; color: #475569; font-weight: 600; text-align: left; border-bottom: 1px solid #c7d2fe; }
+    .st-wl-table td { border-bottom: 1px solid #e5e7eb; }
+    .st-expand-icon { display: inline-block; width: 14px; color: var(--muted); transition: transform .15s; }
+    .st-expand-icon.open { transform: rotate(90deg); }
+    .st-empty { text-align: center; padding: 30px 20px; color: var(--muted); font-size: 13px; }
+    .st-empty .material-symbols-outlined { font-size: 36px; opacity: .5; display: block; margin: 0 auto 8px; }
+    .work-bar-val { min-width: 44px; font-size: 11px; font-weight: 600; color: var(--text); text-align: right; }
+    /* ── Days / Hours animated pill toggle ──────────────────────────── */
+    .stat-unit-switch {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      background: rgba(0,0,0,.28);
+      border: 1px solid rgba(255,255,255,.20);
+      border-radius: 999px;
+      padding: 3px;
+      height: 30px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .stat-unit-pill {
+      position: absolute;
+      top: 3px; left: 3px; bottom: 3px;
+      width: calc(50% - 3px);
+      background: #fff;
+      border-radius: 999px;
+      box-shadow: 0 1px 5px rgba(0,0,0,.22);
+      transition: transform .22s cubic-bezier(.4,0,.2,1);
+      z-index: 1;
+      pointer-events: none;
+    }
+    .stat-unit-switch[data-unit="hours"] .stat-unit-pill {
+      transform: translateX(100%);
+    }
+    .stat-unit-opt {
+      position: relative; z-index: 2;
+      border: 0; background: transparent;
+      color: rgba(255,255,255,.55);
+      font-size: 11px; font-weight: 700; letter-spacing: .4px;
+      cursor: pointer; padding: 0 13px;
+      border-radius: 999px; height: 22px;
+      transition: color .18s ease;
+      white-space: nowrap;
+    }
+    .stat-unit-switch[data-unit="days"]  .stat-unit-opt[data-unit="days"],
+    .stat-unit-switch[data-unit="hours"] .stat-unit-opt[data-unit="hours"] {
+      color: var(--accent);
+      font-weight: 800;
+    }
+
+    /* ── Epic-mode toggle (Subtask Dates / TK Dates) ─────────────────── */
+    .epic-mode-switch {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      background: rgba(0,0,0,.28);
+      border: 1px solid rgba(255,255,255,.20);
+      border-radius: 999px;
+      padding: 3px;
+      height: 30px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .epic-mode-pill {
+      position: absolute;
+      top: 3px; left: 3px; bottom: 3px;
+      width: calc(50% - 3px);
+      background: #fff;
+      border-radius: 999px;
+      box-shadow: 0 1px 5px rgba(0,0,0,.22);
+      transition: transform .24s cubic-bezier(.4,0,.2,1);
+      z-index: 1;
+      pointer-events: none;
+    }
+    .epic-mode-switch[data-mode="subtask"] .epic-mode-pill {
+      transform: translateX(100%);
+    }
+    .epic-mode-opt {
+      position: relative; z-index: 2;
+      border: 0; background: transparent;
+      color: rgba(255,255,255,.6);
+      font-size: 11px; font-weight: 700; letter-spacing: .3px;
+      cursor: pointer; padding: 0 10px;
+      border-radius: 999px; height: 22px;
+      transition: color .18s ease;
+      white-space: nowrap;
+      display: inline-flex; align-items: center; gap: 4px;
+    }
+    .epic-mode-opt .material-symbols-outlined { font-size: 14px; }
+    .epic-mode-switch[data-mode="story"]   .epic-mode-opt[data-mode="story"],
+    .epic-mode-switch[data-mode="subtask"] .epic-mode-opt[data-mode="subtask"] {
+      color: var(--accent);
+      font-weight: 800;
+    }
+
+    /* ── Exclude Bug Subtasks toggle (top-bar) ───────────────────────── */
+    .bug-toggle {
+      display: inline-flex; align-items: center; gap: 8px;
+      cursor: pointer; user-select: none;
+      padding: 4px 10px; border-radius: 6px;
+      background: rgba(255,255,255,.10); border: 1px solid rgba(255,255,255,.22);
+      color: #fff; font-size: 12px; font-weight: 600;
+    }
+    .bug-toggle:hover { background: rgba(255,255,255,.16); }
+    .bug-toggle input { position: absolute; opacity: 0; pointer-events: none; }
+    .bug-toggle-track {
+      width: 30px; height: 16px; border-radius: 999px;
+      background: rgba(255,255,255,.25); position: relative;
+      transition: background .15s ease;
+      flex-shrink: 0;
+    }
+    .bug-toggle-thumb {
+      position: absolute; top: 2px; left: 2px;
+      width: 12px; height: 12px; border-radius: 50%;
+      background: #fff; transition: transform .15s ease;
+      box-shadow: 0 1px 2px rgba(0,0,0,.25);
+    }
+    .bug-toggle input:checked + .bug-toggle-track { background: #f97316; }
+    .bug-toggle input:checked + .bug-toggle-track .bug-toggle-thumb { transform: translateX(14px); }
+    .bug-toggle-label { white-space: nowrap; }
 
     /* ── Sync to Jira button ─────────────────────────────────────────── */
     .btn-sync-jira {
@@ -1312,6 +1494,175 @@
     .util-planned-fill { background: #6366f1; }
     .util-logged-fill  { background: #8b5cf6; }
 
+    /* ── Toolbar dropdown menus ─────────────────────────────────────────── */
+    .tb-menu { position: relative; flex-shrink: 0; }
+    .tb-menu-btn {
+      display: inline-flex; align-items: center; gap: 5px;
+      background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.28);
+      color: #fff; border-radius: 7px; padding: 0 12px; height: 32px;
+      font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;
+      transition: background .15s;
+    }
+    .tb-menu-btn:hover, .tb-menu.open .tb-menu-btn { background: rgba(255,255,255,.24); }
+    .tb-menu-btn .material-symbols-outlined { font-size: 17px; }
+    .tb-caret { transition: transform .22s cubic-bezier(.4,0,.2,1); }
+    .tb-menu.open .tb-caret { transform: rotate(180deg); }
+
+    .tb-panel {
+      position: fixed; top: 64px; left: 12px;
+      background: #fff; border: 1px solid var(--line);
+      border-radius: 12px; box-shadow: 0 8px 28px rgba(0,0,0,.14);
+      padding: 16px; z-index: 320;
+      display: flex; flex-direction: column; gap: 14px;
+      width: min(360px, calc(100vw - 24px));
+      min-width: 0;
+      max-width: calc(100vw - 24px);
+    }
+    .tb-panel[hidden] { display: none; }
+    .tb-panel--settings {
+      width: min(430px, calc(100vw - 24px));
+      max-height: calc(100vh - 76px);
+      overflow-y: auto;
+    }
+
+    .tbp-row {
+      display: grid;
+      grid-template-columns: minmax(96px, 118px) minmax(0, 1fr);
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+    .tbp-lbl { font-size: 12px; font-weight: 600; color: var(--muted); white-space: nowrap; }
+    .tbp-select {
+      width: 100%; min-width: 0; background: #f8fafc; border: 1px solid var(--line);
+      border-radius: 6px; padding: 5px 8px; font-size: 12px; color: var(--text);
+      outline: none; cursor: pointer; height: 30px;
+    }
+    .tbp-select option { background: #fff; }
+
+    /* In-panel pill toggle overrides (light background) */
+    .stat-unit-switch.in-panel, .epic-mode-switch.in-panel {
+      background: #e8edf2; border-color: var(--line);
+    }
+    .stat-unit-switch.in-panel { justify-self: start; }
+    .epic-mode-switch.in-panel { width: 100%; }
+    .epic-mode-switch.in-panel .epic-mode-opt {
+      flex: 1;
+      justify-content: center;
+      min-width: 0;
+      padding-inline: 8px;
+    }
+    .stat-unit-switch.in-panel .stat-unit-opt,
+    .epic-mode-switch.in-panel .epic-mode-opt { color: var(--muted); }
+    .stat-unit-switch.in-panel[data-unit="days"]    .stat-unit-opt[data-unit="days"],
+    .stat-unit-switch.in-panel[data-unit="hours"]   .stat-unit-opt[data-unit="hours"],
+    .epic-mode-switch.in-panel[data-mode="story"]   .epic-mode-opt[data-mode="story"],
+    .epic-mode-switch.in-panel[data-mode="subtask"] .epic-mode-opt[data-mode="subtask"] {
+      color: var(--accent); font-weight: 800;
+    }
+    .stat-unit-switch.in-panel .stat-unit-pill,
+    .epic-mode-switch.in-panel .epic-mode-pill { background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.14); }
+    .bug-toggle.in-panel {
+      color: var(--text); background: rgba(0,0,0,.04); border-color: var(--line);
+      min-width: 0;
+      width: 100%;
+    }
+    .bug-toggle.in-panel .bug-toggle-label { overflow: hidden; text-overflow: ellipsis; }
+
+    @media (max-width: 560px) {
+      .top-bar { padding: 0 10px; gap: 10px; }
+      .top-controls { gap: 8px; flex-wrap: nowrap; min-width: 0; }
+      .top-bar h1 { font-size: 0; gap: 0; }
+      .top-bar h1 .material-symbols-outlined { font-size: 22px; }
+      .tb-menu-btn, .btn-analytics, .btn-load { padding-inline: 9px; }
+      .tbp-row { grid-template-columns: 1fr; gap: 6px; }
+      .tbp-lbl { min-width: 0; }
+    }
+
+    /* ── Dual Calendar Range Picker ──────────────────────────────────────── */
+    .drp-wrap { position: relative; flex: 1; }
+    .drp-btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: #f0f5f9; border: 1px solid var(--line);
+      border-radius: 7px; padding: 5px 10px; font-size: 12px; font-weight: 600;
+      color: var(--text); cursor: pointer; white-space: nowrap; width: 100%;
+      transition: background .15s;
+    }
+    .drp-btn:hover { background: #e2edf3; }
+    .drp-btn .material-symbols-outlined { font-size: 16px; color: var(--accent); }
+    .drp-caret-icon { margin-left: auto; font-size: 16px !important; color: var(--muted); }
+    .drp-outer {
+      position: fixed; top: 64px; left: 12px;
+      background: #fff; border: 1px solid var(--line);
+      border-radius: 12px; box-shadow: 0 10px 32px rgba(0,0,0,.15);
+      padding: 18px; z-index: 400;
+      width: min(540px, calc(100vw - 24px));
+      min-width: 0;
+      max-width: calc(100vw - 24px);
+      max-height: calc(100vh - 76px);
+      overflow-y: auto;
+    }
+    .drp-outer[hidden] { display: none; }
+    .drp-months-wrap { display: flex; gap: 24px; }
+    .drp-cal { flex: 1; min-width: 0; }
+    .drp-cal-hdr { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+    .drp-cal-title { font-size: 13px; font-weight: 700; color: var(--text); }
+    .drp-nav {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 26px; height: 26px; border: 0; background: transparent;
+      border-radius: 6px; cursor: pointer; color: var(--muted); font-size: 14px; font-weight: 800;
+      transition: background .12s; line-height: 1;
+    }
+    .drp-nav:hover { background: #e2edf3; color: var(--accent); }
+    .drp-grid { display: grid; grid-template-columns: repeat(7,1fr); gap: 1px; }
+    .drp-dh { font-size: 10px; font-weight: 700; color: var(--muted); text-align: center; padding: 3px 0 5px; }
+    .drp-d {
+      font-size: 12px; text-align: center; line-height: 28px; height: 28px;
+      border-radius: 4px; cursor: pointer; user-select: none;
+      transition: background .08s, color .08s; position: relative;
+    }
+    .drp-d:hover:not(.drp-d--off) { background: #dbeafe; color: var(--accent); }
+    .drp-d--off { cursor: default; visibility: hidden; }
+    .drp-d--range { background: #dbeafe; color: var(--accent); border-radius: 0; }
+    .drp-d--start {
+      background: var(--accent) !important; color: #fff !important;
+      border-radius: 4px 0 0 4px; font-weight: 700;
+    }
+    .drp-d--end {
+      background: var(--accent) !important; color: #fff !important;
+      border-radius: 0 4px 4px 0; font-weight: 700;
+    }
+    .drp-d--start.drp-d--end { border-radius: 4px; }
+    .drp-d--today::after {
+      content: ''; position: absolute; bottom: 2px; left: 50%;
+      transform: translateX(-50%); width: 3px; height: 3px;
+      border-radius: 50%; background: currentColor; opacity: .5;
+    }
+    .drp-foot {
+      display: flex; align-items: center; justify-content: space-between;
+      padding-top: 12px; margin-top: 12px; border-top: 1px solid var(--line);
+    }
+    .drp-quick { display: flex; gap: 6px; }
+    .drp-q {
+      font-size: 11px; font-weight: 600; background: #f0f5f9;
+      border: 1px solid var(--line); border-radius: 5px; padding: 3px 8px;
+      cursor: pointer; color: var(--muted); transition: background .12s;
+    }
+    .drp-q:hover { background: #e2edf3; color: var(--accent); }
+    .drp-hint { font-size: 11px; color: var(--muted); font-style: italic; }
+    .drp-apply-cal {
+      background: var(--accent); color: #fff; border: 0; border-radius: 7px;
+      padding: 6px 18px; font-size: 12px; font-weight: 700; cursor: pointer;
+      transition: background .15s;
+    }
+    .drp-apply-cal:hover { background: var(--accent-h); }
+
+    @media (max-width: 560px) {
+      .drp-months-wrap { flex-direction: column; gap: 16px; }
+      .drp-foot { align-items: flex-start; flex-direction: column; gap: 10px; }
+      .drp-quick { flex-wrap: wrap; }
+    }
+
     /* ── Analytics member table ──────────────────────────────────────────── */
     .analytics-members-card {
       background: #fff;
@@ -1362,39 +1713,102 @@
 <div class="top-bar">
   <h1><span class="material-symbols-outlined">groups</span>Team Capacity Planner</h1>
   <div class="top-controls">
-    <div class="ctrl-group">
-      <label>Team</label>
-      <select id="team-select"><option value="">— loading —</option></select>
-    </div>
-    <div class="ctrl-group">
-      <label>From</label>
-      <input type="date" id="from-date" />
-    </div>
-    <div class="ctrl-group">
-      <label>To</label>
-      <input type="date" id="to-date" />
-    </div>
-    <script>
-      (function() {
-        var now = new Date();
-        var y = now.getFullYear();
-        var m = String(now.getMonth() + 1).padStart(2, '0');
-        var last = new Date(y, now.getMonth() + 1, 0).getDate();
-        document.getElementById('from-date').value = y + '-' + m + '-01';
-        document.getElementById('to-date').value   = y + '-' + m + '-' + String(last).padStart(2, '0');
-      })();
-    </script>
-    <div class="ctrl-group">
-      <label>Capacity Profile</label>
-      <select id="profile-select"><option value="">Auto (best match)</option></select>
-    </div>
-    <div class="ctrl-group">
-      <label>Stats</label>
-      <div class="stat-toggle" id="stat-unit-toggle" role="group" aria-label="Show resource stats in days or hours">
-        <button type="button" data-unit="days" class="active" aria-pressed="true">Days</button>
-        <button type="button" data-unit="hours" aria-pressed="false">Hours</button>
+
+    <!-- ── Filters menu ─────────────────────────────── -->
+    <div class="tb-menu" id="tb-filters">
+      <button class="tb-menu-btn" id="filters-btn" type="button">
+        <span class="material-symbols-outlined">filter_list</span>
+        Filters
+        <span class="material-symbols-outlined tb-caret">expand_more</span>
+      </button>
+      <div class="tb-panel" id="filters-panel" hidden>
+        <div class="tbp-row">
+          <span class="tbp-lbl">Team</span>
+          <select id="team-select" class="tbp-select"><option value="">— loading —</option></select>
+        </div>
+        <div class="tbp-row">
+          <span class="tbp-lbl">Date Range</span>
+          <div class="drp-wrap" id="drp-wrap">
+            <button class="drp-btn" id="drp-btn" type="button">
+              <span class="material-symbols-outlined">date_range</span>
+              <span id="drp-display">Select range</span>
+              <span class="material-symbols-outlined drp-caret-icon">expand_more</span>
+            </button>
+            <div class="drp-outer" id="drp-outer" hidden>
+              <div class="drp-months-wrap" id="drp-months-wrap"></div>
+              <div class="drp-foot">
+                <div class="drp-quick">
+                  <button class="drp-q" type="button" data-quick="this-month">This month</button>
+                  <button class="drp-q" type="button" data-quick="last-month">Last month</button>
+                  <button class="drp-q" type="button" data-quick="this-quarter">This quarter</button>
+                </div>
+                <div style="display:flex;align-items:center;gap:10px">
+                  <span class="drp-hint" id="drp-hint">Pick start date</span>
+                  <button class="drp-apply-cal" type="button" id="drp-apply">Apply</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- Hidden date inputs — JS reads/writes these -->
+        <input type="date" id="from-date" style="display:none" />
+        <input type="date" id="to-date"   style="display:none" />
+        <script>
+          (function() {
+            var now  = new Date();
+            var y    = now.getFullYear();
+            var m    = String(now.getMonth() + 1).padStart(2, '0');
+            var last = new Date(y, now.getMonth() + 1, 0).getDate();
+            document.getElementById('from-date').value = y + '-' + m + '-01';
+            document.getElementById('to-date').value   = y + '-' + m + '-' + String(last).padStart(2, '0');
+          })();
+        </script>
       </div>
     </div>
+
+    <!-- ── Settings menu ────────────────────────────── -->
+    <div class="tb-menu" id="tb-settings">
+      <button class="tb-menu-btn" id="settings-btn" type="button">
+        <span class="material-symbols-outlined">tune</span>
+        Settings
+        <span class="material-symbols-outlined tb-caret">expand_more</span>
+      </button>
+      <div class="tb-panel tb-panel--settings" id="settings-panel" hidden>
+        <div class="tbp-row">
+          <span class="tbp-lbl">Stats</span>
+          <div class="stat-unit-switch in-panel" id="stat-unit-toggle" role="group" aria-label="Show resource stats in days or hours" data-unit="days">
+            <span class="stat-unit-pill" aria-hidden="true"></span>
+            <button type="button" class="stat-unit-opt" data-unit="days" aria-pressed="true">Days</button>
+            <button type="button" class="stat-unit-opt" data-unit="hours" aria-pressed="false">Hours</button>
+          </div>
+        </div>
+        <div class="tbp-row" title="TK Dates uses story planned dates; Subtask Dates uses subtask planned dates.">
+          <span class="tbp-lbl">Epics by</span>
+          <div class="epic-mode-switch in-panel" id="epic-mode-toggle" role="group" aria-label="Epic eligibility mode" data-mode="story">
+            <span class="epic-mode-pill" aria-hidden="true"></span>
+            <button type="button" class="epic-mode-opt" data-mode="story" aria-pressed="true">
+              <span class="material-symbols-outlined">verified</span>TK Dates
+            </button>
+            <button type="button" class="epic-mode-opt" data-mode="subtask" aria-pressed="false">
+              <span class="material-symbols-outlined">checklist</span>Subtask Dates
+            </button>
+          </div>
+        </div>
+        <div class="tbp-row">
+          <span class="tbp-lbl">Capacity Profile</span>
+          <select id="profile-select" class="tbp-select"><option value="">Auto (best match)</option></select>
+        </div>
+        <div class="tbp-row">
+          <span class="tbp-lbl">Excl. Bug Subtasks</span>
+          <label class="bug-toggle in-panel" title="When ON, bug sub-tasks are excluded from Planned and Logged hours everywhere on this page.">
+            <input type="checkbox" id="exclude-bugs-toggle" checked />
+            <span class="bug-toggle-track"><span class="bug-toggle-thumb"></span></span>
+            <span class="bug-toggle-label">Exclude Bug Subtasks</span>
+          </label>
+        </div>
+      </div>
+    </div>
+
     <button class="btn-analytics" id="analytics-btn" title="Team Analytics">
       <span class="material-symbols-outlined">analytics</span>
       <span>Analytics</span>
@@ -1534,6 +1948,34 @@
   </div>
 </div>
 
+<!-- Subtask Breakdown Drawer -->
+<div class="st-backdrop" id="st-backdrop"></div>
+<div class="st-drawer" id="st-drawer" role="dialog" aria-label="Subtask Breakdown">
+  <div class="st-drawer-header">
+    <div style="min-width:0;flex:1">
+      <h2 class="st-drawer-title">
+        <span class="material-symbols-outlined">fact_check</span>
+        <span id="st-drawer-title-text">Subtask Breakdown</span>
+      </h2>
+      <p class="st-drawer-subtitle" id="st-drawer-subtitle">—</p>
+    </div>
+    <button class="st-drawer-close" id="st-drawer-close" title="Close">
+      <span class="material-symbols-outlined">close</span>
+    </button>
+  </div>
+  <div class="st-drawer-totals" id="st-drawer-totals" hidden>
+    <div><strong id="st-total-count">0</strong> subtasks</div>
+    <div>Planned: <strong id="st-total-planned">0h</strong></div>
+    <div>Logged in range: <strong id="st-total-logged">0h</strong></div>
+  </div>
+  <div class="st-drawer-body" id="st-drawer-body">
+    <div class="st-empty">
+      <span class="material-symbols-outlined">fact_check</span>
+      <p>Click a Planned or Logged bar on any member to see the underlying subtasks.</p>
+    </div>
+  </div>
+</div>
+
 <!-- Toast -->
 <div class="toast" id="toast">
   <span class="material-symbols-outlined" id="toast-icon">check_circle</span>
@@ -1575,6 +2017,8 @@
   const $wiBadge      = document.getElementById('wi-badge');
   const $notice       = document.getElementById('canonical-notice');
   const $statUnitToggle = document.getElementById('stat-unit-toggle');
+  const $excludeBugsToggle = document.getElementById('exclude-bugs-toggle');
+  const $epicModeToggle = document.getElementById('epic-mode-toggle');
   const $modal      = document.getElementById('assign-modal');
   const $modalName  = document.getElementById('modal-issue-name');
   const $modalSel   = document.getElementById('modal-member-select');
@@ -1603,6 +2047,7 @@
   async function init() {
     initDates();
     syncStatUnitToggle();
+    if (typeof DRP !== 'undefined') DRP.updateDisplay();
     await Promise.all([loadTeams(), loadProfiles(), loadWorkItemProjects()]);
     loadWorkItems();
   }
@@ -1663,7 +2108,7 @@
 
     setLoading(true);
     try {
-      let url = `/api/team-capacity-planner/data?team=${encodeURIComponent(team)}&from=${from}&to=${to}`;
+      let url = `/api/team-capacity-planner/data?team=${encodeURIComponent(team)}&from=${from}&to=${to}&exclude_bugs=${getExcludeBugs() ? 1 : 0}&epic_mode=${getEpicMode()}`;
       if (profileId) url += `&profile_id=${encodeURIComponent(profileId)}`;
       const res = await fetch(url);
       const data = await res.json();
@@ -1802,13 +2247,14 @@
     const remainingTitle = remaining >= 0
       ? `${fmtStatHrs(remaining, d)} remaining after planned work`
       : `${fmtStatHrs(Math.abs(remaining), d)} over capacity`;
+    const memberAttr = esc(m.name);
     const workBarsHtml = `<div class="work-bars">
-      <div class="work-bar-row">
+      <div class="work-bar-row clickable" data-bar-kind="planned" data-member="${memberAttr}" title="Click to view subtasks included in planned hours">
         <div class="work-bar-label">Planned</div>
-        <div class="work-bar-track"><div class="work-bar-fill wb-planned" style="width:${wbPlanned}%" title="Assigned subtask estimates only"></div></div>
-        <div class="work-bar-val" title="Sum of subtask estimates assigned to this resource; epic and story estimates are ignored.">${fmtStatHrs(plannedHrs, d)}</div>
+        <div class="work-bar-track"><div class="work-bar-fill wb-planned" style="width:${wbPlanned}%"></div></div>
+        <div class="work-bar-val">${fmtStatHrs(plannedHrs, d)}</div>
       </div>
-      <div class="work-bar-row">
+      <div class="work-bar-row clickable" data-bar-kind="logged" data-member="${memberAttr}" title="Click to view subtasks included in logged hours">
         <div class="work-bar-label">Logged</div>
         <div class="work-bar-track"><div class="work-bar-fill wb-logged" style="width:${wbLogged}%"></div></div>
         <div class="work-bar-val">${fmtStatHrs(loggedHrs, d)}</div>
@@ -2150,9 +2596,9 @@
   function fmtHrs(h) { if (!h) return '0h'; if (h >= 8) return `${(h / 8).toFixed(1).replace(/\.0$/, '')}d`; return `${Math.round(h)}h`; }
   function syncStatUnitToggle() {
     if (!$statUnitToggle) return;
+    $statUnitToggle.dataset.unit = S.statUnit;
     $statUnitToggle.querySelectorAll('button[data-unit]').forEach(btn => {
       const active = btn.dataset.unit === S.statUnit;
-      btn.classList.toggle('active', active);
       btn.setAttribute('aria-pressed', active ? 'true' : 'false');
     });
   }
@@ -2537,6 +2983,480 @@
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape' && $analyticsDrawer.classList.contains('open')) closeAnalyticsDrawer();
   });
+
+  // ── Subtask Breakdown Drawer ─────────────────────────────────────────────
+  const $stBackdrop = document.getElementById('st-backdrop');
+  const $stDrawer = document.getElementById('st-drawer');
+  const $stClose = document.getElementById('st-drawer-close');
+  const $stTitle = document.getElementById('st-drawer-title-text');
+  const $stSubtitle = document.getElementById('st-drawer-subtitle');
+  const $stTotals = document.getElementById('st-drawer-totals');
+  const $stCount = document.getElementById('st-total-count');
+  const $stPlanned = document.getElementById('st-total-planned');
+  const $stLogged = document.getElementById('st-total-logged');
+  const $stBody = document.getElementById('st-drawer-body');
+
+  function closeSubtaskDrawer() {
+    $stDrawer.classList.remove('open');
+    $stBackdrop.classList.remove('open');
+  }
+
+  function renderSubtaskDrawer(data, member, kind) {
+    const subtasks = Array.isArray(data.subtasks) ? data.subtasks : [];
+    $stTitle.textContent = `${kind === 'logged' ? 'Logged' : 'Planned'} Hours · ${member}`;
+    const range = `${data.from || '?'} → ${data.to || '?'}`;
+    const desc = kind === 'logged'
+      ? `Subtasks (non-bug) this resource logged time against in this range`
+      : `Subtasks (non-bug) with original estimates whose start/due falls in this range`;
+    $stSubtitle.textContent = `${desc} · ${range}`;
+    if (!subtasks.length) {
+      $stTotals.hidden = true;
+      $stBody.innerHTML = `<div class="st-empty"><span class="material-symbols-outlined">inbox</span><p>No subtasks found for this selection.</p></div>`;
+      return;
+    }
+    const totals = data.totals || {};
+    $stTotals.hidden = false;
+    $stCount.textContent = String(subtasks.length);
+    $stPlanned.textContent = (totals.planned_hours || 0).toFixed(2) + 'h';
+    $stLogged.textContent = (totals.logged_hours_in_range || 0).toFixed(2) + 'h';
+    const rowsHtml = subtasks.map((s, idx) => {
+      const issueLink = jiraUrl(s.issue_key) ? `<a href="${esc(jiraUrl(s.issue_key))}" target="_blank" rel="noopener" class="st-key">${esc(s.issue_key)}</a>` : `<span class="st-key">${esc(s.issue_key)}</span>`;
+      const storyChip = s.story_key ? `Story <span class="pkey">${esc(s.story_key)}</span>${s.story_summary ? ' · ' + esc(s.story_summary) : ''}` : '';
+      const epicChip = s.epic_key ? `Epic <span class="pkey">${esc(s.epic_key)}</span>${s.epic_summary ? ' · ' + esc(s.epic_summary) : ''}` : '';
+      const parentLine = [storyChip, epicChip].filter(Boolean).join(' · ');
+      const wls = Array.isArray(s.worklogs) ? s.worklogs : [];
+      const hasWls = wls.length > 0;
+      const wlSubtable = hasWls ? `
+        <tr class="st-wl-row" data-wl-for="${idx}" hidden>
+          <td colspan="6">
+            <div class="st-wl-wrap">
+              <div class="st-wl-title">Worklogs (${wls.length})</div>
+              <table class="st-wl-table">
+                <thead><tr><th>Date</th><th>Author</th><th style="text-align:right">Hours</th></tr></thead>
+                <tbody>
+                  ${wls.map(w => `<tr><td class="st-date">${esc(w.started_date)}</td><td>${esc(w.worklog_author)}</td><td class="st-hours">${(w.hours_logged || 0).toFixed(2)}</td></tr>`).join('')}
+                </tbody>
+              </table>
+            </div>
+          </td>
+        </tr>` : '';
+      return `
+        <tr class="expand-toggle" data-row-idx="${idx}" data-has-wls="${hasWls ? '1' : '0'}">
+          <td><span class="st-expand-icon" data-icon-for="${idx}">${hasWls ? '▶' : ''}</span></td>
+          <td>
+            ${issueLink}
+            <div class="st-summary">${esc(s.summary || '')}</div>
+            ${parentLine ? `<div class="st-parent">${parentLine}</div>` : ''}
+          </td>
+          <td class="st-date">${esc(s.start_date || '—')}</td>
+          <td class="st-date">${esc(s.due_date || '—')}</td>
+          <td class="st-hours">${(s.original_estimate_hours || 0).toFixed(2)}</td>
+          <td class="st-hours">${(s.logged_hours_in_range || 0).toFixed(2)}</td>
+        </tr>
+        ${wlSubtable}`;
+    }).join('');
+    $stBody.innerHTML = `
+      <table class="st-table">
+        <thead>
+          <tr>
+            <th style="width:24px"></th>
+            <th>Subtask / Story / Epic</th>
+            <th>Start</th>
+            <th>Due</th>
+            <th style="text-align:right">Est.</th>
+            <th style="text-align:right">Logged</th>
+          </tr>
+        </thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>`;
+    $stBody.querySelectorAll('tr.expand-toggle').forEach(tr => {
+      tr.addEventListener('click', (ev) => {
+        if (ev.target && ev.target.tagName === 'A') return;
+        if (tr.getAttribute('data-has-wls') !== '1') return;
+        const idx = tr.getAttribute('data-row-idx');
+        const wlRow = $stBody.querySelector(`tr.st-wl-row[data-wl-for="${idx}"]`);
+        const icon = $stBody.querySelector(`span.st-expand-icon[data-icon-for="${idx}"]`);
+        if (!wlRow) return;
+        const isOpen = !wlRow.hidden;
+        wlRow.hidden = isOpen;
+        if (icon) icon.classList.toggle('open', !isOpen);
+      });
+    });
+  }
+
+  async function openSubtaskDrawer(member, kind) {
+    if (!member) return;
+    $stTitle.textContent = `${kind === 'logged' ? 'Logged' : 'Planned'} Hours · ${member}`;
+    $stSubtitle.textContent = 'Loading…';
+    $stTotals.hidden = true;
+    $stBody.innerHTML = `<div class="st-empty"><span class="material-symbols-outlined">hourglass_top</span><p>Loading subtask breakdown…</p></div>`;
+    $stDrawer.classList.add('open');
+    $stBackdrop.classList.add('open');
+    const from = $fromDate.value;
+    const to = $toDate.value;
+    try {
+      const url = `/api/team-capacity-planner/member-subtasks?assignee=${encodeURIComponent(member)}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&kind=${encodeURIComponent(kind)}&exclude_bugs=${getExcludeBugs() ? 1 : 0}&epic_mode=${getEpicMode()}`;
+      const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        $stBody.innerHTML = `<div class="st-empty"><span class="material-symbols-outlined">error</span><p>${esc(data.error || 'Failed to load.')}</p></div>`;
+        return;
+      }
+      renderSubtaskDrawer(data, member, kind);
+    } catch (e) {
+      $stBody.innerHTML = `<div class="st-empty"><span class="material-symbols-outlined">error</span><p>${esc(e.message || String(e))}</p></div>`;
+    }
+  }
+
+  $stClose.addEventListener('click', closeSubtaskDrawer);
+  $stBackdrop.addEventListener('click', closeSubtaskDrawer);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && $stDrawer.classList.contains('open')) closeSubtaskDrawer();
+  });
+  $members.addEventListener('click', (ev) => {
+    const row = ev.target.closest('.work-bar-row.clickable');
+    if (!row) return;
+    const member = row.getAttribute('data-member');
+    const kind = row.getAttribute('data-bar-kind');
+    if (member && kind) openSubtaskDrawer(member, kind);
+  });
+
+  // ── Exclude Bug Subtasks toggle helpers ─────────────────────────────────
+  function getExcludeBugs() {
+    return !!($excludeBugsToggle && $excludeBugsToggle.checked);
+  }
+  (function initExcludeBugsToggle() {
+    if (!$excludeBugsToggle) return;
+    const stored = localStorage.getItem('tcp-exclude-bugs');
+    $excludeBugsToggle.checked = (stored === null) ? true : (stored !== '0');
+    $excludeBugsToggle.addEventListener('change', () => {
+      localStorage.setItem('tcp-exclude-bugs', $excludeBugsToggle.checked ? '1' : '0');
+      // Reload team data so Planned/Logged values update.
+      if ($teamSel.value && $fromDate.value && $toDate.value) {
+        loadTeamData();
+      }
+      // If the subtask drawer is open, refresh its content too.
+      if ($stDrawer && $stDrawer.classList.contains('open')) {
+        const titleText = $stTitle ? $stTitle.textContent : '';
+        const m = titleText.match(/^(Planned|Logged) Hours · (.+)$/);
+        if (m) openSubtaskDrawer(m[2], m[1].toLowerCase());
+      }
+    });
+  })();
+
+  // ── Epic-mode (TK Dates vs Subtask Dates) toggle helpers ────────────────
+  function getEpicMode() {
+    if (!$epicModeToggle) return 'story';
+    return $epicModeToggle.dataset.mode === 'subtask' ? 'subtask' : 'story';
+  }
+  function setEpicMode(mode) {
+    if (!$epicModeToggle) return;
+    const m = mode === 'subtask' ? 'subtask' : 'story';
+    $epicModeToggle.dataset.mode = m;
+    $epicModeToggle.querySelectorAll('button[data-mode]').forEach(btn => {
+      btn.setAttribute('aria-pressed', btn.dataset.mode === m ? 'true' : 'false');
+    });
+  }
+  (function initEpicModeToggle() {
+    if (!$epicModeToggle) return;
+    const stored = localStorage.getItem('tcp-epic-mode');
+    setEpicMode(stored === 'subtask' ? 'subtask' : 'story');
+    $epicModeToggle.addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-mode]');
+      if (!btn) return;
+      const next = btn.dataset.mode === 'subtask' ? 'subtask' : 'story';
+      if (next === getEpicMode()) return;
+      setEpicMode(next);
+      localStorage.setItem('tcp-epic-mode', next);
+      if ($teamSel.value && $fromDate.value && $toDate.value) {
+        loadTeamData();
+      }
+      if ($stDrawer && $stDrawer.classList.contains('open')) {
+        const titleText = $stTitle ? $stTitle.textContent : '';
+        const m = titleText.match(/^(Planned|Logged) Hours · (.+)$/);
+        if (m) openSubtaskDrawer(m[2], m[1].toLowerCase());
+      }
+    });
+  })();
+
+  // ── Toolbar menu dropdowns ─────────────────────────────────────────────
+  (function initMenus() {
+    const menus = [
+      { menu: document.getElementById('tb-filters'),  btn: document.getElementById('filters-btn'),  panel: document.getElementById('filters-panel')  },
+      { menu: document.getElementById('tb-settings'), btn: document.getElementById('settings-btn'), panel: document.getElementById('settings-panel') },
+    ];
+
+    const placePanel = (btn, panel) => {
+      const margin = 12;
+      const gap = 8;
+      const rect = btn.getBoundingClientRect();
+      const viewportW = document.documentElement.clientWidth;
+      const viewportH = window.innerHeight || document.documentElement.clientHeight;
+      const panelW = Math.min(panel.getBoundingClientRect().width || 360, viewportW - margin * 2);
+      const alignRight = panel.classList.contains('tb-panel--settings');
+      const preferredLeft = alignRight ? rect.right - panelW : rect.left;
+      const left = Math.max(margin, Math.min(preferredLeft, viewportW - margin - panelW));
+
+      panel.style.top = `${Math.round(rect.bottom + gap)}px`;
+      panel.style.left = `${Math.round(left)}px`;
+      panel.style.maxHeight = `${Math.max(220, Math.round(viewportH - rect.bottom - gap - margin))}px`;
+    };
+
+    const closeMenus = () => {
+      menus.forEach(({ menu: m, panel: p }) => {
+        if (!m || !p) return;
+        m.classList.remove('open');
+        p.setAttribute('hidden', '');
+      });
+    };
+
+    const placeOpenPanel = () => {
+      const openMenu = menus.find(({ menu }) => menu && menu.classList.contains('open'));
+      if (openMenu && openMenu.btn && openMenu.panel) placePanel(openMenu.btn, openMenu.panel);
+    };
+
+    menus.forEach(({ menu, btn, panel }) => {
+      if (!btn || !panel) return;
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const isOpen = menu.classList.contains('open');
+        closeMenus();
+        if (!isOpen) {
+          menu.classList.add('open');
+          panel.removeAttribute('hidden');
+          placePanel(btn, panel);
+        }
+      });
+    });
+    document.addEventListener('click', () => {
+      closeMenus();
+    });
+    window.addEventListener('resize', placeOpenPanel);
+    window.addEventListener('scroll', placeOpenPanel, true);
+    menus.forEach(({ panel }) => {
+      if (panel) panel.addEventListener('click', (e) => e.stopPropagation());
+    });
+  })();
+
+  // ── Dual Calendar Date Range Picker ───────────────────────────────────
+  const DRP = (function () {
+    const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    const DAY_NAMES   = ['Su','Mo','Tu','We','Th','Fr','Sa'];
+    let selStart = null, selEnd = null, hoverDate = null, phase = 'idle';
+    let leftY, leftM, rightY, rightM;
+    const todayStr = (() => { const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-${String(n.getDate()).padStart(2,'0')}`; })();
+
+    function dStr(d) {
+      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    }
+    function dFromStr(s) { return s ? new Date(s + 'T00:00:00') : null; }
+
+    function initMonths() {
+      const fv = document.getElementById('from-date').value;
+      const base = fv ? dFromStr(fv) : new Date();
+      leftY  = base.getFullYear(); leftM  = base.getMonth();
+      rightM = leftM + 1; rightY = leftY;
+      if (rightM > 11) { rightM = 0; rightY++; }
+    }
+
+    function renderMonth(year, month, side) {
+      const firstWd  = new Date(year, month, 1).getDay();
+      const daysInM  = new Date(year, month + 1, 0).getDate();
+      let html = `<div class="drp-cal">
+        <div class="drp-cal-hdr">
+          <button class="drp-nav" type="button" data-side="${side}" data-dir="-1">&#8249;</button>
+          <span class="drp-cal-title">${MONTH_NAMES[month]} ${year}</span>
+          <button class="drp-nav" type="button" data-side="${side}" data-dir="1">&#8250;</button>
+        </div>
+        <div class="drp-grid">`;
+      DAY_NAMES.forEach(d => { html += `<div class="drp-dh">${d}</div>`; });
+      for (let i = 0; i < firstWd; i++) html += `<div class="drp-d drp-d--off"></div>`;
+      const rangeEnd = phase === 'selecting' ? hoverDate : selEnd;
+      const lo = selStart && rangeEnd ? (selStart <= rangeEnd ? selStart : rangeEnd) : null;
+      const hi = selStart && rangeEnd ? (selStart <= rangeEnd ? rangeEnd : selStart) : null;
+      const startStr = selStart ? dStr(selStart) : null;
+      const endStr   = selEnd   ? dStr(selEnd)   : null;
+      for (let d = 1; d <= daysInM; d++) {
+        const ds = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+        const dt = dFromStr(ds);
+        let cls = 'drp-d';
+        if (ds === startStr) cls += ' drp-d--start';
+        if (ds === endStr)   cls += ' drp-d--end';
+        if (lo && hi && dt > lo && dt < hi) cls += ' drp-d--range';
+        if (ds === todayStr) cls += ' drp-d--today';
+        html += `<div class="${cls}" data-date="${ds}">${d}</div>`;
+      }
+      html += `</div></div>`;
+      return html;
+    }
+
+    function render() {
+      const wrap = document.getElementById('drp-months-wrap');
+      if (!wrap) return;
+      wrap.innerHTML = renderMonth(leftY, leftM, 'L') + renderMonth(rightY, rightM, 'R');
+      wrap.querySelectorAll('.drp-d[data-date]').forEach(el => {
+        el.addEventListener('click',      onDayClick);
+        el.addEventListener('mouseenter', onDayHover);
+      });
+      wrap.querySelectorAll('.drp-nav').forEach(el => el.addEventListener('click', onNav));
+      updateHint();
+      updateDisplay();
+    }
+
+    function onNav(e) {
+      const side = e.currentTarget.dataset.side;
+      const dir  = parseInt(e.currentTarget.dataset.dir, 10);
+      if (side === 'L') {
+        leftM += dir; if (leftM > 11) { leftM = 0; leftY++; } if (leftM < 0) { leftM = 11; leftY--; }
+      } else {
+        rightM += dir; if (rightM > 11) { rightM = 0; rightY++; } if (rightM < 0) { rightM = 11; rightY--; }
+      }
+      render();
+    }
+
+    function onDayClick(e) {
+      const d = dFromStr(e.currentTarget.dataset.date);
+      if (phase === 'idle' || phase === 'done') {
+        selStart = d; selEnd = null; hoverDate = null; phase = 'selecting';
+        render();
+      } else {
+        if (d < selStart) { selEnd = selStart; selStart = d; } else { selEnd = d; }
+        phase = 'done';
+        render();
+        applySelection();
+      }
+    }
+
+    function onDayHover(e) {
+      if (phase !== 'selecting') return;
+      hoverDate = dFromStr(e.currentTarget.dataset.date);
+      render();
+    }
+
+    function applySelection() {
+      if (!selStart) return;
+      const from = dStr(selStart);
+      const to   = selEnd ? dStr(selEnd) : from;
+      document.getElementById('from-date').value = from;
+      document.getElementById('to-date').value   = to;
+      updateDisplay();
+      closePanel();
+      if ($teamSel && $teamSel.value) loadTeamData();
+    }
+
+    function quickSet(from, to) {
+      selStart = dFromStr(from); selEnd = dFromStr(to); phase = 'done';
+      document.getElementById('from-date').value = from;
+      document.getElementById('to-date').value   = to;
+      const base = dFromStr(from);
+      leftY = base.getFullYear(); leftM = base.getMonth();
+      rightM = leftM + 1; rightY = leftY;
+      if (rightM > 11) { rightM = 0; rightY++; }
+      render();
+      updateDisplay();
+      closePanel();
+      if ($teamSel && $teamSel.value) loadTeamData();
+    }
+
+    function updateDisplay() {
+      const el = document.getElementById('drp-display');
+      if (!el) return;
+      const from = document.getElementById('from-date').value;
+      const to   = document.getElementById('to-date').value;
+      if (from && to) {
+        const fmt = d => d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+        el.textContent = `${fmt(dFromStr(from))} → ${fmt(dFromStr(to))}`;
+      } else {
+        el.textContent = 'Select range';
+      }
+    }
+
+    function updateHint() {
+      const el = document.getElementById('drp-hint');
+      if (!el) return;
+      el.textContent = phase === 'selecting' ? 'Now pick end date' : 'Click to pick start date';
+    }
+
+    function placePanel() {
+      const btn = document.getElementById('drp-btn');
+      const outer = document.getElementById('drp-outer');
+      if (!btn || !outer || outer.hasAttribute('hidden')) return;
+
+      const margin = 12;
+      const gap = 6;
+      const rect = btn.getBoundingClientRect();
+      const viewportW = document.documentElement.clientWidth;
+      const viewportH = window.innerHeight || document.documentElement.clientHeight;
+      const panelW = Math.min(outer.getBoundingClientRect().width || 540, viewportW - margin * 2);
+      const preferredLeft = rect.left;
+      const left = Math.max(margin, Math.min(preferredLeft, viewportW - margin - panelW));
+
+      outer.style.top = `${Math.round(rect.bottom + gap)}px`;
+      outer.style.left = `${Math.round(left)}px`;
+      outer.style.maxHeight = `${Math.max(140, Math.round(viewportH - rect.bottom - gap - margin))}px`;
+    }
+
+    function openPanel() {
+      initMonths();
+      selStart = dFromStr(document.getElementById('from-date').value);
+      selEnd   = dFromStr(document.getElementById('to-date').value);
+      phase = selStart && selEnd ? 'done' : 'idle';
+      hoverDate = null;
+      render();
+      const outer = document.getElementById('drp-outer');
+      if (outer) {
+        outer.removeAttribute('hidden');
+        placePanel();
+      }
+    }
+
+    function closePanel() {
+      const outer = document.getElementById('drp-outer');
+      if (outer) outer.setAttribute('hidden', '');
+    }
+
+    // Wire up trigger + quick buttons + apply + outside-click
+    document.addEventListener('DOMContentLoaded', () => {
+      updateDisplay();
+      const drpBtn = document.getElementById('drp-btn');
+      if (drpBtn) drpBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const outer = document.getElementById('drp-outer');
+        if (outer && outer.hasAttribute('hidden')) openPanel(); else closePanel();
+      });
+      const applyBtn = document.getElementById('drp-apply');
+      if (applyBtn) applyBtn.addEventListener('click', () => applySelection());
+      window.addEventListener('resize', placePanel);
+      window.addEventListener('scroll', placePanel, true);
+      document.querySelectorAll('.drp-q[data-quick]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const q   = btn.dataset.quick;
+          const now = new Date();
+          const y = now.getFullYear(), mo = now.getMonth();
+          let from, to;
+          if (q === 'this-month') {
+            from = `${y}-${String(mo+1).padStart(2,'0')}-01`;
+            to   = `${y}-${String(mo+1).padStart(2,'0')}-${new Date(y, mo+1, 0).getDate()}`;
+          } else if (q === 'last-month') {
+            const pm = mo === 0 ? 11 : mo - 1;
+            const py = mo === 0 ? y - 1 : y;
+            from = `${py}-${String(pm+1).padStart(2,'0')}-01`;
+            to   = `${py}-${String(pm+1).padStart(2,'0')}-${new Date(py, pm+1, 0).getDate()}`;
+          } else if (q === 'this-quarter') {
+            const qStart = Math.floor(mo / 3) * 3;
+            from = `${y}-${String(qStart+1).padStart(2,'0')}-01`;
+            to   = `${y}-${String(qStart+3).padStart(2,'0')}-${new Date(y, qStart+3, 0).getDate()}`;
+          }
+          if (from && to) quickSet(from, to);
+        });
+      });
+      const outerEl = document.getElementById('drp-outer');
+      if (outerEl) outerEl.addEventListener('click', e => e.stopPropagation());
+      document.addEventListener('click', closePanel);
+    });
+
+    return { updateDisplay, openPanel, closePanel };
+  })();
 
   // ── Event listeners ────────────────────────────────────────────────────
   $loadBtn.addEventListener('click', loadTeamData);

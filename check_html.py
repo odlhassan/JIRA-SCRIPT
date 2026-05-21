@@ -13,8 +13,12 @@ REQUIRED_MARKERS = {
     "Stats toggle present": 'id="stat-unit-toggle"',
     "Hours option present": 'data-unit="hours"',
     "Days option present": 'data-unit="days"',
-    "Subtask-only planned marker": "Assigned subtask estimates only",
+    "Subtask-only planned marker": "Sum of subtask estimates",
     "Subtask planned payload field": "subtask_planned_hours",
+    "Toolbar panels viewport fixed": "position: fixed; top: 64px; left: 12px;",
+    "Toolbar panel placement helper": "const placePanel = (btn, panel) =>",
+    "Responsive menu rows": "grid-template-columns: minmax(96px, 118px) minmax(0, 1fr);",
+    "Responsive calendar stacking": ".drp-months-wrap { flex-direction: column; gap: 16px; }",
 }
 
 

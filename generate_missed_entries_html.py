@@ -133,6 +133,7 @@ def _load_rows(input_path: Path) -> tuple[list[dict], str, str]:
                 "original_estimate": original_estimate,
                 "resource_logged_hours": "Yes" if total_hours_logged > 0 else "No",
                 "hours_logged": total_hours_logged,
+                "story_key": "",
                 "epic_key": "",
                 "jira_url": jira_url,
             }
@@ -169,6 +170,7 @@ def _load_rows_from_canonical_db(db_path: Path, run_id: str = "") -> tuple[list[
                 "original_estimate": round(_to_float(source.get("original_estimate_hours")), 2),
                 "resource_logged_hours": "Yes" if total_hours_logged > 0 else "No",
                 "hours_logged": total_hours_logged,
+                "story_key": _to_text(source.get("story_key")).upper(),
                 "epic_key": _to_text(source.get("epic_key")).upper(),
                 "jira_url": f"{base_url}/browse/{issue_key}",
             }
@@ -763,10 +765,14 @@ def _build_html(payload: dict) -> str:
             ? '<span class="status-chip status-yes">Yes</span>'
             : '<span class="status-chip status-no">No</span>';
           const epicKeyText = asText(sub.epic_key);
+          const storyKeyText = asText(sub.story_key);
           const jiraBase = link ? link.split("/browse/")[0] : "";
           const epicHtml = epicKeyText && jiraBase
             ? '<a class="jira-link" href="' + jiraBase + '/browse/' + epicKeyText + '" target="_blank" rel="noopener noreferrer">' + epicKeyText + '</a>'
             : (epicKeyText || "-");
+          const storyHtml = storyKeyText && jiraBase
+            ? '<a class="jira-link" href="' + jiraBase + '/browse/' + storyKeyText + '" target="_blank" rel="noopener noreferrer">' + storyKeyText + '</a>'
+            : (storyKeyText || "-");
           const subMisses = selectedFieldsNow.length ? missingFields(sub, selectedFieldsNow) : [];
           const missesHtml = subMisses.length
             ? subMisses.map(function(f) {{ return '<span class="missed-field">' + (fieldLabels[f] || f) + '</span>'; }}).join("")
@@ -775,6 +781,7 @@ def _build_html(payload: dict) -> str:
           return '<tr>' +
             '<td>' + issueHtml + '</td>' +
             '<td>' + (asText(sub.issue_type) || "-") + '</td>' +
+            '<td>' + storyHtml + '</td>' +
             '<td>' + epicHtml + '</td>' +
             '<td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + summaryText.replace(/"/g, "&quot;") + '">' + summaryText + '</td>' +
             '<td>' + missesHtml + '</td>' +
@@ -786,19 +793,20 @@ def _build_html(payload: dict) -> str:
         detailRow.className = "assignee-detail-row";
         detailRow.id = assigneeId;
         detailRow.innerHTML =
-          '<td colspan="6" class="assignee-detail-cell">' +
+          '<td colspan="7" class="assignee-detail-cell">' +
           noHoursEpicHtml +
           (entry.allSubtasks.length > 0
             ? '<table class="detail-workitem-table">' +
               '<thead><tr>' +
               '<th style="width:10%">Work Item</th>' +
               '<th style="width:10%">Issue Type</th>' +
+              '<th style="width:10%">Story</th>' +
               '<th style="width:10%">Epic</th>' +
-              '<th style="width:35%">Summary</th>' +
-              '<th style="width:25%">Missing Fields</th>' +
+              '<th style="width:28%">Summary</th>' +
+              '<th style="width:22%">Missing Fields</th>' +
               '<th style="width:10%">Hours Logged</th>' +
               '</tr></thead>' +
-              '<tbody>' + (subtaskItemsHtml || '<tr><td colspan="6" class="empty">No subtask items.</td></tr>') + '</tbody>' +
+              '<tbody>' + (subtaskItemsHtml || '<tr><td colspan="7" class="empty">No subtask items.</td></tr>') + '</tbody>' +
               '</table>'
             : '<p class="empty" style="margin:8px 0">No subtask items assigned.</p>') +
           '</td>';
@@ -866,6 +874,7 @@ def _build_html(payload: dict) -> str:
             "Assignee": normalizeAssignee(row.assignee),
             "Work Item": asText(row.issue_key),
             "Issue Type": asText(row.issue_type),
+            "Story": asText(row.story_key) || "-",
             "Epic": asText(row.epic_key) || "-",
             "Missing Fields": misses,
             "Resource Logged Hours": asText(row.resource_logged_hours),

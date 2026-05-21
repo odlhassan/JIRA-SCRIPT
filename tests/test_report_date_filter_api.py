@@ -265,6 +265,22 @@ class ReportDateFilterApiTests(unittest.TestCase):
             self.assertIn("new employee report", resp.get_data(as_text=True))
             self.assertIn("new employee report", report_path.read_text(encoding="utf-8"))
 
+    def test_employee_performance_served_html_keeps_busy_modal_overlay_css_valid(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            app = _build_app(root)
+            client = app.test_client()
+            source = root / "employee_performance_report.html"
+            source.write_text("<html><body><main>employee performance</main></body></html>", encoding="utf-8")
+
+            resp = client.get("/employee_performance_report.html")
+
+            self.assertEqual(resp.status_code, 200)
+            html = resp.get_data(as_text=True)
+            self.assertIn('.rw-busy-overlay {', html)
+            self.assertIn('display: none;', html)
+            self.assertNotIn("\n}\n}\n.rw-busy-overlay {", html)
+
     def test_report_html_keeps_current_copy_when_root_source_is_older(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             root = Path(td)

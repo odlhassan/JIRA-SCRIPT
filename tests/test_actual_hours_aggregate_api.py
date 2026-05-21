@@ -72,6 +72,7 @@ def _seed_canonical_run(db_path: Path, run_id: str = "canonical-test-run") -> st
             ("O2-EP1", "O2", "Epic", "", "2026-02-10", "2026-02-20", "", "O2-EP1"),
             ("O2-ST1", "O2", "Story", "O2-EP1", "", "", "O2-ST1", "O2-EP1"),
             ("O2-SUB1", "O2", "Sub-task", "O2-ST1", "2026-02-12", "2026-02-18", "O2-ST1", "O2-EP1"),
+            ("O2-SUB3", "O2", "Sub-task", "O2-ST1", "2026-03-05", "2026-03-06", "O2-ST1", "O2-EP1"),
             ("FF-EP1", "FF", "Epic", "", "2026-02-10", "2026-02-20", "", "FF-EP1"),
             ("FF-ST1", "FF", "Story", "FF-EP1", "", "", "FF-ST1", "FF-EP1"),
             ("FF-451", "FF", "Bug Subtask", "FF-ST1", "2026-02-12", "2026-02-18", "FF-ST1", "FF-EP1"),
@@ -102,6 +103,7 @@ def _seed_canonical_run(db_path: Path, run_id: str = "canonical-test-run") -> st
         for worklog_id, issue_key, started_date, hours, author in [
             ("wl-1", "O2-SUB1", "2026-02-15", 3.0, "Alice"),
             ("wl-2", "O2-SUB1", "2026-03-01", 2.0, "Alice"),
+            ("wl-5", "O2-SUB3", "2026-03-06", 4.0, "Alice"),
             ("wl-ff-1", "FF-451", "2026-02-20", 5.0, "Fiona"),
             ("wl-ff-2", "FF-451", "2026-03-02", 7.0, "Fiona"),
             ("wl-3", "O2-SUB2", "2026-02-16", 4.0, "Bob"),
@@ -188,6 +190,19 @@ class ActualHoursAggregateApiTests(unittest.TestCase):
             scoped_ext_by_key = {str(row.get("issue_key")): row for row in scoped_ext_payload.get("rows") or []}
             self.assertEqual(scoped_ext_by_key["O2-SUB1"]["logged_hours"], 5.0)
             self.assertEqual(scoped_ext_by_key["FF-451"]["logged_hours"], 12.0)
+            self.assertNotIn("O2-SUB3", scoped_ext_by_key)
+
+            scoped_tk_resp = client.get(
+                "/api/scoped-subtasks?from=2026-02-01&to=2026-02-28&mode=extended&scope_basis=tk_dates&projects=O2"
+            )
+            self.assertEqual(scoped_tk_resp.status_code, 200)
+            scoped_tk_payload = scoped_tk_resp.get_json() or {}
+            self.assertTrue(scoped_tk_payload.get("ok"))
+            self.assertEqual(scoped_tk_payload.get("scope_basis"), "tk_dates")
+            scoped_tk_by_key = {str(row.get("issue_key")): row for row in scoped_tk_payload.get("rows") or []}
+            self.assertIn("O2-SUB1", scoped_tk_by_key)
+            self.assertIn("O2-SUB3", scoped_tk_by_key)
+            self.assertEqual(scoped_tk_by_key["O2-SUB3"]["logged_hours"], 4.0)
 
             invalid_resp = client.get(
                 "/api/actual-hours/aggregate?from=2026-02-01&to=2026-02-28&mode=bad_mode&report=test"

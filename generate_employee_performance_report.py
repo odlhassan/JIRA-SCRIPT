@@ -1332,7 +1332,7 @@ def _build_html(payload: dict) -> str:
     .date-chip-input:focus {{ outline:none; border-color:#7cb2ff; box-shadow:0 0 0 2px rgba(124,178,255,.25); }}
     .date-chip-select {{ border:1px solid #3a5c91; border-radius:999px; background:#0d1830; color:var(--ink); padding:6px 10px; min-height:32px; font-weight:700; min-width:220px; }}
     .date-chip-select:focus {{ outline:none; border-color:#7cb2ff; box-shadow:0 0 0 2px rgba(124,178,255,.25); }}
-    .date-chip-control {{ display:inline-flex; align-items:center; gap:6px; }}
+    .date-chip-control {{ display:flex; flex-direction:column; align-items:stretch; gap:5px; }}
     .date-chip-label {{ color:#cfe0ff; font-size:.72rem; font-weight:800; text-transform:uppercase; letter-spacing:.03em; white-space:nowrap; }}
     .date-chip-control .date-chip-select {{ min-width:200px; }}
     .date-chip-control.compact .date-chip-select {{ min-width:180px; max-width:220px; }}
@@ -1347,6 +1347,9 @@ def _build_html(payload: dict) -> str:
     .adv-filter-group-label {{ padding:4px 8px; color:#9db1d8; font-size:.66rem; text-transform:uppercase; font-weight:800; letter-spacing:.04em; }}
     .adv-filter-item {{ width:100%; border:0; background:transparent; color:#dce8ff; text-align:left; padding:7px 8px; border-radius:8px; font-size:.76rem; cursor:pointer; }}
     .adv-filter-item:hover {{ background:#17325a; }}
+    .top-menu-row {{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:8px; }}
+    .top-menu-actions {{ display:flex; justify-content:flex-end; gap:8px; margin-top:10px; }}
+    .epic-basis-toggle {{ grid-template-columns:1fr 1fr; }}
     .control-toggle {{ display:inline-flex; align-items:center; gap:7px; min-height:34px; padding:6px 9px; border:1px solid #365c8d; border-radius:999px; background:#10284a; color:#dce8ff; font-size:.72rem; font-weight:800; user-select:none; cursor:pointer; }}
     .control-toggle input {{ margin:0; accent-color:#60a5fa; }}
     .adv-filter-menu .control-toggle {{ width:100%; justify-content:space-between; border-radius:8px; }}
@@ -2045,32 +2048,15 @@ def _build_html(payload: dict) -> str:
 <body>
 <div class="top-date-range-wrap">
   <div class="top-date-range-chip" aria-label="Date range filter">
-    <span class="date-chip-segment">From</span>
-    <input id="from" class="date-chip-input" type="date" aria-label="From date">
-    <span class="date-chip-segment">To</span>
-    <input id="to" class="date-chip-input" type="date" aria-label="To date">
-    <span class="date-chip-segment">Capacity Profile</span>
-    <select id="capacity-profile-top" class="date-chip-select" aria-label="Capacity profile (top)"></select>
-    <div class="date-chip-control compact">
-      <span class="date-chip-label">Overburn</span>
-      <select id="top-overburn-mode" class="date-chip-select" aria-label="Overburn mode">
-        <option value="subtasks" selected>Overburn Per Task</option>
-        <option value="total">Overburn Total</option>
-      </select>
-    </div>
-    <div class="date-chip-control compact">
-      <span class="date-chip-label">Efficiency</span>
-      <select id="top-efficiency-mode" class="date-chip-select" aria-label="Efficiency mode">
-        <option value="penalty_inclusive" selected>Penalty Inclusive Efficiency</option>
-        <option value="simple">Simple Efficiency</option>
-      </select>
-    </div>
-    <button id="apply" class="btn" type="button">Apply Filters</button>
-    <button id="reset" class="btn" type="button">Reset</button>
     <div class="adv-filter-wrap">
-      <button id="adv-filter-toggle" class="adv-filter-btn" type="button" aria-expanded="false" aria-haspopup="true" aria-controls="adv-filter-menu">Advanced Filters</button>
+      <button id="adv-filter-toggle" class="adv-filter-btn" type="button" aria-expanded="false" aria-haspopup="true" aria-controls="adv-filter-menu">Filters</button>
       <div class="adv-filter-menu" id="adv-filter-menu" role="menu" hidden>
-        <div class="adv-filter-group-label">Date Presets</div>
+        <div class="adv-filter-group-label">From To</div>
+        <div class="top-menu-row">
+          <input id="from" class="date-chip-input" type="date" aria-label="From date">
+          <input id="to" class="date-chip-input" type="date" aria-label="To date">
+        </div>
+        <div class="adv-filter-group-label">Advanced Filters</div>
         <button class="adv-filter-item" type="button" data-preset="last30" role="menuitem">Last 30 Days</button>
         <button class="adv-filter-item" type="button" data-preset="lastMonth" role="menuitem">Last Month</button>
         <button class="adv-filter-item" type="button" data-preset="currentMonth" role="menuitem">Current Month</button>
@@ -2114,6 +2100,36 @@ def _build_html(payload: dict) -> str:
             </div>
             <div id="teams-options" class="filter-options"></div>
           </div>
+        </div>
+        <div class="adv-filter-group-label">Epics By</div>
+        <div class="hero-segmented epic-basis-toggle" role="group" aria-label="Epic date basis">
+          <button type="button" id="epic-basis-tk" class="hero-segment-btn active" data-epic-basis="tk_dates">TK Dates</button>
+          <button type="button" id="epic-basis-subtask" class="hero-segment-btn" data-epic-basis="subtask_dates">Subtask Dates</button>
+        </div>
+        <div class="top-menu-actions">
+          <button id="apply" class="btn" type="button">Apply Filters</button>
+          <button id="reset" class="btn" type="button">Reset</button>
+        </div>
+      </div>
+    </div>
+    <div class="adv-filter-wrap settings-filter-wrap">
+      <button id="settings-filter-toggle" class="adv-filter-btn" type="button" aria-expanded="false" aria-haspopup="true" aria-controls="settings-filter-menu">Settings</button>
+      <div class="adv-filter-menu" id="settings-filter-menu" role="menu" hidden>
+        <div class="adv-filter-group-label">Capacity Profile</div>
+        <select id="capacity-profile-top" class="date-chip-select" aria-label="Capacity profile (top)"></select>
+        <div class="date-chip-control compact">
+          <span class="date-chip-label">Overburn</span>
+          <select id="top-overburn-mode" class="date-chip-select" aria-label="Overburn mode">
+            <option value="subtasks" selected>Overburn Per Task</option>
+            <option value="total">Overburn Total</option>
+          </select>
+        </div>
+        <div class="date-chip-control compact">
+          <span class="date-chip-label">Efficiency</span>
+          <select id="top-efficiency-mode" class="date-chip-select" aria-label="Efficiency mode">
+            <option value="penalty_inclusive" selected>Penalty Inclusive Efficiency</option>
+            <option value="simple">Simple Efficiency</option>
+          </select>
         </div>
         <div class="adv-filter-group-label">Score Display</div>
         <div class="hero-segmented score-mode-toggle" role="group" aria-label="Score display mode">
@@ -2309,6 +2325,8 @@ const themeLightButton = document.getElementById("theme-light");
 const themeDarkButton = document.getElementById("theme-dark");
 const advFilterToggleButton = document.getElementById("adv-filter-toggle");
 const advFilterMenu = document.getElementById("adv-filter-menu");
+const settingsFilterToggleButton = document.getElementById("settings-filter-toggle");
+const settingsFilterMenu = document.getElementById("settings-filter-menu");
 const dateFilterStatusNode = document.getElementById("date-filter-status");
 const leaderActionsToggle = document.getElementById("leader-actions-toggle");
 const leaderActionsMenu = document.getElementById("leader-actions-menu");
@@ -2324,6 +2342,8 @@ const headerEfficiencyPenaltyInclusiveEl = document.getElementById("header-effic
 const headerEfficiencySimpleEl = document.getElementById("header-efficiency-simple");
 const advScoreSimpleEl = document.getElementById("adv-score-simple");
 const advScoreAdvancedEl = document.getElementById("adv-score-advanced");
+const epicBasisTkEl = document.getElementById("epic-basis-tk");
+const epicBasisSubtaskEl = document.getElementById("epic-basis-subtask");
 const headerScoreSimpleEl = document.getElementById("header-score-simple");
 const headerScoreAdvancedEl = document.getElementById("header-score-advanced");
 const leaderScoreSimpleEl = document.getElementById("leader-score-simple");
@@ -2373,6 +2393,7 @@ let planningRealismEnabled = n(settings.planning_realism_enabled) > 0;
 let overloadedPenaltyThresholdPct = clamp(n(settings.overloaded_penalty_threshold_pct), 0, 100);
 let simpleOverrunMode = "subtasks";
 let efficiencyScorecardMode = "penalty_inclusive";
+let epicDateBasisMode = "tk_dates";
 let headerPlanActualBreakdownOpen = false;
 let headerPlanActualLastPlannedMeta = "Subtasks: 0 | Total Planned: 0.00h";
 let headerPlanActualLastActualMeta = "Subtasks: 0 | Total Actual: 0.00h";
@@ -3131,6 +3152,22 @@ function syncEfficiencyScorecardMode(nextMode) {{
   efficiencyScorecardMode = String(nextMode || "penalty_inclusive") === "simple" ? "simple" : "penalty_inclusive";
   syncHeaderPerformanceControls();
 }}
+function syncEpicDateBasisMode(nextMode, shouldRender = true) {{
+  epicDateBasisMode = String(nextMode || "tk_dates") === "subtask_dates" ? "subtask_dates" : "tk_dates";
+  if (epicBasisTkEl) {{
+    const active = epicDateBasisMode === "tk_dates";
+    epicBasisTkEl.classList.toggle("active", active);
+    epicBasisTkEl.setAttribute("aria-pressed", active ? "true" : "false");
+  }}
+  if (epicBasisSubtaskEl) {{
+    const active = epicDateBasisMode === "subtask_dates";
+    epicBasisSubtaskEl.classList.toggle("active", active);
+    epicBasisSubtaskEl.setAttribute("aria-pressed", active ? "true" : "false");
+  }}
+  scopedSubtasksLoadedKey = "";
+  scopedSubtasksIssueKeySet = null;
+  if (shouldRender) renderAll();
+}}
 async function hydratePerformanceSettings() {{
   if (typeof window === "undefined" || !window.location || window.location.protocol === "file:") return false;
   try {{
@@ -3145,6 +3182,16 @@ async function hydratePerformanceSettings() {{
   }}
 }}
 function inRange(day, from, to) {{ if (!day) return false; if (from && day < from) return false; if (to && day > to) return false; return true; }}
+function datePairContained(start, due, from, to) {{
+  const s = String(start || "");
+  const d = String(due || "");
+  if (!s || !d) return false;
+  if (from && s < from) return false;
+  if (to && s > to) return false;
+  if (from && d < from) return false;
+  if (to && d > to) return false;
+  return true;
+}}
 function selectedProjects() {{ return new Set(Array.from(document.getElementById("projects").selectedOptions).map(o => o.value)); }}
 function selectedTeams() {{ return new Set(Array.from(document.getElementById("teams").selectedOptions).map(o => o.value)); }}
 function selectedTeamAssignees() {{
@@ -3236,6 +3283,7 @@ function scopedSubtasksCacheKey(from, to) {{
     String(from || ""),
     String(to || ""),
     extendedActualsEnabled ? "extended" : "log_date",
+    epicDateBasisMode,
     Array.from(selectedProjects()).sort().join(","),
     Array.from(selectedTeamAssignees()).sort().join(",")
   ].join("|");
@@ -3256,6 +3304,7 @@ async function loadScopedSubtasksForCurrentFilters() {{
   params.set("from", String(from || ""));
   params.set("to", String(to || ""));
   params.set("mode", extendedActualsEnabled ? "extended" : "log_date");
+  params.set("scope_basis", epicDateBasisMode);
   const projects = Array.from(selectedProjects()).sort();
   if (projects.length) params.set("projects", projects.join(","));
   const assignees = Array.from(selectedTeamAssignees()).sort();
@@ -3487,6 +3536,9 @@ function computeBusinessDays(fromIso, toIso, profile) {{
   return days;
 }}
 function resolveParentEpicKey(wi) {{
+  const ownKey = String(wi && wi.issue_key || "").toUpperCase();
+  const ownType = issueTypeLabel(wi && (wi.jira_issue_type || wi.issue_type || wi.work_item_type));
+  if (ownKey && ownType.includes("epic")) return ownKey;
   const parentKey = String(wi && wi.parent_issue_key || "").toUpperCase();
   if (!parentKey) return "";
   const parentRow = workItemsByKey.get(parentKey) || null;
@@ -3494,6 +3546,22 @@ function resolveParentEpicKey(wi) {{
   const parentType = issueTypeLabel(parentRow.jira_issue_type || parentRow.issue_type || parentRow.work_item_type);
   if (parentType.includes("epic")) return parentKey;
   return String(parentRow.parent_issue_key || "").toUpperCase();
+}}
+function buildQualifyingEpicKeySet(from, to) {{
+  const out = new Set();
+  for (const row of workItems) {{
+    const issueType = issueTypeLabel(row?.jira_issue_type || row?.issue_type || row?.work_item_type);
+    let qualifies = false;
+    if (epicDateBasisMode === "subtask_dates") {{
+      qualifies = isSubtaskPerformanceType(issueType) && datePairContained(row?.start_date, row?.due_date, from, to);
+    }} else {{
+      qualifies = (issueType.includes("epic") || issueType.includes("story")) && datePairContained(row?.start_date, row?.due_date, from, to);
+    }}
+    if (!qualifies) continue;
+    const epicKey = resolveParentEpicKey(row);
+    if (epicKey) out.add(epicKey);
+  }}
+  return out;
 }}
 function resolveEpicKeyFromWorklogRow(row) {{
   const issueKey = String(row && row.issue_id || "").toUpperCase();
@@ -3525,6 +3593,16 @@ function setAdvancedFilterMenuOpen(open) {{
     advFilterMenu.removeAttribute("hidden");
   }} else {{
     advFilterMenu.setAttribute("hidden", "");
+  }}
+}}
+function setSettingsFilterMenuOpen(open) {{
+  if (!settingsFilterToggleButton || !settingsFilterMenu) return;
+  const isOpen = Boolean(open);
+  settingsFilterToggleButton.setAttribute("aria-expanded", isOpen ? "true" : "false");
+  if (isOpen) {{
+    settingsFilterMenu.removeAttribute("hidden");
+  }} else {{
+    settingsFilterMenu.setAttribute("hidden", "");
   }}
 }}
 function applyDateShortcut(kind) {{
@@ -3635,9 +3713,16 @@ function compute() {{
   const useP = pset.size > 0;
   const scopedIssueSet = scopedSubtasksIssueKeySet instanceof Set ? scopedSubtasksIssueKeySet : null;
   const scopedRowsByIssue = new Map((Array.isArray(scopedSubtasksRows) ? scopedSubtasksRows : []).map((row) => [String(row && row.issue_key || "").trim().toUpperCase(), row]));
+  const qualifyingEpicKeys = buildQualifyingEpicKeySet(from, to);
   const scopedWorklogs = worklogs.filter((r) => {{
     const issueKey = String(r.issue_id || "").toUpperCase();
     if (scopedIssueSet && !scopedIssueSet.has(issueKey)) return false;
+    if (!scopedIssueSet) {{
+      const issueRow = workItemsByKey.get(issueKey) || null;
+      if (epicDateBasisMode === "subtask_dates") {{
+        if (!issueRow || !datePairContained(issueRow.start_date, issueRow.due_date, from, to)) return false;
+      }} else if (!qualifyingEpicKeys.has(resolveEpicKeyFromWorklogRow(r))) return false;
+    }}
     if (useP && !pset.has(String(r.project_key || "UNKNOWN"))) return false;
     if (s && !String(r.issue_assignee || "").toLowerCase().includes(s)) return false;
     const issueType = String(r.item_issue_type || r.issue_type || "");
@@ -3662,10 +3747,8 @@ function compute() {{
     if (s && !assignee.toLowerCase().includes(s)) return false;
     const issueType = String(r.jira_issue_type || r.issue_type || r.work_item_type || "");
     if (!isSubtaskPerformanceType(issueType)) return false;
-    const start = String(r.start_date || "");
-    const due = String(r.due_date || "");
-    if (!start && !due) return false;
-    return inRange(start, from, to) || inRange(due, from, to);
+    if (epicDateBasisMode === "subtask_dates") return datePairContained(r.start_date, r.due_date, from, to);
+    return qualifyingEpicKeys.has(resolveParentEpicKey(r));
   }});
   const assignedItemsWork = assignedItems.filter((r) => !isLeaveIssueKey(String(r.issue_key || "")));
   const leaves = leaveRows.filter((r) => inRange(String(r.period_day || ""), from, to));
@@ -5827,11 +5910,13 @@ document.addEventListener("keydown", (event) => {{
     closeScoreDrawer();
   }}
   if (event.key === "Escape") setHeaderPerformanceControlsOpen(false);
+  if (event.key === "Escape") setSettingsFilterMenuOpen(false);
 }});
 if (advFilterToggleButton && advFilterMenu) {{
   advFilterToggleButton.addEventListener("click", () => {{
     const expanded = advFilterToggleButton.getAttribute("aria-expanded") === "true";
     setAdvancedFilterMenuOpen(!expanded);
+    setSettingsFilterMenuOpen(false);
   }});
   advFilterMenu.querySelectorAll(".adv-filter-item").forEach((btn) => {{
     btn.addEventListener("click", () => {{
@@ -5852,9 +5937,17 @@ if (advFilterToggleButton && advFilterMenu) {{
     if (!(target instanceof Element)) return;
     if (target.closest(".adv-filter-wrap")) return;
     setAdvancedFilterMenuOpen(false);
+    setSettingsFilterMenuOpen(false);
   }});
   document.addEventListener("keydown", (event) => {{
     if (event.key === "Escape") setAdvancedFilterMenuOpen(false);
+  }});
+}}
+if (settingsFilterToggleButton && settingsFilterMenu) {{
+  settingsFilterToggleButton.addEventListener("click", () => {{
+    const expanded = settingsFilterToggleButton.getAttribute("aria-expanded") === "true";
+    setSettingsFilterMenuOpen(!expanded);
+    setAdvancedFilterMenuOpen(false);
   }});
 }}
 document.getElementById("toggle-performance-kpis").addEventListener("click", () => {{
@@ -5935,7 +6028,9 @@ document.getElementById("filter-risk").addEventListener("change", renderAll);
 document.getElementById("filter-missed").addEventListener("change", renderAll);
 document.getElementById("leader-search").addEventListener("input", renderAll);
 document.getElementById("search").addEventListener("input", () => {{ render(compute()); }});
-document.getElementById("reset").addEventListener("click", ()=>{{ document.getElementById("from").value=defaultFrom; document.getElementById("to").value=defaultTo; document.getElementById("search").value=\"\"; document.getElementById("leader-search").value=\"\"; document.getElementById("leader-sort").value=\"score\"; document.getElementById("leader-sort-direction").value=\"desc\"; document.getElementById("leader-scoring-mode").value=\"simple\"; document.getElementById("filter-risk").value=\"all\"; document.getElementById("filter-missed").value=\"all\"; syncSimpleOverrunMode(\"subtasks\"); syncEfficiencyScorecardMode(\"penalty_inclusive\"); setScoringMode(\"simple\", false); setDueCompletionEnabled(true, false); setHeaderPerformanceControlsOpen(false); if (assigneeExtendedActualsToggleEl) assigneeExtendedActualsToggleEl.checked = false; extendedActualsEnabled = false; applyPerformanceSettings(settings); syncCapacityProfileSelection(\"auto\", \"\"); selectedTeam = \"\"; setDateFilterStatus(""); Array.from(document.getElementById("projects").options).forEach(o => o.selected=true); Array.from(document.getElementById("teams").options).forEach(o => o.selected=true); updateFilterTriggerText(\"projects\", \"projects-trigger-text\"); updateFilterTriggerText(\"teams\", \"teams-trigger-text\"); document.querySelectorAll(\"#projects-options .filter-option input\").forEach((c)=>{{ c.checked = true; }}); document.querySelectorAll(\"#teams-options .filter-option input\").forEach((c)=>{{ c.checked = true; }}); if (document.getElementById(\"projects-search\")) document.getElementById(\"projects-search\").value = \"\"; if (document.getElementById(\"teams-search\")) document.getElementById(\"teams-search\").value = \"\"; document.querySelectorAll(\"#projects-options .filter-option\").forEach((r)=>{{ r.classList.remove(\"hidden\"); }}); document.querySelectorAll(\"#teams-options .filter-option\").forEach((r)=>{{ r.classList.remove(\"hidden\"); }}); renderAll(); }});
+if (epicBasisTkEl) epicBasisTkEl.addEventListener("click", () => syncEpicDateBasisMode("tk_dates"));
+if (epicBasisSubtaskEl) epicBasisSubtaskEl.addEventListener("click", () => syncEpicDateBasisMode("subtask_dates"));
+document.getElementById("reset").addEventListener("click", ()=>{{ document.getElementById("from").value=defaultFrom; document.getElementById("to").value=defaultTo; document.getElementById("search").value=\"\"; document.getElementById("leader-search").value=\"\"; document.getElementById("leader-sort").value=\"score\"; document.getElementById("leader-sort-direction").value=\"desc\"; document.getElementById("leader-scoring-mode").value=\"simple\"; document.getElementById("filter-risk").value=\"all\"; document.getElementById("filter-missed").value=\"all\"; syncSimpleOverrunMode(\"subtasks\"); syncEfficiencyScorecardMode(\"penalty_inclusive\"); syncEpicDateBasisMode(\"tk_dates\", false); setScoringMode(\"simple\", false); setDueCompletionEnabled(true, false); setHeaderPerformanceControlsOpen(false); setSettingsFilterMenuOpen(false); if (assigneeExtendedActualsToggleEl) assigneeExtendedActualsToggleEl.checked = false; extendedActualsEnabled = false; applyPerformanceSettings(settings); syncCapacityProfileSelection(\"auto\", \"\"); selectedTeam = \"\"; setDateFilterStatus(""); Array.from(document.getElementById("projects").options).forEach(o => o.selected=true); Array.from(document.getElementById("teams").options).forEach(o => o.selected=true); updateFilterTriggerText(\"projects\", \"projects-trigger-text\"); updateFilterTriggerText(\"teams\", \"teams-trigger-text\"); document.querySelectorAll(\"#projects-options .filter-option input\").forEach((c)=>{{ c.checked = true; }}); document.querySelectorAll(\"#teams-options .filter-option input\").forEach((c)=>{{ c.checked = true; }}); if (document.getElementById(\"projects-search\")) document.getElementById(\"projects-search\").value = \"\"; if (document.getElementById(\"teams-search\")) document.getElementById(\"teams-search\").value = \"\"; document.querySelectorAll(\"#projects-options .filter-option\").forEach((r)=>{{ r.classList.remove(\"hidden\"); }}); document.querySelectorAll(\"#teams-options .filter-option\").forEach((r)=>{{ r.classList.remove(\"hidden\"); }}); renderAll(); }});
 document.getElementById("shortcut-current-month").addEventListener("click", ()=>{{ applyDateShortcut("current_month"); renderAll(); }});
 document.getElementById("shortcut-previous-month").addEventListener("click", ()=>{{ applyDateShortcut("previous_month"); renderAll(); }});
 document.getElementById("shortcut-last-30-days").addEventListener("click", ()=>{{ applyDateShortcut("last_30_days"); renderAll(); }});

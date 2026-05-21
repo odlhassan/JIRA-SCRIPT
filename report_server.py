@@ -314,7 +314,7 @@ REPORT_REFRESH_DEFAULT_RETENTION_RUNS = 10
 REFRESH_WIDGET_MARKER = "codex-refresh-widget-v2"
 REFRESH_WIDGET_START = "<!-- codex-refresh-widget-start -->"
 REFRESH_WIDGET_END = "<!-- codex-refresh-widget-end -->"
-REPORT_IDS_WITHOUT_REFRESH_WIDGET = {"original_estimates_hierarchy", "ipp_meeting_dashboard"}
+REPORT_IDS_WITHOUT_REFRESH_WIDGET = {"original_estimates_hierarchy", "ipp_meeting_dashboard", "team_capacity_planner"}
 INFO_DRAWER_MARKER = "codex-info-drawer-v1"
 INFO_DRAWER_START = "<!-- codex-info-drawer-start -->"
 INFO_DRAWER_END = "<!-- codex-info-drawer-end -->"
@@ -338,6 +338,7 @@ CANONICAL_REFRESH_SETTINGS_ROUTE = "/settings/canonical-refresh"
 SQL_CONSOLE_SETTINGS_ROUTE = "/settings/sql-console"
 TCP_SETTINGS_ROUTE = "/settings/team-capacity-planner"
 SEATING_PLANNER_SETTINGS_ROUTE = "/settings/seating-planner"
+DB_MIGRATION_SETTINGS_ROUTE = "/settings/db-migration"
 LEGACY_PVD_PAGE_KEY = "planned_vs_dispensed_report"
 CANONICAL_PVD_PAGE_KEY = "approved_vs_planned_hours_report"
 LEGACY_PVD_HTML_FILE = "planned_vs_dispensed_report.html"
@@ -385,6 +386,7 @@ STATIC_ADMIN_NAV_ITEMS: list[dict[str, object]] = [
     {"page_key": "canonical_refresh_settings", "title": "Colossal Refresh", "href": CANONICAL_REFRESH_SETTINGS_ROUTE, "icon": "sync", "path": CANONICAL_REFRESH_SETTINGS_ROUTE, "default_nav_order": 100, "page_type": "configuration"},
     {"page_key": "sql_console", "title": "SQL Console", "href": SQL_CONSOLE_SETTINGS_ROUTE, "icon": "query_stats", "path": SQL_CONSOLE_SETTINGS_ROUTE, "default_nav_order": 110, "page_type": "configuration"},
     {"page_key": "seating_planner", "title": "Seating Planner", "href": SEATING_PLANNER_SETTINGS_ROUTE, "icon": "chair", "path": SEATING_PLANNER_SETTINGS_ROUTE, "default_nav_order": 149, "page_type": "configuration"},
+    {"page_key": "db_migration", "title": "DB Migration", "href": DB_MIGRATION_SETTINGS_ROUTE, "icon": "compare_arrows", "path": DB_MIGRATION_SETTINGS_ROUTE, "default_nav_order": 160, "page_type": "configuration"},
 ]
 
 
@@ -404,6 +406,7 @@ def _settings_nav_items() -> list[tuple[str, str]]:
         ("Epic Phases", EPIC_PHASES_SETTINGS_ROUTE),
         ("Epics Planner", EPICS_MANAGEMENT_SETTINGS_ROUTE),
         ("Epics Planner Import", EPICS_MANAGEMENT_IMPORT_ROUTE),
+        ("DB Migration", DB_MIGRATION_SETTINGS_ROUTE),
     ]
 
 
@@ -5199,7 +5202,11 @@ def _canonical_normalize_scoped_subtask_basis(scope_basis: object) -> str:
     raw = _to_text(scope_basis).strip().lower()
     if raw in {"log_date", "worklog_date", "worklogs", "subtask_logs"}:
         return "log_date"
-    return "planned_dates"
+    if raw in {"tk_dates", "tk", "story_dates", "stories", "epic_dates", "epics"}:
+        return "tk_dates"
+    if raw in {"subtask_dates", "subtasks", "planned_dates", "planned", "plan_dates"}:
+        return "subtask_dates"
+    return "subtask_dates"
 
 
 def _canonical_compute_nested_actual_hours(
@@ -5298,6 +5305,45 @@ def _canonical_compute_scoped_subtasks(
         if issue_key and started_day is not None and hours > 0 and from_date <= started_day <= to_date:
             issue_keys_with_in_range_worklogs.add(issue_key)
 
+    issues_by_key = {_to_text(issue.get("issue_key")).upper(): issue for issue in issue_rows if _to_text(issue.get("issue_key"))}
+
+    def _date_pair_contained(issue: dict[str, object]) -> bool:
+        start_day = _parse_iso_date(_to_text(issue.get("start_date")))
+        due_day = _parse_iso_date(_to_text(issue.get("due_date")))
+        return bool(start_day and due_day and from_date <= start_day <= to_date and from_date <= due_day <= to_date)
+
+    def _epic_key_for_issue(issue: dict[str, object]) -> str:
+        issue_key = _to_text(issue.get("issue_key")).upper()
+        issue_type = _to_text(issue.get("issue_type")).lower()
+        if "epic" in issue_type:
+            return issue_key
+        explicit = _to_text(issue.get("epic_key")).upper()
+        if explicit and explicit != issue_key:
+            return explicit
+        parent_key = _to_text(issue.get("parent_issue_key")).upper()
+        parent = issues_by_key.get(parent_key)
+        if parent and "epic" in _to_text(parent.get("issue_type")).lower():
+            return parent_key
+        if parent:
+            return _to_text(parent.get("epic_key")).upper()
+        return explicit
+
+    qualifying_epic_keys: set[str] | None = None
+    if scope_mode in {"tk_dates", "subtask_dates"}:
+        qualifying_epic_keys = set()
+        for issue in issue_rows:
+            issue_type = _to_text(issue.get("issue_type")).lower()
+            qualifies = False
+            if scope_mode == "tk_dates":
+                qualifies = ("epic" in issue_type or "story" in issue_type) and _date_pair_contained(issue)
+            else:
+                qualifies = _canonical_is_scoped_subtask_issue_type(issue.get("issue_type")) and _date_pair_contained(issue)
+            if not qualifies:
+                continue
+            epic_key = _epic_key_for_issue(issue)
+            if epic_key:
+                qualifying_epic_keys.add(epic_key)
+
     filtered_rows: list[dict[str, object]] = []
     scoped_issue_keys: set[str] = set()
     for issue in issue_rows:
@@ -5317,10 +5363,12 @@ def _canonical_compute_scoped_subtasks(
         if scope_mode == "log_date":
             if issue_key not in issue_keys_with_in_range_worklogs:
                 continue
+        elif scope_mode == "subtask_dates":
+            if not _date_pair_contained(issue):
+                continue
         else:
-            start_day = _parse_iso_date(_to_text(issue.get("start_date")))
-            due_day = _parse_iso_date(_to_text(issue.get("due_date")))
-            if not ((start_day and from_date <= start_day <= to_date) or (due_day and from_date <= due_day <= to_date)):
+            epic_key = _epic_key_for_issue(issue)
+            if qualifying_epic_keys is not None and epic_key not in qualifying_epic_keys:
                 continue
         filtered_rows.append(
             {
@@ -5331,7 +5379,7 @@ def _canonical_compute_scoped_subtasks(
                 "start_date": _to_text(issue.get("start_date")),
                 "due_date": _to_text(issue.get("due_date")),
                 "original_estimate_hours": round(float(issue.get("original_estimate_hours") or 0), 2),
-                "epic_key": _to_text(issue.get("epic_key")).upper(),
+                "epic_key": _epic_key_for_issue(issue),
                 "logged_hours": 0.0,
                 "in_range_worklogs": [],
             }
@@ -9631,6 +9679,67 @@ def _canonical_refresh_settings_html() -> str:
       font-family:Consolas, monospace;
       font-size:.74rem;
     }}
+    .refresh-busy-overlay {{
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 1100;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }}
+    .refresh-busy-overlay[aria-hidden="false"] {{ display: flex; }}
+    .refresh-busy-backdrop {{
+      position: absolute;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.55);
+      backdrop-filter: blur(2px);
+    }}
+    .refresh-busy-dialog {{
+      position: relative;
+      max-width: 480px;
+      width: 100%;
+      max-height: 90vh;
+      overflow: auto;
+    }}
+    .bm-progress-bar {{
+      width: 100%;
+      height: 10px;
+      border-radius: 999px;
+      background: rgba(148,163,184,.2);
+      overflow: hidden;
+      border: 1px solid rgba(148,163,184,.18);
+      margin-bottom: 16px;
+    }}
+    .bm-progress-fill {{
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #22c55e 0%, #06b6d4 100%);
+      box-shadow: 0 0 14px rgba(34,197,94,.35);
+      transition: width .5s ease;
+    }}
+    .bm-stat-grid {{
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 16px;
+    }}
+    .bm-pulse {{
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+    }}
+    .bm-dot {{
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #22c55e;
+      animation: bm-pulse-anim 1.4s ease-in-out infinite;
+    }}
+    @keyframes bm-pulse-anim {{
+      0%, 100% {{ opacity: 1; transform: scale(1); }}
+      50% {{ opacity: .4; transform: scale(.7); }}
+    }}
     .prepare-offline-modal {{
       display: none;
       position: fixed;
@@ -9898,6 +10007,48 @@ def _canonical_refresh_settings_html() -> str:
         </div>
       </div>
     </div>
+
+    <div id="refresh-busy-modal" class="refresh-busy-overlay" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="bm-title">
+      <div class="refresh-busy-backdrop"></div>
+      <div class="refresh-busy-dialog card">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+          <span class="material-symbols-outlined" style="color:#0f766e;font-size:1.7rem;">sync</span>
+          <h2 id="bm-title" style="margin:0;font-size:1.1rem;">Refresh Already In Progress</h2>
+        </div>
+        <p style="margin:0 0 14px;color:#475569;font-size:.88rem;">
+          Only one refresh can run at a time across all users. Please wait for the current one to finish.
+        </p>
+
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+          <span id="bm-mode-badge" class="pill" style="font-size:.85rem;padding:6px 13px;">-</span>
+          <span class="bm-pulse">
+            <span class="bm-dot"></span>
+            <span style="font-size:.82rem;color:#475569;">In progress</span>
+          </span>
+        </div>
+
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;">
+          <span style="font-size:.78rem;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:#64748b;">Progress</span>
+          <span id="bm-pct" style="font-size:.88rem;font-weight:700;color:#0f172a;">0%</span>
+        </div>
+        <div class="bm-progress-bar"><div id="bm-fill" class="bm-progress-fill"></div></div>
+
+        <div class="bm-stat-grid">
+          <div class="meta-item"><strong>Elapsed Time</strong><span id="bm-elapsed">-</span></div>
+          <div class="meta-item"><strong>Est. Time Remaining</strong><span id="bm-eta">Calculating...</span></div>
+          <div class="meta-item"><strong>Refresh Type</strong><span id="bm-mode">-</span></div>
+          <div class="meta-item"><strong>Current Step</strong><span id="bm-step">-</span></div>
+        </div>
+
+        <p style="margin:0 0 16px;font-size:.8rem;color:#94a3b8;display:flex;align-items:center;gap:5px;">
+          <span class="material-symbols-outlined" style="font-size:1rem;">autorenew</span>
+          Updates automatically every 5 seconds.
+        </p>
+        <div style="display:flex;justify-content:flex-end;">
+          <button class="btn ghost" type="button" id="bm-dismiss-btn">Got it</button>
+        </div>
+      </div>
+    </div>
   </main>
 
   <script>
@@ -9930,6 +10081,7 @@ def _canonical_refresh_settings_html() -> str:
     const metaEnded = document.getElementById("meta-ended");
     let activeRunId = "";
     let pollTimer = 0;
+    let busyModalPollTimer = 0;
 
     function esc(v) {{
       return String(v == null ? "" : v)
@@ -10194,11 +10346,21 @@ def _canonical_refresh_settings_html() -> str:
       }}
       setBusy(true);
       setStatus("Starting " + labelize(mode) + " refresh...", "");
-      const body = await requestJson(START_API, {{
+      const resp = await fetch(START_API, {{
         method: "POST",
         headers: {{ "Content-Type": "application/json" }},
         body: JSON.stringify({{ year: yearValue, mode }}),
       }});
+      const body = await resp.json().catch(function () {{ return {{}}; }});
+      if (resp.status === 409 && body.run) {{
+        setBusy(false);
+        setStatus("", "");
+        openBusyModal(body.run);
+        return;
+      }}
+      if (!resp.ok) {{
+        throw new Error(String(body.error || body.message || "Request failed."));
+      }}
       const run = body.run || null;
       if (run) renderRun(run);
       const runId = String(body.run_id || (run || {{}}).run_id || "");
@@ -10236,6 +10398,84 @@ def _canonical_refresh_settings_html() -> str:
       setBusy(false);
     }}
 
+    function formatDuration(totalSeconds) {{
+      const s = Math.round(Math.max(0, totalSeconds));
+      if (s < 60) return s + "s";
+      const m = Math.floor(s / 60);
+      const rs = s % 60;
+      if (m < 60) return rs > 0 ? m + "m " + rs + "s" : m + "m";
+      const h = Math.floor(m / 60);
+      const rm = m % 60;
+      return rm > 0 ? h + "h " + rm + "m" : h + "h";
+    }}
+
+    function computeElapsedText(run) {{
+      const startedAt = parseUtcTimestamp(run.started_at_utc);
+      if (!startedAt) return "-";
+      return formatDuration((Date.now() - startedAt.getTime()) / 1000);
+    }}
+
+    function computeEtaText(run) {{
+      const pct = Number(run.progress || 0);
+      if (pct <= 0) return "Calculating...";
+      const startedAt = parseUtcTimestamp(run.started_at_utc);
+      if (!startedAt) return "Calculating...";
+      const elapsedSec = (Date.now() - startedAt.getTime()) / 1000;
+      if (elapsedSec <= 0) return "Calculating...";
+      const remaining = (elapsedSec / (pct / 100)) - elapsedSec;
+      if (remaining <= 2) return "Almost done...";
+      return formatDuration(remaining);
+    }}
+
+    function updateBusyModal(run) {{
+      if (!run) return;
+      const stats = (run.stats && typeof run.stats === "object") ? run.stats : {{}};
+      const mode = String(stats.mode || stats.effective_mode || "full").toLowerCase();
+      const pct = Math.max(0, Math.min(100, Number(run.progress || 0)));
+      const status = String(run.status || "").toLowerCase();
+      const modeName = mode === "smart" ? "Smart Refresh" : "Full Refresh";
+      const isActive = status === "running" || status === "cancel_requested";
+      document.getElementById("bm-mode-badge").textContent = modeName;
+      document.getElementById("bm-mode").textContent = modeName;
+      document.getElementById("bm-pct").textContent = pct + "%";
+      document.getElementById("bm-fill").style.width = pct + "%";
+      document.getElementById("bm-elapsed").textContent = computeElapsedText(run);
+      document.getElementById("bm-eta").textContent = isActive ? computeEtaText(run) : (status === "success" ? "Completed ✓" : labelize(status));
+      document.getElementById("bm-step").textContent = labelize(String(run.step || "-"));
+    }}
+
+    function clearBusyModalPolling() {{
+      if (busyModalPollTimer) {{
+        window.clearInterval(busyModalPollTimer);
+        busyModalPollTimer = 0;
+      }}
+    }}
+
+    function closeBusyModal() {{
+      clearBusyModalPolling();
+      document.getElementById("refresh-busy-modal").setAttribute("aria-hidden", "true");
+    }}
+
+    function openBusyModal(run) {{
+      updateBusyModal(run);
+      document.getElementById("refresh-busy-modal").setAttribute("aria-hidden", "false");
+      clearBusyModalPolling();
+      busyModalPollTimer = window.setInterval(async function () {{
+        try {{
+          const resp = await fetch(CURRENT_API);
+          const body = await resp.json().catch(function () {{ return {{}}; }});
+          const freshRun = body.run || null;
+          if (freshRun) {{
+            updateBusyModal(freshRun);
+            const state = String(freshRun.status || "").toLowerCase();
+            if (state !== "running" && state !== "cancel_requested") {{
+              clearBusyModalPolling();
+            }}
+          }}
+        }} catch (e) {{ /* ignore poll errors in busy modal */ }}
+      }}, 5000);
+    }}
+
     startSmartBtn.addEventListener("click", () => startRefresh("smart").catch((err) => setStatus(err.message || String(err), "err")));
     startFullBtn.addEventListener("click", () => startRefresh("full").catch((err) => setStatus(err.message || String(err), "err")));
     cancelBtn.addEventListener("click", () => cancelRefresh().catch((err) => setStatus(err.message || String(err), "err")));
@@ -10249,6 +10489,7 @@ def _canonical_refresh_settings_html() -> str:
       abandonStaleRun().catch((err) => setStatus(err.message || String(err), "err"));
     }});
     reloadBtn.addEventListener("click", () => loadCurrentRun().catch((err) => setStatus(err.message || String(err), "err")));
+    document.getElementById("bm-dismiss-btn").addEventListener("click", closeBusyModal);
 
     const prepareOfflineModal = document.getElementById("prepare-offline-modal");
     const prepareOfflineBtn = document.getElementById("prepare-offline-btn");
@@ -17937,6 +18178,167 @@ def _inject_refresh_ui(html: str, report_id: str) -> str:
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }}
 }}
+.rw-busy-overlay {{
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}}
+.rw-busy-overlay[aria-hidden="false"] {{ display: flex; }}
+.rw-busy-backdrop {{
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(2px);
+}}
+.rw-busy-dialog {{
+  position: relative;
+  background: #ffffff;
+  border: 1px solid #d4deee;
+  border-radius: 18px;
+  padding: 22px;
+  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.12);
+  max-width: 460px;
+  width: 100%;
+  max-height: 90vh;
+  overflow: auto;
+}}
+.rw-busy-title {{
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 8px;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #0f172a;
+}}
+.rw-busy-subtitle {{
+  margin: 0 0 14px;
+  color: #475569;
+  font-size: .88rem;
+}}
+.rw-busy-badge {{
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  padding: 5px 12px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #1d4ed8;
+  font-size: .82rem;
+  font-weight: 700;
+  margin-bottom: 10px;
+}}
+.rw-busy-pulse {{
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 14px;
+}}
+.rw-busy-dot {{
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #22c55e;
+  animation: rw-pulse 1.4s ease-in-out infinite;
+}}
+@keyframes rw-pulse {{
+  0%, 100% {{ opacity: 1; transform: scale(1); }}
+  50% {{ opacity: .4; transform: scale(.7); }}
+}}
+.rw-busy-pct-row {{
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 4px;
+}}
+.rw-busy-pct-label {{
+  font-size: .78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: #64748b;
+}}
+.rw-busy-pct-val {{
+  font-size: .88rem;
+  font-weight: 700;
+  color: #0f172a;
+}}
+.rw-busy-bar {{
+  width: 100%;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(148,163,184,.2);
+  overflow: hidden;
+  border: 1px solid rgba(148,163,184,.18);
+  margin-bottom: 16px;
+}}
+.rw-busy-fill {{
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #22c55e 0%, #06b6d4 100%);
+  transition: width .5s ease;
+}}
+.rw-busy-stat-grid {{
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 14px;
+}}
+.rw-busy-stat {{
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #f8fbff;
+  border: 1px solid #d4deee;
+}}
+.rw-busy-stat strong {{
+  display: block;
+  font-size: .72rem;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: #64748b;
+  margin-bottom: 4px;
+}}
+.rw-busy-stat span {{
+  display: block;
+  font-size: .92rem;
+  color: #0f172a;
+  word-break: break-word;
+}}
+.rw-busy-footer {{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 4px;
+}}
+.rw-busy-note {{
+  font-size: .78rem;
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}}
+.rw-busy-dismiss {{
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #d4deee;
+  background: #fff;
+  color: #0f172a;
+  border-radius: 10px;
+  padding: 8px 16px;
+  cursor: pointer;
+  font-size: .88rem;
+  font-weight: 700;
+  font-family: inherit;
+}}
+.rw-busy-dismiss:hover {{ background: #f8fbff; border-color: #0f766e; }}
 </style>
 <div id="codex-refresh-wrap" aria-live="polite">
   <button id="codex-refresh-btn" type="button">
@@ -17945,6 +18347,39 @@ def _inject_refresh_ui(html: str, report_id: str) -> str:
   </button>
   <button id="codex-refresh-cancel-btn" type="button">Cancel Refresh Run</button>
   <div id="codex-refresh-status"></div>
+</div>
+<div id="rw-busy-modal" class="rw-busy-overlay" aria-hidden="true" role="dialog" aria-modal="true">
+  <div class="rw-busy-backdrop"></div>
+  <div class="rw-busy-dialog">
+    <div class="rw-busy-title">
+      <span class="material-symbols-outlined" style="color:#0f766e;font-size:1.5rem;">sync</span>
+      Refresh Already In Progress
+    </div>
+    <p class="rw-busy-subtitle">Only one refresh can run at a time across all users. Please wait for the current one to finish.</p>
+    <div><span id="rw-busy-badge" class="rw-busy-badge">Report Refresh</span></div>
+    <div class="rw-busy-pulse">
+      <span class="rw-busy-dot"></span>
+      <span style="font-size:.82rem;color:#475569;">In progress</span>
+    </div>
+    <div class="rw-busy-pct-row">
+      <span class="rw-busy-pct-label">Progress</span>
+      <span id="rw-busy-pct" class="rw-busy-pct-val">0%</span>
+    </div>
+    <div class="rw-busy-bar"><div id="rw-busy-fill" class="rw-busy-fill"></div></div>
+    <div class="rw-busy-stat-grid">
+      <div class="rw-busy-stat"><strong>Elapsed Time</strong><span id="rw-busy-elapsed">-</span></div>
+      <div class="rw-busy-stat"><strong>Est. Time Remaining</strong><span id="rw-busy-eta">Calculating...</span></div>
+      <div class="rw-busy-stat"><strong>Current Step</strong><span id="rw-busy-step">-</span></div>
+      <div class="rw-busy-stat"><strong>Report</strong><span id="rw-busy-report">-</span></div>
+    </div>
+    <div class="rw-busy-footer">
+      <span class="rw-busy-note">
+        <span class="material-symbols-outlined" style="font-size:1rem;">autorenew</span>
+        Updates every 5 seconds
+      </span>
+      <button class="rw-busy-dismiss" type="button" id="rw-busy-dismiss">Got it</button>
+    </div>
+  </div>
 </div>
 <script>
 (function () {{
@@ -17961,6 +18396,7 @@ def _inject_refresh_ui(html: str, report_id: str) -> str:
   if (!wrap || !btn || !btnLabel || !status || !reportId) return;
   let activeRunId = "";
   let pollTimer = 0;
+  let rwBusyModalTimer = 0;
 
   if (!usesAsyncProgress && cancelBtn) {{
     cancelBtn.style.display = "none";
@@ -18326,6 +18762,11 @@ def _inject_refresh_ui(html: str, report_id: str) -> str:
         }});
         const response = result.response;
         const payload = result.payload || {{}};
+        if (response.status === 409 && payload.run) {{
+          setBusy(false);
+          rwOpenModal(payload.run);
+          return;
+        }}
         if (!response.ok || !payload.ok) {{
           const msg = payload.error || "Refresh failed.";
           setStatus(msg);
@@ -18410,6 +18851,91 @@ def _inject_refresh_ui(html: str, report_id: str) -> str:
       }}
     }}
   }});
+
+  function rwParseUtc(value) {{
+    const raw = String(value || "").trim();
+    if (!raw) return null;
+    const norm = /[zZ]$|[+-]\\d{{2}}:\\d{{2}}$/.test(raw) ? raw : raw.includes("T") ? raw + "Z" : raw.replace(" ", "T") + "Z";
+    const d = new Date(norm);
+    return isNaN(d.getTime()) ? null : d;
+  }}
+
+  function rwFmtDur(sec) {{
+    const s = Math.round(Math.max(0, sec));
+    if (s < 60) return s + "s";
+    const m = Math.floor(s / 60), rs = s % 60;
+    if (m < 60) return rs > 0 ? m + "m " + rs + "s" : m + "m";
+    const h = Math.floor(m / 60), rm = m % 60;
+    return rm > 0 ? h + "h " + rm + "m" : h + "h";
+  }}
+
+  function rwFmtLabel(v) {{
+    return String(v || "").replace(/_/g, " ").replace(/\\b\\w/g, function (c) {{ return c.toUpperCase(); }});
+  }}
+
+  function rwUpdateModal(run) {{
+    if (!run) return;
+    const pct = Math.max(0, Math.min(100, Number(run.progress_pct || 0)));
+    const step = String(run.progress_step || "-");
+    const rid = String(run.report_id || reportId || "-");
+    const st = String(run.status || "").toLowerCase();
+    const isActive = st === "running" || st === "cancel_requested";
+    const startedAt = rwParseUtc(run.started_at_utc);
+    const elapsedSec = startedAt ? (Date.now() - startedAt.getTime()) / 1000 : 0;
+    const elapsedText = startedAt ? rwFmtDur(elapsedSec) : "-";
+    let etaText = "Calculating...";
+    if (!isActive) {{
+      etaText = st === "success" ? "Completed ✓" : rwFmtLabel(st);
+    }} else if (pct > 0 && elapsedSec > 0) {{
+      const rem = (elapsedSec / (pct / 100)) - elapsedSec;
+      etaText = rem <= 2 ? "Almost done..." : rwFmtDur(rem);
+    }}
+    const badge = document.getElementById("rw-busy-badge");
+    const pctEl = document.getElementById("rw-busy-pct");
+    const fillEl = document.getElementById("rw-busy-fill");
+    const elEl = document.getElementById("rw-busy-elapsed");
+    const etaEl = document.getElementById("rw-busy-eta");
+    const stEl = document.getElementById("rw-busy-step");
+    const rEl = document.getElementById("rw-busy-report");
+    if (badge) badge.textContent = rwFmtLabel(rid);
+    if (pctEl) pctEl.textContent = pct + "%";
+    if (fillEl) fillEl.style.width = pct + "%";
+    if (elEl) elEl.textContent = elapsedText;
+    if (etaEl) etaEl.textContent = etaText;
+    if (stEl) stEl.textContent = rwFmtLabel(step);
+    if (rEl) rEl.textContent = rwFmtLabel(rid);
+  }}
+
+  function rwClearTimer() {{
+    if (rwBusyModalTimer) {{ window.clearInterval(rwBusyModalTimer); rwBusyModalTimer = 0; }}
+  }}
+
+  function rwCloseModal() {{
+    rwClearTimer();
+    const modal = document.getElementById("rw-busy-modal");
+    if (modal) modal.setAttribute("aria-hidden", "true");
+  }}
+
+  function rwOpenModal(run) {{
+    rwUpdateModal(run);
+    const modal = document.getElementById("rw-busy-modal");
+    if (modal) modal.setAttribute("aria-hidden", "false");
+    const dismissBtn = document.getElementById("rw-busy-dismiss");
+    if (dismissBtn) dismissBtn.onclick = rwCloseModal;
+    rwClearTimer();
+    rwBusyModalTimer = window.setInterval(async function () {{
+      try {{
+        const path = "/api/report-refresh/current?report=" + encodeURIComponent(reportId);
+        const result = await requestJson(path, {{ method: "GET", headers: {{ "Accept": "application/json" }} }});
+        const freshRun = ((result.payload) || {{}}).run || null;
+        if (freshRun) {{
+          rwUpdateModal(freshRun);
+          const st = String(freshRun.status || "").toLowerCase();
+          if (st !== "running" && st !== "cancel_requested") rwClearTimer();
+        }}
+      }} catch (e) {{ /* ignore poll errors in busy modal */ }}
+    }}, 5000);
+  }}
 
   if (usesAsyncProgress && cancelBtn) {{
     cancelBtn.addEventListener("click", async function () {{
@@ -29089,6 +29615,75 @@ def _tcp_issue_type_is_subtask_sql(alias: str = "") -> str:
     )
 
 
+def _tcp_epics_in_range(conn, canonical_run_id: str, from_date: str, to_date: str, mode: str = "story") -> list[str]:
+    """Return uppercase epic_keys eligible under the selected Team-Capacity-Planner epic-date mode.
+
+    Modes (controlled by the top-bar "Epics by ..." toggle):
+
+    - ``"story"`` (default, "Epics by TK Dates"): include the epic if **any of its stories**
+      has both ``start_date`` and ``due_date`` falling fully inside the user range
+      ``[from_date, to_date]``. A story is linked to its epic via ``story.epic_key``.
+    - ``"subtask"`` ("Epics by Subtask Dates"): include the epic if **any of its subtasks**
+      has both ``start_date`` and ``due_date`` falling fully inside the user range.
+      Subtask → epic linkage is resolved either directly via ``subtask.epic_key`` or
+      indirectly via ``subtask.parent_issue_key`` → parent story's ``epic_key``.
+
+    Project RLT is always excluded.
+    """
+    if not canonical_run_id:
+        return []
+    mode_norm = (mode or "story").lower()
+    try:
+        if mode_norm == "subtask":
+            rows = conn.execute(
+                f"""
+                SELECT DISTINCT upper(ek) AS ek FROM (
+                    SELECT s.epic_key AS ek FROM canonical_issues s
+                    WHERE s.run_id = ?
+                      AND {_tcp_issue_type_is_subtask_sql('s')}
+                      AND upper(s.project_key) != 'RLT'
+                      AND s.start_date != '' AND s.due_date != ''
+                      AND s.start_date >= ? AND s.start_date <= ?
+                      AND s.due_date   >= ? AND s.due_date   <= ?
+                      AND s.epic_key != ''
+                    UNION
+                    SELECT p.epic_key AS ek FROM canonical_issues s
+                    JOIN canonical_issues p
+                      ON p.run_id = s.run_id AND upper(p.issue_key) = upper(s.parent_issue_key)
+                    WHERE s.run_id = ?
+                      AND {_tcp_issue_type_is_subtask_sql('s')}
+                      AND upper(s.project_key) != 'RLT'
+                      AND s.start_date != '' AND s.due_date != ''
+                      AND s.start_date >= ? AND s.start_date <= ?
+                      AND s.due_date   >= ? AND s.due_date   <= ?
+                      AND (s.epic_key IS NULL OR s.epic_key = '')
+                      AND p.epic_key != ''
+                )
+                WHERE ek IS NOT NULL AND ek != ''
+                """,
+                (
+                    canonical_run_id, from_date, to_date, from_date, to_date,
+                    canonical_run_id, from_date, to_date, from_date, to_date,
+                ),
+            ).fetchall()
+        else:
+            # Default: story dates ("TK dates")
+            rows = conn.execute(
+                """SELECT DISTINCT upper(epic_key) AS ek FROM canonical_issues
+                   WHERE run_id = ?
+                     AND lower(issue_type) LIKE '%story%'
+                     AND upper(project_key) != 'RLT'
+                     AND epic_key != ''
+                     AND start_date != '' AND due_date != ''
+                     AND start_date >= ? AND start_date <= ?
+                     AND due_date   >= ? AND due_date   <= ?""",
+                (canonical_run_id, from_date, to_date, from_date, to_date),
+            ).fetchall()
+        return [r[0] for r in rows if r[0]]
+    except Exception:
+        return []
+
+
 def _tcp_build_team_data(
     db_path: Path,
     leave_report_path: Path,
@@ -29096,6 +29691,8 @@ def _tcp_build_team_data(
     from_date: str,
     to_date: str,
     profile_id: int | None = None,
+    exclude_bugs: bool = True,
+    epic_mode: str = "story",
 ) -> dict:
     """Assemble per-member capacity/leave/availability/assigned-epics payload."""
     teams = _list_performance_teams(db_path)
@@ -29145,6 +29742,8 @@ def _tcp_build_team_data(
 
     with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
+        in_range_epics = _tcp_epics_in_range(conn, canonical_run_id, from_date, to_date, epic_mode) if canonical_run_id else []
+        in_range_epics_upper = {ek.upper() for ek in in_range_epics if ek}
         for member_name in members:
             leave = leave_by.get(member_name, {"planned_taken_hours": 0.0, "unplanned_taken_hours": 0.0, "planned_not_taken_hours": 0.0})
             total_leave = leave["planned_taken_hours"] + leave["unplanned_taken_hours"] + leave["planned_not_taken_hours"]
@@ -29153,66 +29752,79 @@ def _tcp_build_team_data(
             epic_keys_for_member: set[str] = set()
             subtask_planned_hours = 0.0
             logged_hours = 0.0
-            if canonical_run_id:
+            bug_filter_s = " AND lower(s.issue_type) NOT LIKE '%bug%'" if exclude_bugs else ""
+            bug_filter_alias = " AND lower(ci.issue_type) NOT LIKE '%bug%'" if exclude_bugs else ""
+            if canonical_run_id and in_range_epics:
+                # Assigned epics = in-range epics where this member has at least one (non-bug if toggle on)
+                # subtask, linked directly via subtask.epic_key OR via parent_issue_key → parent.epic_key.
                 try:
-                    issue_rows = conn.execute(
-                        """
-                        SELECT epic_key FROM canonical_issues
-                        WHERE run_id = ? AND lower(assignee) = lower(?) AND epic_key != ''
-                        """,
-                        (canonical_run_id, member_name),
+                    epic_list = list(in_range_epics_upper)
+                    ek_ph_assigned = ",".join("?" for _ in epic_list)
+                    rows = conn.execute(
+                        f"""SELECT DISTINCT upper(eff_epic) AS ek FROM (
+                              SELECT s.epic_key AS eff_epic FROM canonical_issues s
+                              WHERE s.run_id = ? AND lower(s.assignee) = lower(?)
+                                AND {_tcp_issue_type_is_subtask_sql('s')}
+                                {bug_filter_s}
+                                AND upper(s.project_key) != 'RLT'
+                                AND s.epic_key != '' AND upper(s.epic_key) IN ({ek_ph_assigned})
+                              UNION
+                              SELECT p.epic_key AS eff_epic FROM canonical_issues s
+                              JOIN canonical_issues p
+                                ON p.run_id = s.run_id AND upper(p.issue_key) = upper(s.parent_issue_key)
+                              WHERE s.run_id = ? AND lower(s.assignee) = lower(?)
+                                AND {_tcp_issue_type_is_subtask_sql('s')}
+                                {bug_filter_s}
+                                AND upper(s.project_key) != 'RLT'
+                                AND p.epic_key != '' AND upper(p.epic_key) IN ({ek_ph_assigned})
+                            )
+                            WHERE eff_epic IS NOT NULL AND eff_epic != ''""",
+                        [canonical_run_id, member_name] + epic_list + [canonical_run_id, member_name] + epic_list,
                     ).fetchall()
-                    for ir in issue_rows:
-                        ek = _to_text(ir["epic_key"]).upper()
+                    for r in rows:
+                        ek = _to_text(r[0]).upper()
                         if ek:
                             epic_keys_for_member.add(ek)
-                    # Also resolve epics for subtasks whose epic_key is blank — walk up via parent
-                    parent_rows = conn.execute(
-                        """
-                        SELECT DISTINCT parent_issue_key FROM canonical_issues
-                        WHERE run_id = ? AND lower(assignee) = lower(?)
-                          AND (epic_key IS NULL OR epic_key = '') AND parent_issue_key != ''
-                        """,
-                        (canonical_run_id, member_name),
-                    ).fetchall()
-                    parent_keys_upper = [_to_text(r["parent_issue_key"]).upper() for r in parent_rows if _to_text(r["parent_issue_key"])]
-                    if parent_keys_upper:
-                        pk_ph = ",".join("?" for _ in parent_keys_upper)
-                        parent_epic_rows = conn.execute(
-                            f"SELECT epic_key FROM canonical_issues WHERE run_id = ? AND upper(issue_key) IN ({pk_ph}) AND epic_key != ''",
-                            [canonical_run_id] + parent_keys_upper,
-                        ).fetchall()
-                        for pr in parent_epic_rows:
-                            ek = _to_text(pr["epic_key"]).upper()
-                            if ek:
-                                epic_keys_for_member.add(ek)
                 except Exception:
                     pass
-                try:
-                    ph_row = conn.execute(
-                        f"""SELECT COALESCE(SUM(original_estimate_hours), 0)
-                           FROM canonical_issues
-                           WHERE run_id = ? AND lower(assignee) = lower(?)
-                             AND {_tcp_issue_type_is_subtask_sql()}
-                             AND upper(project_key) != 'RLT'
-                             AND (
-                               (start_date != '' AND start_date >= ? AND start_date <= ?)
-                               OR
-                               (due_date != '' AND due_date >= ? AND due_date <= ?)
-                             )""",
-                        (canonical_run_id, member_name, from_date, to_date, from_date, to_date),
-                    ).fetchone()
-                    subtask_planned_hours = round(float(ph_row[0] or 0), 2)
-                except Exception:
-                    pass
-                try:
-                    lh_row = conn.execute(
-                        "SELECT COALESCE(SUM(hours_logged), 0) FROM canonical_worklogs WHERE run_id = ? AND lower(issue_assignee) = lower(?) AND upper(project_key) != 'RLT' AND started_date >= ? AND started_date <= ?",
-                        (canonical_run_id, member_name, from_date, to_date),
-                    ).fetchone()
-                    logged_hours = round(float(lh_row[0] or 0), 2)
-                except Exception:
-                    pass
+                if in_range_epics:
+                    ek_ph = ",".join("?" for _ in in_range_epics)
+                    try:
+                        ph_row = conn.execute(
+                            f"""SELECT COALESCE(SUM(s.original_estimate_hours), 0)
+                               FROM canonical_issues s
+                               LEFT JOIN canonical_issues p
+                                 ON p.run_id = s.run_id AND upper(p.issue_key) = upper(s.parent_issue_key)
+                               WHERE s.run_id = ? AND lower(s.assignee) = lower(?)
+                                 AND {_tcp_issue_type_is_subtask_sql('s')}
+                                 {bug_filter_s}
+                                 AND upper(s.project_key) != 'RLT'
+                                 AND (upper(s.epic_key) IN ({ek_ph}) OR upper(p.epic_key) IN ({ek_ph}))""",
+                            [canonical_run_id, member_name] + in_range_epics + in_range_epics,
+                        ).fetchone()
+                        subtask_planned_hours = round(float(ph_row[0] or 0), 2)
+                    except Exception:
+                        pass
+                    try:
+                        lh_row = conn.execute(
+                            f"""SELECT COALESCE(SUM(wl.hours_logged), 0)
+                               FROM canonical_worklogs wl
+                               JOIN canonical_issues ci
+                                 ON ci.run_id = wl.run_id AND ci.issue_key = wl.issue_key
+                               LEFT JOIN canonical_issues p
+                                 ON p.run_id = ci.run_id AND upper(p.issue_key) = upper(ci.parent_issue_key)
+                               WHERE wl.run_id = ?
+                                 AND lower(wl.issue_assignee) = lower(?)
+                                 AND upper(wl.project_key) != 'RLT'
+                                 AND wl.started_date >= ? AND wl.started_date <= ?
+                                 AND {_tcp_issue_type_is_subtask_sql('ci')}
+                                 {bug_filter_alias}
+                                 AND (upper(ci.epic_key) IN ({ek_ph}) OR upper(p.epic_key) IN ({ek_ph}))""",
+                            [canonical_run_id, member_name, from_date, to_date] + in_range_epics + in_range_epics,
+                        ).fetchone()
+                        logged_hours = round(float(lh_row[0] or 0), 2)
+                    except Exception:
+                        pass
 
             all_epic_keys.update(epic_keys_for_member)
             member_results.append({
@@ -41053,6 +41665,10 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 profile_id = int(raw_pid)
         except Exception:
             pass
+        exclude_bugs = _to_text(request.args.get("exclude_bugs", "1")).strip().lower() not in ("0", "false", "no", "")
+        epic_mode = _to_text(request.args.get("epic_mode", "story")).strip().lower()
+        if epic_mode not in ("story", "subtask"):
+            epic_mode = "story"
         try:
             payload = _tcp_build_team_data(
                 capacity_paths["db_path"],
@@ -41061,10 +41677,184 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 from_date,
                 to_date,
                 profile_id=profile_id,
+                exclude_bugs=exclude_bugs,
+                epic_mode=epic_mode,
             )
-            return jsonify({"ok": True, **payload})
+            return jsonify({"ok": True, "exclude_bugs": exclude_bugs, "epic_mode": epic_mode, **payload})
         except LookupError as exc:
             return jsonify({"ok": False, "error": str(exc)}), 404
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+
+    @app.route("/api/team-capacity-planner/member-subtasks", methods=["GET"])
+    def tcp_member_subtasks():
+        assignee = _to_text(request.args.get("assignee", "")).strip()
+        if not assignee:
+            return jsonify({"ok": False, "error": "assignee parameter is required"}), 400
+        from_date = _to_text(request.args.get("from", "")).strip()
+        to_date = _to_text(request.args.get("to", "")).strip()
+        if not from_date or not to_date:
+            return jsonify({"ok": False, "error": "from and to parameters are required"}), 400
+        kind = _to_text(request.args.get("kind", "planned")).lower().strip()
+        if kind not in ("planned", "logged"):
+            kind = "planned"
+        exclude_bugs = _to_text(request.args.get("exclude_bugs", "1")).strip().lower() not in ("0", "false", "no", "")
+        epic_mode = _to_text(request.args.get("epic_mode", "story")).strip().lower()
+        if epic_mode not in ("story", "subtask"):
+            epic_mode = "story"
+        try:
+            db_path = capacity_paths["db_path"]
+            canonical_run_id = _canonical_last_success_run_id(db_path)
+            if not canonical_run_id:
+                return jsonify({"ok": True, "assignee": assignee, "from": from_date, "to": to_date, "kind": kind, "exclude_bugs": exclude_bugs, "epic_mode": epic_mode, "subtasks": [], "totals": {"planned_hours": 0.0, "logged_hours_in_range": 0.0}, "canonical_available": False})
+
+            with sqlite3.connect(db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                subtask_sql = _tcp_issue_type_is_subtask_sql("ci")
+                bug_filter = " AND lower(ci.issue_type) NOT LIKE '%bug%'" if exclude_bugs else ""
+                in_range_epics = _tcp_epics_in_range(conn, canonical_run_id, from_date, to_date, epic_mode)
+                if not in_range_epics:
+                    rows = []
+                else:
+                    ek_ph = ",".join("?" for _ in in_range_epics)
+                    if kind == "planned":
+                        rows = conn.execute(
+                            f"""
+                            SELECT ci.issue_key, ci.summary, ci.issue_type, ci.status,
+                                   ci.start_date, ci.due_date,
+                                   ci.original_estimate_hours, ci.total_hours_logged,
+                                   ci.parent_issue_key, ci.story_key, ci.epic_key,
+                                   ci.project_key
+                            FROM canonical_issues ci
+                            LEFT JOIN canonical_issues p
+                              ON p.run_id = ci.run_id AND upper(p.issue_key) = upper(ci.parent_issue_key)
+                            WHERE ci.run_id = ?
+                              AND lower(ci.assignee) = lower(?)
+                              AND {subtask_sql}
+                              {bug_filter}
+                              AND upper(ci.project_key) != 'RLT'
+                              AND (upper(ci.epic_key) IN ({ek_ph}) OR upper(p.epic_key) IN ({ek_ph}))
+                            ORDER BY COALESCE(NULLIF(ci.start_date,''), ci.due_date), ci.issue_key
+                            """,
+                            [canonical_run_id, assignee] + in_range_epics + in_range_epics,
+                        ).fetchall()
+                    else:
+                        rows = conn.execute(
+                            f"""
+                            SELECT ci.issue_key, ci.summary, ci.issue_type, ci.status,
+                                   ci.start_date, ci.due_date,
+                                   ci.original_estimate_hours, ci.total_hours_logged,
+                                   ci.parent_issue_key, ci.story_key, ci.epic_key,
+                                   ci.project_key,
+                                   COALESCE(SUM(wl.hours_logged), 0) AS logged_in_range
+                            FROM canonical_worklogs wl
+                            JOIN canonical_issues ci
+                              ON ci.run_id = wl.run_id AND ci.issue_key = wl.issue_key
+                            LEFT JOIN canonical_issues p
+                              ON p.run_id = ci.run_id AND upper(p.issue_key) = upper(ci.parent_issue_key)
+                            WHERE wl.run_id = ?
+                              AND lower(wl.issue_assignee) = lower(?)
+                              AND upper(wl.project_key) != 'RLT'
+                              AND wl.started_date >= ? AND wl.started_date <= ?
+                              AND {subtask_sql}
+                              {bug_filter}
+                              AND (upper(ci.epic_key) IN ({ek_ph}) OR upper(p.epic_key) IN ({ek_ph}))
+                            GROUP BY ci.issue_key
+                            ORDER BY ci.issue_key
+                            """,
+                            [canonical_run_id, assignee, from_date, to_date] + in_range_epics + in_range_epics,
+                        ).fetchall()
+
+                issue_keys = [r["issue_key"] for r in rows]
+                worklogs_by_issue: dict[str, list[dict]] = {k: [] for k in issue_keys}
+                logged_in_range_by_issue: dict[str, float] = {}
+                if issue_keys:
+                    placeholders = ",".join(["?"] * len(issue_keys))
+                    wl_rows = conn.execute(
+                        f"""SELECT issue_key, worklog_id, worklog_author, started_date,
+                                  started_utc, hours_logged
+                           FROM canonical_worklogs
+                           WHERE run_id = ?
+                             AND lower(issue_assignee) = lower(?)
+                             AND issue_key IN ({placeholders})
+                             AND started_date >= ? AND started_date <= ?
+                           ORDER BY started_date, issue_key""",
+                        (canonical_run_id, assignee, *issue_keys, from_date, to_date),
+                    ).fetchall()
+                    for wr in wl_rows:
+                        key = wr["issue_key"]
+                        worklogs_by_issue.setdefault(key, []).append({
+                            "worklog_id": wr["worklog_id"],
+                            "worklog_author": wr["worklog_author"],
+                            "started_date": wr["started_date"],
+                            "started_utc": wr["started_utc"],
+                            "hours_logged": round(float(wr["hours_logged"] or 0), 2),
+                        })
+                        logged_in_range_by_issue[key] = logged_in_range_by_issue.get(key, 0.0) + float(wr["hours_logged"] or 0)
+
+                parent_keys: set[str] = set()
+                for r in rows:
+                    if r["story_key"]: parent_keys.add(r["story_key"])
+                    if r["parent_issue_key"]: parent_keys.add(r["parent_issue_key"])
+                    if r["epic_key"]: parent_keys.add(r["epic_key"])
+                parent_summary_by_key: dict[str, dict] = {}
+                if parent_keys:
+                    ph = ",".join(["?"] * len(parent_keys))
+                    p_rows = conn.execute(
+                        f"SELECT issue_key, summary, issue_type FROM canonical_issues WHERE run_id = ? AND issue_key IN ({ph})",
+                        (canonical_run_id, *parent_keys),
+                    ).fetchall()
+                    for pr in p_rows:
+                        parent_summary_by_key[pr["issue_key"]] = {
+                            "summary": pr["summary"],
+                            "issue_type": pr["issue_type"],
+                        }
+
+                subtasks_out: list[dict] = []
+                total_planned = 0.0
+                total_logged = 0.0
+                for r in rows:
+                    key = r["issue_key"]
+                    est = round(float(r["original_estimate_hours"] or 0), 2)
+                    logged_in_range = round(float(logged_in_range_by_issue.get(key, 0.0)), 2)
+                    story_key = r["story_key"] or r["parent_issue_key"] or ""
+                    epic_key = r["epic_key"] or ""
+                    subtasks_out.append({
+                        "issue_key": key,
+                        "summary": r["summary"],
+                        "issue_type": r["issue_type"],
+                        "status": r["status"],
+                        "project_key": r["project_key"],
+                        "start_date": r["start_date"],
+                        "due_date": r["due_date"],
+                        "original_estimate_hours": est,
+                        "total_hours_logged": round(float(r["total_hours_logged"] or 0), 2),
+                        "logged_hours_in_range": logged_in_range,
+                        "parent_issue_key": r["parent_issue_key"],
+                        "story_key": story_key,
+                        "story_summary": (parent_summary_by_key.get(story_key) or {}).get("summary", ""),
+                        "epic_key": epic_key,
+                        "epic_summary": (parent_summary_by_key.get(epic_key) or {}).get("summary", ""),
+                        "worklogs": worklogs_by_issue.get(key, []),
+                    })
+                    total_planned += est
+                    total_logged += logged_in_range
+
+                return jsonify({
+                    "ok": True,
+                    "assignee": assignee,
+                    "from": from_date,
+                    "to": to_date,
+                    "kind": kind,
+                    "exclude_bugs": exclude_bugs,
+                    "epic_mode": epic_mode,
+                    "canonical_available": True,
+                    "subtasks": subtasks_out,
+                    "totals": {
+                        "planned_hours": round(total_planned, 2),
+                        "logged_hours_in_range": round(total_logged, 2),
+                    },
+                })
         except Exception as exc:
             return jsonify({"ok": False, "error": str(exc)}), 500
 
