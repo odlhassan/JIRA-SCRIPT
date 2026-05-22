@@ -1,0 +1,20 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "type": "command",
+        "windows": "cmd /c echo {\"systemMessage\": \"MANDATORY DOC CHECK: Before this session closes, confirm you have updated every relevant .md documentation file for all code changes made. If any .md was missed, reopen the task and update docs now. Task is NOT complete without .md updates.\"}  ",
+        "command": "echo '{\"systemMessage\": \"MANDATORY DOC CHECK: Before this session closes, confirm you have updated every relevant .md documentation file for all code changes made. If any .md was missed, reopen the task and update docs now. Task is NOT complete without .md updates.\"}'",
+        "timeout": 10
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "type": "command",
+        "windows": "cmd /c echo {\"systemMessage\": \"Active rule: after every code change in this session, you MUST update all relevant .md documentation files before calling task_complete. See .github/instructions/mandatory-doc-updates.instructions.md for the full checklist.\"}  ",
+        "command": "echo '{\"systemMessage\": \"Active rule: after every code change in this session, you MUST update all relevant .md documentation files before calling task_complete. See .github/instructions/mandatory-doc-updates.instructions.md for the full checklist.\"}'",
+        "timeout": 10
+      }
+    ]
+  }
+}
