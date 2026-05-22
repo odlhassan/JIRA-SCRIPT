@@ -1,0 +1,6 @@
+WARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.
+ * Running on http://127.0.0.1:3014
+Press CTRL+C to quit
+127.0.0.1 - - [22/May/2026 15:54:12] "GET /monthly_epic_plan_progress_report.html HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:54:17] "GET /api/monthly-epic-plan-progress/summary?month=2026-05 HTTP/1.1" 200 -
+127.0.0.1 - - [22/May/2026 15:54:36] "GET /api/monthly-epic-plan-progress/summary?month=2026-05 HTTP/1.1" 200 -

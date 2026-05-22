@@ -426,6 +426,278 @@
       line-height: 1.35;
       font-variant-numeric: tabular-nums;
     }
+    .estimate-chart {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .estimate-bar-row {
+      display: grid;
+      grid-template-columns: minmax(190px, 260px) minmax(180px, 1fr) minmax(96px, 132px);
+      gap: 14px;
+      align-items: center;
+      min-height: 72px;
+      padding: 12px 14px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--soft);
+    }
+    .estimate-bar-row[role="button"] {
+      cursor: pointer;
+      transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s;
+    }
+    .estimate-bar-row[role="button"]:hover {
+      border-color: #9db7ce;
+      box-shadow: 0 8px 22px rgba(15, 23, 42, 0.08);
+      transform: translateY(-1px);
+    }
+    .estimate-bar-row[role="button"]:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+    .estimate-bar-text {
+      min-width: 0;
+    }
+    .estimate-bar-name {
+      color: var(--title);
+      font-size: 0.94rem;
+      font-weight: 800;
+      line-height: 1.2;
+    }
+    .estimate-bar-desc {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 0.78rem;
+      font-weight: 600;
+      line-height: 1.3;
+    }
+    .estimate-bar-track {
+      position: relative;
+      height: 18px;
+      border-radius: 999px;
+      background: #e4edf7;
+      overflow: hidden;
+      box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.04);
+    }
+    .estimate-bar-fill {
+      width: 0%;
+      height: 100%;
+      border-radius: inherit;
+      background: #1d5f8f;
+      transition: width 0.35s ease;
+    }
+    .estimate-bar-fill.story { background: #2563eb; }
+    .estimate-bar-fill.subtask { background: #0f766e; }
+    .estimate-bar-fill.logged { background: #7c3aed; }
+    .estimate-bar-fill.overrun { background: #b45309; }
+    .estimate-bar-value {
+      text-align: right;
+      font-size: 1.18rem;
+      font-weight: 850;
+      color: var(--title);
+      font-variant-numeric: tabular-nums;
+    }
+    .estimate-bar-meta {
+      margin-top: 4px;
+      text-align: right;
+      color: var(--muted);
+      font-size: 0.74rem;
+      font-weight: 700;
+      line-height: 1.25;
+      font-variant-numeric: tabular-nums;
+    }
+    .estimate-detail-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(14, 30, 50, 0.34);
+      z-index: 1250;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease;
+    }
+    .estimate-detail-overlay.is-open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .estimate-detail-drawer {
+      position: fixed;
+      top: 0;
+      right: 0;
+      width: min(var(--estimate-detail-width, 860px), calc(100vw - 32px));
+      height: 100vh;
+      background: #fff;
+      border-left: 1px solid var(--line);
+      box-shadow: -18px 0 52px rgba(15, 23, 42, 0.2);
+      transform: translateX(100%);
+      transition: transform 0.24s ease;
+      display: flex;
+      flex-direction: column;
+    }
+    .estimate-detail-overlay.is-open .estimate-detail-drawer { transform: translateX(0); }
+    .estimate-detail-resize {
+      position: absolute;
+      left: -6px;
+      top: 0;
+      width: 12px;
+      height: 100%;
+      cursor: ew-resize;
+      background: transparent;
+    }
+    .estimate-detail-resize::after {
+      content: "";
+      position: absolute;
+      left: 5px;
+      top: 18px;
+      bottom: 18px;
+      width: 2px;
+      border-radius: 999px;
+      background: #cbd5e1;
+    }
+    .estimate-detail-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 16px 18px 12px;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(180deg, #fbfdff, #f3f8fd);
+    }
+    .estimate-detail-title {
+      color: var(--title);
+      font-size: 1.05rem;
+      font-weight: 850;
+      line-height: 1.25;
+    }
+    .estimate-detail-subtitle {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 0.84rem;
+      font-weight: 600;
+      line-height: 1.35;
+    }
+    .estimate-detail-close {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      border: 1px solid #cbd5e1;
+      background: #fff;
+      color: #334155;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 auto;
+    }
+    .estimate-detail-close:hover { background: #fef2f2; border-color: #fecaca; color: #b91c1c; }
+    .estimate-detail-close .material-symbols-outlined { font-size: 20px; }
+    .estimate-detail-body {
+      padding: 14px 18px 18px;
+      overflow: auto;
+      flex: 1 1 auto;
+      min-height: 0;
+    }
+    .estimate-detail-summary {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .estimate-detail-chip {
+      border: 1px solid #cbd5e1;
+      border-radius: 999px;
+      background: #f8fafc;
+      color: #334155;
+      font-size: 0.78rem;
+      font-weight: 750;
+      padding: 4px 10px;
+    }
+    .estimate-detail-table-wrap {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      overflow: auto;
+      background: #fff;
+    }
+    .estimate-detail-table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 860px;
+    }
+    .estimate-detail-table th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      background: #f8fafc;
+      color: #475569;
+      font-size: 0.72rem;
+      font-weight: 850;
+      text-transform: uppercase;
+      letter-spacing: 0.045em;
+      padding: 9px 10px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      white-space: nowrap;
+    }
+    .estimate-detail-table td {
+      padding: 9px 10px;
+      border-bottom: 1px solid #edf2f7;
+      vertical-align: top;
+      font-size: 0.82rem;
+      line-height: 1.35;
+    }
+    .estimate-detail-table tr:last-child td { border-bottom: none; }
+    .estimate-detail-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .estimate-jira-btn,
+    .estimate-parent-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      border: 1px solid #cbd5e1;
+      border-radius: 999px;
+      padding: 3px 8px;
+      color: #155e91;
+      background: #f8fbff;
+      text-decoration: none;
+      font-weight: 800;
+      font-size: 0.74rem;
+      white-space: nowrap;
+    }
+    .estimate-jira-btn .material-symbols-outlined,
+    .estimate-parent-link .material-symbols-outlined { font-size: 14px; }
+    .estimate-parent-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      min-width: 140px;
+    }
+    .estimate-item-name {
+      font-weight: 800;
+      color: #0f172a;
+    }
+    .estimate-item-meta {
+      margin-top: 2px;
+      color: var(--muted);
+      font-size: 0.75rem;
+      font-weight: 650;
+    }
+    .estimate-detail-empty {
+      border: 1px dashed #cbd5e1;
+      border-radius: 12px;
+      padding: 28px;
+      text-align: center;
+      color: var(--muted);
+      font-weight: 700;
+      background: #f8fafc;
+    }
+    @media (max-width: 760px) {
+      .estimate-bar-row {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 8px;
+      }
+      .estimate-bar-value,
+      .estimate-bar-meta {
+        text-align: left;
+      }
+    }
     .kpi-breakdown {
       margin-top: 10px;
       padding-top: 10px;
@@ -1888,6 +2160,10 @@
     }
     .hc-member-leaves.has-leave { color: #b45309; }
     .hc-empty { padding: 28px; text-align: center; color: var(--muted); font-size: 0.88rem; }
+    .hc-support-chip { display:inline-flex; align-items:center; font-size:.62rem; font-weight:800; letter-spacing:.03em; padding:1px 7px; border-radius:999px; background:#ede9fe; color:#7c3aed; border:1px solid #ddd6fe; margin-left:6px; vertical-align:middle; white-space:nowrap; }
+    .hc-toggle-row { display:flex; align-items:center; gap:6px; font-size:.82rem; font-weight:600; color:#334155; cursor:pointer; white-space:nowrap; padding:3px 6px; border-radius:6px; user-select:none; }
+    .hc-toggle-row:hover { background:#f1f5f9; }
+    .hc-toggle-row input { width:14px; height:14px; accent-color:#7c3aed; flex:0 0 auto; margin:0; cursor:pointer; }
 
     /* ── Leaves drawer specifics ──────────────────────────────────── */
     .lv-summary-bar {
@@ -2038,131 +2314,6 @@
       font-weight: 800;
       padding: 0 6px;
     }
-    .support-team-controls {
-      display: flex;
-      align-items: end;
-      gap: 10px;
-      flex-wrap: wrap;
-    }
-    .support-emp-dd {
-      position: relative;
-      min-width: min(400px, 100%);
-      flex: 1 1 280px;
-    }
-    .support-emp-dd-toggle {
-      width: 100%;
-      min-height: 38px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-      padding: 7px 12px 7px 14px;
-      border: 1px solid #c0ccd8;
-      border-radius: 10px;
-      background: linear-gradient(180deg, #ffffff, #f8fbff);
-      font-size: 0.88rem;
-      cursor: pointer;
-      text-align: left;
-      color: #142230;
-      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
-    }
-    .support-emp-dd-toggle:hover { border-color: #9db0c2; background: #fff; }
-    .support-emp-dd-toggle:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(29,95,143,0.14); }
-    .support-emp-dd-toggle .caret { flex: 0 0 auto; font-size: 0.72rem; color: var(--muted); transition: transform 0.15s; }
-    .support-emp-dd.is-open .support-emp-dd-toggle .caret { transform: rotate(180deg); }
-    .support-emp-dd-panel {
-      display: none;
-      position: absolute;
-      left: 0;
-      right: 0;
-      top: calc(100% + 5px);
-      z-index: 60;
-      background: #fff;
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      box-shadow: 0 20px 50px rgba(15,23,42,0.18);
-      flex-direction: column;
-      max-height: min(420px, 70vh);
-      min-height: 0;
-      overflow: hidden;
-    }
-    .support-emp-dd.is-open .support-emp-dd-panel { display: flex; }
-    .support-emp-dd-actions {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 6px;
-      padding: 8px 10px;
-      border-bottom: 1px solid var(--line);
-      background: linear-gradient(180deg, #fbfdff, #f4f8fc);
-      flex: 0 0 auto;
-    }
-    .support-emp-dd-actions button {
-      background: #fff;
-      border: 1px solid #c8d7e5;
-      border-radius: 999px;
-      padding: 3px 10px;
-      color: var(--accent);
-      cursor: pointer;
-      font: inherit;
-      font-size: 0.78rem;
-      font-weight: 700;
-    }
-    .support-emp-dd-actions button:hover { color: #164a71; border-color: #9db7ce; background: #edf6fd; }
-    .support-emp-dd-search-wrap { padding: 7px 10px; border-bottom: 1px solid #e5edf5; flex: 0 0 auto; }
-    .support-emp-dd-search {
-      width: 100%;
-      min-height: 32px;
-      border: 1px solid #c9d6e3;
-      border-radius: 8px;
-      padding: 5px 10px 5px 28px;
-      font-size: 0.83rem;
-      color: #142230;
-      background: radial-gradient(circle at 12px 50%, #64748b 0 2px, transparent 2.5px), #fff;
-    }
-    .support-emp-dd-search:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(29,95,143,0.12); }
-    .support-emp-dd-list {
-      flex: 1 1 auto;
-      min-height: 0;
-      overflow-x: hidden;
-      overflow-y: auto;
-      padding: 5px 8px 8px;
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
-    .support-emp-dd-group {
-      border-radius: 10px;
-      border: 1px solid #e5edf5;
-      background: #fff;
-      overflow: hidden;
-    }
-    .support-emp-dd-team-row {
-      font-weight: 750;
-      color: var(--title);
-      background: #f4f9fc;
-      border-bottom: 1px solid #e8eef5;
-      padding: 5px 8px;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-    .support-emp-dd-members { padding: 0 6px 4px 22px; display: flex; flex-direction: column; }
-    .support-emp-dd-members[hidden] { display: none !important; }
-    .support-emp-dd-member-row {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      padding: 3px 6px;
-      border-radius: 6px;
-      cursor: pointer;
-      font-size: 0.82rem;
-    }
-    .support-emp-dd-member-row:hover { background: #eef6fb; }
-    .support-emp-dd-member-row input { width: 14px; height: 14px; margin: 0; flex: 0 0 auto; accent-color: #7c3aed; }
-    .support-emp-dd-name { flex: 1 1 auto; font-weight: 600; color: #0f172a; }
-    .support-emp-dd-empty { padding: 16px 10px; text-align: center; color: var(--muted); font-size: 0.83rem; display: none; }
-    .support-emp-dd-empty.is-visible { display: block; }
 
     /* Support team member table */
     .support-team-table-wrap {
@@ -2376,14 +2527,6 @@
       font-size: 0.86rem;
       font-style: italic;
     }
-    .support-save-status {
-      font-size: 0.78rem;
-      font-weight: 600;
-      color: var(--good);
-      min-height: 18px;
-      white-space: nowrap;
-    }
-    .support-save-status.error { color: var(--bad); }
   </style>
 </head>
 <body>
@@ -2582,6 +2725,79 @@
       </div>
     </section>
 
+    <section class="panel" id="estimate-rollup-panel">
+      <h2 class="section-title">Estimate hierarchy stats</h2>
+      <div class="estimate-chart" id="estimate-rollup-chart" aria-label="Estimate hierarchy bar chart">
+        <div class="estimate-bar-row" role="button" tabindex="0" data-estimate-metric="month_plan" aria-label="Open Month Plan work items">
+          <div class="estimate-bar-text">
+            <div class="estimate-bar-name" id="est-month-plan-label">Month Plan</div>
+            <div class="estimate-bar-desc" id="est-month-plan-desc">Executive planned hours for epics planned this month</div>
+          </div>
+          <div class="estimate-bar-track" aria-hidden="true"><div class="estimate-bar-fill" id="est-month-plan-bar"></div></div>
+          <div>
+            <div class="estimate-bar-value" id="est-month-plan">0.00</div>
+            <div class="estimate-bar-meta" id="est-month-plan-detail">matches Executive summary planned hours</div>
+          </div>
+        </div>
+        <div class="estimate-bar-row" role="button" tabindex="0" data-estimate-metric="epic_original" aria-label="Open Epic Estimate work items">
+          <div class="estimate-bar-text">
+            <div class="estimate-bar-name" id="est-epic-original-label">Epic Estimate</div>
+            <div class="estimate-bar-desc" id="est-epic-original-desc">Sum of Epic Original Estimates</div>
+          </div>
+          <div class="estimate-bar-track" aria-hidden="true"><div class="estimate-bar-fill" id="est-epic-original-bar"></div></div>
+          <div>
+            <div class="estimate-bar-value" id="est-epic-original">0.00</div>
+            <div class="estimate-bar-meta" id="est-epic-original-detail">0 epics planned this month</div>
+          </div>
+        </div>
+        <div class="estimate-bar-row" role="button" tabindex="0" data-estimate-metric="story_original" aria-label="Open Story Estimate work items">
+          <div class="estimate-bar-text">
+            <div class="estimate-bar-name" id="est-story-original-label">Story Estimate</div>
+            <div class="estimate-bar-desc" id="est-story-original-desc">Sum of their Epics' Stories Original Estimate</div>
+          </div>
+          <div class="estimate-bar-track" aria-hidden="true"><div class="estimate-bar-fill story" id="est-story-original-bar"></div></div>
+          <div>
+            <div class="estimate-bar-value" id="est-story-original">0.00</div>
+            <div class="estimate-bar-meta" id="est-story-original-detail">0 stories under selected epics</div>
+          </div>
+        </div>
+        <div class="estimate-bar-row" role="button" tabindex="0" data-estimate-metric="subtask_original" aria-label="Open Subtask Estimate work items">
+          <div class="estimate-bar-text">
+            <div class="estimate-bar-name" id="est-subtask-original-label">Subtask Estimate</div>
+            <div class="estimate-bar-desc" id="est-subtask-original-desc">Sum of Story's subtasks Original Estimates</div>
+          </div>
+          <div class="estimate-bar-track" aria-hidden="true"><div class="estimate-bar-fill subtask" id="est-subtask-original-bar"></div></div>
+          <div>
+            <div class="estimate-bar-value" id="est-subtask-original">0.00</div>
+            <div class="estimate-bar-meta" id="est-subtask-original-detail">0 subtasks under selected stories</div>
+          </div>
+        </div>
+        <div class="estimate-bar-row" role="button" tabindex="0" data-estimate-metric="subtask_logged" aria-label="Open Subtask Logged work items">
+          <div class="estimate-bar-text">
+            <div class="estimate-bar-name" id="est-subtask-logged-label">Subtask Logged</div>
+            <div class="estimate-bar-desc" id="est-subtask-logged-desc">Sum of Story's subtasks Logged Hours</div>
+          </div>
+          <div class="estimate-bar-track" aria-hidden="true"><div class="estimate-bar-fill logged" id="est-subtask-logged-bar"></div></div>
+          <div>
+            <div class="estimate-bar-value" id="est-subtask-logged">0.00</div>
+            <div class="estimate-bar-meta" id="est-subtask-logged-detail">logged this month</div>
+          </div>
+        </div>
+        <div class="estimate-bar-row" role="button" tabindex="0" data-estimate-metric="overrun" aria-label="Open Story Overrun work items">
+          <div class="estimate-bar-text">
+            <div class="estimate-bar-name" id="est-overrun-label">Story Overrun</div>
+            <div class="estimate-bar-desc" id="est-overrun-desc">Logged hours exceeding parent story original estimates</div>
+          </div>
+          <div class="estimate-bar-track" aria-hidden="true"><div class="estimate-bar-fill overrun" id="est-overrun-bar"></div></div>
+          <div>
+            <div class="estimate-bar-value" id="est-overrun-value">0.00</div>
+            <div class="estimate-bar-meta" id="est-overrun-detail">0.0% over parent story estimates</div>
+          </div>
+        </div>
+      </div>
+      <p class="caption">These totals use the report's planned-this-month epic rows and month-scoped story, subtask, and worklog data. Brought-forward overdue epics are shown in Executive summary separately and are not included here.</p>
+    </section>
+
     <section class="panel" id="workforce-panel">
       <div class="emp-stat-section-title">
         <h2 class="section-title" style="margin:0;">Employee Stats</h2>
@@ -2631,27 +2847,10 @@
             Technical Support Team
             <span class="support-team-badge" id="support-team-count">0</span>
           </div>
-          <div class="support-team-controls">
-            <div class="support-emp-dd" id="support-emp-dd">
-              <button type="button" class="support-emp-dd-toggle" id="support-emp-dd-toggle" aria-expanded="false" aria-haspopup="listbox" aria-controls="support-emp-dd-panel">
-                <span id="support-emp-dd-summary">Select support team members…</span>
-                <span class="caret" aria-hidden="true">▼</span>
-              </button>
-              <div class="support-emp-dd-panel" id="support-emp-dd-panel" role="listbox" aria-multiselectable="true">
-                <div class="support-emp-dd-actions">
-                  <button type="button" id="support-select-all">Select all</button>
-                  <button type="button" id="support-clear-all">Clear all</button>
-                </div>
-                <div class="support-emp-dd-search-wrap">
-                  <input type="search" class="support-emp-dd-search" id="support-emp-dd-search" placeholder="Search teams or employees…" autocomplete="off">
-                </div>
-                <div class="support-emp-dd-list" id="support-emp-dd-list"></div>
-                <div class="support-emp-dd-empty" id="support-emp-dd-empty">No teams or employees match your search.</div>
-              </div>
-            </div>
-            <button type="button" class="btn" id="support-save-btn" style="white-space:nowrap;">Save team</button>
-            <span class="support-save-status" id="support-save-status"></span>
-          </div>
+          <a href="/settings/performance#support-team" class="btn" style="display:inline-flex;align-items:center;gap:6px;font-size:0.84rem;text-decoration:none;padding:7px 14px;white-space:nowrap;">
+            <span class="material-symbols-outlined" style="font-size:16px;">settings</span>
+            Manage Support Team
+          </a>
         </div>
 
         <!-- Member rows table -->
@@ -2692,7 +2891,7 @@
         </div>
 
         <div class="support-empty" id="support-team-empty">
-          No support team configured. Select employees from the dropdown and click <strong>Save team</strong>.
+          No support team configured. <a href="/settings/performance#support-team" style="color:var(--accent);font-weight:600;">Go to Performance Settings</a> to add support team members.
         </div>
       </div>
     </section>
@@ -2935,6 +3134,25 @@
     </div>
   </div>
 
+  <!-- Estimate detail drawer -->
+  <div class="estimate-detail-overlay" id="estimate-detail-overlay" role="dialog" aria-modal="true" aria-labelledby="estimate-detail-title">
+    <div class="estimate-detail-drawer" id="estimate-detail-drawer">
+      <div class="estimate-detail-resize" id="estimate-detail-resize" title="Drag to resize"></div>
+      <div class="estimate-detail-header">
+        <div>
+          <div class="estimate-detail-title" id="estimate-detail-title">Estimate Details</div>
+          <div class="estimate-detail-subtitle" id="estimate-detail-subtitle">Work items considered for this stat.</div>
+        </div>
+        <button class="estimate-detail-close" id="estimate-detail-close" aria-label="Close estimate detail panel">
+          <span class="material-symbols-outlined">close</span>
+        </button>
+      </div>
+      <div class="estimate-detail-body" id="estimate-detail-body">
+        <div class="estimate-detail-empty">Select an estimate bar to view work items.</div>
+      </div>
+    </div>
+  </div>
+
   <!-- Head Count Drawer -->
   <div class="stat-drawer-overlay" id="headcount-overlay" role="dialog" aria-modal="true" aria-labelledby="hc-drawer-title-text">
     <div class="stat-drawer" id="headcount-drawer">
@@ -2956,6 +3174,10 @@
         <div class="hc-search-wrap">
           <input type="search" class="hc-search" id="hc-search" placeholder="Search teams or employees…" autocomplete="off" aria-label="Search teams or employees">
         </div>
+        <label class="hc-toggle-row" id="hc-include-support-label">
+          <input type="checkbox" id="hc-include-support">
+          Include Support Team
+        </label>
       </div>
       <div class="stat-drawer-body">
         <div class="hc-tree" id="hc-tree"></div>
@@ -3038,6 +3260,43 @@
       kpiCompletionPct: document.getElementById("kpi-completion-pct"),
       kpiCompletionBar: document.getElementById("kpi-completion-bar"),
       kpiPlannedTotal: document.getElementById("kpi-planned-total"),
+      estMonthPlan: document.getElementById("est-month-plan"),
+      estMonthPlanLabel: document.getElementById("est-month-plan-label"),
+      estMonthPlanDesc: document.getElementById("est-month-plan-desc"),
+      estMonthPlanDetail: document.getElementById("est-month-plan-detail"),
+      estMonthPlanBar: document.getElementById("est-month-plan-bar"),
+      estEpicOriginal: document.getElementById("est-epic-original"),
+      estEpicOriginalLabel: document.getElementById("est-epic-original-label"),
+      estEpicOriginalDesc: document.getElementById("est-epic-original-desc"),
+      estEpicOriginalDetail: document.getElementById("est-epic-original-detail"),
+      estEpicOriginalBar: document.getElementById("est-epic-original-bar"),
+      estStoryOriginal: document.getElementById("est-story-original"),
+      estStoryOriginalLabel: document.getElementById("est-story-original-label"),
+      estStoryOriginalDesc: document.getElementById("est-story-original-desc"),
+      estStoryOriginalDetail: document.getElementById("est-story-original-detail"),
+      estStoryOriginalBar: document.getElementById("est-story-original-bar"),
+      estSubtaskOriginal: document.getElementById("est-subtask-original"),
+      estSubtaskOriginalLabel: document.getElementById("est-subtask-original-label"),
+      estSubtaskOriginalDesc: document.getElementById("est-subtask-original-desc"),
+      estSubtaskOriginalDetail: document.getElementById("est-subtask-original-detail"),
+      estSubtaskOriginalBar: document.getElementById("est-subtask-original-bar"),
+      estSubtaskLogged: document.getElementById("est-subtask-logged"),
+      estSubtaskLoggedLabel: document.getElementById("est-subtask-logged-label"),
+      estSubtaskLoggedDesc: document.getElementById("est-subtask-logged-desc"),
+      estSubtaskLoggedDetail: document.getElementById("est-subtask-logged-detail"),
+      estSubtaskLoggedBar: document.getElementById("est-subtask-logged-bar"),
+      estOverrunValue: document.getElementById("est-overrun-value"),
+      estOverrunLabel: document.getElementById("est-overrun-label"),
+      estOverrunDesc: document.getElementById("est-overrun-desc"),
+      estOverrunDetail: document.getElementById("est-overrun-detail"),
+      estOverrunBar: document.getElementById("est-overrun-bar"),
+      estimateDetailOverlay: document.getElementById("estimate-detail-overlay"),
+      estimateDetailDrawer: document.getElementById("estimate-detail-drawer"),
+      estimateDetailResize: document.getElementById("estimate-detail-resize"),
+      estimateDetailTitle: document.getElementById("estimate-detail-title"),
+      estimateDetailSubtitle: document.getElementById("estimate-detail-subtitle"),
+      estimateDetailClose: document.getElementById("estimate-detail-close"),
+      estimateDetailBody: document.getElementById("estimate-detail-body"),
       dfToggleStart: document.getElementById("df-toggle-start"),
       dfToggleEnd: document.getElementById("df-toggle-end"),
       dfToggleRange: document.getElementById("df-toggle-range"),
@@ -3063,6 +3322,7 @@
       hcSelectAll: document.getElementById("hc-select-all"),
       hcClearAll: document.getElementById("hc-clear-all"),
       hcSearch: document.getElementById("hc-search"),
+      hcIncludeSupport: document.getElementById("hc-include-support"),
       hcTree: document.getElementById("hc-tree"),
       hcApplyBtn: document.getElementById("hc-apply-btn"),
       hcAllEmployeesBtn: document.getElementById("hc-all-employees-btn"),
@@ -3072,17 +3332,6 @@
       lvSummaryBar: document.getElementById("lv-summary-bar"),
       lvSearch: document.getElementById("lv-search"),
       lvContent: document.getElementById("lv-content"),
-      supportEmpDd: document.getElementById("support-emp-dd"),
-      supportEmpDdToggle: document.getElementById("support-emp-dd-toggle"),
-      supportEmpDdPanel: document.getElementById("support-emp-dd-panel"),
-      supportEmpDdList: document.getElementById("support-emp-dd-list"),
-      supportEmpDdSummary: document.getElementById("support-emp-dd-summary"),
-      supportEmpDdSearch: document.getElementById("support-emp-dd-search"),
-      supportEmpDdEmpty: document.getElementById("support-emp-dd-empty"),
-      supportSelectAll: document.getElementById("support-select-all"),
-      supportClearAll: document.getElementById("support-clear-all"),
-      supportSaveBtn: document.getElementById("support-save-btn"),
-      supportSaveStatus: document.getElementById("support-save-status"),
       supportTeamCount: document.getElementById("support-team-count"),
       supportTeamTableWrap: document.getElementById("support-team-table-wrap"),
       supportTeamTbody: document.getElementById("support-team-tbody"),
@@ -3137,6 +3386,8 @@
     };
     const STORAGE_CAPACITY_PROFILE_KEY = "monthly_epic_plan_capacity_profile_key";
     let latestPayload = null;
+    let _hcIncludeSupportState = false;
+    let _hcIncludeSupportApplied = false;
     let employeeDropdownInteractionsBound = false;
     let _resSummaryState = { total: {}, support: {}, epics: {} };
 
@@ -3283,6 +3534,9 @@
       if (!els.employeeDdList) return;
       const selected = new Set(Array.isArray(payload.selected_assignees) ? payload.selected_assignees : []);
       const active = !!payload.assignee_filter_active;
+      const stRows = Array.isArray(payload.support_team && payload.support_team.member_rows)
+        ? payload.support_team.member_rows : [];
+      const supportSet = new Set(stRows.map(function(r) { return String((r && r.name) || "").trim(); }).filter(Boolean));
       let rowSeq = 0;
       let teamSeq = 0;
 
@@ -3294,8 +3548,10 @@
         const title = rid ? ("Resigned" + (rdate ? " — " + rdate : "")) : "";
         const bid = "emp-cb-leaf-" + (rowSeq++);
         const checked = active && selected.has(name);
+        const isSupport = supportSet.has(name);
         return (
-          '<label class="emp-dd-row emp-dd-member" title="' + esc(title) + '" data-search="' + esc(name + " " + (rid ? "resigned " + rdate : "")) + '">'
+          '<label class="emp-dd-row emp-dd-member" title="' + esc(title) + '" data-search="' + esc(name + " " + (rid ? "resigned " + rdate : "")) + '"'
+          + (isSupport ? ' data-support="1"' : "") + (rid ? ' data-resigned="1"' : "") + ">"
           + '<input type="checkbox" class="emp-dd-leaf" id="' + esc(bid) + '" value="' + esc(name) + '"' + (checked ? " checked" : "") + ">"
           + '<span class="emp-dd-name">' + esc(name) + "</span>"
           + (rid ? '<span class="emp-dd-res" data-resigned="1">Resigned' + (rdate ? " · " + esc(rdate) : "") + "</span>" : "")
@@ -3364,16 +3620,22 @@
       if (els.employeeDdSearch) els.employeeDdSearch.value = "";
       if (els.employeeDdEmpty) els.employeeDdEmpty.classList.remove("is-visible");
 
-      // Auto-exclude Process team when no explicit filter is active
+      // Auto-exclude Process team (by group name) and Support members (by data-support) when no explicit filter is active
       let _didAutoExclude = false;
       if (!active) {
-        const processGrp = Array.from(els.employeeDdList.querySelectorAll(".emp-dd-group"))
-          .find(function(g) { return (g.getAttribute("aria-label") || "").toLowerCase().includes("process"); });
-        if (processGrp) {
-          els.employeeDdList.querySelectorAll(".emp-dd-leaf").forEach(function(cb) { cb.checked = true; });
-          processGrp.querySelectorAll(".emp-dd-leaf").forEach(function(cb) { cb.checked = false; });
-          _didAutoExclude = true;
-        }
+        // Start with all checked
+        els.employeeDdList.querySelectorAll(".emp-dd-leaf").forEach(function(cb) { cb.checked = true; });
+        // Uncheck whole Process team groups
+        Array.from(els.employeeDdList.querySelectorAll(".emp-dd-group")).forEach(function(g) {
+          if ((g.getAttribute("aria-label") || "").toLowerCase().includes("process")) {
+            g.querySelectorAll(".emp-dd-leaf").forEach(function(cb) { cb.checked = false; });
+          }
+        });
+        // Uncheck individual support team members (they may live inside any team group)
+        els.employeeDdList.querySelectorAll('[data-support="1"] .emp-dd-leaf').forEach(function(cb) { cb.checked = false; });
+        // Uncheck resigned employees
+        els.employeeDdList.querySelectorAll('[data-resigned="1"] .emp-dd-leaf').forEach(function(cb) { cb.checked = false; });
+        _didAutoExclude = true;
       }
 
       els.employeeDdList.querySelectorAll(".emp-dd-group").forEach((grp) => { syncTeamCheckboxForGroup(grp); });
@@ -3386,6 +3648,7 @@
     const projectMetaByKey = new Map();
     let tableProjectFilterKey = "";
     let projectCardsFilterDelegationBound = false;
+    let currentEstimateDetailMetric = "";
 
     function esc(value) {
       return String(value == null ? "" : value)
@@ -3611,12 +3874,317 @@
       renderResourceSummary();
     }
 
+    function aggregateEstimateRollupFromRows(rows) {
+      const source = latestPayload && latestPayload.estimate_rollup ? latestPayload.estimate_rollup : {};
+      const byEpic = source && source.by_epic && typeof source.by_epic === "object" ? source.by_epic : null;
+      if (!byEpic) return source || {};
+      const pickedRows = Array.isArray(rows) ? rows : [];
+      const totals = {
+        epic_count: 0,
+        story_count: 0,
+        subtask_count: 0,
+        overrun_story_count: 0,
+        epic_original_estimate_hours: 0,
+        story_original_estimate_hours: 0,
+        subtask_original_estimate_hours: 0,
+        subtask_logged_hours: 0,
+        story_subtask_logged_over_parent_estimate_hours: 0,
+        overrun_story_original_estimate_hours: 0,
+      };
+      const seen = new Set();
+      pickedRows.forEach((row) => {
+        const epicKey = String(row && row.epic_key || "").toUpperCase();
+        if (!epicKey || seen.has(epicKey) || !byEpic[epicKey]) return;
+        seen.add(epicKey);
+        const rollup = byEpic[epicKey] || {};
+        totals.epic_count += Number(rollup.epic_count || 0);
+        totals.story_count += Number(rollup.story_count || 0);
+        totals.subtask_count += Number(rollup.subtask_count || 0);
+        totals.overrun_story_count += Number(rollup.overrun_story_count || 0);
+        totals.epic_original_estimate_hours += Number(rollup.epic_original_estimate_hours || 0);
+        totals.story_original_estimate_hours += Number(rollup.story_original_estimate_hours || 0);
+        totals.subtask_original_estimate_hours += Number(rollup.subtask_original_estimate_hours || 0);
+        totals.subtask_logged_hours += Number(rollup.subtask_logged_hours || 0);
+        totals.story_subtask_logged_over_parent_estimate_hours += Number(rollup.story_subtask_logged_over_parent_estimate_hours || 0);
+        totals.overrun_story_original_estimate_hours += Number(rollup.overrun_story_original_estimate_hours || 0);
+      });
+      const baseline = totals.overrun_story_original_estimate_hours;
+      totals.story_subtask_logged_over_parent_estimate_pct = baseline > 0
+        ? totals.story_subtask_logged_over_parent_estimate_hours / baseline * 100
+        : (totals.story_subtask_logged_over_parent_estimate_hours > 0 ? 100 : 0);
+      const hoursPerDay = Number(latestPayload && latestPayload.meta && latestPayload.meta.hours_per_day || 8);
+      totals.epic_original_estimate_days = totals.epic_original_estimate_hours / hoursPerDay;
+      totals.story_original_estimate_days = totals.story_original_estimate_hours / hoursPerDay;
+      totals.subtask_original_estimate_days = totals.subtask_original_estimate_hours / hoursPerDay;
+      totals.subtask_logged_days = totals.subtask_logged_hours / hoursPerDay;
+      totals.story_subtask_logged_over_parent_estimate_days = totals.story_subtask_logged_over_parent_estimate_hours / hoursPerDay;
+      return totals;
+    }
+
+    function renderEstimateRollup(rows) {
+      const rollup = aggregateEstimateRollupFromRows(rows);
+      const dayMode = unit === "days";
+      const lab = dayMode ? "days" : "hours";
+      const epicOriginal = dayMode ? Number(rollup.epic_original_estimate_days || 0) : Number(rollup.epic_original_estimate_hours || 0);
+      const storyOriginal = dayMode ? Number(rollup.story_original_estimate_days || 0) : Number(rollup.story_original_estimate_hours || 0);
+      const subtaskOriginal = dayMode ? Number(rollup.subtask_original_estimate_days || 0) : Number(rollup.subtask_original_estimate_hours || 0);
+      const subtaskLogged = dayMode ? Number(rollup.subtask_logged_days || 0) : Number(rollup.subtask_logged_hours || 0);
+      const overrunValue = dayMode
+        ? Number(rollup.story_subtask_logged_over_parent_estimate_days || 0)
+        : Number(rollup.story_subtask_logged_over_parent_estimate_hours || 0);
+      const pickedRows = Array.isArray(rows) ? rows : [];
+      const monthPlan = pickedRows.reduce((sum, row) => {
+        if (!row || row.brought_forward) return sum;
+        return sum + (dayMode ? Number(row.planned_days || 0) : Number(row.planned_hours || 0));
+      }, 0);
+      const pct = Number(rollup.story_subtask_logged_over_parent_estimate_pct || 0);
+      const values = [monthPlan, epicOriginal, storyOriginal, subtaskOriginal, subtaskLogged, overrunValue];
+      const maxValue = Math.max(1, ...values.map((v) => Math.max(0, Number(v || 0))));
+      const setBar = (el, value) => {
+        if (!el) return;
+        const pctWidth = Math.max(0, Math.min(100, Number(value || 0) / maxValue * 100));
+        el.style.width = (value > 0 ? Math.max(3, pctWidth) : 0).toFixed(1) + "%";
+      };
+      const setDesc = (el, text) => {
+        if (!el) return;
+        el.textContent = text + " (" + lab + ")";
+        el.title = text;
+      };
+      if (els.estEpicOriginalLabel) els.estEpicOriginalLabel.textContent = "Epic Estimate";
+      if (els.estStoryOriginalLabel) els.estStoryOriginalLabel.textContent = "Story Estimate";
+      if (els.estSubtaskOriginalLabel) els.estSubtaskOriginalLabel.textContent = "Subtask Estimate";
+      if (els.estSubtaskLoggedLabel) els.estSubtaskLoggedLabel.textContent = "Subtask Logged";
+      if (els.estOverrunLabel) els.estOverrunLabel.textContent = "Story Overrun";
+      if (els.estMonthPlanLabel) els.estMonthPlanLabel.textContent = "Month Plan";
+      setDesc(els.estMonthPlanDesc, "Executive planned hours for epics planned this month");
+      setDesc(els.estEpicOriginalDesc, "Sum of Epic Original Estimates");
+      setDesc(els.estStoryOriginalDesc, "Sum of their Epics' Stories Original Estimate");
+      setDesc(els.estSubtaskOriginalDesc, "Sum of Story's subtasks Original Estimates");
+      setDesc(els.estSubtaskLoggedDesc, "Sum of Story's subtasks Logged Hours");
+      setDesc(els.estOverrunDesc, "Logged hours exceeding parent story original estimates");
+      if (els.estMonthPlan) els.estMonthPlan.textContent = formatNumber(monthPlan);
+      if (els.estEpicOriginal) els.estEpicOriginal.textContent = formatNumber(epicOriginal);
+      if (els.estStoryOriginal) els.estStoryOriginal.textContent = formatNumber(storyOriginal);
+      if (els.estSubtaskOriginal) els.estSubtaskOriginal.textContent = formatNumber(subtaskOriginal);
+      if (els.estSubtaskLogged) els.estSubtaskLogged.textContent = formatNumber(subtaskLogged);
+      if (els.estOverrunValue) els.estOverrunValue.textContent = formatNumber(overrunValue);
+      setBar(els.estMonthPlanBar, monthPlan);
+      setBar(els.estEpicOriginalBar, epicOriginal);
+      setBar(els.estStoryOriginalBar, storyOriginal);
+      setBar(els.estSubtaskOriginalBar, subtaskOriginal);
+      setBar(els.estSubtaskLoggedBar, subtaskLogged);
+      setBar(els.estOverrunBar, overrunValue);
+      if (els.estEpicOriginalDetail) els.estEpicOriginalDetail.textContent = String(rollup.epic_count || 0) + " epics planned this month";
+      if (els.estStoryOriginalDetail) els.estStoryOriginalDetail.textContent = String(rollup.story_count || 0) + " stories under selected epics";
+      if (els.estSubtaskOriginalDetail) els.estSubtaskOriginalDetail.textContent = String(rollup.subtask_count || 0) + " subtasks under selected stories";
+      if (els.estSubtaskLoggedDetail) els.estSubtaskLoggedDetail.textContent = "logged this month";
+      if (els.estMonthPlanDetail) els.estMonthPlanDetail.textContent = "matches Executive summary planned hours";
+      if (els.estOverrunDetail) {
+        els.estOverrunDetail.textContent = pct.toFixed(1) + "% over parent story estimates across "
+          + String(rollup.overrun_story_count || 0) + " stories";
+      }
+    }
+
+    const ESTIMATE_METRIC_META = {
+      month_plan: {
+        title: "Month Plan",
+        description: "Executive planned hours for epics planned this month.",
+        valueField: "original_estimate",
+      },
+      epic_original: {
+        title: "Epic Estimate",
+        description: "Direct Jira epic original estimates for epics planned this month.",
+        valueField: "original_estimate",
+      },
+      story_original: {
+        title: "Story Estimate",
+        description: "Story original estimates considered for the selected month.",
+        valueField: "original_estimate",
+      },
+      subtask_original: {
+        title: "Subtask Estimate",
+        description: "Subtask original estimates considered for the selected month.",
+        valueField: "original_estimate",
+      },
+      subtask_logged: {
+        title: "Subtask Logged",
+        description: "Selected-month logged hours on subtasks considered for this stat.",
+        valueField: "logged",
+      },
+      overrun: {
+        title: "Story Overrun",
+        description: "Stories whose selected-month subtask logged hours exceed the parent story estimate.",
+        valueField: "overrun",
+      },
+    };
+
+    function currentEstimateRows() {
+      return latestPayload ? filteredRowsForTable(latestPayload.rows || []) : [];
+    }
+
+    function monthPlanDetailRows(rows) {
+      const pickedRows = Array.isArray(rows) ? rows : [];
+      const source = latestPayload && latestPayload.estimate_rollup ? latestPayload.estimate_rollup : {};
+      const byEpic = source && source.by_epic && typeof source.by_epic === "object" ? source.by_epic : {};
+      return pickedRows
+        .filter((row) => row && !row.brought_forward)
+        .map((row) => {
+          const epicKey = String(row.epic_key || "").toUpperCase();
+          const epicRollup = byEpic[epicKey] || {};
+          const oeH = epicRollup.epic_original_estimate_hours != null
+            ? Number(epicRollup.epic_original_estimate_hours)
+            : Number(row.planned_hours || 0);
+          const oeD = epicRollup.epic_original_estimate_days != null
+            ? Number(epicRollup.epic_original_estimate_days)
+            : Number(row.planned_days || 0);
+          const detailItems = epicRollup.details_by_metric && Array.isArray(epicRollup.details_by_metric.epic_original)
+            ? epicRollup.details_by_metric.epic_original : [];
+          const epicDetail = detailItems.length > 0 ? detailItems[0] : {};
+          const tkH = (epicDetail.tk_planned_hours !== null && epicDetail.tk_planned_hours !== undefined)
+            ? Number(epicDetail.tk_planned_hours) : null;
+          const tkD = (epicDetail.tk_planned_days !== null && epicDetail.tk_planned_days !== undefined)
+            ? Number(epicDetail.tk_planned_days) : null;
+          return {
+            issue_key: epicKey,
+            item_type: "Epic",
+            summary: String(row.epic_name || row.epic_key || ""),
+            start_date: row.approved_start || "",
+            due_date: row.approved_due || "",
+            original_estimate_hours: oeH,
+            original_estimate_days: oeD,
+            tk_planned_hours: tkH,
+            tk_planned_days: tkD,
+            logged_hours: Number(row.actual_hours || 0),
+            logged_days: Number(row.actual_days || 0),
+            jira_url: row.jira_url || "",
+            parents: [],
+          };
+        });
+    }
+
+    function estimateDetailRows(metric, rows) {
+      if (metric === "month_plan") return monthPlanDetailRows(rows);
+      const source = latestPayload && latestPayload.estimate_rollup ? latestPayload.estimate_rollup : {};
+      const byEpic = source && source.by_epic && typeof source.by_epic === "object" ? source.by_epic : {};
+      const visibleKeys = new Set((Array.isArray(rows) ? rows : [])
+        .filter((row) => row && !row.brought_forward)
+        .map((row) => String(row.epic_key || "").toUpperCase())
+        .filter(Boolean));
+      const detailRows = [];
+      visibleKeys.forEach((epicKey) => {
+        const rollup = byEpic[epicKey] || {};
+        const details = rollup.details_by_metric || {};
+        const items = Array.isArray(details[metric]) ? details[metric] : [];
+        items.forEach((item) => detailRows.push(item));
+      });
+      return detailRows;
+    }
+
+    function detailHoursText(row, prefix) {
+      const h = row && row[prefix + "_hours"];
+      const d = row && row[prefix + "_days"];
+      const value = unit === "days" ? d : h;
+      if (value === null || value === undefined || value === "") return "—";
+      return formatNumber(Number(value || 0)) + (unit === "days" ? " d" : " h");
+    }
+
+    function detailDateRange(row) {
+      const start = row && row.start_date ? formatDisplayDate(row.start_date) : "—";
+      const due = row && row.due_date ? formatDisplayDate(row.due_date) : "—";
+      return start + " → " + due;
+    }
+
+    function detailJiraButton(row) {
+      const key = String(row && row.issue_key || "");
+      const url = String(row && row.jira_url || "");
+      if (!key) return "—";
+      if (!url) return '<span class="estimate-jira-btn">' + esc(key) + '</span>';
+      return '<a class="estimate-jira-btn" href="' + esc(url) + '" target="_blank" rel="noopener" aria-label="Open ' + esc(key) + ' in Jira">'
+        + '<span class="material-symbols-outlined" aria-hidden="true">open_in_new</span>' + esc(key) + '</a>';
+    }
+
+    function detailParentLinks(row) {
+      const parents = Array.isArray(row && row.parents) ? row.parents : [];
+      if (!parents.length) return "—";
+      return '<div class="estimate-parent-list">' + parents.map((parent) => {
+        const key = String(parent.issue_key || "");
+        const label = String(parent.item_type || "Parent") + " " + key;
+        const url = String(parent.jira_url || "");
+        const title = String(parent.summary || label);
+        if (!url) return '<span class="estimate-parent-link" title="' + esc(title) + '">' + esc(label) + '</span>';
+        return '<a class="estimate-parent-link" href="' + esc(url) + '" target="_blank" rel="noopener" title="' + esc(title) + '">'
+          + '<span class="material-symbols-outlined" aria-hidden="true">open_in_new</span>' + esc(label) + '</a>';
+      }).join("") + '</div>';
+    }
+
+    function renderEstimateDetailDrawer(metric, rows) {
+      const meta = ESTIMATE_METRIC_META[metric] || ESTIMATE_METRIC_META.month_plan;
+      const detailRows = estimateDetailRows(metric, rows);
+      if (els.estimateDetailTitle) els.estimateDetailTitle.textContent = meta.title + " Work Items";
+      if (els.estimateDetailSubtitle) {
+        els.estimateDetailSubtitle.textContent = meta.description + " Showing " + detailRows.length + " work item" + (detailRows.length === 1 ? "" : "s") + " from the current report filters.";
+      }
+      if (!els.estimateDetailBody) return;
+      if (!detailRows.length) {
+        els.estimateDetailBody.innerHTML = '<div class="estimate-detail-empty">No work items matched this stat for the current filters.</div>';
+        return;
+      }
+      const totalOriginal = detailRows.reduce((sum, row) => sum + Number(unit === "days" ? row.original_estimate_days : row.original_estimate_hours || 0), 0);
+      const totalTkPlanned = detailRows.reduce((sum, row) => sum + Number(unit === "days" ? row.tk_planned_days : row.tk_planned_hours || 0), 0);
+      const totalLogged = detailRows.reduce((sum, row) => sum + Number(unit === "days" ? row.logged_days : row.logged_hours || 0), 0);
+      const totalOverrun = detailRows.reduce((sum, row) => sum + Number(unit === "days" ? row.overrun_days : row.overrun_hours || 0), 0);
+      const unitLabel = unit === "days" ? "days" : "hours";
+      const hasTkPlanned = detailRows.some((row) => row && row.tk_planned_hours !== null && row.tk_planned_hours !== undefined && row.tk_planned_hours !== "");
+      const summary = '<div class="estimate-detail-summary">'
+        + '<span class="estimate-detail-chip">' + detailRows.length + ' work item' + (detailRows.length === 1 ? '' : 's') + '</span>'
+        + '<span class="estimate-detail-chip">Original estimate: ' + formatNumber(totalOriginal) + ' ' + unitLabel + '</span>'
+        + (hasTkPlanned ? '<span class="estimate-detail-chip">TK planned: ' + formatNumber(totalTkPlanned) + ' ' + unitLabel + '</span>' : '')
+        + '<span class="estimate-detail-chip">Logged: ' + formatNumber(totalLogged) + ' ' + unitLabel + '</span>'
+        + (totalOverrun > 0 ? '<span class="estimate-detail-chip">Overrun: ' + formatNumber(totalOverrun) + ' ' + unitLabel + '</span>' : '')
+        + '</div>';
+      const body = detailRows.map((row) => {
+        return '<tr>'
+          + '<td>' + detailJiraButton(row) + '</td>'
+          + '<td><div class="estimate-item-name">' + esc(row.summary || row.issue_key || "") + '</div><div class="estimate-item-meta">' + esc(row.item_type || "Work Item") + '</div></td>'
+          + '<td>' + detailParentLinks(row) + '</td>'
+          + '<td>' + esc(detailDateRange(row)) + '</td>'
+          + '<td class="num">' + esc(detailHoursText(row, "original_estimate")) + '</td>'
+          + '<td class="num">' + esc(detailHoursText(row, "tk_planned")) + '</td>'
+          + '<td class="num">' + esc(detailHoursText(row, "logged")) + '</td>'
+          + '<td class="num">' + esc(detailHoursText(row, "overrun")) + '</td>'
+          + '</tr>';
+      }).join("");
+      els.estimateDetailBody.innerHTML = summary
+        + '<div class="estimate-detail-table-wrap"><table class="estimate-detail-table">'
+        + '<thead><tr><th>Jira</th><th>Work item</th><th>Parents</th><th>Planned dates</th><th class="num">Original estimate</th><th class="num">TK planned</th><th class="num">Logged hours</th><th class="num">Overrun</th></tr></thead>'
+        + '<tbody>' + body + '</tbody></table></div>';
+    }
+
+    function openEstimateDetail(metric) {
+      if (!els.estimateDetailOverlay) return;
+      currentEstimateDetailMetric = metric || "month_plan";
+      renderEstimateDetailDrawer(currentEstimateDetailMetric, currentEstimateRows());
+      els.estimateDetailOverlay.classList.add("is-open");
+      document.body.style.overflow = "hidden";
+    }
+
+    function closeEstimateDetail() {
+      if (!els.estimateDetailOverlay) return;
+      els.estimateDetailOverlay.classList.remove("is-open");
+      currentEstimateDetailMetric = "";
+      document.body.style.overflow = "";
+    }
+
     function applyClientFilter() {
       if (!latestPayload) return;
       const filtered = filteredRowsForTable(latestPayload.rows || []);
       renderRows(filtered);
       if (ganttVisible) renderGantt(filtered, els.month ? els.month.value : "");
       updateKpiCards(recomputeKpiTotalsFromRows(filtered));
+      renderEstimateRollup(filtered);
+      if (els.estimateDetailOverlay && els.estimateDetailOverlay.classList.contains("is-open")) {
+        renderEstimateDetailDrawer(currentEstimateDetailMetric || "month_plan", filtered);
+      }
     }
 
     function formatNumber(value) {
@@ -3813,10 +4381,10 @@
       renderRows(filteredRows);
       if (ganttVisible) renderGantt(filteredRows, els.month ? els.month.value : "");
       updateKpiCards(recomputeKpiTotalsFromRows(filteredRows));
+      renderEstimateRollup(filteredRows);
       renderEmployeeDropdown(latestPayload.workforce || {});
       renderWorkforce(latestPayload.workforce || {});
       renderSupportTeam(latestPayload.workforce || {});
-      loadAndRenderSupportDd();
       renderExcludedEpics(latestPayload.excluded_epics || []);
       els.runMeta.textContent = latestPayload.canonical_run_id
         ? "Canonical run: " + latestPayload.canonical_run_id
@@ -3857,14 +4425,22 @@
       if (els.kpiWfAvailLabel) els.kpiWfAvailLabel.textContent = "Availability (" + lab + ")";
       if (els.kpiWfAvailability) els.kpiWfAvailability.textContent = formatNumber(av);
 
+      // Resource Planning headcount always uses formula: all − process − resigned.
+      // The drawer/assignee filter does NOT change these counts — it only affects
+      // epic-row filtering and the KPI cards above, not this planning panel.
+      const actualHC = Number(payload.employee_count_actual != null ? payload.employee_count_actual : n);
+      const actualCapH = Number(payload.actual_capacity_hours != null ? payload.actual_capacity_hours : payload.capacity_hours || 0);
+      const actualCapD = Number(payload.actual_capacity_days != null ? payload.actual_capacity_days : payload.capacity_days || 0);
+      const resLeaveH = Number(payload.planned_leave_hours || 0);
+      const resLeaveD = Number(payload.planned_leave_days || 0);
       _resSummaryState.total = {
-        headcount: filterActive ? kSel : n,
-        capacity_hours: Number(payload.capacity_hours || 0),
-        capacity_days: Number(payload.capacity_days || 0),
-        planned_leave_hours: Number(payload.planned_leave_hours || 0),
-        planned_leave_days: Number(payload.planned_leave_days || 0),
-        availability_hours: Number(payload.availability_hours || 0),
-        availability_days: Number(payload.availability_days || 0),
+        headcount: actualHC,
+        capacity_hours: actualCapH,
+        capacity_days: actualCapD,
+        planned_leave_hours: resLeaveH,
+        planned_leave_days: resLeaveD,
+        availability_hours: Math.max(0, actualCapH - resLeaveH),
+        availability_days: Math.max(0, actualCapD - resLeaveD),
       };
       renderResourceSummary();
 
@@ -3974,6 +4550,12 @@
       document.body.style.overflow = "";
     }
 
+    function cancelHeadcountDrawer() {
+      _hcIncludeSupportState = _hcIncludeSupportApplied;
+      closeHeadcountDrawer();
+      restoreHcCount();
+    }
+
     function renderHeadcountDrawerContent(wf) {
       const payload = wf || {};
       const tree = payload.employee_tree || {};
@@ -3983,6 +4565,18 @@
       const selected = new Set(Array.isArray(payload.selected_assignees) ? payload.selected_assignees : []);
       const monthStr = els.month ? els.month.value : "";
       const n = Number(payload.employee_count_profile || 0);
+
+      // Build support team set from payload
+      const stRows = Array.isArray(payload.support_team && payload.support_team.member_rows)
+        ? payload.support_team.member_rows : [];
+      const supportTeamSet = new Set(stRows.map(function(r) { return String((r && r.name) || "").trim(); }).filter(Boolean));
+
+      // Restore toggle to last-used state (persisted across drawer open/close)
+      if (els.hcIncludeSupport) {
+        els.hcIncludeSupport.checked = _hcIncludeSupportState;
+        els.hcIncludeSupport.indeterminate = false;
+      }
+
       if (els.hcDrawerSubtitle) {
         els.hcDrawerSubtitle.textContent =
           (n ? n + " employees in capacity profile · " : "") +
@@ -3994,12 +4588,16 @@
         if (!name) return "";
         const rid = m.resigned === true || m.resigned === 1;
         const lv = Number(m.leave_hours || 0);
-        const checked = active && selected.has(name);
+        const isSupport = supportTeamSet.has(name);
+        // Default: exclude support team and resigned; when filter active respect selected set (still exclude resigned)
+        const checked = active ? (selected.has(name) && !rid) : (!isSupport && !rid);
         const rdate = m.resignation_date ? String(m.resignation_date).slice(0, 10) : "";
         return (
-          '<label class="hc-member-row" data-hc-name="' + esc(name.toLowerCase()) + '">'
+          '<label class="hc-member-row" data-hc-name="' + esc(name.toLowerCase()) + '"' + (isSupport ? ' data-support="1"' : "") + '>'
           + '<input type="checkbox" class="hc-leaf" value="' + esc(name) + '"' + (checked ? " checked" : "") + ">"
-          + '<span class="hc-member-name">' + esc(name) + "</span>"
+          + '<span class="hc-member-name">' + esc(name)
+          + (isSupport ? '<span class="hc-support-chip">Support</span>' : "")
+          + "</span>"
           + '<span class="hc-member-status ' + (rid ? "resigned" : "active") + '">'
           + (rid ? ("Resigned" + (rdate ? " · " + rdate : "")) : "Active") + "</span>"
           + (lv > 0
@@ -4053,6 +4651,46 @@
           ? parts.join("")
           : '<div class="hc-empty">No employee data available for this month.</div>';
         bindHcTreeEvents();
+        // Enforce toggle state: if Include Support Team is off, uncheck all support members
+        if (els.hcIncludeSupport && !els.hcIncludeSupport.checked) {
+          els.hcTree.querySelectorAll(".hc-leaf").forEach(function (cb) {
+            if (cb.closest('[data-support="1"]')) cb.checked = false;
+          });
+          els.hcTree.querySelectorAll(".hc-team-block").forEach(function (block) {
+            const teamCb = block.querySelector(".hc-team-cb");
+            if (!teamCb) return;
+            const leaves = block.querySelectorAll(".hc-leaf");
+            const checkedCount = block.querySelectorAll(".hc-leaf:checked").length;
+            teamCb.indeterminate = false;
+            if (checkedCount === 0) teamCb.checked = false;
+            else if (checkedCount === leaves.length) teamCb.checked = true;
+            else { teamCb.checked = false; teamCb.indeterminate = true; }
+          });
+        }
+      }
+    }
+
+    function updateLiveHcCount() {
+      if (!els.hcTree) return;
+      const n = latestPayload && latestPayload.employee_count_profile != null
+        ? Number(latestPayload.employee_count_profile) : 0;
+      const checked = els.hcTree.querySelectorAll(".hc-leaf:checked").length;
+      if (els.kpiHeadcount) els.kpiHeadcount.textContent = String(checked);
+      if (els.kpiHeadcountDetail) {
+        els.kpiHeadcountDetail.textContent = checked + " selected of " + n + " employees";
+      }
+    }
+
+    function restoreHcCount() {
+      const wf = (latestPayload && latestPayload.workforce) || {};
+      const n = Number(wf.employee_count_profile != null ? wf.employee_count_profile : 0);
+      const kSel = Number(wf.selected_employee_count != null ? wf.selected_employee_count : 0);
+      const filterActive = !!wf.assignee_filter_active;
+      if (els.kpiHeadcount) els.kpiHeadcount.textContent = filterActive ? String(kSel) : String(n);
+      if (els.kpiHeadcountDetail) {
+        els.kpiHeadcountDetail.textContent = filterActive
+          ? kSel + " selected of " + n + " employees"
+          : "employees in capacity profile";
       }
     }
 
@@ -4063,6 +4701,7 @@
           const block = this.closest(".hc-team-block");
           if (!block) return;
           block.querySelectorAll(".hc-leaf").forEach(function (leaf) { leaf.checked = teamCb.checked; });
+          updateLiveHcCount();
         });
       });
       els.hcTree.querySelectorAll(".hc-leaf").forEach(function (leaf) {
@@ -4077,6 +4716,7 @@
           if (checked === 0) teamCb.checked = false;
           else if (checked === leaves.length) teamCb.checked = true;
           else { teamCb.checked = false; teamCb.indeterminate = true; }
+          updateLiveHcCount();
         });
       });
       els.hcTree.querySelectorAll(".hc-team-block").forEach(function (block) {
@@ -4095,12 +4735,14 @@
       if (!els.hcTree) return;
       els.hcTree.querySelectorAll(".hc-leaf").forEach(function (cb) { cb.checked = true; });
       els.hcTree.querySelectorAll(".hc-team-cb").forEach(function (cb) { cb.checked = true; cb.indeterminate = false; });
+      updateLiveHcCount();
     }
 
     function clearHcDrawerFilter() {
       if (!els.hcTree) return;
       els.hcTree.querySelectorAll(".hc-leaf").forEach(function (cb) { cb.checked = false; });
       els.hcTree.querySelectorAll(".hc-team-cb").forEach(function (cb) { cb.checked = false; cb.indeterminate = false; });
+      updateLiveHcCount();
     }
 
     function filterHcTree(q) {
@@ -4121,6 +4763,7 @@
 
     function applyHcDrawerFilter() {
       if (!els.hcTree) { closeHeadcountDrawer(); return; }
+      _hcIncludeSupportApplied = _hcIncludeSupportState;
       const checked = Array.from(els.hcTree.querySelectorAll(".hc-leaf:checked"))
         .map(function (cb) { return String(cb.value || "").trim(); })
         .filter(Boolean);
@@ -4314,8 +4957,8 @@
         });
       }
       // Head Count drawer controls
-      if (els.hcDrawerClose) els.hcDrawerClose.addEventListener("click", closeHeadcountDrawer);
-      if (els.hcCancelBtn) els.hcCancelBtn.addEventListener("click", closeHeadcountDrawer);
+      if (els.hcDrawerClose) els.hcDrawerClose.addEventListener("click", cancelHeadcountDrawer);
+      if (els.hcCancelBtn) els.hcCancelBtn.addEventListener("click", cancelHeadcountDrawer);
       if (els.hcApplyBtn) els.hcApplyBtn.addEventListener("click", applyHcDrawerFilter);
       if (els.hcAllEmployeesBtn) {
         els.hcAllEmployeesBtn.addEventListener("click", function () {
@@ -4332,9 +4975,33 @@
       if (els.hcSelectAll) els.hcSelectAll.addEventListener("click", selectAllHcDrawer);
       if (els.hcClearAll) els.hcClearAll.addEventListener("click", clearHcDrawerFilter);
       if (els.hcSearch) els.hcSearch.addEventListener("input", function () { filterHcTree(this.value); });
+      if (els.hcIncludeSupport) {
+        els.hcIncludeSupport.addEventListener("change", function () {
+          if (!els.hcTree) return;
+          const include = this.checked;
+          _hcIncludeSupportState = include;
+          this.indeterminate = false;
+          els.hcTree.querySelectorAll('.hc-leaf').forEach(function (cb) {
+            const row = cb.closest('[data-support="1"]');
+            if (row) cb.checked = include;
+          });
+          // Sync team checkboxes
+          els.hcTree.querySelectorAll(".hc-team-block").forEach(function (block) {
+            const teamCb = block.querySelector(".hc-team-cb");
+            if (!teamCb) return;
+            const leaves = block.querySelectorAll(".hc-leaf");
+            const checkedCount = block.querySelectorAll(".hc-leaf:checked").length;
+            teamCb.indeterminate = false;
+            if (checkedCount === 0) teamCb.checked = false;
+            else if (checkedCount === leaves.length) teamCb.checked = true;
+            else { teamCb.checked = false; teamCb.indeterminate = true; }
+          });
+          updateLiveHcCount();
+        });
+      }
       if (els.headcountOverlay) {
         els.headcountOverlay.addEventListener("click", function (e) {
-          if (e.target === els.headcountOverlay) closeHeadcountDrawer();
+          if (e.target === els.headcountOverlay) cancelHeadcountDrawer();
         });
       }
       // Leaves drawer controls
@@ -4354,163 +5021,11 @@
       // Escape key closes any open drawer
       document.addEventListener("keydown", function (e) {
         if (e.key !== "Escape") return;
-        if (els.headcountOverlay && els.headcountOverlay.classList.contains("is-open")) closeHeadcountDrawer();
+        if (els.headcountOverlay && els.headcountOverlay.classList.contains("is-open")) cancelHeadcountDrawer();
         if (els.leavesOverlay && els.leavesOverlay.classList.contains("is-open")) closeLeavesDrawer();
+        if (els.estimateDetailOverlay && els.estimateDetailOverlay.classList.contains("is-open")) closeEstimateDetail();
       });
     })();
-
-    // ── Support Team ─────────────────────────────────────────────────
-    const API_SUPPORT_TEAM = "/api/monthly-epic-plan-progress/support-team";
-    let supportDdOpen = false;
-    let supportDdInteractionBound = false;
-
-    function setSupportDdOpen(open) {
-      if (!els.supportEmpDd || !els.supportEmpDdToggle || !els.supportEmpDdPanel) return;
-      supportDdOpen = open;
-      els.supportEmpDd.classList.toggle("is-open", open);
-      els.supportEmpDdToggle.setAttribute("aria-expanded", open ? "true" : "false");
-    }
-
-    function updateSupportDdSummary() {
-      if (!els.supportEmpDdList || !els.supportEmpDdSummary) return;
-      const checked = els.supportEmpDdList.querySelectorAll(".support-leaf:checked");
-      if (!checked.length) {
-        els.supportEmpDdSummary.textContent = "Select support team members…";
-      } else if (checked.length === 1) {
-        els.supportEmpDdSummary.textContent = "1 member selected";
-      } else {
-        els.supportEmpDdSummary.textContent = checked.length + " members selected";
-      }
-    }
-
-    function filterSupportDdList(q) {
-      if (!els.supportEmpDdList) return;
-      const query = q.trim().toLowerCase();
-      let visible = 0;
-      els.supportEmpDdList.querySelectorAll(".support-emp-dd-group").forEach(function (group) {
-        const teamSearch = String(group.getAttribute("data-search") || "");
-        let anyMember = false;
-        group.querySelectorAll(".support-emp-dd-member-row").forEach(function (row) {
-          const nameSearch = String(row.getAttribute("data-search") || "");
-          const match = !query || nameSearch.includes(query) || teamSearch.includes(query);
-          row.style.display = match ? "" : "none";
-          if (match) anyMember = true;
-        });
-        const show = anyMember || (!query);
-        group.style.display = show ? "" : "none";
-        if (show) visible++;
-      });
-      if (els.supportEmpDdEmpty) els.supportEmpDdEmpty.classList.toggle("is-visible", visible === 0 && !!query);
-    }
-
-    function renderSupportDdFromTree(wf, savedMembers) {
-      if (!els.supportEmpDdList) return;
-      const tree = (wf && wf.employee_tree) || {};
-      const teams = Array.isArray(tree.teams) ? tree.teams : [];
-      const ungrouped = Array.isArray(tree.ungrouped) ? tree.ungrouped : [];
-      const savedSet = new Set(Array.isArray(savedMembers) ? savedMembers : []);
-      let rowSeq = 0;
-      let teamSeq = 0;
-
-      function memberRowHtml(m) {
-        const name = String((m && m.name) || "").trim();
-        if (!name) return "";
-        const rid = m.resigned === true || m.resigned === 1;
-        const checked = savedSet.has(name);
-        const bid = "sup-cb-" + (rowSeq++);
-        return (
-          '<label class="support-emp-dd-member-row" data-search="' + esc(name.toLowerCase()) + '">'
-          + '<input type="checkbox" class="support-leaf" id="' + esc(bid) + '" value="' + esc(name) + '"'
-          + (checked ? " checked" : "") + ">"
-          + '<span class="support-emp-dd-name">' + esc(name) + "</span>"
-          + (rid ? '<span class="emp-dd-res" data-resigned="1" style="font-size:0.62rem;">Resigned</span>' : "")
-          + "</label>"
-        );
-      }
-
-      const parts = [];
-      teams.forEach(function (team) {
-        const teamName = String((team && team.team_name) || "").trim();
-        const leader = String((team && team.team_leader) || "").trim();
-        const members = Array.isArray(team.members) ? team.members : [];
-        const membersHtml = members.map(memberRowHtml).join("");
-        if (!membersHtml) return;
-        const tid = "sup-team-" + (teamSeq++);
-        parts.push(
-          '<div class="support-emp-dd-group" data-search="' + esc((teamName + " " + leader).toLowerCase()) + '">'
-          + '<label class="support-emp-dd-team-row" style="display:flex;align-items:center;gap:6px;font-size:0.82rem;">'
-          + '<input type="checkbox" class="support-team-cb" id="' + esc(tid) + '" style="accent-color:#7c3aed;width:14px;height:14px;">'
-          + '<span style="font-weight:750;color:var(--title);">' + esc(teamName)
-          + (leader ? ' <span style="font-weight:500;color:var(--muted);">· ' + esc(leader) + "</span>" : "")
-          + "</span></label>"
-          + '<div class="support-emp-dd-members">' + membersHtml + "</div>"
-          + "</div>"
-        );
-      });
-      if (ungrouped.length) {
-        const ugHtml = ungrouped.map(memberRowHtml).join("");
-        if (ugHtml) {
-          const tid = "sup-team-" + (teamSeq++);
-          parts.push(
-            '<div class="support-emp-dd-group" data-search="others ungrouped">'
-            + '<label class="support-emp-dd-team-row" style="display:flex;align-items:center;gap:6px;font-size:0.82rem;">'
-            + '<input type="checkbox" class="support-team-cb" id="' + esc(tid) + '" style="accent-color:#7c3aed;width:14px;height:14px;">'
-            + '<span style="font-weight:750;color:var(--title);">Others <span style="font-weight:500;color:var(--muted);">· not mapped to a team</span></span>'
-            + "</label>"
-            + '<div class="support-emp-dd-members">' + ugHtml + "</div>"
-            + "</div>"
-          );
-        }
-      }
-      els.supportEmpDdList.innerHTML = parts.join("") || '<div style="padding:14px;text-align:center;color:var(--muted);font-size:0.84rem;">No employee data loaded yet.</div>';
-      bindSupportDdEvents();
-      updateSupportDdSummary();
-    }
-
-    function bindSupportDdEvents() {
-      if (!els.supportEmpDdList) return;
-      els.supportEmpDdList.querySelectorAll(".support-team-cb").forEach(function (teamCb) {
-        teamCb.addEventListener("change", function () {
-          const group = this.closest(".support-emp-dd-group");
-          if (!group) return;
-          group.querySelectorAll(".support-leaf").forEach(function (leaf) { leaf.checked = teamCb.checked; });
-          updateSupportDdSummary();
-        });
-      });
-      els.supportEmpDdList.querySelectorAll(".support-leaf").forEach(function (leaf) {
-        leaf.addEventListener("change", function () {
-          const group = this.closest(".support-emp-dd-group");
-          if (!group) return;
-          const teamCb = group.querySelector(".support-team-cb");
-          if (!teamCb) return;
-          const leaves = group.querySelectorAll(".support-leaf");
-          const checked = group.querySelectorAll(".support-leaf:checked").length;
-          teamCb.indeterminate = false;
-          if (checked === 0) teamCb.checked = false;
-          else if (checked === leaves.length) teamCb.checked = true;
-          else { teamCb.checked = false; teamCb.indeterminate = true; }
-          updateSupportDdSummary();
-        });
-      });
-      // sync team cbs on render
-      els.supportEmpDdList.querySelectorAll(".support-emp-dd-group").forEach(function (group) {
-        const teamCb = group.querySelector(".support-team-cb");
-        if (!teamCb) return;
-        const leaves = group.querySelectorAll(".support-leaf");
-        const checked = group.querySelectorAll(".support-leaf:checked").length;
-        teamCb.indeterminate = false;
-        if (checked === 0) teamCb.checked = false;
-        else if (checked === leaves.length) teamCb.checked = true;
-        else { teamCb.checked = false; teamCb.indeterminate = true; }
-      });
-    }
-
-    function getCheckedSupportMembers() {
-      if (!els.supportEmpDdList) return [];
-      return Array.from(els.supportEmpDdList.querySelectorAll(".support-leaf:checked"))
-        .map(function (cb) { return String(cb.value || "").trim(); })
-        .filter(Boolean);
-    }
 
     function renderSupportTeam(wf) {
       const st = (wf && wf.support_team) || {};
@@ -4597,84 +5112,6 @@
       };
       renderResourceSummary();
     }
-
-    async function saveSupportTeam() {
-      const members = getCheckedSupportMembers();
-      if (els.supportSaveStatus) { els.supportSaveStatus.className = "support-save-status"; els.supportSaveStatus.textContent = "Saving…"; }
-      try {
-        const resp = await fetch(API_SUPPORT_TEAM, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ members }),
-        });
-        const body = await resp.json().catch(function () { return {}; });
-        if (!resp.ok || !body.ok) throw new Error(body.error || "Save failed");
-        if (els.supportSaveStatus) {
-          els.supportSaveStatus.className = "support-save-status";
-          els.supportSaveStatus.textContent = "✓ Saved (" + members.length + " member" + (members.length === 1 ? "" : "s") + ")";
-        }
-        setSupportDdOpen(false);
-        // Re-fetch summary to get updated support_team payload
-        if (els.apply) els.apply.click();
-      } catch (err) {
-        if (els.supportSaveStatus) {
-          els.supportSaveStatus.className = "support-save-status error";
-          els.supportSaveStatus.textContent = "Error: " + String(err.message || err);
-        }
-      }
-    }
-
-    async function loadAndRenderSupportDd() {
-      const wf = (latestPayload && latestPayload.workforce) || {};
-      try {
-        const resp = await fetch(API_SUPPORT_TEAM, { cache: "no-store" });
-        const body = await resp.json().catch(function () { return {}; });
-        const savedMembers = Array.isArray(body.members) ? body.members : [];
-        renderSupportDdFromTree(wf, savedMembers);
-      } catch (_e) {
-        renderSupportDdFromTree(wf, []);
-      }
-    }
-
-    (function wireSupportTeamEvents() {
-      // Toggle dropdown
-      if (els.supportEmpDdToggle) {
-        els.supportEmpDdToggle.addEventListener("click", function () {
-          const opening = !supportDdOpen;
-          setSupportDdOpen(opening);
-          if (opening && els.supportEmpDdSearch) els.supportEmpDdSearch.value = "";
-          if (opening) filterSupportDdList("");
-        });
-      }
-      // Close on outside click
-      document.addEventListener("click", function (e) {
-        if (!els.supportEmpDd || !supportDdOpen) return;
-        if (!els.supportEmpDd.contains(e.target)) setSupportDdOpen(false);
-      });
-      // Search
-      if (els.supportEmpDdSearch) {
-        els.supportEmpDdSearch.addEventListener("input", function () { filterSupportDdList(this.value); });
-      }
-      // Select all / Clear all
-      if (els.supportSelectAll) {
-        els.supportSelectAll.addEventListener("click", function () {
-          if (!els.supportEmpDdList) return;
-          els.supportEmpDdList.querySelectorAll(".support-leaf").forEach(function (cb) { cb.checked = true; });
-          els.supportEmpDdList.querySelectorAll(".support-team-cb").forEach(function (cb) { cb.checked = true; cb.indeterminate = false; });
-          updateSupportDdSummary();
-        });
-      }
-      if (els.supportClearAll) {
-        els.supportClearAll.addEventListener("click", function () {
-          if (!els.supportEmpDdList) return;
-          els.supportEmpDdList.querySelectorAll(".support-leaf").forEach(function (cb) { cb.checked = false; });
-          els.supportEmpDdList.querySelectorAll(".support-team-cb").forEach(function (cb) { cb.checked = false; cb.indeterminate = false; });
-          updateSupportDdSummary();
-        });
-      }
-      // Save button
-      if (els.supportSaveBtn) els.supportSaveBtn.addEventListener("click", saveSupportTeam);
-    })();
 
     function renderProjectCards(byProject) {
       if (!els.projectCards) return;
@@ -5239,6 +5676,7 @@
         if (els.kpiPlannedTotal) els.kpiPlannedTotal.textContent = formatNumber(0) + " " + suffixShort;
         if (els.kpiCompletionPct) els.kpiCompletionPct.textContent = "—";
         if (els.kpiCompletionBar) els.kpiCompletionBar.style.width = "0%";
+        renderEstimateRollup([]);
         renderWorkforce({});
         renderEmployeeDropdown({});
         renderSupportTeam({});
@@ -5258,6 +5696,44 @@
         if (latestPayload) renderSummary(latestPayload, { resetTableProjectFilter: false });
       });
     });
+    document.querySelectorAll("[data-estimate-metric]").forEach((row) => {
+      row.addEventListener("click", () => openEstimateDetail(row.dataset.estimateMetric || "month_plan"));
+      row.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          openEstimateDetail(row.dataset.estimateMetric || "month_plan");
+        }
+      });
+    });
+    if (els.estimateDetailClose) els.estimateDetailClose.addEventListener("click", closeEstimateDetail);
+    if (els.estimateDetailOverlay) {
+      els.estimateDetailOverlay.addEventListener("click", (event) => {
+        if (event.target === els.estimateDetailOverlay) closeEstimateDetail();
+      });
+    }
+    if (els.estimateDetailResize && els.estimateDetailDrawer) {
+      let resizingEstimateDrawer = false;
+      const setEstimateDrawerWidth = (clientX) => {
+        const maxWidth = Math.max(520, window.innerWidth - 32);
+        const rawWidth = window.innerWidth - clientX;
+        const width = Math.max(520, Math.min(maxWidth, rawWidth));
+        els.estimateDetailDrawer.style.setProperty("--estimate-detail-width", width + "px");
+      };
+      els.estimateDetailResize.addEventListener("mousedown", (event) => {
+        resizingEstimateDrawer = true;
+        document.body.style.userSelect = "none";
+        event.preventDefault();
+      });
+      document.addEventListener("mousemove", (event) => {
+        if (!resizingEstimateDrawer) return;
+        setEstimateDrawerWidth(event.clientX);
+      });
+      document.addEventListener("mouseup", () => {
+        if (!resizingEstimateDrawer) return;
+        resizingEstimateDrawer = false;
+        document.body.style.userSelect = "";
+      });
+    }
     [els.modeTkEpics, els.modeAllEpics, els.modeAllJiraEpics].forEach((btn) => {
       if (!btn) return;
       btn.addEventListener("click", () => {

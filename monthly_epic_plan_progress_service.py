@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import calendar
 import json
+import re
 import sqlite3
 from collections import defaultdict
 from datetime import date, timedelta
@@ -65,6 +66,43 @@ def _hours_from_man_days(value: Any) -> float | None:
     if parsed < 0:
         return None
     return _round_hours(parsed * HOURS_PER_DAY)
+
+
+def _extract_planner_issue_key(value: Any) -> str:
+    text = _to_text(value)
+    if not text:
+        return ""
+    if "/" in text:
+        text = text.rsplit("/", 1)[-1]
+    text = text.split("?", 1)[0].split("#", 1)[0].strip().upper()
+    return text if re.match(r"^[A-Z0-9][A-Z0-9_-]*$", text) else ""
+
+
+def _build_tk_planned_hours_by_issue(planner_rows: list[dict[str, Any]]) -> dict[str, float]:
+    result: dict[str, float] = {}
+    for row in planner_rows:
+        epic_key = _to_text((row or {}).get("epic_key")).upper()
+        plans = (row or {}).get("plans") or {}
+        if not isinstance(plans, dict):
+            continue
+        for plan_key, plan_value in plans.items():
+            if not isinstance(plan_value, dict):
+                continue
+            planned_hours = _hours_from_man_days(
+                plan_value.get("tk_budgeted_man_days")
+                if plan_value.get("tk_budgeted_man_days") not in (None, "")
+                else plan_value.get("man_days")
+            )
+            if planned_hours is None:
+                continue
+            if plan_key == "epic_plan":
+                if epic_key:
+                    result[epic_key] = planned_hours
+                continue
+            linked_issue_key = _extract_planner_issue_key(plan_value.get("jira_url"))
+            if linked_issue_key:
+                result[linked_issue_key] = planned_hours
+    return result
 
 
 def _date_in_month(date_text: str, month_start: date, month_end: date) -> bool:
@@ -299,6 +337,462 @@ def _load_total_planned_hours(
             total_by_epic[epic_key] += float(story["original_estimate_hours"] or 0)
 
     return dict(total_by_epic)
+
+
+def _load_estimate_rollup_for_epics(
+    db_path: Path,
+    run_id: str,
+    epic_keys: list[str],
+    month_start: date,
+    month_end: date,
+    jira_base: str = "",
+    tk_planned_hours_by_issue: dict[str, float] | None = None,
+) -> dict[str, Any]:
+    """
+    Build month-scoped estimate hierarchy totals for the report's planned-this-month epic set.
+
+    The rollup intentionally keeps direct Epic, Story, and Sub-task original estimates
+    separate so the report can show how each Jira hierarchy level compares.
+    """
+    selected_epics = sorted({_to_text(key).upper() for key in epic_keys if _to_text(key)})
+    if not selected_epics or not run_id:
+        return _empty_estimate_rollup(0)
+    if tk_planned_hours_by_issue is None:
+        tk_planned_hours_by_issue = {}
+
+    epic_original_hours = 0.0
+    story_original_hours = 0.0
+    subtask_original_hours = 0.0
+    subtask_logged_hours = 0.0
+
+    all_story_original_by_key: dict[str, float] = {}
+    story_original_by_key: dict[str, float] = {}
+    story_to_epic: dict[str, str] = {}
+    story_rows_by_key: dict[str, dict[str, Any]] = {}
+    subtask_rows_by_key: dict[str, dict[str, Any]] = {}
+    month_subtask_keys: set[str] = set()
+    jira_base_clean = _to_text(jira_base).rstrip("/")
+
+    def issue_url(issue_key: str) -> str:
+        return f"{jira_base_clean}/browse/{issue_key}" if jira_base_clean and issue_key else ""
+
+    def parent_link(issue_key: str, item_type: str, summary: Any = "") -> dict[str, Any]:
+        key = _to_text(issue_key).upper()
+        return {
+            "issue_key": key,
+            "item_type": item_type,
+            "summary": _to_text(summary),
+            "jira_url": issue_url(key),
+        }
+
+    def detail_row(
+        row: dict[str, Any],
+        item_type: str,
+        *,
+        original_estimate_hours: float | None = None,
+        logged_hours: float | None = None,
+        overrun_hours: float | None = None,
+        parents: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        issue_key = _to_text(row.get("issue_key")).upper()
+        original = None if original_estimate_hours is None else _round_hours(original_estimate_hours)
+        logged = None if logged_hours is None else _round_hours(logged_hours)
+        overrun = None if overrun_hours is None else _round_hours(overrun_hours)
+        tk_planned = None
+        if issue_key and issue_key in tk_planned_hours_by_issue:
+            tk_planned = _round_hours(float(tk_planned_hours_by_issue[issue_key] or 0.0))
+        result = {
+            "issue_key": issue_key,
+            "item_type": item_type,
+            "summary": _to_text(row.get("summary")) or issue_key,
+            "start_date": _to_text(row.get("start_date")),
+            "due_date": _to_text(row.get("due_date")),
+            "original_estimate_hours": original,
+            "original_estimate_days": None if original is None else _round_hours(original / HOURS_PER_DAY),
+            "tk_planned_hours": tk_planned,
+            "tk_planned_days": None if tk_planned is None else _round_hours(tk_planned / HOURS_PER_DAY),
+            "logged_hours": logged,
+            "logged_days": None if logged is None else _round_hours(logged / HOURS_PER_DAY),
+            "overrun_hours": overrun,
+            "overrun_days": None if overrun is None else _round_hours(overrun / HOURS_PER_DAY),
+            "jira_url": issue_url(issue_key),
+            "parents": parents or [],
+        }
+        return result
+
+    def add_detail(epic_key: str, metric: str, row: dict[str, Any]) -> None:
+        metric_map = by_epic.get(epic_key, {}).get("details_by_metric")
+        if isinstance(metric_map, dict):
+            metric_map.setdefault(metric, []).append(row)
+
+    by_epic: dict[str, dict[str, Any]] = {
+        key: {
+            "epic_count": 1,
+            "story_count": 0,
+            "subtask_count": 0,
+            "overrun_story_count": 0,
+            "epic_original_estimate_hours": 0.0,
+            "story_original_estimate_hours": 0.0,
+            "subtask_original_estimate_hours": 0.0,
+            "subtask_logged_hours": 0.0,
+            "story_subtask_logged_over_parent_estimate_hours": 0.0,
+            "overrun_story_original_estimate_hours": 0.0,
+            "story_subtask_logged_over_parent_estimate_pct": 0.0,
+            "details_by_metric": {
+                "epic_original": [],
+                "story_original": [],
+                "subtask_original": [],
+                "subtask_logged": [],
+                "overrun": [],
+            },
+        }
+        for key in selected_epics
+    }
+
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        for chunk in _chunked(selected_epics, 400):
+            placeholders = ",".join("?" for _ in chunk)
+            epic_rows = conn.execute(
+                f"""
+                SELECT issue_key, summary, start_date, due_date, original_estimate_hours
+                FROM canonical_issues
+                WHERE run_id = ? AND issue_type = 'Epic'
+                  AND UPPER(issue_key) IN ({placeholders})
+                """,
+                [run_id, *chunk],
+            ).fetchall()
+            for row in epic_rows:
+                epic_key = _to_text(row["issue_key"]).upper()
+                estimate = float(row["original_estimate_hours"] or 0.0)
+                epic_original_hours += estimate
+                if epic_key in by_epic:
+                    by_epic[epic_key]["epic_original_estimate_hours"] = (
+                        float(by_epic[epic_key]["epic_original_estimate_hours"]) + estimate
+                    )
+                    add_detail(
+                        epic_key,
+                        "epic_original",
+                        detail_row(dict(row), "Epic", original_estimate_hours=estimate),
+                    )
+
+            story_rows = conn.execute(
+                f"""
+                SELECT issue_key, epic_key, parent_issue_key, summary, start_date, due_date, original_estimate_hours
+                FROM canonical_issues
+                WHERE run_id = ? AND issue_type = 'Story'
+                  AND (UPPER(epic_key) IN ({placeholders}) OR UPPER(parent_issue_key) IN ({placeholders}))
+                """,
+                [run_id, *chunk, *chunk],
+            ).fetchall()
+            for row in story_rows:
+                story_key = _to_text(row["issue_key"]).upper()
+                if not story_key:
+                    continue
+                epic_key = _to_text(row["epic_key"]).upper() or _to_text(row["parent_issue_key"]).upper()
+                if epic_key not in selected_epics:
+                    continue
+                estimate = float(row["original_estimate_hours"] or 0.0)
+                all_story_original_by_key[story_key] = estimate
+                story_to_epic[story_key] = epic_key
+                story_rows_by_key[story_key] = dict(row)
+                if _date_in_month(_to_text(row["start_date"]), month_start, month_end) or _date_in_month(_to_text(row["due_date"]), month_start, month_end):
+                    story_original_by_key[story_key] = estimate
+
+            subtask_rows = conn.execute(
+                f"""
+                SELECT issue_key, epic_key, parent_issue_key, story_key, summary, start_date, due_date, original_estimate_hours
+                FROM canonical_issues
+                WHERE run_id = ? AND issue_type IN ('Sub-task', 'Bug Subtask')
+                  AND UPPER(epic_key) IN ({placeholders})
+                """,
+                [run_id, *chunk],
+            ).fetchall()
+            for row in subtask_rows:
+                subtask_key = _to_text(row["issue_key"]).upper()
+                if subtask_key:
+                    subtask_rows_by_key[subtask_key] = dict(row)
+                    if _date_in_month(_to_text(row["start_date"]), month_start, month_end) or _date_in_month(_to_text(row["due_date"]), month_start, month_end):
+                        month_subtask_keys.add(subtask_key)
+                        story_key = _to_text(row["story_key"]).upper() or _to_text(row["parent_issue_key"]).upper()
+                        if story_key and story_key in all_story_original_by_key:
+                            story_original_by_key[story_key] = all_story_original_by_key[story_key]
+
+        story_keys = sorted(all_story_original_by_key.keys())
+        for chunk in _chunked(story_keys, 400):
+            placeholders = ",".join("?" for _ in chunk)
+            subtask_rows = conn.execute(
+                f"""
+                SELECT issue_key, epic_key, parent_issue_key, story_key, summary, start_date, due_date, original_estimate_hours
+                FROM canonical_issues
+                WHERE run_id = ? AND issue_type IN ('Sub-task', 'Bug Subtask')
+                  AND (UPPER(story_key) IN ({placeholders}) OR UPPER(parent_issue_key) IN ({placeholders}))
+                """,
+                [run_id, *chunk, *chunk],
+            ).fetchall()
+            for row in subtask_rows:
+                subtask_key = _to_text(row["issue_key"]).upper()
+                if subtask_key:
+                    subtask_rows_by_key[subtask_key] = dict(row)
+                    if _date_in_month(_to_text(row["start_date"]), month_start, month_end) or _date_in_month(_to_text(row["due_date"]), month_start, month_end):
+                        month_subtask_keys.add(subtask_key)
+                        story_key = _to_text(row["story_key"]).upper() or _to_text(row["parent_issue_key"]).upper()
+                        if story_key and story_key in all_story_original_by_key:
+                            story_original_by_key[story_key] = all_story_original_by_key[story_key]
+
+        for story_key, estimate in story_original_by_key.items():
+            epic_key = story_to_epic.get(story_key)
+            if epic_key not in selected_epics:
+                continue
+            story_original_hours += estimate
+            by_epic[epic_key]["story_count"] = int(by_epic[epic_key]["story_count"]) + 1
+            by_epic[epic_key]["story_original_estimate_hours"] = (
+                float(by_epic[epic_key]["story_original_estimate_hours"]) + estimate
+            )
+            story_row = story_rows_by_key.get(story_key, {"issue_key": story_key})
+            add_detail(
+                epic_key,
+                "story_original",
+                detail_row(
+                    story_row,
+                    "Story",
+                    original_estimate_hours=estimate,
+                    parents=[parent_link(epic_key, "Epic")],
+                ),
+            )
+
+        subtask_to_story: dict[str, str] = {}
+        subtask_to_epic: dict[str, str] = {}
+        subtask_logged_by_key: dict[str, float] = defaultdict(float)
+        story_subtask_logged: dict[str, float] = defaultdict(float)
+        for row in subtask_rows_by_key.values():
+            subtask_key = _to_text(row.get("issue_key")).upper()
+            if subtask_key not in month_subtask_keys:
+                continue
+            epic_key = _to_text(row.get("epic_key")).upper()
+            story_key = _to_text(row.get("story_key")).upper() or _to_text(row.get("parent_issue_key")).upper()
+            if story_key and story_key in story_to_epic:
+                epic_key = story_to_epic[story_key]
+            if epic_key not in selected_epics:
+                continue
+            estimate = float(row.get("original_estimate_hours") or 0.0)
+            subtask_original_hours += estimate
+            by_epic[epic_key]["subtask_count"] = int(by_epic[epic_key]["subtask_count"]) + 1
+            by_epic[epic_key]["subtask_original_estimate_hours"] = (
+                float(by_epic[epic_key]["subtask_original_estimate_hours"]) + estimate
+            )
+            parent_story = story_rows_by_key.get(story_key, {"issue_key": story_key})
+            add_detail(
+                epic_key,
+                "subtask_original",
+                detail_row(
+                    row,
+                    "Sub-task",
+                    original_estimate_hours=estimate,
+                    parents=[
+                        parent_link(story_key, "Story", parent_story.get("summary")),
+                        parent_link(epic_key, "Epic"),
+                    ],
+                ),
+            )
+            if subtask_key:
+                subtask_to_epic[subtask_key] = epic_key
+            if subtask_key and story_key:
+                subtask_to_story[subtask_key] = story_key
+
+        # Extend worklog scope to subtasks whose dates are outside the month.
+        # The estimate pass above (month_subtask_keys) is intentionally date-scoped to
+        # only reflect work planned for this month in the OE numbers. But for logged hours
+        # we want every subtask that belongs to the in-scope epics — the same population
+        # used by _load_worklog_metrics — so "Subtask Logged" matches "Epic Work Summary
+        # actual hours" instead of silently dropping worklogs on out-of-month subtasks.
+        for row in subtask_rows_by_key.values():
+            subtask_key = _to_text(row.get("issue_key")).upper()
+            if not subtask_key or subtask_key in subtask_to_story:
+                continue
+            epic_key = _to_text(row.get("epic_key")).upper()
+            story_key = _to_text(row.get("story_key")).upper() or _to_text(row.get("parent_issue_key")).upper()
+            if story_key and story_key in story_to_epic:
+                epic_key = story_to_epic[story_key]
+            if epic_key not in selected_epics:
+                continue
+            if subtask_key and epic_key:
+                subtask_to_epic[subtask_key] = epic_key
+            if subtask_key and story_key:
+                subtask_to_story[subtask_key] = story_key
+
+        subtask_keys = sorted(subtask_to_story.keys())
+        if subtask_keys:
+            wl_latest = conn.execute(
+                "SELECT run_id FROM canonical_worklogs ORDER BY rowid DESC LIMIT 1"
+            ).fetchone()
+            wl_run_id = wl_latest[0] if wl_latest else run_id
+            today = date.today().isoformat()
+            for chunk in _chunked(subtask_keys, 400):
+                placeholders = ",".join("?" for _ in chunk)
+                worklog_rows = conn.execute(
+                    f"""
+                    SELECT issue_key, hours_logged, started_date
+                    FROM canonical_worklogs
+                    WHERE run_id = ?
+                      AND issue_key IN ({placeholders})
+                      AND started_date >= ?
+                      AND started_date <= ?
+                    """,
+                    [wl_run_id, *chunk, month_start.isoformat(), min(month_end.isoformat(), today)],
+                ).fetchall()
+                for row in worklog_rows:
+                    subtask_key = _to_text(row["issue_key"]).upper()
+                    story_key = subtask_to_story.get(subtask_key)
+                    hours = float(row["hours_logged"] or 0.0)
+                    if not story_key or hours <= 0:
+                        continue
+                    epic_key = subtask_to_epic.get(subtask_key)
+                    subtask_logged_hours += hours
+                    subtask_logged_by_key[subtask_key] += hours
+                    story_subtask_logged[story_key] += hours
+                    if epic_key in by_epic:
+                        by_epic[epic_key]["subtask_logged_hours"] = (
+                            float(by_epic[epic_key]["subtask_logged_hours"]) + hours
+                        )
+
+        for subtask_key, logged in subtask_logged_by_key.items():
+            row = subtask_rows_by_key.get(subtask_key)
+            story_key = subtask_to_story.get(subtask_key, "")
+            epic_key = subtask_to_epic.get(subtask_key, "")
+            if not row or epic_key not in selected_epics:
+                continue
+            parent_story = story_rows_by_key.get(story_key, {"issue_key": story_key})
+            add_detail(
+                epic_key,
+                "subtask_logged",
+                detail_row(
+                    row,
+                    "Sub-task",
+                    original_estimate_hours=float(row.get("original_estimate_hours") or 0.0),
+                    logged_hours=logged,
+                    parents=[
+                        parent_link(story_key, "Story", parent_story.get("summary")),
+                        parent_link(epic_key, "Epic"),
+                    ],
+                ),
+            )
+
+    overrun_hours = 0.0
+    overrun_story_estimate_hours = 0.0
+    overrun_story_count = 0
+    for story_key, logged in story_subtask_logged.items():
+        parent_estimate = float(story_original_by_key.get(story_key) or 0.0)
+        if logged > parent_estimate:
+            epic_key = story_to_epic.get(story_key)
+            overrun_value = logged - parent_estimate
+            overrun_hours += logged - parent_estimate
+            overrun_story_estimate_hours += parent_estimate
+            overrun_story_count += 1
+            if epic_key in by_epic:
+                by_epic[epic_key]["story_subtask_logged_over_parent_estimate_hours"] = (
+                    float(by_epic[epic_key]["story_subtask_logged_over_parent_estimate_hours"]) + logged - parent_estimate
+                )
+                by_epic[epic_key]["overrun_story_original_estimate_hours"] = (
+                    float(by_epic[epic_key]["overrun_story_original_estimate_hours"]) + parent_estimate
+                )
+                by_epic[epic_key]["overrun_story_count"] = int(by_epic[epic_key]["overrun_story_count"]) + 1
+                story_row = story_rows_by_key.get(story_key, {"issue_key": story_key})
+                add_detail(
+                    epic_key,
+                    "overrun",
+                    detail_row(
+                        story_row,
+                        "Story",
+                        original_estimate_hours=parent_estimate,
+                        logged_hours=logged,
+                        overrun_hours=overrun_value,
+                        parents=[parent_link(epic_key, "Epic")],
+                    ),
+                )
+
+    if overrun_story_estimate_hours > 0:
+        overrun_pct = overrun_hours / overrun_story_estimate_hours * 100.0
+    elif overrun_hours > 0:
+        overrun_pct = 100.0
+    else:
+        overrun_pct = 0.0
+
+    for epic_rollup in by_epic.values():
+        baseline = float(epic_rollup.get("overrun_story_original_estimate_hours") or 0.0)
+        overrun = float(epic_rollup.get("story_subtask_logged_over_parent_estimate_hours") or 0.0)
+        if baseline > 0:
+            epic_rollup["story_subtask_logged_over_parent_estimate_pct"] = overrun / baseline * 100.0
+        elif overrun > 0:
+            epic_rollup["story_subtask_logged_over_parent_estimate_pct"] = 100.0
+
+    rollup = _round_estimate_rollup({
+        "epic_count": len(selected_epics),
+        "story_count": len(story_original_by_key),
+        "subtask_count": sum(int(item.get("subtask_count") or 0) for item in by_epic.values()),
+        "overrun_story_count": overrun_story_count,
+        "epic_original_estimate_hours": epic_original_hours,
+        "story_original_estimate_hours": story_original_hours,
+        "subtask_original_estimate_hours": subtask_original_hours,
+        "subtask_logged_hours": subtask_logged_hours,
+        "story_subtask_logged_over_parent_estimate_hours": overrun_hours,
+        "overrun_story_original_estimate_hours": overrun_story_estimate_hours,
+        "story_subtask_logged_over_parent_estimate_pct": overrun_pct,
+    })
+    rollup["by_epic"] = {
+        epic_key: _round_estimate_rollup(epic_rollup)
+        for epic_key, epic_rollup in by_epic.items()
+    }
+    return rollup
+
+
+def _empty_estimate_rollup(epic_count: int = 0) -> dict[str, Any]:
+    rollup = _round_estimate_rollup({
+        "epic_count": epic_count,
+        "story_count": 0,
+        "subtask_count": 0,
+        "overrun_story_count": 0,
+        "epic_original_estimate_hours": 0.0,
+        "story_original_estimate_hours": 0.0,
+        "subtask_original_estimate_hours": 0.0,
+        "subtask_logged_hours": 0.0,
+        "story_subtask_logged_over_parent_estimate_hours": 0.0,
+        "overrun_story_original_estimate_hours": 0.0,
+        "story_subtask_logged_over_parent_estimate_pct": 0.0,
+    })
+    rollup["by_epic"] = {}
+    rollup["details_by_metric"] = {
+        "epic_original": [],
+        "story_original": [],
+        "subtask_original": [],
+        "subtask_logged": [],
+        "overrun": [],
+    }
+    return rollup
+
+
+def _round_estimate_rollup(rollup: dict[str, Any]) -> dict[str, Any]:
+    hour_fields = [
+        "epic_original_estimate_hours",
+        "story_original_estimate_hours",
+        "subtask_original_estimate_hours",
+        "subtask_logged_hours",
+        "story_subtask_logged_over_parent_estimate_hours",
+        "overrun_story_original_estimate_hours",
+    ]
+    rounded = dict(rollup)
+    for field in hour_fields:
+        value = _round_hours(float(rounded.get(field) or 0.0))
+        rounded[field] = value
+        rounded[field.replace("_hours", "_days")] = _round_hours(value / HOURS_PER_DAY)
+    rounded["story_subtask_logged_over_parent_estimate_pct"] = _round_hours(
+        float(rounded.get("story_subtask_logged_over_parent_estimate_pct") or 0.0)
+    )
+    rounded["epic_count"] = int(rounded.get("epic_count") or 0)
+    rounded["story_count"] = int(rounded.get("story_count") or 0)
+    rounded["subtask_count"] = int(rounded.get("subtask_count") or 0)
+    rounded["overrun_story_count"] = int(rounded.get("overrun_story_count") or 0)
+    return rounded
 
 
 def _load_child_items_for_month(
@@ -855,6 +1349,10 @@ def build_workforce_month_payload(
     team_capacity_hours = float(cap["metrics"].get("available_capacity_hours") or 0.0)
     n_team = int(settings.get("employee_count") or 0)
     per_person_cap = _round_hours(team_capacity_hours / n_team) if n_team > 0 else 0.0
+    # Actual headcount: all team members minus process team minus resigned
+    n_actual = _compute_actual_headcount(db_path)
+    actual_capacity_hours = _round_hours(n_actual * per_person_cap) if per_person_cap > 0 else _round_hours(team_capacity_hours)
+    actual_capacity_days = _round_hours(actual_capacity_hours / HOURS_PER_DAY)
 
     try:
         capacity_profiles_out = _list_capacity_profiles(db_path)
@@ -1081,6 +1579,9 @@ def build_workforce_month_payload(
         "capacity_settings": cap["settings"],
         "team_metrics": cap["metrics"],
         "employee_count_profile": n_team,
+        "employee_count_actual": n_actual,
+        "actual_capacity_hours": actual_capacity_hours,
+        "actual_capacity_days": actual_capacity_days,
         "selected_employee_count": k_sel,
         "assignee_filter_active": filter_lowers is not None,
         "selected_assignees": [display_by_lower.get(k) or team_display_by_lower.get(k) or k for k in active_for_rows],
@@ -1368,6 +1869,33 @@ def _load_all_jira_epic_rows(
     return rows, excluded_epics
 
 
+def _compute_actual_headcount(db_path: Path) -> int:
+    """Count active resources: all team members minus process team minus resigned."""
+    try:
+        teams = _list_performance_teams(db_path)
+    except Exception:
+        return 0
+    all_members: list[str] = []
+    process_members_lower: set[str] = set()
+    for team in teams:
+        team_name = _to_text(team.get("team_name"))
+        for m in (team.get("assignees") or []):
+            name = _to_text(m)
+            if not name:
+                continue
+            all_members.append(name)
+            if team_name.lower() == "process team":
+                process_members_lower.add(name.lower())
+    unique_members = sorted(set(m for m in all_members if m), key=str.lower)
+    try:
+        res_map = _load_performance_resource_resignation_map(db_path, unique_members)
+    except Exception:
+        res_map = {}
+    resigned_lower = {name.lower() for name, rec in res_map.items() if rec.get("resigned")}
+    excluded = process_members_lower | resigned_lower
+    return sum(1 for m in unique_members if m.lower() not in excluded)
+
+
 def _build_support_team_payload(
     db_path: Path,
     planned_by_lower: dict[str, float],
@@ -1484,6 +2012,7 @@ def build_monthly_epic_plan_payload(
         for project_key in (selected_projects or set())
         if _to_text(project_key)
     }
+    tk_planned_hours_by_issue: dict[str, float] = _build_tk_planned_hours_by_issue(planner_rows)
     epic_meta, subtask_keys_by_epic = _load_canonical_issue_maps(db_path, run_id)
     actual_hours_by_epic, has_worklog_through_month_end, last_worklog_date_by_epic, worklog_dates_by_epic, total_actual_hours_by_epic = _load_worklog_metrics(
         db_path,
@@ -1577,13 +2106,23 @@ def build_monthly_epic_plan_payload(
         excluded_epics.sort(key=lambda e: (_to_text(e.get("project_name")).lower(), _to_text(e.get("approved_start")), _to_text(e.get("epic_key"))))
         by_project_rows = _build_by_project_rows(by_project)
         rounded_totals = _round_totals(totals)
+        estimate_rollup = _load_estimate_rollup_for_epics(
+            db_path,
+            run_id,
+            [_to_text(row.get("epic_key")).upper() for row in rows if not row.get("brought_forward")],
+            month_start,
+            month_end,
+            jira_base,
+            tk_planned_hours_by_issue,
+        )
         workforce = build_workforce_month_payload(db_path, month_start, month_end, run_id, selected_assignees=selected_assignees, capacity_profile_key=capacity_profile_key, jira_base=jira_base)
         return {
             "month": month, "from_date": month_start.isoformat(), "to_date": month_end.isoformat(),
             "canonical_run_id": run_id, "selected_projects": sorted(selected_project_keys),
             "overdue_threshold_days": int(overdue_threshold_days), "include_on_hold": bool(include_on_hold),
             "epic_mode": epic_mode, "rows": rows, "by_project": by_project_rows,
-            "totals": rounded_totals, "excluded_epics": excluded_epics, "workforce": workforce,
+            "totals": rounded_totals, "estimate_rollup": estimate_rollup,
+            "excluded_epics": excluded_epics, "workforce": workforce,
             "meta": {
                 "hours_per_day": HOURS_PER_DAY,
                 "scope_basis": (
@@ -1624,6 +2163,7 @@ def build_monthly_epic_plan_payload(
     story_planned_hours_by_epic: dict[str, float] = _load_story_planned_hours(
         db_path, run_id, _all_candidate_epic_keys, month_start, month_end
     )
+    tk_planned_hours_by_issue: dict[str, float] = _build_tk_planned_hours_by_issue(planner_rows)
     total_planned_hours_by_epic: dict[str, float] = _load_total_planned_hours(
         db_path, run_id, _all_candidate_epic_keys
     )
@@ -1874,6 +2414,15 @@ def build_monthly_epic_plan_payload(
     excluded_epics.sort(key=lambda e: (_to_text(e.get("project_name")).lower(), _to_text(e.get("approved_start")), _to_text(e.get("epic_key"))))
     by_project_rows = _build_by_project_rows(by_project)
     rounded_totals = _round_totals(totals)
+    estimate_rollup = _load_estimate_rollup_for_epics(
+        db_path,
+        run_id,
+        [_to_text(row.get("epic_key")).upper() for row in rows if not row.get("brought_forward")],
+        month_start,
+        month_end,
+        jira_base,
+        tk_planned_hours_by_issue,
+    )
     workforce = build_workforce_month_payload(
         db_path, month_start, month_end, run_id,
         selected_assignees=selected_assignees,
@@ -1892,6 +2441,7 @@ def build_monthly_epic_plan_payload(
         "rows": rows,
         "by_project": by_project_rows,
         "totals": rounded_totals,
+        "estimate_rollup": estimate_rollup,
         "excluded_epics": excluded_epics,
         "workforce": workforce,
         "meta": {

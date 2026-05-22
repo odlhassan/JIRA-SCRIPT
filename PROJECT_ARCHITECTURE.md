@@ -165,7 +165,7 @@ flowchart TD
 | `generate_rlt_leave_report.py` | RLT leave report | Resource leave tracking calendar; team availability view |
 | `generate_rmi_jira_gantt_html.py` | RMI Jira Gantt | Integrated RMI + Jira Gantt with phase and dependency mapping |
 | `generate_rnd_data_story.py` | R&D data story | Narrative R&D breakdown; investment split and delivery confidence |
-| `monthly_epic_plan_progress_service.py` | Monthly epic progress | Month-over-month epic plan progress; commitment vs delivery trend |
+| `monthly_epic_plan_progress_service.py` | Monthly epic progress | Month-over-month epic plan progress; commitment vs delivery trend; estimate hierarchy rollups |
 | `delayed_epic_chain_gantt_service.py` | Delayed epic chain | Gantt of epics with delay chains; cascading impact visualization |
 | `planned_actual_table_view_service.py` | Planned vs actual (service) | Service layer backing the planned vs actual table API and report |
 

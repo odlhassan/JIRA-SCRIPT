@@ -16,3 +16,16 @@
 ## Git push to GitHub
 
 - When the user asks to **push to GitHub** (or equivalent) **without naming a branch**, use **`main`**: `git checkout main`, commit there if needed, then `git push origin main` so Azure deploy can run. Do not default to `backup/*` or other branches unless the user explicitly asks for that branch.
+
+## Database schema change protocol
+
+- Any SQLite schema change is incomplete until the local audit trail and production migration path are updated.
+- Use `db_schema_changelog.py` to keep a separate local changelog database (`db_schema_changelog.db`) with, at minimum, the changed table/column, operation, reason, files that read the column, referencing tables, and previous/new state.
+- After changing a local database structure, snapshot the authoritative local schema so the repo has a current target definition for later production migration work.
+- Production migration depends on a human-downloaded production DB file. Once the user provides that DB locally, use `db_migration.py` to plan and execute a rename-create-copy-drop migration that preserves customer data:
+  - rename modified production tables to `_old`
+  - create replacement tables with the updated local structure
+  - migrate shared-column data into the replacement tables
+  - drop the `_old` tables after successful copy
+- If a schema task finishes before the production DB is available, explicitly report that the changelog was updated but the production migration run is pending the user-provided DB file.
+- If the migration workflow, diagnostics, or UI changes, update the related Python, UI, tests, and `.md` files together.

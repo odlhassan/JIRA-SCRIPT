@@ -6953,7 +6953,18 @@ def _performance_settings_html() -> str:
     .drawer-body p { margin:0; color:#334155; line-height:1.55; font-size:.9rem; white-space:pre-wrap; }
     body.drawer-open .drawer-backdrop { opacity:1; pointer-events:auto; }
     body.drawer-open .drawer { transform:translateX(0); }
-    #team-assignees { min-height:160px; }
+    .st-group { border:1px solid #e2eaf4; border-radius:10px; background:#fff; margin-bottom:8px; }
+    .st-group:last-child { margin-bottom:0; }
+    .st-group-hdr { display:flex; align-items:center; gap:8px; padding:8px 12px; background:linear-gradient(180deg,#f4f9fc,#eef5fa); border-bottom:1px solid #e2eaf4; border-radius:10px 10px 0 0; font-size:.83rem; font-weight:750; color:#1e293b; cursor:pointer; user-select:none; }
+    .st-group-hdr:hover { background:linear-gradient(180deg,#eaf3fa,#e4eef7); }
+    .st-group-hdr .st-team-cb { width:14px; height:14px; margin:0; flex:0 0 auto; accent-color:#7c3aed; cursor:pointer; }
+    .st-group-body { padding:6px 10px 8px 32px; display:flex; flex-direction:column; gap:2px; }
+    .st-member { display:flex; align-items:center; gap:8px; padding:5px 8px; border-radius:6px; cursor:pointer; font-size:.84rem; transition:background .12s; }
+    .st-member:hover { background:#f1f5f9; }
+    .st-member input[type=checkbox] { width:14px; height:14px; margin:0; flex:0 0 auto; accent-color:#7c3aed; cursor:pointer; }
+    .st-member-name { flex:1; font-weight:600; color:#0f172a; }
+    .st-resigned { font-size:.68rem; font-weight:700; color:#9a3412; background:#ffedd5; border-radius:4px; padding:1px 6px; }
+    #st-list { border:1px solid var(--line); border-radius:10px; background:#f8fbff; height:360px; overflow-y:auto; padding:10px; box-sizing:border-box; }
     .resource-add-row { display:flex; flex-wrap:wrap; gap:8px; align-items:flex-end; margin-bottom:10px; }
     .resource-add-row > div label { font-size:.78rem; }
     .resource-add-row input { max-width:14rem; }
@@ -7149,6 +7160,25 @@ def _performance_settings_html() -> str:
             <tbody id="resource-records-tbody"></tbody>
           </table>
         </div>
+      </div>
+    </section>
+    <section class="team-wrap" id="support-team" style="scroll-margin-top:24px;">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;flex-wrap:wrap;">
+        <span class="material-symbols-outlined" style="font-size:1.15rem;color:#7c3aed;">support_agent</span>
+        <h2 style="margin:0;font-size:1rem;">Technical Support Team</h2>
+        <span id="st-badge" style="display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;border-radius:999px;background:#7c3aed;color:#fff;font-size:0.72rem;font-weight:800;padding:0 7px;">0</span>
+      </div>
+      <p style="margin:0 0 12px;color:var(--muted);font-size:.88rem;">Select which employees are part of the Technical Support Team. This drives the support hours breakdown in the Monthly Epic Plan Progress report.</p>
+      <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center;">
+        <input type="search" id="st-search" placeholder="Search employees or teams…" autocomplete="off"
+          style="flex:1 1 200px;max-width:300px;min-height:34px;border:1px solid var(--line);border-radius:8px;padding:5px 12px;font-size:.85rem;outline:none;">
+        <button type="button" id="st-select-all" class="btn alt" style="font-size:.8rem;padding:5px 14px;white-space:nowrap;">Select all</button>
+        <button type="button" id="st-clear-all" class="btn alt" style="font-size:.8rem;padding:5px 14px;white-space:nowrap;">Clear all</button>
+      </div>
+      <div id="st-list"></div>
+      <div style="display:flex;align-items:center;gap:12px;margin-top:10px;flex-wrap:wrap;">
+        <button class="btn" type="button" id="st-save-btn">Save Support Team</button>
+        <span id="st-status" style="font-size:.83rem;font-weight:600;min-height:1.2em;"></span>
       </div>
     </section>
     <div id="status"></div>
@@ -7564,7 +7594,166 @@ def _performance_settings_html() -> str:
         }
       });
     }
-    Promise.all([loadSettings(), loadAssignees(), loadTeams()]).catch((e) => setStatus(e.message || String(e), "err"));
+    // ── Technical Support Team ────────────────────────────────────────
+    const SUPPORT_TEAM_API = "/api/monthly-epic-plan-progress/support-team";
+    const stList = document.getElementById("st-list");
+    const stSearch = document.getElementById("st-search");
+    const stBadge = document.getElementById("st-badge");
+    const stStatus = document.getElementById("st-status");
+    let stSavedMembers = new Set();
+
+    function escSt(s) { return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+
+    function renderSupportTeamList() {
+      if (!stList) return;
+      const query = stSearch ? stSearch.value.trim().toLowerCase() : "";
+      const teamsData = typeof loadedTeams !== "undefined" ? loadedTeams : [];
+      let html = "";
+      let seq = 0;
+      const groupedNames = new Set();
+
+      teamsData.forEach((team) => {
+        const teamName = String(team.team_name || "");
+        const leader = String(team.team_leader || "");
+        const members = Array.isArray(team.assignees) ? team.assignees : [];
+        const matchedMembers = members.filter((n) => !query || n.toLowerCase().includes(query) || teamName.toLowerCase().includes(query) || leader.toLowerCase().includes(query));
+        members.forEach((n) => groupedNames.add(n));
+        if (!matchedMembers.length && query) return;
+        const tid = "st-tcb-" + (seq++);
+        const allChecked = matchedMembers.length > 0 && matchedMembers.every((n) => stSavedMembers.has(n));
+        const someChecked = !allChecked && matchedMembers.some((n) => stSavedMembers.has(n));
+        const membersHtml = matchedMembers.map((n) => {
+          const resigned = resourceRecords[n] && resourceRecords[n].resigned;
+          const cbId = "st-cb-" + (seq++);
+          return '<label class="st-member">'
+            + '<input type="checkbox" class="st-leaf" id="' + escSt(cbId) + '" value="' + escSt(n) + '"' + (stSavedMembers.has(n) ? " checked" : "") + '>'
+            + '<span class="st-member-name">' + escSt(n) + "</span>"
+            + (resigned ? '<span class="st-resigned">Resigned</span>' : "")
+            + "</label>";
+        }).join("");
+        html += '<div class="st-group" data-team="' + escSt(teamName) + '">'
+          + '<div class="st-group-hdr">'
+          + '<input type="checkbox" class="st-team-cb" id="' + escSt(tid) + '"' + (allChecked ? " checked" : "") + (someChecked ? " data-indeterminate" : "") + '>'
+          + '<span>' + escSt(teamName) + (leader ? ' <span style="font-weight:500;color:#64748b;">· ' + escSt(leader) + "</span>" : "") + "</span>"
+          + "</div>"
+          + (membersHtml ? '<div class="st-group-body">' + membersHtml + "</div>" : '<div style="padding:6px 10px;color:#94a3b8;font-size:.8rem;font-style:italic;">No members match search.</div>')
+          + "</div>";
+      });
+
+      const ungrouped = (typeof allAssignees !== "undefined" ? allAssignees : []).filter((n) => !groupedNames.has(n));
+      const matchedUng = ungrouped.filter((n) => !query || n.toLowerCase().includes(query));
+      if (matchedUng.length) {
+        const tid = "st-tcb-" + (seq++);
+        const allChecked = matchedUng.every((n) => stSavedMembers.has(n));
+        const someChecked = !allChecked && matchedUng.some((n) => stSavedMembers.has(n));
+        const membersHtml = matchedUng.map((n) => {
+          const resigned = resourceRecords[n] && resourceRecords[n].resigned;
+          const cbId = "st-cb-" + (seq++);
+          return '<label class="st-member">'
+            + '<input type="checkbox" class="st-leaf" id="' + escSt(cbId) + '" value="' + escSt(n) + '"' + (stSavedMembers.has(n) ? " checked" : "") + '>'
+            + '<span class="st-member-name">' + escSt(n) + "</span>"
+            + (resigned ? '<span class="st-resigned">Resigned</span>' : "")
+            + "</label>";
+        }).join("");
+        html += '<div class="st-group" data-team="__ungrouped__">'
+          + '<div class="st-group-hdr">'
+          + '<input type="checkbox" class="st-team-cb" id="' + escSt(tid) + '"' + (allChecked ? " checked" : "") + (someChecked ? " data-indeterminate" : "") + '>'
+          + '<span>Others <span style="font-weight:500;color:#64748b;">· not mapped to a team</span></span>'
+          + "</div>"
+          + '<div class="st-group-body">' + membersHtml + "</div>"
+          + "</div>";
+      }
+
+      stList.innerHTML = html || '<div style="padding:20px;text-align:center;color:#94a3b8;font-size:.85rem;">' + (query ? "No employees match your search." : "No employees loaded yet.") + "</div>";
+
+      // Set indeterminate state on team checkboxes
+      stList.querySelectorAll(".st-team-cb[data-indeterminate]").forEach((cb) => { cb.indeterminate = true; });
+
+      // Team checkbox → toggle all members in group
+      stList.querySelectorAll(".st-team-cb").forEach((teamCb) => {
+        teamCb.addEventListener("change", () => {
+          const grp = teamCb.closest(".st-group");
+          if (!grp) return;
+          grp.querySelectorAll(".st-leaf").forEach((leaf) => { leaf.checked = teamCb.checked; });
+          teamCb.indeterminate = false;
+          updateStBadge();
+        });
+      });
+
+      // Leaf checkbox → sync team checkbox
+      stList.querySelectorAll(".st-leaf").forEach((leaf) => {
+        leaf.addEventListener("change", () => {
+          const grp = leaf.closest(".st-group");
+          if (!grp) return;
+          const teamCb = grp.querySelector(".st-team-cb");
+          if (!teamCb) return;
+          const leaves = grp.querySelectorAll(".st-leaf");
+          const checkedCount = grp.querySelectorAll(".st-leaf:checked").length;
+          teamCb.indeterminate = false;
+          if (checkedCount === 0) teamCb.checked = false;
+          else if (checkedCount === leaves.length) teamCb.checked = true;
+          else { teamCb.checked = false; teamCb.indeterminate = true; }
+          updateStBadge();
+        });
+      });
+
+      updateStBadge();
+    }
+
+    function updateStBadge() {
+      if (!stList || !stBadge) return;
+      stBadge.textContent = String(stList.querySelectorAll(".st-leaf:checked").length);
+    }
+
+    function getCheckedStMembers() {
+      if (!stList) return [];
+      return Array.from(stList.querySelectorAll(".st-leaf:checked")).map((cb) => String(cb.value||"").trim()).filter(Boolean);
+    }
+
+    async function loadSupportTeam() {
+      try {
+        const resp = await fetch(SUPPORT_TEAM_API, { cache: "no-store" });
+        const body = await resp.json().catch(() => ({}));
+        stSavedMembers = new Set(Array.isArray(body.members) ? body.members : []);
+      } catch (_e) {
+        stSavedMembers = new Set();
+      }
+      renderSupportTeamList();
+    }
+
+    if (stSearch) stSearch.addEventListener("input", renderSupportTeamList);
+    document.getElementById("st-select-all").addEventListener("click", () => {
+      stList.querySelectorAll(".st-leaf").forEach((cb) => { cb.checked = true; });
+      stList.querySelectorAll(".st-team-cb").forEach((cb) => { cb.checked = true; cb.indeterminate = false; });
+      updateStBadge();
+    });
+    document.getElementById("st-clear-all").addEventListener("click", () => {
+      stList.querySelectorAll(".st-leaf").forEach((cb) => { cb.checked = false; });
+      stList.querySelectorAll(".st-team-cb").forEach((cb) => { cb.checked = false; cb.indeterminate = false; });
+      updateStBadge();
+    });
+    document.getElementById("st-save-btn").addEventListener("click", async () => {
+      const members = getCheckedStMembers();
+      stStatus.textContent = "Saving…";
+      stStatus.style.color = "var(--muted)";
+      try {
+        const resp = await fetch(SUPPORT_TEAM_API, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ members }),
+        });
+        const body = await resp.json().catch(() => ({}));
+        if (!resp.ok || !body.ok) throw new Error(body.error || "Save failed");
+        stSavedMembers = new Set(members);
+        stStatus.textContent = "✓ Saved (" + members.length + " member" + (members.length === 1 ? "" : "s") + ")";
+        stStatus.style.color = "var(--ok)";
+      } catch (err) {
+        stStatus.textContent = "Error: " + String(err.message || err);
+        stStatus.style.color = "var(--err)";
+      }
+    });
+
+    Promise.all([loadSettings(), loadAssignees(), loadTeams()]).then(() => loadSupportTeam()).catch((e) => setStatus(e.message || String(e), "err"));
   </script>
   <script src="/shared-nav.js"></script>
 </body>

@@ -46,6 +46,27 @@ def _planner_row(
     }
 
 
+def _planner_row_with_story_plan(
+    epic_key: str,
+    epic_name: str,
+    start_date: str,
+    due_date: str,
+    *,
+    epic_man_days: float = 10,
+    story_key: str,
+    story_man_days: float,
+) -> dict:
+    row = _planner_row(epic_key, epic_name, start_date, due_date, man_days=epic_man_days)
+    row["plans"]["research_urs_plan"] = {
+        "jira_url": f"https://jira.example/browse/{story_key}",
+        "tk_budgeted_man_days": story_man_days,
+        "man_days": story_man_days,
+        "start_date": start_date,
+        "due_date": due_date,
+    }
+    return row
+
+
 def _create_canonical_tables(db_path: Path, run_id: str = "run-1") -> None:
     conn = sqlite3.connect(db_path)
     try:
@@ -152,6 +173,76 @@ def _add_epic_tree(db_path: Path, epic_key: str, status: str, worklogs: list[tup
             VALUES ('run-1', ?, ?, 'O2', ?, ?)
             """,
             [(f"{subtask_key}-{index}", subtask_key, started_date, hours) for index, (started_date, hours) in enumerate(worklogs, start=1)],
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _add_estimate_rollup_tree(
+    db_path: Path,
+    epic_key: str,
+    *,
+    epic_original: float,
+    story_rows: list[tuple[str, float, list[tuple[str, float, float]]]],
+    status: str = "In Progress",
+    start_date: str = "2026-03-01",
+    due_date: str = "2026-03-31",
+) -> None:
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            """
+            INSERT INTO canonical_issues(
+                run_id, issue_key, project_key, issue_type, summary, status,
+                start_date, due_date, original_estimate_hours, parent_issue_key, story_key, epic_key
+            )
+            VALUES ('run-1', ?, 'O2', 'Epic', ?, ?, ?, ?, ?, '', '', ?)
+            """,
+            (epic_key, f"{epic_key} Epic", status, start_date, due_date, epic_original, epic_key),
+        )
+        worklog_rows = []
+        for story_suffix, story_estimate, subtask_specs in story_rows:
+            story_key = f"{epic_key}-{story_suffix}"
+            conn.execute(
+                """
+                INSERT INTO canonical_issues(
+                    run_id, issue_key, project_key, issue_type, summary, status,
+                    start_date, due_date, original_estimate_hours, parent_issue_key, story_key, epic_key
+                )
+                VALUES ('run-1', ?, 'O2', 'Story', ?, 'In Progress', ?, ?, ?, ?, ?, ?)
+                """,
+                (story_key, f"{story_key} Story", start_date, due_date, story_estimate, epic_key, story_key, epic_key),
+            )
+            for idx, (sub_suffix, subtask_estimate, logged_hours) in enumerate(subtask_specs, start=1):
+                subtask_key = f"{story_key}-{sub_suffix}"
+                conn.execute(
+                    """
+                    INSERT INTO canonical_issues(
+                        run_id, issue_key, project_key, issue_type, summary, status,
+                        start_date, due_date, original_estimate_hours, parent_issue_key, story_key, epic_key
+                    )
+                    VALUES ('run-1', ?, 'O2', 'Sub-task', ?, 'In Progress', ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        subtask_key,
+                        f"{subtask_key} Subtask",
+                        start_date,
+                        due_date,
+                        subtask_estimate,
+                        story_key,
+                        story_key,
+                        epic_key,
+                    ),
+                )
+                if logged_hours:
+                    worklog_rows.append((f"{subtask_key}-{idx}", subtask_key, "2026-03-10", logged_hours))
+        conn.executemany(
+            """
+            INSERT INTO canonical_worklogs(run_id, worklog_id, issue_key, project_key, started_date, hours_logged)
+            VALUES ('run-1', ?, ?, 'O2', ?, ?)
+            """,
+            worklog_rows,
         )
         conn.commit()
     finally:
@@ -287,6 +378,115 @@ class MonthlyEpicPlanProgressTests(unittest.TestCase):
             self.assertEqual(row["actual_hours"], 8)
             self.assertFalse(row["start_slip"])
             self.assertFalse(row["end_slip"])
+
+    def test_estimate_rollup_uses_same_in_scope_epics(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            db_path = Path(td) / "assignee_hours_capacity.db"
+            _create_canonical_tables(db_path)
+            _add_estimate_rollup_tree(
+                db_path,
+                "O2-IN",
+                epic_original=120,
+                story_rows=[
+                    ("S1", 40, [("T1", 10, 30), ("T2", 15, 20)]),
+                    ("S2", 16, [("T1", 8, 4)]),
+                ],
+            )
+            _add_estimate_rollup_tree(
+                db_path,
+                "O2-OUT",
+                epic_original=999,
+                story_rows=[("S1", 999, [("T1", 999, 999)])],
+                start_date="2026-01-01",
+                due_date="2026-01-15",
+            )
+            _add_estimate_rollup_tree(
+                db_path,
+                "O2-BF",
+                epic_original=777,
+                story_rows=[("S1", 777, [("T1", 777, 777)])],
+                start_date="2026-02-01",
+                due_date="2026-02-25",
+            )
+
+            payload = build_monthly_epic_plan_payload(
+                db_path,
+                "2026-03",
+                [
+                    _planner_row("O2-IN", "Included Epic", "2026-03-01", "2026-03-31"),
+                    _planner_row("O2-OUT", "Excluded Epic", "2026-01-01", "2026-01-15"),
+                    _planner_row("O2-BF", "Brought Forward Epic", "2026-02-01", "2026-02-25"),
+                ],
+                "run-1",
+                selected_projects={"O2"},
+            )
+
+            rows_by_key = {row["epic_key"]: row for row in payload["rows"]}
+            self.assertEqual(set(rows_by_key), {"O2-BF", "O2-IN"})
+            self.assertTrue(rows_by_key["O2-BF"]["brought_forward"])
+            rollup = payload["estimate_rollup"]
+            self.assertEqual(rollup["epic_count"], 1)
+            self.assertEqual(rollup["story_count"], 2)
+            self.assertEqual(rollup["subtask_count"], 3)
+            self.assertEqual(rollup["epic_original_estimate_hours"], 120.0)
+            self.assertEqual(rollup["story_original_estimate_hours"], 56.0)
+            self.assertEqual(rollup["subtask_original_estimate_hours"], 33.0)
+            self.assertEqual(rollup["subtask_logged_hours"], 54.0)
+            self.assertEqual(rollup["story_subtask_logged_over_parent_estimate_hours"], 10.0)
+            self.assertEqual(rollup["story_subtask_logged_over_parent_estimate_pct"], 25.0)
+            self.assertEqual(rollup["overrun_story_count"], 1)
+            by_epic = rollup["by_epic"]["O2-IN"]
+            self.assertIn("details_by_metric", by_epic)
+            self.assertEqual(len(by_epic["details_by_metric"]["epic_original"]), 1)
+            self.assertEqual(len(by_epic["details_by_metric"]["story_original"]), 2)
+            self.assertEqual(len(by_epic["details_by_metric"]["subtask_original"]), 3)
+            self.assertEqual(len(by_epic["details_by_metric"]["subtask_logged"]), 3)
+            self.assertEqual(len(by_epic["details_by_metric"]["overrun"]), 1)
+            subtask_detail = by_epic["details_by_metric"]["subtask_logged"][0]
+            self.assertEqual(subtask_detail["item_type"], "Sub-task")
+            self.assertIn("parents", subtask_detail)
+            self.assertEqual([parent["item_type"] for parent in subtask_detail["parents"]], ["Story", "Epic"])
+
+    def test_estimate_rollup_detail_rows_include_tk_planned_hours_for_matching_epics_and_stories(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            db_path = Path(td) / "assignee_hours_capacity.db"
+            _create_canonical_tables(db_path)
+            _add_estimate_rollup_tree(
+                db_path,
+                "O2-IN",
+                epic_original=120,
+                story_rows=[
+                    ("S1", 40, [("T1", 10, 0)]),
+                    ("S2", 16, [("T1", 8, 0)]),
+                ],
+            )
+
+            payload = build_monthly_epic_plan_payload(
+                db_path,
+                "2026-03",
+                [
+                    _planner_row_with_story_plan(
+                        "O2-IN",
+                        "Included Epic",
+                        "2026-03-01",
+                        "2026-03-31",
+                        epic_man_days=11,
+                        story_key="O2-IN-S1",
+                        story_man_days=3,
+                    )
+                ],
+                "run-1",
+                selected_projects={"O2"},
+            )
+
+            by_epic = payload["estimate_rollup"]["by_epic"]["O2-IN"]
+            epic_detail = by_epic["details_by_metric"]["epic_original"][0]
+            self.assertEqual(epic_detail["tk_planned_hours"], 88.0)
+            self.assertEqual(epic_detail["tk_planned_days"], 11.0)
+            story_details = {item["issue_key"]: item for item in by_epic["details_by_metric"]["story_original"]}
+            self.assertEqual(story_details["O2-IN-S1"]["tk_planned_hours"], 24.0)
+            self.assertEqual(story_details["O2-IN-S1"]["tk_planned_days"], 3.0)
+            self.assertIsNone(story_details["O2-IN-S2"]["tk_planned_hours"])
 
     def test_service_excludes_epic_when_schedule_spans_month_but_no_endpoint_in_month(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
@@ -505,6 +705,48 @@ class MonthlyEpicPlanProgressTests(unittest.TestCase):
         self.assertIn("emp-dd-meta", html)
         self.assertIn("Brought Forward", html)
         self.assertIn("Brought forward", html)
+        self.assertIn("Estimate hierarchy stats", html)
+        self.assertIn('id="estimate-rollup-panel"', html)
+        self.assertIn('id="estimate-rollup-chart"', html)
+        self.assertIn("estimate-bar-row", html)
+        self.assertIn("estimate-bar-fill", html)
+        self.assertIn("Month Plan", html)
+        self.assertIn("Epic Estimate", html)
+        self.assertIn("Story Estimate", html)
+        self.assertIn("Subtask Estimate", html)
+        self.assertIn("Subtask Logged", html)
+        self.assertIn("Story Overrun", html)
+        self.assertIn("epics planned this month", html)
+        self.assertIn("Brought-forward overdue epics are shown in Executive summary separately", html)
+        self.assertIn('id="est-month-plan"', html)
+        self.assertIn('id="est-month-plan-bar"', html)
+        self.assertIn("matches Executive summary planned hours", html)
+        self.assertIn('id="est-epic-original"', html)
+        self.assertIn('id="est-epic-original-bar"', html)
+        self.assertIn('id="est-story-original"', html)
+        self.assertIn('id="est-story-original-bar"', html)
+        self.assertIn('id="est-subtask-original"', html)
+        self.assertIn('id="est-subtask-original-bar"', html)
+        self.assertIn('id="est-subtask-logged"', html)
+        self.assertIn('id="est-subtask-logged-bar"', html)
+        self.assertIn('id="est-overrun-value"', html)
+        self.assertIn('id="est-overrun-bar"', html)
+        self.assertIn('id="estimate-detail-overlay"', html)
+        self.assertIn('id="estimate-detail-resize"', html)
+        self.assertIn("function openEstimateDetail", html)
+        self.assertIn("function renderEstimateDetailDrawer", html)
+        self.assertIn("function estimateDetailRows", html)
+        self.assertIn("data-estimate-metric=\"subtask_logged\"", html)
+        self.assertIn("estimate-detail-table", html)
+        self.assertIn("TK planned", html)
+        self.assertIn('detailHoursText(row, "tk_planned")', html)
+        self.assertIn("TK planned: ", html)
+        self.assertIn("estimate-parent-link", html)
+        self.assertIn("Drag to resize", html)
+        self.assertIn("function renderEstimateRollup", html)
+        self.assertIn("aggregateEstimateRollupFromRows", html)
+        self.assertIn("const setBar = (el, value)", html)
+        self.assertIn("estimate_rollup", html)
         row_to_html = re.search(r"function rowToHtml\(row\) \{(?P<body>.*?)\n    // Sort order:", html, re.S)
         self.assertIsNotNone(row_to_html)
         self.assertIn('const monthYm = els.month ? String(els.month.value || "").trim() : "";', row_to_html.group("body"))

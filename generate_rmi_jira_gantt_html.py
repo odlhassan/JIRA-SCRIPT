@@ -212,12 +212,23 @@ def _load_canonical_tree(db_path: Path, run_id: str) -> dict[str, Any]:
     stories_by_epic: dict[str, list[dict[str, Any]]] = defaultdict(list)
     descendants_by_story: dict[str, list[dict[str, Any]]] = defaultdict(list)
     worklogs_by_issue: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    jira_project_names: dict[str, str] = {}
 
     for issue in issues:
         key = _to_text(issue.get("issue_key")).upper()
         if not key:
             continue
         by_key[key] = issue
+        pk = _to_text(issue.get("project_key")).upper()
+        if pk and pk not in jira_project_names:
+            raw = _to_text(issue.get("raw_payload_json"))
+            if raw:
+                try:
+                    pname = json.loads(raw).get("fields", {}).get("project", {}).get("name", "")
+                    if pname:
+                        jira_project_names[pk] = pname
+                except (json.JSONDecodeError, AttributeError):
+                    pass
 
     for worklog in worklogs:
         issue_key = _to_text(worklog.get("issue_key")).upper()
@@ -258,6 +269,7 @@ def _load_canonical_tree(db_path: Path, run_id: str) -> dict[str, Any]:
         "stories_by_epic": stories_by_epic,
         "descendants_by_story": descendants_by_story,
         "worklogs_by_issue": worklogs_by_issue,
+        "jira_project_names": jira_project_names,
     }
 
 
@@ -327,6 +339,13 @@ def load_report_data(db_path: Path, run_id: str = "") -> dict[str, Any]:
     }
     planner_rows = [row for row in _load_epics_management_rows(planner_db) if int(row.get("is_tk_epic") or 0) == 1]
     planner_epic_keys: set[str] = {_to_text(r.get("epic_key")).upper() for r in planner_rows if _to_text(r.get("epic_key"))}
+    # Map project_key → project_name so canonical-only epics use the same product label
+    planner_key_to_product: dict[str, str] = {}
+    for _r in planner_rows:
+        _pk = _to_text(_r.get("project_key")).upper()
+        _pn = _to_text(_r.get("project_name"))
+        if _pk and _pn and _pk not in planner_key_to_product:
+            planner_key_to_product[_pk] = _pn
     epic_records: list[dict[str, Any]] = []
 
     for row in planner_rows:
@@ -416,7 +435,8 @@ def load_report_data(db_path: Path, run_id: str = "") -> dict[str, Any]:
             _to_float(story.get("logged_seconds")) + sum(_to_float(child.get("logged_seconds")) for child in story.get("subtasks", []))
             for story in stories
         )
-        product = _to_text(issue.get("project_key")).upper() or "Unassigned"
+        _pk = _to_text(issue.get("project_key")).upper()
+        product = planner_key_to_product.get(_pk) or tree["jira_project_names"].get(_pk) or _pk or "Unassigned"
         epic_records.append(
             {
                 "jira_id": issue_key,

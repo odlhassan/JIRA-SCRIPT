@@ -1,0 +1,10 @@
+[server] Warning: failed to remove jira_sync_cache.db: [WinError 32] The process cannot access the file because it is being used by another process: 'E:\\JIRA SCRIPT\\jira_sync_cache.db'
+[server] Cleared cache file: run_all_state.json
+[server] Cleared planned-vs-dispensed cache tables.
+[server] Skipping HTML rebuild + report-html sync (--no-sync).
+
+[server] Serving reports from: E:\JIRA SCRIPT\report_html
+[server] Open: http://127.0.0.1:3014/introduction.html
+[server] Press Ctrl+C to stop.
+ * Serving Flask app 'report_server'
+ * Debug mode: off

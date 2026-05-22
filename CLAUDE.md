@@ -85,6 +85,51 @@ full serving chain is aligned:
 
 ---
 
+## 3A. Database schema changes require changelog + production migration discipline
+
+Whenever you change any SQLite schema in this repo, treat the change as **incomplete**
+until the audit trail, local schema snapshot, and production migration path are aligned.
+
+Mandatory workflow:
+
+1. **Record every structural change** in `db_schema_changelog.py` via
+  `record_change(...)`. Capture, at minimum:
+  - target DB file
+  - operation (`ADD_COLUMN`, `DROP_COLUMN`, `RENAME_COLUMN`, `MODIFY_COLUMN`,
+    `ADD_TABLE`, `DROP_TABLE`, `RENAME_TABLE`, index changes)
+  - table and column name
+  - reason for the change
+  - files that read the column/table
+  - referencing tables / foreign-key dependents
+  - previous state and new state (name, type, nullability, default, notes)
+2. **Maintain the separate local audit DB** `db_schema_changelog.db` as the detailed
+  ledger of schema evolution for local development. This DB is the source of truth for
+  what changed, why it changed, and what production migrations still need to absorb.
+3. **Snapshot the local authoritative schema** after the change using
+  `snapshot_current_schema(...)` so the target structure is preserved for future
+  production migration work.
+4. **Prepare the production migration path** using `db_migration.py`. The required flow
+  for modified tables is:
+  - rename the existing production table to `<table>_old`
+  - create a new table with the exact updated local schema and the original table name
+  - migrate compatible data from `<table>_old` into the new table
+  - drop `<table>_old` only after a successful copy
+5. **Human dependency:** the user downloads the production DB and places it locally.
+  Once that DB exists, use `db_migration.py --plan-only` first, then execute the
+  migration, and report diagnostics. If the production DB is not yet available, say so
+  explicitly in the final response and mark production migration as pending.
+6. **If the DB migration UI or diagnostics are touched,** update the coupled route, UI,
+  server wiring, tests, and documentation together.
+
+Preferred files for this workflow:
+
+- `db_schema_changelog.py` — local audit log and schema snapshots
+- `db_migration.py` — production migration planner and executor
+- `DATABASE_SCHEMA_MIGRATION_PROTOCOL.md` — operator/developer runbook
+- `.claude/skills/db-schema-migration-discipline/SKILL.md` — task workflow skill
+
+---
+
 ## 4. Final-response contract (mandatory)
 
 End every completed task with **two short sections, in this order**:
@@ -214,6 +259,9 @@ Port these from `.cursor/skills/` so Claude Code activates the same workflows:
 - **`module-doc-sync`** — keep module-level `.md` documentation aligned with the
   affected module's business logic, UI fields, validations, dependencies, related code
   files, and downstream impact.
+- **`db-schema-migration-discipline`** — for any SQLite schema change, update the
+  changelog DB, capture schema snapshots, prepare production migration steps, and report
+  blockers until the human-provided production DB is available.
 - **`regression-audit`** — plan + execute system regression via browser automation
   (Playwright is already installed under `node_modules/`) and produce an LLM-readable
   audit report.
@@ -296,6 +344,10 @@ Every time you complete a code change — regardless of size — you **must** up
 `.md` documentation for the primary module changed **and** every linked, dependent, or
 impacted module. This is non-negotiable and is part of the definition of "task complete".
 
+When the change affects SQLite schema, the primary-doc update must also cover the schema
+audit and production migration workflow in `DATABASE_SCHEMA_MIGRATION_PROTOCOL.md`, and
+linked docs must mention any newly affected tables, columns, or migration dependencies.
+
 ### 10.1 Which docs to update
 
 For every module touched by a code change, update (or create) its documentation file:
@@ -360,6 +412,11 @@ A task is **not complete** until:
 
 ## 11. Changelog
 
+- `2026-05-21`: added the mandatory database schema changelog + production migration
+  discipline. Any SQLite schema change now requires recording the change in
+  `db_schema_changelog.db`, snapshotting the updated local schema, and preparing the
+  `db_migration.py` flow for a human-downloaded production DB before the task is
+  considered complete.
 - `2026-05-13`: scaffolded `.claude/` per section 7 — `agents/` (explore, shell,
   report-generator, localhost-verifier, doc-sync, ci-investigator, pr-babysit),
   `commands/` (`/run-server`, `/rebuild-html`, `/push-main`, `/localhost-check`),

@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Copy-Item \"E:\\\\JIRA SCRIPT\\\\monthly_epic_plan_progress_report.html\" \"E:\\\\JIRA SCRIPT\\\\report_html\\\\monthly_epic_plan_progress_report.html\" -Force)",
+      "PowerShell(Copy-Item \"E:\\\\JIRA SCRIPT\\\\monthly_epic_plan_progress_report.html\" \"E:\\\\JIRA SCRIPT\\\\report_html\\\\monthly_epic_plan_progress_report.html\" -Force)",
+      "Bash(python generate_rmi_jira_gantt_html.py)",
+      "Bash(python -c ' *)"
+    ]
+  }
+}
