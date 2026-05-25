@@ -392,12 +392,18 @@ def _load_estimate_rollup_for_epics(
         original_estimate_hours: float | None = None,
         logged_hours: float | None = None,
         overrun_hours: float | None = None,
+        non_bug_logged_hours: float | None = None,
+        non_bug_overrun_hours: float | None = None,
+        bug_logged_hours: float | None = None,
         parents: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         issue_key = _to_text(row.get("issue_key")).upper()
         original = None if original_estimate_hours is None else _round_hours(original_estimate_hours)
         logged = None if logged_hours is None else _round_hours(logged_hours)
         overrun = None if overrun_hours is None else _round_hours(overrun_hours)
+        non_bug_logged = None if non_bug_logged_hours is None else _round_hours(non_bug_logged_hours)
+        non_bug_overrun = None if non_bug_overrun_hours is None else _round_hours(non_bug_overrun_hours)
+        bug_logged = None if bug_logged_hours is None else _round_hours(bug_logged_hours)
         tk_planned = None
         if issue_key and issue_key in tk_planned_hours_by_issue:
             tk_planned = _round_hours(float(tk_planned_hours_by_issue[issue_key] or 0.0))
@@ -415,6 +421,12 @@ def _load_estimate_rollup_for_epics(
             "logged_days": None if logged is None else _round_hours(logged / HOURS_PER_DAY),
             "overrun_hours": overrun,
             "overrun_days": None if overrun is None else _round_hours(overrun / HOURS_PER_DAY),
+            "non_bug_logged_hours": non_bug_logged,
+            "non_bug_logged_days": None if non_bug_logged is None else _round_hours(non_bug_logged / HOURS_PER_DAY),
+            "non_bug_overrun_hours": non_bug_overrun,
+            "non_bug_overrun_days": None if non_bug_overrun is None else _round_hours(non_bug_overrun / HOURS_PER_DAY),
+            "bug_logged_hours": bug_logged,
+            "bug_logged_days": None if bug_logged is None else _round_hours(bug_logged / HOURS_PER_DAY),
             "jira_url": issue_url(issue_key),
             "parents": parents or [],
         }
@@ -501,7 +513,7 @@ def _load_estimate_rollup_for_epics(
 
             subtask_rows = conn.execute(
                 f"""
-                SELECT issue_key, epic_key, parent_issue_key, story_key, summary, start_date, due_date, original_estimate_hours
+                                SELECT issue_key, epic_key, parent_issue_key, story_key, issue_type, summary, start_date, due_date, original_estimate_hours
                 FROM canonical_issues
                 WHERE run_id = ? AND issue_type IN ('Sub-task', 'Bug Subtask')
                   AND UPPER(epic_key) IN ({placeholders})
@@ -523,7 +535,7 @@ def _load_estimate_rollup_for_epics(
             placeholders = ",".join("?" for _ in chunk)
             subtask_rows = conn.execute(
                 f"""
-                SELECT issue_key, epic_key, parent_issue_key, story_key, summary, start_date, due_date, original_estimate_hours
+                                SELECT issue_key, epic_key, parent_issue_key, story_key, issue_type, summary, start_date, due_date, original_estimate_hours
                 FROM canonical_issues
                 WHERE run_id = ? AND issue_type IN ('Sub-task', 'Bug Subtask')
                   AND (UPPER(story_key) IN ({placeholders}) OR UPPER(parent_issue_key) IN ({placeholders}))
@@ -565,6 +577,8 @@ def _load_estimate_rollup_for_epics(
         subtask_to_epic: dict[str, str] = {}
         subtask_logged_by_key: dict[str, float] = defaultdict(float)
         story_subtask_logged: dict[str, float] = defaultdict(float)
+        story_non_bug_subtask_logged: dict[str, float] = defaultdict(float)
+        story_bug_subtask_logged: dict[str, float] = defaultdict(float)
         for row in subtask_rows_by_key.values():
             subtask_key = _to_text(row.get("issue_key")).upper()
             if subtask_key not in month_subtask_keys:
@@ -648,9 +662,16 @@ def _load_estimate_rollup_for_epics(
                     if not story_key or hours <= 0:
                         continue
                     epic_key = subtask_to_epic.get(subtask_key)
+                    subtask_issue = subtask_rows_by_key.get(subtask_key) or {}
+                    issue_type = _to_text(subtask_issue.get("issue_type"))
+                    is_bug_subtask = issue_type.casefold() == "bug subtask"
                     subtask_logged_hours += hours
                     subtask_logged_by_key[subtask_key] += hours
                     story_subtask_logged[story_key] += hours
+                    if is_bug_subtask:
+                        story_bug_subtask_logged[story_key] += hours
+                    else:
+                        story_non_bug_subtask_logged[story_key] += hours
                     if epic_key in by_epic:
                         by_epic[epic_key]["subtask_logged_hours"] = (
                             float(by_epic[epic_key]["subtask_logged_hours"]) + hours
@@ -685,7 +706,10 @@ def _load_estimate_rollup_for_epics(
         parent_estimate = float(story_original_by_key.get(story_key) or 0.0)
         if logged > parent_estimate:
             epic_key = story_to_epic.get(story_key)
+            non_bug_logged = float(story_non_bug_subtask_logged.get(story_key) or 0.0)
+            bug_logged = float(story_bug_subtask_logged.get(story_key) or 0.0)
             overrun_value = logged - parent_estimate
+            non_bug_overrun_value = max(non_bug_logged - parent_estimate, 0.0)
             overrun_hours += logged - parent_estimate
             overrun_story_estimate_hours += parent_estimate
             overrun_story_count += 1
@@ -707,6 +731,9 @@ def _load_estimate_rollup_for_epics(
                         original_estimate_hours=parent_estimate,
                         logged_hours=logged,
                         overrun_hours=overrun_value,
+                        non_bug_logged_hours=non_bug_logged,
+                        non_bug_overrun_hours=non_bug_overrun_value,
+                        bug_logged_hours=bug_logged,
                         parents=[parent_link(epic_key, "Epic")],
                     ),
                 )

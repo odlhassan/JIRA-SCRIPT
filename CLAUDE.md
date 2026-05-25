@@ -412,6 +412,7 @@ A task is **not complete** until:
 
 ## 11. Changelog
 
+- `2026-05-25`: fixed `.github/hooks/doc-enforcement.json` Windows hook commands to use PowerShell-native `Write-Output` JSON emission instead of raw `cmd /c echo {...}` so mandatory doc reminders no longer fail with a PowerShell parser error on Windows.
 - `2026-05-21`: added the mandatory database schema changelog + production migration
   discipline. Any SQLite schema change now requires recording the change in
   `db_schema_changelog.db`, snapshotting the updated local schema, and preparing the

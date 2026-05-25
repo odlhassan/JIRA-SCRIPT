@@ -214,7 +214,12 @@ def _add_estimate_rollup_tree(
                 """,
                 (story_key, f"{story_key} Story", start_date, due_date, story_estimate, epic_key, story_key, epic_key),
             )
-            for idx, (sub_suffix, subtask_estimate, logged_hours) in enumerate(subtask_specs, start=1):
+            for idx, subtask_spec in enumerate(subtask_specs, start=1):
+                if len(subtask_spec) == 4:
+                    sub_suffix, subtask_estimate, logged_hours, issue_type = subtask_spec
+                else:
+                    sub_suffix, subtask_estimate, logged_hours = subtask_spec
+                    issue_type = "Sub-task"
                 subtask_key = f"{story_key}-{sub_suffix}"
                 conn.execute(
                     """
@@ -222,10 +227,11 @@ def _add_estimate_rollup_tree(
                         run_id, issue_key, project_key, issue_type, summary, status,
                         start_date, due_date, original_estimate_hours, parent_issue_key, story_key, epic_key
                     )
-                    VALUES ('run-1', ?, 'O2', 'Sub-task', ?, 'In Progress', ?, ?, ?, ?, ?, ?)
+                    VALUES ('run-1', ?, 'O2', ?, ?, 'In Progress', ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         subtask_key,
+                        issue_type,
                         f"{subtask_key} Subtask",
                         start_date,
                         due_date,
@@ -488,6 +494,43 @@ class MonthlyEpicPlanProgressTests(unittest.TestCase):
             self.assertEqual(story_details["O2-IN-S1"]["tk_planned_days"], 3.0)
             self.assertIsNone(story_details["O2-IN-S2"]["tk_planned_hours"])
 
+    def test_estimate_rollup_overrun_detail_rows_split_bug_and_non_bug_logged_hours(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            db_path = Path(td) / "assignee_hours_capacity.db"
+            _create_canonical_tables(db_path)
+            _add_estimate_rollup_tree(
+                db_path,
+                "O2-IN",
+                epic_original=120,
+                story_rows=[
+                    (
+                        "S1",
+                        40,
+                        [
+                            ("T1", 10, 30, "Sub-task"),
+                            ("B1", 5, 18, "Bug Subtask"),
+                        ],
+                    ),
+                ],
+            )
+
+            payload = build_monthly_epic_plan_payload(
+                db_path,
+                "2026-03",
+                [_planner_row("O2-IN", "Included Epic", "2026-03-01", "2026-03-31")],
+                "run-1",
+                selected_projects={"O2"},
+            )
+
+            overrun_detail = payload["estimate_rollup"]["by_epic"]["O2-IN"]["details_by_metric"]["overrun"][0]
+            self.assertEqual(overrun_detail["issue_key"], "O2-IN-S1")
+            self.assertEqual(overrun_detail["original_estimate_hours"], 40.0)
+            self.assertEqual(overrun_detail["logged_hours"], 48.0)
+            self.assertEqual(overrun_detail["overrun_hours"], 8.0)
+            self.assertEqual(overrun_detail["non_bug_logged_hours"], 30.0)
+            self.assertEqual(overrun_detail["non_bug_overrun_hours"], 0.0)
+            self.assertEqual(overrun_detail["bug_logged_hours"], 18.0)
+
     def test_service_excludes_epic_when_schedule_spans_month_but_no_endpoint_in_month(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             db_path = Path(td) / "assignee_hours_capacity.db"
@@ -733,9 +776,17 @@ class MonthlyEpicPlanProgressTests(unittest.TestCase):
         self.assertIn('id="est-overrun-bar"', html)
         self.assertIn('id="estimate-detail-overlay"', html)
         self.assertIn('id="estimate-detail-resize"', html)
+        self.assertIn('id="estimate-detail-controls"', html)
+        self.assertIn('id="estimate-detail-include-bugs"', html)
+        self.assertIn("Include bug subtasks", html)
         self.assertIn("function openEstimateDetail", html)
         self.assertIn("function renderEstimateDetailDrawer", html)
         self.assertIn("function estimateDetailRows", html)
+        self.assertIn("function estimateDetailDisplayedRows", html)
+        self.assertIn("estimateDetailIncludeBugSubtasks", html)
+        self.assertIn("non_bug_logged_hours", html)
+        self.assertIn("non_bug_overrun_hours", html)
+        self.assertIn("Main Story Overrun bars stay unchanged", html)
         self.assertIn("data-estimate-metric=\"subtask_logged\"", html)
         self.assertIn("estimate-detail-table", html)
         self.assertIn("TK planned", html)

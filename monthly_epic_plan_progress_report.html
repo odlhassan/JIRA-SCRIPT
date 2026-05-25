@@ -575,6 +575,37 @@
       font-weight: 600;
       line-height: 1.35;
     }
+    .estimate-detail-controls {
+      margin-top: 10px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px 14px;
+    }
+    .estimate-detail-controls[hidden] { display: none; }
+    .estimate-detail-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.84rem;
+      font-weight: 700;
+      color: #1f2937;
+      cursor: pointer;
+      user-select: none;
+    }
+    .estimate-detail-toggle input {
+      width: 16px;
+      height: 16px;
+      margin: 0;
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+    .estimate-detail-toggle-note {
+      color: var(--muted);
+      font-size: 0.76rem;
+      font-weight: 600;
+      line-height: 1.35;
+    }
     .estimate-detail-close {
       width: 36px;
       height: 36px;
@@ -3142,6 +3173,13 @@
         <div>
           <div class="estimate-detail-title" id="estimate-detail-title">Estimate Details</div>
           <div class="estimate-detail-subtitle" id="estimate-detail-subtitle">Work items considered for this stat.</div>
+          <div class="estimate-detail-controls" id="estimate-detail-controls" hidden>
+            <label class="estimate-detail-toggle" for="estimate-detail-include-bugs">
+              <input type="checkbox" id="estimate-detail-include-bugs">
+              <span>Include bug subtasks</span>
+            </label>
+            <div class="estimate-detail-toggle-note" id="estimate-detail-toggle-note">Applies only to this drawer.</div>
+          </div>
         </div>
         <button class="estimate-detail-close" id="estimate-detail-close" aria-label="Close estimate detail panel">
           <span class="material-symbols-outlined">close</span>
@@ -3295,6 +3333,9 @@
       estimateDetailResize: document.getElementById("estimate-detail-resize"),
       estimateDetailTitle: document.getElementById("estimate-detail-title"),
       estimateDetailSubtitle: document.getElementById("estimate-detail-subtitle"),
+      estimateDetailControls: document.getElementById("estimate-detail-controls"),
+      estimateDetailIncludeBugs: document.getElementById("estimate-detail-include-bugs"),
+      estimateDetailToggleNote: document.getElementById("estimate-detail-toggle-note"),
       estimateDetailClose: document.getElementById("estimate-detail-close"),
       estimateDetailBody: document.getElementById("estimate-detail-body"),
       dfToggleStart: document.getElementById("df-toggle-start"),
@@ -3649,6 +3690,7 @@
     let tableProjectFilterKey = "";
     let projectCardsFilterDelegationBound = false;
     let currentEstimateDetailMetric = "";
+    let estimateDetailIncludeBugSubtasks = false;
 
     function esc(value) {
       return String(value == null ? "" : value)
@@ -4117,9 +4159,50 @@
       }).join("") + '</div>';
     }
 
+    function estimateDetailDisplayedRows(metric, rows) {
+      const detailRows = estimateDetailRows(metric, rows);
+      if (metric !== "overrun") return detailRows;
+      return detailRows
+        .map((row) => {
+          const baseRow = row && typeof row === "object" ? row : {};
+          const includeBugSubtasks = !!estimateDetailIncludeBugSubtasks;
+          const loggedHours = includeBugSubtasks
+            ? Number(baseRow.logged_hours || 0)
+            : Number(baseRow.non_bug_logged_hours || 0);
+          const loggedDays = includeBugSubtasks
+            ? Number(baseRow.logged_days || 0)
+            : Number(baseRow.non_bug_logged_days || 0);
+          const overrunHours = includeBugSubtasks
+            ? Number(baseRow.overrun_hours || 0)
+            : Number(baseRow.non_bug_overrun_hours || 0);
+          const overrunDays = includeBugSubtasks
+            ? Number(baseRow.overrun_days || 0)
+            : Number(baseRow.non_bug_overrun_days || 0);
+          return Object.assign({}, baseRow, {
+            logged_hours: loggedHours,
+            logged_days: loggedDays,
+            overrun_hours: overrunHours,
+            overrun_days: overrunDays,
+          });
+        })
+        .filter((row) => Number(unit === "days" ? row.overrun_days : row.overrun_hours || 0) > 0);
+    }
+
     function renderEstimateDetailDrawer(metric, rows) {
       const meta = ESTIMATE_METRIC_META[metric] || ESTIMATE_METRIC_META.month_plan;
-      const detailRows = estimateDetailRows(metric, rows);
+      const detailRows = estimateDetailDisplayedRows(metric, rows);
+      const showBugToggle = metric === "overrun";
+      if (els.estimateDetailControls) {
+        els.estimateDetailControls.hidden = !showBugToggle;
+      }
+      if (els.estimateDetailIncludeBugs) {
+        els.estimateDetailIncludeBugs.checked = !!estimateDetailIncludeBugSubtasks;
+      }
+      if (els.estimateDetailToggleNote) {
+        els.estimateDetailToggleNote.textContent = showBugToggle
+          ? "Applies only to this drawer. Main Story Overrun bars stay unchanged."
+          : "Applies only to this drawer.";
+      }
       if (els.estimateDetailTitle) els.estimateDetailTitle.textContent = meta.title + " Work Items";
       if (els.estimateDetailSubtitle) {
         els.estimateDetailSubtitle.textContent = meta.description + " Showing " + detailRows.length + " work item" + (detailRows.length === 1 ? "" : "s") + " from the current report filters.";
@@ -4163,6 +4246,7 @@
     function openEstimateDetail(metric) {
       if (!els.estimateDetailOverlay) return;
       currentEstimateDetailMetric = metric || "month_plan";
+      estimateDetailIncludeBugSubtasks = false;
       renderEstimateDetailDrawer(currentEstimateDetailMetric, currentEstimateRows());
       els.estimateDetailOverlay.classList.add("is-open");
       document.body.style.overflow = "hidden";
@@ -4172,6 +4256,8 @@
       if (!els.estimateDetailOverlay) return;
       els.estimateDetailOverlay.classList.remove("is-open");
       currentEstimateDetailMetric = "";
+      estimateDetailIncludeBugSubtasks = false;
+      if (els.estimateDetailIncludeBugs) els.estimateDetailIncludeBugs.checked = false;
       document.body.style.overflow = "";
     }
 
@@ -5706,6 +5792,12 @@
       });
     });
     if (els.estimateDetailClose) els.estimateDetailClose.addEventListener("click", closeEstimateDetail);
+    if (els.estimateDetailIncludeBugs) {
+      els.estimateDetailIncludeBugs.addEventListener("change", () => {
+        estimateDetailIncludeBugSubtasks = !!els.estimateDetailIncludeBugs.checked;
+        if (currentEstimateDetailMetric) renderEstimateDetailDrawer(currentEstimateDetailMetric, currentEstimateRows());
+      });
+    }
     if (els.estimateDetailOverlay) {
       els.estimateDetailOverlay.addEventListener("click", (event) => {
         if (event.target === els.estimateDetailOverlay) closeEstimateDetail();
