@@ -42467,10 +42467,12 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                               AND {subtask_sql}
                               {bug_filter}
                               AND upper(ci.project_key) != 'RLT'
+                              AND ci.start_date != '' AND ci.due_date != ''
+                              AND ci.start_date <= ? AND ci.due_date >= ?
                               AND (upper(ci.epic_key) IN ({ek_ph}) OR upper(p.epic_key) IN ({ek_ph}))
                             ORDER BY COALESCE(NULLIF(ci.start_date,''), ci.due_date), ci.issue_key
                             """,
-                            [canonical_run_id, assignee] + in_range_epics + in_range_epics,
+                            [canonical_run_id, assignee, to_date, from_date] + in_range_epics + in_range_epics,
                         ).fetchall()
                     else:
                         rows = conn.execute(
