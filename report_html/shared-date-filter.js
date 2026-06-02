@@ -1,6 +1,11 @@
 (function () {
   if ((window.location.protocol || "").startsWith("file")) return;
 
+  // Pages that manage their own date range and should not be overridden by the global filter
+  var EXCLUDED_PATHS = ["/settings/team-capacity-planner"];
+  var currentPath = (window.location.pathname || "").replace(/\/+$/, "").toLowerCase();
+  if (EXCLUDED_PATHS.some(function (p) { return currentPath === p || currentPath.startsWith(p + "/"); })) return;
+
   var GLOBAL_DATE_FILTER_API = "/api/report-date-filter";
   var FILE_TO_PAGE_KEY = {
     "dashboard.html": "dashboard",
