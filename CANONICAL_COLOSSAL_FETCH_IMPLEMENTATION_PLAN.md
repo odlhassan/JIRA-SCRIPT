@@ -286,6 +286,8 @@ Implemented so far:
 - Employee Performance async refresh uses canonical rebuild flow instead of `epf_*` staging when canonical data exists
 - Leaves Planned Calendar refresh now rebuilds from canonical leave report
 - RLT Leave Report refresh now rebuilds directly from canonical DB
+- **Incremental sync-cache is now warmed per-issue inside the worklog fetch loop** — each issue+worklog pair is written to `jira_sync_cache.db` immediately after being fetched, so a subsequent smart refresh after a failed/cancelled run will skip already-fetched issues automatically (resume behaviour)
+- **Resume (Smart Refresh) banner** added to the Colossal Refresh settings UI — shown when the most recent run was `canceled` or `failed`; clicking it pre-fills the scope year from the last run and starts a smart refresh
 
 Key implementation location:
 

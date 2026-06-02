@@ -38,6 +38,7 @@
         { page_key: "original_estimates_hierarchy_report", title: "Epic Estimate Report", href: resolveReportHref("original_estimates_hierarchy_report.html"), icon: "schema", file: "original_estimates_hierarchy_report.html" },
         { page_key: "delayed_epic_chain_gantt", title: "Delayed Epic Chain Gantt", href: resolveReportHref("delayed_epic_chain_gantt_report.html"), icon: "timeline", file: "delayed_epic_chain_gantt_report.html" },
         { page_key: "monthly_epic_plan_progress", title: "Monthly Epic Plan vs Actual", href: resolveReportHref("monthly_epic_plan_progress_report.html"), icon: "event_available", file: "monthly_epic_plan_progress_report.html" },
+        { page_key: "support_center_report", title: "Support Center", href: resolveReportHref("support_center_report.html"), icon: "support_agent", file: "support_center_report.html" },
 
         { page_key: "ipp_meeting_dashboard", title: "IPP Meeting Dashboard", href: resolveReportHref("ipp_meeting_dashboard.html"), icon: "groups", file: "ipp_meeting_dashboard.html" }
       ],

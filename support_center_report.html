@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Support Center Report</title>
+  <link rel="stylesheet" href="/shared-nav.css">
+  <link rel="stylesheet" href="/material-symbols.css">
+  <style>
+    :root { --bg:#f3f6fb; --card:#fff; --line:#d7e0ea; --text:#1f2937; --muted:#64748b; --brand:#0f4c5c; --ok:#166534; --err:#991b1b; }
+    * { box-sizing:border-box; }
+    body { margin:0; font-family:"Segoe UI", Tahoma, sans-serif; color:var(--text); background:linear-gradient(180deg,#f7fbff,var(--bg)); }
+    .top { position:sticky; top:0; z-index:1200; border-bottom:1px solid #d5e3f0; background:rgba(247,251,255,.97); backdrop-filter:blur(4px); padding:10px 14px; }
+    .toolbar { max-width:1500px; margin:0 auto; display:flex; gap:8px; align-items:center; flex-wrap:wrap; border:1px solid #d5e3f0; border-radius:12px; background:#f8fbff; padding:8px 10px; }
+    .seg { font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; color:#334155; font-weight:800; }
+    .ctl { display:grid; gap:4px; min-width:150px; }
+    .ctl label { font-size:.7rem; text-transform:uppercase; letter-spacing:.04em; color:#35556a; font-weight:700; }
+    .ctl input, .ctl select { border:1px solid #b7c9d7; border-radius:8px; padding:7px 9px; background:#fff; color:#12313f; font-size:.85rem; }
+    .ctl select[multiple] { min-height:90px; }
+    .btn { border:1px solid #255f73; border-radius:8px; background:#0f4c5c; color:#fff; font-size:.84rem; font-weight:700; padding:8px 10px; cursor:pointer; }
+    .btn.alt { background:#fff; color:#255f73; }
+    .btn:disabled { opacity:.7; cursor:progress; }
+    .status { font-size:.78rem; color:#475569; min-height:18px; }
+    .page { max-width:1500px; margin:0 auto; padding:16px; display:grid; gap:12px; }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px; }
+    .title { margin:0; font-size:1.25rem; color:#0b3142; }
+    .meta { margin:6px 0 0; font-size:.84rem; color:var(--muted); }
+    .tabs { display:flex; gap:6px; flex-wrap:wrap; }
+    .tab { border:1px solid #b7c9d7; border-radius:999px; background:#fff; color:#255f73; font-size:.82rem; font-weight:700; padding:6px 14px; cursor:pointer; }
+    .tab.active { background:#0f4c5c; color:#fff; border-color:#255f73; }
+    .view { display:none; }
+    .view.active { display:grid; gap:12px; }
+    .kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:10px; }
+    .kpi { border:1px solid #dbe4ef; border-radius:12px; background:#fff; padding:12px 14px; display:grid; gap:4px; }
+    .kpi .label { font-size:.7rem; text-transform:uppercase; letter-spacing:.04em; color:#5b7186; font-weight:700; }
+    .kpi .value { font-size:1.5rem; font-weight:800; color:#0b3142; font-variant-numeric:tabular-nums; }
+    .kpi .sub { font-size:.74rem; color:#64748b; }
+    .kpi.accent { background:#ecfdf5; border-color:#a7f3d0; }
+    .kpi.invest { background:#eff6ff; border-color:#bfdbfe; }
+    .kpi.warn { background:#fff7ed; border-color:#fed7aa; }
+    .table-wrap { overflow:auto; border:1px solid #dbe4ef; border-radius:10px; background:#fff; }
+    table { width:100%; min-width:760px; border-collapse:collapse; }
+    th, td { border-bottom:1px solid #e4ebf3; padding:6px 8px; text-align:left; vertical-align:top; font-size:.8rem; line-height:1.25; }
+    th { position:sticky; top:0; background:#f4f8fd; color:#1e3a52; z-index:1; font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; }
+    td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; }
+    .proj-link { color:#1d4ed8; cursor:pointer; font-weight:700; text-decoration:underline; background:none; border:none; font:inherit; padding:0; }
+    .jira-id { font-family:Consolas,monospace; font-size:.7rem; color:#475569; }
+    .assignee { font-size:.7rem; color:#1d4ed8; border:1px solid #bfdbfe; border-radius:999px; padding:1px 6px; background:#eff6ff; white-space:nowrap; }
+    .pill { font-size:.68rem; border-radius:999px; padding:1px 8px; white-space:nowrap; }
+    .pill.done { color:#166534; background:#dcfce7; border:1px solid #bbf7d0; }
+    .pill.open { color:#92400e; background:#fef3c7; border:1px solid #fde68a; }
+    .sub-row td { background:#fbfdff; }
+    .section-title { margin:0 0 8px; font-size:1rem; color:#0b3142; }
+    .empty { padding:18px; text-align:center; color:#64748b; }
+    details.story { border:1px solid #e4ebf3; border-radius:8px; margin-bottom:6px; background:#fff; }
+    details.story > summary { cursor:pointer; padding:8px 10px; list-style:none; display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+    details.story > summary::-webkit-details-marker { display:none; }
+    .hidden { display:none !important; }
+  </style>
+</head>
+<body>
+  <div class="top">
+    <div class="toolbar">
+      <span class="seg">Filters</span>
+      <div class="ctl"><label for="from-date">From</label><input id="from-date" type="date"></div>
+      <div class="ctl"><label for="to-date">To</label><input id="to-date" type="date"></div>
+      <div class="ctl"><label for="projects">Projects</label><select id="projects" multiple title="Select projects to filter. Hover an option to see the Jira project key."></select></div>
+      <button id="apply-btn" class="btn" type="button">Apply</button>
+      <button id="reset-btn" class="btn alt" type="button">Reset</button>
+      <span id="status" class="status" aria-live="polite"></span>
+    </div>
+  </div>
+  <main class="page">
+    <section class="card">
+      <h1 class="title">Support Center Report</h1>
+      <p class="meta">Where the Technical Support Team's available hours are actually spent: hours available (capacity), hours invested (support subtask worklogs), and resolved support stories. Booking stories are shown as a roster.</p>
+      <p class="meta" id="meta-updated"></p>
+      <div class="tabs" style="margin-top:10px">
+        <button class="tab active" data-view="birdseye" type="button">Birds-eye</button>
+        <button class="tab" data-view="project" type="button">Project drilldown</button>
+      </div>
+    </section>
+
+    <section class="view active" id="view-birdseye">
+      <div class="card">
+        <div class="kpis" id="kpis">
+          <div class="kpi accent"><span class="label">Hours Available</span><span class="value" id="kpi-available">-</span><span class="sub" id="kpi-available-sub"></span></div>
+          <div class="kpi invest"><span class="label">Hours Invested</span><span class="value" id="kpi-invested">-</span><span class="sub" id="kpi-invested-sub"></span></div>
+          <div class="kpi"><span class="label">Utilization</span><span class="value" id="kpi-util">-</span><span class="sub">invested / available</span></div>
+          <div class="kpi"><span class="label">Resolved Support Stories</span><span class="value" id="kpi-resolved">-</span><span class="sub" id="kpi-resolved-sub"></span></div>
+          <div class="kpi warn"><span class="label">Support Members</span><span class="value" id="kpi-members">-</span><span class="sub">capacity contributors</span></div>
+        </div>
+      </div>
+      <div class="card">
+        <h2 class="section-title">By project</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr>
+              <th>Project</th><th class="num">Support Stories</th><th class="num">Resolved</th><th class="num">Subtasks</th><th class="num">Invested (h)</th><th class="num">Invested (d)</th>
+            </tr></thead>
+            <tbody id="by-project-body"><tr><td colspan="6" class="empty">Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card">
+        <h2 class="section-title">Support roster (booking stories)</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Project</th><th>Assignee</th><th>Booked For</th><th>Booking Story</th></tr></thead>
+            <tbody id="roster-body"><tr><td colspan="4" class="empty">Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="view" id="view-project">
+      <div class="card">
+        <h2 class="section-title">Project support center</h2>
+        <p class="meta">Birds-eye view se kisi project ka naam click karein, ya yahan project select karke Apply karein.</p>
+        <div class="kpis" id="proj-kpis" style="margin-top:8px">
+          <div class="kpi"><span class="label">Project</span><span class="value" id="pk-project">-</span></div>
+          <div class="kpi"><span class="label">Support Stories</span><span class="value" id="pk-stories">-</span></div>
+          <div class="kpi"><span class="label">Resolved</span><span class="value" id="pk-resolved">-</span></div>
+          <div class="kpi invest"><span class="label">Invested (h)</span><span class="value" id="pk-invested">-</span><span class="sub" id="pk-invested-sub"></span></div>
+        </div>
+      </div>
+      <div class="card">
+        <h2 class="section-title">Actual support stories &amp; subtasks</h2>
+        <div id="proj-stories"><div class="empty">Select a project to view detail.</div></div>
+      </div>
+      <div class="card">
+        <h2 class="section-title">Support roster (booking stories)</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Assignee</th><th>Booked For</th><th>Booking Story</th></tr></thead>
+            <tbody id="proj-roster-body"><tr><td colspan="3" class="empty">No data.</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    (function () {
+      const $ = (id) => document.getElementById(id);
+      const st = { view: "birdseye", activeProject: "" };
+
+      function esc(v){ return String(v == null ? "" : v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+      function txt(v){ return String(v == null ? "" : v).trim(); }
+      function n(v){ const x = Number(v); return Number.isFinite(x) ? x : 0; }
+      function h2(v){ return n(v).toFixed(2); }
+      function selectedValues(id){ return Array.from($(id).selectedOptions || []).map((o)=>txt(o.value)).filter(Boolean); }
+      function setStatus(msg, cls){
+        const el = $("status");
+        el.textContent = msg || "";
+        el.style.color = cls === "err" ? "var(--err)" : (cls === "ok" ? "var(--ok)" : "#475569");
+      }
+      function fillSelect(id, values, selected){
+        const sel = $(id);
+        const wanted = new Set((Array.isArray(selected) ? selected : []).map((v)=>txt(v).toLowerCase()));
+        sel.innerHTML = "";
+        (Array.isArray(values) ? values : []).forEach((val)=>{
+          const v = txt(val);
+          if (!v) return;
+          const op = document.createElement("option");
+          op.value = v; op.textContent = v;
+          if (wanted.has(v.toLowerCase())) op.selected = true;
+          sel.appendChild(op);
+        });
+      }
+      function rangeQuery(){
+        const p = new URLSearchParams();
+        p.set("from", $("from-date").value || "");
+        p.set("to", $("to-date").value || "");
+        return p;
+      }
+      function statusPill(isResolved, status){
+        const cls = isResolved ? "done" : "open";
+        return `<span class="pill ${cls}">${esc(status || (isResolved ? "Done" : "Open"))}</span>`;
+      }
+
+      function switchView(view){
+        st.view = view;
+        document.querySelectorAll(".tab").forEach((t)=> t.classList.toggle("active", t.dataset.view === view));
+        $("view-birdseye").classList.toggle("active", view === "birdseye");
+        $("view-project").classList.toggle("active", view === "project");
+      }
+
+      async function loadProjects(){
+        const res = await fetch("/api/projects?include_inactive=0", { cache: "no-store" });
+        const data = await res.json().catch(()=>({}));
+        let list = [];
+        if (Array.isArray(data)) list = data;
+        else if (Array.isArray(data.projects)) list = data.projects;
+        // Build key→name map; store globally for table rendering
+        window._projectMap = {};
+        list.forEach((p)=>{
+          if (typeof p === "object" && p.project_key) {
+            window._projectMap[txt(p.project_key).toUpperCase()] = txt(p.project_name || p.project_key);
+          }
+        });
+        const sel = $("projects");
+        sel.innerHTML = "";
+        // Sort by project name for leadership readability
+        const sorted = list
+          .filter((p)=> typeof p === "object" && txt(p.project_key || p.key || p.code))
+          .sort((a, b)=> txt(a.project_name || a.project_key).localeCompare(txt(b.project_name || b.project_key)));
+        sorted.forEach((p)=>{
+          const key = txt(p.project_key || p.key || p.code);
+          const name = txt(p.project_name || key);
+          const op = document.createElement("option");
+          op.value = key;
+          op.textContent = name === key ? name : `${name}`;
+          op.title = key;
+          sel.appendChild(op);
+        });
+      }
+
+      function renderOverview(data){
+        const b = data.birds_eye || {};
+        $("kpi-available").textContent = h2(b.available_hours);
+        $("kpi-available-sub").textContent = `${h2(b.available_days)} days`;
+        $("kpi-invested").textContent = h2(b.invested_hours);
+        $("kpi-invested-sub").textContent = `${h2(b.invested_days)} days`;
+        $("kpi-util").textContent = `${h2(b.utilization_pct)}%`;
+        $("kpi-resolved").textContent = n(b.resolved_support_stories);
+        $("kpi-resolved-sub").textContent = `${n(b.support_story_count)} in range`;
+        $("kpi-members").textContent = n(b.support_member_count);
+
+        const pb = $("by-project-body");
+        const rows = Array.isArray(data.by_project) ? data.by_project : [];
+        const pmap = window._projectMap || {};
+        if (!rows.length){ pb.innerHTML = '<tr><td colspan="6" class="empty">No support activity in this range.</td></tr>'; }
+        else {
+          pb.innerHTML = rows.map((r)=>{
+            const pname = esc(r.project_name || pmap[txt(r.project_key).toUpperCase()] || r.project_key);
+            return `
+            <tr>
+              <td><button class="proj-link" data-project="${esc(r.project_key)}" title="${esc(r.project_key)}">${pname}</button></td>
+              <td class="num">${n(r.story_count)}</td>
+              <td class="num">${n(r.resolved_count)}</td>
+              <td class="num">${n(r.subtask_count)}</td>
+              <td class="num">${h2(r.invested_hours)}</td>
+              <td class="num">${h2(r.invested_days)}</td>
+            </tr>`;
+          }).join("");
+          pb.querySelectorAll(".proj-link").forEach((el)=> el.addEventListener("click", ()=> openProject(el.dataset.project)));
+        }
+
+        renderRoster($("roster-body"), data.roster, true);
+      }
+
+      function renderRoster(tbody, roster, withProject){
+        const list = Array.isArray(roster) ? roster : [];
+        const pmap = window._projectMap || {};
+        const cols = withProject ? 4 : 3;
+        if (!list.length){ tbody.innerHTML = `<tr><td colspan="${cols}" class="empty">No booking stories in this range.</td></tr>`; return; }
+        tbody.innerHTML = list.map((r)=>{
+          const pname = esc(r.project_name || pmap[txt(r.project_key).toUpperCase()] || r.project_key);
+          return `
+          <tr>
+            ${withProject ? `<td title="${esc(r.project_key)}">${pname}</td>` : ""}
+            <td><span class="assignee">${esc(r.assignee || "Unassigned")}</span></td>
+            <td>${esc(r.booked_for)}</td>
+            <td><span class="jira-id">${esc(r.issue_key)}</span> ${esc(r.summary)}</td>
+          </tr>`;
+        }).join("");
+      }
+
+      function renderProjectDetail(data){
+        const s = data.summary || {};
+        const pmap = window._projectMap || {};
+        const pk = txt(data.project_key);
+        const pname = pmap[pk.toUpperCase()] || pk;
+        $("pk-project").textContent = pname || "-";
+        $("pk-project").title = pk;
+        $("pk-stories").textContent = n(s.story_count);
+        $("pk-resolved").textContent = n(s.resolved_count);
+        $("pk-invested").textContent = h2(s.invested_hours);
+        $("pk-invested-sub").textContent = `${h2(s.invested_days)} days`;
+
+        const wrap = $("proj-stories");
+        const stories = Array.isArray(data.stories) ? data.stories : [];
+        if (!stories.length){ wrap.innerHTML = '<div class="empty">No actual support stories in this range for this project.</div>'; }
+        else {
+          wrap.innerHTML = stories.map((story)=>{
+            const subs = Array.isArray(story.subtasks) ? story.subtasks : [];
+            const subRows = subs.length ? subs.map((sub)=>`
+              <tr class="sub-row">
+                <td><span class="jira-id">${esc(sub.issue_key)}</span></td>
+                <td>${esc(sub.issue_type)}</td>
+                <td>${esc(sub.summary)}</td>
+                <td><span class="assignee">${esc(sub.assignee || "Unassigned")}</span></td>
+                <td>${statusPill(false, sub.status)}</td>
+                <td class="num">${h2(sub.logged_hours)}</td>
+                <td>${esc(sub.actual_complete_date)}</td>
+              </tr>`).join("") : '<tr><td colspan="7" class="empty">No subtasks.</td></tr>';
+            return `
+              <details class="story">
+                <summary>
+                  <span class="material-symbols-outlined" aria-hidden="true">support_agent</span>
+                  <span class="jira-id">${esc(story.issue_key)}</span>
+                  <strong>${esc(story.summary)}</strong>
+                  <span class="assignee">${esc(story.assignee || "Unassigned")}</span>
+                  ${statusPill(story.is_resolved, story.status)}
+                  <span class="meta">Completed: ${esc(story.actual_completion_date) || "-"}</span>
+                  <span class="meta">Invested: ${h2(story.invested_hours)}h</span>
+                  <span class="meta">Subtasks: ${n(story.subtask_count)}</span>
+                </summary>
+                <div class="table-wrap" style="margin:8px 10px 10px">
+                  <table>
+                    <thead><tr><th>Key</th><th>Type</th><th>Summary</th><th>Assignee</th><th>Status</th><th class="num">Logged (h)</th><th>Completed</th></tr></thead>
+                    <tbody>${subRows}</tbody>
+                  </table>
+                </div>
+              </details>`;
+          }).join("");
+        }
+
+        renderRoster($("proj-roster-body"), data.roster, false);
+      }
+
+      async function loadOverview(){
+        setStatus("Loading overview...", "");
+        const p = rangeQuery();
+        const projects = selectedValues("projects");
+        if (projects.length) p.set("projects", projects.join(","));
+        const res = await fetch(`/api/support-center/overview?${p.toString()}`, { cache: "no-store" });
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || "Failed to load overview.");
+        $("meta-updated").textContent = `Range: ${txt(data.range && data.range.from)} -> ${txt(data.range && data.range.to)}`;
+        renderOverview(data);
+        setStatus("Loaded.", "ok");
+      }
+
+      async function loadProjectDetail(projectKey){
+        const key = txt(projectKey);
+        if (!key){ setStatus("Pick a project first.", "err"); return; }
+        st.activeProject = key;
+        const pmap = window._projectMap || {};
+        const pname = pmap[key.toUpperCase()] || key;
+        setStatus(`Loading ${pname}...`, "");
+        const p = rangeQuery();
+        const res = await fetch(`/api/support-center/project/${encodeURIComponent(key)}?${p.toString()}`, { cache: "no-store" });
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || "Failed to load project detail.");
+        renderProjectDetail(data);
+        setStatus("Loaded.", "ok");
+      }
+
+      function openProject(projectKey){
+        switchView("project");
+        const sel = $("projects");
+        Array.from(sel.options).forEach((o)=> o.selected = (o.value === projectKey));
+        loadProjectDetail(projectKey).catch((err)=> setStatus(err.message || String(err), "err"));
+      }
+
+      document.querySelectorAll(".tab").forEach((t)=> t.addEventListener("click", ()=>{
+        switchView(t.dataset.view);
+        if (t.dataset.view === "project" && st.activeProject){
+          loadProjectDetail(st.activeProject).catch((err)=> setStatus(err.message || String(err), "err"));
+        }
+      }));
+
+      $("apply-btn").addEventListener("click", async ()=>{
+        try {
+          if (st.view === "project"){
+            const projects = selectedValues("projects");
+            await loadProjectDetail(projects[0] || st.activeProject);
+          } else {
+            await loadOverview();
+          }
+        } catch (err){ setStatus(err.message || String(err), "err"); }
+      });
+      $("reset-btn").addEventListener("click", async ()=>{
+        try {
+          const now = new Date();
+          const y = now.getFullYear(), m = String(now.getMonth() + 1).padStart(2, "0");
+          const lastDay = new Date(y, now.getMonth() + 1, 0).getDate();
+          $("from-date").value = `${y}-${m}-01`;
+          $("to-date").value = `${y}-${m}-${String(lastDay).padStart(2, "0")}`;
+          await loadProjects();
+          switchView("birdseye");
+          await loadOverview();
+          setStatus("Filters reset.", "ok");
+        } catch (err){ setStatus(err.message || String(err), "err"); }
+      });
+
+      (async function init(){
+        try {
+          // Default to current month so leadership sees live data
+          const now = new Date();
+          const y = now.getFullYear(), m = String(now.getMonth() + 1).padStart(2, "0");
+          const lastDay = new Date(y, now.getMonth() + 1, 0).getDate();
+          if (!$("from-date").value) $("from-date").value = `${y}-${m}-01`;
+          if (!$("to-date").value) $("to-date").value = `${y}-${m}-${String(lastDay).padStart(2, "0")}`;
+          await loadProjects();
+          await loadOverview();
+        } catch (err){
+          setStatus(err.message || String(err), "err");
+        }
+      })();
+    })();
+  </script>
+  <script src="/shared-date-filter.js"></script>
+  <script src="/shared-nav.js"></script>
+</body>
+</html>

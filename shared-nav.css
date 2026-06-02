@@ -101,6 +101,11 @@ body.unified-nav-enabled {
   cursor: pointer;
   font-size: 1rem;
   line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 0;
 }
 
 .unified-nav-body {

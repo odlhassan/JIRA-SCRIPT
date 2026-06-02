@@ -20,6 +20,8 @@ import uuid
 from pathlib import Path
 from urllib.parse import unquote
 
+import requests
+
 from flask import Flask, jsonify, redirect, request, send_file
 from openpyxl import Workbook, load_workbook
 from generate_assignee_hours_report import (
@@ -193,6 +195,11 @@ from monthly_epic_plan_progress_service import (
     load_support_team,
     save_support_team,
 )
+from support_center_service import (
+    build_support_center_overview,
+    build_support_center_project_detail,
+)
+from support_center_sync import resolve_db_path as resolve_support_center_db_path
 from jira_incremental_cache import (
     get_db_path as incremental_cache_db_path,
     init_db as incremental_cache_init_db,
@@ -230,6 +237,7 @@ REPORT_FILENAME_TO_ID: dict[str, str] = {
     "original_estimates_hierarchy_report.html": "original_estimates_hierarchy",
     "delayed_epic_chain_gantt_report.html": "delayed_epic_chain_gantt",
     "monthly_epic_plan_progress_report.html": "monthly_epic_plan_progress",
+    "support_center_report.html": "support_center",
     "team_capacity_planner.html": "team_capacity_planner",
 }
 
@@ -305,6 +313,10 @@ REPORT_REFRESH_CHAINS: dict[str, list[str]] = {
     "delayed_epic_chain_gantt": [],
     # This report is API-driven and DB-backed.
     "monthly_epic_plan_progress": [],
+    "support_center": [
+        "support_center_sync.py",
+        "generate_support_center_report.py",
+    ],
 }
 
 EPF_DEFAULT_RETENTION_RUNS = 5
@@ -365,6 +377,7 @@ STATIC_REPORT_NAV_ITEMS: list[dict[str, object]] = [
     {"page_key": "original_estimates_hierarchy_report", "title": "Epic Estimate Report", "href": "/original_estimates_hierarchy_report.html", "icon": "schema", "file": "original_estimates_hierarchy_report.html", "default_nav_order": 130, "page_type": "report"},
     {"page_key": "delayed_epic_chain_gantt", "title": "Delayed Epic Chain Gantt", "href": "/delayed_epic_chain_gantt_report.html", "icon": "timeline", "file": "delayed_epic_chain_gantt_report.html", "default_nav_order": 140, "page_type": "report"},
     {"page_key": "monthly_epic_plan_progress", "title": "Monthly Epic Plan vs Actual", "href": "/monthly_epic_plan_progress_report.html", "icon": "event_available", "file": "monthly_epic_plan_progress_report.html", "default_nav_order": 145, "page_type": "report"},
+    {"page_key": "support_center_report", "title": "Support Center", "href": "/support_center_report.html", "icon": "support_agent", "file": "support_center_report.html", "default_nav_order": 146, "page_type": "report"},
     {"page_key": "team_capacity_planner", "title": "Team Capacity Planner", "href": TCP_SETTINGS_ROUTE, "icon": "group_work", "path": TCP_SETTINGS_ROUTE, "default_nav_order": 147, "page_type": "configuration"},
     {"page_key": "ipp_meeting_dashboard", "title": "IPP Meeting Dashboard", "href": "/ipp_meeting_dashboard.html", "icon": "groups", "file": "ipp_meeting_dashboard.html", "default_nav_order": 150, "page_type": "report"},
 ]
@@ -1618,6 +1631,39 @@ SQL_CONSOLE_ALLOWED_PRAGMAS = {
 }
 SQL_CONSOLE_MAX_ROWS = 500
 SQL_CONSOLE_EXPORT_MAX_ROWS = 20000
+SQL_CONSOLE_PREVIEW_ROWS = 10
+
+SQL_CONSOLE_DATABASE_INFO: dict[str, dict[str, str]] = {
+    "canonical": {
+        "key": "canonical",
+        "label": "Canonical DB",
+        "file": "assignee_hours_capacity.db",
+        "description": "Authoritative Jira sync snapshot and planning store: canonical issues, worklogs, refresh runs, and the epics planner tables that drive most reports.",
+    },
+    "exports": {
+        "key": "exports",
+        "label": "Exports DB",
+        "file": "jira_exports.db",
+        "description": "Flattened export tables produced for reporting: work items and subtask worklogs used by spreadsheet exports and downstream views.",
+    },
+    "support_center": {
+        "key": "support_center",
+        "label": "Support Center DB",
+        "file": "support_center.db",
+        "description": "Support-tagged Jira issues synced for the Support Center report (Work Type EPR = Support).",
+    },
+}
+
+SQL_CONSOLE_TABLE_DESCRIPTIONS: dict[str, str] = {
+    "canonical_issues": "One row per Jira issue in the latest sync run: keys, project, type, status, assignee, dates, and original estimate hours.",
+    "canonical_worklogs": "Individual worklog entries (hours logged per issue per date) tied to a refresh run.",
+    "canonical_refresh_runs": "History of canonical sync runs with status, scope year, and start/end timestamps.",
+    "canonical_refresh_state": "Pointer to the last successful canonical run id used by reports as the active snapshot.",
+    "oeh_epics": "Epics tracked by the Epics Planner: keys, project, summary, status, assignee, planned dates, and estimates.",
+    "work_items": "Flattened work-item rows used by exports: issue key, project, status, assignee, and update timestamps.",
+    "subtask_worklogs": "Per-subtask worklog totals used by export and capacity reports.",
+    "support_issues": "Support-tagged issues synced for the Support Center report, including work type value and sync timestamp.",
+}
 
 
 def _sql_console_split_statements(sql: str) -> list[str]:
@@ -1740,11 +1786,137 @@ def _sql_console_target_path(base_dir: Path, canonical_db_path: Path, database_k
         return key, canonical_db_path
     if key == "exports":
         return key, _resolve_exports_db_path(base_dir)
-    raise ValueError("database must be 'canonical' or 'exports'.")
+    if key == "support_center":
+        return key, resolve_support_center_db_path()
+    raise ValueError("database must be 'canonical', 'exports', or 'support_center'.")
 
 
 def _sqlite_readonly_uri(db_path: Path) -> str:
     return db_path.resolve().as_uri().replace("file:///", "file:/") + "?mode=ro"
+
+
+SQL_CONSOLE_DEFAULT_OPENAI_MODEL = "gpt-4.1-mini"
+SQL_CONSOLE_OPENAI_URL = "https://api.openai.com/v1/responses"
+
+
+def _sql_console_schema_brief(conn: sqlite3.Connection) -> list[tuple[str, list[str]]]:
+    tables: list[tuple[str, list[str]]] = []
+    rows = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+    ).fetchall()
+    for row in rows:
+        name = _to_text(row[0])
+        escaped = name.replace('"', '""')
+        cols = [
+            f"{_to_text(col[1])} {_to_text(col[2])}" if _to_text(col[2]) else _to_text(col[1])
+            for col in conn.execute(f'PRAGMA table_info("{escaped}")').fetchall()
+        ]
+        tables.append((name, cols))
+    return tables
+
+
+def _sql_console_extract_backtick_phrases(prompt: str) -> list[str]:
+    return [phrase.strip() for phrase in re.findall(r"`([^`]+)`", prompt) if phrase.strip()]
+
+
+def _sql_console_resolve_entity_hints(conn: sqlite3.Connection, prompt: str) -> list[str]:
+    phrases = _sql_console_extract_backtick_phrases(prompt)
+    if not phrases:
+        return []
+    has_epics = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'oeh_epics' LIMIT 1"
+    ).fetchone()
+    if not has_epics:
+        return []
+    hints: list[str] = []
+    seen: set[str] = set()
+    for phrase in phrases:
+        try:
+            rows = conn.execute(
+                "SELECT epic_key, summary FROM oeh_epics WHERE summary = ? OR summary LIKE ? LIMIT 5",
+                (phrase, f"%{phrase}%"),
+            ).fetchall()
+        except sqlite3.Error:
+            continue
+        for row in rows:
+            token = f"epic_key={_to_text(row[0])}, summary={_to_text(row[1])}"
+            if token not in seen:
+                seen.add(token)
+                hints.append(token)
+    return hints
+
+
+_SQL_CONSOLE_JOIN_HINTS = """\
+Key relationships for joining tables:
+- oeh_subtasks.subtask_key = canonical_worklogs.issue_key  (subtask worklog hours)
+- oeh_subtasks.subtask_key = canonical_issues.issue_key    (total_hours_logged on an issue)
+- oeh_subtasks.epic_key    = oeh_epics.epic_key
+- oeh_subtasks.story_key   = oeh_stories.story_key
+- oeh_stories.epic_key     = oeh_epics.epic_key
+- canonical_worklogs.issue_key = canonical_issues.issue_key
+- canonical_issue_actuals.issue_key = canonical_issues.issue_key  (total_worklog_hours per issue)
+- canonical_hierarchy_summary.issue_key = canonical_issues.issue_key
+- epics_management.epic_key = oeh_epics.epic_key
+- canonical_issues.run_id = canonical_refresh_runs.run_id
+Use SUM(canonical_worklogs.hours_logged) to aggregate worklog hours for subtasks/issues.\
+"""
+
+
+def _sql_console_build_generation_input(
+    database_name: str,
+    schema: list[tuple[str, list[str]]],
+    entity_hints: list[str],
+    prompt: str,
+) -> str:
+    schema_lines = [f"{name}({', '.join(cols)})" for name, cols in schema]
+    parts = [
+        "You are a SQL assistant for a strictly read-only SQLite database.",
+        (
+            "Translate the user's request into exactly one read-only SQLite statement "
+            "(SELECT, WITH, EXPLAIN, or a schema PRAGMA). Never emit INSERT, UPDATE, "
+            "DELETE, or any DDL. Return only the SQL text with no explanation and no "
+            "markdown code fences."
+        ),
+        (
+            "CRITICAL: Only reference columns that are explicitly listed in the schema "
+            "below. Never invent, guess, or use column names that do not appear in the "
+            "schema. If a concept (e.g. 'worklog hours') requires joining to another "
+            "table (e.g. canonical_worklogs), write the join — do not assume a "
+            "shortcut column exists on the primary table."
+        ),
+        f"Target database: {database_name}",
+        "Schema (each line is table(column_name column_type, ...)):",
+        "\n".join(schema_lines) if schema_lines else "(no tables)",
+        _SQL_CONSOLE_JOIN_HINTS,
+    ]
+    if entity_hints:
+        parts.append("Resolved entity hints from the database (prefer these exact keys/values):")
+        parts.append("\n".join(f"- {hint}" for hint in entity_hints))
+    parts.append("User request:")
+    parts.append(prompt)
+    return "\n\n".join(parts)
+
+
+def _sql_console_extract_model_sql(payload: object) -> str:
+    if not isinstance(payload, dict):
+        return ""
+    text = payload.get("output_text")
+    if isinstance(text, str) and text.strip():
+        collected = text
+    else:
+        chunks: list[str] = []
+        for item in payload.get("output") or []:
+            if not isinstance(item, dict):
+                continue
+            for content in item.get("content") or []:
+                if isinstance(content, dict) and content.get("type") == "output_text":
+                    chunks.append(_to_text(content.get("text")))
+        collected = "".join(chunks)
+    collected = collected.strip()
+    if collected.startswith("```"):
+        collected = re.sub(r"^```[a-zA-Z]*\s*", "", collected)
+        collected = re.sub(r"\s*```$", "", collected).strip()
+    return collected
 
 
 def _epf_retention_runs() -> int:
@@ -5831,6 +6003,11 @@ def _run_canonical_phase1_refresh(
             current_detail=f"{len(worklog_fetch_keys)} issues to check",
             stage_counts={"worklog_fetch_candidates": len(worklog_fetch_keys)},
         )
+        raw_issues_by_key: dict[str, dict] = {
+            _to_text(issue.get("key")).upper(): issue
+            for issue in detailed_issues
+            if issue and _to_text(issue.get("key"))
+        }
         worklogs_by_issue: dict[str, list[dict]] = {}
         total_fetch_count = len(fetch_issue_keys)
         for idx, issue_key in enumerate(fetch_issue_keys):
@@ -5843,6 +6020,12 @@ def _run_canonical_phase1_refresh(
                 print(f"[canonical-refresh] WARNING: skipping worklogs for {issue_key}: {_wl_err}")
                 fetched_worklogs = []
             worklogs_by_issue[issue_key] = fetched_worklogs
+            _raw_issue = raw_issues_by_key.get(issue_key)
+            if _raw_issue:
+                try:
+                    _canonical_update_incremental_cache(sync_db_path, [_raw_issue], {issue_key: fetched_worklogs})
+                except Exception as _cache_err:
+                    print(f"[canonical-refresh] WARNING: incremental cache update failed for {issue_key}: {_cache_err}")
             cached_worklog_updated = _to_text((sync_cache_state.get(issue_key) or {}).get("cached_worklog_updated_utc"))
             latest_worklog_updated = ""
             for worklog_row in fetched_worklogs:
@@ -5868,9 +6051,6 @@ def _run_canonical_phase1_refresh(
             to_date=to_date,
         )
         completed_stages.add("fetching_worklogs")
-
-        if detailed_issues:
-            _canonical_update_incremental_cache(sync_db_path, detailed_issues, worklogs_by_issue)
 
         if effective_mode == "smart" and previous_run_id:
             baseline_issue_rows, baseline_link_rows, baseline_worklog_rows = _canonical_load_previous_base_rows(
@@ -5938,10 +6118,11 @@ def _run_canonical_phase1_refresh(
                 "JIRA_EMP_PERF_CANONICAL_RUN_ID": run_id,
             }
             report_base_dir = db_path.parent
-            for script_name in ("generate_rlt_leave_report.py", "generate_employee_performance_report.py"):
+            for script_name in ("generate_rlt_leave_report.py", "generate_employee_performance_report.py", "support_center_sync.py"):
                 if _canonical_is_cancel_requested(db_path, run_id):
                     return _cancel("generating_reports")
-                code, stdout, stderr = _run_script(script_name, report_base_dir, env_overrides=report_env)
+                env_overrides = report_env if script_name != "support_center_sync.py" else None
+                code, stdout, stderr = _run_script(script_name, report_base_dir, env_overrides=env_overrides)
                 report_gen_stats[script_name] = {"exit_code": code}
                 if code != 0:
                     report_gen_stats[script_name]["error"] = _to_text(stderr)[-500:]
@@ -10052,6 +10233,32 @@ def _canonical_refresh_settings_html() -> str:
     }}
     .prepare-offline-progress {{ margin: 12px 0; color: var(--muted); font-size: .9rem; }}
     .prepare-offline-actions {{ display: flex; gap: 10px; margin-top: 14px; }}
+    .resume-banner {{
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: #fffbeb;
+      border: 1px solid #fde68a;
+      border-radius: 12px;
+      padding: 12px 16px;
+      margin-top: 12px;
+      color: #92400e;
+      font-size: .88rem;
+      flex-wrap: wrap;
+    }}
+    .resume-banner > .material-symbols-outlined {{
+      color: #b45309;
+      font-size: 1.3rem;
+      flex-shrink: 0;
+    }}
+    .resume-text {{ flex: 1; min-width: 200px; }}
+    .btn.resume {{
+      border-color: #0f766e;
+      background: linear-gradient(135deg, #0f766e, #0ea5a4);
+      color: #fff;
+      font-size: .85rem;
+      padding: 8px 14px;
+    }}
     @media (max-width: 980px) {{
       .controls {{ grid-template-columns: 1fr; }}
       .prepare-offline-fields {{ grid-template-columns: 1fr; }}
@@ -10106,6 +10313,15 @@ def _canonical_refresh_settings_html() -> str:
         <span id="managed-project-pill" class="pill">Loading managed projects...</span>
         <span id="run-mode-pill" class="pill">Mode: -</span>
         <span id="run-year-pill" class="pill">Year: -</span>
+      </div>
+
+      <div id="resume-banner" class="resume-banner" style="display:none;" role="status" aria-live="polite">
+        <span class="material-symbols-outlined">history</span>
+        <span id="resume-banner-text" class="resume-text">Last run was interrupted.</span>
+        <button id="resume-btn" class="btn resume" type="button">
+          <span class="material-symbols-outlined">play_arrow</span>
+          Resume (Smart Refresh)
+        </button>
       </div>
 
       <div id="status"></div>
@@ -10269,6 +10485,7 @@ def _canonical_refresh_settings_html() -> str:
     const metaUpdated = document.getElementById("meta-updated");
     const metaEnded = document.getElementById("meta-ended");
     let activeRunId = "";
+    let activeRunYear = "";
     let pollTimer = 0;
     let busyModalPollTimer = 0;
 
@@ -10467,9 +10684,20 @@ def _canonical_refresh_settings_html() -> str:
       renderStages(stats.stages || []);
       renderItems(stats.items || []);
       const statusValue = String(item.status || "").toLowerCase();
+      activeRunYear = String(item.scope_year || "");
       abandonStaleBtn.disabled = !item.abandon_eligible;
       abandonStaleBtn.title = abandonStaleTitle(item);
       setBusy(statusValue === "running" || statusValue === "cancel_requested");
+      const resumeBanner = document.getElementById("resume-banner");
+      const resumeBannerText = document.getElementById("resume-banner-text");
+      const isResumable = (statusValue === "canceled" || statusValue === "failed") && activeRunYear;
+      if (isResumable) {{
+        const yearLabel = activeRunYear ? ` for ${{activeRunYear}}` : "";
+        resumeBannerText.textContent = `Last run${{yearLabel}} was ${{labelize(statusValue)}}. Resume with Smart Refresh to skip already-fetched issues and pick up where it left off.`;
+        resumeBanner.style.display = "";
+      }} else {{
+        resumeBanner.style.display = "none";
+      }}
     }}
 
     function clearPolling() {{
@@ -10668,6 +10896,10 @@ def _canonical_refresh_settings_html() -> str:
     startSmartBtn.addEventListener("click", () => startRefresh("smart").catch((err) => setStatus(err.message || String(err), "err")));
     startFullBtn.addEventListener("click", () => startRefresh("full").catch((err) => setStatus(err.message || String(err), "err")));
     cancelBtn.addEventListener("click", () => cancelRefresh().catch((err) => setStatus(err.message || String(err), "err")));
+    document.getElementById("resume-btn").addEventListener("click", () => {{
+      if (activeRunYear) scopeYearEl.value = activeRunYear;
+      startRefresh("smart").catch((err) => setStatus(err.message || String(err), "err"));
+    }});
     abandonStaleBtn.addEventListener("click", () => {{
       if (!activeRunId || abandonStaleBtn.disabled) return;
       const ok = window.confirm(
@@ -10832,48 +11064,11 @@ def _canonical_refresh_settings_html() -> str:
 
 
 def _sql_console_settings_html() -> str:
-    samples = {
-        "canonical": [
-            {
-                "label": "Canonical tables",
-                "sql": "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name LIMIT 100",
-            },
-            {
-                "label": "Total work by projects (subtasks only)",
-                "sql": "-- Total work by projects (1. Total work by projects) \u2013 no bindings; edit dates below if needed.\n-- Date range: 2026-02-01 to 2026-03-31 (change the 4 literals in the CTEs if needed).\n\nWITH\nrun AS (\n  SELECT last_success_run_id AS run_id\n  FROM canonical_refresh_state\n  WHERE id = 1\n),\n\nscoped_subtasks AS (\n  SELECT\n    i.issue_key,\n    UPPER(i.project_key) AS project_key,\n    UPPER(COALESCE(NULLIF(TRIM(i.epic_key), ''), 'NO_EPIC')) AS epic_key,\n    i.assignee,\n    i.issue_type,\n    i.start_date,\n    i.due_date,\n    COALESCE(i.original_estimate_hours, 0) AS planned_hours\n  FROM canonical_issues i\n  JOIN run r ON r.run_id = i.run_id\n  WHERE UPPER(i.project_key) <> 'RLT'\n    AND (\n      LOWER(i.issue_type) LIKE '%sub-task%'\n      OR LOWER(i.issue_type) LIKE '%subtask%'\n    )\n    AND (\n      (i.start_date <> '' AND i.start_date BETWEEN '2026-02-01' AND '2026-03-31')\n      OR\n      (i.due_date   <> '' AND i.due_date   BETWEEN '2026-02-01' AND '2026-03-31')\n    )\n),\n\nworklogs AS (\n  SELECT\n    w.issue_key,\n    SUM(COALESCE(w.hours_logged, 0)) AS total_hours_all,\n    SUM(\n      CASE\n        WHEN w.started_date BETWEEN '2026-02-01' AND '2026-03-31' THEN COALESCE(w.hours_logged, 0)\n        ELSE 0\n      END\n    ) AS total_hours_in_range\n  FROM canonical_worklogs w\n  JOIN run r ON r.run_id = w.run_id\n  GROUP BY w.issue_key\n),\n\nepic_meta AS (\n  SELECT\n    UPPER(i.issue_key) AS epic_key,\n    i.summary AS epic_summary,\n    i.status  AS epic_status,\n    i.start_date AS epic_start_date,\n    i.due_date   AS epic_due_date\n  FROM canonical_issues i\n  JOIN run r ON r.run_id = i.run_id\n  WHERE i.issue_key <> ''\n)\n\nSELECT\n  s.project_key,\n  s.epic_key,\n  COALESCE(em.epic_summary, '') AS epic_summary,\n  COALESCE(em.epic_status,  '') AS epic_status,\n  COALESCE(em.epic_start_date, '') AS epic_start_date,\n  COALESCE(em.epic_due_date,   '') AS epic_due_date,\n  ROUND(SUM(s.planned_hours), 2) AS planned_hours,\n  ROUND(SUM(COALESCE(w.total_hours_in_range, 0)), 2) AS actual_hours_log_date,\n  ROUND(SUM(s.planned_hours) - SUM(COALESCE(w.total_hours_in_range, 0)), 2) AS plan_actual_difference_log_date,\n  ROUND(SUM(COALESCE(w.total_hours_all, 0)), 2) AS actual_hours_planned_dates,\n  ROUND(SUM(s.planned_hours) - SUM(COALESCE(w.total_hours_all, 0)), 2) AS plan_actual_difference_planned_dates,\n  COUNT(*) AS subtask_count,\n  COUNT(DISTINCT NULLIF(LOWER(TRIM(s.assignee)), '')) AS assignee_count\nFROM scoped_subtasks s\nLEFT JOIN worklogs w ON w.issue_key = s.issue_key\nLEFT JOIN epic_meta em ON em.epic_key = s.epic_key\nGROUP BY s.project_key, s.epic_key\nORDER BY planned_hours DESC, s.project_key, s.epic_key;",
-            },
-            {
-                "label": "Total Planned Subtasks",
-                "sql": "WITH latest_run AS (\n  SELECT run_id\n  FROM canonical_refresh_runs\n  WHERE status = 'success'\n  ORDER BY updated_at_utc DESC\n  LIMIT 1\n), scoped_subtasks AS (\n  SELECT\n    ci.issue_key,\n    ci.project_key,\n    ci.assignee,\n    ci.issue_type,\n    ci.start_date,\n    ci.due_date,\n    COALESCE(ci.original_estimate_hours, 0) AS original_estimate_hours\n  FROM canonical_issues ci\n  WHERE ci.run_id = (SELECT run_id FROM latest_run)\n    AND ci.project_key IN ('DIGITALLOG', 'FF', 'ODL', 'MN', 'O2', 'WOM')\n    AND ci.project_key <> 'RLT'\n    AND (\n      LOWER(ci.issue_type) LIKE '%sub-task%'\n      OR LOWER(ci.issue_type) LIKE '%subtask%'\n    )\n    AND (\n      (ci.start_date >= '2026-02-01' AND ci.start_date <= '2026-02-28')\n      OR\n      (ci.due_date >= '2026-02-01' AND ci.due_date <= '2026-02-28')\n    )\n), worklog_totals AS (\n  SELECT\n    cw.issue_key,\n    ROUND(SUM(COALESCE(cw.hours_logged, 0)), 2) AS logged_hours\n  FROM canonical_worklogs cw\n  WHERE cw.run_id = (SELECT run_id FROM latest_run)\n    AND cw.started_date >= '2026-02-01'\n    AND cw.started_date <= '2026-02-28'\n  GROUP BY cw.issue_key\n)\nSELECT\n  ss.project_key,\n  ss.issue_key,\n  ss.assignee,\n  ss.issue_type,\n  ss.start_date,\n  ss.due_date,\n  ROUND(ss.original_estimate_hours, 2) AS original_estimate_hours,\n  COALESCE(wt.logged_hours, 0) AS logged_hours\nFROM scoped_subtasks ss\nLEFT JOIN worklog_totals wt\n  ON wt.issue_key = ss.issue_key\nORDER BY ss.project_key, ss.issue_key;",
-            },
-            {
-                "label": "Total Planned Subtasks Extended Actuals",
-                "sql": "WITH latest_run AS (\n  SELECT run_id\n  FROM canonical_refresh_runs\n  WHERE status = 'success'\n  ORDER BY updated_at_utc DESC\n  LIMIT 1\n), scoped_subtasks AS (\n  SELECT\n    ci.issue_key,\n    ci.project_key,\n    ci.assignee,\n    ci.issue_type,\n    ci.start_date,\n    ci.due_date,\n    COALESCE(ci.original_estimate_hours, 0) AS original_estimate_hours\n  FROM canonical_issues ci\n  WHERE ci.run_id = (SELECT run_id FROM latest_run)\n    AND ci.project_key IN ('DIGITALLOG', 'FF', 'ODL', 'MN', 'O2', 'WOM')\n    AND ci.project_key <> 'RLT'\n    AND (\n      LOWER(ci.issue_type) LIKE '%sub-task%'\n      OR LOWER(ci.issue_type) LIKE '%subtask%'\n    )\n    AND (\n      (ci.start_date >= '2026-02-01' AND ci.start_date <= '2026-02-28')\n      OR\n      (ci.due_date >= '2026-02-01' AND ci.due_date <= '2026-02-28')\n    )\n), worklog_totals AS (\n  SELECT\n    cw.issue_key,\n    ROUND(SUM(COALESCE(cw.hours_logged, 0)), 2) AS logged_hours\n  FROM canonical_worklogs cw\n  WHERE cw.run_id = (SELECT run_id FROM latest_run)\n  GROUP BY cw.issue_key\n)\nSELECT\n  ss.project_key,\n  ss.issue_key,\n  ss.assignee,\n  ss.issue_type,\n  ss.start_date,\n  ss.due_date,\n  ROUND(ss.original_estimate_hours, 2) AS original_estimate_hours,\n  COALESCE(wt.logged_hours, 0) AS logged_hours\nFROM scoped_subtasks ss\nLEFT JOIN worklog_totals wt\n  ON wt.issue_key = ss.issue_key\nORDER BY ss.project_key, ss.issue_key;",
-            },
-            {
-                "label": "Latest canonical run",
-                "sql": "SELECT run_id, scope_year, status, started_at_utc, ended_at_utc FROM canonical_refresh_runs ORDER BY started_at_utc DESC LIMIT 10",
-            },
-            {
-                "label": "Issue counts by type",
-                "sql": "SELECT issue_type, COUNT(*) AS issue_count FROM canonical_issues GROUP BY issue_type ORDER BY issue_count DESC LIMIT 20",
-            },
-        ],
-        "exports": [
-            {
-                "label": "Exports tables",
-                "sql": "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name LIMIT 100",
-            },
-            {
-                "label": "Recent work items",
-                "sql": "SELECT issue_key, project_key, status, assignee, updated FROM work_items ORDER BY updated DESC LIMIT 25",
-            },
-            {
-                "label": "Worklog totals by assignee",
-                "sql": "SELECT issue_assignee, ROUND(SUM(hours_logged), 2) AS total_hours FROM subtask_worklogs GROUP BY issue_assignee ORDER BY total_hours DESC LIMIT 25",
-            },
-        ],
-    }
+    databases = [
+        SQL_CONSOLE_DATABASE_INFO[key]
+        for key in ("canonical", "exports", "support_center")
+    ]
+    cm = "https://cdn.jsdelivr.net/npm/codemirror@5.65.16"
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -10882,6 +11077,8 @@ def _sql_console_settings_html() -> str:
   <title>SQL Console</title>
   <link rel="stylesheet" href="/shared-nav.css">
   <link rel="stylesheet" href="/material-symbols.css">
+  <link rel="stylesheet" href="{cm}/lib/codemirror.min.css">
+  <link rel="stylesheet" href="{cm}/addon/hint/show-hint.min.css">
   <style>
     :root {{
       --bg:#eef6fb;
@@ -10894,9 +11091,6 @@ def _sql_console_settings_html() -> str:
       --soft:#f7fbff;
       --danger:#b91c1c;
       --ok:#166534;
-      --code:#0b1120;
-      --code-line:#1e293b;
-      --code-ink:#e2e8f0;
       --accent:#e0f2fe;
     }}
     * {{ box-sizing:border-box; }}
@@ -10910,7 +11104,7 @@ def _sql_console_settings_html() -> str:
         radial-gradient(circle at top right, rgba(15,118,110,.10), transparent 28%),
         linear-gradient(180deg, #edf5fb 0%, #f8fbff 100%);
     }}
-    .wrap {{ max-width:1400px; margin:0 auto; display:grid; gap:16px; }}
+    .wrap {{ max-width:1500px; margin:0 auto; display:grid; gap:16px; }}
     .card {{
       background:var(--panel);
       border:1px solid var(--line);
@@ -10918,205 +11112,88 @@ def _sql_console_settings_html() -> str:
       padding:18px;
       box-shadow:0 18px 34px rgba(15,23,42,.06);
     }}
-    .top {{
-      display:flex;
-      justify-content:space-between;
-      gap:12px;
-      align-items:flex-start;
-      flex-wrap:wrap;
-    }}
-    .grid {{
-      display:grid;
-      gap:16px;
-      grid-template-columns:minmax(320px, 1.3fr) minmax(260px, .9fr);
-      align-items:start;
-    }}
-    .controls {{
-      display:grid;
-      gap:12px;
-    }}
+    .top {{ display:flex; justify-content:space-between; gap:12px; align-items:flex-start; flex-wrap:wrap; }}
+    .helper {{ margin:0; font-size:.88rem; color:var(--muted); }}
     label {{
-      display:block;
-      font-size:.78rem;
-      font-weight:800;
-      letter-spacing:.04em;
-      text-transform:uppercase;
-      color:#475569;
-      margin-bottom:6px;
+      display:block; font-size:.74rem; font-weight:800; letter-spacing:.05em;
+      text-transform:uppercase; color:#475569; margin-bottom:6px;
     }}
-    select, textarea, input {{
-      width:100%;
-      border:1px solid var(--line);
-      border-radius:12px;
-      padding:11px 12px;
-      font:inherit;
-      color:var(--ink);
-      background:#fff;
+    .target-pill {{
+      display:inline-flex; align-items:center; gap:8px; border-radius:999px;
+      border:1px solid #bfdbfe; background:#eff6ff; color:#1d4ed8;
+      font-size:.82rem; font-weight:800; padding:7px 14px;
     }}
-    textarea {{
-      min-height:300px;
-      resize:vertical;
-      font-family:Consolas, "Courier New", monospace;
-      font-size:.9rem;
-      line-height:1.5;
-      background:linear-gradient(180deg, #0f172a, #111827);
-      color:var(--code-ink);
-      border-color:#1e293b;
+    .target-pill .material-symbols-rounded {{ font-size:1.05rem; }}
+    textarea, input {{
+      width:100%; border:1px solid var(--line); border-radius:12px; padding:11px 12px;
+      font:inherit; color:var(--ink); background:#fff;
     }}
-    .path-pill {{
-      display:inline-flex;
-      align-items:center;
-      gap:8px;
-      border-radius:999px;
-      border:1px solid #bfdbfe;
-      background:#eff6ff;
-      color:#1d4ed8;
-      font-size:.8rem;
-      font-weight:700;
-      padding:7px 12px;
-      max-width:100%;
-      overflow:hidden;
-      text-overflow:ellipsis;
-      white-space:nowrap;
-    }}
-    .button-row {{
-      display:flex;
-      gap:10px;
-      flex-wrap:wrap;
-      align-items:center;
-    }}
+    #nl-input {{ min-height:70px; resize:vertical; }}
     button {{
-      border:1px solid var(--line);
-      border-radius:12px;
-      padding:10px 14px;
-      font:inherit;
-      font-weight:700;
-      cursor:pointer;
-      background:#fff;
-      color:var(--ink);
+      border:1px solid var(--line); border-radius:12px; padding:10px 14px;
+      font:inherit; font-weight:700; cursor:pointer; background:#fff; color:var(--ink);
+      display:inline-flex; align-items:center; gap:7px;
     }}
-    button.primary {{
-      border-color:var(--brand);
-      background:linear-gradient(135deg, var(--brand), #14b8a6);
-      color:#fff;
-    }}
-    button.secondary {{
-      border-color:#93c5fd;
-      background:#eff6ff;
-      color:#1d4ed8;
-    }}
+    button .material-symbols-rounded {{ font-size:1.1rem; }}
+    button.primary {{ border-color:var(--brand); background:linear-gradient(135deg, var(--brand), #14b8a6); color:#fff; }}
+    button.secondary {{ border-color:#93c5fd; background:#eff6ff; color:#1d4ed8; }}
     button:disabled {{ opacity:.6; cursor:not-allowed; }}
-    .status {{
-      min-height:1.2em;
-      font-size:.92rem;
-      color:var(--muted);
-    }}
+    .button-row {{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top:10px; }}
+    .field {{ margin-top:14px; }}
+    .gen-row {{ display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; }}
+    .gen-row > div:first-child {{ flex:1 1 320px; }}
+    .status {{ min-height:1.1em; font-size:.86rem; color:var(--muted); margin-top:8px; }}
     .status.ok {{ color:var(--ok); }}
     .status.err {{ color:var(--danger); }}
-    .stat-row {{
-      display:flex;
-      gap:10px;
-      flex-wrap:wrap;
-      margin-top:10px;
-    }}
+    .stat-row {{ display:flex; gap:10px; flex-wrap:wrap; margin-top:10px; }}
     .pill {{
-      display:inline-flex;
-      align-items:center;
-      gap:6px;
-      border-radius:999px;
-      padding:6px 10px;
-      background:#f8fafc;
-      border:1px solid var(--line);
-      color:#334155;
-      font-size:.78rem;
-      font-weight:700;
+      display:inline-flex; align-items:center; gap:6px; border-radius:999px; padding:6px 10px;
+      background:#f8fafc; border:1px solid var(--line); color:#334155; font-size:.76rem; font-weight:700;
     }}
-    .helper {{
-      margin:0;
-      font-size:.88rem;
-      color:var(--muted);
+    .CodeMirror {{
+      height:auto; min-height:190px; border:1px solid var(--line); border-radius:12px;
+      font-family:Consolas,"Courier New",monospace; font-size:.9rem; line-height:1.55;
     }}
-    .sample-list, .schema-list {{
-      display:grid;
-      gap:10px;
-      margin-top:12px;
+    .CodeMirror-focused {{ border-color:var(--brand); box-shadow:0 0 0 3px rgba(15,118,110,.12); }}
+    .cm-s-default .cm-keyword {{ color:#2563eb; font-weight:700; }}
+    .cm-s-default .cm-builtin {{ color:#0e7490; font-weight:700; }}
+    .cm-s-default .cm-def, .cm-s-default .cm-variable-2 {{ color:#9333ea; }}
+    .cm-s-default .cm-variable {{ color:#0f172a; }}
+    .cm-s-default .cm-string, .cm-s-default .cm-string-2 {{ color:#15803d; }}
+    .cm-s-default .cm-number {{ color:#c2410c; }}
+    .cm-s-default .cm-comment {{ color:#94a3b8; font-style:italic; }}
+    .cm-s-default .cm-operator {{ color:#b91c1c; }}
+    .CodeMirror-hints {{ z-index:50; font-family:Consolas,"Courier New",monospace; font-size:.82rem; }}
+    .sql-textarea-fallback {{
+      min-height:190px; resize:vertical; font-family:Consolas,"Courier New",monospace;
+      font-size:.9rem; line-height:1.55;
     }}
-    .sample-card, .schema-card {{
-      border:1px solid var(--line);
-      border-radius:14px;
-      background:var(--soft);
-      padding:12px;
-    }}
-    .sample-card h3, .schema-card h3 {{
-      margin:0 0 8px;
-      font-size:.92rem;
-    }}
-    .sample-sql {{
-      margin:0;
-      white-space:pre-wrap;
-      font-family:Consolas, "Courier New", monospace;
-      font-size:.79rem;
-      color:#0f172a;
-      background:#fff;
-      border:1px solid var(--line);
-      border-radius:10px;
-      padding:10px;
-    }}
-    .schema-columns {{
-      margin-top:10px;
-      display:grid;
-      gap:6px;
-    }}
-    .schema-column {{
-      display:flex;
-      justify-content:space-between;
-      gap:10px;
-      font-size:.8rem;
-      border-bottom:1px dashed #d8e1e8;
-      padding-bottom:6px;
-    }}
-    .schema-column:last-child {{ border-bottom:none; padding-bottom:0; }}
-    .table-wrap {{
-      margin-top:14px;
-      border:1px solid var(--line);
-      border-radius:16px;
-      overflow:auto;
-      background:#fff;
-      max-height:560px;
-    }}
-    table {{
-      width:100%;
-      border-collapse:collapse;
-      min-width:720px;
-    }}
-    th, td {{
-      border-bottom:1px solid #e2e8f0;
-      padding:9px 10px;
-      text-align:left;
-      vertical-align:top;
-      font-size:.84rem;
-    }}
-    th {{
-      position:sticky;
-      top:0;
-      background:#f8fafc;
-      text-transform:uppercase;
-      letter-spacing:.05em;
-      font-size:.72rem;
-    }}
-    td {{
-      font-family:Consolas, "Courier New", monospace;
-      white-space:pre-wrap;
-      word-break:break-word;
-    }}
-    .empty {{
-      padding:24px;
-      color:var(--muted);
-      text-align:center;
-    }}
-    @media (max-width: 1040px) {{
-      .grid {{ grid-template-columns: 1fr; }}
-    }}
+    .table-wrap {{ margin-top:14px; border:1px solid var(--line); border-radius:16px; overflow:auto; background:#fff; max-height:520px; }}
+    table {{ width:100%; border-collapse:collapse; min-width:560px; }}
+    th, td {{ border-bottom:1px solid #e2e8f0; border-right:1px solid #eef2f7; padding:8px 10px; text-align:left; vertical-align:top; font-size:.82rem; }}
+    th {{ position:sticky; top:0; background:#f1f5f9; z-index:1; text-transform:uppercase; letter-spacing:.04em; font-size:.72rem; }}
+    td {{ font-family:Consolas,"Courier New",monospace; white-space:pre-wrap; word-break:break-word; }}
+    td.null {{ color:#94a3b8; font-style:italic; }}
+    tbody tr:nth-child(even) td {{ background:#fafcff; }}
+    .empty {{ padding:24px 16px; color:var(--muted); text-align:center; font-size:.86rem; }}
+    .browser {{ margin-top:4px; display:grid; gap:14px; grid-template-columns:minmax(220px, .85fr) minmax(220px, .95fr) minmax(340px, 1.5fr); align-items:stretch; }}
+    .col {{ border:1px solid var(--line); border-radius:16px; background:var(--soft); display:flex; flex-direction:column; overflow:hidden; min-height:0; }}
+    .col-head {{ padding:12px 14px; border-bottom:1px solid var(--line); background:#fff; }}
+    .col-head h2 {{ margin:0; font-size:.8rem; text-transform:uppercase; letter-spacing:.06em; color:#475569; }}
+    .col-head p {{ margin:.3rem 0 0; font-size:.76rem; color:var(--muted); }}
+    .col-body {{ padding:10px; display:flex; flex-direction:column; gap:8px; overflow:auto; flex:1 1 auto; max-height:420px; }}
+    .list-item {{ display:block; text-align:left; width:100%; border:1px solid var(--line); border-radius:12px; background:#fff; padding:11px 12px; cursor:pointer; font:inherit; color:var(--ink); }}
+    .list-item:hover {{ border-color:#93c5fd; }}
+    .list-item.active {{ border-color:var(--brand); background:var(--accent); box-shadow:0 4px 12px rgba(15,118,110,.12); }}
+    .list-item .name {{ display:flex; align-items:center; gap:8px; font-weight:800; font-size:.9rem; }}
+    .list-item .name .material-symbols-rounded {{ font-size:1.05rem; color:var(--brand-strong); }}
+    .list-item .desc {{ margin:.32rem 0 0; font-size:.77rem; color:var(--muted); line-height:1.4; }}
+    .list-item .meta {{ margin:.4rem 0 0; font-size:.71rem; color:#64748b; font-family:Consolas,"Courier New",monospace; word-break:break-all; }}
+    .preview-head {{ padding:12px 14px; border-bottom:1px solid var(--line); background:#fff; display:flex; justify-content:space-between; align-items:flex-start; gap:10px; flex-wrap:wrap; }}
+    .preview-head h2 {{ margin:0; font-size:.96rem; }}
+    .preview-head .sub {{ margin:.25rem 0 0; font-size:.76rem; color:var(--muted); }}
+    .preview-actions {{ margin-top:8px; }}
+    @media (max-width: 1100px) {{ .browser {{ grid-template-columns:1fr; }} }}
   </style>
 </head>
 <body>
@@ -11125,151 +11202,387 @@ def _sql_console_settings_html() -> str:
       <div class="top">
         <div>
           <h1 style="margin:0;font-size:1.3rem;">SQL Console</h1>
-          <p class="helper" style="margin:.45rem 0 0;">Run read-only SQL against the canonical and exports SQLite databases. Only a single read-only statement is allowed per execution.</p>
+          <p class="helper" style="margin:.45rem 0 0;">Ask a question in plain English and let the model write schema-aware SQL, then review, edit, and run it against the read-only databases. Browse the schema below for table and column reference.</p>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">__SETTINGS_TOP_NAV__</div>
       </div>
-      <div class="grid" style="margin-top:16px;">
-        <section class="controls">
-          <div>
-            <label for="database-select">Database</label>
-            <select id="database-select">
-              <option value="canonical">Canonical DB</option>
-              <option value="exports">Exports DB</option>
-            </select>
+    </section>
+
+    <section class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
+        <h2 style="margin:0;font-size:1.05rem;">Query workspace</h2>
+        <span id="target-pill" class="target-pill"><span class="material-symbols-rounded">database</span><span id="target-label">Canonical DB</span></span>
+      </div>
+
+      <div class="field gen-row">
+        <div>
+          <label for="nl-input">Ask in plain English</label>
+          <textarea id="nl-input" spellcheck="false" placeholder="e.g. Total logged hours per assignee for project O2 this month"></textarea>
+        </div>
+        <button id="generate-btn" class="primary" type="button"><span class="material-symbols-rounded">auto_awesome</span>Generate SQL</button>
+      </div>
+      <div id="gen-status" class="status"></div>
+
+      <div class="field">
+        <label for="sql-input">SQL query (editable)</label>
+        <textarea id="sql-input" class="sql-textarea-fallback" spellcheck="false" placeholder="SELECT * FROM ..."></textarea>
+      </div>
+      <div class="button-row">
+        <button id="run-btn" class="primary" type="button"><span class="material-symbols-rounded">play_arrow</span>Run Query</button>
+        <button id="download-btn" class="secondary" type="button"><span class="material-symbols-rounded">download</span>Download Excel</button>
+        <button id="clear-btn" type="button">Clear</button>
+      </div>
+      <div id="run-status" class="status"></div>
+      <div class="stat-row">
+        <span id="elapsed-pill" class="pill">Elapsed: -</span>
+        <span id="rows-pill" class="pill">Rows: -</span>
+        <span id="trunc-pill" class="pill">Truncated: no</span>
+      </div>
+      <div class="table-wrap">
+        <div id="results-empty" class="empty">Run a query to see results here.</div>
+        <table id="results-table" hidden>
+          <thead><tr id="results-head"></tr></thead>
+          <tbody id="results-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2 style="margin:0 0 12px;font-size:1.05rem;">Browse schema</h2>
+      <div class="browser">
+        <div class="col">
+          <div class="col-head"><h2>Databases</h2><p>Read-only sources</p></div>
+          <div id="db-list" class="col-body"></div>
+        </div>
+        <div class="col">
+          <div class="col-head"><h2>Tables</h2><p id="tables-hint">Select a database</p></div>
+          <div id="tables-status" class="status" style="padding:8px 10px 0;margin-top:0;"></div>
+          <div id="table-list" class="col-body"><div class="empty">Select a database to list its tables.</div></div>
+        </div>
+        <div class="col">
+          <div class="preview-head">
+            <div>
+              <h2 id="preview-title">Table preview</h2>
+              <p id="preview-sub" class="sub">Select a table to preview its first {SQL_CONSOLE_PREVIEW_ROWS} rows.</p>
+            </div>
+            <div id="preview-pills" style="display:flex;gap:8px;flex-wrap:wrap;"></div>
           </div>
-          <div>
-            <label>Effective Path</label>
-            <div id="db-path" class="path-pill">Loading...</div>
+          <div class="preview-actions" style="padding:8px 14px 0;">
+            <button id="select-all-btn" class="secondary" type="button" disabled><span class="material-symbols-rounded">edit_note</span>Load SELECT * into editor</button>
           </div>
-          <div>
-            <label for="sql-input">SQL Query</label>
-            <textarea id="sql-input" spellcheck="false" placeholder="SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name"></textarea>
-          </div>
-          <div class="button-row">
-            <button id="run-btn" class="primary" type="button">Run Query</button>
-            <button id="download-btn" class="secondary" type="button">Download Excel</button>
-            <button id="clear-btn" type="button">Clear</button>
-            <button id="schema-btn" class="secondary" type="button">Reload Schema</button>
-          </div>
-          <div id="status" class="status"></div>
-          <div class="stat-row">
-            <span id="elapsed-pill" class="pill">Elapsed: -</span>
-            <span id="rows-pill" class="pill">Rows: -</span>
-            <span id="trunc-pill" class="pill">Truncated: no</span>
-          </div>
-          <div class="table-wrap">
-            <div id="results-empty" class="empty">Run a query to inspect rows.</div>
-            <table id="results-table" hidden>
-              <thead><tr id="results-head"></tr></thead>
-              <tbody id="results-body"></tbody>
+          <div id="preview-status" class="status" style="padding:8px 14px 0;margin-top:0;"></div>
+          <div class="table-wrap" style="margin-top:10px;border-radius:0;border-left:none;border-right:none;border-bottom:none;">
+            <div id="preview-empty" class="empty">No table selected.</div>
+            <table id="preview-table" hidden>
+              <thead><tr id="preview-head-row"></tr></thead>
+              <tbody id="preview-body"></tbody>
             </table>
           </div>
-        </section>
-        <aside class="controls">
-          <div>
-            <h2 style="margin:0;font-size:1rem;">Sample Queries</h2>
-            <p class="helper" style="margin:.35rem 0 0;">Click a sample to load it into the editor.</p>
-            <div id="sample-list" class="sample-list"></div>
-          </div>
-          <div>
-            <h2 style="margin:0;font-size:1rem;">Schema Browser</h2>
-            <p class="helper" style="margin:.35rem 0 0;">Live table and column metadata from the selected database.</p>
-            <div id="schema-list" class="schema-list"></div>
-          </div>
-        </aside>
+        </div>
       </div>
     </section>
   </main>
+
+  <script src="{cm}/lib/codemirror.min.js"></script>
+  <script src="{cm}/mode/sql/sql.min.js"></script>
+  <script src="{cm}/addon/edit/matchbrackets.min.js"></script>
+  <script src="{cm}/addon/hint/show-hint.min.js"></script>
+  <script src="{cm}/addon/hint/sql-hint.min.js"></script>
   <script>
     (() => {{
+      const DATABASES = {json.dumps(databases)};
+      const PREVIEW_ROWS = {SQL_CONSOLE_PREVIEW_ROWS};
       const MAX_ROWS = {SQL_CONSOLE_MAX_ROWS};
-      const SAMPLE_QUERIES = {json.dumps(samples)};
-      const databaseEl = document.getElementById("database-select");
-      const sqlEl = document.getElementById("sql-input");
-      const statusEl = document.getElementById("status");
-      const dbPathEl = document.getElementById("db-path");
-      const elapsedPillEl = document.getElementById("elapsed-pill");
-      const rowsPillEl = document.getElementById("rows-pill");
-      const truncPillEl = document.getElementById("trunc-pill");
+
+      const dbListEl = document.getElementById("db-list");
+      const targetLabelEl = document.getElementById("target-label");
+      const tablesHintEl = document.getElementById("tables-hint");
+      const tablesStatusEl = document.getElementById("tables-status");
+      const tableListEl = document.getElementById("table-list");
+      const nlInputEl = document.getElementById("nl-input");
+      const generateBtn = document.getElementById("generate-btn");
+      const genStatusEl = document.getElementById("gen-status");
+      const sqlTextarea = document.getElementById("sql-input");
       const runBtn = document.getElementById("run-btn");
       const downloadBtn = document.getElementById("download-btn");
       const clearBtn = document.getElementById("clear-btn");
-      const schemaBtn = document.getElementById("schema-btn");
-      const sampleListEl = document.getElementById("sample-list");
-      const schemaListEl = document.getElementById("schema-list");
+      const runStatusEl = document.getElementById("run-status");
+      const elapsedPillEl = document.getElementById("elapsed-pill");
+      const rowsPillEl = document.getElementById("rows-pill");
+      const truncPillEl = document.getElementById("trunc-pill");
       const resultsTableEl = document.getElementById("results-table");
       const resultsHeadEl = document.getElementById("results-head");
       const resultsBodyEl = document.getElementById("results-body");
       const resultsEmptyEl = document.getElementById("results-empty");
+      const previewTitleEl = document.getElementById("preview-title");
+      const previewSubEl = document.getElementById("preview-sub");
+      const previewPillsEl = document.getElementById("preview-pills");
+      const previewStatusEl = document.getElementById("preview-status");
+      const previewEmptyEl = document.getElementById("preview-empty");
+      const previewTableEl = document.getElementById("preview-table");
+      const previewHeadRowEl = document.getElementById("preview-head-row");
+      const previewBodyEl = document.getElementById("preview-body");
+      const selectAllBtn = document.getElementById("select-all-btn");
 
-      function setStatus(message, kind) {{
-        statusEl.textContent = message || "";
-        statusEl.className = "status" + (kind ? " " + kind : "");
+      let activeDb = null;
+      let activeTable = null;
+      let hintSchema = {{}};
+      let cmEditor = null;
+
+      function quoteIdent(name) {{
+        return '"' + String(name).replace(/"/g, '""') + '"';
       }}
 
-      function selectedDatabase() {{
-        return String(databaseEl.value || "canonical");
+      const CELL_DISPLAY_LIMIT = 1000;
+      function fillCell(td, value) {{
+        if (value == null) {{ td.textContent = "NULL"; td.className = "null"; return; }}
+        const s = String(value);
+        if (s.length > CELL_DISPLAY_LIMIT) {{
+          td.textContent = s.slice(0, CELL_DISPLAY_LIMIT) + " … (" + s.length + " chars)";
+          td.title = "Value truncated for display (" + s.length + " characters).";
+        }} else {{
+          td.textContent = s;
+        }}
       }}
 
-      function renderSamples() {{
-        const db = selectedDatabase();
-        const rows = Array.isArray(SAMPLE_QUERIES[db]) ? SAMPLE_QUERIES[db] : [];
-        sampleListEl.innerHTML = "";
-        rows.forEach((sample) => {{
-          const card = document.createElement("div");
-          card.className = "sample-card";
-          const title = document.createElement("h3");
-          title.textContent = String(sample.label || "Sample");
-          const code = document.createElement("pre");
-          code.className = "sample-sql";
-          code.textContent = String(sample.sql || "");
+      function setGenStatus(message, kind) {{
+        genStatusEl.textContent = message || "";
+        genStatusEl.className = "status" + (kind ? " " + kind : "");
+      }}
+      function setRunStatus(message, kind) {{
+        runStatusEl.textContent = message || "";
+        runStatusEl.className = "status" + (kind ? " " + kind : "");
+      }}
+      function setTablesStatus(message, isError) {{
+        tablesStatusEl.textContent = message || "";
+        tablesStatusEl.className = "status" + (isError ? " err" : "");
+      }}
+      function setPreviewStatus(message, isError) {{
+        previewStatusEl.textContent = message || "";
+        previewStatusEl.className = "status" + (isError ? " err" : "");
+      }}
+
+      function initEditor() {{
+        if (window.CodeMirror) {{
+          cmEditor = CodeMirror.fromTextArea(sqlTextarea, {{
+            mode: "text/x-sqlite",
+            theme: "default",
+            lineNumbers: true,
+            lineWrapping: true,
+            matchBrackets: true,
+            extraKeys: {{ "Ctrl-Space": "autocomplete" }},
+            hintOptions: {{ tables: hintSchema, completeSingle: false }},
+          }});
+          cmEditor.on("inputRead", (cm, change) => {{
+            if (!change.text || !change.text.length) return;
+            const typed = change.text[0];
+            if (/[\\w.]/.test(typed)) {{
+              cm.showHint({{ hint: CodeMirror.hint.sql, completeSingle: false, tables: hintSchema }});
+            }}
+          }});
+        }}
+      }}
+      function getSql() {{ return cmEditor ? cmEditor.getValue() : sqlTextarea.value; }}
+      function setSql(value) {{ if (cmEditor) {{ cmEditor.setValue(value); }} else {{ sqlTextarea.value = value; }} }}
+      function applyHintSchema(schema) {{
+        hintSchema = schema || {{}};
+        if (cmEditor) cmEditor.setOption("hintOptions", {{ tables: hintSchema, completeSingle: false }});
+      }}
+
+      function renderDatabases() {{
+        dbListEl.innerHTML = "";
+        DATABASES.forEach((db) => {{
           const btn = document.createElement("button");
           btn.type = "button";
-          btn.textContent = "Use Query";
-          btn.addEventListener("click", () => {{
-            sqlEl.value = String(sample.sql || "");
-            sqlEl.focus();
-          }});
-          card.append(title, code, btn);
-          sampleListEl.appendChild(card);
+          btn.className = "list-item";
+          btn.dataset.key = db.key;
+          const name = document.createElement("div");
+          name.className = "name";
+          const icon = document.createElement("span");
+          icon.className = "material-symbols-rounded";
+          icon.textContent = "database";
+          const label = document.createElement("span");
+          label.textContent = db.label;
+          name.append(icon, label);
+          const desc = document.createElement("p");
+          desc.className = "desc";
+          desc.textContent = db.description || "";
+          const meta = document.createElement("p");
+          meta.className = "meta";
+          meta.textContent = db.file || "";
+          btn.append(name, desc, meta);
+          btn.addEventListener("click", () => selectDatabase(db.key));
+          dbListEl.appendChild(btn);
         }});
       }}
 
-      function renderSchemaTables(tables) {{
-        schemaListEl.innerHTML = "";
-        const source = Array.isArray(tables) ? tables : [];
-        if (!source.length) {{
-          const empty = document.createElement("div");
-          empty.className = "empty";
-          empty.textContent = "No tables found.";
-          schemaListEl.appendChild(empty);
+      function highlight(container, key) {{
+        Array.from(container.querySelectorAll(".list-item")).forEach((el) => {{
+          el.classList.toggle("active", el.dataset.key === key);
+        }});
+      }}
+
+      function resetPreview() {{
+        activeTable = null;
+        previewTitleEl.textContent = "Table preview";
+        previewSubEl.textContent = "Select a table to preview its first " + PREVIEW_ROWS + " rows.";
+        previewPillsEl.innerHTML = "";
+        previewHeadRowEl.innerHTML = "";
+        previewBodyEl.innerHTML = "";
+        previewTableEl.hidden = true;
+        previewEmptyEl.hidden = false;
+        previewEmptyEl.textContent = "No table selected.";
+        selectAllBtn.disabled = true;
+        setPreviewStatus("", false);
+      }}
+
+      async function selectDatabase(key) {{
+        activeDb = key;
+        highlight(dbListEl, key);
+        const db = DATABASES.find((item) => item.key === key);
+        targetLabelEl.textContent = db ? db.label : key;
+        tablesHintEl.textContent = db ? db.label : "Select a database";
+        tableListEl.innerHTML = '<div class="empty">Loading tables...</div>';
+        resetPreview();
+        setTablesStatus("Loading tables...", false);
+        applyHintSchema({{}});
+        try {{
+          const response = await fetch("/api/admin/sql-console/schema?database=" + encodeURIComponent(key), {{ cache: "no-store" }});
+          const body = await response.json().catch(() => ({{}}));
+          if (!response.ok || !body.ok) throw new Error(String(body.error || "Failed to load tables."));
+          const tables = body.tables || [];
+          renderTables(tables);
+          const schema = {{}};
+          tables.forEach((t) => {{ schema[String(t.name)] = (Array.isArray(t.columns) ? t.columns : []).map((c) => String(c.name)); }});
+          applyHintSchema(schema);
+          setTablesStatus("", false);
+        }} catch (error) {{
+          tableListEl.innerHTML = '<div class="empty">Tables unavailable.</div>';
+          setTablesStatus(String(error && error.message || error || "Failed to load tables."), true);
+        }}
+      }}
+
+      function renderTables(tables) {{
+        tableListEl.innerHTML = "";
+        if (!Array.isArray(tables) || !tables.length) {{
+          tableListEl.innerHTML = '<div class="empty">No tables in this database.</div>';
           return;
         }}
-        source.forEach((table) => {{
-          const card = document.createElement("div");
-          card.className = "schema-card";
-          const title = document.createElement("h3");
-          title.textContent = String(table.name || "");
-          const cols = document.createElement("div");
-          cols.className = "schema-columns";
-          (Array.isArray(table.columns) ? table.columns : []).forEach((col) => {{
-            const row = document.createElement("div");
-            row.className = "schema-column";
-            const left = document.createElement("span");
-            left.textContent = String(col.name || "");
-            const right = document.createElement("span");
-            const flags = [];
-            if (col.type) flags.push(String(col.type));
-            if (col.pk) flags.push("PK");
-            if (col.notnull) flags.push("NOT NULL");
-            right.textContent = flags.join(" • ");
-            row.append(left, right);
-            cols.appendChild(row);
-          }});
-          card.append(title, cols);
-          schemaListEl.appendChild(card);
+        tables.forEach((table) => {{
+          const cols = Array.isArray(table.columns) ? table.columns : [];
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "list-item";
+          btn.dataset.key = String(table.name || "");
+          const name = document.createElement("div");
+          name.className = "name";
+          const icon = document.createElement("span");
+          icon.className = "material-symbols-rounded";
+          icon.textContent = "table";
+          const label = document.createElement("span");
+          label.textContent = String(table.name || "");
+          name.append(icon, label);
+          const desc = document.createElement("p");
+          desc.className = "desc";
+          desc.textContent = String(table.description || (cols.length + " columns."));
+          const meta = document.createElement("p");
+          meta.className = "meta";
+          meta.textContent = cols.length + " column" + (cols.length === 1 ? "" : "s");
+          btn.append(name, desc, meta);
+          btn.addEventListener("click", () => selectTable(String(table.name || ""), cols));
+          tableListEl.appendChild(btn);
         }});
+      }}
+
+      async function selectTable(tableName, columns) {{
+        if (!tableName) return;
+        activeTable = tableName;
+        highlight(tableListEl, tableName);
+        previewTitleEl.textContent = tableName;
+        previewSubEl.textContent = "Loading preview...";
+        previewPillsEl.innerHTML = "";
+        previewHeadRowEl.innerHTML = "";
+        previewBodyEl.innerHTML = "";
+        previewTableEl.hidden = true;
+        previewEmptyEl.hidden = false;
+        previewEmptyEl.textContent = "Loading...";
+        selectAllBtn.disabled = false;
+        setPreviewStatus("", false);
+        try {{
+          const url = "/api/admin/sql-console/table-preview?database=" + encodeURIComponent(activeDb) + "&table=" + encodeURIComponent(tableName);
+          const response = await fetch(url, {{ cache: "no-store" }});
+          const body = await response.json().catch(() => ({{}}));
+          if (!response.ok || !body.ok) throw new Error(String(body.error || "Failed to load preview."));
+          if (activeTable !== tableName) return;
+          renderPreview(body, columns);
+        }} catch (error) {{
+          if (activeTable !== tableName) return;
+          previewTableEl.hidden = true;
+          previewEmptyEl.hidden = false;
+          previewEmptyEl.textContent = "Preview unavailable.";
+          previewSubEl.textContent = "Could not load this table.";
+          setPreviewStatus(String(error && error.message || error || "Failed to load preview."), true);
+        }}
+      }}
+
+      function renderPreview(body, schemaColumns) {{
+        const columns = Array.isArray(body.columns) ? body.columns : [];
+        const rows = Array.isArray(body.rows) ? body.rows : [];
+        const typeByName = {{}};
+        (Array.isArray(schemaColumns) ? schemaColumns : []).forEach((col) => {{
+          if (col && col.name) typeByName[String(col.name)] = String(col.type || "");
+        }});
+        previewPillsEl.innerHTML = "";
+        const total = (body.total_row_count == null) ? null : Number(body.total_row_count);
+        const totalPill = document.createElement("span");
+        totalPill.className = "pill";
+        totalPill.textContent = "Total rows: " + (total == null ? "?" : total.toLocaleString());
+        const colsPill = document.createElement("span");
+        colsPill.className = "pill";
+        colsPill.textContent = "Columns: " + columns.length;
+        previewPillsEl.append(totalPill, colsPill);
+        previewSubEl.textContent = "Showing first " + rows.length + " of " + (total == null ? "?" : total.toLocaleString()) + " rows.";
+        previewHeadRowEl.innerHTML = "";
+        previewBodyEl.innerHTML = "";
+        if (!columns.length) {{
+          previewTableEl.hidden = true;
+          previewEmptyEl.hidden = false;
+          previewEmptyEl.textContent = "This table has no columns.";
+          return;
+        }}
+        columns.forEach((col) => {{
+          const th = document.createElement("th");
+          const nameSpan = document.createElement("span");
+          nameSpan.style.fontWeight = "800";
+          nameSpan.textContent = String(col);
+          th.appendChild(nameSpan);
+          const type = typeByName[String(col)];
+          if (type) {{
+            const typeSpan = document.createElement("span");
+            typeSpan.style.cssText = "display:block;margin-top:2px;font-size:.68rem;color:#64748b;";
+            typeSpan.textContent = type;
+            th.appendChild(typeSpan);
+          }}
+          previewHeadRowEl.appendChild(th);
+        }});
+        if (!rows.length) {{
+          previewTableEl.hidden = true;
+          previewEmptyEl.hidden = false;
+          previewEmptyEl.textContent = "This table is empty.";
+          return;
+        }}
+        rows.forEach((row) => {{
+          const tr = document.createElement("tr");
+          columns.forEach((col) => {{
+            const td = document.createElement("td");
+            const value = row && Object.prototype.hasOwnProperty.call(row, col) ? row[col] : null;
+            fillCell(td, value);
+            tr.appendChild(td);
+          }});
+          previewBodyEl.appendChild(tr);
+        }});
+        previewEmptyEl.hidden = true;
+        previewTableEl.hidden = false;
       }}
 
       function renderResults(columns, rows) {{
@@ -11298,8 +11611,8 @@ def _sql_console_settings_html() -> str:
           const tr = document.createElement("tr");
           colList.forEach((col) => {{
             const td = document.createElement("td");
-            const value = row && Object.prototype.hasOwnProperty.call(row, col) ? row[col] : "";
-            td.textContent = value == null ? "" : String(value);
+            const value = row && Object.prototype.hasOwnProperty.call(row, col) ? row[col] : null;
+            fillCell(td, value);
             tr.appendChild(td);
           }});
           resultsBodyEl.appendChild(tr);
@@ -11308,72 +11621,69 @@ def _sql_console_settings_html() -> str:
         resultsTableEl.hidden = false;
       }}
 
-      async function loadSchema() {{
-        const db = selectedDatabase();
-        setStatus("Loading schema...", "");
-        dbPathEl.textContent = "Loading...";
+      async function generateSql() {{
+        const prompt = String(nlInputEl.value || "").trim();
+        if (!prompt) {{ setGenStatus("Type a question first.", "err"); return; }}
+        if (!activeDb) {{ setGenStatus("Select a database first.", "err"); return; }}
+        generateBtn.disabled = true;
+        setGenStatus("Generating SQL with the model...", "");
         try {{
-          const response = await fetch("/api/admin/sql-console/schema?database=" + encodeURIComponent(db), {{ cache: "no-store" }});
+          const response = await fetch("/api/admin/sql-console/generate", {{
+            method: "POST",
+            headers: {{ "Content-Type": "application/json" }},
+            body: JSON.stringify({{ database: activeDb, prompt }}),
+          }});
           const body = await response.json().catch(() => ({{}}));
-          if (!response.ok || !body.ok) throw new Error(String(body.error || "Failed to load schema."));
-          dbPathEl.textContent = String(body.db_path || "-");
-          renderSchemaTables(body.tables || []);
-          setStatus("Schema loaded.", "ok");
+          if (!response.ok || !body.ok) throw new Error(String(body.error || "Generation failed."));
+          setSql(String(body.sql || ""));
+          setGenStatus("SQL generated. Review or edit it, then Run.", "ok");
         }} catch (error) {{
-          dbPathEl.textContent = "Unavailable";
-          renderSchemaTables([]);
-          setStatus(String(error && error.message || error || "Failed to load schema."), "err");
+          setGenStatus(String(error && error.message || error || "Generation failed."), "err");
+        }} finally {{
+          generateBtn.disabled = false;
         }}
       }}
 
       async function runQuery() {{
-        const db = selectedDatabase();
-        const sql = String(sqlEl.value || "").trim();
-        if (!sql) {{
-          setStatus("Enter a SQL query first.", "err");
-          return;
-        }}
+        const sql = String(getSql() || "").trim();
+        if (!sql) {{ setRunStatus("Enter or generate a SQL query first.", "err"); return; }}
+        if (!activeDb) {{ setRunStatus("Select a database first.", "err"); return; }}
         runBtn.disabled = true;
-        setStatus("Running query...", "");
+        setRunStatus("Running query...", "");
         try {{
           const response = await fetch("/api/admin/sql-console/execute", {{
             method: "POST",
             headers: {{ "Content-Type": "application/json" }},
-            body: JSON.stringify({{ database: db, sql }})
+            body: JSON.stringify({{ database: activeDb, sql }}),
           }});
           const body = await response.json().catch(() => ({{}}));
           if (!response.ok || !body.ok) throw new Error(String(body.error || "Query failed."));
-          dbPathEl.textContent = String(body.db_path || "-");
           elapsedPillEl.textContent = "Elapsed: " + String(body.elapsed_ms || 0) + " ms";
           rowsPillEl.textContent = "Rows: " + String(body.row_count || 0);
           truncPillEl.textContent = "Truncated: " + (body.truncated ? "yes (max " + MAX_ROWS + ")" : "no");
           renderResults(body.columns || [], body.rows || []);
-          setStatus("Query completed successfully.", "ok");
+          setRunStatus("Query completed successfully.", "ok");
         }} catch (error) {{
           elapsedPillEl.textContent = "Elapsed: -";
           rowsPillEl.textContent = "Rows: -";
           truncPillEl.textContent = "Truncated: no";
           renderResults([], []);
-          setStatus(String(error && error.message || error || "Query failed."), "err");
+          setRunStatus(String(error && error.message || error || "Query failed."), "err");
         }} finally {{
           runBtn.disabled = false;
         }}
       }}
 
       async function downloadExcel() {{
-        const db = selectedDatabase();
-        const sql = String(sqlEl.value || "").trim();
-        if (!sql) {{
-          setStatus("Enter a SQL query first.", "err");
-          return;
-        }}
+        const sql = String(getSql() || "").trim();
+        if (!sql) {{ setRunStatus("Enter or generate a SQL query first.", "err"); return; }}
         downloadBtn.disabled = true;
-        setStatus("Preparing Excel download...", "");
+        setRunStatus("Preparing Excel download...", "");
         try {{
           const response = await fetch("/api/admin/sql-console/export", {{
             method: "POST",
             headers: {{ "Content-Type": "application/json" }},
-            body: JSON.stringify({{ database: db, sql }})
+            body: JSON.stringify({{ database: activeDb, sql }}),
           }});
           if (!response.ok) {{
             const body = await response.json().catch(() => ({{}}));
@@ -11381,7 +11691,7 @@ def _sql_console_settings_html() -> str:
           }}
           const blob = await response.blob();
           const disposition = String(response.headers.get("Content-Disposition") || "");
-          const match = disposition.match(/filename=\"?([^\";]+)\"?/i);
+          const match = disposition.match(/filename=\\"?([^\\";]+)\\"?/i);
           const filename = match && match[1] ? match[1] : "sql-console-export.xlsx";
           const url = URL.createObjectURL(blob);
           const link = document.createElement("a");
@@ -11391,30 +11701,31 @@ def _sql_console_settings_html() -> str:
           link.click();
           link.remove();
           URL.revokeObjectURL(url);
-          setStatus("Excel download started.", "ok");
+          setRunStatus("Excel download started.", "ok");
         }} catch (error) {{
-          setStatus(String(error && error.message || error || "Export failed."), "err");
+          setRunStatus(String(error && error.message || error || "Export failed."), "err");
         }} finally {{
           downloadBtn.disabled = false;
         }}
       }}
 
-      databaseEl.addEventListener("change", () => {{
-        renderSamples();
-        loadSchema();
-      }});
-      schemaBtn.addEventListener("click", loadSchema);
+      generateBtn.addEventListener("click", generateSql);
       runBtn.addEventListener("click", runQuery);
       downloadBtn.addEventListener("click", downloadExcel);
       clearBtn.addEventListener("click", () => {{
-        sqlEl.value = "";
+        setSql("");
         renderResults([], []);
-        setStatus("", "");
+        setRunStatus("", "");
+      }});
+      selectAllBtn.addEventListener("click", () => {{
+        if (!activeTable) return;
+        setSql("SELECT *\\nFROM " + quoteIdent(activeTable) + "\\nLIMIT 100;");
+        setRunStatus("Loaded a starter query for " + activeTable + ".", "ok");
       }});
 
-      renderSamples();
-      sqlEl.value = String((SAMPLE_QUERIES.canonical && SAMPLE_QUERIES.canonical[0] && SAMPLE_QUERIES.canonical[0].sql) || "");
-      loadSchema();
+      initEditor();
+      renderDatabases();
+      if (DATABASES.length) selectDatabase(DATABASES[0].key);
     }})();
   </script>
   <script src="/shared-nav.js"></script>
@@ -17763,6 +18074,9 @@ def _resolve_report_html_sources(base_dir: Path) -> dict[str, Path]:
         ),
         "monthly_epic_plan_progress_report.html": _resolve_output_html_path(
             "JIRA_MONTHLY_EPIC_PLAN_PROGRESS_HTML_PATH", "monthly_epic_plan_progress_report.html", base_dir
+        ),
+        "support_center_report.html": _resolve_output_html_path(
+            "JIRA_SUPPORT_CENTER_HTML_PATH", "support_center_report.html", base_dir
         ),
         "team_capacity_planner.html": base_dir / "team_capacity_planner.html",
     }
@@ -29832,8 +30146,7 @@ def _tcp_epics_in_range(conn, canonical_run_id: str, from_date: str, to_date: st
                       AND {_tcp_issue_type_is_subtask_sql('s')}
                       AND upper(s.project_key) != 'RLT'
                       AND s.start_date != '' AND s.due_date != ''
-                      AND s.start_date >= ? AND s.start_date <= ?
-                      AND s.due_date   >= ? AND s.due_date   <= ?
+                      AND s.start_date <= ? AND s.due_date >= ?
                       AND s.epic_key != ''
                     UNION
                     SELECT p.epic_key AS ek FROM canonical_issues s
@@ -29843,20 +30156,20 @@ def _tcp_epics_in_range(conn, canonical_run_id: str, from_date: str, to_date: st
                       AND {_tcp_issue_type_is_subtask_sql('s')}
                       AND upper(s.project_key) != 'RLT'
                       AND s.start_date != '' AND s.due_date != ''
-                      AND s.start_date >= ? AND s.start_date <= ?
-                      AND s.due_date   >= ? AND s.due_date   <= ?
+                      AND s.start_date <= ? AND s.due_date >= ?
                       AND (s.epic_key IS NULL OR s.epic_key = '')
                       AND p.epic_key != ''
                 )
                 WHERE ek IS NOT NULL AND ek != ''
                 """,
                 (
-                    canonical_run_id, from_date, to_date, from_date, to_date,
-                    canonical_run_id, from_date, to_date, from_date, to_date,
+                    canonical_run_id, to_date, from_date,
+                    canonical_run_id, to_date, from_date,
                 ),
             ).fetchall()
         else:
-            # Default: story dates ("TK dates")
+            # Default: story dates ("TK dates") — use overlap: story overlaps the period
+            # if it starts on or before the period end AND ends on or after the period start.
             rows = conn.execute(
                 """SELECT DISTINCT upper(epic_key) AS ek FROM canonical_issues
                    WHERE run_id = ?
@@ -29864,9 +30177,8 @@ def _tcp_epics_in_range(conn, canonical_run_id: str, from_date: str, to_date: st
                      AND upper(project_key) != 'RLT'
                      AND epic_key != ''
                      AND start_date != '' AND due_date != ''
-                     AND start_date >= ? AND start_date <= ?
-                     AND due_date   >= ? AND due_date   <= ?""",
-                (canonical_run_id, from_date, to_date, from_date, to_date),
+                     AND start_date <= ? AND due_date >= ?""",
+                (canonical_run_id, to_date, from_date),
             ).fetchall()
         return [r[0] for r in rows if r[0]]
     except Exception:
@@ -37519,6 +37831,68 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         except Exception as exc:
             return jsonify({"ok": False, "error": str(exc)}), 500
 
+    def _support_center_date_range():
+        from_raw = _parse_iso_date(_to_text(request.args.get("from")))
+        to_raw = _parse_iso_date(_to_text(request.args.get("to")))
+        if from_raw and to_raw:
+            return from_raw, to_raw
+        latest = _load_latest_global_report_date_filter(capacity_paths["db_path"])
+        if latest:
+            from_raw = from_raw or _parse_iso_date(_to_text(latest.get("from_date")))
+            to_raw = to_raw or _parse_iso_date(_to_text(latest.get("to_date")))
+        if from_raw and to_raw:
+            return from_raw, to_raw
+        today = datetime.now(timezone.utc).date()
+        return (from_raw or today - timedelta(days=30)), (to_raw or today)
+
+    @app.route("/api/support-center/overview", methods=["GET"])
+    def support_center_overview():
+        try:
+            from_date, to_date = _support_center_date_range()
+            projects_raw = _to_text(request.args.get("projects")) or _to_text(request.args.get("project"))
+            selected_projects = {
+                _to_text(item).upper()
+                for item in projects_raw.split(",")
+                if _to_text(item)
+            } if projects_raw else None
+            canonical_run_id = _canonical_last_success_run_id(capacity_paths["db_path"])
+            payload = build_support_center_overview(
+                Path(capacity_paths["db_path"]),
+                resolve_support_center_db_path(),
+                canonical_run_id,
+                from_date,
+                to_date,
+                selected_projects=selected_projects,
+            )
+            return jsonify({"ok": True, **payload})
+        except ValueError as exc:
+            message = str(exc)
+            status_code = 409 if "No successful canonical refresh found" in message else 400
+            return jsonify({"ok": False, "error": message}), status_code
+        except Exception as exc:
+            return jsonify({"ok": False, "error": f"Failed to load support center overview: {exc}"}), 500
+
+    @app.route("/api/support-center/project/<project_key>", methods=["GET"])
+    def support_center_project_detail(project_key):
+        try:
+            from_date, to_date = _support_center_date_range()
+            canonical_run_id = _canonical_last_success_run_id(capacity_paths["db_path"])
+            payload = build_support_center_project_detail(
+                Path(capacity_paths["db_path"]),
+                resolve_support_center_db_path(),
+                canonical_run_id,
+                _to_text(project_key).upper(),
+                from_date,
+                to_date,
+            )
+            return jsonify({"ok": True, **payload})
+        except ValueError as exc:
+            message = str(exc)
+            status_code = 409 if "No successful canonical refresh found" in message else 400
+            return jsonify({"ok": False, "error": message}), status_code
+        except Exception as exc:
+            return jsonify({"ok": False, "error": f"Failed to load support center project detail: {exc}"}), 500
+
     @app.route(f"{CANONICAL_PVD_API_PREFIX}/ui-settings", methods=["GET"])
     @app.route(f"{LEGACY_PVD_API_PREFIX}/ui-settings", methods=["GET"])
     def get_pvd_ui_settings():
@@ -39675,21 +40049,75 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                     table_name = _to_text(row["name"])
                     escaped_name = table_name.replace('"', '""')
                     pragma_rows = conn.execute(f'PRAGMA table_info("{escaped_name}")').fetchall()
+                    columns = [
+                        {
+                            "name": _to_text(col["name"]),
+                            "type": _to_text(col["type"]),
+                            "notnull": int(col["notnull"] or 0) == 1,
+                            "pk": int(col["pk"] or 0) == 1,
+                        }
+                        for col in pragma_rows
+                    ]
+                    description = SQL_CONSOLE_TABLE_DESCRIPTIONS.get(table_name)
+                    if not description:
+                        description = f"{len(columns)} column{'s' if len(columns) != 1 else ''}."
                     tables.append(
                         {
                             "name": table_name,
-                            "columns": [
-                                {
-                                    "name": _to_text(col["name"]),
-                                    "type": _to_text(col["type"]),
-                                    "notnull": int(col["notnull"] or 0) == 1,
-                                    "pk": int(col["pk"] or 0) == 1,
-                                }
-                                for col in pragma_rows
-                            ],
+                            "description": description,
+                            "columns": columns,
                         }
                     )
             return jsonify({"ok": True, "database": database_name, "db_path": str(db_path), "tables": tables})
+        except FileNotFoundError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 404
+        except (ValueError, sqlite3.Error) as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+
+    @app.route("/api/admin/sql-console/table-preview", methods=["GET"])
+    def sql_console_table_preview():
+        try:
+            database_name, db_path = _sql_console_resolve_target_or_error(request.args.get("database"))
+            table_name = _to_text(request.args.get("table")).strip()
+            if not table_name:
+                raise ValueError("table is required.")
+            with _sql_console_open_connection(db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                exists = conn.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1",
+                    (table_name,),
+                ).fetchone()
+                if not exists:
+                    raise ValueError(f"Table not found: {table_name}")
+                escaped_name = table_name.replace('"', '""')
+                try:
+                    total_row_count = int(conn.execute(f'SELECT COUNT(*) FROM "{escaped_name}"').fetchone()[0])
+                except (sqlite3.Error, TypeError, ValueError):
+                    total_row_count = None
+                cursor = conn.execute(f'SELECT * FROM "{escaped_name}" LIMIT {int(SQL_CONSOLE_PREVIEW_ROWS)}')
+                column_names = [str(item[0]) for item in (cursor.description or [])]
+                fetched = cursor.fetchall()
+            rows: list[dict[str, object]] = []
+            for row in fetched:
+                item: dict[str, object] = {}
+                for idx, value in enumerate(tuple(row)):
+                    item[column_names[idx]] = (
+                        value.decode("utf-8", errors="replace") if isinstance(value, bytes) else value
+                    )
+                rows.append(item)
+            return jsonify(
+                {
+                    "ok": True,
+                    "database": database_name,
+                    "db_path": str(db_path),
+                    "table": table_name,
+                    "columns": column_names,
+                    "rows": rows,
+                    "row_count": len(rows),
+                    "total_row_count": total_row_count,
+                    "preview_limit": SQL_CONSOLE_PREVIEW_ROWS,
+                }
+            )
         except FileNotFoundError as exc:
             return jsonify({"ok": False, "error": str(exc)}), 404
         except (ValueError, sqlite3.Error) as exc:
@@ -39751,6 +40179,46 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 as_attachment=True,
                 download_name=filename,
             )
+        except FileNotFoundError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 404
+        except (ValueError, sqlite3.Error) as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+
+    @app.route("/api/admin/sql-console/generate", methods=["POST"])
+    def sql_console_generate():
+        try:
+            payload = request.get_json(silent=True) or {}
+            database_name, db_path = _sql_console_resolve_target_or_error(payload.get("database"))
+            prompt = _to_text(payload.get("prompt")).strip()
+            if not prompt:
+                return jsonify({"ok": False, "error": "Prompt is required."}), 400
+            api_key = _to_text(os.getenv("OPENAI_API_KEY")).strip()
+            if not api_key:
+                return jsonify({"ok": False, "error": "OPENAI_API_KEY is required to generate SQL."}), 400
+            with _sql_console_open_connection(db_path) as conn:
+                schema = _sql_console_schema_brief(conn)
+                entity_hints = _sql_console_resolve_entity_hints(conn, prompt)
+            model = _to_text(os.getenv("OPENAI_SQL_CONSOLE_MODEL")).strip() or SQL_CONSOLE_DEFAULT_OPENAI_MODEL
+            generation_input = _sql_console_build_generation_input(database_name, schema, entity_hints, prompt)
+            try:
+                response = requests.post(
+                    SQL_CONSOLE_OPENAI_URL,
+                    headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                    json={"model": model, "input": generation_input},
+                    timeout=60,
+                )
+                response.raise_for_status()
+                data = response.json()
+            except requests.RequestException as exc:
+                return jsonify({"ok": False, "error": f"SQL generation request failed: {exc}"}), 502
+            candidate = _sql_console_extract_model_sql(data)
+            if not candidate:
+                return jsonify({"ok": False, "error": "The model returned an empty response."}), 502
+            try:
+                sql = _normalize_sql_console_query(candidate)
+            except ValueError as exc:
+                return jsonify({"ok": False, "error": f"Generated SQL was not a valid read-only query: {exc}"}), 400
+            return jsonify({"ok": True, "database": database_name, "sql": sql})
         except FileNotFoundError as exc:
             return jsonify({"ok": False, "error": str(exc)}), 404
         except (ValueError, sqlite3.Error) as exc:

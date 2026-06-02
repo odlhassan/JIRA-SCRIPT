@@ -85,6 +85,7 @@ The new bug-subtask toggle is intentionally local to the drawer. The report head
 - `tests/test_monthly_epic_plan_progress.py` is impacted whenever estimate-rollup payload fields or drawer markup change.
 - `report_html/monthly_epic_plan_progress_report.html` is a served copy produced by the sync flow and reflects changes from the canonical root HTML file.
 - Planner-backed Jira link mappings from `epics_management` affect whether the drawer can display story or epic `TK planned` values.
+- `support_center_service.py` reuses this module's support-team capacity helpers (`build_workforce_month_payload`, `HOURS_PER_DAY`, `_month_bounds`) read-only to compute "hours available" for the Support Center report. See `SUPPORT_CENTER_REPORT.md`.
 
 ## Table Schema
 

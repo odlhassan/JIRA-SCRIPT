@@ -349,6 +349,64 @@ class AdminSqlConsoleApiTests(unittest.TestCase):
             self.assertEqual([worksheet["A2"].value, worksheet["B2"].value], ["alice", 3.5])
             self.assertEqual([worksheet["A3"].value, worksheet["B3"].value], ["bob", 4.0])
 
+    def test_schema_includes_table_descriptions(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            app = self._build_app(root)
+            client = app.test_client()
+
+            with sqlite3.connect(root / "assignee_hours_capacity.db") as conn:
+                conn.execute("CREATE TABLE demo_browse(a TEXT, b INTEGER, c REAL)")
+                conn.commit()
+
+            resp = client.get("/api/admin/sql-console/schema?database=canonical")
+            self.assertEqual(resp.status_code, 200)
+            tables = {str(item.get("name")): item for item in (resp.get_json() or {}).get("tables") or []}
+            self.assertIn("demo_browse", tables)
+            self.assertEqual(tables["demo_browse"].get("description"), "3 columns.")
+
+    def test_table_preview_returns_first_rows_and_total_count(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            app = self._build_app(root)
+            client = app.test_client()
+
+            with sqlite3.connect(root / "assignee_hours_capacity.db") as conn:
+                conn.execute("CREATE TABLE demo_preview(issue_key TEXT, hours REAL)")
+                conn.executemany(
+                    "INSERT INTO demo_preview(issue_key, hours) VALUES (?, ?)",
+                    [(f"O2-{idx}", float(idx)) for idx in range(25)],
+                )
+                conn.commit()
+
+            resp = client.get("/api/admin/sql-console/table-preview?database=canonical&table=demo_preview")
+            self.assertEqual(resp.status_code, 200)
+            body = resp.get_json() or {}
+            self.assertTrue(body.get("ok"))
+            self.assertEqual(body.get("columns"), ["issue_key", "hours"])
+            self.assertEqual(body.get("preview_limit"), 10)
+            self.assertEqual(len(body.get("rows") or []), 10)
+            self.assertEqual(body.get("total_row_count"), 25)
+            self.assertEqual((body.get("rows") or [])[0]["issue_key"], "O2-0")
+
+    def test_table_preview_rejects_unknown_or_injection_table_name(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            app = self._build_app(root)
+            client = app.test_client()
+
+            with sqlite3.connect(root / "assignee_hours_capacity.db") as conn:
+                conn.execute("CREATE TABLE demo_preview(issue_key TEXT)")
+                conn.commit()
+
+            for table in ("does_not_exist", "demo_preview; DROP TABLE demo_preview", ""):
+                with self.subTest(table=table):
+                    resp = client.get(
+                        "/api/admin/sql-console/table-preview?database=canonical&table=" + table
+                    )
+                    self.assertEqual(resp.status_code, 400)
+                    self.assertFalse((resp.get_json() or {}).get("ok", False))
+
     def test_missing_target_db_returns_404(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             root = Path(td)

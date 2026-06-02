@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
@@ -1098,6 +1098,34 @@
     .st-empty { text-align: center; padding: 30px 20px; color: var(--muted); font-size: 13px; }
     .st-empty .material-symbols-outlined { font-size: 36px; opacity: .5; display: block; margin: 0 auto 8px; }
     .work-bar-val { min-width: 44px; font-size: 11px; font-weight: 600; color: var(--text); text-align: right; }
+
+    /* ── Drawer resize handle ──────────────────────────────────────────── */
+    .drawer-resize-handle {
+      position: absolute; left: 0; top: 0; bottom: 0; width: 7px;
+      cursor: ew-resize; z-index: 10; background: transparent;
+      display: flex; align-items: center; justify-content: center;
+      transition: background .15s;
+    }
+    .drawer-resize-handle:hover, .drawer-resize-handle.is-dragging {
+      background: rgba(30,130,160,.14);
+    }
+    .drawer-resize-handle::after {
+      content: ''; display: block; width: 3px; height: 44px;
+      background: var(--accent, #1e82a0); border-radius: 3px;
+      opacity: 0; transition: opacity .15s;
+    }
+    .drawer-resize-handle:hover::after,
+    .drawer-resize-handle.is-dragging::after { opacity: .65; }
+
+    /* ── Drawer expand/restore button ─────────────────────────────────── */
+    .drawer-expand-btn {
+      background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.4);
+      color: #fff; width: 30px; height: 30px; border-radius: 6px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+      transition: background .15s;
+    }
+    .drawer-expand-btn:hover { background: rgba(255,255,255,.32); }
+    .drawer-expand-btn .material-symbols-outlined { font-size: 17px; }
     /* ── Days / Hours animated pill toggle ──────────────────────────── */
     .stat-unit-switch {
       position: relative;
@@ -1929,6 +1957,7 @@
 <!-- Analytics Drawer -->
 <div class="analytics-backdrop" id="analytics-backdrop"></div>
 <div class="analytics-drawer" id="analytics-drawer" role="dialog" aria-label="Team Analytics">
+  <div class="drawer-resize-handle" id="analytics-resize-handle" title="Drag to resize"></div>
   <div class="analytics-drawer-header">
     <div>
       <h2 class="analytics-drawer-title">
@@ -1936,9 +1965,14 @@
       </h2>
       <p class="analytics-drawer-subtitle" id="analytics-drawer-subtitle">—</p>
     </div>
-    <button class="analytics-close-btn" id="analytics-close-btn" title="Close">
-      <span class="material-symbols-outlined">close</span>
-    </button>
+    <div style="display:flex;gap:6px;flex-shrink:0">
+      <button class="drawer-expand-btn" id="analytics-expand-btn" title="Expand to full width">
+        <span class="material-symbols-outlined">open_in_full</span>
+      </button>
+      <button class="analytics-close-btn" id="analytics-close-btn" title="Close">
+        <span class="material-symbols-outlined">close</span>
+      </button>
+    </div>
   </div>
   <div class="analytics-drawer-body" id="analytics-drawer-body">
     <div class="empty-state">
@@ -1951,6 +1985,7 @@
 <!-- Subtask Breakdown Drawer -->
 <div class="st-backdrop" id="st-backdrop"></div>
 <div class="st-drawer" id="st-drawer" role="dialog" aria-label="Subtask Breakdown">
+  <div class="drawer-resize-handle" id="st-resize-handle" title="Drag to resize"></div>
   <div class="st-drawer-header">
     <div style="min-width:0;flex:1">
       <h2 class="st-drawer-title">
@@ -1959,9 +1994,14 @@
       </h2>
       <p class="st-drawer-subtitle" id="st-drawer-subtitle">—</p>
     </div>
-    <button class="st-drawer-close" id="st-drawer-close" title="Close">
-      <span class="material-symbols-outlined">close</span>
-    </button>
+    <div style="display:flex;gap:6px;flex-shrink:0">
+      <button class="drawer-expand-btn" id="st-expand-btn" title="Expand to full width">
+        <span class="material-symbols-outlined">open_in_full</span>
+      </button>
+      <button class="st-drawer-close" id="st-drawer-close" title="Close">
+        <span class="material-symbols-outlined">close</span>
+      </button>
+    </div>
   </div>
   <div class="st-drawer-totals" id="st-drawer-totals" hidden>
     <div><strong id="st-total-count">0</strong> subtasks</div>
@@ -3120,6 +3160,118 @@
     const kind = row.getAttribute('data-bar-kind');
     if (member && kind) openSubtaskDrawer(member, kind);
   });
+
+  // ── Drawer Drag-to-Resize ────────────────────────────────────────────────
+  (function initDrawerResize() {
+    const SNAP_MIN = 320;
+
+    function setupResize(drawer, handle, expandBtn, storageKey, defaultWidth) {
+      if (!drawer || !handle) return;
+
+      // Restore saved width
+      try {
+        const saved = parseInt(localStorage.getItem(storageKey), 10);
+        if (!isNaN(saved) && saved >= SNAP_MIN) drawer.style.width = saved + 'px';
+      } catch (_) {}
+
+      // Sync expand button icon with current width
+      function syncExpandIcon() {
+        if (!expandBtn) return;
+        const icon = expandBtn.querySelector('.material-symbols-outlined');
+        const isMax = drawer.getBoundingClientRect().width >= window.innerWidth - 2;
+        if (icon) icon.textContent = isMax ? 'close_fullscreen' : 'open_in_full';
+        expandBtn.title = isMax ? 'Restore default width' : 'Expand to full width';
+      }
+
+      // Drag logic
+      let dragging = false, startX = 0, startW = 0;
+
+      handle.addEventListener('mousedown', (e) => {
+        if (!drawer.classList.contains('open')) return;
+        dragging = true;
+        startX = e.clientX;
+        startW = drawer.getBoundingClientRect().width;
+        handle.classList.add('is-dragging');
+        drawer.style.transition = 'none';
+        document.body.style.userSelect = 'none';
+        document.body.style.cursor = 'ew-resize';
+        e.preventDefault();
+      });
+
+      document.addEventListener('mousemove', (e) => {
+        if (!dragging) return;
+        const newW = Math.max(SNAP_MIN, Math.min(window.innerWidth, startW + (startX - e.clientX)));
+        drawer.style.width = newW + 'px';
+      });
+
+      document.addEventListener('mouseup', () => {
+        if (!dragging) return;
+        dragging = false;
+        handle.classList.remove('is-dragging');
+        drawer.style.transition = '';
+        document.body.style.userSelect = '';
+        document.body.style.cursor = '';
+        syncExpandIcon();
+        try { localStorage.setItem(storageKey, parseInt(drawer.style.width, 10)); } catch (_) {}
+      });
+
+      // Touch support
+      handle.addEventListener('touchstart', (e) => {
+        if (!drawer.classList.contains('open')) return;
+        dragging = true;
+        startX = e.touches[0].clientX;
+        startW = drawer.getBoundingClientRect().width;
+        handle.classList.add('is-dragging');
+        drawer.style.transition = 'none';
+        e.preventDefault();
+      }, { passive: false });
+
+      document.addEventListener('touchmove', (e) => {
+        if (!dragging) return;
+        const newW = Math.max(SNAP_MIN, Math.min(window.innerWidth, startW + (startX - e.touches[0].clientX)));
+        drawer.style.width = newW + 'px';
+      }, { passive: true });
+
+      document.addEventListener('touchend', () => {
+        if (!dragging) return;
+        dragging = false;
+        handle.classList.remove('is-dragging');
+        drawer.style.transition = '';
+        syncExpandIcon();
+        try { localStorage.setItem(storageKey, parseInt(drawer.style.width, 10)); } catch (_) {}
+      });
+
+      // Expand / restore button
+      if (expandBtn) {
+        expandBtn.addEventListener('click', () => {
+          const currentW = drawer.getBoundingClientRect().width;
+          const isMax = currentW >= window.innerWidth - 2;
+          drawer.style.width = isMax ? defaultWidth + 'px' : window.innerWidth + 'px';
+          syncExpandIcon();
+          try { localStorage.setItem(storageKey, parseInt(drawer.style.width, 10)); } catch (_) {}
+        });
+      }
+
+      // Sync icon whenever drawer opens
+      const observer = new MutationObserver(() => syncExpandIcon());
+      observer.observe(drawer, { attributes: true, attributeFilter: ['class'] });
+    }
+
+    setupResize(
+      document.getElementById('st-drawer'),
+      document.getElementById('st-resize-handle'),
+      document.getElementById('st-expand-btn'),
+      'tcp-drawer-w-st',
+      760
+    );
+    setupResize(
+      document.getElementById('analytics-drawer'),
+      document.getElementById('analytics-resize-handle'),
+      document.getElementById('analytics-expand-btn'),
+      'tcp-drawer-w-analytics',
+      400
+    );
+  })();
 
   // ── Exclude Bug Subtasks toggle helpers ─────────────────────────────────
   function getExcludeBugs() {

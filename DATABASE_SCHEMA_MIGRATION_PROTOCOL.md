@@ -88,6 +88,7 @@ This workflow can be operated from CLI today, and the repo also exposes a DB Mig
 | `docs/report-user-guide/screens/12-epics-planner-tk-estimates.md` | Must reflect Epics Planner table/column changes when schema updates touch that module. |
 | Any generator or service file that issues `CREATE TABLE`, `ALTER TABLE`, or reads changed columns | Must be listed in `files_reading_json` and kept aligned with the migration log. |
 | Tests covering schema setup or migrations | Must validate the changed structure and any production migration behavior that was modified. |
+| `support_center.db` (table `support_issues`) | Standalone, local-only DB for the Support Center report. Recorded in the changelog (ADD_TABLE) and snapshotted, but it is a brand-new DB — no production rename→recreate→copy flow applies. Rebuilt by `support_center_sync.py`; gitignored. The main canonical DBs are untouched/read-only. See `SUPPORT_CENTER_REPORT.md`. |
 
 ## Table Schema
 

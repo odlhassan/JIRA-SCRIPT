@@ -29,6 +29,10 @@ assignee_hours_capacity.db
 jira_sync_cache.db
 jira_sync_cache.db-shm
 jira_sync_cache.db-wal
+# Support Center standalone DB — local-only artifact, rebuilt by support_center_sync.py
+support_center.db
+support_center.db-shm
+support_center.db-wal
 
 # Local or export backups — do not push (GitHub Actions production deploy skips these too)
 /backup/

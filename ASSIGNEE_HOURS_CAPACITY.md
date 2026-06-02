@@ -25,6 +25,13 @@ Detailed functional documentation is available at:
   - `assignee_hours_capacity.db`
   - `assignee_hours_capacity.sqlite`
 
+### Dependent & Impacted Files
+
+- `support_center_service.py` reads `assignee_hours_capacity.db` **read-only** (canonical
+  issues/worklogs/actuals + support-team capacity) to power the Support Center report. It
+  never writes to or alters this DB; its own data lives in the standalone
+  `support_center.db`. See `SUPPORT_CENTER_REPORT.md`.
+
 ## Run Modes
 
 - Static generation:
