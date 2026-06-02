@@ -29,8 +29,16 @@ from monthly_epic_plan_progress_service import (
     build_workforce_month_payload,
 )
 
-# `Support by <name> (<Full Month and year>)`, e.g. "Support by Nadeem (June 2026)"
-BOOKING_STORY_RE = re.compile(r"^\s*support\s+by\s+.+\(.+\)\s*$", re.IGNORECASE)
+# Booking stories: "Support by <name> (<Month Year>)" or "Support by <name> <Month Year>"
+# Also matches "Technical Support by ..." variants.
+BOOKING_STORY_RE = re.compile(r"^\s*(?:technical\s+)?support\s+by\s+.+\(.+\)\s*$", re.IGNORECASE)
+# Looser pattern: "Support by <name> <Month Year>" without parentheses
+BOOKING_STORY_LOOSE_RE = re.compile(
+    r"^\s*(?:technical\s+)?support\s+by\s+\S+(?:\s+\S+)*\s+"
+    r"(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)"
+    r"\s+\d{4}\s*$",
+    re.IGNORECASE,
+)
 
 DONE_STATUSES = {"done", "closed", "resolved", "complete", "completed"}
 
@@ -74,7 +82,8 @@ def _is_done(status: str) -> bool:
 
 
 def is_booking_story(summary: str) -> bool:
-    return bool(BOOKING_STORY_RE.match(_to_text(summary)))
+    text = _to_text(summary)
+    return bool(BOOKING_STORY_RE.match(text) or BOOKING_STORY_LOOSE_RE.match(text))
 
 
 def _months_in_range(from_date: date, to_date: date) -> list[str]:
@@ -134,10 +143,15 @@ def _build_context(
     support_keys = load_support_keys(support_db_path)
 
     worklogs_by_issue: dict[str, float] = {}
+    # Track per-issue worklogs with dates for range-based filtering
+    worklogs_dated: dict[str, list[tuple[str, float]]] = {}
     for wl in load_canonical_worklogs(canonical_db_path, effective_run_id):
         wl_key = _to_text(wl.get("issue_key")).upper()
         if wl_key:
-            worklogs_by_issue[wl_key] = worklogs_by_issue.get(wl_key, 0.0) + _to_float(wl.get("hours_logged"))
+            hours = _to_float(wl.get("hours_logged"))
+            worklogs_by_issue[wl_key] = worklogs_by_issue.get(wl_key, 0.0) + hours
+            wl_date = _to_text(wl.get("started_date"))
+            worklogs_dated.setdefault(wl_key, []).append((wl_date, hours))
 
     issue_by_key: dict[str, dict[str, Any]] = {}
     children_by_story: dict[str, list[dict[str, Any]]] = {}
@@ -157,6 +171,7 @@ def _build_context(
         "actuals": actuals,
         "support_keys": support_keys,
         "worklogs_by_issue": worklogs_by_issue,
+        "worklogs_dated": worklogs_dated,
     }
 
 
@@ -237,13 +252,87 @@ def _in_range(completion: date | None, from_date: date, to_date: date) -> bool:
     return from_date <= completion <= to_date
 
 
+def _story_overlaps_range(story: dict[str, Any], ctx: dict[str, Any], from_date: date, to_date: date) -> bool:
+    """Return True if the story has any activity or date overlap with [from_date, to_date].
+
+    A story overlaps if:
+    - Its completion date is in range, OR
+    - Its start_date..due_date span overlaps the range (both must exist), OR
+    - Any of its subtasks have worklogs within the range
+    """
+    key = _to_text(story.get("issue_key")).upper()
+    issue = ctx["issue_by_key"].get(key, story)
+    actual = ctx["actuals"].get(key, {})
+
+    # Check completion date in range
+    completion = _story_completion_date(issue, actual)
+    if completion and from_date <= completion <= to_date:
+        return True
+
+    # Check story date span overlap (requires both start and due)
+    start = _parse_iso_date(issue.get("start_date"))
+    due = _parse_iso_date(issue.get("due_date"))
+    if start and due and start <= to_date and due >= from_date:
+        return True
+
+    # Check if any subtask has worklogs in the range
+    worklogs_dated = ctx.get("worklogs_dated") or {}
+    for child in ctx["children_by_story"].get(key, []):
+        child_key = _to_text(child.get("issue_key")).upper()
+        for wl_date_str, _ in worklogs_dated.get(child_key, []):
+            wl_date = _parse_iso_date(wl_date_str)
+            if wl_date and from_date <= wl_date <= to_date:
+                return True
+
+    return False
+
+
+def _subtask_hours_in_range(ctx: dict[str, Any], story_key: str, from_date: date, to_date: date) -> tuple[float, int, int]:
+    """Sum logged hours on subtasks WHERE worklog date is in [from_date, to_date]."""
+    worklogs_dated = ctx.get("worklogs_dated") or {}
+    actuals = ctx["actuals"]
+    total_hours = 0.0
+    subtask_count = 0
+    done_subtasks = 0
+    for child in ctx["children_by_story"].get(story_key.upper(), []):
+        subtask_count += 1
+        child_key = _to_text(child.get("issue_key")).upper()
+        # Sum only worklogs within date range
+        child_hours = 0.0
+        for wl_date_str, wl_hours in worklogs_dated.get(child_key, []):
+            wl_date = _parse_iso_date(wl_date_str)
+            if wl_date and from_date <= wl_date <= to_date:
+                child_hours += wl_hours
+        # If no dated worklogs available, fall back to total (for backwards compat)
+        if not child_hours and not worklogs_dated.get(child_key):
+            actual = actuals.get(child_key, {})
+            child_hours = _to_float(actual.get("total_worklog_hours"))
+        total_hours += child_hours
+        if _is_done(child.get("status")):
+            done_subtasks += 1
+    return total_hours, subtask_count, done_subtasks
+
+
 def _roster_from_booking(ctx: dict[str, Any], booking_stories: list[dict[str, Any]]) -> list[dict[str, Any]]:
     roster: list[dict[str, Any]] = []
     for story in booking_stories:
         summary = _to_text(story.get("summary"))
+        # Try parenthesized month first: "Support by Name (June 2026)"
         month_match = re.search(r"\(([^)]+)\)\s*$", summary)
-        name_match = re.search(r"support\s+by\s+(.+?)\s*\(", summary, re.IGNORECASE)
         booked_for = month_match.group(1).strip() if month_match else ""
+        # Extract assignee name from "Support by <name>"
+        if month_match:
+            name_match = re.search(r"support\s+by\s+(.+?)\s*\(", summary, re.IGNORECASE)
+        else:
+            name_match = re.search(r"support\s+by\s+(.+?)\s+(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)", summary, re.IGNORECASE)
+        # If no parenthesized month, try trailing "Month Year" pattern
+        if not booked_for:
+            trailing_month = re.search(
+                r"((?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+\d{4})\s*$",
+                summary, re.IGNORECASE
+            )
+            if trailing_month:
+                booked_for = trailing_month.group(1).strip()
         roster.append({
             "issue_key": _to_text(story.get("issue_key")).upper(),
             "project_key": _to_text(story.get("project_key")).upper(),
@@ -341,8 +430,12 @@ def build_support_center_overview(
         row = _story_row(ctx, story)
         if project_filter and row["project_key"] not in project_filter:
             continue
-        if not _in_range(row["_completion_date"], from_date, to_date):
+        if not _story_overlaps_range(story, ctx, from_date, to_date):
             continue
+        # Recalculate hours using only worklogs within the date range
+        hours_in_range, _, _ = _subtask_hours_in_range(ctx, row["issue_key"], from_date, to_date)
+        row["invested_hours"] = _round_hours(hours_in_range)
+        row["invested_days"] = _round_hours(hours_in_range / HOURS_PER_DAY)
         in_range_rows.append(row)
         agg = by_project.setdefault(row["project_key"], {
             "project_key": row["project_key"],
@@ -367,6 +460,28 @@ def build_support_center_overview(
         roster = [r for r in roster if r["project_key"] in project_filter]
     for r in roster:
         r["project_name"] = project_name_map.get(r["project_key"], r["project_key"])
+
+    # Also count invested hours from booking stories' subtasks within the range
+    booking_invested = 0.0
+    for story in booking_stories:
+        pk = _to_text(story.get("project_key")).upper()
+        if project_filter and pk not in project_filter:
+            continue
+        story_key = _to_text(story.get("issue_key")).upper()
+        hours_in_range, subtask_count, _ = _subtask_hours_in_range(ctx, story_key, from_date, to_date)
+        if hours_in_range > 0:
+            booking_invested += hours_in_range
+            agg = by_project.setdefault(pk, {
+                "project_key": pk,
+                "story_count": 0,
+                "resolved_count": 0,
+                "invested_hours": 0.0,
+                "subtask_count": 0,
+            })
+            agg["invested_hours"] += hours_in_range
+            agg["subtask_count"] += subtask_count
+
+    total_invested = _round_hours(total_invested + booking_invested)
 
     project_rows = []
     for pk in sorted(by_project.keys()):
@@ -423,8 +538,12 @@ def build_support_center_project_detail(
         row = _story_row(ctx, story)
         if row["project_key"] != pk:
             continue
-        if not _in_range(row["_completion_date"], from_date, to_date):
+        if not _story_overlaps_range(story, ctx, from_date, to_date):
             continue
+        # Recalculate hours using only worklogs within the date range
+        hours_in_range, _, _ = _subtask_hours_in_range(ctx, row["issue_key"], from_date, to_date)
+        row["invested_hours"] = _round_hours(hours_in_range)
+        row["invested_days"] = _round_hours(hours_in_range / HOURS_PER_DAY)
         story_key = row["issue_key"]
         subtasks = []
         for child in ctx["children_by_story"].get(story_key, []):
