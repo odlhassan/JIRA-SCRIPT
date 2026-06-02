@@ -12,19 +12,24 @@ hours were invested, on what, and how many support stories were resolved.
   tagged can be Epic, Story, Subtask, or Bug Subtask. The canonical databases are **not**
   modified; this DB is joined back to canonical data on `issue_key` at query time.
 - **Two kinds of Support stories** (Story-level issues in the support set):
-  1. **Booking stories** — summary matches `^\s*support\s+by\s+.+\(.+\)\s*$`
-     (case-insensitive), e.g. `Support by Nadeem (June 2026)`. These are roster entries
-     only; they show *who* is booked for support in a month. They never contribute hours.
+  1. **Booking stories** — summary matches either:
+     - Strict: `^\s*(?:technical\s+)?support\s+by\s+.+\(.+\)\s*$` (with parentheses),
+       e.g. `Support by Nadeem (June 2026)`
+     - Loose: `^\s*(?:technical\s+)?support\s+by\s+<name>\s+<Month>\s+<Year>$` (without
+       parentheses), e.g. `Support by Abbas May 2026`, `Technical Support by Nadeem May 2026`
+     These are roster entries; they show *who* is booked for support in a month. Their
+     subtask worklogs still contribute to total invested hours.
   2. **Actual support stories** — any other support-tagged Story. These carry the real
      work: subtasks / bug subtasks with worklog hours.
-- **Hours invested.** For each actual support story, sum the logged hours of its
-  descendants (subtasks + bug subtasks, resolved via `canonical_issues.story_key`).
-  Per-subtask hours prefer `canonical_issue_actuals.total_worklog_hours`, then a sum of
-  `canonical_worklogs.hours_logged`, then `canonical_issues.total_hours_logged`.
-- **Date scoping.** The date filter is applied to the **actual support story's actual
-  completion date** (`canonical_issue_actuals.actual_complete_date`, falling back to
-  `last_worklog_date` → `due_date` → `start_date`). Stories whose completion date falls in
-  range are included; their subtasks' worklogs give the invested hours.
+- **Hours invested.** Total support work hours = sum of (a) actual-story subtask
+  worklogs dated within the range, plus (b) booking-story subtask worklogs dated within
+  the range. Per-subtask hours are counted from `canonical_worklogs.started_date` within
+  the range. If no dated worklogs exist, falls back to
+  `canonical_issue_actuals.total_worklog_hours`.
+- **Date scoping.** Actual support stories are included if they **overlap** the date
+  range via any of: (a) actual completion date in range, (b) start_date..due_date span
+  overlaps range, (c) any subtask has a worklog with `started_date` within the range.
+  This ensures in-progress stories with recent work are visible.
 - **Resolved count.** Actual support stories within range whose status is Done/closed/
   resolved/complete/completed.
 - **Hours available.** Reuses the Monthly Epic Plan capacity model
@@ -162,9 +167,10 @@ tables, all support-tagged issues, counts by project, counts by type.
    GETs `/api/support-center/overview?from=&to=&projects=`.
 3. **Service** (`build_support_center_overview`): resolve canonical run id → load issues /
    actuals / worklogs (read-only) + support keys → classify booking vs actual stories →
-   filter actual stories by completion date in range → sum subtask hours → compute
-   resolved count → sum available hours from capacity model → return KPIs + by_project +
-   roster.
+   filter actual stories by date overlap (completion in range OR start/due span overlaps
+   OR subtask worklogs in range) → sum subtask hours within the date range → also sum
+   booking-story subtask hours within range → compute resolved count → sum available hours
+   from capacity model → return KPIs + by_project + roster.
 4. **Drilldown**: `/api/support-center/project/<key>` →
    `build_support_center_project_detail` returns per-story subtask detail + roster.
 5. **Render**: HTML shell paints KPIs, tables, and expandable stories.
