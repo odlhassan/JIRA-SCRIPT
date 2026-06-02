@@ -1214,6 +1214,66 @@
       font-weight: 800;
     }
 
+    /* ── Date-match mode toggle (3-option pill: Overlap / Start in Range / End in Range) ─── */
+    .date-match-switch {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      background: rgba(0,0,0,.28);
+      border: 1px solid rgba(255,255,255,.20);
+      border-radius: 999px;
+      padding: 3px;
+      height: 30px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .date-match-pill {
+      position: absolute;
+      top: 3px; left: 3px; bottom: 3px;
+      width: calc(33.333% - 2px);
+      background: #fff;
+      border-radius: 999px;
+      box-shadow: 0 1px 5px rgba(0,0,0,.22);
+      transition: transform .24s cubic-bezier(.4,0,.2,1);
+      z-index: 1;
+      pointer-events: none;
+    }
+    .date-match-switch[data-mode="start_in_range"] .date-match-pill {
+      transform: translateX(100%);
+    }
+    .date-match-switch[data-mode="end_in_range"] .date-match-pill {
+      transform: translateX(200%);
+    }
+    .date-match-opt {
+      position: relative; z-index: 2;
+      border: 0; background: transparent;
+      color: rgba(255,255,255,.6);
+      font-size: 10px; font-weight: 700; letter-spacing: .2px;
+      cursor: pointer; padding: 0 8px;
+      border-radius: 999px; height: 22px;
+      transition: color .18s ease;
+      white-space: nowrap;
+      display: inline-flex; align-items: center; gap: 3px;
+    }
+    .date-match-opt .material-symbols-outlined { font-size: 13px; }
+    .date-match-switch[data-mode="overlap"]        .date-match-opt[data-mode="overlap"],
+    .date-match-switch[data-mode="start_in_range"] .date-match-opt[data-mode="start_in_range"],
+    .date-match-switch[data-mode="end_in_range"]   .date-match-opt[data-mode="end_in_range"] {
+      color: var(--accent);
+      font-weight: 800;
+    }
+    .date-match-switch.in-panel { width: 100%; }
+    .date-match-switch.in-panel .date-match-opt {
+      flex: 1; justify-content: center;
+    }
+    .date-match-switch.in-panel .date-match-opt { color: var(--muted); }
+    .date-match-switch.in-panel[data-mode="overlap"]        .date-match-opt[data-mode="overlap"],
+    .date-match-switch.in-panel[data-mode="start_in_range"] .date-match-opt[data-mode="start_in_range"],
+    .date-match-switch.in-panel[data-mode="end_in_range"]   .date-match-opt[data-mode="end_in_range"] {
+      color: var(--accent); font-weight: 800;
+    }
+    .date-match-switch.in-panel .date-match-pill { background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.14); }
+
     /* ── Exclude Bug Subtasks toggle (top-bar) ───────────────────────── */
     .bug-toggle {
       display: inline-flex; align-items: center; gap: 8px;
@@ -1822,6 +1882,21 @@
             </button>
           </div>
         </div>
+        <div class="tbp-row" title="Overlap: epic dates overlap the filter range. Start in Range: epic start date falls within filter. End in Range: epic end date falls within filter.">
+          <span class="tbp-lbl">Date Match</span>
+          <div class="date-match-switch in-panel" id="date-match-toggle" role="group" aria-label="Date match mode" data-mode="overlap">
+            <span class="date-match-pill" aria-hidden="true"></span>
+            <button type="button" class="date-match-opt" data-mode="overlap" aria-pressed="true">
+              <span class="material-symbols-outlined">join_inner</span>Overlap
+            </button>
+            <button type="button" class="date-match-opt" data-mode="start_in_range" aria-pressed="false">
+              <span class="material-symbols-outlined">start</span>Start in Range
+            </button>
+            <button type="button" class="date-match-opt" data-mode="end_in_range" aria-pressed="false">
+              <span class="material-symbols-outlined">flag</span>End in Range
+            </button>
+          </div>
+        </div>
         <div class="tbp-row">
           <span class="tbp-lbl">Capacity Profile</span>
           <select id="profile-select" class="tbp-select"><option value="">Auto (best match)</option></select>
@@ -2059,6 +2134,7 @@
   const $statUnitToggle = document.getElementById('stat-unit-toggle');
   const $excludeBugsToggle = document.getElementById('exclude-bugs-toggle');
   const $epicModeToggle = document.getElementById('epic-mode-toggle');
+  const $dateMatchToggle = document.getElementById('date-match-toggle');
   const $modal      = document.getElementById('assign-modal');
   const $modalName  = document.getElementById('modal-issue-name');
   const $modalSel   = document.getElementById('modal-member-select');
@@ -2092,11 +2168,34 @@
     loadWorkItems();
   }
 
+  async function fetchJson(url, options) {
+    const res = await fetch(url, options);
+    const contentType = (res.headers.get('content-type') || '').toLowerCase();
+    const text = await res.text();
+    const trimmed = text.trim();
+    let data = {};
+    const looksJson = trimmed.startsWith('{') || trimmed.startsWith('[');
+    if (trimmed && (contentType.includes('application/json') || looksJson)) {
+      try {
+        data = JSON.parse(trimmed);
+      } catch (err) {
+        throw new Error(`Server returned invalid JSON (HTTP ${res.status || 'unknown'}).`);
+      }
+    } else if (trimmed) {
+      const preview = trimmed.replace(/\s+/g, ' ').slice(0, 180);
+      const status = res.status ? `HTTP ${res.status}` : 'Server response';
+      throw new Error(`${status}: ${preview}`);
+    }
+    if (!res.ok) {
+      throw new Error(data.error || `HTTP ${res.status} ${res.statusText || 'request failed'}`.trim());
+    }
+    return { res, data };
+  }
+
   // ── Capacity profiles ──────────────────────────────────────────────────
   async function loadProfiles() {
     try {
-      const res  = await fetch('/api/team-capacity-planner/capacity-profiles');
-      const data = await res.json();
+      const { data } = await fetchJson('/api/team-capacity-planner/capacity-profiles');
       S.profiles = data.profiles || [];
       $profileSel.innerHTML = '<option value="">Auto (best match)</option>' +
         S.profiles.map(p => {
@@ -2111,8 +2210,7 @@
   // ── Work item projects ─────────────────────────────────────────────────
   async function loadWorkItemProjects() {
     try {
-      const res  = await fetch('/api/team-capacity-planner/work-item-projects');
-      const data = await res.json();
+      const { data } = await fetchJson('/api/team-capacity-planner/work-item-projects');
       if (!data.ok) return;
       const opts = (data.projects || []).map(p => `<option value="${esc(p)}">${esc(p)}</option>`).join('');
       $wiProjectSel.innerHTML = '<option value="">All Projects</option>' + opts;
@@ -2124,8 +2222,7 @@
   // ── Teams ──────────────────────────────────────────────────────────────
   async function loadTeams() {
     try {
-      const res = await fetch('/api/team-capacity-planner/teams');
-      const data = await res.json();
+      const { data } = await fetchJson('/api/team-capacity-planner/teams');
       if (!data.ok) throw new Error(data.error || 'Failed to load teams');
       S.teams = data.teams || [];
       $teamSel.innerHTML = S.teams.length
@@ -2148,10 +2245,9 @@
 
     setLoading(true);
     try {
-      let url = `/api/team-capacity-planner/data?team=${encodeURIComponent(team)}&from=${from}&to=${to}&exclude_bugs=${getExcludeBugs() ? 1 : 0}&epic_mode=${getEpicMode()}`;
+      let url = `/api/team-capacity-planner/data?team=${encodeURIComponent(team)}&from=${from}&to=${to}&exclude_bugs=${getExcludeBugs() ? 1 : 0}&epic_mode=${getEpicMode()}&date_match=${getDateMatch()}`;
       if (profileId) url += `&profile_id=${encodeURIComponent(profileId)}`;
-      const res = await fetch(url);
-      const data = await res.json();
+      const { data } = await fetchJson(url);
       if (!data.ok) throw new Error(data.error || 'Load failed');
       S.teamData = data;
       if (data.jira_base_url) S.jiraBaseUrl = data.jira_base_url;
@@ -2178,8 +2274,7 @@
       if (q)       url += `&search=${encodeURIComponent(q)}`;
       if (project) url += `&project=${encodeURIComponent(project)}`;
       if (type)    url += `&type=${encodeURIComponent(type)}`;
-      const res = await fetch(url);
-      const data = await res.json();
+      const { data } = await fetchJson(url);
       if (!data.ok) throw new Error(data.error);
       S.workItems = data.work_items || [];
       if (data.jira_base_url) S.jiraBaseUrl = data.jira_base_url;
@@ -2586,7 +2681,7 @@
     if (!assigneeName) { showToast('Please select a team member.', 'warn'); return; }
     $confirmBtn.disabled = true;
     try {
-      const res = await fetch('/api/team-capacity-planner/assign', {
+      const { res, data } = await fetchJson('/api/team-capacity-planner/assign', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -2595,7 +2690,6 @@
           assignee_account_id: '',
         }),
       });
-      const data = await res.json();
       closeModal();
       if (res.status === 207 || !data.jira_synced) {
         showToast(data.warning || 'Assignment saved locally (Jira sync pending).', 'warn');
@@ -2670,8 +2764,7 @@
   async function loadEpicChildren(epicKey) {
     const cacheKey = epicKey.toUpperCase();
     if (S.epicChildrenCache[cacheKey]) return S.epicChildrenCache[cacheKey];
-    const res = await fetch(`/api/team-capacity-planner/epic-children?epic_key=${encodeURIComponent(epicKey)}`);
-    const data = await res.json();
+    const { data } = await fetchJson(`/api/team-capacity-planner/epic-children?epic_key=${encodeURIComponent(epicKey)}`);
     if (!data.ok) throw new Error(data.error || 'Failed to load children');
     const stories = data.stories || [];
     S.epicChildrenCache[cacheKey] = stories;
@@ -2720,8 +2813,7 @@
     $jiraSyncPush.innerHTML = '<span class="material-symbols-outlined" style="font-size:15px;vertical-align:middle">cloud_upload</span> Push Selected to Jira';
     $jiraSyncContent.innerHTML = emptyState('hourglass_empty', 'Loading assignments…');
     try {
-      const res = await fetch('/api/team-capacity-planner/assignments');
-      const data = await res.json();
+      const { data } = await fetchJson('/api/team-capacity-planner/assignments');
       if (!data.ok) throw new Error(data.error || 'Failed to load');
       const asgns = data.assignments || [];
       if (!asgns.length) {
@@ -2813,12 +2905,11 @@
     $jiraSyncPush.innerHTML = '<span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle;animation:spin .7s linear infinite">sync</span> Pushing…';
     $jiraSyncResult.hidden = true;
     try {
-      const res = await fetch('/api/team-capacity-planner/push-assignments-to-jira', {
+      const { data } = await fetchJson('/api/team-capacity-planner/push-assignments-to-jira', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids }),
       });
-      const data = await res.json();
       if (!data.ok) throw new Error(data.error || 'Push failed');
       const succeeded = data.succeeded || 0;
       const failed = (data.pushed || 0) - succeeded;
@@ -3135,9 +3226,8 @@
     const from = $fromDate.value;
     const to = $toDate.value;
     try {
-      const url = `/api/team-capacity-planner/member-subtasks?assignee=${encodeURIComponent(member)}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&kind=${encodeURIComponent(kind)}&exclude_bugs=${getExcludeBugs() ? 1 : 0}&epic_mode=${getEpicMode()}`;
-      const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
-      const data = await res.json();
+      const url = `/api/team-capacity-planner/member-subtasks?assignee=${encodeURIComponent(member)}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&kind=${encodeURIComponent(kind)}&exclude_bugs=${getExcludeBugs() ? 1 : 0}&epic_mode=${getEpicMode()}&date_match=${getDateMatch()}`;
+      const { res, data } = await fetchJson(url, { headers: { 'Accept': 'application/json' } });
       if (!res.ok || !data.ok) {
         $stBody.innerHTML = `<div class="st-empty"><span class="material-symbols-outlined">error</span><p>${esc(data.error || 'Failed to load.')}</p></div>`;
         return;
@@ -3327,6 +3417,43 @@
         const titleText = $stTitle ? $stTitle.textContent : '';
         const m = titleText.match(/^(Planned|Logged) Hours · (.+)$/);
         if (m) openSubtaskDrawer(m[2], m[1].toLowerCase());
+      }
+    });
+  })();
+
+  // ── Date-match mode (Overlap / Start in Range / End in Range) toggle helpers ──
+  const VALID_DATE_MATCH = ['overlap', 'start_in_range', 'end_in_range'];
+  function getDateMatch() {
+    if (!$dateMatchToggle) return 'overlap';
+    const v = $dateMatchToggle.dataset.mode;
+    return VALID_DATE_MATCH.includes(v) ? v : 'overlap';
+  }
+  function setDateMatch(mode) {
+    if (!$dateMatchToggle) return;
+    const m = VALID_DATE_MATCH.includes(mode) ? mode : 'overlap';
+    $dateMatchToggle.dataset.mode = m;
+    $dateMatchToggle.querySelectorAll('button[data-mode]').forEach(btn => {
+      btn.setAttribute('aria-pressed', btn.dataset.mode === m ? 'true' : 'false');
+    });
+  }
+  (function initDateMatchToggle() {
+    if (!$dateMatchToggle) return;
+    const stored = localStorage.getItem('tcp-date-match');
+    setDateMatch(VALID_DATE_MATCH.includes(stored) ? stored : 'overlap');
+    $dateMatchToggle.addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-mode]');
+      if (!btn) return;
+      const next = btn.dataset.mode;
+      if (!VALID_DATE_MATCH.includes(next) || next === getDateMatch()) return;
+      setDateMatch(next);
+      localStorage.setItem('tcp-date-match', next);
+      if ($teamSel.value && $fromDate.value && $toDate.value) {
+        loadTeamData();
+      }
+      if ($stDrawer && $stDrawer.classList.contains('open')) {
+        const titleText = $stTitle ? $stTitle.textContent : '';
+        const m2 = titleText.match(/^(Planned|Logged) Hours · (.+)$/);
+        if (m2) openSubtaskDrawer(m2[2], m2[1].toLowerCase());
       }
     });
   })();

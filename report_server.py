@@ -30118,7 +30118,7 @@ def _tcp_issue_type_is_subtask_sql(alias: str = "") -> str:
     )
 
 
-def _tcp_epics_in_range(conn, canonical_run_id: str, from_date: str, to_date: str, mode: str = "story") -> list[str]:
+def _tcp_epics_in_range(conn, canonical_run_id: str, from_date: str, to_date: str, mode: str = "story", date_match: str = "overlap") -> list[str]:
     """Return uppercase epic_keys eligible under the selected Team-Capacity-Planner epic-date mode.
 
     Modes (controlled by the top-bar "Epics by ..." toggle):
@@ -30131,13 +30131,38 @@ def _tcp_epics_in_range(conn, canonical_run_id: str, from_date: str, to_date: st
       Subtask → epic linkage is resolved either directly via ``subtask.epic_key`` or
       indirectly via ``subtask.parent_issue_key`` → parent story's ``epic_key``.
 
+    date_match controls how dates are compared against the filter range:
+
+    - ``"overlap"`` (default): include if the item's date range overlaps the filter
+      (start_date <= to_date AND due_date >= from_date).
+    - ``"start_in_range"``: include only if the item's start_date falls within
+      [from_date, to_date].
+    - ``"end_in_range"``: include only if the item's due_date falls within
+      [from_date, to_date].
+
     Project RLT is always excluded.
     """
     if not canonical_run_id:
         return []
     mode_norm = (mode or "story").lower()
+    dm = (date_match or "overlap").lower()
+    if dm not in ("overlap", "start_in_range", "end_in_range"):
+        dm = "overlap"
+
+    # Build the date condition SQL fragment and params based on date_match mode
+    if dm == "start_in_range":
+        date_cond = "{alias}.start_date >= ? AND {alias}.start_date <= ?"
+        date_params = (from_date, to_date)
+    elif dm == "end_in_range":
+        date_cond = "{alias}.due_date >= ? AND {alias}.due_date <= ?"
+        date_params = (from_date, to_date)
+    else:
+        date_cond = "{alias}.start_date <= ? AND {alias}.due_date >= ?"
+        date_params = (to_date, from_date)
+
     try:
         if mode_norm == "subtask":
+            dc_s = date_cond.format(alias="s")
             rows = conn.execute(
                 f"""
                 SELECT DISTINCT upper(ek) AS ek FROM (
@@ -30146,7 +30171,7 @@ def _tcp_epics_in_range(conn, canonical_run_id: str, from_date: str, to_date: st
                       AND {_tcp_issue_type_is_subtask_sql('s')}
                       AND upper(s.project_key) != 'RLT'
                       AND s.start_date != '' AND s.due_date != ''
-                      AND s.start_date <= ? AND s.due_date >= ?
+                      AND {dc_s}
                       AND s.epic_key != ''
                     UNION
                     SELECT p.epic_key AS ek FROM canonical_issues s
@@ -30156,29 +30181,30 @@ def _tcp_epics_in_range(conn, canonical_run_id: str, from_date: str, to_date: st
                       AND {_tcp_issue_type_is_subtask_sql('s')}
                       AND upper(s.project_key) != 'RLT'
                       AND s.start_date != '' AND s.due_date != ''
-                      AND s.start_date <= ? AND s.due_date >= ?
+                      AND {dc_s}
                       AND (s.epic_key IS NULL OR s.epic_key = '')
                       AND p.epic_key != ''
                 )
                 WHERE ek IS NOT NULL AND ek != ''
                 """,
                 (
-                    canonical_run_id, to_date, from_date,
-                    canonical_run_id, to_date, from_date,
+                    canonical_run_id, *date_params,
+                    canonical_run_id, *date_params,
                 ),
             ).fetchall()
         else:
-            # Default: story dates ("TK dates") — use overlap: story overlaps the period
-            # if it starts on or before the period end AND ends on or after the period start.
+            dc_no_alias = date_cond.format(alias="")
+            # Remove leading dot from alias-less references
+            dc_story = dc_no_alias.replace(".start_date", "start_date").replace(".due_date", "due_date")
             rows = conn.execute(
-                """SELECT DISTINCT upper(epic_key) AS ek FROM canonical_issues
+                f"""SELECT DISTINCT upper(epic_key) AS ek FROM canonical_issues
                    WHERE run_id = ?
                      AND lower(issue_type) LIKE '%story%'
                      AND upper(project_key) != 'RLT'
                      AND epic_key != ''
                      AND start_date != '' AND due_date != ''
-                     AND start_date <= ? AND due_date >= ?""",
-                (canonical_run_id, to_date, from_date),
+                     AND {dc_story}""",
+                (canonical_run_id, *date_params),
             ).fetchall()
         return [r[0] for r in rows if r[0]]
     except Exception:
@@ -30194,6 +30220,7 @@ def _tcp_build_team_data(
     profile_id: int | None = None,
     exclude_bugs: bool = True,
     epic_mode: str = "story",
+    date_match: str = "overlap",
 ) -> dict:
     """Assemble per-member capacity/leave/availability/assigned-epics payload."""
     teams = _list_performance_teams(db_path)
@@ -30243,90 +30270,111 @@ def _tcp_build_team_data(
 
     with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
-        in_range_epics = _tcp_epics_in_range(conn, canonical_run_id, from_date, to_date, epic_mode) if canonical_run_id else []
+        in_range_epics = _tcp_epics_in_range(conn, canonical_run_id, from_date, to_date, epic_mode, date_match) if canonical_run_id else []
         in_range_epics_upper = {ek.upper() for ek in in_range_epics if ek}
+        member_name_by_lower = {_to_text(name).lower(): name for name in members if _to_text(name)}
+        member_lowers = list(member_name_by_lower.keys())
+        epic_keys_by_member: dict[str, set[str]] = {name: set() for name in members}
+        planned_hours_by_member: dict[str, float] = {name: 0.0 for name in members}
+        logged_hours_by_member: dict[str, float] = {name: 0.0 for name in members}
+        if canonical_run_id and in_range_epics and member_lowers:
+            bug_filter_s = " AND lower(s.issue_type) NOT LIKE '%bug%'" if exclude_bugs else ""
+            bug_filter_alias = " AND lower(ci.issue_type) NOT LIKE '%bug%'" if exclude_bugs else ""
+            epic_list = sorted(in_range_epics_upper)
+            member_ph = ",".join("?" for _ in member_lowers)
+            ek_ph = ",".join("?" for _ in epic_list)
+            try:
+                rows = conn.execute(
+                    f"""SELECT lower(member_name) AS member_key, upper(eff_epic) AS ek FROM (
+                          SELECT s.assignee AS member_name, s.epic_key AS eff_epic
+                          FROM canonical_issues s
+                          WHERE s.run_id = ? AND lower(s.assignee) IN ({member_ph})
+                            AND {_tcp_issue_type_is_subtask_sql('s')}
+                            {bug_filter_s}
+                            AND upper(s.project_key) != 'RLT'
+                            AND s.start_date != '' AND s.due_date != ''
+                            AND s.start_date <= ? AND s.due_date >= ?
+                            AND s.epic_key != '' AND upper(s.epic_key) IN ({ek_ph})
+                          UNION
+                          SELECT s.assignee AS member_name, p.epic_key AS eff_epic
+                          FROM canonical_issues s
+                          JOIN canonical_issues p
+                            ON p.run_id = s.run_id AND upper(p.issue_key) = upper(s.parent_issue_key)
+                          WHERE s.run_id = ? AND lower(s.assignee) IN ({member_ph})
+                            AND {_tcp_issue_type_is_subtask_sql('s')}
+                            {bug_filter_s}
+                            AND upper(s.project_key) != 'RLT'
+                            AND s.start_date != '' AND s.due_date != ''
+                            AND s.start_date <= ? AND s.due_date >= ?
+                            AND p.epic_key != '' AND upper(p.epic_key) IN ({ek_ph})
+                        )
+                        WHERE eff_epic IS NOT NULL AND eff_epic != ''""",
+                    [canonical_run_id] + member_lowers + [to_date, from_date] + epic_list
+                    + [canonical_run_id] + member_lowers + [to_date, from_date] + epic_list,
+                ).fetchall()
+                for r in rows:
+                    member_name = member_name_by_lower.get(_to_text(r["member_key"]).lower())
+                    ek = _to_text(r["ek"]).upper()
+                    if member_name and ek:
+                        epic_keys_by_member.setdefault(member_name, set()).add(ek)
+            except Exception:
+                pass
+            try:
+                rows = conn.execute(
+                    f"""SELECT lower(s.assignee) AS member_key,
+                               COALESCE(SUM(s.original_estimate_hours), 0) AS planned_hours
+                       FROM canonical_issues s
+                       LEFT JOIN canonical_issues p
+                         ON p.run_id = s.run_id AND upper(p.issue_key) = upper(s.parent_issue_key)
+                       WHERE s.run_id = ? AND lower(s.assignee) IN ({member_ph})
+                         AND {_tcp_issue_type_is_subtask_sql('s')}
+                         {bug_filter_s}
+                         AND upper(s.project_key) != 'RLT'
+                         AND s.start_date != '' AND s.due_date != ''
+                         AND s.start_date <= ? AND s.due_date >= ?
+                         AND (upper(s.epic_key) IN ({ek_ph}) OR upper(p.epic_key) IN ({ek_ph}))
+                       GROUP BY lower(s.assignee)""",
+                    [canonical_run_id] + member_lowers + [to_date, from_date] + epic_list + epic_list,
+                ).fetchall()
+                for r in rows:
+                    member_name = member_name_by_lower.get(_to_text(r["member_key"]).lower())
+                    if member_name:
+                        planned_hours_by_member[member_name] = round(float(r["planned_hours"] or 0), 2)
+            except Exception:
+                pass
+            try:
+                rows = conn.execute(
+                    f"""SELECT lower(wl.issue_assignee) AS member_key,
+                               COALESCE(SUM(wl.hours_logged), 0) AS logged_hours
+                       FROM canonical_worklogs wl
+                       JOIN canonical_issues ci
+                         ON ci.run_id = wl.run_id AND ci.issue_key = wl.issue_key
+                       LEFT JOIN canonical_issues p
+                         ON p.run_id = ci.run_id AND upper(p.issue_key) = upper(ci.parent_issue_key)
+                       WHERE wl.run_id = ?
+                         AND lower(wl.issue_assignee) IN ({member_ph})
+                         AND upper(wl.project_key) != 'RLT'
+                         AND wl.started_date >= ? AND wl.started_date <= ?
+                         AND {_tcp_issue_type_is_subtask_sql('ci')}
+                         {bug_filter_alias}
+                         AND (upper(ci.epic_key) IN ({ek_ph}) OR upper(p.epic_key) IN ({ek_ph}))
+                       GROUP BY lower(wl.issue_assignee)""",
+                    [canonical_run_id] + member_lowers + [from_date, to_date] + epic_list + epic_list,
+                ).fetchall()
+                for r in rows:
+                    member_name = member_name_by_lower.get(_to_text(r["member_key"]).lower())
+                    if member_name:
+                        logged_hours_by_member[member_name] = round(float(r["logged_hours"] or 0), 2)
+            except Exception:
+                pass
         for member_name in members:
             leave = leave_by.get(member_name, {"planned_taken_hours": 0.0, "unplanned_taken_hours": 0.0, "planned_not_taken_hours": 0.0})
             total_leave = leave["planned_taken_hours"] + leave["unplanned_taken_hours"] + leave["planned_not_taken_hours"]
             availability = round(per_person_cap - total_leave, 2)
 
-            epic_keys_for_member: set[str] = set()
-            subtask_planned_hours = 0.0
-            logged_hours = 0.0
-            bug_filter_s = " AND lower(s.issue_type) NOT LIKE '%bug%'" if exclude_bugs else ""
-            bug_filter_alias = " AND lower(ci.issue_type) NOT LIKE '%bug%'" if exclude_bugs else ""
-            if canonical_run_id and in_range_epics:
-                # Assigned epics = in-range epics where this member has at least one (non-bug if toggle on)
-                # subtask, linked directly via subtask.epic_key OR via parent_issue_key → parent.epic_key.
-                try:
-                    epic_list = list(in_range_epics_upper)
-                    ek_ph_assigned = ",".join("?" for _ in epic_list)
-                    rows = conn.execute(
-                        f"""SELECT DISTINCT upper(eff_epic) AS ek FROM (
-                              SELECT s.epic_key AS eff_epic FROM canonical_issues s
-                              WHERE s.run_id = ? AND lower(s.assignee) = lower(?)
-                                AND {_tcp_issue_type_is_subtask_sql('s')}
-                                {bug_filter_s}
-                                AND upper(s.project_key) != 'RLT'
-                                AND s.epic_key != '' AND upper(s.epic_key) IN ({ek_ph_assigned})
-                              UNION
-                              SELECT p.epic_key AS eff_epic FROM canonical_issues s
-                              JOIN canonical_issues p
-                                ON p.run_id = s.run_id AND upper(p.issue_key) = upper(s.parent_issue_key)
-                              WHERE s.run_id = ? AND lower(s.assignee) = lower(?)
-                                AND {_tcp_issue_type_is_subtask_sql('s')}
-                                {bug_filter_s}
-                                AND upper(s.project_key) != 'RLT'
-                                AND p.epic_key != '' AND upper(p.epic_key) IN ({ek_ph_assigned})
-                            )
-                            WHERE eff_epic IS NOT NULL AND eff_epic != ''""",
-                        [canonical_run_id, member_name] + epic_list + [canonical_run_id, member_name] + epic_list,
-                    ).fetchall()
-                    for r in rows:
-                        ek = _to_text(r[0]).upper()
-                        if ek:
-                            epic_keys_for_member.add(ek)
-                except Exception:
-                    pass
-                if in_range_epics:
-                    ek_ph = ",".join("?" for _ in in_range_epics)
-                    try:
-                        ph_row = conn.execute(
-                            f"""SELECT COALESCE(SUM(s.original_estimate_hours), 0)
-                               FROM canonical_issues s
-                               LEFT JOIN canonical_issues p
-                                 ON p.run_id = s.run_id AND upper(p.issue_key) = upper(s.parent_issue_key)
-                               WHERE s.run_id = ? AND lower(s.assignee) = lower(?)
-                                 AND {_tcp_issue_type_is_subtask_sql('s')}
-                                 {bug_filter_s}
-                                 AND upper(s.project_key) != 'RLT'
-                                 AND (upper(s.epic_key) IN ({ek_ph}) OR upper(p.epic_key) IN ({ek_ph}))""",
-                            [canonical_run_id, member_name] + in_range_epics + in_range_epics,
-                        ).fetchone()
-                        subtask_planned_hours = round(float(ph_row[0] or 0), 2)
-                    except Exception:
-                        pass
-                    try:
-                        lh_row = conn.execute(
-                            f"""SELECT COALESCE(SUM(wl.hours_logged), 0)
-                               FROM canonical_worklogs wl
-                               JOIN canonical_issues ci
-                                 ON ci.run_id = wl.run_id AND ci.issue_key = wl.issue_key
-                               LEFT JOIN canonical_issues p
-                                 ON p.run_id = ci.run_id AND upper(p.issue_key) = upper(ci.parent_issue_key)
-                               WHERE wl.run_id = ?
-                                 AND lower(wl.issue_assignee) = lower(?)
-                                 AND upper(wl.project_key) != 'RLT'
-                                 AND wl.started_date >= ? AND wl.started_date <= ?
-                                 AND {_tcp_issue_type_is_subtask_sql('ci')}
-                                 {bug_filter_alias}
-                                 AND (upper(ci.epic_key) IN ({ek_ph}) OR upper(p.epic_key) IN ({ek_ph}))""",
-                            [canonical_run_id, member_name, from_date, to_date] + in_range_epics + in_range_epics,
-                        ).fetchone()
-                        logged_hours = round(float(lh_row[0] or 0), 2)
-                    except Exception:
-                        pass
-
+            epic_keys_for_member = epic_keys_by_member.get(member_name, set())
+            subtask_planned_hours = planned_hours_by_member.get(member_name, 0.0)
+            logged_hours = logged_hours_by_member.get(member_name, 0.0)
             all_epic_keys.update(epic_keys_for_member)
             member_results.append({
                 "name": member_name,
@@ -42348,6 +42396,9 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         epic_mode = _to_text(request.args.get("epic_mode", "story")).strip().lower()
         if epic_mode not in ("story", "subtask"):
             epic_mode = "story"
+        date_match = _to_text(request.args.get("date_match", "overlap")).strip().lower()
+        if date_match not in ("overlap", "start_in_range", "end_in_range"):
+            date_match = "overlap"
         try:
             payload = _tcp_build_team_data(
                 capacity_paths["db_path"],
@@ -42358,8 +42409,9 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 profile_id=profile_id,
                 exclude_bugs=exclude_bugs,
                 epic_mode=epic_mode,
+                date_match=date_match,
             )
-            return jsonify({"ok": True, "exclude_bugs": exclude_bugs, "epic_mode": epic_mode, **payload})
+            return jsonify({"ok": True, "exclude_bugs": exclude_bugs, "epic_mode": epic_mode, "date_match": date_match, **payload})
         except LookupError as exc:
             return jsonify({"ok": False, "error": str(exc)}), 404
         except Exception as exc:
@@ -42381,17 +42433,20 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         epic_mode = _to_text(request.args.get("epic_mode", "story")).strip().lower()
         if epic_mode not in ("story", "subtask"):
             epic_mode = "story"
+        date_match = _to_text(request.args.get("date_match", "overlap")).strip().lower()
+        if date_match not in ("overlap", "start_in_range", "end_in_range"):
+            date_match = "overlap"
         try:
             db_path = capacity_paths["db_path"]
             canonical_run_id = _canonical_last_success_run_id(db_path)
             if not canonical_run_id:
-                return jsonify({"ok": True, "assignee": assignee, "from": from_date, "to": to_date, "kind": kind, "exclude_bugs": exclude_bugs, "epic_mode": epic_mode, "subtasks": [], "totals": {"planned_hours": 0.0, "logged_hours_in_range": 0.0}, "canonical_available": False})
+                return jsonify({"ok": True, "assignee": assignee, "from": from_date, "to": to_date, "kind": kind, "exclude_bugs": exclude_bugs, "epic_mode": epic_mode, "date_match": date_match, "subtasks": [], "totals": {"planned_hours": 0.0, "logged_hours_in_range": 0.0}, "canonical_available": False})
 
             with sqlite3.connect(db_path) as conn:
                 conn.row_factory = sqlite3.Row
                 subtask_sql = _tcp_issue_type_is_subtask_sql("ci")
                 bug_filter = " AND lower(ci.issue_type) NOT LIKE '%bug%'" if exclude_bugs else ""
-                in_range_epics = _tcp_epics_in_range(conn, canonical_run_id, from_date, to_date, epic_mode)
+                in_range_epics = _tcp_epics_in_range(conn, canonical_run_id, from_date, to_date, epic_mode, date_match)
                 if not in_range_epics:
                     rows = []
                 else:
