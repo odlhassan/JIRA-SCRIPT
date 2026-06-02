@@ -37893,6 +37893,28 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         except Exception as exc:
             return jsonify({"ok": False, "error": f"Failed to load support center project detail: {exc}"}), 500
 
+    @app.route("/api/support-center/diagnostics", methods=["GET"])
+    def support_center_diagnostics():
+        """Diagnostic endpoint: check support_center.db health."""
+        try:
+            import sqlite3 as _sql
+            db_path = resolve_support_center_db_path()
+            info = {"db_path": str(db_path), "exists": db_path.exists()}
+            if db_path.exists():
+                with _sql.connect(db_path) as conn:
+                    tables = [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
+                    info["tables"] = tables
+                    if "support_issues" in tables:
+                        info["total_rows"] = conn.execute("SELECT COUNT(*) FROM support_issues").fetchone()[0]
+                        info["by_type"] = {r[0]: r[1] for r in conn.execute("SELECT issue_type, COUNT(*) FROM support_issues GROUP BY issue_type").fetchall()}
+                        info["sample_keys"] = [r[0] for r in conn.execute("SELECT issue_key FROM support_issues LIMIT 5").fetchall()]
+            # Also check canonical run
+            canonical_run_id = _canonical_last_success_run_id(capacity_paths["db_path"])
+            info["canonical_run_id"] = canonical_run_id
+            return jsonify({"ok": True, **info})
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+
     @app.route(f"{CANONICAL_PVD_API_PREFIX}/ui-settings", methods=["GET"])
     @app.route(f"{LEGACY_PVD_API_PREFIX}/ui-settings", methods=["GET"])
     def get_pvd_ui_settings():
