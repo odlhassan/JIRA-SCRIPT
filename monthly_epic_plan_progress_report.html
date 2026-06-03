@@ -4464,7 +4464,9 @@
       if (els.kpiCompletionPct) els.kpiCompletionPct.textContent = pctText;
       if (els.kpiCompletionBar) els.kpiCompletionBar.style.width = pct.toFixed(1) + "%";
       document.querySelectorAll(".effort-head").forEach((cell, index) => {
-        cell.textContent = (index === 0 ? "Planned " : "Actual ") + suffixTitle;
+        if (index === 0) cell.textContent = "Month Plan " + suffixTitle;
+        else if (index === 1) cell.textContent = "Month Actual " + suffixTitle;
+        else cell.textContent = "Total Actual " + suffixTitle;
       });
       renderProjectCards(latestPayload.by_project || []);
       const filteredRows = filteredRowsForTable(latestPayload.rows || []);
@@ -6424,7 +6426,7 @@
       const isDay = (unit === "days");
       const sfx = isDay ? " (Days)" : " (Hrs)";
       const headers = ["Epic Key", "Epic Name", "Project", "Planned Start", "Planned Due", "Done Date",
-        "Jira Status", "Planned" + sfx, "Month Actual" + sfx, "Total Actual" + sfx,
+        "Jira Status", "Month Plan" + sfx, "Month Actual" + sfx, "Total Actual" + sfx,
         "Carry-In", "Start Signal", "End Signal", "Carry-Out"];
       const monthYm = els.month ? String(els.month.value || "").trim() : "";
       const csvRows = [headers];
@@ -6454,27 +6456,18 @@
           r.brought_forward ? "Yes" : "No", startSig, endSig, carryOut
         ]);
       });
-      var xml = '<?xml version="1.0"?><?mso-application progid="Excel.Sheet"?>';
-      xml += '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">';
-      xml += '<Worksheet ss:Name="Epics"><Table>';
-      csvRows.forEach(function(row, ri) {
-        xml += '<Row>';
-        row.forEach(function(cell) {
-          if (typeof cell === "number") {
-            xml += '<Cell><Data ss:Type="Number">' + cell + '</Data></Cell>';
-          } else {
-            var safe = String(cell).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
-            xml += '<Cell' + (ri === 0 ? ' ss:StyleID="hdr"' : '') + '><Data ss:Type="String">' + safe + '</Data></Cell>';
-          }
-        });
-        xml += '</Row>';
-      });
-      xml += '</Table></Worksheet></Workbook>';
-      var blob = new Blob([xml], {type: "application/vnd.ms-excel"});
+      var csvContent = csvRows.map(function(row) {
+        return row.map(function(cell) {
+          var s = String(cell === null || cell === undefined ? "" : cell);
+          if (s.search(/[",\r\n]/) !== -1) s = '"' + s.replace(/"/g, '""') + '"';
+          return s;
+        }).join(",");
+      }).join("\r\n");
+      var blob = new Blob(["\uFEFF" + csvContent], {type: "text/csv;charset=utf-8;"});
       var url = URL.createObjectURL(blob);
       var a = document.createElement("a");
       a.href = url;
-      a.download = "epic_plan_progress_" + (els.month ? els.month.value : "report") + ".xls";
+      a.download = "epic_plan_progress_" + (els.month ? els.month.value : "report") + ".csv";
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
