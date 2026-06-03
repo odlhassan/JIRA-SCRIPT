@@ -1792,6 +1792,7 @@ def _load_all_jira_epic_rows(
             continue
 
         planned_hours = _round_hours(story_planned_hours_by_epic.get(epic_key, 0.0))
+        tk_epic_budget_hours = None
         actual_hours = _round_hours(float(actual_hours_by_epic.get(epic_key) or 0.0))
 
         start_slip = bool(
@@ -1875,6 +1876,8 @@ def _load_all_jira_epic_rows(
             "jira_status": jira_status,
             "planned_hours": _round_hours(planned_hours),
             "planned_days": _round_hours(planned_hours / HOURS_PER_DAY),
+            "tk_epic_budget_hours": tk_epic_budget_hours,
+            "tk_epic_budget_days": None,
             "actual_hours": actual_hours,
             "actual_days": _round_hours(actual_hours / HOURS_PER_DAY),
             "total_actual_hours": _round_hours(float(total_actual_hours_by_epic.get(epic_key, 0.0))),
@@ -2298,9 +2301,14 @@ def build_monthly_epic_plan_payload(
         # TK-budgeted man-days as the planned commitment carried into this month.
         # In-month epics (start or due in month): use story/subtask original estimates
         # that fall within the month (bottom-up, reflects actual Jira planning).
+        tk_epic_budget_hours = _hours_from_man_days(
+            epic_plan.get("tk_budgeted_man_days")
+            if epic_plan.get("tk_budgeted_man_days") not in (None, "")
+            else epic_plan.get("man_days")
+        )
+
         if brought_forward:
-            tk_days = float(epic_plan.get("tk_budgeted_man_days") or epic_plan.get("man_days") or 0)
-            planned_hours = _round_hours(tk_days * HOURS_PER_DAY)
+            planned_hours = _round_hours(tk_epic_budget_hours or 0.0)
         else:
             planned_hours = _round_hours(story_planned_hours_by_epic.get(epic_key, 0.0))
 
@@ -2393,6 +2401,8 @@ def build_monthly_epic_plan_payload(
                 "jira_status": jira_status,
                 "planned_hours": _round_hours(planned_hours),
                 "planned_days": _round_hours(planned_hours / HOURS_PER_DAY),
+                "tk_epic_budget_hours": tk_epic_budget_hours,
+                "tk_epic_budget_days": None if tk_epic_budget_hours is None else _round_hours(tk_epic_budget_hours / HOURS_PER_DAY),
                 "actual_hours": actual_hours,
                 "actual_days": _round_hours(actual_hours / HOURS_PER_DAY),
                 "total_actual_hours": _round_hours(float(total_actual_hours_by_epic.get(epic_key, 0.0))),

@@ -14,6 +14,8 @@
 - The Story Overrun drawer excludes bug subtasks by default. The `Include bug subtasks` checkbox is drawer-only and does not change the main Story Overrun bar, percent, or count behind the drawer.
 - When `Include bug subtasks` is off, the drawer recalculates each visible story row from regular subtasks only and hides rows whose non-bug overrun becomes zero.
 - When `Include bug subtasks` is on, the drawer reverts to the combined regular-subtask plus bug-subtask totals already used by the main Story Overrun metric.
+- The Epics table shows `TK Epic Budget`, `Month Plan`, `Month Actual`, and `Total Actual` as separate effort columns. `TK Epic Budget` comes from the epic-level TK-budgeted man-days when available, falling back to the epic plan man-days.
+- Epics table project chips and row stripes use the managed project color configured in Projects settings.
 - The estimate detail drawer width can be resized from the left edge.
 - Days are derived from `hours_per_day`, currently `8`.
 
@@ -87,6 +89,9 @@ The new bug-subtask toggle is intentionally local to the drawer. The report head
 | Estimate detail drawer | Overrun | Numeric column | Derived | For Story Overrun rows, recalculated from the currently displayed logged totals. |
 | Estimate detail drawer | Include bug subtasks | Checkbox | Unchecked | Available only in the Story Overrun drawer. Recalculates drawer rows and summary chips without changing the main chart metric. |
 | Estimate detail drawer | Summary chips | Read-only chips | Calculated | Shows work-item count, original estimate, TK planned when present, logged, and overrun for the currently displayed drawer rows. |
+| Epics table | Project color | Visual row stripe and chip | Managed project color | Uses the Projects settings color for each row's project. |
+| Epics table | TK Epic Budget | Numeric column | Derived | Shows epic-level TK budget in the selected unit. Blank for rows without planner-backed TK budget. |
+| Epics table | Month Plan / Month Actual / Total Actual | Numeric columns | Derived | Show selected-month plan, selected-month worklogs, and total logged work across the epic. |
 | Team Roster drawer | Include Support Team | Checkbox | Unchecked | When on, support members are selectable and feed Employee Stats + Resource Planning; when off, support members are force-unchecked (dev-only scope). |
 | Team Roster drawer | Member / team checkboxes | Checkboxes | Active dev selected, support/resigned unchecked | Selecting/clearing members defines the workforce scope. `Apply selection` re-fetches the payload with the chosen assignees. |
 | Employee Stats | Head Count / Capacity / Leaves / Availability | Read-only cards | Calculated | Reflect the roster selection (selected count, scaled capacity, selected members' planned leave). |

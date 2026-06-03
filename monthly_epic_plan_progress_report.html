@@ -792,7 +792,7 @@
     }
     table {
       width: 100%;
-      min-width: 1240px;
+      min-width: 1320px;
       border-collapse: separate;
       border-spacing: 0;
     }
@@ -814,6 +814,9 @@
       letter-spacing: 0.04em;
     }
     tbody tr:hover { background: #f8fbff; }
+    .table-wrap tbody tr[data-project-key] > td:first-child {
+      border-left: 5px solid var(--row-project-color, #94a3b8);
+    }
     .row-toggle-btn {
       display: inline-flex;
       align-items: center;
@@ -3097,7 +3100,8 @@
               <th>Planned Due</th>
               <th>Done Date</th>
               <th>Jira Status</th>
-              <th class="num effort-head">Planned Hrs</th>
+              <th class="num effort-head">TK Epic Budget Hrs</th>
+              <th class="num effort-head">Month Plan Hrs</th>
               <th class="num effort-head">Month Actual</th>
               <th class="num effort-head">Total Actual</th>
               <th>Carry-In</th>
@@ -4302,6 +4306,18 @@
       return unit === "days" ? Number(row[key + "_days"] || 0) : Number(row[key + "_hours"] || 0);
     }
 
+    function optionalEffortValue(row, hoursKey, daysKey) {
+      const raw = unit === "days" ? row[daysKey] : row[hoursKey];
+      if (raw === null || raw === undefined || raw === "") return null;
+      const parsed = Number(raw);
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+
+    function optionalEffortText(row, hoursKey, daysKey) {
+      const value = optionalEffortValue(row, hoursKey, daysKey);
+      return value === null ? '<span style="color:#94a3b8;">—</span>' : formatNumber(value);
+    }
+
     function flagPill(active, activeLabel, inactiveLabel) {
       return active
         ? '<span class="pill bad">' + esc(activeLabel) + '</span>'
@@ -4426,7 +4442,16 @@
       try {
         const response = await fetch(API_PROJECTS, { cache: "no-store", headers: { "Accept": "application/json" } });
         const body = await response.json().catch(() => ({}));
-        if (response.ok) renderProjects(body.projects || []);
+        if (response.ok) {
+          renderProjects(body.projects || []);
+          if (latestPayload && latestPayload.rows) {
+            renderProjectCards(latestPayload.by_project || []);
+            const filteredRows = filteredRowsForTable(latestPayload.rows || []);
+            renderRows(filteredRows);
+            if (ganttVisible) renderGantt(filteredRows, els.month ? els.month.value : "");
+            renderExcludedEpics(latestPayload.excluded_epics || []);
+          }
+        }
       } catch (err) {
         console.warn("Failed to load projects", err);
       }
@@ -4464,8 +4489,9 @@
       if (els.kpiCompletionPct) els.kpiCompletionPct.textContent = pctText;
       if (els.kpiCompletionBar) els.kpiCompletionBar.style.width = pct.toFixed(1) + "%";
       document.querySelectorAll(".effort-head").forEach((cell, index) => {
-        if (index === 0) cell.textContent = "Month Plan " + suffixTitle;
-        else if (index === 1) cell.textContent = "Month Actual " + suffixTitle;
+        if (index === 0) cell.textContent = "TK Epic Budget " + suffixTitle;
+        else if (index === 1) cell.textContent = "Month Plan " + suffixTitle;
+        else if (index === 2) cell.textContent = "Month Actual " + suffixTitle;
         else cell.textContent = "Total Actual " + suffixTitle;
       });
       renderProjectCards(latestPayload.by_project || []);
@@ -5531,6 +5557,7 @@
       const projectKey = String(row.project_key || "").toUpperCase();
       const projectHex = projectColor(projectKey);
       const projectStyle = '--project-color:' + projectHex + ';--project-bg:' + colorToSoftBg(projectHex);
+      const rowProjectStyle = '--row-project-color:' + projectHex + ';--row-project-bg:' + colorToSoftBg(projectHex);
       const projectName = projectDisplayName(projectKey, row.project_name);
       const projectCell = '<div class="project-cell"><span class="project-chip" style="' + esc(projectStyle) + '">' + esc(projectName) + '</span></div>';
 
@@ -5555,15 +5582,19 @@
         return h || '<span style="color:#94a3b8;">—</span>';
       })();
       const rowClass = monthOverburn ? ' class="row-overburn-month"' : (totalOverburn ? ' class="row-overburn-total"' : '');
+      const rowAttrs = rowClass
+        + ' data-project-key="' + esc(projectKey) + '"'
+        + ' style="' + esc(rowProjectStyle) + '"';
       const actualCellClass = monthOverburn ? 'num cell-overburn-month' : 'num';
 
-      const epicRow = '<tr' + rowClass + '>'
+      const epicRow = '<tr' + rowAttrs + '>'
         + '<td>' + epicCell + '</td>'
         + '<td>' + projectCell + '</td>'
         + '<td>' + esc(formatDisplayDate(row.approved_start)) + '</td>'
         + '<td>' + esc(formatDisplayDate(row.approved_due)) + '</td>'
         + '<td>' + (row.actual_completed_date ? esc(formatDisplayDate(row.actual_completed_date)) : '<span style="color:#94a3b8;">—</span>') + '</td>'
         + '<td>' + statusPill(row.jira_status || "Not in canonical data", row.approved_start) + '</td>'
+        + '<td class="num">' + optionalEffortText(row, "tk_epic_budget_hours", "tk_epic_budget_days") + '</td>'
         + '<td class="num">' + formatNumber(effortValue(row, "planned")) + '</td>'
         + '<td class="' + actualCellClass + '">' + formatNumber(effortValue(row, "actual")) + '</td>'
         + '<td class="num">' + formatNumber(tActual) + '</td>'
@@ -6426,12 +6457,13 @@
       const isDay = (unit === "days");
       const sfx = isDay ? " (Days)" : " (Hrs)";
       const headers = ["Epic Key", "Epic Name", "Project", "Planned Start", "Planned Due", "Done Date",
-        "Jira Status", "Month Plan" + sfx, "Month Actual" + sfx, "Total Actual" + sfx,
+        "Jira Status", "TK Epic Budget" + sfx, "Month Plan" + sfx, "Month Actual" + sfx, "Total Actual" + sfx,
         "Carry-In", "Start Signal", "End Signal", "Carry-Out"];
       const monthYm = els.month ? String(els.month.value || "").trim() : "";
       const csvRows = [headers];
       rows.forEach(function(r) {
         const mPlanned = isDay ? Number(r.planned_days || 0) : Number(r.planned_hours || 0);
+        const tkBudget = optionalEffortValue(r, "tk_epic_budget_hours", "tk_epic_budget_days");
         const mActual = isDay ? Number(r.actual_days || 0) : Number(r.actual_hours || 0);
         const tActual = isDay ? (Number(r.total_actual_hours || 0) / 8) : Number(r.total_actual_hours || 0);
         var startSig = "";
@@ -6452,7 +6484,7 @@
           r.epic_key || "", r.epic_name || "", r.project_name || r.project_key || "",
           r.approved_start || "", r.approved_due || "",
           r.actual_completed_date || "", r.jira_status || "",
-          mPlanned, mActual, Math.round(tActual * 100) / 100,
+          tkBudget === null ? "" : tkBudget, mPlanned, mActual, Math.round(tActual * 100) / 100,
           r.brought_forward ? "Yes" : "No", startSig, endSig, carryOut
         ]);
       });

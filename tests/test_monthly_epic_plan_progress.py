@@ -380,6 +380,8 @@ class MonthlyEpicPlanProgressTests(unittest.TestCase):
             self.assertEqual(payload["totals"]["epic_count"], 1)
             row = payload["rows"][0]
             self.assertEqual(row["epic_key"], "O2-SPAN")
+            self.assertEqual(row["tk_epic_budget_hours"], 80.0)
+            self.assertEqual(row["tk_epic_budget_days"], 10.0)
             self.assertEqual(row["planned_hours"], 80)
             self.assertEqual(row["actual_hours"], 8)
             self.assertFalse(row["start_slip"])
@@ -754,6 +756,13 @@ class MonthlyEpicPlanProgressTests(unittest.TestCase):
         self.assertIn("estimate-bar-row", html)
         self.assertIn("estimate-bar-fill", html)
         self.assertIn("Month Plan", html)
+        self.assertIn("TK Epic Budget", html)
+        self.assertIn("tk_epic_budget_hours", html)
+        self.assertIn("optionalEffortText", html)
+        self.assertIn("optionalEffortValue", html)
+        self.assertIn("data-project-key", html)
+        self.assertIn("--row-project-color", html)
+        self.assertIn("renderProjectCards(latestPayload.by_project || [])", html)
         self.assertIn("Epic Estimate", html)
         self.assertIn("Story Estimate", html)
         self.assertIn("Subtask Estimate", html)
@@ -801,6 +810,8 @@ class MonthlyEpicPlanProgressTests(unittest.TestCase):
         row_to_html = re.search(r"function rowToHtml\(row\) \{(?P<body>.*?)\n    // Sort order:", html, re.S)
         self.assertIsNotNone(row_to_html)
         self.assertIn('const monthYm = els.month ? String(els.month.value || "").trim() : "";', row_to_html.group("body"))
+        self.assertIn('optionalEffortText(row, "tk_epic_budget_hours", "tk_epic_budget_days")', row_to_html.group("body"))
+        self.assertIn('data-project-key="', row_to_html.group("body"))
 
     def test_resource_planning_panel_present_in_html(self):
         html_path = Path(__file__).resolve().parents[1] / "monthly_epic_plan_progress_report.html"
