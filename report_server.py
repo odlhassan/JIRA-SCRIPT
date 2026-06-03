@@ -14309,6 +14309,7 @@ def _epics_management_settings_html() -> str:
     .plan-cell-actions { display:flex; justify-content:flex-end; gap:4px; }
     .plan-btn { width:100%; border:1px solid #fed7aa; background:var(--most-likely-bg); color:#000; border-radius:8px; text-align:left; padding:6px; cursor:pointer; min-height:42px; max-height:60px; overflow-y:auto; }
     .plan-btn.plan-btn-tk { border-color:#86efac; background:var(--tk-budgeted-bg); }
+    .plan-btn.plan-btn-formula-dates { border-color:#c4b5fd; background:#f5f3ff; }
     .plan-empty { color:#475569; font-size:.76rem; }
     .plan-summary { font-size:.74rem; line-height:1.2; }
     .plan-summary b { color:#000; }
@@ -14408,6 +14409,7 @@ def _epics_management_settings_html() -> str:
     .matrix-value-main { font-weight:700; color:#0f172a; font-size:.84rem; }
     .matrix-value-meta { font-size:.7rem; color:#475569; }
     .matrix-value-empty { color:#64748b; font-size:.72rem; }
+    .matrix-value-sub { color:#94a3b8; font-size:.62rem; font-style:italic; }
     .matrix-value-readonly { padding:6px 10px; border-radius:8px; min-height:34px; border:1px solid #e2e8f0; background:#fff; }
     .matrix-value-readonly.plan-layer-most-likely { border-color:#fdba74; background:var(--most-likely-bg); }
     .matrix-value-readonly.plan-layer-tk-budgeted { border-color:#86efac; background:var(--tk-budgeted-bg); }
@@ -16206,6 +16208,13 @@ def _epics_management_settings_html() -> str:
               : plan && plan.man_days
           );
       if (isMostLikely && !planCol.most_likely_enabled) {
+        if (canEditFormulaManagedPlanDates(planCol)) {
+          const dateText = formatPlanDateRange(plan && plan.start_date, plan && plan.due_date);
+          if (dateText) {
+            return '<div class="matrix-value"><div class="matrix-value-meta">' + esc(dateText) + '</div><div class="matrix-value-sub">Formula mandays</div></div>';
+          }
+          return '<div class="matrix-value"><div class="matrix-value-empty">Set planned dates</div></div>';
+        }
         return '<div class="matrix-value"><div class="matrix-value-empty">Formula-managed phase</div></div>';
       }
       if (manDaysValue == null) {
@@ -16224,9 +16233,10 @@ def _epics_management_settings_html() -> str:
       const valueHtml = renderMatrixValueContent(plan, planCol, layer);
       const layerClass = layer === "most_likely" ? "plan-layer-most-likely" : "plan-layer-tk-budgeted";
       const allowMostLikelyEdit = layer === "most_likely" && planCol.most_likely_enabled && !effectivelySealed;
-      const allowFormulaDateEdit = layer === "tk_budgeted" && !planCol.most_likely_enabled && canEditFormulaManagedPlanDates(planCol) && !effectivelySealed;
+      const allowFormulaDateEdit = !planCol.most_likely_enabled && canEditFormulaManagedPlanDates(planCol) && !effectivelySealed;
       if (allowMostLikelyEdit || allowFormulaDateEdit) {
-        return '<button class="plan-btn' + (layer === "tk_budgeted" ? " plan-btn-tk" : "") + '" type="button" data-row-index="' + rowIndex + '" data-plan-key="' + esc(planCol.key) + '">' + valueHtml + "</button>";
+        const btnClass = layer === "tk_budgeted" ? " plan-btn-tk" : (allowFormulaDateEdit && !allowMostLikelyEdit ? " plan-btn-formula-dates" : "");
+        return '<button class="plan-btn' + btnClass + '" type="button" data-row-index="' + rowIndex + '" data-plan-key="' + esc(planCol.key) + '">' + valueHtml + "</button>";
       }
       return '<div class="matrix-value-readonly ' + layerClass + '">' + valueHtml + "</div>";
     }
