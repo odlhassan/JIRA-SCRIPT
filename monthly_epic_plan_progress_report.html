@@ -3081,6 +3081,9 @@
           <button type="button" class="view-mode-btn" id="view-gantt-btn">
             <span class="material-symbols-outlined">view_timeline</span> Gantt
           </button>
+          <button type="button" class="view-mode-btn" id="download-excel-btn" title="Download table as Excel">
+            <span class="material-symbols-outlined">download</span> Excel
+          </button>
         </div>
       </div>
       <div id="table-view-wrap">
@@ -3095,7 +3098,8 @@
               <th>Done Date</th>
               <th>Jira Status</th>
               <th class="num effort-head">Planned Hrs</th>
-              <th class="num effort-head">Actual Hrs</th>
+              <th class="num effort-head">Month Actual</th>
+              <th class="num effort-head">Total Actual</th>
               <th>Carry-In</th>
               <th>Start Signal</th>
               <th>End Signal</th>
@@ -5560,6 +5564,7 @@
         + '<td>' + statusPill(row.jira_status || "Not in canonical data", row.approved_start) + '</td>'
         + '<td class="num">' + formatNumber(effortValue(row, "planned")) + '</td>'
         + '<td class="' + actualCellClass + '">' + formatNumber(effortValue(row, "actual")) + '</td>'
+        + '<td class="num">' + formatNumber(tActual) + '</td>'
         + '<td>' + (row.brought_forward ? '<span class="pill info">Brought forward</span>' : '<span class="pill good">No</span>') + '</td>'
         + '<td>' + (function() {
             // Start Signal: start was in this month — did the epic actually begin?
@@ -5596,7 +5601,7 @@
         + '<td>' + overburnHtml + '</td>'
         + '</tr>';
       const childRow = '<tr class="child-row" id="' + childId + '">'
-        + '<td colspan="14">' + childRowHtml(row) + '</td></tr>';
+        + '<td colspan="15">' + childRowHtml(row) + '</td></tr>';
       return epicRow + childRow;
     }
 
@@ -5620,7 +5625,7 @@
         const fk = String(tableProjectFilterKey || "").trim();
         const hint = fk ? ' Try "All projects" or another project card.' : "";
         els.rows.innerHTML =
-          '<tr><td colspan="14"><div class="empty">No epics to show for this view.'
+          '<tr><td colspan="15"><div class="empty">No epics to show for this view.'
           + esc(hint)
           + "</div></td></tr>";
         return;
@@ -5633,7 +5638,7 @@
 
       function groupHeader(cls, iconName, label, count) {
         return '<tr class="group-header-row ' + cls + '">'
-          + '<td colspan="14"><div class="group-label">'
+          + '<td colspan="15"><div class="group-label">'
           + '<span class="group-icon material-symbols-outlined" aria-hidden="true">' + iconName + '</span>'
           + '<span class="group-title">' + esc(label) + '</span>'
           + '<span class="group-badge">' + count + '</span>'
@@ -5811,7 +5816,7 @@
         const tableMsg = isCanonicalMissing
           ? 'Jira data not synced yet on this server. <a href="/settings/canonical-refresh" style="color:var(--primary,#3b82f6);font-weight:600;">Run a Canonical Refresh →</a>'
           : esc(err.message || err);
-        els.rows.innerHTML = '<tr><td colspan="14"><div class="empty">' + tableMsg + '</div></td></tr>';
+        els.rows.innerHTML = '<tr><td colspan="15"><div class="empty">' + tableMsg + '</div></td></tr>';
         renderExcludedEpics([]);
         if (els.projectCards) els.projectCards.innerHTML = '<div class="empty" style="grid-column:1/-1;">'
           + (isCanonicalMissing ? 'Jira data not synced. <a href="/settings/canonical-refresh">Run Canonical Refresh →</a>' : 'Could not load data.')
@@ -6411,6 +6416,70 @@
     const _viewGanttBtn = document.getElementById("view-gantt-btn");
     if (_viewTableBtn) _viewTableBtn.addEventListener("click", function() { toggleGanttView(false); });
     if (_viewGanttBtn) _viewGanttBtn.addEventListener("click", function() { toggleGanttView(true); });
+
+    const _downloadExcelBtn = document.getElementById("download-excel-btn");
+    if (_downloadExcelBtn) _downloadExcelBtn.addEventListener("click", function() {
+      if (!latestPayload || !latestPayload.rows || !latestPayload.rows.length) return;
+      const rows = filteredRowsForTable(latestPayload.rows);
+      const isDay = (unit === "days");
+      const sfx = isDay ? " (Days)" : " (Hrs)";
+      const headers = ["Epic Key", "Epic Name", "Project", "Planned Start", "Planned Due", "Done Date",
+        "Jira Status", "Planned" + sfx, "Month Actual" + sfx, "Total Actual" + sfx,
+        "Carry-In", "Start Signal", "End Signal", "Carry-Out"];
+      const monthYm = els.month ? String(els.month.value || "").trim() : "";
+      const csvRows = [headers];
+      rows.forEach(function(r) {
+        const mPlanned = isDay ? Number(r.planned_days || 0) : Number(r.planned_hours || 0);
+        const mActual = isDay ? Number(r.actual_days || 0) : Number(r.actual_hours || 0);
+        const tActual = isDay ? (Number(r.total_actual_hours || 0) / 8) : Number(r.total_actual_hours || 0);
+        var startSig = "";
+        if (!r.approved_start || (r.approved_start || "").slice(0, 7) > monthYm) startSig = "Not This Month";
+        else if (r.start_slip) startSig = "Could Not Start";
+        else startSig = "Started on Time";
+        var endSig = "";
+        var due = (r.approved_due || "").slice(0, 7);
+        if (due > monthYm) endSig = "Future Planned";
+        else if (r.actual_completed_date && r.actual_completed_date <= r.approved_due) endSig = "Completed in Time";
+        else if (r.actual_completed_date && r.actual_completed_date > r.approved_due) endSig = "Completed Late";
+        else if (r.end_slip) endSig = "Could Not End";
+        else endSig = "—";
+        var carryOut = "No";
+        if (r.carried_forward && r.brought_forward) carryOut = "Persisting Overdue";
+        else if (r.carried_forward) carryOut = "Carried Forward";
+        csvRows.push([
+          r.epic_key || "", r.epic_name || "", r.project_name || r.project_key || "",
+          r.approved_start || "", r.approved_due || "",
+          r.actual_completed_date || "", r.jira_status || "",
+          mPlanned, mActual, Math.round(tActual * 100) / 100,
+          r.brought_forward ? "Yes" : "No", startSig, endSig, carryOut
+        ]);
+      });
+      var xml = '<?xml version="1.0"?><?mso-application progid="Excel.Sheet"?>';
+      xml += '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">';
+      xml += '<Worksheet ss:Name="Epics"><Table>';
+      csvRows.forEach(function(row, ri) {
+        xml += '<Row>';
+        row.forEach(function(cell) {
+          if (typeof cell === "number") {
+            xml += '<Cell><Data ss:Type="Number">' + cell + '</Data></Cell>';
+          } else {
+            var safe = String(cell).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+            xml += '<Cell' + (ri === 0 ? ' ss:StyleID="hdr"' : '') + '><Data ss:Type="String">' + safe + '</Data></Cell>';
+          }
+        });
+        xml += '</Row>';
+      });
+      xml += '</Table></Worksheet></Workbook>';
+      var blob = new Blob([xml], {type: "application/vnd.ms-excel"});
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement("a");
+      a.href = url;
+      a.download = "epic_plan_progress_" + (els.month ? els.month.value : "report") + ".xls";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    });
 
     function setStoryMode(mode) {
       storyMode = storyMode === mode ? "none" : mode; // toggle off if clicking same button
