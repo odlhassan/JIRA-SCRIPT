@@ -14227,7 +14227,7 @@ def _epics_management_settings_html() -> str:
     #status { margin-top:10px; min-height:1.2em; font-size:.9rem; color:var(--muted); }
     #status.ok { color:var(--ok); }
     #status.warn { color:var(--warn); }
-    .table-wrap { margin-top:12px; border:1px solid var(--line); border-radius:10px; overflow:auto; background:#fff; max-height:70vh; }
+    .table-wrap { margin-top:12px; border:1px solid var(--line); border-radius:10px; overflow:auto; background:#fff; height:calc(100vh - 20px); }
     .executive-summary-wrap { margin-top:12px; border:1px solid var(--line); border-radius:8px; overflow:auto; background:#fff; max-width:620px; }
     .executive-summary-table { border-collapse:collapse; min-width:520px; width:100%; }
     .executive-summary-table th, .executive-summary-table td { border:1px solid #d9d9d9; padding:4px 7px; font-size:.82rem; line-height:1.2; background:#fff; color:#000; text-align:left; }
@@ -14837,6 +14837,11 @@ def _epics_management_settings_html() -> str:
       <div id="sync-jira-subtitle" class="muted" style="margin-top:4px;font-size:.8rem;">Choose which fields should be refreshed from Jira.</div>
     </div>
     <div class="modal-body">
+      <div class="sync-jira-group" style="margin-bottom:12px;">
+        <div class="sync-jira-group-title">Jira URL</div>
+        <input id="sync-jira-url" type="url" placeholder="https://jira.example.com/browse/ABC-123" style="width:100%;box-sizing:border-box;">
+        <p class="sync-jira-hint" id="sync-jira-url-hint">Required. The Jira epic URL to sync data from.</p>
+      </div>
       <div class="sync-jira-grid">
         <div class="sync-jira-group">
           <div class="sync-jira-group-title">Man-days</div>
@@ -14924,6 +14929,8 @@ def _epics_management_settings_html() -> str:
     const planDueEl = document.getElementById("plan-due");
     const syncJiraModalEl = document.getElementById("sync-jira-modal");
     const syncJiraSubtitleEl = document.getElementById("sync-jira-subtitle");
+    const syncJiraUrlEl = document.getElementById("sync-jira-url");
+    const syncJiraUrlHintEl = document.getElementById("sync-jira-url-hint");
     const syncEpicMandaysEl = document.getElementById("sync-epic-mandays");
     const syncPhaseMandaysEl = document.getElementById("sync-phase-mandays");
     const syncEpicDatesEl = document.getElementById("sync-epic-dates");
@@ -15043,7 +15050,11 @@ def _epics_management_settings_html() -> str:
     function updateSyncJiraSubmitState() {
       if (!syncJiraApplyEl) return;
       const hasSelection = syncJiraCheckboxes().some((inputEl) => !!(inputEl && inputEl.checked));
-      syncJiraApplyEl.disabled = !hasSelection;
+      const hasUrl = !!(syncJiraUrlEl && String(syncJiraUrlEl.value || "").trim());
+      syncJiraApplyEl.disabled = !hasSelection || !hasUrl;
+      if (syncJiraUrlHintEl) {
+        syncJiraUrlHintEl.style.color = hasUrl ? "" : "#dc2626";
+      }
     }
 
     function applySyncScopeDependencies(changedEl) {
@@ -15415,6 +15426,7 @@ def _epics_management_settings_html() -> str:
       const epicKey = String(row.epic_key || row.id || "").trim().toUpperCase();
       const epicName = String(row.epic_name || row.epic_key || "").trim() || epicKey;
       if (syncJiraSubtitleEl) syncJiraSubtitleEl.textContent = epicName + " (" + epicKey + ")";
+      if (syncJiraUrlEl) syncJiraUrlEl.value = String(row.jira_url || "").trim();
       syncEpicMandaysEl.checked = true;
       syncPhaseMandaysEl.checked = false;
       syncEpicDatesEl.checked = true;
@@ -17252,12 +17264,18 @@ def _epics_management_settings_html() -> str:
         rowEl.classList.remove(nextClass);
       }, Math.max(0, Number(durationMs) || 0));
     }
-    async function syncRowPlanFromJira(rowIndex, syncOptions) {
+    async function syncRowPlanFromJira(rowIndex, syncOptions, overrideJiraUrl) {
       const row = rows[rowIndex];
       if (!row) throw new Error("Row not found.");
       const key = String(row.epic_key || row.id || "").toUpperCase();
       if (!key) throw new Error("Epic key is required to sync.");
       const options = syncOptions && typeof syncOptions === "object" ? syncOptions : {};
+      const effectiveUrl = String(overrideJiraUrl || row.jira_url || "").trim();
+      if (effectiveUrl && effectiveUrl !== String(row.jira_url || "").trim()) {
+        row.jira_url = effectiveUrl;
+        ensureRowOverride(row).jira_url = effectiveUrl;
+        saveOverrides();
+      }
       const planJiraLinks = {};
       PLAN_COLUMNS.forEach((col) => {
         const plan = (row.plans || {})[col.key] || {};
@@ -17268,7 +17286,7 @@ def _epics_management_settings_html() -> str:
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          jira_url: String(row.jira_url || ""),
+          jira_url: effectiveUrl,
           plan_jira_links: planJiraLinks,
           sync_epic_mandays: options.sync_epic_mandays,
           sync_phase_mandays: options.sync_phase_mandays,
@@ -17703,6 +17721,7 @@ def _epics_management_settings_html() -> str:
     syncJiraCheckboxes().forEach((inputEl) => {
       inputEl.addEventListener("change", () => applySyncScopeDependencies(inputEl));
     });
+    if (syncJiraUrlEl) syncJiraUrlEl.addEventListener("input", () => updateSyncJiraSubmitState());
     document.getElementById("sync-jira-cancel").addEventListener("click", closeSyncJiraModal);
     document.getElementById("sync-jira-apply").addEventListener("click", () => {
       if (activeSyncRowIndex < 0) return;
@@ -17711,9 +17730,14 @@ def _epics_management_settings_html() -> str:
         setStatus("Select at least one Jira sync option.", "warn");
         return;
       }
+      const modalUrl = syncJiraUrlEl ? String(syncJiraUrlEl.value || "").trim() : "";
+      if (!modalUrl) {
+        setStatus("Jira URL is required for sync.", "warn");
+        return;
+      }
       const rowIndex = activeSyncRowIndex;
       closeSyncJiraModal();
-      syncRowPlanFromJira(rowIndex, selection).catch((err) => setStatus(err.message || String(err), "warn"));
+      syncRowPlanFromJira(rowIndex, selection, modalUrl).catch((err) => setStatus(err.message || String(err), "warn"));
     });
     manageColumnsTbodyEl.addEventListener("click", (event) => {
       const target = event.target instanceof Element ? event.target : null;
@@ -26821,6 +26845,11 @@ def _sync_epic_plan_from_jira(
         "jira_url": jira_url,
         "plans": plan_updates,
     }
+    if _is_tmp_epic_key(key) and project_key:
+        current_project = _to_text(existing.get("project_key")).upper()
+        if not current_project or current_project == "ORPHAN":
+            update_payload["project_key"] = project_key
+            update_payload["project_name"] = project_key
     if epic_name_from_jira:
         update_payload["epic_name"] = epic_name_from_jira
     if epic_description_from_jira:

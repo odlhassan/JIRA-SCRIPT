@@ -4511,23 +4511,11 @@
       if (els.kpiWfAvailLabel) els.kpiWfAvailLabel.textContent = "Availability (" + lab + ")";
       if (els.kpiWfAvailability) els.kpiWfAvailability.textContent = formatNumber(av);
 
-      // Resource Planning headcount always uses formula: all − process − resigned.
-      // The drawer/assignee filter does NOT change these counts — it only affects
-      // epic-row filtering and the KPI cards above, not this planning panel.
-      const actualHC = Number(payload.employee_count_actual != null ? payload.employee_count_actual : n);
-      const actualCapH = Number(payload.actual_capacity_hours != null ? payload.actual_capacity_hours : payload.capacity_hours || 0);
-      const actualCapD = Number(payload.actual_capacity_days != null ? payload.actual_capacity_days : payload.capacity_days || 0);
-      const resLeaveH = Number(payload.planned_leave_hours || 0);
-      const resLeaveD = Number(payload.planned_leave_days || 0);
-      _resSummaryState.total = {
-        headcount: actualHC,
-        capacity_hours: actualCapH,
-        capacity_days: actualCapD,
-        planned_leave_hours: resLeaveH,
-        planned_leave_days: resLeaveD,
-        availability_hours: Math.max(0, actualCapH - resLeaveH),
-        availability_days: Math.max(0, actualCapD - resLeaveD),
-      };
+      // Resource Planning mirrors the Team Roster selection (single source of truth):
+      // Total / Dev / Support all follow the checked members and the Include Support
+      // Team toggle. computeResourcePlanningState fills both the total and support
+      // buckets from the effective selected set.
+      computeResourcePlanningState(payload);
       renderResourceSummary();
 
       renderCapacityProfileDropdown(payload);
@@ -4549,6 +4537,93 @@
         }
         els.workforceCaption.textContent = capLine + " " + leaveLine + " Availability = capacity minus leave load.";
       }
+    }
+
+    // Compute the Resource Planning total + support buckets from the effective Team
+    // Roster selection so the panel stays consistent with the Employee Stats cards.
+    // Per-member capacity is uniform (team capacity ÷ profile headcount), matching the
+    // server's per_person_capacity_hours basis. Planned leave is summed per selected
+    // member from employee_tree. Dev = Total − Support (computed in renderResourceSummary).
+    function computeResourcePlanningState(wf) {
+      const payload = wf || {};
+      const tree = payload.employee_tree || {};
+      const teams = Array.isArray(tree.teams) ? tree.teams : [];
+      const ungrouped = Array.isArray(tree.ungrouped) ? tree.ungrouped : [];
+      const allMembers = [];
+      teams.forEach(function (t) {
+        (Array.isArray(t && t.members) ? t.members : []).forEach(function (m) { allMembers.push(m); });
+      });
+      ungrouped.forEach(function (m) { allMembers.push(m); });
+
+      const stRows = Array.isArray(payload.support_team && payload.support_team.member_rows)
+        ? payload.support_team.member_rows : [];
+      const supportSet = new Set(stRows.map(function (r) {
+        return String((r && r.name) || "").trim().toLowerCase();
+      }).filter(Boolean));
+
+      const nProfile = Number(payload.employee_count_profile || 0);
+      const teamCapH = Number(payload.team_capacity_hours || 0);
+      const perPersonCap = nProfile > 0 ? teamCapH / nProfile : 0;
+
+      const leaveByLower = Object.create(null);
+      allMembers.forEach(function (m) {
+        const lk = String((m && m.name) || "").trim().toLowerCase();
+        if (!lk) return;
+        leaveByLower[lk] = Number(m.leave_hours || 0);
+      });
+
+      const filterActive = !!payload.assignee_filter_active;
+      let selectedLowers;
+      if (filterActive) {
+        selectedLowers = new Set(
+          (Array.isArray(payload.selected_assignees) ? payload.selected_assignees : [])
+            .map(function (s) { return String(s).trim().toLowerCase(); })
+            .filter(Boolean)
+        );
+      } else {
+        // Default roster: active (non-resigned) members; support included only when the
+        // Include Support Team toggle is applied on.
+        const includeSupport = _hcIncludeSupportApplied;
+        selectedLowers = new Set();
+        allMembers.forEach(function (m) {
+          const lk = String((m && m.name) || "").trim().toLowerCase();
+          if (!lk) return;
+          const rid = m.resigned === true || m.resigned === 1;
+          if (rid) return;
+          if (supportSet.has(lk) && !includeSupport) return;
+          selectedLowers.add(lk);
+        });
+      }
+
+      let totHC = 0, totLeave = 0, supHC = 0, supLeave = 0;
+      selectedLowers.forEach(function (lk) {
+        const lv = Number(leaveByLower[lk] || 0);
+        totHC += 1;
+        totLeave += lv;
+        if (supportSet.has(lk)) { supHC += 1; supLeave += lv; }
+      });
+
+      const totCapH = perPersonCap * totHC;
+      const supCapH = perPersonCap * supHC;
+
+      _resSummaryState.total = {
+        headcount: totHC,
+        capacity_hours: totCapH,
+        capacity_days: totCapH / 8,
+        planned_leave_hours: totLeave,
+        planned_leave_days: totLeave / 8,
+        availability_hours: Math.max(0, totCapH - totLeave),
+        availability_days: Math.max(0, (totCapH - totLeave) / 8),
+      };
+      _resSummaryState.support = {
+        headcount: supHC,
+        capacity_hours: supCapH,
+        capacity_days: supCapH / 8,
+        leaves_hours: supLeave,
+        leaves_days: supLeave / 8,
+        availability_hours: Math.max(0, supCapH - supLeave),
+        availability_days: Math.max(0, (supCapH - supLeave) / 8),
+      };
     }
 
     // ── Head Count Drawer ────────────────────────────────────────────
@@ -5187,15 +5262,9 @@
       }
       if (els.kpiFeaturesAvail) els.kpiFeaturesAvail.textContent = formatNumber(featAvail);
 
-      _resSummaryState.support = {
-        headcount: rows.length,
-        capacity_hours: Number(st.total_capacity_hours || 0),
-        capacity_days: Number(st.total_capacity_days || 0),
-        leaves_hours: Number(st.total_planned_leave_hours || 0),
-        leaves_days: Number(st.total_planned_leave_hours || 0) / 8,
-        availability_hours: Number(st.total_availability_hours || 0),
-        availability_days: Number(st.total_availability_days || 0),
-      };
+      // Resource Planning support bucket is selection-aware (computed from the Team
+      // Roster selection, not the full support roster shown in the table above).
+      computeResourcePlanningState(wf);
       renderResourceSummary();
     }
 

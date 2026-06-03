@@ -325,6 +325,12 @@ class IppMeetingPlannerApiTests(unittest.TestCase):
             self.assertTrue(report_html.exists())
             self.assertIn("root copy", report_html.read_text(encoding="utf-8"))
 
+    def test_team_capacity_planner_uses_safe_json_fetch_helper(self):
+        html = (Path(__file__).resolve().parents[1] / "team_capacity_planner.html").read_text(encoding="utf-8")
+        self.assertIn("async function fetchJson(url, options)", html)
+        self.assertIn("Server returned invalid JSON", html)
+        self.assertNotIn("await res.json()", html)
+
     def test_search_work_items_returns_epics_planner_epic(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             root = Path(td)
@@ -449,7 +455,7 @@ class IppMeetingPlannerApiTests(unittest.TestCase):
                     INSERT INTO performance_teams(team_name, team_leader, assignees_json, updated_at)
                     VALUES (?, ?, ?, ?)
                     """,
-                    ("Alpha", "Resource One", '["Resource One"]', "2026-05-20T00:00:00+00:00"),
+                    ("Alpha", "Resource One", '["Resource One", "Resource Two"]', "2026-05-20T00:00:00+00:00"),
                 )
                 conn.execute(
                     """
@@ -472,6 +478,7 @@ class IppMeetingPlannerApiTests(unittest.TestCase):
                     ("run-1", "EP-4", "EP", "Bug Subtask", "Resource One", "2026-05-04", "2026-05-05", 2.5, "EP-2", "EP-2", "EP-1"),
                     ("run-1", "EP-5", "EP", "Sub-task", "Other Resource", "2026-05-04", "2026-05-05", 9.0, "EP-2", "EP-2", "EP-1"),
                     ("run-1", "EP-6", "EP", "Sub-task", "Resource One", "2026-06-01", "2026-06-02", 7.0, "EP-2", "EP-2", "EP-1"),
+                    ("run-1", "EP-7", "EP", "Sub-task", "Resource Two", "2026-05-10", "2026-05-11", 4.0, "EP-2", "EP-2", "EP-1"),
                 ]
                 conn.executemany(
                     """
@@ -483,6 +490,19 @@ class IppMeetingPlannerApiTests(unittest.TestCase):
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     rows,
+                )
+                conn.executemany(
+                    """
+                    INSERT INTO canonical_worklogs(
+                        run_id, worklog_id, issue_key, project_key, worklog_author,
+                        issue_assignee, started_utc, started_date, updated_utc, hours_logged
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    [
+                        ("run-1", "wl-1", "EP-3", "EP", "Resource One", "Resource One", "2026-05-02T09:00:00+00:00", "2026-05-02", "2026-05-02T10:00:00+00:00", 1.5),
+                        ("run-1", "wl-2", "EP-7", "EP", "Resource Two", "Resource Two", "2026-05-10T09:00:00+00:00", "2026-05-10", "2026-05-10T10:00:00+00:00", 3.0),
+                    ],
                 )
                 conn.commit()
             finally:
@@ -496,9 +516,15 @@ class IppMeetingPlannerApiTests(unittest.TestCase):
                 "2026-05-31",
             )
 
-            member = data["members"][0]
-            self.assertEqual(member["planned_hours"], 8.5)
-            self.assertEqual(member["subtask_planned_hours"], 8.5)
+            members = {m["name"]: m for m in data["members"]}
+            self.assertEqual(members["Resource One"]["planned_hours"], 6.0)
+            self.assertEqual(members["Resource One"]["subtask_planned_hours"], 6.0)
+            self.assertEqual(members["Resource One"]["logged_hours"], 1.5)
+            self.assertEqual(members["Resource One"]["epic_keys"], ["EP-1"])
+            self.assertEqual(members["Resource Two"]["planned_hours"], 4.0)
+            self.assertEqual(members["Resource Two"]["subtask_planned_hours"], 4.0)
+            self.assertEqual(members["Resource Two"]["logged_hours"], 3.0)
+            self.assertEqual(members["Resource Two"]["epic_keys"], ["EP-1"])
 
     def test_add_custom_item_creates_row_with_custom_kind(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:

@@ -17,6 +17,22 @@
 - The estimate detail drawer width can be resized from the left edge.
 - Days are derived from `hours_per_day`, currently `8`.
 
+### Workforce: Team Roster, Employee Stats, and Resource Planning
+
+- The **Team Roster** drawer is the single source of truth for which employees the workforce numbers describe. By default it leaves only the **active development team** selected; support-team members, employees resigned within the selected month, and process-team resources are unchecked.
+- **Include Support Team** toggle:
+	- **On** → the user wants combined active dev + active support stats; support members become eligible for selection.
+	- **Off** (default) → only the active dev team is in scope; support members are force-unchecked.
+- **Employee Stats** cards (head count, capacity, leaves, availability) already reflect the roster selection: head count shows the selected count, and capacity/leaves are recomputed server-side as `team_capacity × (selected ÷ profile headcount)` and the sum of selected members' planned leave.
+- **Resource Planning** (Total / Dev / Support resources) now mirrors the same roster selection instead of a fixed `all − process − resigned` formula. The panel is computed client-side from the selected members so it always stays consistent with Employee Stats:
+	- Per-member capacity is uniform: `team_capacity_hours ÷ employee_count_profile` (the same `per_person_capacity_hours` basis the server uses).
+	- **Total** = selected members × per-person capacity; planned leave summed over selected members; availability = capacity − leave.
+	- **Support** = the subset of selected members that belong to the support team (same per-person basis).
+	- **Dev** = Total − Support for every metric, so Dev head count never includes a member the user unchecked.
+	- When Include Support Team is off, no support member is selected, so the Support Resources group is hidden and **Total = Dev**.
+- On first load with no explicit selection, Resource Planning still mirrors the roster default (active dev only, support shown only when Include Support Team is applied on), rather than the full organisation breakdown.
+- The detailed **Technical Support Team** table below Employee Stats continues to list the full support roster as a reference; only the Resource Planning *Support Resources* card is selection-aware.
+
 ## Business Cases
 
 - Delivery leads use the report to compare month commitments against actual Jira execution for epics that should be progressing this month.
@@ -71,11 +87,15 @@ The new bug-subtask toggle is intentionally local to the drawer. The report head
 | Estimate detail drawer | Overrun | Numeric column | Derived | For Story Overrun rows, recalculated from the currently displayed logged totals. |
 | Estimate detail drawer | Include bug subtasks | Checkbox | Unchecked | Available only in the Story Overrun drawer. Recalculates drawer rows and summary chips without changing the main chart metric. |
 | Estimate detail drawer | Summary chips | Read-only chips | Calculated | Shows work-item count, original estimate, TK planned when present, logged, and overrun for the currently displayed drawer rows. |
+| Team Roster drawer | Include Support Team | Checkbox | Unchecked | When on, support members are selectable and feed Employee Stats + Resource Planning; when off, support members are force-unchecked (dev-only scope). |
+| Team Roster drawer | Member / team checkboxes | Checkboxes | Active dev selected, support/resigned unchecked | Selecting/clearing members defines the workforce scope. `Apply selection` re-fetches the payload with the chosen assignees. |
+| Employee Stats | Head Count / Capacity / Leaves / Availability | Read-only cards | Calculated | Reflect the roster selection (selected count, scaled capacity, selected members' planned leave). |
+| Resource Planning | Total / Dev / Support resources | Read-only cards | Calculated | Mirror the roster selection. Total and Support are computed from selected members at a uniform per-person capacity; Dev = Total − Support. Support group hidden when no support member is selected. |
 
 ## Script Files
 
 - `monthly_epic_plan_progress_service.py` — builds the monthly payload, estimate rollups, and Story Overrun detail rows including split regular-subtask and bug-subtask logged totals.
-- `monthly_epic_plan_progress_report.html` — renders filters, estimate bars, the detail drawer, the drawer-only bug toggle, table view, and Gantt view.
+- `monthly_epic_plan_progress_report.html` — renders filters, estimate bars, the detail drawer, the drawer-only bug toggle, table view, Gantt view, the Team Roster drawer, Employee Stats cards, and the selection-aware Resource Planning panel (`computeResourcePlanningState` → `renderResourceSummary`).
 - `report_server.py` — serves `/api/monthly-epic-plan-progress/summary` and syncs the canonical report HTML into `report_html/` for localhost serving.
 - `tests/test_monthly_epic_plan_progress.py` — covers payload generation, HTML presence checks, and Story Overrun detail-row regression cases.
 
@@ -108,3 +128,5 @@ The new bug-subtask toggle is intentionally local to the drawer. The report head
 8. The browser renders the bar chart from the unchanged main rollup fields.
 9. When the user opens the Story Overrun drawer, the browser starts from the story-level detail rows, defaults the bug toggle to unchecked, recalculates displayed logged/overrun values from the regular-subtask-only fields, and removes rows that no longer overrun.
 10. If the user enables `Include bug subtasks`, the browser re-renders the same rows using the combined totals already supplied by the backend.
+11. For workforce numbers, the service returns per-member data in `employee_tree` (name, `resigned`, planned `leave_hours`), the support roster in `support_team.member_rows`, `team_capacity_hours`, `employee_count_profile`, and the active selection (`selected_assignees`, `assignee_filter_active`).
+12. `renderWorkforce` and `renderSupportTeam` call `computeResourcePlanningState`, which derives the effective selected set (from `selected_assignees`, or the active dev-only default when no filter is active), computes Total and Support buckets at a uniform per-person capacity, and `renderResourceSummary` then renders Dev = Total − Support. Changing the Team Roster selection and clicking `Apply selection` re-fetches the payload and re-renders all workforce panels consistently.
