@@ -595,6 +595,30 @@ def _list_performance_teams(db_path: Path) -> list[dict]:
     return out
 
 
+def _load_support_team_members(db_path: Path) -> list[str]:
+    if not db_path.exists():
+        return []
+    try:
+        with sqlite3.connect(db_path) as conn:
+            table_row = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'support_team_config'"
+            ).fetchone()
+            if not table_row:
+                return []
+            row = conn.execute(
+                "SELECT members_json FROM support_team_config WHERE key = 'members'"
+            ).fetchone()
+    except sqlite3.Error:
+        return []
+    if not row:
+        return []
+    try:
+        parsed = json.loads(_to_text(row[0]))
+    except json.JSONDecodeError:
+        return []
+    return sorted({_to_text(name) for name in parsed if _to_text(name)}, key=lambda s: s.casefold())
+
+
 def _save_performance_team(db_path: Path, team_name: Any, assignees: list[Any], team_leader: Any) -> dict:
     _init_performance_settings_db(db_path)
     normalized_name = _normalize_team_name(team_name)
@@ -1255,6 +1279,8 @@ def _build_payload(
     capacity_profiles: list[dict],
     leave_issue_keys: list[str] | None = None,
     simple_scoring: list[dict] | None = None,
+    resource_records: dict[str, dict[str, Any]] | None = None,
+    support_team_members: list[str] | None = None,
     managed_project_display_names: dict[str, str] | None = None,
 ) -> dict:
     normalized_leave_issue_keys = sorted(
@@ -1300,6 +1326,8 @@ def _build_payload(
         "capacity_profiles": capacity_profiles or [],
         "simple_scoring": simple_scoring or [],
         "simple_scoring_precomputed": simple_scoring or [],
+        "resource_records": resource_records or {},
+        "support_team_members": support_team_members or [],
         "jira_browse_base": jira_browse_base.rstrip("/"),
         "generated_at": _format_display_date(datetime.now(timezone.utc)),
     }
@@ -1391,6 +1419,27 @@ def _build_html(payload: dict) -> str:
     .filter-option input[type="checkbox"] {{ width:16px; height:16px; margin:0; accent-color:#60a5fa; flex-shrink:0; cursor:pointer; }}
     .filter-option .filter-option-label {{ flex:1; cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; text-align:left !important; color:#e2e8f0 !important; font-size:.86rem !important; font-weight:500 !important; display:inline !important; text-transform:none !important; margin:0 !important; }}
     .filter-option.hidden {{ display:none !important; }}
+    .team-filter-menu {{ min-width:min(560px, calc(100vw - 40px)); right:auto; max-height:min(72vh, 620px); }}
+    .team-filter-menu .filter-options {{ max-height:420px; padding:10px 12px 12px; display:grid; gap:12px; }}
+    .team-filter-group {{ border:1px solid #263f66; border-radius:14px; background:linear-gradient(180deg,#10213d 0%,#0d1a31 100%); overflow:hidden; }}
+    .team-filter-group.hidden {{ display:none; }}
+    .team-filter-group-head {{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding:12px 14px; border-bottom:1px solid #21385e; background:rgba(96,165,250,.08); }}
+    .team-filter-title {{ font-size:.9rem; font-weight:900; color:#f1f7ff; }}
+    .team-filter-meta {{ margin-top:3px; color:#91a9cd; font-size:.72rem; line-height:1.35; }}
+    .team-filter-check {{ display:inline-flex; align-items:center; gap:8px; color:#cfe0ff; font-size:.76rem; font-weight:800; white-space:nowrap; cursor:pointer; }}
+    .team-filter-check input {{ width:17px; height:17px; margin:0; accent-color:#60a5fa; }}
+    .team-member-list {{ display:grid; gap:8px; padding:12px; }}
+    .team-member-row {{ display:grid; grid-template-columns:18px minmax(0,1fr); gap:10px; align-items:start; padding:9px 10px; border:1px solid #223a61; border-radius:12px; background:#0c172b; cursor:pointer; transition:background .12s,border-color .12s; }}
+    .team-member-row:hover {{ background:#12284b; border-color:#3d679d; }}
+    .team-member-row input {{ width:16px; height:16px; margin:2px 0 0; accent-color:#60a5fa; }}
+    .team-member-main {{ min-width:0; }}
+    .team-member-name {{ color:#ecf4ff; font-weight:800; font-size:.84rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
+    .team-member-badges {{ display:flex; flex-wrap:wrap; gap:5px; margin-top:5px; }}
+    .team-member-chip {{ display:inline-flex; align-items:center; border:1px solid #375985; border-radius:999px; padding:2px 7px; background:#132949; color:#cfe0ff; font-size:.64rem; font-weight:900; letter-spacing:.02em; text-transform:uppercase; }}
+    .team-member-chip.support {{ border-color:#0ea5e9; background:rgba(14,165,233,.18); color:#bae6fd; }}
+    .team-member-chip.resigned {{ border-color:#ef4444; background:rgba(239,68,68,.16); color:#fecaca; }}
+    .team-member-chip.active {{ border-color:#22c55e; background:rgba(34,197,94,.14); color:#bbf7d0; }}
+    .team-filter-empty {{ padding:14px 12px; color:#8da5c9; font-size:.82rem; text-align:center; }}
     .filter-menu-empty {{ padding:12px; font-size:.84rem; color:#6b87b3; text-align:center; }}
     .shortcut-bar {{ display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }}
     .shortcut-btn {{ border:1px solid #3f5f93; background:#0f2342; color:#dce8ff; border-radius:999px; font-size:.74rem; padding:5px 10px; cursor:pointer; }}
@@ -1907,6 +1956,17 @@ def _build_html(payload: dict) -> str:
     html[data-theme="light"] .exec-scorecards {{ background:linear-gradient(180deg,#f7fbff 0%,#edf5ff 100%); border-color:#d6e1f2; }}
     html[data-theme="light"] .exec-card {{ background:linear-gradient(145deg,#ffffff 0%,#f6faff 62%,#eef5ff 100%); border-color:#d2dff2; }}
     html[data-theme="light"] .exec-card-mode {{ background:#edf4ff; border-color:#c6d7ee; color:#305785; }}
+    html[data-theme="light"] .team-filter-group {{ background:linear-gradient(180deg,#ffffff 0%,#f6faff 100%); border-color:#d6e1f2; }}
+    html[data-theme="light"] .team-filter-group-head {{ background:#eef5ff; border-color:#dbe5f3; }}
+    html[data-theme="light"] .team-filter-title,
+    html[data-theme="light"] .team-member-name {{ color:#17345f; }}
+    html[data-theme="light"] .team-filter-meta {{ color:#5b769c; }}
+    html[data-theme="light"] .team-member-row {{ background:#fbfdff; border-color:#dbe5f3; }}
+    html[data-theme="light"] .team-member-row:hover {{ background:#eaf3ff; border-color:#9fc0ea; }}
+    html[data-theme="light"] .team-member-chip {{ background:#edf4ff; border-color:#c6d7ee; color:#305785; }}
+    html[data-theme="light"] .team-member-chip.support {{ background:#e0f2fe; border-color:#7dd3fc; color:#075985; }}
+    html[data-theme="light"] .team-member-chip.resigned {{ background:#fee2e2; border-color:#fca5a5; color:#991b1b; }}
+    html[data-theme="light"] .team-member-chip.active {{ background:#dcfce7; border-color:#86efac; color:#166534; }}
     html[data-theme="light"] .exec-plan-actual-breakdown .section-title {{ color:#1f3f69; }}
     html[data-theme="light"] .exec-card-kicker,
     html[data-theme="light"] .hero-settings-label,
@@ -2089,10 +2149,10 @@ def _build_html(payload: dict) -> str:
             <span class="filter-trigger-text" id="teams-trigger-text">All</span>
             <span class="material-symbols-outlined" aria-hidden="true">expand_more</span>
           </button>
-          <div id="teams-menu" class="filter-menu" role="dialog" aria-label="Team filter" hidden>
+          <div id="teams-menu" class="filter-menu team-filter-menu" role="dialog" aria-label="Team filter" hidden>
             <div class="filter-search-wrap">
               <span class="material-symbols-outlined search-icon" aria-hidden="true">search</span>
-              <input type="text" id="teams-search" class="filter-search" placeholder="Search teams..." aria-label="Search teams">
+              <input type="text" id="teams-search" class="filter-search" placeholder="Search teams or members..." aria-label="Search teams or members">
             </div>
             <div class="filter-menu-head">
               <button type="button" id="teams-select-all" class="filter-action-btn">Select all</button>
@@ -2308,6 +2368,9 @@ const leaveIssueKeySet = new Set((Array.isArray(payload.leave_issue_keys) ? payl
 const teams = Array.isArray(payload.teams) ? payload.teams : [];
 const projects = Array.isArray(payload.projects) ? payload.projects : [];
 const projectDisplayNames = payload.project_display_names && typeof payload.project_display_names === "object" ? payload.project_display_names : {{}};
+const resourceRecords = payload.resource_records && typeof payload.resource_records === "object" ? payload.resource_records : {{}};
+const supportTeamMembers = Array.isArray(payload.support_team_members) ? payload.support_team_members : [];
+const supportTeamMemberSet = new Set(supportTeamMembers.map((name) => String(name || "").trim().toLowerCase()).filter(Boolean));
 const entitiesCatalog = Array.isArray(payload.entities_catalog) ? payload.entities_catalog : [];
 const managedFields = Array.isArray(payload.managed_fields) ? payload.managed_fields : [];
 const capacityProfiles = Array.isArray(payload.capacity_profiles) ? payload.capacity_profiles : [];
@@ -5780,8 +5843,122 @@ function setupFilterDropdown(config) {{
   }});
   updateFilterTriggerText(selectId, triggerTextId);
 }}
+function resourceRecordFor(name) {{
+  const target = String(name || "").trim();
+  if (!target) return {{}};
+  if (resourceRecords[target] && typeof resourceRecords[target] === "object") return resourceRecords[target];
+  const targetKey = target.toLowerCase();
+  for (const [key, value] of Object.entries(resourceRecords)) {{
+    if (String(key || "").trim().toLowerCase() === targetKey && value && typeof value === "object") return value;
+  }}
+  return {{}};
+}}
+function isSupportTeamMember(name) {{
+  return supportTeamMemberSet.has(String(name || "").trim().toLowerCase());
+}}
+function teamMemberStatusChip(name) {{
+  const rec = resourceRecordFor(name);
+  if (rec && rec.resigned) {{
+    const dateText = formatDate(String(rec.resignation_date || ""));
+    return `<span class="team-member-chip resigned">${{dateText ? `Resigned ${{e(dateText)}}` : "Resigned"}}</span>`;
+  }}
+  return `<span class="team-member-chip active">Not resigned</span>`;
+}}
+function syncTeamFilterVisualState() {{
+  const selectEl = document.getElementById("teams");
+  const optionsContainer = document.getElementById("teams-options");
+  if (!selectEl || !optionsContainer) return;
+  optionsContainer.querySelectorAll(".team-filter-check input").forEach((cb) => {{
+    const val = cb.getAttribute("data-value") || "";
+    const opt = Array.from(selectEl.options).find((o) => o.value === val);
+    cb.checked = opt ? opt.selected : false;
+  }});
+  updateFilterTriggerText("teams", "teams-trigger-text");
+}}
+function setupTeamFilterDropdown() {{
+  const selectEl = document.getElementById("teams");
+  const triggerEl = document.getElementById("teams-trigger");
+  const menuEl = document.getElementById("teams-menu");
+  const searchEl = document.getElementById("teams-search");
+  const selectAllBtn = document.getElementById("teams-select-all");
+  const clearAllBtn = document.getElementById("teams-clear-all");
+  const optionsContainer = document.getElementById("teams-options");
+  if (!selectEl || !triggerEl || !menuEl || !optionsContainer) return;
+  const teamRows = teams.map((team) => {{
+    const name = String(team && team.team_name || "");
+    const leader = String(team && team.team_leader || "");
+    const members = Array.isArray(team && team.assignees) ? team.assignees.map((m) => String(m || "").trim()).filter(Boolean) : [];
+    return {{ name, leader, members }};
+  }}).filter((team) => team.name);
+  optionsContainer.innerHTML = teamRows.length ? teamRows.map((team) => {{
+    const optEl = Array.from(selectEl.options).find((opt) => opt.value === team.name);
+    const isSelected = optEl ? optEl.selected : true;
+    const memberRows = team.members.length ? team.members.map((member) => {{
+      const badges = [
+        teamMemberStatusChip(member),
+        isSupportTeamMember(member) ? '<span class="team-member-chip support">Support team</span>' : "",
+      ].filter(Boolean).join("");
+      return `<div class="team-member-row" data-member-name="${{e(member)}}"><div class="team-member-main"><div class="team-member-name">${{e(member)}}</div><div class="team-member-badges">${{badges}}</div></div></div>`;
+    }}).join("") : '<div class="team-filter-empty">No members configured for this team.</div>';
+    return `<section class="team-filter-group" data-team-name="${{e(team.name)}}" data-search-text="${{e([team.name, team.leader, ...team.members].join(" ").toLowerCase())}}"><div class="team-filter-group-head"><div><div class="team-filter-title">${{e(team.name)}}</div><div class="team-filter-meta">Lead: ${{e(team.leader || "-")}} | Members: ${{team.members.length}}</div></div><label class="team-filter-check"><input type="checkbox" data-value="${{e(team.name)}}" ${{isSelected ? "checked" : ""}}> Include team</label></div><div class="team-member-list">${{memberRows}}</div></section>`;
+  }}).join("") : '<div class="team-filter-empty">No teams configured.</div>';
+  function applySelection(value, checked) {{
+    const opt = Array.from(selectEl.options).find((o) => o.value === value);
+    if (opt) opt.selected = checked;
+    syncTeamFilterVisualState();
+    renderAll();
+  }}
+  optionsContainer.querySelectorAll(".team-filter-check input").forEach((cb) => {{
+    cb.addEventListener("change", () => applySelection(cb.getAttribute("data-value") || "", cb.checked));
+  }});
+  if (searchEl) {{
+    searchEl.addEventListener("input", () => {{
+      const q = String(searchEl.value || "").trim().toLowerCase();
+      let shown = 0;
+      optionsContainer.querySelectorAll(".team-filter-group").forEach((group) => {{
+        const show = !q || String(group.getAttribute("data-search-text") || "").includes(q);
+        group.classList.toggle("hidden", !show);
+        if (show) shown += 1;
+      }});
+      let empty = optionsContainer.querySelector(".team-filter-search-empty");
+      if (!empty) {{
+        empty = document.createElement("div");
+        empty.className = "team-filter-empty team-filter-search-empty";
+        empty.textContent = "No teams or members match your search.";
+        optionsContainer.appendChild(empty);
+      }}
+      empty.hidden = shown > 0 || !q;
+    }});
+  }}
+  if (selectAllBtn) selectAllBtn.addEventListener("click", () => {{
+    Array.from(selectEl.options).forEach((o) => {{ o.selected = true; }});
+    syncTeamFilterVisualState();
+    renderAll();
+  }});
+  if (clearAllBtn) clearAllBtn.addEventListener("click", () => {{
+    Array.from(selectEl.options).forEach((o) => {{ o.selected = false; }});
+    syncTeamFilterVisualState();
+    renderAll();
+  }});
+  triggerEl.addEventListener("click", (event) => {{
+    event.stopPropagation();
+    const open = menuEl.classList.toggle("open");
+    triggerEl.setAttribute("aria-expanded", open ? "true" : "false");
+    menuEl.hidden = !open;
+    if (open && searchEl) searchEl.focus();
+  }});
+  menuEl.addEventListener("click", (event) => event.stopPropagation());
+  document.addEventListener("click", (event) => {{
+    if (!menuEl.contains(event.target) && event.target !== triggerEl && !triggerEl.contains(event.target)) {{
+      menuEl.classList.remove("open");
+      triggerEl.setAttribute("aria-expanded", "false");
+      menuEl.hidden = true;
+    }}
+  }});
+  syncTeamFilterVisualState();
+}}
 setupFilterDropdown({{ selectId: "projects", triggerId: "projects-trigger", menuId: "projects-menu", searchId: "projects-search", selectAllId: "projects-select-all", clearAllId: "projects-clear-all", optionsId: "projects-options", options: projects.map((p) => ({{ value: p, label: projectDisplayNames[p] || p }})) }});
-setupFilterDropdown({{ selectId: "teams", triggerId: "teams-trigger", menuId: "teams-menu", searchId: "teams-search", selectAllId: "teams-select-all", clearAllId: "teams-clear-all", optionsId: "teams-options", options: teams.map((t) => ({{ value: t.team_name, label: t.team_name }})) }});
+setupTeamFilterDropdown();
 
 refreshCapacityProfileOptions();
 document.getElementById("from").value = defaultFrom; document.getElementById("to").value = defaultTo;
@@ -6030,7 +6207,7 @@ document.getElementById("leader-search").addEventListener("input", renderAll);
 document.getElementById("search").addEventListener("input", () => {{ render(compute()); }});
 if (epicBasisTkEl) epicBasisTkEl.addEventListener("click", () => syncEpicDateBasisMode("tk_dates"));
 if (epicBasisSubtaskEl) epicBasisSubtaskEl.addEventListener("click", () => syncEpicDateBasisMode("subtask_dates"));
-document.getElementById("reset").addEventListener("click", ()=>{{ document.getElementById("from").value=defaultFrom; document.getElementById("to").value=defaultTo; document.getElementById("search").value=\"\"; document.getElementById("leader-search").value=\"\"; document.getElementById("leader-sort").value=\"score\"; document.getElementById("leader-sort-direction").value=\"desc\"; document.getElementById("leader-scoring-mode").value=\"simple\"; document.getElementById("filter-risk").value=\"all\"; document.getElementById("filter-missed").value=\"all\"; syncSimpleOverrunMode(\"subtasks\"); syncEfficiencyScorecardMode(\"penalty_inclusive\"); syncEpicDateBasisMode(\"tk_dates\", false); setScoringMode(\"simple\", false); setDueCompletionEnabled(true, false); setHeaderPerformanceControlsOpen(false); setSettingsFilterMenuOpen(false); if (assigneeExtendedActualsToggleEl) assigneeExtendedActualsToggleEl.checked = false; extendedActualsEnabled = false; applyPerformanceSettings(settings); syncCapacityProfileSelection(\"auto\", \"\"); selectedTeam = \"\"; setDateFilterStatus(""); Array.from(document.getElementById("projects").options).forEach(o => o.selected=true); Array.from(document.getElementById("teams").options).forEach(o => o.selected=true); updateFilterTriggerText(\"projects\", \"projects-trigger-text\"); updateFilterTriggerText(\"teams\", \"teams-trigger-text\"); document.querySelectorAll(\"#projects-options .filter-option input\").forEach((c)=>{{ c.checked = true; }}); document.querySelectorAll(\"#teams-options .filter-option input\").forEach((c)=>{{ c.checked = true; }}); if (document.getElementById(\"projects-search\")) document.getElementById(\"projects-search\").value = \"\"; if (document.getElementById(\"teams-search\")) document.getElementById(\"teams-search\").value = \"\"; document.querySelectorAll(\"#projects-options .filter-option\").forEach((r)=>{{ r.classList.remove(\"hidden\"); }}); document.querySelectorAll(\"#teams-options .filter-option\").forEach((r)=>{{ r.classList.remove(\"hidden\"); }}); renderAll(); }});
+document.getElementById("reset").addEventListener("click", ()=>{{ document.getElementById("from").value=defaultFrom; document.getElementById("to").value=defaultTo; document.getElementById("search").value=\"\"; document.getElementById("leader-search").value=\"\"; document.getElementById("leader-sort").value=\"score\"; document.getElementById("leader-sort-direction").value=\"desc\"; document.getElementById("leader-scoring-mode").value=\"simple\"; document.getElementById("filter-risk").value=\"all\"; document.getElementById("filter-missed").value=\"all\"; syncSimpleOverrunMode(\"subtasks\"); syncEfficiencyScorecardMode(\"penalty_inclusive\"); syncEpicDateBasisMode(\"tk_dates\", false); setScoringMode(\"simple\", false); setDueCompletionEnabled(true, false); setHeaderPerformanceControlsOpen(false); setSettingsFilterMenuOpen(false); if (assigneeExtendedActualsToggleEl) assigneeExtendedActualsToggleEl.checked = false; extendedActualsEnabled = false; applyPerformanceSettings(settings); syncCapacityProfileSelection(\"auto\", \"\"); selectedTeam = \"\"; setDateFilterStatus(""); Array.from(document.getElementById("projects").options).forEach(o => o.selected=true); Array.from(document.getElementById("teams").options).forEach(o => o.selected=true); updateFilterTriggerText(\"projects\", \"projects-trigger-text\"); syncTeamFilterVisualState(); document.querySelectorAll(\"#projects-options .filter-option input\").forEach((c)=>{{ c.checked = true; }}); if (document.getElementById(\"projects-search\")) document.getElementById(\"projects-search\").value = \"\"; if (document.getElementById(\"teams-search\")) document.getElementById(\"teams-search\").value = \"\"; document.querySelectorAll(\"#projects-options .filter-option\").forEach((r)=>{{ r.classList.remove(\"hidden\"); }}); document.querySelectorAll(\"#teams-options .team-filter-group\").forEach((r)=>{{ r.classList.remove(\"hidden\"); }}); const teamsEmpty = document.querySelector(\"#teams-options .team-filter-search-empty\"); if (teamsEmpty) teamsEmpty.hidden = true; renderAll(); }});
 document.getElementById("shortcut-current-month").addEventListener("click", ()=>{{ applyDateShortcut("current_month"); renderAll(); }});
 document.getElementById("shortcut-previous-month").addEventListener("click", ()=>{{ applyDateShortcut("previous_month"); renderAll(); }});
 document.getElementById("shortcut-last-30-days").addEventListener("click", ()=>{{ applyDateShortcut("last_30_days"); renderAll(); }});
@@ -6112,6 +6289,7 @@ def main() -> None:
     entities_catalog = load_report_entities(paths["db_path"])
     managed_fields = load_manage_fields(paths["db_path"], include_inactive=False)
     capacity_profiles = _list_capacity_profiles(paths["db_path"])
+    support_team_members = _load_support_team_members(paths["db_path"])
     source_mode, resolved_run_id = _resolve_employee_performance_source_mode(paths)
     if source_mode == "db":
         run_id = resolved_run_id
@@ -6140,6 +6318,16 @@ def main() -> None:
         leave_issue_keys = _load_leave_issue_keys(paths["leave_report_path"])
     simple_scoring = _precompute_simple_scoring(paths["db_path"], work_items, worklogs)
     _apply_managed_project_display_names(work_items, simple_scoring, managed_project_display_names)
+    team_member_names = sorted(
+        {
+            _to_text(member)
+            for team in teams
+            for member in list(team.get("assignees") or [])
+            if _to_text(member)
+        },
+        key=lambda s: s.casefold(),
+    )
+    resource_records = _load_performance_resource_resignation_map(paths["db_path"], team_member_names)
     payload = _build_payload(
         worklogs,
         list(work_items.values()),
@@ -6151,6 +6339,8 @@ def main() -> None:
         capacity_profiles=capacity_profiles,
         leave_issue_keys=leave_issue_keys,
         simple_scoring=simple_scoring,
+        resource_records=resource_records,
+        support_team_members=support_team_members,
         managed_project_display_names=managed_project_display_names,
     )
     paths["html_path"].write_text(_build_html(payload), encoding="utf-8")

@@ -125,6 +125,9 @@ tables, all support-tagged issues, counts by project, counts by type.
   Not modified.
 - `monthly_epic_plan_progress_service.py` — capacity reuse (`build_workforce_month_payload`,
   `HOURS_PER_DAY`, `_month_bounds`). Not modified; shares the support-team capacity model.
+- `generate_employee_performance_report.py` — reads `support_team_config.members_json`
+  read-only to show `Support team` chips for nested members in the Employee Performance
+  Teams filter. It does not write the support roster or alter this schema.
 - `db_schema_changelog.py` / `db_schema_changelog.db` — records the new `support_center.db`
   / `support_issues` table.
 - `.gitignore` — `support_center.db` is a local-only artifact (rebuilt by the sync).

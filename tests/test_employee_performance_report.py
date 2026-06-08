@@ -17,6 +17,7 @@ from generate_employee_performance_report import (
     _init_performance_settings_db,
     _load_leave_issue_keys,
     _load_managed_project_display_names,
+    _load_support_team_members,
     _load_unplanned_leave_rows,
     _load_simple_scoring,
     _load_work_items,
@@ -306,6 +307,12 @@ class EmployeePerformanceReportTests(unittest.TestCase):
         self.assertIn('id="from"', html)
         self.assertIn('id="to"', html)
         self.assertIn('id="projects"', html)
+        self.assertIn('class="filter-menu team-filter-menu"', html)
+        self.assertIn("function setupTeamFilterDropdown()", html)
+        self.assertIn("function resourceRecordFor(name)", html)
+        self.assertIn("function syncTeamFilterVisualState()", html)
+        self.assertIn("Support team", html)
+        self.assertIn("Not resigned", html)
         self.assertIn('id="leaderboard"', html)
         self.assertIn('id="leader-sort"', html)
         self.assertIn('id="leader-sort-direction"', html)
@@ -495,6 +502,7 @@ class EmployeePerformanceReportTests(unittest.TestCase):
 
     def test_build_payload_exposes_precomputed_simple_scoring_key(self):
         rows = [{"issue_key": "ABC-1", "assignee": "Alice"}]
+        records = {"Alice": {"resigned": True, "resignation_date": "2026-04-01"}}
         payload = _build_payload(
             [],
             [],
@@ -505,9 +513,33 @@ class EmployeePerformanceReportTests(unittest.TestCase):
             [],
             [],
             simple_scoring=rows,
+            resource_records=records,
+            support_team_members=["Alice"],
         )
         self.assertEqual(payload["simple_scoring_precomputed"], rows)
         self.assertEqual(payload["simple_scoring"], rows)
+        self.assertEqual(payload["resource_records"], records)
+        self.assertEqual(payload["support_team_members"], ["Alice"])
+
+    def test_load_support_team_members_reads_existing_config_without_creating_table(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            db = Path(td) / "assignee_hours_capacity.db"
+            self.assertEqual(_load_support_team_members(db), [])
+            with sqlite3.connect(db) as conn:
+                self.assertFalse(
+                    conn.execute(
+                        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='support_team_config'"
+                    ).fetchone()
+                )
+                conn.execute(
+                    "CREATE TABLE support_team_config (key TEXT PRIMARY KEY, members_json TEXT NOT NULL DEFAULT '[]', updated_at TEXT)"
+                )
+                conn.execute(
+                    "INSERT INTO support_team_config (key, members_json, updated_at) VALUES ('members', ?, 'now')",
+                    ('["Bob", "Alice", ""]',),
+                )
+                conn.commit()
+            self.assertEqual(_load_support_team_members(db), ["Alice", "Bob"])
 
     def test_html_stacks_simple_and_advanced_scoring_sections(self):
         payload = _build_payload([], [], [], dict(DEFAULT_PERFORMANCE_SETTINGS), [], [], [], [])
