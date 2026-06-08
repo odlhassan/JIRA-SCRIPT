@@ -1419,26 +1419,27 @@ def _build_html(payload: dict) -> str:
     .filter-option input[type="checkbox"] {{ width:16px; height:16px; margin:0; accent-color:#60a5fa; flex-shrink:0; cursor:pointer; }}
     .filter-option .filter-option-label {{ flex:1; cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; text-align:left !important; color:#e2e8f0 !important; font-size:.86rem !important; font-weight:500 !important; display:inline !important; text-transform:none !important; margin:0 !important; }}
     .filter-option.hidden {{ display:none !important; }}
-    .team-filter-menu {{ min-width:min(560px, calc(100vw - 40px)); right:auto; max-height:min(72vh, 620px); }}
-    .team-filter-menu .filter-options {{ max-height:420px; padding:10px 12px 12px; display:grid; gap:12px; }}
+    .team-filter-menu {{ position:fixed !important; top:auto; left:auto; right:auto; bottom:auto; width:min(580px, calc(100vw - 32px)); max-height:min(75vh, 640px); margin:0; border:1px solid #314d7a; border-radius:14px; background:#0f1b32; box-shadow:0 12px 40px rgba(2,8,23,.6),0 0 0 1px rgba(96,165,250,.08); z-index:9999; display:none; flex-direction:column; }}
+    .team-filter-menu.open {{ display:flex; }}
+    .team-filter-menu .filter-search-wrap {{ padding:14px 16px 10px; }}
+    .team-filter-menu .filter-menu-head {{ padding:0 16px 10px; }}
+    .team-filter-menu .filter-options {{ max-height:none; flex:1; min-height:0; overflow-y:auto; padding:8px 14px 14px; display:grid; gap:14px; scrollbar-width:thin; scrollbar-color:#4f7fb8 #0b213e; }}
     .team-filter-group {{ border:1px solid #263f66; border-radius:14px; background:linear-gradient(180deg,#10213d 0%,#0d1a31 100%); overflow:hidden; }}
     .team-filter-group.hidden {{ display:none; }}
-    .team-filter-group-head {{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding:12px 14px; border-bottom:1px solid #21385e; background:rgba(96,165,250,.08); }}
-    .team-filter-title {{ font-size:.9rem; font-weight:900; color:#f1f7ff; }}
-    .team-filter-meta {{ margin-top:3px; color:#91a9cd; font-size:.72rem; line-height:1.35; }}
+    .team-filter-group-head {{ display:flex; align-items:flex-start; justify-content:space-between; gap:14px; padding:14px 16px; border-bottom:1px solid #21385e; background:rgba(96,165,250,.06); }}
+    .team-filter-title {{ font-size:.92rem; font-weight:900; color:#f1f7ff; }}
+    .team-filter-meta {{ margin-top:4px; color:#91a9cd; font-size:.73rem; line-height:1.4; }}
     .team-filter-check {{ display:inline-flex; align-items:center; gap:8px; color:#cfe0ff; font-size:.76rem; font-weight:800; white-space:nowrap; cursor:pointer; }}
     .team-filter-check input {{ width:17px; height:17px; margin:0; accent-color:#60a5fa; }}
-    .team-member-list {{ display:grid; gap:8px; padding:12px; }}
-    .team-member-row {{ display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:42px; padding:9px 11px; border:1px solid #223a61; border-radius:12px; background:#0c172b; transition:background .12s,border-color .12s; }}
+    .team-member-list {{ display:grid; gap:8px; padding:14px 16px; }}
+    .team-member-row {{ display:flex; align-items:center; gap:14px; min-height:44px; padding:10px 14px; border:1px solid #223a61; border-radius:12px; background:#0c172b; transition:background .12s,border-color .12s; }}
     .team-member-row:hover {{ background:#12284b; border-color:#3d679d; }}
-    .team-member-row input {{ width:16px; height:16px; margin:2px 0 0; accent-color:#60a5fa; }}
-    .team-member-main {{ min-width:0; flex:1; display:flex; align-items:center; justify-content:space-between; gap:10px; }}
-    .team-member-name {{ color:#ecf4ff; font-weight:800; font-size:.84rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
-    .team-member-badges {{ display:flex; flex-wrap:wrap; justify-content:flex-end; gap:5px; flex-shrink:0; }}
-    .team-member-chip {{ display:inline-flex; align-items:center; border:1px solid #375985; border-radius:999px; padding:2px 7px; background:#132949; color:#cfe0ff; font-size:.64rem; font-weight:900; letter-spacing:.02em; text-transform:uppercase; }}
-    .team-member-chip.support {{ border-color:#0ea5e9; background:rgba(14,165,233,.18); color:#bae6fd; }}
-    .team-member-chip.resigned {{ border-color:#ef4444; background:rgba(239,68,68,.16); color:#fecaca; }}
-    .team-filter-empty {{ padding:14px 12px; color:#8da5c9; font-size:.82rem; text-align:center; }}
+    .team-member-name {{ flex:1; min-width:0; color:#ecf4ff; font-weight:700; font-size:.88rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
+    .team-member-badges {{ display:flex; flex-wrap:nowrap; gap:6px; flex-shrink:0; max-width:45%; }}
+    .team-member-chip {{ display:inline-flex; align-items:center; border-radius:999px; padding:3px 9px; font-size:.62rem; font-weight:800; letter-spacing:.03em; text-transform:uppercase; white-space:nowrap; }}
+    .team-member-chip.support {{ border:1px solid #0ea5e9; background:rgba(14,165,233,.15); color:#7dd3fc; }}
+    .team-member-chip.resigned {{ border:1px solid #ef4444; background:rgba(239,68,68,.14); color:#fca5a5; }}
+    .team-filter-empty {{ padding:16px 14px; color:#8da5c9; font-size:.82rem; text-align:center; }}
     .filter-menu-empty {{ padding:12px; font-size:.84rem; color:#6b87b3; text-align:center; }}
     .shortcut-bar {{ display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }}
     .shortcut-btn {{ border:1px solid #3f5f93; background:#0f2342; color:#dce8ff; border-radius:999px; font-size:.74rem; padding:5px 10px; cursor:pointer; }}
@@ -1955,6 +1956,7 @@ def _build_html(payload: dict) -> str:
     html[data-theme="light"] .exec-scorecards {{ background:linear-gradient(180deg,#f7fbff 0%,#edf5ff 100%); border-color:#d6e1f2; }}
     html[data-theme="light"] .exec-card {{ background:linear-gradient(145deg,#ffffff 0%,#f6faff 62%,#eef5ff 100%); border-color:#d2dff2; }}
     html[data-theme="light"] .exec-card-mode {{ background:#edf4ff; border-color:#c6d7ee; color:#305785; }}
+    html[data-theme="light"] .team-filter-menu {{ background:#ffffff; border-color:#d6e1f2; box-shadow:0 12px 40px rgba(30,60,110,.14),0 0 0 1px rgba(100,160,230,.12); }}
     html[data-theme="light"] .team-filter-group {{ background:linear-gradient(180deg,#ffffff 0%,#f6faff 100%); border-color:#d6e1f2; }}
     html[data-theme="light"] .team-filter-group-head {{ background:#eef5ff; border-color:#dbe5f3; }}
     html[data-theme="light"] .team-filter-title,
@@ -5897,7 +5899,7 @@ function setupTeamFilterDropdown() {{
         isSupportTeamMember(member) ? '<span class="team-member-chip support">Support team</span>' : "",
       ].filter(Boolean).join("");
       const badgeHtml = badges ? `<div class="team-member-badges">${{badges}}</div>` : "";
-      return `<div class="team-member-row" data-member-name="${{e(member)}}"><div class="team-member-main"><div class="team-member-name">${{e(member)}}</div>${{badgeHtml}}</div></div>`;
+      return `<div class="team-member-row" data-member-name="${{e(member)}}"><span class="team-member-name">${{e(member)}}</span>${{badgeHtml}}</div>`;
     }}).join("") : '<div class="team-filter-empty">No members configured for this team.</div>';
     return `<section class="team-filter-group" data-team-name="${{e(team.name)}}" data-search-text="${{e([team.name, team.leader, ...team.members].join(" ").toLowerCase())}}"><div class="team-filter-group-head"><div><div class="team-filter-title">${{e(team.name)}}</div><div class="team-filter-meta">Lead: ${{e(team.leader || "-")}} | Members: ${{team.members.length}}</div></div><label class="team-filter-check"><input type="checkbox" data-value="${{e(team.name)}}" ${{isSelected ? "checked" : ""}}> Include team</label></div><div class="team-member-list">${{memberRows}}</div></section>`;
   }}).join("") : '<div class="team-filter-empty">No teams configured.</div>';
@@ -5944,7 +5946,17 @@ function setupTeamFilterDropdown() {{
     const open = menuEl.classList.toggle("open");
     triggerEl.setAttribute("aria-expanded", open ? "true" : "false");
     menuEl.hidden = !open;
-    if (open && searchEl) searchEl.focus();
+    if (open) {{
+      const rect = triggerEl.getBoundingClientRect();
+      const menuW = Math.min(580, window.innerWidth - 32);
+      let left = rect.left;
+      if (left + menuW > window.innerWidth - 16) left = window.innerWidth - 16 - menuW;
+      if (left < 16) left = 16;
+      menuEl.style.top = (rect.bottom + 6) + "px";
+      menuEl.style.left = left + "px";
+      menuEl.style.width = menuW + "px";
+      if (searchEl) searchEl.focus();
+    }}
   }});
   menuEl.addEventListener("click", (event) => event.stopPropagation());
   document.addEventListener("click", (event) => {{
