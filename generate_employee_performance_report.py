@@ -1429,16 +1429,15 @@ def _build_html(payload: dict) -> str:
     .team-filter-check {{ display:inline-flex; align-items:center; gap:8px; color:#cfe0ff; font-size:.76rem; font-weight:800; white-space:nowrap; cursor:pointer; }}
     .team-filter-check input {{ width:17px; height:17px; margin:0; accent-color:#60a5fa; }}
     .team-member-list {{ display:grid; gap:8px; padding:12px; }}
-    .team-member-row {{ display:grid; grid-template-columns:18px minmax(0,1fr); gap:10px; align-items:start; padding:9px 10px; border:1px solid #223a61; border-radius:12px; background:#0c172b; cursor:pointer; transition:background .12s,border-color .12s; }}
+    .team-member-row {{ display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:42px; padding:9px 11px; border:1px solid #223a61; border-radius:12px; background:#0c172b; transition:background .12s,border-color .12s; }}
     .team-member-row:hover {{ background:#12284b; border-color:#3d679d; }}
     .team-member-row input {{ width:16px; height:16px; margin:2px 0 0; accent-color:#60a5fa; }}
-    .team-member-main {{ min-width:0; }}
+    .team-member-main {{ min-width:0; flex:1; display:flex; align-items:center; justify-content:space-between; gap:10px; }}
     .team-member-name {{ color:#ecf4ff; font-weight:800; font-size:.84rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
-    .team-member-badges {{ display:flex; flex-wrap:wrap; gap:5px; margin-top:5px; }}
+    .team-member-badges {{ display:flex; flex-wrap:wrap; justify-content:flex-end; gap:5px; flex-shrink:0; }}
     .team-member-chip {{ display:inline-flex; align-items:center; border:1px solid #375985; border-radius:999px; padding:2px 7px; background:#132949; color:#cfe0ff; font-size:.64rem; font-weight:900; letter-spacing:.02em; text-transform:uppercase; }}
     .team-member-chip.support {{ border-color:#0ea5e9; background:rgba(14,165,233,.18); color:#bae6fd; }}
     .team-member-chip.resigned {{ border-color:#ef4444; background:rgba(239,68,68,.16); color:#fecaca; }}
-    .team-member-chip.active {{ border-color:#22c55e; background:rgba(34,197,94,.14); color:#bbf7d0; }}
     .team-filter-empty {{ padding:14px 12px; color:#8da5c9; font-size:.82rem; text-align:center; }}
     .filter-menu-empty {{ padding:12px; font-size:.84rem; color:#6b87b3; text-align:center; }}
     .shortcut-bar {{ display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }}
@@ -1966,7 +1965,6 @@ def _build_html(payload: dict) -> str:
     html[data-theme="light"] .team-member-chip {{ background:#edf4ff; border-color:#c6d7ee; color:#305785; }}
     html[data-theme="light"] .team-member-chip.support {{ background:#e0f2fe; border-color:#7dd3fc; color:#075985; }}
     html[data-theme="light"] .team-member-chip.resigned {{ background:#fee2e2; border-color:#fca5a5; color:#991b1b; }}
-    html[data-theme="light"] .team-member-chip.active {{ background:#dcfce7; border-color:#86efac; color:#166534; }}
     html[data-theme="light"] .exec-plan-actual-breakdown .section-title {{ color:#1f3f69; }}
     html[data-theme="light"] .exec-card-kicker,
     html[data-theme="light"] .hero-settings-label,
@@ -5862,7 +5860,7 @@ function teamMemberStatusChip(name) {{
     const dateText = formatDate(String(rec.resignation_date || ""));
     return `<span class="team-member-chip resigned">${{dateText ? `Resigned ${{e(dateText)}}` : "Resigned"}}</span>`;
   }}
-  return `<span class="team-member-chip active">Not resigned</span>`;
+  return "";
 }}
 function syncTeamFilterVisualState() {{
   const selectEl = document.getElementById("teams");
@@ -5898,7 +5896,8 @@ function setupTeamFilterDropdown() {{
         teamMemberStatusChip(member),
         isSupportTeamMember(member) ? '<span class="team-member-chip support">Support team</span>' : "",
       ].filter(Boolean).join("");
-      return `<div class="team-member-row" data-member-name="${{e(member)}}"><div class="team-member-main"><div class="team-member-name">${{e(member)}}</div><div class="team-member-badges">${{badges}}</div></div></div>`;
+      const badgeHtml = badges ? `<div class="team-member-badges">${{badges}}</div>` : "";
+      return `<div class="team-member-row" data-member-name="${{e(member)}}"><div class="team-member-main"><div class="team-member-name">${{e(member)}}</div>${{badgeHtml}}</div></div>`;
     }}).join("") : '<div class="team-filter-empty">No members configured for this team.</div>';
     return `<section class="team-filter-group" data-team-name="${{e(team.name)}}" data-search-text="${{e([team.name, team.leader, ...team.members].join(" ").toLowerCase())}}"><div class="team-filter-group-head"><div><div class="team-filter-title">${{e(team.name)}}</div><div class="team-filter-meta">Lead: ${{e(team.leader || "-")}} | Members: ${{team.members.length}}</div></div><label class="team-filter-check"><input type="checkbox" data-value="${{e(team.name)}}" ${{isSelected ? "checked" : ""}}> Include team</label></div><div class="team-member-list">${{memberRows}}</div></section>`;
   }}).join("") : '<div class="team-filter-empty">No teams configured.</div>';

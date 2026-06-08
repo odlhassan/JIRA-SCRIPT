@@ -8,8 +8,8 @@ INFO_IDS: `employee.team_avg_score`, `employee.advanced_score_sum`, `employee.ca
 
 - Date scope defaults to the current month. `Epics By TK Dates` includes epics whose Epic or Story/TK start and due dates are fully inside the selected range. `Epics By Subtask Dates` includes subtasks whose planned start and due dates are fully inside the selected range.
 - Team filtering is team-level: selected teams expand to their configured members from `performance_teams.assignees_json`, and only matching assignees remain in the computed leaderboard and KPI set.
-- The Teams filter uses a custom menu rather than a browser-native dropdown. It groups members under their team, shows the team leader and member count, and decorates each member with resignation status plus a `Support team` chip when the member exists in `support_team_config`.
-- Resignation status is read from `performance_resource_resignations`: a row means `Resigned` and may include a resignation date; no row means `Not resigned`.
+- The Teams filter uses a custom menu rather than a browser-native dropdown. It groups members under their team, shows the team leader and member count, and decorates members only when extra context is useful: `Resigned` for resigned resources and `Support team` for support-roster members.
+- Resignation status is read from `performance_resource_resignations`: a row means `Resigned` and may include a resignation date; active/non-resigned members intentionally show no badge to keep the menu clean.
 - `Support team` is read read-only from `support_team_config.members_json`; the report does not create or modify that table.
 - Employee capacity is `base_capacity_hours - planned_leave_hours`. Unplanned leave is displayed but not deducted from capacity.
 - Simple Score is `clamp(100 * (1 - adjusted_overrun / total_estimated_hours), 0, 100)`. When due-completion is enabled, over-estimate subtasks finished on or before due date forgive their overrun hours.
@@ -25,7 +25,7 @@ INFO_IDS: `employee.team_avg_score`, `employee.advanced_score_sum`, `employee.ca
 
 | Input | Output |
 | --- | --- |
-| Team `Fullstack Team`, leader `Ameer Hamza Khan`, members `Ameer Hamza Khan`, `Sarmad Sabir`; `Sarmad Sabir` in `support_team_config`; no resignation row | Teams menu shows a `Fullstack Team` card, both members nested below it, `Sarmad Sabir` with `Not resigned` + `Support team` chips. |
+| Team `Fullstack Team`, leader `Ameer Hamza Khan`, members `Ameer Hamza Khan`, `Sarmad Sabir`; `Sarmad Sabir` in `support_team_config`; no resignation row | Teams menu shows a `Fullstack Team` card, both members nested below it, and `Sarmad Sabir` with only a `Support team` chip. |
 | Member `Maria Sharafat` appears in `performance_resource_resignations` with `2026-04-06` | Member row shows `Resigned 6 Apr 2026`. |
 | Date range `1 Mar` to `31 Mar`, `Epics By TK Dates`, selected project `O2` and selected team `SQA` | Only SQA members with qualifying O2 work in March contribute to scorecards, leaderboard, detail drawer, and scoped subtask actuals. |
 
@@ -46,7 +46,7 @@ The Teams filter is still backed by a hidden multi-select (`#teams`) so existing
 | Team | custom grouped multi-select | all teams selected | teams from `performance_teams` | Limits assignees to members of selected teams | Select only `SQA`. |
 | Team search | text input | blank | free text | Filters team cards by team name, leader, or member | Type `Abbas` to find teams containing Muhammad Abbas. |
 | Include team | checkbox | checked | checked/unchecked | Selects or clears that team in the hidden `#teams` select | Clear `Fullstack Team` to remove its members. |
-| Member chips | labels | computed | `Not resigned`, `Resigned [date]`, `Support team` | Display-only context for each nested member | `Resigned 6 Apr 2026` + `Support team`. |
+| Member chips | labels | computed | `Resigned [date]`, `Support team` | Display-only context for nested members only when a badge adds meaning | `Resigned 6 Apr 2026` + `Support team`. |
 | Epics By | segmented buttons | TK Dates | TK Dates, Subtask Dates | Chooses date scoping basis | `Subtask Dates` uses subtask planned dates. |
 | Settings | button + popover | closed | open/closed | Capacity profile, overburn basis, efficiency mode, score display | Switch to Advanced Scores. |
 | Capacity Profile | select | Auto | saved capacity profiles | Chooses capacity calendar for employee capacity | `Auto (Match selected date range)`. |
