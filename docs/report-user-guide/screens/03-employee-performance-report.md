@@ -33,7 +33,7 @@ INFO_IDS: `employee.team_avg_score`, `employee.advanced_score_sum`, `employee.ca
 
 The generator loads work items, worklogs, leave rows, team definitions, resignation records, support-team membership, capacity profiles, settings, and simple-scoring subtasks. It embeds these as JSON in `employee_performance_report.html`. The browser computes per-assignee metrics for the current filters, renders executive scorecards, the leaderboard, team chart, and the assignee drilldown.
 
-The Teams filter is still backed by a hidden multi-select (`#teams`) so existing filtering code remains stable. The visible control is a custom popover: each configured team is a spacious card with an `Include team` checkbox and nested member rows. Search matches both team names and member names. Reset selects all teams and resynchronizes the custom visual state.
+The Teams filter is still backed by a hidden multi-select (`#teams`) so existing filtering code remains stable. The visible control is a fixed-position popover (580 px wide, z-index 9999) that breaks free of the narrow filter panel. Each configured team is a spacious card with an `Include team` checkbox and nested member rows showing the full member name with optional `Resigned` or `Support team` chips. Search matches both team names and member names. Reset selects all teams and resynchronizes the custom visual state.
 
 ## Front-end UI Fields
 
