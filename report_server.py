@@ -192,6 +192,7 @@ from delayed_epic_chain_gantt_service import (
 )
 from monthly_epic_plan_progress_service import (
     build_monthly_epic_plan_payload,
+    build_worklog_detail_for_range,
     load_support_team,
     save_support_team,
 )
@@ -37899,6 +37900,39 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             return jsonify({"ok": False, "error": message}), status_code
         except Exception as exc:
             return jsonify({"ok": False, "error": f"Failed to load monthly epic plan progress: {exc}"}), 500
+
+    @app.route("/api/monthly-epic-plan-progress/worklog-detail", methods=["GET"])
+    def monthly_epic_plan_worklog_detail():
+        try:
+            from datetime import date as _date
+            from_date_raw = _to_text(request.args.get("from_date"))
+            to_date_raw = _to_text(request.args.get("to_date"))
+            if not from_date_raw or not to_date_raw:
+                return jsonify({"ok": False, "error": "from_date and to_date are required (YYYY-MM-DD)."}), 400
+            try:
+                from_date = _date.fromisoformat(from_date_raw)
+                to_date = _date.fromisoformat(to_date_raw)
+            except ValueError:
+                return jsonify({"ok": False, "error": "Invalid date format; expected YYYY-MM-DD."}), 400
+            if to_date < from_date:
+                to_date = from_date
+            canonical_run_id = _canonical_last_success_run_id(capacity_paths["db_path"])
+            include_bug_subtasks = request.args.get("include_bug_subtasks", "1") not in ("0", "false", "no")
+            rows = build_worklog_detail_for_range(
+                capacity_paths["db_path"],
+                canonical_run_id,
+                from_date,
+                to_date,
+                include_bug_subtasks=include_bug_subtasks,
+                jira_base_url=BASE_URL,
+            )
+            return jsonify({"ok": True, "rows": rows, "from_date": from_date_raw, "to_date": to_date_raw})
+        except ValueError as exc:
+            message = str(exc)
+            status_code = 409 if "No successful canonical refresh found" in message else 400
+            return jsonify({"ok": False, "error": message}), status_code
+        except Exception as exc:
+            return jsonify({"ok": False, "error": f"Failed to load worklog detail: {exc}"}), 500
 
     @app.route("/api/monthly-epic-plan-progress/support-team", methods=["GET"])
     def get_support_team():

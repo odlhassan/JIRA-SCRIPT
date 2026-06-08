@@ -11,6 +11,7 @@ from datetime import date
 from monthly_epic_plan_progress_service import (
     _nested_aligned_leave_by_assignee,
     build_monthly_epic_plan_payload,
+    build_worklog_detail_for_range,
 )
 from report_server import _init_epics_management_db, create_report_server_app
 from report_server import sync_report_html
@@ -968,9 +969,62 @@ class MonthlyEpicPlanProgressTests(unittest.TestCase):
         self.assertIn("openWorklogDetail", html)
         self.assertIn("closeWorklogDetail", html)
         self.assertIn("renderWorklogDetail", html)
-        self.assertIn("subtask_worklog_detail", html)
+        self.assertIn("fetchWorklogDetail", html)
+        self.assertIn("worklog-detail", html)
+        self.assertIn("wld-from-date", html)
+        self.assertIn("wld-to-date", html)
+        self.assertIn("wld-date-apply", html)
         self.assertIn("table_chart", html)
         self.assertIn("worklog-detail-icon-btn", html)
+
+    def test_build_worklog_detail_for_range_uses_custom_dates(self):
+        """build_worklog_detail_for_range returns per-subtask rows for arbitrary date range."""
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            db_path = Path(td) / "assignee_hours_capacity.db"
+            _create_canonical_tables(db_path)
+            _add_estimate_rollup_tree(
+                db_path,
+                "O2-WLD",
+                epic_original=80,
+                story_rows=[
+                    (
+                        "S1",
+                        40,
+                        [
+                            ("T1", 16, 10, "Sub-task"),
+                            ("B1", 8, 4, "Bug Subtask"),
+                        ],
+                    ),
+                ],
+            )
+            # Full March range — should see both subtasks
+            rows = build_worklog_detail_for_range(
+                db_path, "run-1",
+                date(2026, 3, 1), date(2026, 3, 31),
+                include_bug_subtasks=True,
+            )
+            keys = {r["issue_key"] for r in rows}
+            self.assertIn("O2-WLD-S1-T1", keys)
+            self.assertIn("O2-WLD-S1-B1", keys)
+
+            # Exclude bug subtasks
+            rows_no_bug = build_worklog_detail_for_range(
+                db_path, "run-1",
+                date(2026, 3, 1), date(2026, 3, 31),
+                include_bug_subtasks=False,
+            )
+            keys_no_bug = {r["issue_key"] for r in rows_no_bug}
+            self.assertIn("O2-WLD-S1-T1", keys_no_bug)
+            self.assertNotIn("O2-WLD-S1-B1", keys_no_bug)
+
+            # Date range with no worklogs (Feb) — hours should be 0
+            rows_feb = build_worklog_detail_for_range(
+                db_path, "run-1",
+                date(2026, 2, 1), date(2026, 2, 28),
+                include_bug_subtasks=True,
+            )
+            for r in rows_feb:
+                self.assertEqual(r["month_logged_hours"], 0.0)
 
 
 if __name__ == "__main__":

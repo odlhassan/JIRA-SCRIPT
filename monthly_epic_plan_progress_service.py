@@ -2137,6 +2137,32 @@ def _load_subtask_worklog_detail(
     return result
 
 
+def build_worklog_detail_for_range(
+    db_path: Path,
+    canonical_run_id: str,
+    from_date: date,
+    to_date: date,
+    *,
+    include_bug_subtasks: bool = True,
+    jira_base_url: str = "",
+) -> list[dict[str, Any]]:
+    """
+    Lightweight standalone function: load per-subtask worklog hours for any
+    arbitrary from_date → to_date range, independent of the full monthly payload.
+    Used by the dedicated worklog-detail API endpoint.
+    """
+    run_id = _to_text(canonical_run_id)
+    if not run_id:
+        raise ValueError("No successful canonical refresh found.")
+    jira_base = _to_text(jira_base_url).rstrip("/")
+    _, subtask_keys_by_epic = _load_canonical_issue_maps(
+        db_path, run_id, include_bug_subtasks=include_bug_subtasks
+    )
+    return _load_subtask_worklog_detail(
+        db_path, run_id, subtask_keys_by_epic, from_date, to_date, jira_base
+    )
+
+
 def build_monthly_epic_plan_payload(
     db_path: Path,
     month: str,

@@ -2697,6 +2697,45 @@
       flex: 0 0 auto;
       flex-wrap: wrap;
     }
+    .wld-date-range {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex: 0 0 auto;
+      flex-wrap: wrap;
+    }
+    .wld-date-range label {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: #5a7a94;
+      white-space: nowrap;
+    }
+    .wld-date-input {
+      height: 34px;
+      border: 1px solid #c0ccd8;
+      border-radius: 8px;
+      padding: 0 8px;
+      font-size: 0.83rem;
+      outline: none;
+      color: #1e3a52;
+      background: #fff;
+      cursor: pointer;
+    }
+    .wld-date-input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(29,95,143,0.12); }
+    .wld-date-apply {
+      height: 34px;
+      padding: 0 14px;
+      border: 1px solid var(--accent);
+      border-radius: 8px;
+      background: var(--accent);
+      color: #fff;
+      font-size: 0.83rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+      white-space: nowrap;
+    }
+    .wld-date-apply:hover { background: #1a6faa; border-color: #1a6faa; }
     .worklog-detail-search {
       flex: 1 1 200px;
       min-width: 0;
@@ -3478,6 +3517,13 @@
         </div>
       </div>
       <div class="worklog-detail-toolbar" id="worklog-detail-toolbar">
+        <div class="wld-date-range">
+          <label for="wld-from-date">From</label>
+          <input type="date" id="wld-from-date" class="wld-date-input" aria-label="From date">
+          <label for="wld-to-date">To</label>
+          <input type="date" id="wld-to-date" class="wld-date-input" aria-label="To date">
+          <button class="wld-date-apply" id="wld-date-apply" title="Apply date range">Apply</button>
+        </div>
         <input type="search" class="worklog-detail-search" id="worklog-detail-search" placeholder="Search by key, summary, story, or epic…" autocomplete="off" aria-label="Search subtasks">
         <div class="worklog-detail-chips" id="worklog-detail-chips"></div>
       </div>
@@ -3643,6 +3689,9 @@
       worklogDetailSearch: document.getElementById("worklog-detail-search"),
       worklogDetailChips: document.getElementById("worklog-detail-chips"),
       worklogDetailOpenBtn: document.getElementById("worklog-detail-open-btn"),
+      wldFromDate: document.getElementById("wld-from-date"),
+      wldToDate: document.getElementById("wld-to-date"),
+      wldDateApply: document.getElementById("wld-date-apply"),
       dfToggleStart: document.getElementById("df-toggle-start"),
       dfToggleEnd: document.getElementById("df-toggle-end"),
       dfToggleRange: document.getElementById("df-toggle-range"),
@@ -4569,13 +4618,49 @@
 
     // ── Worklog Detail Drawer ──────────────────────────────────────────────────
     let _worklogDetailIsFullWidth = false;
+    let _currentWorklogDetailRows = null;
+
+    function _monthStartEnd(month) {
+      // Returns { fromDate: "YYYY-MM-DD", toDate: "YYYY-MM-DD" } from "YYYY-MM"
+      if (!month || !/^\d{4}-\d{2}$/.test(month)) return { fromDate: "", toDate: "" };
+      const [y, m] = month.split("-").map(Number);
+      const lastDay = new Date(y, m, 0).getDate();
+      return { fromDate: month + "-01", toDate: month + "-" + String(lastDay).padStart(2, "0") };
+    }
 
     function openWorklogDetail() {
       if (!els.worklogDetailOverlay || !latestPayload) return;
-      renderWorklogDetail("");
+      const { fromDate, toDate } = _monthStartEnd(latestPayload.month || "");
+      if (els.wldFromDate) els.wldFromDate.value = fromDate;
+      if (els.wldToDate) els.wldToDate.value = toDate;
       els.worklogDetailOverlay.classList.add("is-open");
       document.body.style.overflow = "hidden";
-      if (els.worklogDetailSearch) { els.worklogDetailSearch.value = ""; els.worklogDetailSearch.focus(); }
+      if (els.worklogDetailSearch) els.worklogDetailSearch.value = "";
+      fetchWorklogDetail(fromDate, toDate);
+    }
+
+    async function fetchWorklogDetail(fromDate, toDate) {
+      if (!els.worklogDetailBody) return;
+      if (!fromDate || !toDate) {
+        els.worklogDetailBody.innerHTML = '<div class="worklog-detail-empty">Select a valid date range and click Apply.</div>';
+        return;
+      }
+      els.worklogDetailBody.innerHTML = '<div class="worklog-detail-empty">Loading…</div>';
+      if (els.worklogDetailChips) els.worklogDetailChips.innerHTML = "";
+      try {
+        const params = new URLSearchParams({ from_date: fromDate, to_date: toDate });
+        if (els.includeBugSubtasks && !els.includeBugSubtasks.checked) params.set("include_bug_subtasks", "0");
+        const resp = await fetch("/api/monthly-epic-plan-progress/worklog-detail?" + params.toString(), { cache: "no-store", headers: { Accept: "application/json" } });
+        const body = await resp.json().catch(() => ({}));
+        if (!resp.ok || !body.ok) throw new Error(body.error || "Failed to load worklog detail.");
+        _currentWorklogDetailRows = Array.isArray(body.rows) ? body.rows : [];
+        if (els.worklogDetailSearch) els.worklogDetailSearch.value = "";
+        renderWorklogDetail("", _currentWorklogDetailRows, fromDate, toDate);
+        if (els.worklogDetailSearch) els.worklogDetailSearch.focus();
+      } catch (err) {
+        _currentWorklogDetailRows = null;
+        if (els.worklogDetailBody) els.worklogDetailBody.innerHTML = '<div class="worklog-detail-empty" style="color:#b91c1c;">Error: ' + esc(err.message) + '</div>';
+      }
     }
 
     function closeWorklogDetail() {
@@ -4604,9 +4689,9 @@
       }
     }
 
-    function renderWorklogDetail(searchQuery) {
-      if (!els.worklogDetailBody || !latestPayload) return;
-      const rows = Array.isArray(latestPayload.subtask_worklog_detail) ? latestPayload.subtask_worklog_detail : [];
+    function renderWorklogDetail(searchQuery, rows, fromDate, toDate) {
+      if (!els.worklogDetailBody) return;
+      rows = Array.isArray(rows) ? rows : (_currentWorklogDetailRows || []);
       const query = String(searchQuery || "").trim().toLowerCase();
 
       const filtered = query
@@ -4620,23 +4705,30 @@
           })
         : rows;
 
+      // Update subtitle with date range
+      const subtitle = document.getElementById("worklog-detail-subtitle");
+      if (subtitle) {
+        const rangeLabel = (fromDate && toDate) ? fromDate + ' → ' + toDate : (latestPayload && latestPayload.month ? latestPayload.month : "");
+        subtitle.textContent = "Subtasks with planned and logged hours" + (rangeLabel ? " (" + rangeLabel + ")" : "") + ".";
+      }
+
       // Summary chips
       if (els.worklogDetailChips) {
         const totalEstimate = rows.reduce((s, r) => s + Number(r.original_estimate_hours || 0), 0);
         const totalLogged = rows.reduce((s, r) => s + Number(r.month_logged_hours || 0), 0);
         const bugCount = rows.filter((r) => String(r.issue_type || "").toLowerCase() === "bug subtask").length;
         const suffixShort = unit === "days" ? "d" : "h";
-        const toDisp = (h) => unit === "days" ? formatNumber(h / (latestPayload.meta && latestPayload.meta.hours_per_day || 8)) : formatNumber(h);
+        const hpdChip = (latestPayload && latestPayload.meta && latestPayload.meta.hours_per_day) || 8;
+        const toDispChip = (h) => unit === "days" ? formatNumber(h / hpdChip) : formatNumber(h);
         els.worklogDetailChips.innerHTML =
           '<span class="worklog-detail-chip">' + rows.length + ' subtasks' + (query ? ' (' + filtered.length + ' shown)' : '') + '</span>' +
-          '<span class="worklog-detail-chip">Estimated: ' + toDisp(totalEstimate) + ' ' + suffixShort + '</span>' +
-          '<span class="worklog-detail-chip accent">Logged this month: ' + toDisp(totalLogged) + ' ' + suffixShort + '</span>' +
+          '<span class="worklog-detail-chip">Estimated: ' + toDispChip(totalEstimate) + ' ' + suffixShort + '</span>' +
+          '<span class="worklog-detail-chip accent">Logged: ' + toDispChip(totalLogged) + ' ' + suffixShort + '</span>' +
           (bugCount > 0 ? '<span class="worklog-detail-chip">' + bugCount + ' bug subtasks</span>' : '');
       }
 
-      const month = latestPayload.month || "";
-      const monthLabel = month ? ' (' + month + ')' : '';
-      const hpd = (latestPayload.meta && latestPayload.meta.hours_per_day) || 8;
+      const dateLabel = (fromDate && toDate) ? ' (' + fromDate + ' → ' + toDate + ')' : (latestPayload ? ' (' + (latestPayload.month || "") + ')' : '');
+      const hpd = (latestPayload && latestPayload.meta && latestPayload.meta.hours_per_day) || 8;
 
       if (!filtered.length) {
         els.worklogDetailBody.innerHTML = '<div class="worklog-detail-empty">No subtasks found' + (query ? ' matching "' + esc(query) + '".' : '.') + '</div>';
@@ -4690,7 +4782,7 @@
         + '<th>Story</th>'
         + '<th>Epic</th>'
         + '<th class="num">Estimated</th>'
-        + '<th class="num">Logged' + monthLabel + '</th>'
+        + '<th class="num">Logged' + dateLabel + '</th>'
         + '</tr></thead>'
         + '<tbody>' + tbody + '</tbody>'
         + tfoot
@@ -6405,7 +6497,17 @@
     }
     if (els.worklogDetailSearch) {
       els.worklogDetailSearch.addEventListener("input", () => {
-        renderWorklogDetail(els.worklogDetailSearch.value);
+        renderWorklogDetail(els.worklogDetailSearch.value, _currentWorklogDetailRows,
+          els.wldFromDate ? els.wldFromDate.value : "",
+          els.wldToDate ? els.wldToDate.value : "");
+      });
+    }
+    if (els.wldDateApply) {
+      els.wldDateApply.addEventListener("click", () => {
+        fetchWorklogDetail(
+          els.wldFromDate ? els.wldFromDate.value : "",
+          els.wldToDate ? els.wldToDate.value : ""
+        );
       });
     }
     document.addEventListener("keydown", (event) => {
