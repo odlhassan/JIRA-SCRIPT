@@ -2639,6 +2639,36 @@
       background: linear-gradient(180deg, #fbfdff, #f3f8fd);
       flex: 0 0 auto;
     }
+    .wld-header-totals {
+      display: flex;
+      gap: 10px;
+      margin-top: 10px;
+      flex-wrap: wrap;
+    }
+    .wld-header-total-card {
+      display: flex;
+      flex-direction: column;
+      padding: 8px 14px;
+      border-radius: 10px;
+      border: 1px solid #cbd5e1;
+      background: #f8fafc;
+      min-width: 140px;
+    }
+    .wld-header-total-card.accent { background: #e8f3fc; border-color: #bdd6ee; }
+    .wld-header-total-label {
+      font-size: 0.73rem;
+      font-weight: 700;
+      color: #64748b;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .wld-header-total-value {
+      font-size: 1.2rem;
+      font-weight: 850;
+      color: #334155;
+      margin-top: 2px;
+    }
+    .wld-header-total-card.accent .wld-header-total-value { color: var(--accent); }
     .worklog-detail-title {
       color: var(--title);
       font-size: 1.05rem;
@@ -2736,6 +2766,25 @@
       white-space: nowrap;
     }
     .wld-date-apply:hover { background: #1a6faa; border-color: #1a6faa; }
+    .wld-download-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      height: 34px;
+      padding: 0 13px;
+      border: 1px solid #94a3b8;
+      border-radius: 8px;
+      background: #fff;
+      color: #334155;
+      font-size: 0.83rem;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      margin-left: auto;
+      transition: background 0.14s, border-color 0.14s;
+    }
+    .wld-download-btn:hover { background: #f0fdf4; border-color: #4ade80; color: #15803d; }
+    .wld-download-btn .material-symbols-outlined { font-size: 16px; }
     .worklog-detail-search {
       flex: 1 1 200px;
       min-width: 0;
@@ -2848,7 +2897,21 @@
       color: var(--muted);
       font-size: 0.9rem;
     }
-  </style>
+    /* Nested worklog expand rows */
+    .wld-expand-row td { background: #f4f8fd; padding: 0 !important; border-bottom: 1px solid #e4eef8; }
+    .wld-expand-row.hidden { display: none; }
+    .wld-expand-inner { padding: 6px 12px 10px 36px; }
+    .wld-expand-table { width: 100%; border-collapse: collapse; font-size: 0.79rem; }
+    .wld-expand-table th { color: #64748b; font-weight: 700; text-transform: uppercase; font-size: 0.72rem; letter-spacing: 0.03em; padding: 4px 8px; text-align: left; border-bottom: 1px solid #dde8f4; }
+    .wld-expand-table th.num { text-align: right; }
+    .wld-expand-table td { padding: 4px 8px; color: #334155; border-bottom: 1px solid #edf2f8; }
+    .wld-expand-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .wld-expand-table tr:last-child td { border-bottom: none; }
+    .wld-logged-btn { background: none; border: none; cursor: pointer; color: var(--good); font-weight: 700; font-size: inherit; font-variant-numeric: tabular-nums; padding: 0; display: inline-flex; align-items: center; gap: 3px; text-decoration: underline dotted; }
+    .wld-logged-btn:hover { color: #0d6e2a; }
+    .wld-logged-btn-zero { color: #94a3b8; font-weight: 400; cursor: default; }
+    .wld-expand-icon { font-size: 14px; vertical-align: -2px; transition: transform 0.18s; }
+    .wld-expand-icon.open { transform: rotate(90deg); }
 </head>
 <body>
   <div class="page">
@@ -3501,11 +3564,21 @@
     <div class="worklog-detail-drawer" id="worklog-detail-drawer">
       <div class="worklog-detail-resize" id="worklog-detail-resize" title="Drag to resize"></div>
       <div class="worklog-detail-header">
-        <div>
+        <div style="flex:1;min-width:0;">
           <div class="worklog-detail-title" id="worklog-detail-title">
-            <span class="material-symbols-outlined" style="font-size:18px;vertical-align:-3px;margin-right:6px;">table_chart</span>Logged This Month — Subtask Breakdown
+            <span class="material-symbols-outlined" style="font-size:18px;vertical-align:-3px;margin-right:6px;">table_chart</span>Logged — Subtask Breakdown
           </div>
-          <div class="worklog-detail-subtitle" id="worklog-detail-subtitle">All in-scope subtasks and bug subtasks with planned and month-logged hours.</div>
+          <div class="worklog-detail-subtitle" id="worklog-detail-subtitle">All in-scope subtasks and bug subtasks with planned and logged hours.</div>
+          <div class="wld-header-totals" id="wld-header-totals">
+            <div class="wld-header-total-card">
+              <span class="wld-header-total-label">Logged in range</span>
+              <span class="wld-header-total-value" id="wld-total-range-value">—</span>
+            </div>
+            <div class="wld-header-total-card accent">
+              <span class="wld-header-total-label">Total ever logged</span>
+              <span class="wld-header-total-value" id="wld-total-lifetime-value">—</span>
+            </div>
+          </div>
         </div>
         <div class="worklog-detail-header-btns">
           <button class="worklog-detail-fullwidth-btn" id="worklog-detail-fullwidth-btn" title="Toggle full width">
@@ -3526,6 +3599,10 @@
         </div>
         <input type="search" class="worklog-detail-search" id="worklog-detail-search" placeholder="Search by key, summary, story, or epic…" autocomplete="off" aria-label="Search subtasks">
         <div class="worklog-detail-chips" id="worklog-detail-chips"></div>
+        <button class="wld-download-btn" id="wld-download-btn" title="Download as CSV">
+          <span class="material-symbols-outlined">download</span>
+          Download CSV
+        </button>
       </div>
       <div class="worklog-detail-body" id="worklog-detail-body">
         <div class="worklog-detail-empty">Load the report to view subtask worklog data.</div>
@@ -3692,6 +3769,9 @@
       wldFromDate: document.getElementById("wld-from-date"),
       wldToDate: document.getElementById("wld-to-date"),
       wldDateApply: document.getElementById("wld-date-apply"),
+      wldDownloadBtn: document.getElementById("wld-download-btn"),
+      wldTotalRangeValue: document.getElementById("wld-total-range-value"),
+      wldTotalLifetimeValue: document.getElementById("wld-total-lifetime-value"),
       dfToggleStart: document.getElementById("df-toggle-start"),
       dfToggleEnd: document.getElementById("df-toggle-end"),
       dfToggleRange: document.getElementById("df-toggle-range"),
@@ -4693,100 +4773,164 @@
       if (!els.worklogDetailBody) return;
       rows = Array.isArray(rows) ? rows : (_currentWorklogDetailRows || []);
       const query = String(searchQuery || "").trim().toLowerCase();
-
       const filtered = query
-        ? rows.filter((r) => {
-            return (
-              String(r.issue_key || "").toLowerCase().includes(query) ||
-              String(r.summary || "").toLowerCase().includes(query) ||
-              String(r.story_key || "").toLowerCase().includes(query) ||
-              String(r.epic_key || "").toLowerCase().includes(query)
-            );
-          })
+        ? rows.filter((r) =>
+            String(r.issue_key || "").toLowerCase().includes(query) ||
+            String(r.summary || "").toLowerCase().includes(query) ||
+            String(r.story_key || "").toLowerCase().includes(query) ||
+            String(r.epic_key || "").toLowerCase().includes(query))
         : rows;
 
-      // Update subtitle with date range
-      const subtitle = document.getElementById("worklog-detail-subtitle");
-      if (subtitle) {
-        const rangeLabel = (fromDate && toDate) ? fromDate + ' → ' + toDate : (latestPayload && latestPayload.month ? latestPayload.month : "");
-        subtitle.textContent = "Subtasks with planned and logged hours" + (rangeLabel ? " (" + rangeLabel + ")" : "") + ".";
-      }
-
-      // Summary chips
-      if (els.worklogDetailChips) {
-        const totalEstimate = rows.reduce((s, r) => s + Number(r.original_estimate_hours || 0), 0);
-        const totalLogged = rows.reduce((s, r) => s + Number(r.month_logged_hours || 0), 0);
-        const bugCount = rows.filter((r) => String(r.issue_type || "").toLowerCase() === "bug subtask").length;
-        const suffixShort = unit === "days" ? "d" : "h";
-        const hpdChip = (latestPayload && latestPayload.meta && latestPayload.meta.hours_per_day) || 8;
-        const toDispChip = (h) => unit === "days" ? formatNumber(h / hpdChip) : formatNumber(h);
-        els.worklogDetailChips.innerHTML =
-          '<span class="worklog-detail-chip">' + rows.length + ' subtasks' + (query ? ' (' + filtered.length + ' shown)' : '') + '</span>' +
-          '<span class="worklog-detail-chip">Estimated: ' + toDispChip(totalEstimate) + ' ' + suffixShort + '</span>' +
-          '<span class="worklog-detail-chip accent">Logged: ' + toDispChip(totalLogged) + ' ' + suffixShort + '</span>' +
-          (bugCount > 0 ? '<span class="worklog-detail-chip">' + bugCount + ' bug subtasks</span>' : '');
-      }
-
-      const dateLabel = (fromDate && toDate) ? ' (' + fromDate + ' → ' + toDate + ')' : (latestPayload ? ' (' + (latestPayload.month || "") + ')' : '');
       const hpd = (latestPayload && latestPayload.meta && latestPayload.meta.hours_per_day) || 8;
+      const sfx = unit === "days" ? "d" : "h";
+      const toDisp = (h) => formatNumber(unit === "days" ? h / hpd : h) + " " + sfx;
+
+      // Subtitle
+      const rangeLabel = (fromDate && toDate) ? fromDate + " → " + toDate : (latestPayload && latestPayload.month ? latestPayload.month : "");
+      const subtitle = document.getElementById("worklog-detail-subtitle");
+      if (subtitle) subtitle.textContent = "Subtasks with planned and logged hours" + (rangeLabel ? " (" + rangeLabel + ")" : "") + ".";
+
+      // Header total cards
+      const totalRange = rows.reduce((s, r) => s + Number(r.month_logged_hours || 0), 0);
+      const totalLifetime = rows.reduce((s, r) => s + Number(r.total_hours_logged || 0), 0);
+      if (els.wldTotalRangeValue) els.wldTotalRangeValue.textContent = toDisp(totalRange);
+      if (els.wldTotalLifetimeValue) els.wldTotalLifetimeValue.textContent = toDisp(totalLifetime);
+
+      // Chips
+      if (els.worklogDetailChips) {
+        const totalEst = rows.reduce((s, r) => s + Number(r.original_estimate_hours || 0), 0);
+        const bugCount = rows.filter((r) => String(r.issue_type || "").toLowerCase() === "bug subtask").length;
+        const toD = (h) => (unit === "days" ? formatNumber(h / hpd) : formatNumber(h));
+        els.worklogDetailChips.innerHTML =
+          '<span class="worklog-detail-chip">' + rows.length + " subtasks" + (query ? " (" + filtered.length + " shown)" : "") + "</span>" +
+          '<span class="worklog-detail-chip">Estimated: ' + toD(totalEst) + " " + sfx + "</span>" +
+          '<span class="worklog-detail-chip accent">Logged in range: ' + toD(totalRange) + " " + sfx + "</span>" +
+          (bugCount > 0 ? '<span class="worklog-detail-chip">' + bugCount + " bug subtasks</span>" : "");
+      }
+
+      const dateLabel = rangeLabel ? " (" + rangeLabel + ")" : "";
 
       if (!filtered.length) {
-        els.worklogDetailBody.innerHTML = '<div class="worklog-detail-empty">No subtasks found' + (query ? ' matching "' + esc(query) + '".' : '.') + '</div>';
+        els.worklogDetailBody.innerHTML = '<div class="worklog-detail-empty">No subtasks found' + (query ? ' matching "' + esc(query) + '".' : ".") + "</div>";
         return;
       }
 
-      const suffixShort = unit === "days" ? "d" : "h";
-      const toDisp = (h) => formatNumber(unit === "days" ? h / hpd : h) + ' ' + suffixShort;
-
-      let totalEst = 0, totalLogged2 = 0;
-      let tbody = filtered.map((r) => {
+      let totalEst2 = 0, totalLoggedRange = 0;
+      const rowsHtml = [];
+      filtered.forEach((r, idx) => {
         const ik = String(r.issue_key || "");
         const url = String(r.jira_url || "");
-        const itype = String(r.issue_type || "");
-        const isBug = itype.toLowerCase() === "bug subtask";
+        const isBug = String(r.issue_type || "").toLowerCase() === "bug subtask";
         const est = Number(r.original_estimate_hours || 0);
         const logged = Number(r.month_logged_hours || 0);
-        totalEst += est;
-        totalLogged2 += logged;
+        const wlEntries = Array.isArray(r.worklogs) ? r.worklogs : [];
+        totalEst2 += est;
+        totalLoggedRange += logged;
+        const expandId = "wld-exp-" + idx;
+
         const keyCell = url
           ? '<a class="wl-jira-link" href="' + esc(url) + '" target="_blank" rel="noopener">' + esc(ik) + '&nbsp;<span class="material-symbols-outlined" style="font-size:12px;vertical-align:-1px;">open_in_new</span></a>'
-          : '<span class="wl-jira-link" style="cursor:default;">' + esc(ik) + '</span>';
-        const typeCell = isBug
-          ? '<span class="wl-type-bug">Bug Subtask</span>'
-          : '<span class="wl-type-subtask">Sub-task</span>';
-        const loggedCls = logged > 0 ? "wl-logged-has" : "wl-logged-zero";
-        return '<tr>'
+          : '<span class="wl-jira-link" style="cursor:default;">' + esc(ik) + "</span>";
+        const typeCell = isBug ? '<span class="wl-type-bug">Bug Subtask</span>' : '<span class="wl-type-subtask">Sub-task</span>';
+        const startCell = r.start_date ? esc(r.start_date) : '<span style="color:#94a3b8;">—</span>';
+        const dueCell = r.due_date ? esc(r.due_date) : '<span style="color:#94a3b8;">—</span>';
+        const loggedCell = (logged > 0 && wlEntries.length > 0)
+          ? '<button class="wld-logged-btn" onclick="toggleWldExpand(\'' + expandId + '\', this)">'
+              + '<span class="material-symbols-outlined wld-expand-icon">chevron_right</span>' + toDisp(logged) + '</button>'
+          : '<span class="wld-logged-btn-zero">' + toDisp(logged) + '</span>';
+
+        rowsHtml.push('<tr>'
           + '<td>' + keyCell + '</td>'
           + '<td>' + typeCell + '</td>'
           + '<td>' + esc(String(r.summary || "—")) + '</td>'
           + '<td>' + (r.story_key ? esc(r.story_key) : '<span style="color:#94a3b8;">—</span>') + '</td>'
           + '<td>' + (r.epic_key ? esc(r.epic_key) : '<span style="color:#94a3b8;">—</span>') + '</td>'
+          + '<td>' + startCell + '</td>'
+          + '<td>' + dueCell + '</td>'
           + '<td class="num">' + (est > 0 ? toDisp(est) : '<span style="color:#94a3b8;">—</span>') + '</td>'
-          + '<td class="num ' + loggedCls + '">' + toDisp(logged) + '</td>'
-          + '</tr>';
-      }).join("");
+          + '<td class="num">' + loggedCell + '</td>'
+          + '</tr>');
+
+        if (wlEntries.length > 0) {
+          const wlRows = wlEntries.map((wl) =>
+            '<tr><td>' + esc(String(wl.date || "—")) + '</td><td>' + esc(String(wl.author || "—")) + '</td><td class="num">' + toDisp(Number(wl.hours || 0)) + '</td></tr>'
+          ).join("");
+          rowsHtml.push('<tr class="wld-expand-row hidden" id="' + expandId + '">'
+            + '<td colspan="9"><div class="wld-expand-inner"><table class="wld-expand-table">'
+            + '<thead><tr><th>Date</th><th>Author</th><th class="num">Hours</th></tr></thead>'
+            + '<tbody>' + wlRows + '</tbody></table></div></td></tr>');
+        }
+      });
 
       const tfoot = '<tfoot><tr class="worklog-detail-tfoot">'
-        + '<td colspan="5" style="font-weight:800;">Total (' + filtered.length + ' rows)</td>'
-        + '<td class="num">' + toDisp(totalEst) + '</td>'
-        + '<td class="num wl-logged-has">' + toDisp(totalLogged2) + '</td>'
+        + '<td colspan="7" style="font-weight:800;">Total (' + filtered.length + " rows)</td>"
+        + '<td class="num">' + toDisp(totalEst2) + '</td>'
+        + '<td class="num wl-logged-has">' + toDisp(totalLoggedRange) + '</td>'
         + '</tr></tfoot>';
 
       els.worklogDetailBody.innerHTML =
-        '<div class="worklog-detail-table-wrap">'
-        + '<table class="worklog-detail-table" aria-label="Subtask worklog breakdown">'
-        + '<thead><tr>'
-        + '<th>Jira Key</th>'
-        + '<th>Type</th>'
-        + '<th>Summary</th>'
-        + '<th>Story</th>'
-        + '<th>Epic</th>'
-        + '<th class="num">Estimated</th>'
-        + '<th class="num">Logged' + dateLabel + '</th>'
-        + '</tr></thead>'
-        + '<tbody>' + tbody + '</tbody>'
-        + tfoot
-        + '</table></div>';
+        '<div class="worklog-detail-table-wrap"><table class="worklog-detail-table" aria-label="Subtask worklog breakdown">'
+        + '<thead><tr><th>Jira Key</th><th>Type</th><th>Summary</th><th>Story</th><th>Epic</th>'
+        + '<th>Start Date</th><th>Due Date</th><th class="num">Estimated</th>'
+        + '<th class="num">Logged' + dateLabel + '</th></tr></thead>'
+        + '<tbody>' + rowsHtml.join("") + '</tbody>' + tfoot + '</table></div>';
+    }
+
+    function toggleWldExpand(expandId, btn) {
+      const row = document.getElementById(expandId);
+      if (!row) return;
+      const isHidden = row.classList.toggle("hidden");
+      const icon = btn ? btn.querySelector(".wld-expand-icon") : null;
+      if (icon) icon.classList.toggle("open", !isHidden);
+    }
+
+    function downloadWorklogDetailCSV() {
+      const rows = _currentWorklogDetailRows;
+      if (!rows || !rows.length) return;
+      const fromDate = els.wldFromDate ? els.wldFromDate.value : "";
+      const toDate = els.wldToDate ? els.wldToDate.value : "";
+      const hpd = (latestPayload && latestPayload.meta && latestPayload.meta.hours_per_day) || 8;
+      const isDay = unit === "days";
+      const sfx = isDay ? " (Days)" : " (Hrs)";
+      const toVal = (h) => isDay ? Math.round(h / hpd * 100) / 100 : h;
+      const csvEsc = (v) => { const s = String(v === null || v === undefined ? "" : v); return s.search(/[",\r\n]/) !== -1 ? '"' + s.replace(/"/g, '""') + '"' : s; };
+
+      const headers = ["Jira Key", "Type", "Summary", "Story", "Epic", "Start Date", "Due Date",
+        "Estimated" + sfx, "Logged in Range" + sfx, "Total Ever Logged" + sfx,
+        "Worklog Date", "Worklog Author", "Worklog Hours" + sfx];
+      const csvRows = [headers];
+
+      rows.forEach((r) => {
+        const est = toVal(Number(r.original_estimate_hours || 0));
+        const rangeLogged = toVal(Number(r.month_logged_hours || 0));
+        const totalLogged = toVal(Number(r.total_hours_logged || 0));
+        const wlEntries = Array.isArray(r.worklogs) ? r.worklogs : [];
+        if (wlEntries.length > 0) {
+          wlEntries.forEach((wl, idx) => {
+            csvRows.push([
+              idx === 0 ? (r.issue_key || "") : "", idx === 0 ? (r.issue_type || "") : "",
+              idx === 0 ? (r.summary || "") : "", idx === 0 ? (r.story_key || "") : "",
+              idx === 0 ? (r.epic_key || "") : "", idx === 0 ? (r.start_date || "") : "",
+              idx === 0 ? (r.due_date || "") : "", idx === 0 ? est : "",
+              idx === 0 ? rangeLogged : "", idx === 0 ? totalLogged : "",
+              wl.date || "", wl.author || "", toVal(Number(wl.hours || 0)),
+            ]);
+          });
+        } else {
+          csvRows.push([r.issue_key || "", r.issue_type || "", r.summary || "",
+            r.story_key || "", r.epic_key || "", r.start_date || "", r.due_date || "",
+            est, rangeLogged, totalLogged, "", "", ""]);
+        }
+      });
+
+      const csvContent = csvRows.map((row) => row.map(csvEsc).join(",")).join("\r\n");
+      const rangeTag = (fromDate && toDate) ? fromDate + "_to_" + toDate : (latestPayload && latestPayload.month ? latestPayload.month : "export");
+      const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = "worklog_detail_" + rangeTag + ".csv";
+      document.body.appendChild(a); a.click();
+      document.body.removeChild(a); URL.revokeObjectURL(url);
     }
     // ── End Worklog Detail Drawer ──────────────────────────────────────────────
 
@@ -6509,6 +6653,9 @@
           els.wldToDate ? els.wldToDate.value : ""
         );
       });
+    }
+    if (els.wldDownloadBtn) {
+      els.wldDownloadBtn.addEventListener("click", downloadWorklogDetailCSV);
     }
     document.addEventListener("keydown", (event) => {
       if (event.key === "Escape") {

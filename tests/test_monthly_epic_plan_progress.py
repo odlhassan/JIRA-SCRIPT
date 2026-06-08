@@ -940,12 +940,22 @@ class MonthlyEpicPlanProgressTests(unittest.TestCase):
                 self.assertIn("story_key", r)
                 self.assertIn("original_estimate_hours", r)
                 self.assertIn("month_logged_hours", r)
+                self.assertIn("start_date", r)
+                self.assertIn("due_date", r)
+                self.assertIn("total_hours_logged", r)
+                self.assertIn("worklogs", r)
+                self.assertIsInstance(r["worklogs"], list)
             t1 = next(r for r in detail if r["issue_key"] == "O2-WLD-S1-T1")
             b1 = next(r for r in detail if r["issue_key"] == "O2-WLD-S1-B1")
             self.assertEqual(t1["issue_type"], "Sub-task")
             self.assertEqual(b1["issue_type"], "Bug Subtask")
             self.assertAlmostEqual(t1["month_logged_hours"], 10.0, places=2)
             self.assertAlmostEqual(b1["month_logged_hours"], 4.0, places=2)
+            # worklogs array should contain individual entries
+            self.assertEqual(len(t1["worklogs"]), 1)
+            self.assertIn("date", t1["worklogs"][0])
+            self.assertIn("hours", t1["worklogs"][0])
+            self.assertIn("author", t1["worklogs"][0])
 
             # When include_bug_subtasks=False, Bug Subtask should not appear
             payload_no_bug = build_monthly_epic_plan_payload(
@@ -976,6 +986,8 @@ class MonthlyEpicPlanProgressTests(unittest.TestCase):
         self.assertIn("wld-date-apply", html)
         self.assertIn("table_chart", html)
         self.assertIn("worklog-detail-icon-btn", html)
+        self.assertIn("wld-download-btn", html)
+        self.assertIn("downloadWorklogDetailCSV", html)
 
     def test_build_worklog_detail_for_range_uses_custom_dates(self):
         """build_worklog_detail_for_range returns per-subtask rows for arbitrary date range."""
@@ -1006,6 +1018,13 @@ class MonthlyEpicPlanProgressTests(unittest.TestCase):
             keys = {r["issue_key"] for r in rows}
             self.assertIn("O2-WLD-S1-T1", keys)
             self.assertIn("O2-WLD-S1-B1", keys)
+            # New fields should be present
+            for r in rows:
+                self.assertIn("start_date", r)
+                self.assertIn("due_date", r)
+                self.assertIn("total_hours_logged", r)
+                self.assertIn("worklogs", r)
+                self.assertIsInstance(r["worklogs"], list)
 
             # Exclude bug subtasks
             rows_no_bug = build_worklog_detail_for_range(

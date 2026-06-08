@@ -2061,7 +2061,8 @@ def _load_subtask_worklog_detail(
     """
     Return per-subtask rows for the 'Logged this month' drawer.
     Each row contains Jira key, issue type, summary, story key, epic key,
-    original estimate hours, and selected-month worklog hours.
+    start/due dates, original estimate hours, lifetime total logged hours,
+    selected-range worklog hours, and a list of individual worklog entries.
     """
     issue_to_epic: dict[str, str] = {}
     for ek, sk_set in subtask_keys_by_epic.items():
@@ -2077,6 +2078,7 @@ def _load_subtask_worklog_detail(
 
     issue_meta: dict[str, dict[str, Any]] = {}
     month_logged_by_issue: dict[str, float] = defaultdict(float)
+    worklogs_by_issue: dict[str, list[dict[str, Any]]] = defaultdict(list)
 
     with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
@@ -2085,7 +2087,8 @@ def _load_subtask_worklog_detail(
             for row in conn.execute(
                 f"""
                 SELECT issue_key, issue_type, summary, story_key, epic_key,
-                       parent_issue_key, original_estimate_hours
+                       parent_issue_key, original_estimate_hours,
+                       start_date, due_date, total_hours_logged
                 FROM canonical_issues
                 WHERE run_id = ? AND UPPER(issue_key) IN ({placeholders})
                 """,
@@ -2103,17 +2106,23 @@ def _load_subtask_worklog_detail(
             placeholders = ",".join("?" for _ in chunk)
             for wl_row in conn.execute(
                 f"""
-                SELECT issue_key, SUM(hours_logged) AS total_logged
+                SELECT issue_key, started_date, hours_logged, worklog_author
                 FROM canonical_worklogs
                 WHERE run_id = ? AND UPPER(issue_key) IN ({placeholders})
                   AND started_date >= ? AND started_date <= ?
-                GROUP BY issue_key
+                ORDER BY started_date ASC
                 """,
                 [wl_run_id, *chunk, month_start.isoformat(), month_end.isoformat()],
             ).fetchall():
                 ik = _to_text(wl_row["issue_key"]).upper()
                 if ik:
-                    month_logged_by_issue[ik] = float(wl_row["total_logged"] or 0.0)
+                    h = float(wl_row["hours_logged"] or 0.0)
+                    month_logged_by_issue[ik] += h
+                    worklogs_by_issue[ik].append({
+                        "date": _to_text(wl_row["started_date"]),
+                        "hours": _round_hours(h),
+                        "author": _to_text(wl_row["worklog_author"]),
+                    })
 
     result: list[dict[str, Any]] = []
     for ik in issue_keys:
@@ -2128,9 +2137,13 @@ def _load_subtask_worklog_detail(
             "summary": _to_text(meta.get("summary")),
             "epic_key": epic_key,
             "story_key": story_key,
+            "start_date": _to_text(meta.get("start_date")),
+            "due_date": _to_text(meta.get("due_date")),
             "original_estimate_hours": _round_hours(float(meta.get("original_estimate_hours") or 0.0)),
+            "total_hours_logged": _round_hours(float(meta.get("total_hours_logged") or 0.0)),
             "month_logged_hours": _round_hours(month_logged_by_issue.get(ik, 0.0)),
             "jira_url": f"{jira_base}/browse/{ik}" if jira_base else "",
+            "worklogs": worklogs_by_issue.get(ik, []),
         })
 
     result.sort(key=lambda r: (_to_text(r["epic_key"]), _to_text(r["story_key"]), _to_text(r["issue_key"])))
