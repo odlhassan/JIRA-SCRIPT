@@ -37874,6 +37874,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             except (ValueError, TypeError):
                 overdue_threshold_days = 30
             include_on_hold = request.args.get("include_on_hold", "0") in ("1", "true", "yes")
+            include_bug_subtasks = request.args.get("include_bug_subtasks", "1") not in ("0", "false", "no")
             epic_mode_raw = _to_text(request.args.get("epic_mode", "tk_epics")).lower()
             if epic_mode_raw not in ("tk_epics", "all_epics", "all_jira_epics"):
                 epic_mode_raw = "tk_epics"
@@ -37888,6 +37889,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 jira_base_url=BASE_URL,
                 overdue_threshold_days=overdue_threshold_days,
                 include_on_hold=include_on_hold,
+                include_bug_subtasks=include_bug_subtasks,
                 epic_mode=epic_mode_raw,
             )
             return jsonify({"ok": True, **payload})

@@ -339,7 +339,7 @@ class MonthlyEpicPlanProgressTests(unittest.TestCase):
                 }
             ],
         }
-        _, leave_by, src = _nested_aligned_leave_by_assignee(snapshot, month_start, month_end)
+        _, leave_by, _, src = _nested_aligned_leave_by_assignee(snapshot, month_start, month_end)
         self.assertEqual(src, "distributed_subtasks")
         self.assertAlmostEqual(leave_by.get("alpha", 0), 8.0, places=2)
 
@@ -359,7 +359,7 @@ class MonthlyEpicPlanProgressTests(unittest.TestCase):
                 }
             ],
         }
-        _, leave_by, src = _nested_aligned_leave_by_assignee(snapshot, month_start, month_end)
+        _, leave_by, _, src = _nested_aligned_leave_by_assignee(snapshot, month_start, month_end)
         self.assertEqual(src, "daily_planned_buckets")
         self.assertAlmostEqual(leave_by.get("beta", 0), 5.0, places=2)
 
@@ -533,6 +533,57 @@ class MonthlyEpicPlanProgressTests(unittest.TestCase):
             self.assertEqual(overrun_detail["non_bug_overrun_hours"], 0.0)
             self.assertEqual(overrun_detail["bug_logged_hours"], 18.0)
 
+    def test_include_bug_subtasks_toggle_recalculates_monthly_scope_hours(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            db_path = Path(td) / "assignee_hours_capacity.db"
+            _create_canonical_tables(db_path)
+            _add_estimate_rollup_tree(
+                db_path,
+                "O2-BUGS",
+                epic_original=120,
+                story_rows=[
+                    (
+                        "S1",
+                        40,
+                        [
+                            ("T1", 16, 10, "Sub-task"),
+                            ("B1", 8, 6, "Bug Subtask"),
+                        ],
+                    ),
+                ],
+            )
+
+            default_payload = build_monthly_epic_plan_payload(
+                db_path,
+                "2026-03",
+                [_planner_row("O2-BUGS", "Bug Toggle Epic", "2026-03-01", "2026-03-31")],
+                "run-1",
+                selected_projects={"O2"},
+            )
+            no_bug_payload = build_monthly_epic_plan_payload(
+                db_path,
+                "2026-03",
+                [_planner_row("O2-BUGS", "Bug Toggle Epic", "2026-03-01", "2026-03-31")],
+                "run-1",
+                selected_projects={"O2"},
+                include_bug_subtasks=False,
+            )
+
+            self.assertTrue(default_payload["include_bug_subtasks"])
+            self.assertEqual(default_payload["totals"]["planned_hours"], 24.0)
+            self.assertEqual(default_payload["totals"]["actual_hours"], 16.0)
+            self.assertEqual(default_payload["estimate_rollup"]["subtask_original_estimate_hours"], 24.0)
+            self.assertEqual(default_payload["estimate_rollup"]["subtask_logged_hours"], 16.0)
+            self.assertEqual(len(default_payload["rows"][0]["child_items"]), 2)
+
+            self.assertFalse(no_bug_payload["include_bug_subtasks"])
+            self.assertEqual(no_bug_payload["totals"]["planned_hours"], 16.0)
+            self.assertEqual(no_bug_payload["totals"]["actual_hours"], 10.0)
+            self.assertEqual(no_bug_payload["estimate_rollup"]["subtask_original_estimate_hours"], 16.0)
+            self.assertEqual(no_bug_payload["estimate_rollup"]["subtask_logged_hours"], 10.0)
+            self.assertEqual(len(no_bug_payload["rows"][0]["child_items"]), 1)
+            self.assertEqual(no_bug_payload["rows"][0]["child_items"][0]["issue_type"], "Sub-task")
+
     def test_service_excludes_epic_when_schedule_spans_month_but_no_endpoint_in_month(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             db_path = Path(td) / "assignee_hours_capacity.db"
@@ -619,7 +670,7 @@ class MonthlyEpicPlanProgressTests(unittest.TestCase):
                 selected_projects={"O2"},
             )
             self.assertEqual(len(payload["rows"]), 1)
-            self.assertEqual(payload["rows"][0]["delivery_status"], "On-track")
+            self.assertEqual(payload["rows"][0]["jira_status"], "In Progress")
 
     def test_delivery_status_keeps_yet_to_start_when_jira_to_do(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
@@ -633,7 +684,7 @@ class MonthlyEpicPlanProgressTests(unittest.TestCase):
                 "run-1",
                 selected_projects={"O2"},
             )
-            self.assertEqual(payload["rows"][0]["delivery_status"], "Yet to start")
+            self.assertEqual(payload["rows"][0]["jira_status"], "To Do")
 
     def test_delivery_status_keeps_planner_late_when_jira_also_active(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
@@ -647,7 +698,7 @@ class MonthlyEpicPlanProgressTests(unittest.TestCase):
                 "run-1",
                 selected_projects={"O2"},
             )
-            self.assertEqual(payload["rows"][0]["delivery_status"], "Late")
+            self.assertEqual(payload["rows"][0]["jira_status"], "In Progress")
 
     def test_api_summary_loads_epics_management_rows(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
@@ -788,6 +839,10 @@ class MonthlyEpicPlanProgressTests(unittest.TestCase):
         self.assertIn('id="estimate-detail-controls"', html)
         self.assertIn('id="estimate-detail-include-bugs"', html)
         self.assertIn("Include bug subtasks", html)
+        self.assertIn('id="include-bug-subtasks-toggle"', html)
+        self.assertIn("Include <strong>Bug Subtasks</strong>", html)
+        self.assertIn("include_bug_subtasks", html)
+        self.assertIn("els.includeBugSubtasks.addEventListener(\"change\", loadSummary)", html)
         self.assertIn("function openEstimateDetail", html)
         self.assertIn("function renderEstimateDetailDrawer", html)
         self.assertIn("function estimateDetailRows", html)
@@ -838,7 +893,7 @@ class MonthlyEpicPlanProgressTests(unittest.TestCase):
         html_path = Path(__file__).resolve().parents[1] / "monthly_epic_plan_progress_report.html"
         html = html_path.read_text(encoding="utf-8")
 
-        self.assertIn("Auto-exclude Process team when no explicit filter is active", html)
+        self.assertIn("Auto-exclude Process team (by group name) and Support members", html)
         self.assertIn(".includes(\"process\")", html)
         self.assertIn("_didAutoExclude", html)
         self.assertIn("setTimeout(loadSummary, 0)", html)

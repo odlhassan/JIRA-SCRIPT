@@ -28,6 +28,10 @@ def _to_text(value: Any) -> str:
     return "" if value is None else str(value).strip()
 
 
+def _is_bug_subtask_type(value: Any) -> bool:
+    return _to_text(value).casefold() == "bug subtask"
+
+
 def _parse_iso_date(value: Any) -> date | None:
     text = _to_text(value)
     if not text:
@@ -121,6 +125,8 @@ def _load_story_planned_hours(
     epic_keys: list[str],
     month_start: date,
     month_end: date,
+    *,
+    include_bug_subtasks: bool = True,
 ) -> dict[str, float]:
     """
     Return planned hours per epic for the given month, computed from stories/subtasks:
@@ -153,7 +159,7 @@ def _load_story_planned_hours(
         ).fetchall()
         subtasks = conn.execute(
             f"""
-            SELECT issue_key, story_key, epic_key, start_date, due_date, original_estimate_hours
+            SELECT issue_key, story_key, epic_key, issue_type, start_date, due_date, original_estimate_hours
             FROM canonical_issues
             WHERE run_id = ? AND epic_key IN ({placeholders})
               AND issue_type IN ('Sub-task', 'Bug Subtask')
@@ -163,6 +169,8 @@ def _load_story_planned_hours(
 
     subs_by_story: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for sub in subtasks:
+        if not include_bug_subtasks and _is_bug_subtask_type(sub["issue_type"]):
+            continue
         sk = _to_text(sub["story_key"]).upper()
         if sk:
             subs_by_story[sk].append(dict(sub))
@@ -193,6 +201,8 @@ def _load_story_gantt_data(
     db_path: Path,
     run_id: str,
     epic_keys: list[str],
+    *,
+    include_bug_subtasks: bool = True,
 ) -> dict[str, list[dict[str, Any]]]:
     """
     Return per-epic list of story bars for the Gantt chart.
@@ -217,7 +227,7 @@ def _load_story_gantt_data(
         ).fetchall()
         subtasks = conn.execute(
             f"""
-            SELECT issue_key, story_key
+            SELECT issue_key, story_key, issue_type
             FROM canonical_issues
             WHERE run_id = ? AND epic_key IN ({placeholders})
               AND issue_type IN ('Sub-task', 'Bug Subtask')
@@ -228,6 +238,8 @@ def _load_story_gantt_data(
     subtask_to_story: dict[str, str] = {}
     story_keys_set: set[str] = set()
     for sub in subtasks:
+        if not include_bug_subtasks and _is_bug_subtask_type(sub["issue_type"]):
+            continue
         sk = _to_text(sub["story_key"]).upper()
         ik = _to_text(sub["issue_key"]).upper()
         if sk and ik:
@@ -289,6 +301,8 @@ def _load_total_planned_hours(
     db_path: Path,
     run_id: str,
     epic_keys: list[str],
+    *,
+    include_bug_subtasks: bool = True,
 ) -> dict[str, float]:
     """
     Return total planned hours per epic across ALL stories/subtasks (no month filter).
@@ -311,7 +325,7 @@ def _load_total_planned_hours(
         ).fetchall()
         subtasks = conn.execute(
             f"""
-            SELECT story_key, epic_key, original_estimate_hours
+            SELECT story_key, epic_key, issue_type, original_estimate_hours
             FROM canonical_issues
             WHERE run_id = ? AND epic_key IN ({placeholders})
               AND issue_type IN ('Sub-task', 'Bug Subtask')
@@ -321,6 +335,8 @@ def _load_total_planned_hours(
 
     subs_by_story: dict[str, list[float]] = defaultdict(list)
     for sub in subtasks:
+        if not include_bug_subtasks and _is_bug_subtask_type(sub["issue_type"]):
+            continue
         sk = _to_text(sub["story_key"]).upper()
         if sk:
             subs_by_story[sk].append(float(sub["original_estimate_hours"] or 0))
@@ -347,6 +363,7 @@ def _load_estimate_rollup_for_epics(
     month_end: date,
     jira_base: str = "",
     tk_planned_hours_by_issue: dict[str, float] | None = None,
+    include_bug_subtasks: bool = True,
 ) -> dict[str, Any]:
     """
     Build month-scoped estimate hierarchy totals for the report's planned-this-month epic set.
@@ -521,6 +538,8 @@ def _load_estimate_rollup_for_epics(
                 [run_id, *chunk],
             ).fetchall()
             for row in subtask_rows:
+                if not include_bug_subtasks and _is_bug_subtask_type(row["issue_type"]):
+                    continue
                 subtask_key = _to_text(row["issue_key"]).upper()
                 if subtask_key:
                     subtask_rows_by_key[subtask_key] = dict(row)
@@ -543,6 +562,8 @@ def _load_estimate_rollup_for_epics(
                 [run_id, *chunk, *chunk],
             ).fetchall()
             for row in subtask_rows:
+                if not include_bug_subtasks and _is_bug_subtask_type(row["issue_type"]):
+                    continue
                 subtask_key = _to_text(row["issue_key"]).upper()
                 if subtask_key:
                     subtask_rows_by_key[subtask_key] = dict(row)
@@ -601,7 +622,7 @@ def _load_estimate_rollup_for_epics(
                 "subtask_original",
                 detail_row(
                     row,
-                    "Sub-task",
+                    _to_text(row.get("issue_type")) or "Sub-task",
                     original_estimate_hours=estimate,
                     parents=[
                         parent_link(story_key, "Story", parent_story.get("summary")),
@@ -689,7 +710,7 @@ def _load_estimate_rollup_for_epics(
                 "subtask_logged",
                 detail_row(
                     row,
-                    "Sub-task",
+                    _to_text(row.get("issue_type")) or "Sub-task",
                     original_estimate_hours=float(row.get("original_estimate_hours") or 0.0),
                     logged_hours=logged,
                     parents=[
@@ -829,6 +850,8 @@ def _load_child_items_for_month(
     month_start: date,
     month_end: date,
     jira_base: str = "",
+    *,
+    include_bug_subtasks: bool = True,
 ) -> dict[str, list[dict[str, Any]]]:
     """
     Return per-epic list of story/subtask items that drove the epic's appearance in the
@@ -853,7 +876,7 @@ def _load_child_items_for_month(
         ).fetchall()
         subtasks = conn.execute(
             f"""
-            SELECT issue_key, story_key, epic_key, summary, status, start_date, due_date, original_estimate_hours,
+            SELECT issue_key, story_key, epic_key, issue_type, summary, status, start_date, due_date, original_estimate_hours,
                    resolved_stable_since_date
             FROM canonical_issues
             WHERE run_id = ? AND epic_key IN ({placeholders})
@@ -904,6 +927,8 @@ def _load_child_items_for_month(
 
     subs_by_story: dict[str, list[dict]] = defaultdict(list)
     for sub in subtasks:
+        if not include_bug_subtasks and _is_bug_subtask_type(sub["issue_type"]):
+            continue
         sk = _to_text(sub["story_key"]).upper()
         if sk:
             subs_by_story[sk].append(dict(sub))
@@ -928,7 +953,7 @@ def _load_child_items_for_month(
                     "parent_story_key": story_key,
                     "parent_story_summary": _to_text(story["summary"]),
                     "summary": _to_text(sub["summary"]),
-                    "issue_type": "Sub-task",
+                    "issue_type": _to_text(sub["issue_type"]) or "Sub-task",
                     "status": _to_text(sub["status"]),
                     "start_date": sd,
                     "due_date": dd,
@@ -999,7 +1024,12 @@ def _chunked(items: list[str], chunk_size: int) -> list[list[str]]:
     return [items[index : index + chunk_size] for index in range(0, len(items), chunk_size)]
 
 
-def _load_canonical_issue_maps(db_path: Path, run_id: str) -> tuple[dict[str, dict[str, Any]], dict[str, set[str]]]:
+def _load_canonical_issue_maps(
+    db_path: Path,
+    run_id: str,
+    *,
+    include_bug_subtasks: bool = True,
+) -> tuple[dict[str, dict[str, Any]], dict[str, set[str]]]:
     epic_meta: dict[str, dict[str, Any]] = {}
     story_to_epic: dict[str, str] = {}
     subtask_rows: list[dict[str, Any]] = []
@@ -1033,6 +1063,8 @@ def _load_canonical_issue_maps(db_path: Path, run_id: str) -> tuple[dict[str, di
             if issue_key and resolved_epic:
                 story_to_epic[issue_key] = resolved_epic
         elif _is_subtask_type(issue_type):
+            if not include_bug_subtasks and _is_bug_subtask_type(issue_type):
+                continue
             subtask_rows.append(dict(row))
 
     subtask_keys_by_epic: dict[str, set[str]] = defaultdict(set)
@@ -2030,6 +2062,7 @@ def build_monthly_epic_plan_payload(
     jira_base_url: str = "",
     overdue_threshold_days: int = 30,
     include_on_hold: bool = False,
+    include_bug_subtasks: bool = True,
     epic_mode: str = "tk_epics",
 ) -> dict[str, Any]:
     run_id = _to_text(canonical_run_id)
@@ -2043,7 +2076,11 @@ def build_monthly_epic_plan_payload(
         if _to_text(project_key)
     }
     tk_planned_hours_by_issue: dict[str, float] = _build_tk_planned_hours_by_issue(planner_rows)
-    epic_meta, subtask_keys_by_epic = _load_canonical_issue_maps(db_path, run_id)
+    epic_meta, subtask_keys_by_epic = _load_canonical_issue_maps(
+        db_path,
+        run_id,
+        include_bug_subtasks=include_bug_subtasks,
+    )
     actual_hours_by_epic, has_worklog_through_month_end, last_worklog_date_by_epic, worklog_dates_by_epic, total_actual_hours_by_epic = _load_worklog_metrics(
         db_path,
         run_id,
@@ -2083,9 +2120,26 @@ def build_monthly_epic_plan_payload(
             _dim = _ad is not None and month_start <= _ad <= month_end
             if _sim or _dim or _bf:
                 all_jira_keys.append(_ek)
-        story_planned_hours_by_epic = _load_story_planned_hours(db_path, run_id, all_jira_keys, month_start, month_end)
-        total_planned_hours_by_epic = _load_total_planned_hours(db_path, run_id, all_jira_keys)
-        story_gantt_by_epic = _load_story_gantt_data(db_path, run_id, all_jira_keys)
+        story_planned_hours_by_epic = _load_story_planned_hours(
+            db_path,
+            run_id,
+            all_jira_keys,
+            month_start,
+            month_end,
+            include_bug_subtasks=include_bug_subtasks,
+        )
+        total_planned_hours_by_epic = _load_total_planned_hours(
+            db_path,
+            run_id,
+            all_jira_keys,
+            include_bug_subtasks=include_bug_subtasks,
+        )
+        story_gantt_by_epic = _load_story_gantt_data(
+            db_path,
+            run_id,
+            all_jira_keys,
+            include_bug_subtasks=include_bug_subtasks,
+        )
         rows, excluded_epics = _load_all_jira_epic_rows(
             db_path, run_id, selected_project_keys, month_start, month_end,
             overdue_cutoff, include_on_hold, jira_base,
@@ -2144,12 +2198,14 @@ def build_monthly_epic_plan_payload(
             month_end,
             jira_base,
             tk_planned_hours_by_issue,
+            include_bug_subtasks,
         )
         workforce = build_workforce_month_payload(db_path, month_start, month_end, run_id, selected_assignees=selected_assignees, capacity_profile_key=capacity_profile_key, jira_base=jira_base)
         return {
             "month": month, "from_date": month_start.isoformat(), "to_date": month_end.isoformat(),
             "canonical_run_id": run_id, "selected_projects": sorted(selected_project_keys),
             "overdue_threshold_days": int(overdue_threshold_days), "include_on_hold": bool(include_on_hold),
+            "include_bug_subtasks": bool(include_bug_subtasks),
             "epic_mode": epic_mode, "rows": rows, "by_project": by_project_rows,
             "totals": rounded_totals, "estimate_rollup": estimate_rollup,
             "excluded_epics": excluded_epics, "workforce": workforce,
@@ -2160,7 +2216,10 @@ def build_monthly_epic_plan_payload(
                     "falls inside the selected month, plus unresolved epics overdue by less than the "
                     "overdue threshold. Planned hours use story/subtask original estimates from Jira."
                 ),
-                "actual_hours_basis": "canonical_worklogs.started_date within the selected month",
+                "actual_hours_basis": (
+                    "canonical_worklogs.started_date within the selected month"
+                    + (" including Bug Subtask issues" if include_bug_subtasks else " excluding Bug Subtask issues")
+                ),
                 "status_basis": "Current Jira epic status from the latest canonical refresh",
             },
         }
@@ -2191,17 +2250,34 @@ def build_monthly_epic_plan_payload(
             _all_candidate_epic_keys.append(_ek)
 
     story_planned_hours_by_epic: dict[str, float] = _load_story_planned_hours(
-        db_path, run_id, _all_candidate_epic_keys, month_start, month_end
+        db_path,
+        run_id,
+        _all_candidate_epic_keys,
+        month_start,
+        month_end,
+        include_bug_subtasks=include_bug_subtasks,
     )
     tk_planned_hours_by_issue: dict[str, float] = _build_tk_planned_hours_by_issue(planner_rows)
     total_planned_hours_by_epic: dict[str, float] = _load_total_planned_hours(
-        db_path, run_id, _all_candidate_epic_keys
+        db_path,
+        run_id,
+        _all_candidate_epic_keys,
+        include_bug_subtasks=include_bug_subtasks,
     )
     story_gantt_by_epic: dict[str, list[dict[str, Any]]] = _load_story_gantt_data(
-        db_path, run_id, _all_candidate_epic_keys
+        db_path,
+        run_id,
+        _all_candidate_epic_keys,
+        include_bug_subtasks=include_bug_subtasks,
     )
     child_items_by_epic: dict[str, list[dict[str, Any]]] = _load_child_items_for_month(
-        db_path, run_id, _all_candidate_epic_keys, month_start, month_end, jira_base
+        db_path,
+        run_id,
+        _all_candidate_epic_keys,
+        month_start,
+        month_end,
+        jira_base,
+        include_bug_subtasks=include_bug_subtasks,
     )
 
     rows: list[dict[str, Any]] = []
@@ -2459,6 +2535,7 @@ def build_monthly_epic_plan_payload(
         month_end,
         jira_base,
         tk_planned_hours_by_issue,
+        include_bug_subtasks,
     )
     workforce = build_workforce_month_payload(
         db_path, month_start, month_end, run_id,
@@ -2474,6 +2551,7 @@ def build_monthly_epic_plan_payload(
         "selected_projects": sorted(selected_project_keys),
         "overdue_threshold_days": int(overdue_threshold_days),
         "include_on_hold": bool(include_on_hold),
+        "include_bug_subtasks": bool(include_bug_subtasks),
         "epic_mode": epic_mode,
         "rows": rows,
         "by_project": by_project_rows,
@@ -2489,7 +2567,10 @@ def build_monthly_epic_plan_payload(
                 "Planned hours: brought-forward epics use TK-budgeted man-days; in-month epics use "
                 "story/subtask original estimates from Jira (subtask hours replace parent story hours when subtasks carry estimates)."
             ),
-            "actual_hours_basis": "canonical_worklogs.started_date within the selected month",
+            "actual_hours_basis": (
+                "canonical_worklogs.started_date within the selected month"
+                + (" including Bug Subtask issues" if include_bug_subtasks else " excluding Bug Subtask issues")
+            ),
             "status_basis": "Current Jira epic status from the latest canonical refresh",
         },
     }

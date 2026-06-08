@@ -2620,6 +2620,13 @@
             <span class="df-toggle-text">Include <strong>On Hold</strong> epics</span>
           </label>
         </div>
+        <div class="control" style="align-self:end;padding-bottom:2px;">
+          <label class="df-toggle" for="include-bug-subtasks-toggle" style="gap:8px;" title="When checked, Bug Subtask planned and logged hours are included in report totals. On by default to match Jira exports that include bug subtasks.">
+            <input type="checkbox" class="df-toggle-input" id="include-bug-subtasks-toggle" checked>
+            <span class="df-toggle-track"><span class="df-toggle-thumb"></span></span>
+            <span class="df-toggle-text">Include <strong>Bug Subtasks</strong></span>
+          </label>
+        </div>
         <div class="epic-mode-wrap">
           <label style="font-size:0.8rem;font-weight:700;color:#324559;">Epic scope</label>
           <div class="epic-mode-btns">
@@ -3432,6 +3439,7 @@
       onlyFromPlanner: document.getElementById("only-from-planner"),
       overdueThreshold: document.getElementById("overdue-threshold-input"),
       includeOnHold: document.getElementById("include-on-hold-toggle"),
+      includeBugSubtasks: document.getElementById("include-bug-subtasks-toggle"),
     };
     const STORAGE_CAPACITY_PROFILE_KEY = "monthly_epic_plan_capacity_profile_key";
     let latestPayload = null;
@@ -5833,6 +5841,7 @@
       const overdueThresholdVal = els.overdueThreshold ? parseInt(els.overdueThreshold.value, 10) : 30;
       params.set("overdue_threshold_days", String(isNaN(overdueThresholdVal) || overdueThresholdVal < 1 ? 30 : overdueThresholdVal));
       if (els.includeOnHold && els.includeOnHold.checked) params.set("include_on_hold", "1");
+      if (els.includeBugSubtasks && !els.includeBugSubtasks.checked) params.set("include_bug_subtasks", "0");
       if (dfDateFilter === "range") params.set("date_filter", "range");
       updateDateFilterMonthLabels();
       els.status.textContent = "Loading monthly epic report...";
@@ -5947,6 +5956,9 @@
     });
     if (els.onlyFromPlanner) {
       els.onlyFromPlanner.addEventListener("change", loadSummary);
+    }
+    if (els.includeBugSubtasks) {
+      els.includeBugSubtasks.addEventListener("change", loadSummary);
     }
     if (els.dfToggleRange) {
       els.dfToggleRange.addEventListener("change", () => {
