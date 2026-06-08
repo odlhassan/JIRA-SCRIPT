@@ -95,14 +95,18 @@ Jira CSV reconciliation has one important caveat: the downloaded `Σ Time Spent`
 | Estimate hierarchy stats | Logged this month (table_chart icon) | Icon button | — | Opens the Worklog Detail drawer showing per-subtask planned and logged hours for a selectable date range. |
 | Worklog Detail drawer | From date / To date | Date pickers | Month start / month end | Select a precise start and end date for the worklog query. Click Apply to re-fetch data for the new range. |
 | Worklog Detail drawer | Apply button | Button | — | Triggers a new API request to `/api/monthly-epic-plan-progress/worklog-detail` with the selected From/To dates. |
+| Worklog Detail drawer | Download CSV | Button | — | Exports the full drawer data to a CSV file. Each per-worklog entry becomes its own row; subtask metadata is on the first worklog row only. Filename includes the active date range. |
 | Worklog Detail drawer | Search | Search input | Empty | Filters displayed rows client-side by Jira key, summary, story key, or epic key. |
-| Worklog Detail drawer | Summary chips | Read-only chips | Calculated | Shows subtask count, estimated hours, logged hours for the active date range, and bug-subtask count. |
+| Worklog Detail drawer | Summary chips | Read-only chips | Calculated | Shows subtask count, estimated hours, logged-in-range hours, and bug-subtask count. |
+| Worklog Detail drawer | Header totals | Read-only cards | Calculated | Two total cards: "Logged in range" (sum of `month_logged_hours` for the queried date span) and "Total ever logged" (sum of `total_hours_logged` lifetime per subtask). |
 | Worklog Detail drawer | Jira Key | Link column | Derived | Clickable link opening the Jira issue in a new tab when a URL is available. |
 | Worklog Detail drawer | Type | Chip column | Derived | Shows `Sub-task` or `Bug Subtask`. |
 | Worklog Detail drawer | Summary | Text column | Derived | Jira issue summary. |
 | Worklog Detail drawer | Story / Epic | Text columns | Derived | Parent story and epic keys. |
+| Worklog Detail drawer | Start Date | Date column | Derived | Jira `start_date` from `canonical_issues`. |
+| Worklog Detail drawer | Due Date | Date column | Derived | Jira `due_date` from `canonical_issues`. |
 | Worklog Detail drawer | Estimated | Numeric column | Derived | Jira original estimate in the selected unit. |
-| Worklog Detail drawer | Logged | Numeric column | Derived | Worklog hours within the selected From/To date range. |
+| Worklog Detail drawer | Logged | Numeric column / expand button | Derived | Worklog hours within the selected From/To date range. When individual worklog entries exist, the cell is a clickable button; clicking expands an inline nested table showing each worklog's date, author, and hours. |
 
 | Epics table | TK Epic Budget | Numeric column | Derived | Shows epic-level TK budget in the selected unit. Blank for rows without planner-backed TK budget. |
 | Epics table | Month Plan / Month Actual / Total Actual | Numeric columns | Derived | Show selected-month plan, selected-month worklogs, and total logged work across the epic. |
@@ -146,8 +150,9 @@ Jira CSV reconciliation has one important caveat: the downloaded `Σ Time Spent`
 7. For Story Overrun rows, the service keeps the current-scope combined overrun fields and also stores regular-subtask-only logged and overrun values for drawer filtering.
 8. The browser renders the bar chart from the current-scope main rollup fields.
 9. Changing the page-level `Include Bug Subtasks` toggle calls the summary API again with `include_bug_subtasks=1` or `0`.
-10. When the user clicks the `table_chart` icon on the Logged This Month card, the Worklog Detail drawer opens with From/To date pickers pre-filled to the loaded month's first and last day, then immediately calls `/api/monthly-epic-plan-progress/worklog-detail?from_date=…&to_date=…&include_bug_subtasks=…`. The drawer renders per-subtask planned and logged hours for the queried range.
+10. When the user clicks the `table_chart` icon on the Logged This Month card, the Worklog Detail drawer opens with From/To date pickers pre-filled to the loaded month's first and last day, then immediately calls `/api/monthly-epic-plan-progress/worklog-detail?from_date=…&to_date=…&include_bug_subtasks=…`. The drawer renders per-subtask rows with 9 columns: Jira Key, Type, Summary, Story, Epic, Start Date, Due Date, Estimated, and Logged. Two header total cards show the sum of Logged in range and Total ever logged. Each Logged cell is a clickable expand button when individual worklog entries exist; clicking toggles an inline nested table of worklog date, author, and hours.
 11. Changing the From or To date and clicking Apply re-calls the worklog-detail endpoint; the search box filters already-fetched rows client-side without a new network request.
+12. Clicking "Download CSV" exports all drawer rows to a file named `worklog_detail_<from>_to_<to>.csv`. Each per-worklog entry becomes a separate row; subtask metadata repeats only on the first row for that subtask.
 12. When the user opens the Story Overrun drawer, the browser starts from the story-level detail rows, defaults the drawer bug toggle to unchecked, recalculates displayed logged/overrun values from the regular-subtask-only fields, and removes rows that no longer overrun.
 13. If the user enables the drawer-local `Include bug subtasks`, the browser re-renders the same rows using the combined totals already supplied by the backend for the current page-level scope.
 14. For workforce numbers, the service returns per-member data in `employee_tree` (name, `resigned`, planned `leave_hours`), the support roster in `support_team.member_rows`, `team_capacity_hours`, `employee_count_profile`, and the active selection (`selected_assignees`, `assignee_filter_active`).
