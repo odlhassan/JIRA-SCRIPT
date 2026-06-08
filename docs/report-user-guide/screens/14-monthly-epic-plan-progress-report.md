@@ -118,9 +118,9 @@ Jira CSV reconciliation has one important caveat: the downloaded `Σ Time Spent`
 ## Script Files
 
 - `monthly_epic_plan_progress_service.py` — builds the monthly payload, estimate rollups, top-level Bug Subtask inclusion/exclusion, Story Overrun detail rows, and the standalone `build_worklog_detail_for_range()` function used by the dedicated worklog-detail endpoint.
-- `monthly_epic_plan_progress_report.html` — renders filters, the top-level `Include Bug Subtasks` toggle, estimate bars, detail drawers, the Worklog Detail drawer with From/To date pickers and Apply button, table view, Gantt view, the Team Roster drawer, Employee Stats cards, and the selection-aware Resource Planning panel.
+- `monthly_epic_plan_progress_report.html` — renders filters, the top-level `Include Bug Subtasks` toggle, estimate bars, detail drawers, the Worklog Detail drawer with From/To date pickers and Apply button, table view, Gantt view, the Team Roster drawer, Employee Stats cards, and the selection-aware Resource Planning panel. The main `<style>` block must close before `<body>` so browser parsing does not treat the report body as CSS text.
 - `report_server.py` — serves `/api/monthly-epic-plan-progress/summary` (includes `include_bug_subtasks` param) and the new `/api/monthly-epic-plan-progress/worklog-detail` endpoint (`from_date`, `to_date`, `include_bug_subtasks` params). Syncs canonical report HTML into `report_html/`.
-- `tests/test_monthly_epic_plan_progress.py` — 19 tests covering payload generation, HTML presence, Story Overrun regression, bug-subtask toggle, worklog detail payload, and `build_worklog_detail_for_range` with custom dates.
+- `tests/test_monthly_epic_plan_progress.py` — 19 tests covering payload generation, HTML presence, Story Overrun regression, bug-subtask toggle, worklog detail payload, `build_worklog_detail_for_range` with custom dates, and the HTML structural guard that `</style>` appears before `<body>`.
 
 ## Dependent & Impacted Files
 

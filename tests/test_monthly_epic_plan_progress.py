@@ -973,6 +973,7 @@ class MonthlyEpicPlanProgressTests(unittest.TestCase):
         # HTML assertions
         html_path = Path(__file__).resolve().parents[1] / "monthly_epic_plan_progress_report.html"
         html = html_path.read_text(encoding="utf-8")
+        self.assertLess(html.index("</style>"), html.index("<body>"))
         self.assertIn('id="worklog-detail-open-btn"', html)
         self.assertIn('id="worklog-detail-overlay"', html)
         self.assertIn('id="worklog-detail-drawer"', html)
