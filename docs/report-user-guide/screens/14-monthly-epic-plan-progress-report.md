@@ -92,7 +92,18 @@ Jira CSV reconciliation has one important caveat: the downloaded `Σ Time Spent`
 | Estimate detail drawer | Overrun | Numeric column | Derived | For Story Overrun rows, recalculated from the currently displayed logged totals. |
 | Estimate detail drawer | Include bug subtasks | Checkbox | Unchecked | Available only in the Story Overrun drawer. Recalculates drawer rows and summary chips inside the current page-level bug-subtask scope. |
 | Estimate detail drawer | Summary chips | Read-only chips | Calculated | Shows work-item count, original estimate, TK planned when present, logged, and overrun for the currently displayed drawer rows. |
-| Epics table | Project color | Visual row stripe and chip | Managed project color | Uses the Projects settings color for each row's project. |
+| Estimate hierarchy stats | Logged this month (table_chart icon) | Icon button | — | Opens the Worklog Detail drawer showing per-subtask planned and logged hours for a selectable date range. |
+| Worklog Detail drawer | From date / To date | Date pickers | Month start / month end | Select a precise start and end date for the worklog query. Click Apply to re-fetch data for the new range. |
+| Worklog Detail drawer | Apply button | Button | — | Triggers a new API request to `/api/monthly-epic-plan-progress/worklog-detail` with the selected From/To dates. |
+| Worklog Detail drawer | Search | Search input | Empty | Filters displayed rows client-side by Jira key, summary, story key, or epic key. |
+| Worklog Detail drawer | Summary chips | Read-only chips | Calculated | Shows subtask count, estimated hours, logged hours for the active date range, and bug-subtask count. |
+| Worklog Detail drawer | Jira Key | Link column | Derived | Clickable link opening the Jira issue in a new tab when a URL is available. |
+| Worklog Detail drawer | Type | Chip column | Derived | Shows `Sub-task` or `Bug Subtask`. |
+| Worklog Detail drawer | Summary | Text column | Derived | Jira issue summary. |
+| Worklog Detail drawer | Story / Epic | Text columns | Derived | Parent story and epic keys. |
+| Worklog Detail drawer | Estimated | Numeric column | Derived | Jira original estimate in the selected unit. |
+| Worklog Detail drawer | Logged | Numeric column | Derived | Worklog hours within the selected From/To date range. |
+
 | Epics table | TK Epic Budget | Numeric column | Derived | Shows epic-level TK budget in the selected unit. Blank for rows without planner-backed TK budget. |
 | Epics table | Month Plan / Month Actual / Total Actual | Numeric columns | Derived | Show selected-month plan, selected-month worklogs, and total logged work across the epic. |
 | Team Roster drawer | Include Support Team | Checkbox | Unchecked | When on, support members are selectable and feed Employee Stats + Resource Planning; when off, support members are force-unchecked (dev-only scope). |
@@ -102,10 +113,10 @@ Jira CSV reconciliation has one important caveat: the downloaded `Σ Time Spent`
 
 ## Script Files
 
-- `monthly_epic_plan_progress_service.py` — builds the monthly payload, estimate rollups, top-level Bug Subtask inclusion/exclusion, and Story Overrun detail rows including split regular-subtask and bug-subtask logged totals.
-- `monthly_epic_plan_progress_report.html` — renders filters, the top-level `Include Bug Subtasks` toggle, estimate bars, the detail drawer, the drawer-local bug toggle, table view, Gantt view, the Team Roster drawer, Employee Stats cards, and the selection-aware Resource Planning panel (`computeResourcePlanningState` -> `renderResourceSummary`).
-- `report_server.py` — serves `/api/monthly-epic-plan-progress/summary`, including the `include_bug_subtasks` query parameter, and syncs the canonical report HTML into `report_html/` for localhost serving.
-- `tests/test_monthly_epic_plan_progress.py` — covers payload generation, HTML presence checks, Story Overrun detail-row regression cases, and the top-level Bug Subtask toggle regression.
+- `monthly_epic_plan_progress_service.py` — builds the monthly payload, estimate rollups, top-level Bug Subtask inclusion/exclusion, Story Overrun detail rows, and the standalone `build_worklog_detail_for_range()` function used by the dedicated worklog-detail endpoint.
+- `monthly_epic_plan_progress_report.html` — renders filters, the top-level `Include Bug Subtasks` toggle, estimate bars, detail drawers, the Worklog Detail drawer with From/To date pickers and Apply button, table view, Gantt view, the Team Roster drawer, Employee Stats cards, and the selection-aware Resource Planning panel.
+- `report_server.py` — serves `/api/monthly-epic-plan-progress/summary` (includes `include_bug_subtasks` param) and the new `/api/monthly-epic-plan-progress/worklog-detail` endpoint (`from_date`, `to_date`, `include_bug_subtasks` params). Syncs canonical report HTML into `report_html/`.
+- `tests/test_monthly_epic_plan_progress.py` — 19 tests covering payload generation, HTML presence, Story Overrun regression, bug-subtask toggle, worklog detail payload, and `build_worklog_detail_for_range` with custom dates.
 
 ## Dependent & Impacted Files
 
@@ -135,7 +146,9 @@ Jira CSV reconciliation has one important caveat: the downloaded `Σ Time Spent`
 7. For Story Overrun rows, the service keeps the current-scope combined overrun fields and also stores regular-subtask-only logged and overrun values for drawer filtering.
 8. The browser renders the bar chart from the current-scope main rollup fields.
 9. Changing the page-level `Include Bug Subtasks` toggle calls the summary API again with `include_bug_subtasks=1` or `0`.
-10. When the user opens the Story Overrun drawer, the browser starts from the story-level detail rows, defaults the drawer bug toggle to unchecked, recalculates displayed logged/overrun values from the regular-subtask-only fields, and removes rows that no longer overrun.
-11. If the user enables the drawer-local `Include bug subtasks`, the browser re-renders the same rows using the combined totals already supplied by the backend for the current page-level scope.
-11. For workforce numbers, the service returns per-member data in `employee_tree` (name, `resigned`, planned `leave_hours`), the support roster in `support_team.member_rows`, `team_capacity_hours`, `employee_count_profile`, and the active selection (`selected_assignees`, `assignee_filter_active`).
-12. `renderWorkforce` and `renderSupportTeam` call `computeResourcePlanningState`, which derives the effective selected set (from `selected_assignees`, or the active dev-only default when no filter is active), computes Total and Support buckets at a uniform per-person capacity, and `renderResourceSummary` then renders Dev = Total − Support. Changing the Team Roster selection and clicking `Apply selection` re-fetches the payload and re-renders all workforce panels consistently.
+10. When the user clicks the `table_chart` icon on the Logged This Month card, the Worklog Detail drawer opens with From/To date pickers pre-filled to the loaded month's first and last day, then immediately calls `/api/monthly-epic-plan-progress/worklog-detail?from_date=…&to_date=…&include_bug_subtasks=…`. The drawer renders per-subtask planned and logged hours for the queried range.
+11. Changing the From or To date and clicking Apply re-calls the worklog-detail endpoint; the search box filters already-fetched rows client-side without a new network request.
+12. When the user opens the Story Overrun drawer, the browser starts from the story-level detail rows, defaults the drawer bug toggle to unchecked, recalculates displayed logged/overrun values from the regular-subtask-only fields, and removes rows that no longer overrun.
+13. If the user enables the drawer-local `Include bug subtasks`, the browser re-renders the same rows using the combined totals already supplied by the backend for the current page-level scope.
+14. For workforce numbers, the service returns per-member data in `employee_tree` (name, `resigned`, planned `leave_hours`), the support roster in `support_team.member_rows`, `team_capacity_hours`, `employee_count_profile`, and the active selection (`selected_assignees`, `assignee_filter_active`).
+15. `renderWorkforce` and `renderSupportTeam` call `computeResourcePlanningState`, which derives the effective selected set (from `selected_assignees`, or the active dev-only default when no filter is active), computes Total and Support buckets at a uniform per-person capacity, and `renderResourceSummary` then renders Dev = Total − Support. Changing the Team Roster selection and clicking `Apply selection` re-fetches the payload and re-renders all workforce panels consistently.
