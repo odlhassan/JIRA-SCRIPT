@@ -2785,6 +2785,9 @@
     }
     .wld-download-btn:hover { background: #f0fdf4; border-color: #4ade80; color: #15803d; }
     .wld-download-btn .material-symbols-outlined { font-size: 16px; }
+    .worklog-detail-table tr.wld-row-matches-filters > td { background: #ecfccb !important; }
+    .worklog-detail-table tr.wld-row-matches-filters:hover > td { background: #d9f99d !important; }
+    .worklog-detail-chip.matched { background: #ecfccb; color: #3f6212; border-color: #bef264; }
     .worklog-detail-search {
       flex: 1 1 200px;
       min-width: 0;
@@ -3039,6 +3042,13 @@
             <span class="df-toggle-track"><span class="df-toggle-thumb"></span></span>
             <span class="df-toggle-text">Have <span class="df-month-label">this month</span> in their planned date range</span>
           </label>
+        </div>
+        <div class="date-filter-custom-range" id="df-custom-range-wrap" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;">
+          <span class="toolbar-label" style="font-size:12px;color:#475569;">Or use a custom date range</span>
+          <label style="font-size:12px;color:#475569;">From <input type="date" id="df-custom-from" style="margin-left:4px;padding:4px 6px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px;"></label>
+          <label style="font-size:12px;color:#475569;">To <input type="date" id="df-custom-to" style="margin-left:4px;padding:4px 6px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px;"></label>
+          <button type="button" id="df-custom-clear" class="btn alt" style="padding:4px 8px;font-size:12px;">Clear</button>
+          <span id="df-custom-status" style="font-size:11px;color:#64748b;"></span>
         </div>
       </div>
       <div class="status" id="status"></div>
@@ -3778,6 +3788,10 @@
       dfToggleRange: document.getElementById("df-toggle-range"),
       dfToggleStartWrap: document.getElementById("df-toggle-start-wrap"),
       dfToggleEndWrap: document.getElementById("df-toggle-end-wrap"),
+      dfCustomFrom: document.getElementById("df-custom-from"),
+      dfCustomTo: document.getElementById("df-custom-to"),
+      dfCustomClear: document.getElementById("df-custom-clear"),
+      dfCustomStatus: document.getElementById("df-custom-status"),
       projectCards: document.getElementById("project-cards"),
       kpiHeadcount: document.getElementById("kpi-headcount"),
       kpiHeadcountDetail: document.getElementById("kpi-headcount-detail"),
@@ -4213,7 +4227,14 @@
       const filterStart = els.dfToggleStart && els.dfToggleStart.checked;
       const filterEnd = els.dfToggleEnd && els.dfToggleEnd.checked;
       if (filterStart || filterEnd) {
-        const bounds = parseMonthBounds(els.month ? els.month.value : "");
+        const customFrom = els.dfCustomFrom ? els.dfCustomFrom.value : "";
+        const customTo = els.dfCustomTo ? els.dfCustomTo.value : "";
+        let bounds = null;
+        if (customFrom && customTo && customFrom <= customTo) {
+          bounds = { start: customFrom, end: customTo };
+        } else {
+          bounds = parseMonthBounds(els.month ? els.month.value : "");
+        }
         if (bounds) {
           result = result.filter((r) => {
             const s = r.approved_start || "";
@@ -4731,6 +4752,13 @@
       try {
         const params = new URLSearchParams({ from_date: fromDate, to_date: toDate });
         if (els.includeBugSubtasks && !els.includeBugSubtasks.checked) params.set("include_bug_subtasks", "0");
+        if (els.includeOnHold && els.includeOnHold.checked) params.set("include_on_hold", "1");
+        try {
+          const checkedAssignees = (typeof getCheckedEmployeeNames === "function") ? getCheckedEmployeeNames() : [];
+          if (checkedAssignees && checkedAssignees.length) {
+            params.set("selected_assignees", checkedAssignees.join(","));
+          }
+        } catch (e) { /* employee dropdown not initialised yet */ }
         const resp = await fetch("/api/monthly-epic-plan-progress/worklog-detail?" + params.toString(), { cache: "no-store", headers: { Accept: "application/json" } });
         const body = await resp.json().catch(() => ({}));
         if (!resp.ok || !body.ok) throw new Error(body.error || "Failed to load worklog detail.");
@@ -4801,9 +4829,11 @@
       if (els.worklogDetailChips) {
         const totalEst = rows.reduce((s, r) => s + Number(r.original_estimate_hours || 0), 0);
         const bugCount = rows.filter((r) => String(r.issue_type || "").toLowerCase() === "bug subtask").length;
+        const matchedCount = rows.filter((r) => r && r.matches_filters !== false).length;
         const toD = (h) => (unit === "days" ? formatNumber(h / hpd) : formatNumber(h));
         els.worklogDetailChips.innerHTML =
           '<span class="worklog-detail-chip">' + rows.length + " subtasks" + (query ? " (" + filtered.length + " shown)" : "") + "</span>" +
+          '<span class="worklog-detail-chip matched">' + matchedCount + " match active filters</span>" +
           '<span class="worklog-detail-chip">Estimated: ' + toD(totalEst) + " " + sfx + "</span>" +
           '<span class="worklog-detail-chip accent">Logged in range: ' + toD(totalRange) + " " + sfx + "</span>" +
           (bugCount > 0 ? '<span class="worklog-detail-chip">' + bugCount + " bug subtasks</span>" : "");
@@ -4825,6 +4855,7 @@
         const est = Number(r.original_estimate_hours || 0);
         const logged = Number(r.month_logged_hours || 0);
         const wlEntries = Array.isArray(r.worklogs) ? r.worklogs : [];
+        const matches = r.matches_filters !== false;
         totalEst2 += est;
         totalLoggedRange += logged;
         const expandId = "wld-exp-" + idx;
@@ -4833,6 +4864,7 @@
           ? '<a class="wl-jira-link" href="' + esc(url) + '" target="_blank" rel="noopener">' + esc(ik) + '&nbsp;<span class="material-symbols-outlined" style="font-size:12px;vertical-align:-1px;">open_in_new</span></a>'
           : '<span class="wl-jira-link" style="cursor:default;">' + esc(ik) + "</span>";
         const typeCell = isBug ? '<span class="wl-type-bug">Bug Subtask</span>' : '<span class="wl-type-subtask">Sub-task</span>';
+        const assigneeCell = r.assignee ? esc(String(r.assignee)) : '<span style="color:#94a3b8;">—</span>';
         const startCell = r.start_date ? esc(r.start_date) : '<span style="color:#94a3b8;">—</span>';
         const dueCell = r.due_date ? esc(r.due_date) : '<span style="color:#94a3b8;">—</span>';
         const loggedCell = (logged > 0 && wlEntries.length > 0)
@@ -4840,10 +4872,12 @@
               + '<span class="material-symbols-outlined wld-expand-icon">chevron_right</span>' + toDisp(logged) + '</button>'
           : '<span class="wld-logged-btn-zero">' + toDisp(logged) + '</span>';
 
-        rowsHtml.push('<tr>'
+        const rowCls = matches ? ' class="wld-row-matches-filters"' : '';
+        rowsHtml.push('<tr' + rowCls + '>'
           + '<td>' + keyCell + '</td>'
           + '<td>' + typeCell + '</td>'
           + '<td>' + esc(String(r.summary || "—")) + '</td>'
+          + '<td>' + assigneeCell + '</td>'
           + '<td>' + (r.story_key ? esc(r.story_key) : '<span style="color:#94a3b8;">—</span>') + '</td>'
           + '<td>' + (r.epic_key ? esc(r.epic_key) : '<span style="color:#94a3b8;">—</span>') + '</td>'
           + '<td>' + startCell + '</td>'
@@ -4857,21 +4891,21 @@
             '<tr><td>' + esc(String(wl.date || "—")) + '</td><td>' + esc(String(wl.author || "—")) + '</td><td class="num">' + toDisp(Number(wl.hours || 0)) + '</td></tr>'
           ).join("");
           rowsHtml.push('<tr class="wld-expand-row hidden" id="' + expandId + '">'
-            + '<td colspan="9"><div class="wld-expand-inner"><table class="wld-expand-table">'
+            + '<td colspan="10"><div class="wld-expand-inner"><table class="wld-expand-table">'
             + '<thead><tr><th>Date</th><th>Author</th><th class="num">Hours</th></tr></thead>'
             + '<tbody>' + wlRows + '</tbody></table></div></td></tr>');
         }
       });
 
       const tfoot = '<tfoot><tr class="worklog-detail-tfoot">'
-        + '<td colspan="7" style="font-weight:800;">Total (' + filtered.length + " rows)</td>"
+        + '<td colspan="8" style="font-weight:800;">Total (' + filtered.length + " rows)</td>"
         + '<td class="num">' + toDisp(totalEst2) + '</td>'
         + '<td class="num wl-logged-has">' + toDisp(totalLoggedRange) + '</td>'
         + '</tr></tfoot>';
 
       els.worklogDetailBody.innerHTML =
         '<div class="worklog-detail-table-wrap"><table class="worklog-detail-table" aria-label="Subtask worklog breakdown">'
-        + '<thead><tr><th>Jira Key</th><th>Type</th><th>Summary</th><th>Story</th><th>Epic</th>'
+        + '<thead><tr><th>Jira Key</th><th>Type</th><th>Summary</th><th>Assignee</th><th>Story</th><th>Epic</th>'
         + '<th>Start Date</th><th>Due Date</th><th class="num">Estimated</th>'
         + '<th class="num">Logged' + dateLabel + '</th></tr></thead>'
         + '<tbody>' + rowsHtml.join("") + '</tbody>' + tfoot + '</table></div>';
@@ -4896,8 +4930,9 @@
       const toVal = (h) => isDay ? Math.round(h / hpd * 100) / 100 : h;
       const csvEsc = (v) => { const s = String(v === null || v === undefined ? "" : v); return s.search(/[",\r\n]/) !== -1 ? '"' + s.replace(/"/g, '""') + '"' : s; };
 
-      const headers = ["Jira Key", "Type", "Summary", "Story", "Epic", "Start Date", "Due Date",
+      const headers = ["Jira Key", "Type", "Summary", "Assignee", "Story", "Epic", "Start Date", "Due Date",
         "Estimated" + sfx, "Logged in Range" + sfx, "Total Ever Logged" + sfx,
+        "Matches Active Filters",
         "Worklog Date", "Worklog Author", "Worklog Hours" + sfx];
       const csvRows = [headers];
 
@@ -4905,22 +4940,26 @@
         const est = toVal(Number(r.original_estimate_hours || 0));
         const rangeLogged = toVal(Number(r.month_logged_hours || 0));
         const totalLogged = toVal(Number(r.total_hours_logged || 0));
+        const matches = r.matches_filters !== false ? "Yes" : "No";
         const wlEntries = Array.isArray(r.worklogs) ? r.worklogs : [];
         if (wlEntries.length > 0) {
           wlEntries.forEach((wl, idx) => {
             csvRows.push([
               idx === 0 ? (r.issue_key || "") : "", idx === 0 ? (r.issue_type || "") : "",
-              idx === 0 ? (r.summary || "") : "", idx === 0 ? (r.story_key || "") : "",
+              idx === 0 ? (r.summary || "") : "", idx === 0 ? (r.assignee || "") : "",
+              idx === 0 ? (r.story_key || "") : "",
               idx === 0 ? (r.epic_key || "") : "", idx === 0 ? (r.start_date || "") : "",
               idx === 0 ? (r.due_date || "") : "", idx === 0 ? est : "",
               idx === 0 ? rangeLogged : "", idx === 0 ? totalLogged : "",
+              idx === 0 ? matches : "",
               wl.date || "", wl.author || "", toVal(Number(wl.hours || 0)),
             ]);
           });
         } else {
           csvRows.push([r.issue_key || "", r.issue_type || "", r.summary || "",
+            r.assignee || "",
             r.story_key || "", r.epic_key || "", r.start_date || "", r.due_date || "",
-            est, rangeLogged, totalLogged, "", "", ""]);
+            est, rangeLogged, totalLogged, matches, "", "", ""]);
         }
       });
 
@@ -6703,6 +6742,34 @@
     }
     if (els.dfToggleEnd) {
       els.dfToggleEnd.addEventListener("change", applyClientFilter);
+    }
+    function _updateCustomDateStatus() {
+      if (!els.dfCustomStatus) return;
+      const f = els.dfCustomFrom ? els.dfCustomFrom.value : "";
+      const t = els.dfCustomTo ? els.dfCustomTo.value : "";
+      if (f && t && f <= t) {
+        els.dfCustomStatus.textContent = "Custom range active — overrides month for start/end filters.";
+        els.dfCustomStatus.style.color = "#3f6212";
+      } else if (f || t) {
+        els.dfCustomStatus.textContent = "Set both From and To to apply.";
+        els.dfCustomStatus.style.color = "#b91c1c";
+      } else {
+        els.dfCustomStatus.textContent = "";
+      }
+    }
+    if (els.dfCustomFrom) {
+      els.dfCustomFrom.addEventListener("change", () => { _updateCustomDateStatus(); applyClientFilter(); });
+    }
+    if (els.dfCustomTo) {
+      els.dfCustomTo.addEventListener("change", () => { _updateCustomDateStatus(); applyClientFilter(); });
+    }
+    if (els.dfCustomClear) {
+      els.dfCustomClear.addEventListener("click", () => {
+        if (els.dfCustomFrom) els.dfCustomFrom.value = "";
+        if (els.dfCustomTo) els.dfCustomTo.value = "";
+        _updateCustomDateStatus();
+        applyClientFilter();
+      });
     }
     els.apply.addEventListener("click", loadSummary);
     if (els.clearProjects) {

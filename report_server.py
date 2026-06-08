@@ -37918,6 +37918,13 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 to_date = from_date
             canonical_run_id = _canonical_last_success_run_id(capacity_paths["db_path"])
             include_bug_subtasks = request.args.get("include_bug_subtasks", "1") not in ("0", "false", "no")
+            include_on_hold = request.args.get("include_on_hold", "0") not in ("0", "false", "no", "")
+            assignees_raw = _to_text(request.args.get("selected_assignees"))
+            selected_assignees: set[str] | None = None
+            if assignees_raw:
+                selected_assignees = {
+                    _to_text(item) for item in assignees_raw.split(",") if _to_text(item)
+                } or None
             rows = build_worklog_detail_for_range(
                 capacity_paths["db_path"],
                 canonical_run_id,
@@ -37925,6 +37932,8 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 to_date,
                 include_bug_subtasks=include_bug_subtasks,
                 jira_base_url=BASE_URL,
+                selected_assignees=selected_assignees,
+                include_on_hold=include_on_hold,
             )
             return jsonify({"ok": True, "rows": rows, "from_date": from_date_raw, "to_date": to_date_raw})
         except ValueError as exc:

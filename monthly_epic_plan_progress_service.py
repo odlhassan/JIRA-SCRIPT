@@ -2057,12 +2057,17 @@ def _load_subtask_worklog_detail(
     month_start: date,
     month_end: date,
     jira_base: str = "",
+    *,
+    selected_assignees: set[str] | None = None,
+    include_on_hold: bool = False,
+    include_bug_subtasks: bool = True,
 ) -> list[dict[str, Any]]:
     """
     Return per-subtask rows for the 'Logged this month' drawer.
-    Each row contains Jira key, issue type, summary, story key, epic key,
-    start/due dates, original estimate hours, lifetime total logged hours,
-    selected-range worklog hours, and a list of individual worklog entries.
+    Each row contains Jira key, issue type, summary, story/epic key,
+    assignee, status, start/due dates, original estimate hours,
+    lifetime total logged hours, selected-range worklog hours,
+    individual worklog entries, and per-row filter-match flags.
     """
     issue_to_epic: dict[str, str] = {}
     for ek, sk_set in subtask_keys_by_epic.items():
@@ -2088,7 +2093,8 @@ def _load_subtask_worklog_detail(
                 f"""
                 SELECT issue_key, issue_type, summary, story_key, epic_key,
                        parent_issue_key, original_estimate_hours,
-                       start_date, due_date, total_hours_logged
+                       start_date, due_date, total_hours_logged,
+                       assignee, status
                 FROM canonical_issues
                 WHERE run_id = ? AND UPPER(issue_key) IN ({placeholders})
                 """,
@@ -2124,6 +2130,12 @@ def _load_subtask_worklog_detail(
                         "author": _to_text(wl_row["worklog_author"]),
                     })
 
+    assignee_filter_lowers: set[str] = set()
+    if selected_assignees:
+        assignee_filter_lowers = {
+            _to_text(a).lower() for a in selected_assignees if _to_text(a)
+        }
+
     result: list[dict[str, Any]] = []
     for ik in issue_keys:
         meta = issue_meta.get(ik)
@@ -2131,12 +2143,32 @@ def _load_subtask_worklog_detail(
             continue
         epic_key = issue_to_epic.get(ik, "")
         story_key = _to_text(meta.get("story_key")).upper() or _to_text(meta.get("parent_issue_key")).upper()
+        issue_type_text = _to_text(meta.get("issue_type"))
+        is_bug_subtask = issue_type_text.lower() == "bug subtask"
+        assignee_text = _to_text(meta.get("assignee"))
+        status_text = _to_text(meta.get("status"))
+        is_on_hold = _is_on_hold_status_text(status_text)
+
+        matches_assignees = (
+            True if not assignee_filter_lowers
+            else assignee_text.lower() in assignee_filter_lowers
+        )
+        matches_bug_subtask = include_bug_subtasks or not is_bug_subtask
+        matches_on_hold = include_on_hold or not is_on_hold
+        matches_filters = (
+            matches_assignees and matches_bug_subtask and matches_on_hold
+        )
+
         result.append({
             "issue_key": ik,
-            "issue_type": _to_text(meta.get("issue_type")),
+            "issue_type": issue_type_text,
             "summary": _to_text(meta.get("summary")),
             "epic_key": epic_key,
             "story_key": story_key,
+            "assignee": assignee_text,
+            "status": status_text,
+            "is_on_hold": bool(is_on_hold),
+            "is_bug_subtask": bool(is_bug_subtask),
             "start_date": _to_text(meta.get("start_date")),
             "due_date": _to_text(meta.get("due_date")),
             "original_estimate_hours": _round_hours(float(meta.get("original_estimate_hours") or 0.0)),
@@ -2144,6 +2176,10 @@ def _load_subtask_worklog_detail(
             "month_logged_hours": _round_hours(month_logged_by_issue.get(ik, 0.0)),
             "jira_url": f"{jira_base}/browse/{ik}" if jira_base else "",
             "worklogs": worklogs_by_issue.get(ik, []),
+            "matches_assignees": bool(matches_assignees),
+            "matches_bug_subtask": bool(matches_bug_subtask),
+            "matches_on_hold": bool(matches_on_hold),
+            "matches_filters": bool(matches_filters),
         })
 
     result.sort(key=lambda r: (_to_text(r["epic_key"]), _to_text(r["story_key"]), _to_text(r["issue_key"])))
@@ -2158,21 +2194,31 @@ def build_worklog_detail_for_range(
     *,
     include_bug_subtasks: bool = True,
     jira_base_url: str = "",
+    selected_assignees: set[str] | None = None,
+    include_on_hold: bool = False,
 ) -> list[dict[str, Any]]:
     """
     Lightweight standalone function: load per-subtask worklog hours for any
     arbitrary from_date → to_date range, independent of the full monthly payload.
-    Used by the dedicated worklog-detail API endpoint.
+    Used by the dedicated worklog-detail API endpoint. Returns all subtasks
+    in scope so the drawer can highlight which rows match the active filters
+    (assignee selection, include-on-hold, include-bug-subtasks).
     """
     run_id = _to_text(canonical_run_id)
     if not run_id:
         raise ValueError("No successful canonical refresh found.")
     jira_base = _to_text(jira_base_url).rstrip("/")
+    # Always load both subtask + bug-subtask universes so the drawer can show
+    # all candidate rows; matches_bug_subtask flags which rows the active
+    # include_bug_subtasks toggle currently selects.
     _, subtask_keys_by_epic = _load_canonical_issue_maps(
-        db_path, run_id, include_bug_subtasks=include_bug_subtasks
+        db_path, run_id, include_bug_subtasks=True
     )
     return _load_subtask_worklog_detail(
-        db_path, run_id, subtask_keys_by_epic, from_date, to_date, jira_base
+        db_path, run_id, subtask_keys_by_epic, from_date, to_date, jira_base,
+        selected_assignees=selected_assignees,
+        include_on_hold=include_on_hold,
+        include_bug_subtasks=include_bug_subtasks,
     )
 
 
@@ -2328,7 +2374,10 @@ def build_monthly_epic_plan_payload(
         )
         workforce = build_workforce_month_payload(db_path, month_start, month_end, run_id, selected_assignees=selected_assignees, capacity_profile_key=capacity_profile_key, jira_base=jira_base)
         subtask_worklog_detail = _load_subtask_worklog_detail(
-            db_path, run_id, subtask_keys_by_epic, month_start, month_end, jira_base
+            db_path, run_id, subtask_keys_by_epic, month_start, month_end, jira_base,
+            selected_assignees=selected_assignees,
+            include_on_hold=include_on_hold,
+            include_bug_subtasks=include_bug_subtasks,
         )
         return {
             "month": month, "from_date": month_start.isoformat(), "to_date": month_end.isoformat(),
@@ -2674,7 +2723,10 @@ def build_monthly_epic_plan_payload(
         jira_base=jira_base,
     )
     subtask_worklog_detail = _load_subtask_worklog_detail(
-        db_path, run_id, subtask_keys_by_epic, month_start, month_end, jira_base
+        db_path, run_id, subtask_keys_by_epic, month_start, month_end, jira_base,
+        selected_assignees=selected_assignees,
+        include_on_hold=include_on_hold,
+        include_bug_subtasks=include_bug_subtasks,
     )
     return {
         "month": month,

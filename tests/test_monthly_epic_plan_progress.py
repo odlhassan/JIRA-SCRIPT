@@ -989,6 +989,12 @@ class MonthlyEpicPlanProgressTests(unittest.TestCase):
         self.assertIn("worklog-detail-icon-btn", html)
         self.assertIn("wld-download-btn", html)
         self.assertIn("downloadWorklogDetailCSV", html)
+        # Drawer assignee column + lime-green filter-match highlight
+        self.assertIn(">Assignee<", html)
+        self.assertIn("wld-row-matches-filters", html)
+        # Main report custom From/To date inputs
+        self.assertIn('id="df-custom-from"', html)
+        self.assertIn('id="df-custom-to"', html)
 
     def test_build_worklog_detail_for_range_uses_custom_dates(self):
         """build_worklog_detail_for_range returns per-subtask rows for arbitrary date range."""
@@ -1019,23 +1025,48 @@ class MonthlyEpicPlanProgressTests(unittest.TestCase):
             keys = {r["issue_key"] for r in rows}
             self.assertIn("O2-WLD-S1-T1", keys)
             self.assertIn("O2-WLD-S1-B1", keys)
-            # New fields should be present
+            # New fields should be present (incl. assignee + filter-match flags)
             for r in rows:
                 self.assertIn("start_date", r)
                 self.assertIn("due_date", r)
                 self.assertIn("total_hours_logged", r)
                 self.assertIn("worklogs", r)
                 self.assertIsInstance(r["worklogs"], list)
+                self.assertIn("assignee", r)
+                self.assertIn("matches_filters", r)
+                self.assertIn("matches_bug_subtask", r)
+                self.assertIn("matches_on_hold", r)
+                self.assertIn("matches_assignees", r)
+                # With no filters narrowing, every row should be a match.
+                self.assertTrue(r["matches_filters"])
+                self.assertTrue(r["matches_bug_subtask"])
 
-            # Exclude bug subtasks
+            # Exclude bug subtasks: drawer still returns the full universe so the
+            # UI can show all candidates, but bug-subtask rows must be flagged as
+            # *not* matching the active filters (so they render unhighlighted).
             rows_no_bug = build_worklog_detail_for_range(
                 db_path, "run-1",
                 date(2026, 3, 1), date(2026, 3, 31),
                 include_bug_subtasks=False,
             )
-            keys_no_bug = {r["issue_key"] for r in rows_no_bug}
-            self.assertIn("O2-WLD-S1-T1", keys_no_bug)
-            self.assertNotIn("O2-WLD-S1-B1", keys_no_bug)
+            by_key = {r["issue_key"]: r for r in rows_no_bug}
+            self.assertIn("O2-WLD-S1-T1", by_key)
+            self.assertIn("O2-WLD-S1-B1", by_key)
+            self.assertTrue(by_key["O2-WLD-S1-T1"]["matches_bug_subtask"])
+            self.assertTrue(by_key["O2-WLD-S1-T1"]["matches_filters"])
+            self.assertFalse(by_key["O2-WLD-S1-B1"]["matches_bug_subtask"])
+            self.assertFalse(by_key["O2-WLD-S1-B1"]["matches_filters"])
+
+            # Assignee filter: only rows assigned to the selected names match.
+            rows_assignee = build_worklog_detail_for_range(
+                db_path, "run-1",
+                date(2026, 3, 1), date(2026, 3, 31),
+                include_bug_subtasks=True,
+                selected_assignees={"Nobody Here"},
+            )
+            for r in rows_assignee:
+                self.assertFalse(r["matches_assignees"])
+                self.assertFalse(r["matches_filters"])
 
             # Date range with no worklogs (Feb) — hours should be 0
             rows_feb = build_worklog_detail_for_range(
