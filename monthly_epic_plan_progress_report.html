@@ -2561,6 +2561,254 @@
       font-size: 0.86rem;
       font-style: italic;
     }
+
+    /* ── Worklog Detail Drawer ────────────────────────────── */
+    .worklog-detail-icon-btn {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      width: 30px;
+      height: 30px;
+      border-radius: 8px;
+      border: 1px solid #cbd5e1;
+      background: #f8fafc;
+      color: var(--accent);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.14s, border-color 0.14s, color 0.14s;
+    }
+    .worklog-detail-icon-btn:hover { background: #e0eefa; border-color: var(--accent); }
+    .worklog-detail-icon-btn .material-symbols-outlined { font-size: 17px; }
+
+    .worklog-detail-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(14, 30, 50, 0.34);
+      z-index: 1260;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease;
+    }
+    .worklog-detail-overlay.is-open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .worklog-detail-drawer {
+      position: fixed;
+      top: 0;
+      right: 0;
+      width: min(var(--worklog-detail-width, 960px), 100vw);
+      height: 100vh;
+      background: #fff;
+      border-left: 1px solid var(--line);
+      box-shadow: -18px 0 52px rgba(15, 23, 42, 0.2);
+      transform: translateX(100%);
+      transition: transform 0.24s ease;
+      display: flex;
+      flex-direction: column;
+    }
+    .worklog-detail-overlay.is-open .worklog-detail-drawer { transform: translateX(0); }
+    .worklog-detail-resize {
+      position: absolute;
+      left: -6px;
+      top: 0;
+      width: 12px;
+      height: 100%;
+      cursor: ew-resize;
+      background: transparent;
+    }
+    .worklog-detail-resize::after {
+      content: "";
+      position: absolute;
+      left: 5px;
+      top: 18px;
+      bottom: 18px;
+      width: 2px;
+      border-radius: 999px;
+      background: #cbd5e1;
+    }
+    .worklog-detail-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 16px 18px 12px;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(180deg, #fbfdff, #f3f8fd);
+      flex: 0 0 auto;
+    }
+    .worklog-detail-title {
+      color: var(--title);
+      font-size: 1.05rem;
+      font-weight: 850;
+      line-height: 1.25;
+    }
+    .worklog-detail-subtitle {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 0.84rem;
+      font-weight: 600;
+    }
+    .worklog-detail-header-btns {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: 0 0 auto;
+    }
+    .worklog-detail-fullwidth-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 9px;
+      border: 1px solid #cbd5e1;
+      background: #fff;
+      color: #334155;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.14s;
+    }
+    .worklog-detail-fullwidth-btn:hover { background: #f0f9ff; }
+    .worklog-detail-fullwidth-btn .material-symbols-outlined { font-size: 19px; }
+    .worklog-detail-close {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      border: 1px solid #cbd5e1;
+      background: #fff;
+      color: #334155;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .worklog-detail-close:hover { background: #fef2f2; border-color: #fecaca; color: #b91c1c; }
+    .worklog-detail-close .material-symbols-outlined { font-size: 20px; }
+
+    .worklog-detail-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 18px;
+      border-bottom: 1px solid #e8eef4;
+      background: #fafcff;
+      flex: 0 0 auto;
+      flex-wrap: wrap;
+    }
+    .worklog-detail-search {
+      flex: 1 1 200px;
+      min-width: 0;
+      height: 34px;
+      border: 1px solid #c0ccd8;
+      border-radius: 8px;
+      padding: 0 10px;
+      font-size: 0.84rem;
+      outline: none;
+    }
+    .worklog-detail-search:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(29,95,143,0.12); }
+    .worklog-detail-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .worklog-detail-chip {
+      border: 1px solid #cbd5e1;
+      border-radius: 999px;
+      background: #f8fafc;
+      color: #334155;
+      font-size: 0.78rem;
+      font-weight: 750;
+      padding: 4px 11px;
+      white-space: nowrap;
+    }
+    .worklog-detail-chip.accent { background: #e8f3fc; border-color: #bdd6ee; color: var(--accent); }
+
+    .worklog-detail-body {
+      flex: 1 1 auto;
+      overflow: auto;
+      min-height: 0;
+      padding: 14px 18px 18px;
+    }
+    .worklog-detail-table-wrap {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      overflow: auto;
+      background: #fff;
+    }
+    .worklog-detail-table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 860px;
+      font-size: 0.84rem;
+    }
+    .worklog-detail-table th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      background: #f8fafc;
+      color: #475569;
+      font-size: 0.78rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      white-space: nowrap;
+    }
+    .worklog-detail-table th.num { text-align: right; }
+    .worklog-detail-table td {
+      padding: 8px 12px;
+      border-bottom: 1px solid #f1f5f9;
+      color: var(--text);
+      vertical-align: middle;
+    }
+    .worklog-detail-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .worklog-detail-table tr:last-child td { border-bottom: none; }
+    .worklog-detail-table tr:hover td { background: #f7fbff; }
+    .worklog-detail-table .wl-jira-link {
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 700;
+      font-size: 0.82rem;
+    }
+    .worklog-detail-table .wl-jira-link:hover { text-decoration: underline; }
+    .worklog-detail-table .wl-type-bug {
+      background: #fef2f2;
+      color: #b91c1c;
+      border: 1px solid #fecaca;
+      border-radius: 6px;
+      padding: 1px 7px;
+      font-size: 0.73rem;
+      font-weight: 750;
+      white-space: nowrap;
+    }
+    .worklog-detail-table .wl-type-subtask {
+      background: #f0f9ff;
+      color: #0369a1;
+      border: 1px solid #bae6fd;
+      border-radius: 6px;
+      padding: 1px 7px;
+      font-size: 0.73rem;
+      font-weight: 750;
+      white-space: nowrap;
+    }
+    .worklog-detail-table .wl-logged-zero { color: #94a3b8; }
+    .worklog-detail-table .wl-logged-has { color: var(--good); font-weight: 700; }
+    .worklog-detail-tfoot td {
+      background: #f8fafc;
+      font-weight: 800;
+      border-top: 2px solid var(--line);
+      padding: 9px 12px;
+    }
+    .worklog-detail-empty {
+      padding: 32px 18px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
   </style>
 </head>
 <body>
@@ -2750,8 +2998,11 @@
             </div>
           </div>
         </div>
-        <div class="card">
+        <div class="card" style="position:relative;">
           <div class="label" id="kpi-actual-label">Logged this month</div>
+          <button class="worklog-detail-icon-btn" id="worklog-detail-open-btn" title="View subtask worklog breakdown" aria-label="Open subtask worklog detail">
+            <span class="material-symbols-outlined">table_chart</span>
+          </button>
           <div class="value" id="kpi-actual">0.00</div>
           <div class="kpi-progress-wrap">
             <div class="kpi-progress-label">
@@ -3206,6 +3457,36 @@
     </div>
   </div>
 
+  <!-- Worklog Detail Drawer (Logged this month) -->
+  <div class="worklog-detail-overlay" id="worklog-detail-overlay" role="dialog" aria-modal="true" aria-labelledby="worklog-detail-title">
+    <div class="worklog-detail-drawer" id="worklog-detail-drawer">
+      <div class="worklog-detail-resize" id="worklog-detail-resize" title="Drag to resize"></div>
+      <div class="worklog-detail-header">
+        <div>
+          <div class="worklog-detail-title" id="worklog-detail-title">
+            <span class="material-symbols-outlined" style="font-size:18px;vertical-align:-3px;margin-right:6px;">table_chart</span>Logged This Month — Subtask Breakdown
+          </div>
+          <div class="worklog-detail-subtitle" id="worklog-detail-subtitle">All in-scope subtasks and bug subtasks with planned and month-logged hours.</div>
+        </div>
+        <div class="worklog-detail-header-btns">
+          <button class="worklog-detail-fullwidth-btn" id="worklog-detail-fullwidth-btn" title="Toggle full width">
+            <span class="material-symbols-outlined">open_in_full</span>
+          </button>
+          <button class="worklog-detail-close" id="worklog-detail-close" aria-label="Close worklog detail panel">
+            <span class="material-symbols-outlined">close</span>
+          </button>
+        </div>
+      </div>
+      <div class="worklog-detail-toolbar" id="worklog-detail-toolbar">
+        <input type="search" class="worklog-detail-search" id="worklog-detail-search" placeholder="Search by key, summary, story, or epic…" autocomplete="off" aria-label="Search subtasks">
+        <div class="worklog-detail-chips" id="worklog-detail-chips"></div>
+      </div>
+      <div class="worklog-detail-body" id="worklog-detail-body">
+        <div class="worklog-detail-empty">Load the report to view subtask worklog data.</div>
+      </div>
+    </div>
+  </div>
+
   <!-- Head Count Drawer -->
   <div class="stat-drawer-overlay" id="headcount-overlay" role="dialog" aria-modal="true" aria-labelledby="hc-drawer-title-text">
     <div class="stat-drawer" id="headcount-drawer">
@@ -3353,6 +3634,15 @@
       estimateDetailToggleNote: document.getElementById("estimate-detail-toggle-note"),
       estimateDetailClose: document.getElementById("estimate-detail-close"),
       estimateDetailBody: document.getElementById("estimate-detail-body"),
+      worklogDetailOverlay: document.getElementById("worklog-detail-overlay"),
+      worklogDetailDrawer: document.getElementById("worklog-detail-drawer"),
+      worklogDetailResize: document.getElementById("worklog-detail-resize"),
+      worklogDetailClose: document.getElementById("worklog-detail-close"),
+      worklogDetailFullwidthBtn: document.getElementById("worklog-detail-fullwidth-btn"),
+      worklogDetailBody: document.getElementById("worklog-detail-body"),
+      worklogDetailSearch: document.getElementById("worklog-detail-search"),
+      worklogDetailChips: document.getElementById("worklog-detail-chips"),
+      worklogDetailOpenBtn: document.getElementById("worklog-detail-open-btn"),
       dfToggleStart: document.getElementById("df-toggle-start"),
       dfToggleEnd: document.getElementById("df-toggle-end"),
       dfToggleRange: document.getElementById("df-toggle-range"),
@@ -4276,6 +4566,137 @@
       if (els.estimateDetailIncludeBugs) els.estimateDetailIncludeBugs.checked = false;
       document.body.style.overflow = "";
     }
+
+    // ── Worklog Detail Drawer ──────────────────────────────────────────────────
+    let _worklogDetailIsFullWidth = false;
+
+    function openWorklogDetail() {
+      if (!els.worklogDetailOverlay || !latestPayload) return;
+      renderWorklogDetail("");
+      els.worklogDetailOverlay.classList.add("is-open");
+      document.body.style.overflow = "hidden";
+      if (els.worklogDetailSearch) { els.worklogDetailSearch.value = ""; els.worklogDetailSearch.focus(); }
+    }
+
+    function closeWorklogDetail() {
+      if (!els.worklogDetailOverlay) return;
+      els.worklogDetailOverlay.classList.remove("is-open");
+      document.body.style.overflow = "";
+      _worklogDetailIsFullWidth = false;
+      if (els.worklogDetailDrawer) els.worklogDetailDrawer.style.setProperty("--worklog-detail-width", "");
+    }
+
+    function toggleWorklogDetailFullWidth() {
+      if (!els.worklogDetailDrawer) return;
+      _worklogDetailIsFullWidth = !_worklogDetailIsFullWidth;
+      if (_worklogDetailIsFullWidth) {
+        els.worklogDetailDrawer.style.setProperty("--worklog-detail-width", "100vw");
+        if (els.worklogDetailFullwidthBtn) {
+          els.worklogDetailFullwidthBtn.querySelector(".material-symbols-outlined").textContent = "close_fullscreen";
+          els.worklogDetailFullwidthBtn.title = "Restore width";
+        }
+      } else {
+        els.worklogDetailDrawer.style.setProperty("--worklog-detail-width", "");
+        if (els.worklogDetailFullwidthBtn) {
+          els.worklogDetailFullwidthBtn.querySelector(".material-symbols-outlined").textContent = "open_in_full";
+          els.worklogDetailFullwidthBtn.title = "Toggle full width";
+        }
+      }
+    }
+
+    function renderWorklogDetail(searchQuery) {
+      if (!els.worklogDetailBody || !latestPayload) return;
+      const rows = Array.isArray(latestPayload.subtask_worklog_detail) ? latestPayload.subtask_worklog_detail : [];
+      const query = String(searchQuery || "").trim().toLowerCase();
+
+      const filtered = query
+        ? rows.filter((r) => {
+            return (
+              String(r.issue_key || "").toLowerCase().includes(query) ||
+              String(r.summary || "").toLowerCase().includes(query) ||
+              String(r.story_key || "").toLowerCase().includes(query) ||
+              String(r.epic_key || "").toLowerCase().includes(query)
+            );
+          })
+        : rows;
+
+      // Summary chips
+      if (els.worklogDetailChips) {
+        const totalEstimate = rows.reduce((s, r) => s + Number(r.original_estimate_hours || 0), 0);
+        const totalLogged = rows.reduce((s, r) => s + Number(r.month_logged_hours || 0), 0);
+        const bugCount = rows.filter((r) => String(r.issue_type || "").toLowerCase() === "bug subtask").length;
+        const suffixShort = unit === "days" ? "d" : "h";
+        const toDisp = (h) => unit === "days" ? formatNumber(h / (latestPayload.meta && latestPayload.meta.hours_per_day || 8)) : formatNumber(h);
+        els.worklogDetailChips.innerHTML =
+          '<span class="worklog-detail-chip">' + rows.length + ' subtasks' + (query ? ' (' + filtered.length + ' shown)' : '') + '</span>' +
+          '<span class="worklog-detail-chip">Estimated: ' + toDisp(totalEstimate) + ' ' + suffixShort + '</span>' +
+          '<span class="worklog-detail-chip accent">Logged this month: ' + toDisp(totalLogged) + ' ' + suffixShort + '</span>' +
+          (bugCount > 0 ? '<span class="worklog-detail-chip">' + bugCount + ' bug subtasks</span>' : '');
+      }
+
+      const month = latestPayload.month || "";
+      const monthLabel = month ? ' (' + month + ')' : '';
+      const hpd = (latestPayload.meta && latestPayload.meta.hours_per_day) || 8;
+
+      if (!filtered.length) {
+        els.worklogDetailBody.innerHTML = '<div class="worklog-detail-empty">No subtasks found' + (query ? ' matching "' + esc(query) + '".' : '.') + '</div>';
+        return;
+      }
+
+      const suffixShort = unit === "days" ? "d" : "h";
+      const toDisp = (h) => formatNumber(unit === "days" ? h / hpd : h) + ' ' + suffixShort;
+
+      let totalEst = 0, totalLogged2 = 0;
+      let tbody = filtered.map((r) => {
+        const ik = String(r.issue_key || "");
+        const url = String(r.jira_url || "");
+        const itype = String(r.issue_type || "");
+        const isBug = itype.toLowerCase() === "bug subtask";
+        const est = Number(r.original_estimate_hours || 0);
+        const logged = Number(r.month_logged_hours || 0);
+        totalEst += est;
+        totalLogged2 += logged;
+        const keyCell = url
+          ? '<a class="wl-jira-link" href="' + esc(url) + '" target="_blank" rel="noopener">' + esc(ik) + '&nbsp;<span class="material-symbols-outlined" style="font-size:12px;vertical-align:-1px;">open_in_new</span></a>'
+          : '<span class="wl-jira-link" style="cursor:default;">' + esc(ik) + '</span>';
+        const typeCell = isBug
+          ? '<span class="wl-type-bug">Bug Subtask</span>'
+          : '<span class="wl-type-subtask">Sub-task</span>';
+        const loggedCls = logged > 0 ? "wl-logged-has" : "wl-logged-zero";
+        return '<tr>'
+          + '<td>' + keyCell + '</td>'
+          + '<td>' + typeCell + '</td>'
+          + '<td>' + esc(String(r.summary || "—")) + '</td>'
+          + '<td>' + (r.story_key ? esc(r.story_key) : '<span style="color:#94a3b8;">—</span>') + '</td>'
+          + '<td>' + (r.epic_key ? esc(r.epic_key) : '<span style="color:#94a3b8;">—</span>') + '</td>'
+          + '<td class="num">' + (est > 0 ? toDisp(est) : '<span style="color:#94a3b8;">—</span>') + '</td>'
+          + '<td class="num ' + loggedCls + '">' + toDisp(logged) + '</td>'
+          + '</tr>';
+      }).join("");
+
+      const tfoot = '<tfoot><tr class="worklog-detail-tfoot">'
+        + '<td colspan="5" style="font-weight:800;">Total (' + filtered.length + ' rows)</td>'
+        + '<td class="num">' + toDisp(totalEst) + '</td>'
+        + '<td class="num wl-logged-has">' + toDisp(totalLogged2) + '</td>'
+        + '</tr></tfoot>';
+
+      els.worklogDetailBody.innerHTML =
+        '<div class="worklog-detail-table-wrap">'
+        + '<table class="worklog-detail-table" aria-label="Subtask worklog breakdown">'
+        + '<thead><tr>'
+        + '<th>Jira Key</th>'
+        + '<th>Type</th>'
+        + '<th>Summary</th>'
+        + '<th>Story</th>'
+        + '<th>Epic</th>'
+        + '<th class="num">Estimated</th>'
+        + '<th class="num">Logged' + monthLabel + '</th>'
+        + '</tr></thead>'
+        + '<tbody>' + tbody + '</tbody>'
+        + tfoot
+        + '</table></div>';
+    }
+    // ── End Worklog Detail Drawer ──────────────────────────────────────────────
 
     function applyClientFilter() {
       if (!latestPayload) return;
@@ -5942,6 +6363,58 @@
         document.body.style.userSelect = "";
       });
     }
+
+    // Worklog detail drawer event listeners
+    if (els.worklogDetailOpenBtn) {
+      els.worklogDetailOpenBtn.addEventListener("click", openWorklogDetail);
+    }
+    if (els.worklogDetailClose) {
+      els.worklogDetailClose.addEventListener("click", closeWorklogDetail);
+    }
+    if (els.worklogDetailFullwidthBtn) {
+      els.worklogDetailFullwidthBtn.addEventListener("click", toggleWorklogDetailFullWidth);
+    }
+    if (els.worklogDetailOverlay) {
+      els.worklogDetailOverlay.addEventListener("click", (event) => {
+        if (event.target === els.worklogDetailOverlay) closeWorklogDetail();
+      });
+    }
+    if (els.worklogDetailResize && els.worklogDetailDrawer) {
+      let resizingWorklogDrawer = false;
+      const setWorklogDrawerWidth = (clientX) => {
+        const maxWidth = window.innerWidth;
+        const rawWidth = window.innerWidth - clientX;
+        const width = Math.max(520, Math.min(maxWidth, rawWidth));
+        els.worklogDetailDrawer.style.setProperty("--worklog-detail-width", width + "px");
+        _worklogDetailIsFullWidth = width >= window.innerWidth - 2;
+      };
+      els.worklogDetailResize.addEventListener("mousedown", (event) => {
+        resizingWorklogDrawer = true;
+        document.body.style.userSelect = "none";
+        event.preventDefault();
+      });
+      document.addEventListener("mousemove", (event) => {
+        if (!resizingWorklogDrawer) return;
+        setWorklogDrawerWidth(event.clientX);
+      });
+      document.addEventListener("mouseup", () => {
+        if (!resizingWorklogDrawer) return;
+        resizingWorklogDrawer = false;
+        document.body.style.userSelect = "";
+      });
+    }
+    if (els.worklogDetailSearch) {
+      els.worklogDetailSearch.addEventListener("input", () => {
+        renderWorklogDetail(els.worklogDetailSearch.value);
+      });
+    }
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        if (els.worklogDetailOverlay && els.worklogDetailOverlay.classList.contains("is-open")) {
+          closeWorklogDetail();
+        }
+      }
+    });
     [els.modeTkEpics, els.modeAllEpics, els.modeAllJiraEpics].forEach((btn) => {
       if (!btn) return;
       btn.addEventListener("click", () => {

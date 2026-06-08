@@ -2050,6 +2050,93 @@ def save_support_team(db_path: Path, members: list[str]) -> list[str]:
     return cleaned
 
 
+def _load_subtask_worklog_detail(
+    db_path: Path,
+    run_id: str,
+    subtask_keys_by_epic: dict[str, set[str]],
+    month_start: date,
+    month_end: date,
+    jira_base: str = "",
+) -> list[dict[str, Any]]:
+    """
+    Return per-subtask rows for the 'Logged this month' drawer.
+    Each row contains Jira key, issue type, summary, story key, epic key,
+    original estimate hours, and selected-month worklog hours.
+    """
+    issue_to_epic: dict[str, str] = {}
+    for ek, sk_set in subtask_keys_by_epic.items():
+        ek_up = _to_text(ek).upper()
+        for sk in sk_set:
+            sk_up = _to_text(sk).upper()
+            if sk_up:
+                issue_to_epic[sk_up] = ek_up
+
+    issue_keys = sorted(issue_to_epic)
+    if not issue_keys:
+        return []
+
+    issue_meta: dict[str, dict[str, Any]] = {}
+    month_logged_by_issue: dict[str, float] = defaultdict(float)
+
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        for chunk in _chunked(issue_keys, 400):
+            placeholders = ",".join("?" for _ in chunk)
+            for row in conn.execute(
+                f"""
+                SELECT issue_key, issue_type, summary, story_key, epic_key,
+                       parent_issue_key, original_estimate_hours
+                FROM canonical_issues
+                WHERE run_id = ? AND UPPER(issue_key) IN ({placeholders})
+                """,
+                [run_id, *chunk],
+            ).fetchall():
+                ik = _to_text(row["issue_key"]).upper()
+                if ik:
+                    issue_meta[ik] = dict(row)
+
+        wl_latest = conn.execute(
+            "SELECT run_id FROM canonical_worklogs ORDER BY rowid DESC LIMIT 1"
+        ).fetchone()
+        wl_run_id = wl_latest[0] if wl_latest else run_id
+        for chunk in _chunked(issue_keys, 400):
+            placeholders = ",".join("?" for _ in chunk)
+            for wl_row in conn.execute(
+                f"""
+                SELECT issue_key, SUM(hours_logged) AS total_logged
+                FROM canonical_worklogs
+                WHERE run_id = ? AND UPPER(issue_key) IN ({placeholders})
+                  AND started_date >= ? AND started_date <= ?
+                GROUP BY issue_key
+                """,
+                [wl_run_id, *chunk, month_start.isoformat(), month_end.isoformat()],
+            ).fetchall():
+                ik = _to_text(wl_row["issue_key"]).upper()
+                if ik:
+                    month_logged_by_issue[ik] = float(wl_row["total_logged"] or 0.0)
+
+    result: list[dict[str, Any]] = []
+    for ik in issue_keys:
+        meta = issue_meta.get(ik)
+        if not meta:
+            continue
+        epic_key = issue_to_epic.get(ik, "")
+        story_key = _to_text(meta.get("story_key")).upper() or _to_text(meta.get("parent_issue_key")).upper()
+        result.append({
+            "issue_key": ik,
+            "issue_type": _to_text(meta.get("issue_type")),
+            "summary": _to_text(meta.get("summary")),
+            "epic_key": epic_key,
+            "story_key": story_key,
+            "original_estimate_hours": _round_hours(float(meta.get("original_estimate_hours") or 0.0)),
+            "month_logged_hours": _round_hours(month_logged_by_issue.get(ik, 0.0)),
+            "jira_url": f"{jira_base}/browse/{ik}" if jira_base else "",
+        })
+
+    result.sort(key=lambda r: (_to_text(r["epic_key"]), _to_text(r["story_key"]), _to_text(r["issue_key"])))
+    return result
+
+
 def build_monthly_epic_plan_payload(
     db_path: Path,
     month: str,
@@ -2201,6 +2288,9 @@ def build_monthly_epic_plan_payload(
             include_bug_subtasks,
         )
         workforce = build_workforce_month_payload(db_path, month_start, month_end, run_id, selected_assignees=selected_assignees, capacity_profile_key=capacity_profile_key, jira_base=jira_base)
+        subtask_worklog_detail = _load_subtask_worklog_detail(
+            db_path, run_id, subtask_keys_by_epic, month_start, month_end, jira_base
+        )
         return {
             "month": month, "from_date": month_start.isoformat(), "to_date": month_end.isoformat(),
             "canonical_run_id": run_id, "selected_projects": sorted(selected_project_keys),
@@ -2209,6 +2299,7 @@ def build_monthly_epic_plan_payload(
             "epic_mode": epic_mode, "rows": rows, "by_project": by_project_rows,
             "totals": rounded_totals, "estimate_rollup": estimate_rollup,
             "excluded_epics": excluded_epics, "workforce": workforce,
+            "subtask_worklog_detail": subtask_worklog_detail,
             "meta": {
                 "hours_per_day": HOURS_PER_DAY,
                 "scope_basis": (
@@ -2543,6 +2634,9 @@ def build_monthly_epic_plan_payload(
         capacity_profile_key=capacity_profile_key,
         jira_base=jira_base,
     )
+    subtask_worklog_detail = _load_subtask_worklog_detail(
+        db_path, run_id, subtask_keys_by_epic, month_start, month_end, jira_base
+    )
     return {
         "month": month,
         "from_date": month_start.isoformat(),
@@ -2559,6 +2653,7 @@ def build_monthly_epic_plan_payload(
         "estimate_rollup": estimate_rollup,
         "excluded_epics": excluded_epics,
         "workforce": workforce,
+        "subtask_worklog_detail": subtask_worklog_detail,
         "meta": {
             "hours_per_day": HOURS_PER_DAY,
             "scope_basis": (

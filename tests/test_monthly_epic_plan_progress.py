@@ -898,6 +898,80 @@ class MonthlyEpicPlanProgressTests(unittest.TestCase):
         self.assertIn("_didAutoExclude", html)
         self.assertIn("setTimeout(loadSummary, 0)", html)
 
+    def test_subtask_worklog_detail_in_payload_and_html(self):
+        """Worklog detail drawer: payload carries subtask_worklog_detail list; HTML has icon + drawer."""
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            db_path = Path(td) / "assignee_hours_capacity.db"
+            _create_canonical_tables(db_path)
+            _add_estimate_rollup_tree(
+                db_path,
+                "O2-WLD",
+                epic_original=80,
+                story_rows=[
+                    (
+                        "S1",
+                        40,
+                        [
+                            ("T1", 16, 10, "Sub-task"),
+                            ("B1", 8, 4, "Bug Subtask"),
+                        ],
+                    ),
+                ],
+            )
+            payload = build_monthly_epic_plan_payload(
+                db_path,
+                "2026-03",
+                [_planner_row("O2-WLD", "WLD Epic", "2026-03-01", "2026-03-31")],
+                "run-1",
+                selected_projects={"O2"},
+            )
+            self.assertIn("subtask_worklog_detail", payload)
+            detail = payload["subtask_worklog_detail"]
+            self.assertIsInstance(detail, list)
+            self.assertEqual(len(detail), 2)
+            keys_in_detail = {r["issue_key"] for r in detail}
+            self.assertIn("O2-WLD-S1-T1", keys_in_detail)
+            self.assertIn("O2-WLD-S1-B1", keys_in_detail)
+            for r in detail:
+                self.assertIn("issue_type", r)
+                self.assertIn("summary", r)
+                self.assertIn("epic_key", r)
+                self.assertIn("story_key", r)
+                self.assertIn("original_estimate_hours", r)
+                self.assertIn("month_logged_hours", r)
+            t1 = next(r for r in detail if r["issue_key"] == "O2-WLD-S1-T1")
+            b1 = next(r for r in detail if r["issue_key"] == "O2-WLD-S1-B1")
+            self.assertEqual(t1["issue_type"], "Sub-task")
+            self.assertEqual(b1["issue_type"], "Bug Subtask")
+            self.assertAlmostEqual(t1["month_logged_hours"], 10.0, places=2)
+            self.assertAlmostEqual(b1["month_logged_hours"], 4.0, places=2)
+
+            # When include_bug_subtasks=False, Bug Subtask should not appear
+            payload_no_bug = build_monthly_epic_plan_payload(
+                db_path,
+                "2026-03",
+                [_planner_row("O2-WLD", "WLD Epic", "2026-03-01", "2026-03-31")],
+                "run-1",
+                selected_projects={"O2"},
+                include_bug_subtasks=False,
+            )
+            no_bug_detail = payload_no_bug["subtask_worklog_detail"]
+            self.assertEqual(len(no_bug_detail), 1)
+            self.assertEqual(no_bug_detail[0]["issue_type"], "Sub-task")
+
+        # HTML assertions
+        html_path = Path(__file__).resolve().parents[1] / "monthly_epic_plan_progress_report.html"
+        html = html_path.read_text(encoding="utf-8")
+        self.assertIn('id="worklog-detail-open-btn"', html)
+        self.assertIn('id="worklog-detail-overlay"', html)
+        self.assertIn('id="worklog-detail-drawer"', html)
+        self.assertIn("openWorklogDetail", html)
+        self.assertIn("closeWorklogDetail", html)
+        self.assertIn("renderWorklogDetail", html)
+        self.assertIn("subtask_worklog_detail", html)
+        self.assertIn("table_chart", html)
+        self.assertIn("worklog-detail-icon-btn", html)
+
 
 if __name__ == "__main__":
     unittest.main()
