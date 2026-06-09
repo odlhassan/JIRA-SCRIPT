@@ -1419,11 +1419,11 @@ def _build_html(payload: dict) -> str:
     .filter-option input[type="checkbox"] {{ width:16px; height:16px; margin:0; accent-color:#60a5fa; flex-shrink:0; cursor:pointer; }}
     .filter-option .filter-option-label {{ flex:1; cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; text-align:left !important; color:#e2e8f0 !important; font-size:.86rem !important; font-weight:500 !important; display:inline !important; text-transform:none !important; margin:0 !important; }}
     .filter-option.hidden {{ display:none !important; }}
-    .team-filter-menu {{ position:fixed !important; top:auto; left:auto; right:auto; bottom:auto; width:min(580px, calc(100vw - 32px)); max-height:min(75vh, 640px); margin:0; border:1px solid #314d7a; border-radius:14px; background:#0f1b32; box-shadow:0 12px 40px rgba(2,8,23,.6),0 0 0 1px rgba(96,165,250,.08); z-index:9999; display:none; flex-direction:column; }}
+    .team-filter-menu {{ position:fixed !important; top:auto; left:auto; right:auto; bottom:auto; width:min(580px, calc(100vw - 32px)); max-height:min(75vh, 640px); margin:0; border:1px solid #314d7a; border-radius:14px; background:#0f1b32; box-shadow:0 12px 40px rgba(2,8,23,.6),0 0 0 1px rgba(96,165,250,.08); z-index:9999; display:none; flex-direction:column; overflow:hidden; }}
     .team-filter-menu.open {{ display:flex; }}
-    .team-filter-menu .filter-search-wrap {{ padding:14px 16px 10px; }}
-    .team-filter-menu .filter-menu-head {{ padding:0 16px 10px; }}
-    .team-filter-menu .filter-options {{ max-height:none; flex:1; min-height:0; overflow-y:auto; padding:8px 14px 14px; display:grid; gap:14px; scrollbar-width:thin; scrollbar-color:#4f7fb8 #0b213e; }}
+    .team-filter-menu .filter-search-wrap {{ padding:14px 16px 10px; flex-shrink:0; }}
+    .team-filter-menu .filter-menu-head {{ padding:0 16px 10px; flex-shrink:0; }}
+    .team-filter-menu .filter-options {{ flex:1; min-height:0; overflow-y:auto; padding:8px 14px 14px; display:grid; gap:14px; scrollbar-width:thin; scrollbar-color:#4f7fb8 #0b213e; }}
     .team-filter-group {{ border:1px solid #263f66; border-radius:14px; background:linear-gradient(180deg,#10213d 0%,#0d1a31 100%); overflow:hidden; }}
     .team-filter-group.hidden {{ display:none; }}
     .team-filter-group-head {{ display:flex; align-items:flex-start; justify-content:space-between; gap:14px; padding:14px 16px; border-bottom:1px solid #21385e; background:rgba(96,165,250,.06); }}
