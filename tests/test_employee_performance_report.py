@@ -383,7 +383,7 @@ class EmployeePerformanceReportTests(unittest.TestCase):
         self.assertIn("if (!isSubtaskPerformanceType(issueType)) return false;", html)
         self.assertIn("const leaveIssueKeySet = new Set(", html)
         self.assertIn("function isLeaveIssueKey(issueKey)", html)
-        self.assertIn("function datePairContained(start, due, from, to)", html)
+        self.assertIn("function datePairOverlaps(start, due, from, to)", html)
         self.assertIn("function buildQualifyingEpicKeySet(from, to)", html)
         self.assertIn('epicDateBasisMode === "subtask_dates"', html)
         self.assertIn("return qualifyingEpicKeys.has(resolveParentEpicKey(r));", html)

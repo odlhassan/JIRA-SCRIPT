@@ -5455,7 +5455,7 @@ def _canonical_compute_scoped_subtasks(
         issue_rows = [dict(row) for row in conn.execute(
             """
             SELECT issue_key, project_key, issue_type, assignee, start_date, due_date,
-                   original_estimate_hours, epic_key
+                   original_estimate_hours, parent_issue_key, story_key, epic_key
             FROM canonical_issues
             WHERE run_id = ?
             """,
@@ -5480,10 +5480,10 @@ def _canonical_compute_scoped_subtasks(
 
     issues_by_key = {_to_text(issue.get("issue_key")).upper(): issue for issue in issue_rows if _to_text(issue.get("issue_key"))}
 
-    def _date_pair_contained(issue: dict[str, object]) -> bool:
+    def _date_pair_overlaps(issue: dict[str, object]) -> bool:
         start_day = _parse_iso_date(_to_text(issue.get("start_date")))
         due_day = _parse_iso_date(_to_text(issue.get("due_date")))
-        return bool(start_day and due_day and from_date <= start_day <= to_date and from_date <= due_day <= to_date)
+        return bool(start_day and due_day and start_day <= to_date and due_day >= from_date)
 
     def _epic_key_for_issue(issue: dict[str, object]) -> str:
         issue_key = _to_text(issue.get("issue_key")).upper()
@@ -5508,9 +5508,9 @@ def _canonical_compute_scoped_subtasks(
             issue_type = _to_text(issue.get("issue_type")).lower()
             qualifies = False
             if scope_mode == "tk_dates":
-                qualifies = ("epic" in issue_type or "story" in issue_type) and _date_pair_contained(issue)
+                qualifies = ("epic" in issue_type or "story" in issue_type) and _date_pair_overlaps(issue)
             else:
-                qualifies = _canonical_is_scoped_subtask_issue_type(issue.get("issue_type")) and _date_pair_contained(issue)
+                qualifies = _canonical_is_scoped_subtask_issue_type(issue.get("issue_type")) and _date_pair_overlaps(issue)
             if not qualifies:
                 continue
             epic_key = _epic_key_for_issue(issue)
@@ -5537,7 +5537,7 @@ def _canonical_compute_scoped_subtasks(
             if issue_key not in issue_keys_with_in_range_worklogs:
                 continue
         elif scope_mode == "subtask_dates":
-            if not _date_pair_contained(issue):
+            if not _date_pair_overlaps(issue):
                 continue
         else:
             epic_key = _epic_key_for_issue(issue)
@@ -30164,10 +30164,10 @@ def _tcp_epics_in_range(conn, canonical_run_id: str, from_date: str, to_date: st
     Modes (controlled by the top-bar "Epics by ..." toggle):
 
     - ``"story"`` (default, "Epics by TK Dates"): include the epic if **any of its stories**
-      has both ``start_date`` and ``due_date`` falling fully inside the user range
-      ``[from_date, to_date]``. A story is linked to its epic via ``story.epic_key``.
+      matches the selected ``date_match`` rule. With the default ``"overlap"``, story
+      dates only need to overlap ``[from_date, to_date]``.
     - ``"subtask"`` ("Epics by Subtask Dates"): include the epic if **any of its subtasks**
-      has both ``start_date`` and ``due_date`` falling fully inside the user range.
+      matches the selected ``date_match`` rule.
       Subtask → epic linkage is resolved either directly via ``subtask.epic_key`` or
       indirectly via ``subtask.parent_issue_key`` → parent story's ``epic_key``.
 

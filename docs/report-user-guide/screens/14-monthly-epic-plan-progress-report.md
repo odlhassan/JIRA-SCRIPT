@@ -3,11 +3,11 @@
 ## Business Logic
 
 - The report compares TK planner epics for the selected month against Jira execution data and a canonical worklog snapshot.
-- Epic scope starts from the selected month and the chosen epic mode, then adds unresolved brought-forward epics that still fall inside the overdue lookback threshold.
+- Epic scope starts from the selected date range and the chosen epic mode, then adds unresolved brought-forward epics that still fall inside the overdue lookback threshold. A non-overdue epic is in scope when its approved epic date range overlaps the selected range. In `All Jira Epics` + `TK dates`, story-date overlap can also bring the epic into scope so logged actuals match Team Capacity Planner's TK Dates rule.
 - The Estimate hierarchy stats only use the planned-this-month epic subset. Brought-forward overdue epics remain visible elsewhere in the report but do not inflate month-plan estimate bars.
 - `Month Plan` is a reference bar based on the executive planned-hours total for the same visible month-planned epic set.
 - `Epic Estimate`, `Story Estimate`, and `Subtask Estimate` each show a separate Jira original-estimate layer rather than replacing the main planned-hours calculation.
-- `Subtask Logged` sums selected-month worklog hours on in-scope subtasks. The top-level `Include Bug Subtasks` control is on by default; when it is turned off, Bug Subtask rows are removed before planned-hour, logged-hour, child-row, Gantt/worklog-marker, estimate-rollup, and project-card totals are calculated.
+- `Subtask Logged` sums selected-range worklog hours on in-scope subtasks whose `canonical_worklogs.issue_assignee` matches the selected employees. In `TK dates`, in-scope subtasks roll up to selected epics. In `Subtask dates`, in-scope subtasks must both roll up to selected epics and have planned dates that overlap the selected range. The top-level `Include Bug Subtasks` control is on by default; when it is turned off, Bug Subtask rows are removed before planned-hour, logged-hour, child-row, Gantt/worklog-marker, estimate-rollup, and project-card totals are calculated.
 - `Story Overrun` on the main chart is `max(sum(selected-month included-subtask logged hours for a story) - story original estimate, 0)`. With the default bug toggle on, included subtasks means regular subtasks plus Bug Subtask issues. With the toggle off, included subtasks means regular subtasks only.
 - Clicking an estimate bar opens the estimate detail drawer scoped to the currently visible report rows.
 - The Story Overrun drawer stays at story level. Each row shows the story Jira original estimate, the story TK planned value when a planner-backed Jira link exists, and the story's summed subtask logged hours.
@@ -62,7 +62,7 @@ The estimate hierarchy bar chart is a fast comparison layer. Each bar opens a dr
 
 The page-level bug-subtask toggle is a server-side scope switch. It defaults on because Jira recon exports commonly include both `Sub-task` and `Bug Subtask` issue types. Turning it off re-fetches the payload with Bug Subtask issue keys excluded from the subtask-to-epic map, so planned hours, actual worklogs, estimate hierarchy stats, child rows, and Gantt worklog indicators all stay internally consistent.
 
-Jira CSV reconciliation has one important caveat: the downloaded `Σ Time Spent` column is Jira's aggregate lifetime time-spent value for each returned issue, while the EPR `Logged this month` KPI uses `canonical_worklogs.started_date` inside the selected month. A Jira CSV filtered by issue start/due dates can therefore be higher than EPR if the returned issues contain worklogs from other months, or if the report is in `TK EPICS` scope while the CSV includes all Jira issues. To compare like-for-like, use `ALL JIRA EPICS`, keep `Include Bug Subtasks` on, and compare against a Jira export built from worklog dates for the same calendar month.
+Jira CSV reconciliation has one important caveat: Jira's time-spent export columns can represent lifetime time spent for each returned issue, while the EPR `Logged this month` KPI uses `canonical_worklogs.started_date` inside the selected range. A Jira CSV filtered by issue start/due dates can therefore be higher than EPR if the returned issues contain worklogs from other months, or if the report is in `TK EPICS` scope while the CSV includes all Jira issues. To compare like-for-like, use `ALL JIRA EPICS`, choose the same logged-hours scope (`TK dates` or `Subtask dates`), keep `Include Bug Subtasks` on, and compare against a Jira export built from worklog dates for the same date range.
 
 ## Front-end UI Fields
 
@@ -70,11 +70,12 @@ Jira CSV reconciliation has one important caveat: the downloaded `Σ Time Spent`
 |---|---|---|---|---|
 | Controls | Month | Month input | Current month | Defines the reporting month used for epic scope and selected-month worklogs. |
 | Controls | Projects | Multi-select dropdown | All projects | Limits the payload to chosen project keys. |
-| Controls | Employees | Hierarchical checkbox dropdown | Team-scope default selection | Limits workforce and leave calculations to chosen assignees. |
+| Controls | Employees | Hierarchical checkbox dropdown | Team-scope default selection | Limits logged actual hours, workforce, and leave calculations to chosen assignees. |
 | Controls | Effort unit | Radio buttons | Hours | Switches visible numeric values between hours and days. |
-| Controls | Epic scope | Segmented buttons | TK planner epics | Chooses planner-only, all epics, or all Jira epics mode. |
+| Controls | Epic scope | Segmented buttons | TK planner epics | Chooses planner-only, all epics, or all Jira epics mode. All modes use approved epic-date overlap for non-overdue epics; All Jira Epics + TK dates also includes epics with story-date overlap. |
 | Controls | Overdue lookback | Numeric input | 30 days | Sets how far back unresolved epics can be pulled forward into scope. |
 | Controls | Include Bug Subtasks | Checkbox toggle | Checked | Re-fetches the report with Bug Subtask planned and logged hours included or excluded. Checked by default to match Jira recon exports that include bug subtasks. |
+| Controls | Logged hours scope | Segmented buttons | TK dates | `TK dates` counts selected-range worklogs from subtasks under selected epics. `Subtask dates` additionally requires each subtask planned date range to overlap the selected range. Both modes are available for All Jira Epics. |
 | Controls | Date toggles | Toggle controls | Default mode | Applies start-date, due-date, or range client-side filtering. |
 | Estimate hierarchy stats | Month Plan | Clickable bar | Calculated | Opens the drawer with visible in-month epic rows and their planned-vs-logged context. |
 | Estimate hierarchy stats | Epic Estimate | Clickable bar | Calculated | Opens epic Jira original-estimate rows. |
@@ -109,7 +110,7 @@ Jira CSV reconciliation has one important caveat: the downloaded `Σ Time Spent`
 | Worklog Detail drawer | Logged | Numeric column / expand button | Derived | Worklog hours within the selected From/To date range. When individual worklog entries exist, the cell is a clickable button; clicking expands an inline nested table showing each worklog's date, author, and hours. |
 
 | Epics table | TK Epic Budget | Numeric column | Derived | Shows epic-level TK budget in the selected unit. Blank for rows without planner-backed TK budget. |
-| Epics table | Month Plan / Month Actual / Total Actual | Numeric columns | Derived | Show selected-month plan, selected-month worklogs, and total logged work across the epic. |
+| Epics table | Month Plan / Month Actual / Total Actual | Numeric columns | Derived | Show selected-month plan, selected-month worklogs for the selected assignees, and total logged work across the epic. |
 | Team Roster drawer | Include Support Team | Checkbox | Unchecked | When on, support members are selectable and feed Employee Stats + Resource Planning; when off, support members are force-unchecked (dev-only scope). |
 | Team Roster drawer | Member / team checkboxes | Checkboxes | Active dev selected, support and before-month resignations unchecked | Selecting/clearing members defines the workforce scope. `Apply selection` re-fetches the payload with the chosen assignees and preserves manually selected employees, including employees with resignation records. |
 | Employee Stats | Head Count / Capacity / Leaves / Availability | Read-only cards | Calculated | Reflect the roster selection (selected count, scaled capacity, selected members' planned leave). |
@@ -136,7 +137,7 @@ Jira CSV reconciliation has one important caveat: the downloaded `Σ Time Spent`
 |---|---|---|
 | `canonical_refresh_state` | `active_run_id`, `last_success_run_id`, `updated_at_utc` | Identifies the Jira snapshot that should drive the current payload. |
 | `canonical_issues` | `run_id`, `issue_key`, `project_key`, `issue_type`, `summary`, `status`, `assignee`, `start_date`, `due_date`, `resolved_stable_since_date`, `original_estimate_hours`, `total_hours_logged`, `parent_issue_key`, `story_key`, `epic_key` | Supplies epic, story, subtask, and bug-subtask hierarchy plus Jira original estimates and dates. |
-| `canonical_worklogs` | `run_id`, `worklog_id`, `issue_key`, `project_key`, `worklog_author`, `issue_assignee`, `started_date`, `hours_logged` | Supplies selected-month logged hours for in-scope subtasks. |
+| `canonical_worklogs` | `run_id`, `worklog_id`, `issue_key`, `project_key`, `worklog_author`, `issue_assignee`, `started_date`, `hours_logged` | Supplies selected-range logged hours for in-scope subtasks. |
 | `epics_management` | `id`, `epic_key`, `project_key`, `project_name`, `product_category`, `component`, `epic_name`, `delivery_status`, `jira_url`, `epic_plan_json`, planner phase JSON columns | Supplies TK planned effort and Jira-link mappings for epic/story rows shown in the drawer. |
 
 ## Data Flow
@@ -145,8 +146,8 @@ Jira CSV reconciliation has one important caveat: the downloaded `Σ Time Spent`
 2. The page calls `/api/monthly-epic-plan-progress/summary` on `report_server.py`.
 3. `report_server.py` delegates to `monthly_epic_plan_progress_service.py`.
 4. The service reads the active canonical snapshot from `canonical_refresh_state`, then loads planner-backed epics from `epics_management`.
-5. The service reads matching epic, story, subtask, and bug-subtask rows from `canonical_issues` and selected-month worklogs from `canonical_worklogs`; if `include_bug_subtasks=0`, Bug Subtask issue keys are excluded before the worklog lookup and rollup calculations.
-6. The service builds top-line totals, estimate hierarchy rollups, and detail rows by metric.
+5. The service reads matching epic, story, subtask, and bug-subtask rows from `canonical_issues` and selected-range worklogs from `canonical_worklogs`; if `include_bug_subtasks=0`, Bug Subtask issue keys are excluded before the worklog lookup and rollup calculations.
+6. The service builds subtask worklog detail for the selected epic/date mode, applies the worklog-level `issue_assignee`, bug-subtask, and on-hold filters to that detail, then recalculates Month Actual at executive, project, and epic-row level from the filtered rows.
 7. For Story Overrun rows, the service keeps the current-scope combined overrun fields and also stores regular-subtask-only logged and overrun values for drawer filtering.
 8. The browser renders the bar chart from the current-scope main rollup fields.
 9. Changing the page-level `Include Bug Subtasks` toggle calls the summary API again with `include_bug_subtasks=1` or `0`.

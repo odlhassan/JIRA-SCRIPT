@@ -6,7 +6,7 @@ INFO_IDS: `employee.team_avg_score`, `employee.advanced_score_sum`, `employee.ca
 
 ## Business Logic
 
-- Date scope defaults to the current month. `Epics By TK Dates` includes epics whose Epic or Story/TK start and due dates are fully inside the selected range. `Epics By Subtask Dates` includes subtasks whose planned start and due dates are fully inside the selected range.
+- Date scope defaults to the current month. `Epics By TK Dates` includes epics whose Epic or Story/TK date range overlaps the selected range. `Epics By Subtask Dates` includes subtasks whose planned date range overlaps the selected range. Worklogs still count only when their worklog date is inside the selected range unless Extended Actuals is enabled.
 - Team filtering supports both team-level and member-level selection: selected teams expand to their configured members from `performance_teams.assignees_json`, but individual members can be excluded via per-member checkboxes. Only non-excluded assignees from selected teams remain in the computed leaderboard, KPI set, and scoped subtasks API call.
 - The Teams filter uses a custom menu rather than a browser-native dropdown. It groups members under their team, shows the team leader and member count, and decorates members only when extra context is useful: `Resigned` for resigned resources and `Support team` for support-roster members. Each member row has a checkbox; unchecking a member excludes them from the report while keeping the rest of the team visible. The `Include team` checkbox acts as a master toggle for all members in that team and shows an indeterminate state when some members are excluded.
 - Resignation status is read from `performance_resource_resignations`: a row means `Resigned` and may include a resignation date; active/non-resigned members intentionally show no badge to keep the menu clean.
@@ -27,7 +27,7 @@ INFO_IDS: `employee.team_avg_score`, `employee.advanced_score_sum`, `employee.ca
 | --- | --- |
 | Team `Fullstack Team`, leader `Ameer Hamza Khan`, members `Ameer Hamza Khan`, `Sarmad Sabir`; `Sarmad Sabir` in `support_team_config`; no resignation row | Teams menu shows a `Fullstack Team` card, both members nested below it, and `Sarmad Sabir` with only a `Support team` chip. |
 | Member `Maria Sharafat` appears in `performance_resource_resignations` with `2026-04-06` | Member row shows `Resigned 6 Apr 2026`. |
-| Date range `1 Mar` to `31 Mar`, `Epics By TK Dates`, selected project `O2` and selected team `SQA` | Only SQA members with qualifying O2 work in March contribute to scorecards, leaderboard, detail drawer, and scoped subtask actuals. |
+| Date range `1 Mar` to `31 Mar`, `Epics By TK Dates`, selected project `O2` and selected team `SQA` | Only SQA members with qualifying O2 work whose epic/story dates overlap March contribute to scorecards, leaderboard, detail drawer, and scoped subtask actuals. |
 
 ## Explanations
 
@@ -121,7 +121,7 @@ The Teams filter is still backed by a hidden multi-select (`#teams`) so existing
 3. `_load_performance_resource_resignation_map()` reads resignation records for configured team members, and `_load_support_team_members()` reads `support_team_config` without creating tables.
 4. `_build_payload()` embeds teams, `resource_records`, and `support_team_members` into the report JSON.
 5. `_build_html()` emits the custom Teams filter. The hidden `#teams` select stores selected team names; `setupTeamFilterDropdown()` renders team cards and member chips and keeps the select synchronized.
-6. Browser `renderAll()` loads scoped subtasks for current filters, computes assignee metrics, applies team/project/date filters, and renders scorecards, leaderboard, charts, and drilldowns.
+6. Browser `renderAll()` loads scoped subtasks for current filters, computes assignee metrics, applies team/project/date filters, and renders scorecards, leaderboard, charts, and drilldowns. Scoped subtask filtering uses date-overlap rules shared with Monthly Epic Plan Progress and Team Capacity Planner.
 
 ## Drawer Notes
 

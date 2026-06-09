@@ -7,7 +7,7 @@
 ## Changelog
 
 - **2026-06-09**: **RLT (Leaves) project excluded by default.** On page load and "Select All"/"All Projects" actions, RLT is unchecked. Its data is excluded from planning and actual stats but still counts in capacity/availability calculations. The `/api/projects` endpoint now returns `is_leaves_project` per project.
-- **2026-06-09**: Added **Logged hours scope** toggle (TK dates / Subtask dates) in the header filters. TK dates scopes by epic TK approved dates (default for TK EPICS mode), Subtask dates scopes by subtask's own planned dates (default for ALL JIRA EPICS mode). Both options available when epic scope = ALL EPICS. Executive card and drawer now use the same scoping logic, fixing the mismatch between the executive summary's "Logged this month" and the drawer's "Logged in range".
+- **2026-06-09**: Standardized **Logged hours scope** (TK dates / Subtask dates) in the header filters. TK dates scopes by selected epics whose approved date ranges overlap the report range; Subtask dates additionally requires each subtask's own planned date range to overlap the report range. Both options are available for ALL JIRA EPICS so management can choose epic-date or subtask-date scoping without changing the visible stats/charts.
 - **2026-06-09**: Replaced the Month selector (`<input type="month">`) in the header controls with a **Date Range** selector (From/To `<input type="date">` pair). Removed the separate "Or use a custom date range" section below the SHOW EPICS toggles. The date range now initializes to the current month boundaries. API backward-compatible via a `_monthShim` property that derives `YYYY-MM` from the From date.
 
 ---

@@ -2694,7 +2694,7 @@ function openScoreDrawerForAssignee(item) {{
       impact: extendedActualsEnabled ? "Extended" : "Date Range",
       tone: "",
       desc: extendedActualsEnabled
-        ? "Extended Actuals is ON: for each subtask whose planned start or due date is within the filter range, actual hours include ALL worklogs ever logged (across all dates), not just those within the date range."
+        ? "Extended Actuals is ON: for each subtask whose planned date range overlaps the filter range, actual hours include ALL worklogs ever logged (across all dates), not just those within the date range."
         : "Extended Actuals is OFF: actual hours only include worklogs whose log date falls within the selected date range filter.",
       meta: `Actual Hours Spent: ${{hoursText(totalActual)}} | Planned Hours: ${{hoursText(totalEstimate)}} | Surplus/Deficit: ${{totalActual >= totalEstimate ? "+" : ""}}${{hoursText(totalActual - totalEstimate)}}`,
     }},
@@ -3250,14 +3250,12 @@ async function hydratePerformanceSettings() {{
   }}
 }}
 function inRange(day, from, to) {{ if (!day) return false; if (from && day < from) return false; if (to && day > to) return false; return true; }}
-function datePairContained(start, due, from, to) {{
+function datePairOverlaps(start, due, from, to) {{
   const s = String(start || "");
   const d = String(due || "");
   if (!s || !d) return false;
-  if (from && s < from) return false;
   if (to && s > to) return false;
   if (from && d < from) return false;
-  if (to && d > to) return false;
   return true;
 }}
 function selectedProjects() {{ return new Set(Array.from(document.getElementById("projects").selectedOptions).map(o => o.value)); }}
@@ -3640,9 +3638,9 @@ function buildQualifyingEpicKeySet(from, to) {{
     const issueType = issueTypeLabel(row?.jira_issue_type || row?.issue_type || row?.work_item_type);
     let qualifies = false;
     if (epicDateBasisMode === "subtask_dates") {{
-      qualifies = isSubtaskPerformanceType(issueType) && datePairContained(row?.start_date, row?.due_date, from, to);
+      qualifies = isSubtaskPerformanceType(issueType) && datePairOverlaps(row?.start_date, row?.due_date, from, to);
     }} else {{
-      qualifies = (issueType.includes("epic") || issueType.includes("story")) && datePairContained(row?.start_date, row?.due_date, from, to);
+      qualifies = (issueType.includes("epic") || issueType.includes("story")) && datePairOverlaps(row?.start_date, row?.due_date, from, to);
     }}
     if (!qualifies) continue;
     const epicKey = resolveParentEpicKey(row);
@@ -3807,7 +3805,7 @@ function compute() {{
     if (!scopedIssueSet) {{
       const issueRow = workItemsByKey.get(issueKey) || null;
       if (epicDateBasisMode === "subtask_dates") {{
-        if (!issueRow || !datePairContained(issueRow.start_date, issueRow.due_date, from, to)) return false;
+        if (!issueRow || !datePairOverlaps(issueRow.start_date, issueRow.due_date, from, to)) return false;
       }} else if (!qualifyingEpicKeys.has(resolveEpicKeyFromWorklogRow(r))) return false;
     }}
     if (useP && !pset.has(String(r.project_key || "UNKNOWN"))) return false;
@@ -3834,7 +3832,7 @@ function compute() {{
     if (s && !assignee.toLowerCase().includes(s)) return false;
     const issueType = String(r.jira_issue_type || r.issue_type || r.work_item_type || "");
     if (!isSubtaskPerformanceType(issueType)) return false;
-    if (epicDateBasisMode === "subtask_dates") return datePairContained(r.start_date, r.due_date, from, to);
+    if (epicDateBasisMode === "subtask_dates") return datePairOverlaps(r.start_date, r.due_date, from, to);
     return qualifyingEpicKeys.has(resolveParentEpicKey(r));
   }});
   const assignedItemsWork = assignedItems.filter((r) => !isLeaveIssueKey(String(r.issue_key || "")));

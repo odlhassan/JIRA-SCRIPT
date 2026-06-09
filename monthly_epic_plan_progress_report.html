@@ -3000,8 +3000,8 @@
         <div class="epic-mode-wrap" id="logged-hours-mode-wrap">
           <label style="font-size:0.8rem;font-weight:700;color:#324559;">Logged hours scope</label>
           <div class="epic-mode-btns">
-            <button type="button" class="epic-mode-btn active" id="mode-tk-dates" data-logged-mode="tk_dates" title="Sum of worklogs from subtasks under in-scope epics (epics whose TK dates fall in the month)">TK dates</button>
-            <button type="button" class="epic-mode-btn" id="mode-subtask-dates" data-logged-mode="subtask_dates" title="Sum of worklogs from subtasks whose own start or due date falls in the selected month">Subtask dates</button>
+            <button type="button" class="epic-mode-btn active" id="mode-tk-dates" data-logged-mode="tk_dates" title="Sum of worklogs from subtasks under in-scope epics whose planned dates overlap the selected range">TK dates</button>
+            <button type="button" class="epic-mode-btn" id="mode-subtask-dates" data-logged-mode="subtask_dates" title="Sum of worklogs from subtasks whose own planned date range overlaps the selected range">Subtask dates</button>
           </div>
         </div>
         <div class="btn-row">
@@ -3490,7 +3490,7 @@
         </table>
       </div>
       <div class="caption">
-        Rows include epics whose approved start <strong>or</strong> approved due falls inside the selected month (TK planner), plus unresolved brought-forward epics whose approved due was before that month.
+        Rows include epics whose approved date range overlaps the selected range (TK planner or Jira epics), plus unresolved brought-forward epics whose approved due was before that range.
         Brought forward means the approved due date is before the selected month and the latest Jira epic status is still unresolved.
         Start slip means the approved start date is inside the selected month and no subtask worklog exists through month end.
         End slip means the approved due date is inside the selected month and the current Jira epic status is not resolved.
@@ -4809,7 +4809,7 @@
         if (els.includeBugSubtasks && !els.includeBugSubtasks.checked) params.set("include_bug_subtasks", "0");
         if (els.includeOnHold && els.includeOnHold.checked) params.set("include_on_hold", "1");
         params.set("logged_hours_mode", loggedHoursMode);
-        if (loggedHoursMode === "tk_dates" && latestPayload && latestPayload.rows) {
+        if (latestPayload && latestPayload.rows) {
           const epicKeys = [...new Set((latestPayload.rows || []).map(r => String(r.epic_key || "").toUpperCase()).filter(Boolean))];
           if (epicKeys.length) params.set("epic_keys_in_scope", epicKeys.join(","));
         }
@@ -6786,8 +6786,6 @@
         // Auto-select logged hours mode based on epic scope
         if (epicMode === "tk_epics") {
           loggedHoursMode = "tk_dates";
-        } else if (epicMode === "all_jira_epics") {
-          loggedHoursMode = "subtask_dates";
         }
         _syncLoggedHoursModeUI();
         loadSummary();
@@ -6799,11 +6797,10 @@
       if (els.modeSubtaskDates) els.modeSubtaskDates.classList.toggle("active", loggedHoursMode === "subtask_dates");
       // Disable logic based on epic scope
       const tkOnly = epicMode === "tk_epics";
-      const jiraOnly = epicMode === "all_jira_epics";
       if (els.modeTkDates) {
-        els.modeTkDates.disabled = jiraOnly;
-        els.modeTkDates.style.opacity = jiraOnly ? "0.45" : "";
-        els.modeTkDates.style.pointerEvents = jiraOnly ? "none" : "";
+        els.modeTkDates.disabled = false;
+        els.modeTkDates.style.opacity = "";
+        els.modeTkDates.style.pointerEvents = "";
       }
       if (els.modeSubtaskDates) {
         els.modeSubtaskDates.disabled = tkOnly;

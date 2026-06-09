@@ -642,7 +642,7 @@ class MonthlyEpicPlanProgressTests(unittest.TestCase):
             self.assertEqual(len(no_bug_payload["rows"][0]["child_items"]), 1)
             self.assertEqual(no_bug_payload["rows"][0]["child_items"][0]["issue_type"], "Sub-task")
 
-    def test_service_excludes_epic_when_schedule_spans_month_but_no_endpoint_in_month(self):
+    def test_service_includes_epic_when_schedule_overlaps_month_without_endpoint_in_month(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             db_path = Path(td) / "assignee_hours_capacity.db"
             _create_canonical_tables(db_path)
@@ -654,8 +654,100 @@ class MonthlyEpicPlanProgressTests(unittest.TestCase):
                 "run-1",
                 selected_projects={"O2"},
             )
-            self.assertEqual(payload["totals"]["epic_count"], 0)
-            self.assertEqual(len(payload["rows"]), 0)
+            self.assertEqual(payload["totals"]["epic_count"], 1)
+            self.assertEqual(len(payload["rows"]), 1)
+            self.assertEqual(payload["rows"][0]["epic_key"], "O2-MID")
+
+    def test_all_jira_epics_uses_epic_date_overlap(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            db_path = Path(td) / "assignee_hours_capacity.db"
+            _create_canonical_tables(db_path)
+            _add_estimate_rollup_tree(
+                db_path,
+                "O2-SPAN",
+                epic_original=120,
+                story_rows=[("S1", 40, [("T1", 16, 6)])],
+                start_date="2026-02-01",
+                due_date="2026-04-30",
+            )
+
+            payload = build_monthly_epic_plan_payload(
+                db_path,
+                "2026-03",
+                [],
+                "run-1",
+                selected_projects={"O2"},
+                epic_mode="all_jira_epics",
+                logged_hours_mode="tk_dates",
+            )
+
+            self.assertEqual(payload["totals"]["epic_count"], 1)
+            self.assertEqual(payload["rows"][0]["epic_key"], "O2-SPAN")
+            self.assertEqual(payload["totals"]["actual_hours"], 6.0)
+
+    def test_all_jira_epics_selected_assignees_filter_logged_actual_hours(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            db_path = Path(td) / "assignee_hours_capacity.db"
+            _create_canonical_tables(db_path)
+            _add_estimate_rollup_tree(
+                db_path,
+                "O2-FILTER",
+                epic_original=120,
+                story_rows=[
+                    (
+                        "S1",
+                        40,
+                        [
+                            ("T1", 16, 10, "Sub-task"),
+                            ("T2", 8, 6, "Sub-task"),
+                        ],
+                    ),
+                ],
+                start_date="2026-03-01",
+                due_date="2026-03-31",
+            )
+            conn = sqlite3.connect(db_path)
+            try:
+                conn.execute(
+                    "UPDATE canonical_issues SET assignee = 'Alice' WHERE run_id = 'run-1' AND issue_key = 'O2-FILTER-S1-T1'"
+                )
+                conn.execute(
+                    "UPDATE canonical_issues SET assignee = 'Bob' WHERE run_id = 'run-1' AND issue_key = 'O2-FILTER-S1-T2'"
+                )
+                conn.execute(
+                    "UPDATE canonical_worklogs SET issue_assignee = 'Alice' WHERE run_id = 'run-1' AND issue_key = 'O2-FILTER-S1-T1'"
+                )
+                conn.execute(
+                    "UPDATE canonical_worklogs SET issue_assignee = 'Bob' WHERE run_id = 'run-1' AND issue_key = 'O2-FILTER-S1-T2'"
+                )
+                conn.execute(
+                    """
+                    UPDATE canonical_issues
+                    SET start_date = '2026-01-01', due_date = '2026-01-31'
+                    WHERE run_id = 'run-1' AND issue_key = 'O2-FILTER'
+                    """
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            payload = build_monthly_epic_plan_payload(
+                db_path,
+                "2026-03",
+                [],
+                "run-1",
+                selected_projects={"O2"},
+                selected_assignees={"Alice"},
+                epic_mode="all_jira_epics",
+                logged_hours_mode="tk_dates",
+            )
+
+            self.assertEqual(payload["totals"]["actual_hours"], 10.0)
+            self.assertEqual(payload["rows"][0]["actual_hours"], 10.0)
+            self.assertEqual(payload["by_project"][0]["actual_hours"], 10.0)
+            detail_by_key = {row["issue_key"]: row for row in payload["subtask_worklog_detail"]}
+            self.assertTrue(detail_by_key["O2-FILTER-S1-T1"]["matches_filters"])
+            self.assertFalse(detail_by_key["O2-FILTER-S1-T2"]["matches_filters"])
 
     def test_service_marks_start_and_end_slips_for_month(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
