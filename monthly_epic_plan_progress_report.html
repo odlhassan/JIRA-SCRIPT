@@ -49,7 +49,7 @@
     .controls {
       margin-top: 14px;
       display: grid;
-      grid-template-columns: minmax(150px, 190px) minmax(220px, 300px) minmax(180px, 220px) minmax(200px, 240px) auto;
+      grid-template-columns: minmax(280px, 360px) minmax(220px, 300px) minmax(180px, 220px) minmax(200px, 240px) auto;
       gap: 12px;
       align-items: end;
     }
@@ -2931,8 +2931,12 @@
       </div>
       <div class="controls">
         <div class="control">
-          <label for="month-input">Month</label>
-          <input type="month" id="month-input">
+          <label>Date range</label>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <input type="date" id="date-from-input" style="min-height:40px;border:1px solid #c0ccd8;border-radius:10px;padding:0 10px;font-size:0.92rem;">
+            <span style="color:#5c6b7a;font-size:0.82rem;">to</span>
+            <input type="date" id="date-to-input" style="min-height:40px;border:1px solid #c0ccd8;border-radius:10px;padding:0 10px;font-size:0.92rem;">
+          </div>
         </div>
         <div class="control">
           <label>Project filter</label>
@@ -2993,6 +2997,13 @@
             <label for="only-from-planner">Only from Epics Planner</label>
           </div>
         </div>
+        <div class="epic-mode-wrap" id="logged-hours-mode-wrap">
+          <label style="font-size:0.8rem;font-weight:700;color:#324559;">Logged hours scope</label>
+          <div class="epic-mode-btns">
+            <button type="button" class="epic-mode-btn active" id="mode-tk-dates" data-logged-mode="tk_dates" title="Sum of worklogs from subtasks under in-scope epics (epics whose TK dates fall in the month)">TK dates</button>
+            <button type="button" class="epic-mode-btn" id="mode-subtask-dates" data-logged-mode="subtask_dates" title="Sum of worklogs from subtasks whose own start or due date falls in the selected month">Subtask dates</button>
+          </div>
+        </div>
         <div class="btn-row">
           <button type="button" class="btn" id="apply-btn">Apply</button>
           <button type="button" class="btn alt" id="clear-projects-btn">All projects</button>
@@ -3042,13 +3053,6 @@
             <span class="df-toggle-track"><span class="df-toggle-thumb"></span></span>
             <span class="df-toggle-text">Have <span class="df-month-label">this month</span> in their planned date range</span>
           </label>
-        </div>
-        <div class="date-filter-custom-range" id="df-custom-range-wrap" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;">
-          <span class="toolbar-label" style="font-size:12px;color:#475569;">Or use a custom date range</span>
-          <label style="font-size:12px;color:#475569;">From <input type="date" id="df-custom-from" style="margin-left:4px;padding:4px 6px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px;"></label>
-          <label style="font-size:12px;color:#475569;">To <input type="date" id="df-custom-to" style="margin-left:4px;padding:4px 6px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px;"></label>
-          <button type="button" id="df-custom-clear" class="btn alt" style="padding:4px 8px;font-size:12px;">Clear</button>
-          <span id="df-custom-status" style="font-size:11px;color:#64748b;"></span>
         </div>
       </div>
       <div class="status" id="status"></div>
@@ -3687,9 +3691,11 @@
     const API_SUMMARY = "/api/monthly-epic-plan-progress/summary";
     const API_PROJECTS = "/api/projects?include_inactive=0";
     let epicMode = "tk_epics";
+    let loggedHoursMode = "tk_dates";
     let dfDateFilter = "default";
     const els = {
-      month: document.getElementById("month-input"),
+      dateFrom: document.getElementById("date-from-input"),
+      dateTo: document.getElementById("date-to-input"),
       projDd: document.getElementById("project-dropdown"),
       projDdToggle: document.getElementById("project-dropdown-toggle"),
       projDdPanel: document.getElementById("project-dropdown-panel"),
@@ -3788,10 +3794,10 @@
       dfToggleRange: document.getElementById("df-toggle-range"),
       dfToggleStartWrap: document.getElementById("df-toggle-start-wrap"),
       dfToggleEndWrap: document.getElementById("df-toggle-end-wrap"),
-      dfCustomFrom: document.getElementById("df-custom-from"),
-      dfCustomTo: document.getElementById("df-custom-to"),
-      dfCustomClear: document.getElementById("df-custom-clear"),
-      dfCustomStatus: document.getElementById("df-custom-status"),
+      dfCustomFrom: document.getElementById("date-from-input"),
+      dfCustomTo: document.getElementById("date-to-input"),
+      dfCustomClear: null,
+      dfCustomStatus: null,
       projectCards: document.getElementById("project-cards"),
       kpiHeadcount: document.getElementById("kpi-headcount"),
       kpiHeadcountDetail: document.getElementById("kpi-headcount-detail"),
@@ -3874,7 +3880,26 @@
       overdueThreshold: document.getElementById("overdue-threshold-input"),
       includeOnHold: document.getElementById("include-on-hold-toggle"),
       includeBugSubtasks: document.getElementById("include-bug-subtasks-toggle"),
+      loggedHoursModeWrap: document.getElementById("logged-hours-mode-wrap"),
+      modeTkDates: document.getElementById("mode-tk-dates"),
+      modeSubtaskDates: document.getElementById("mode-subtask-dates"),
     };
+    // Compatibility shim: els.month.value derives YYYY-MM from dateFrom for API calls
+    const _monthShim = {
+      get value() {
+        const v = els.dateFrom ? els.dateFrom.value : "";
+        return v ? v.slice(0, 7) : "";
+      },
+      set value(val) {
+        if (!val || val.length < 7) return;
+        const y = parseInt(val.slice(0, 4), 10);
+        const m = parseInt(val.slice(5, 7), 10);
+        const lastDay = new Date(y, m, 0).getDate();
+        if (els.dateFrom) els.dateFrom.value = val + "-01";
+        if (els.dateTo) els.dateTo.value = val + "-" + String(lastDay).padStart(2, "0");
+      }
+    };
+    Object.defineProperty(els, "month", { get() { return _monthShim; } });
     const STORAGE_CAPACITY_PROFILE_KEY = "monthly_epic_plan_capacity_profile_key";
     let latestPayload = null;
     let _hcIncludeSupportState = false;
@@ -4215,7 +4240,15 @@
     }
 
     function updateDateFilterMonthLabels() {
-      const name = monthDisplayName(els.month ? els.month.value : "");
+      const f = els.dateFrom ? els.dateFrom.value : "";
+      const t = els.dateTo ? els.dateTo.value : "";
+      let name;
+      if (f && t) {
+        const fmt = (d) => { const p = d.split("-"); return p[2] + "/" + p[1] + "/" + p[0]; };
+        name = fmt(f) + " – " + fmt(t);
+      } else {
+        name = monthDisplayName(els.month ? els.month.value : "");
+      }
       document.querySelectorAll(".df-month-label").forEach((el) => { el.textContent = name; });
     }
 
@@ -4753,6 +4786,15 @@
         const params = new URLSearchParams({ from_date: fromDate, to_date: toDate });
         if (els.includeBugSubtasks && !els.includeBugSubtasks.checked) params.set("include_bug_subtasks", "0");
         if (els.includeOnHold && els.includeOnHold.checked) params.set("include_on_hold", "1");
+        params.set("logged_hours_mode", loggedHoursMode);
+        if (loggedHoursMode === "tk_dates" && latestPayload && latestPayload.rows) {
+          const epicKeys = [...new Set((latestPayload.rows || []).map(r => String(r.epic_key || "").toUpperCase()).filter(Boolean))];
+          if (epicKeys.length) params.set("epic_keys_in_scope", epicKeys.join(","));
+        }
+        if (loggedHoursMode === "subtask_dates") {
+          const projects = selectedProjects();
+          if (projects.length) params.set("selected_projects", projects.join(","));
+        }
         try {
           const checkedAssignees = (typeof getCheckedEmployeeNames === "function") ? getCheckedEmployeeNames() : [];
           if (checkedAssignees && checkedAssignees.length) {
@@ -4819,8 +4861,10 @@
       const subtitle = document.getElementById("worklog-detail-subtitle");
       if (subtitle) subtitle.textContent = "Subtasks with planned and logged hours" + (rangeLabel ? " (" + rangeLabel + ")" : "") + ".";
 
-      // Header total cards
-      const totalRange = rows.reduce((s, r) => s + Number(r.month_logged_hours || 0), 0);
+      // Header total cards — only sum rows matching bug-subtask filter to match executive card
+      const includeBugSub = !(els.includeBugSubtasks && !els.includeBugSubtasks.checked);
+      const matchingRows = rows.filter((r) => includeBugSub || r.matches_bug_subtask !== false);
+      const totalRange = matchingRows.reduce((s, r) => s + Number(r.month_logged_hours || 0), 0);
       const totalLifetime = rows.reduce((s, r) => s + Number(r.total_hours_logged || 0), 0);
       if (els.wldTotalRangeValue) els.wldTotalRangeValue.textContent = toDisp(totalRange);
       if (els.wldTotalLifetimeValue) els.wldTotalLifetimeValue.textContent = toDisp(totalLifetime);
@@ -5171,7 +5215,8 @@
       const suffixTitle = unit === "days" ? "Days" : "Hours";
       els.kpiEpics.textContent = String(totals.epic_count || 0);
       if (els.kpiPlannedLabel) els.kpiPlannedLabel.textContent = "Planned Hours (" + suffixShort + ")";
-      if (els.kpiActualLabel) els.kpiActualLabel.textContent = "Logged this month (" + suffixShort + ")";
+      const loggedLabel = loggedHoursMode === "subtask_dates" ? "Logged (subtask dates)" : "Logged this month";
+      if (els.kpiActualLabel) els.kpiActualLabel.textContent = loggedLabel + " (" + suffixShort + ")";
       const allPlannedVal = unit === "days" ? totals.planned_days : totals.planned_hours;
       const actualVal = unit === "days" ? totals.actual_days : totals.actual_hours;
       const bh = unit === "days" ? (totals.brought_forward_planned_days || 0) : (totals.brought_forward_planned_hours || 0);
@@ -6534,6 +6579,7 @@
       getCheckedEmployeeNames().forEach((name) => params.append("assignees", name));
       if (els.capacityProfile && els.capacityProfile.value) params.set("capacity_profile", els.capacityProfile.value);
       params.set("epic_mode", epicMode);
+      params.set("logged_hours_mode", loggedHoursMode);
       if (epicMode === "all_epics" && els.onlyFromPlanner && els.onlyFromPlanner.checked) params.set("only_from_planner", "1");
       const overdueThresholdVal = els.overdueThreshold ? parseInt(els.overdueThreshold.value, 10) : 30;
       params.set("overdue_threshold_days", String(isNaN(overdueThresholdVal) || overdueThresholdVal < 1 ? 30 : overdueThresholdVal));
@@ -6563,7 +6609,7 @@
         const suffixShort = unit === "days" ? "days" : "hours";
         if (els.kpiEpics) els.kpiEpics.textContent = "0";
         if (els.kpiPlannedLabel) els.kpiPlannedLabel.textContent = "Planned Hours (" + suffixShort + ")";
-        if (els.kpiActualLabel) els.kpiActualLabel.textContent = "Logged this month (" + suffixShort + ")";
+        if (els.kpiActualLabel) els.kpiActualLabel.textContent = (loggedHoursMode === "subtask_dates" ? "Logged (subtask dates)" : "Logged this month") + " (" + suffixShort + ")";
         if (els.kpiPlanned) els.kpiPlanned.textContent = formatNumber(0);
         if (els.kpiActual) els.kpiActual.textContent = formatNumber(0);
         if (els.kpiInMonthCount) els.kpiInMonthCount.textContent = "0";
@@ -6713,6 +6759,40 @@
         if (els.modeAllJiraEpics) els.modeAllJiraEpics.classList.toggle("active", epicMode === "all_jira_epics");
         if (els.onlyPlannerRow) els.onlyPlannerRow.style.display = epicMode === "all_epics" ? "" : "none";
         if (epicMode !== "all_epics" && els.onlyFromPlanner) els.onlyFromPlanner.checked = false;
+        // Auto-select logged hours mode based on epic scope
+        if (epicMode === "tk_epics") {
+          loggedHoursMode = "tk_dates";
+        } else if (epicMode === "all_jira_epics") {
+          loggedHoursMode = "subtask_dates";
+        }
+        _syncLoggedHoursModeUI();
+        loadSummary();
+      });
+    });
+    // Logged hours mode toggle
+    function _syncLoggedHoursModeUI() {
+      if (els.modeTkDates) els.modeTkDates.classList.toggle("active", loggedHoursMode === "tk_dates");
+      if (els.modeSubtaskDates) els.modeSubtaskDates.classList.toggle("active", loggedHoursMode === "subtask_dates");
+      // Disable logic based on epic scope
+      const tkOnly = epicMode === "tk_epics";
+      const jiraOnly = epicMode === "all_jira_epics";
+      if (els.modeTkDates) {
+        els.modeTkDates.disabled = jiraOnly;
+        els.modeTkDates.style.opacity = jiraOnly ? "0.45" : "";
+        els.modeTkDates.style.pointerEvents = jiraOnly ? "none" : "";
+      }
+      if (els.modeSubtaskDates) {
+        els.modeSubtaskDates.disabled = tkOnly;
+        els.modeSubtaskDates.style.opacity = tkOnly ? "0.45" : "";
+        els.modeSubtaskDates.style.pointerEvents = tkOnly ? "none" : "";
+      }
+    }
+    _syncLoggedHoursModeUI();
+    [els.modeTkDates, els.modeSubtaskDates].forEach((btn) => {
+      if (!btn) return;
+      btn.addEventListener("click", () => {
+        loggedHoursMode = btn.dataset.loggedMode;
+        _syncLoggedHoursModeUI();
         loadSummary();
       });
     });
@@ -6744,32 +6824,13 @@
       els.dfToggleEnd.addEventListener("change", applyClientFilter);
     }
     function _updateCustomDateStatus() {
-      if (!els.dfCustomStatus) return;
-      const f = els.dfCustomFrom ? els.dfCustomFrom.value : "";
-      const t = els.dfCustomTo ? els.dfCustomTo.value : "";
-      if (f && t && f <= t) {
-        els.dfCustomStatus.textContent = "Custom range active — overrides month for start/end filters.";
-        els.dfCustomStatus.style.color = "#3f6212";
-      } else if (f || t) {
-        els.dfCustomStatus.textContent = "Set both From and To to apply.";
-        els.dfCustomStatus.style.color = "#b91c1c";
-      } else {
-        els.dfCustomStatus.textContent = "";
-      }
+      // No-op: custom range status element removed
     }
     if (els.dfCustomFrom) {
-      els.dfCustomFrom.addEventListener("change", () => { _updateCustomDateStatus(); applyClientFilter(); });
+      els.dfCustomFrom.addEventListener("change", () => { loadSummary(); });
     }
     if (els.dfCustomTo) {
-      els.dfCustomTo.addEventListener("change", () => { _updateCustomDateStatus(); applyClientFilter(); });
-    }
-    if (els.dfCustomClear) {
-      els.dfCustomClear.addEventListener("click", () => {
-        if (els.dfCustomFrom) els.dfCustomFrom.value = "";
-        if (els.dfCustomTo) els.dfCustomTo.value = "";
-        _updateCustomDateStatus();
-        applyClientFilter();
-      });
+      els.dfCustomTo.addEventListener("change", () => { loadSummary(); });
     }
     els.apply.addEventListener("click", loadSummary);
     if (els.clearProjects) {

@@ -37879,6 +37879,9 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             epic_mode_raw = _to_text(request.args.get("epic_mode", "tk_epics")).lower()
             if epic_mode_raw not in ("tk_epics", "all_epics", "all_jira_epics"):
                 epic_mode_raw = "tk_epics"
+            logged_hours_mode_raw = _to_text(request.args.get("logged_hours_mode", "tk_dates")).lower()
+            if logged_hours_mode_raw not in ("tk_dates", "subtask_dates"):
+                logged_hours_mode_raw = "tk_dates"
             payload = build_monthly_epic_plan_payload(
                 capacity_paths["db_path"],
                 month,
@@ -37892,6 +37895,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 include_on_hold=include_on_hold,
                 include_bug_subtasks=include_bug_subtasks,
                 epic_mode=epic_mode_raw,
+                logged_hours_mode=logged_hours_mode_raw,
             )
             return jsonify({"ok": True, **payload})
         except ValueError as exc:
@@ -37925,6 +37929,19 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 selected_assignees = {
                     _to_text(item) for item in assignees_raw.split(",") if _to_text(item)
                 } or None
+            logged_hours_mode = _to_text(request.args.get("logged_hours_mode", "tk_dates")).lower()
+            if logged_hours_mode not in ("tk_dates", "subtask_dates"):
+                logged_hours_mode = "tk_dates"
+            projects_raw = _to_text(request.args.get("selected_projects"))
+            selected_projects: set[str] | None = None
+            if projects_raw:
+                selected_projects = {
+                    _to_text(item).upper() for item in projects_raw.split(",") if _to_text(item)
+                } or None
+            epic_keys_raw = _to_text(request.args.get("epic_keys_in_scope"))
+            epic_keys_in_scope: list[str] | None = None
+            if epic_keys_raw:
+                epic_keys_in_scope = [_to_text(k).upper() for k in epic_keys_raw.split(",") if _to_text(k)]
             rows = build_worklog_detail_for_range(
                 capacity_paths["db_path"],
                 canonical_run_id,
@@ -37934,6 +37951,9 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 jira_base_url=BASE_URL,
                 selected_assignees=selected_assignees,
                 include_on_hold=include_on_hold,
+                logged_hours_mode=logged_hours_mode,
+                selected_projects=selected_projects,
+                epic_keys_in_scope=epic_keys_in_scope,
             )
             return jsonify({"ok": True, "rows": rows, "from_date": from_date_raw, "to_date": to_date_raw})
         except ValueError as exc:

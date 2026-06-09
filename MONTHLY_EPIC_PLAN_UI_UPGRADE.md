@@ -4,6 +4,11 @@
 **Target files**: `monthly_epic_plan_progress_report.html`, `monthly_epic_plan_progress_service.py`
 **Date**: 2026-05-19
 
+## Changelog
+
+- **2026-06-09**: Added **Logged hours scope** toggle (TK dates / Subtask dates) in the header filters. TK dates scopes by epic TK approved dates (default for TK EPICS mode), Subtask dates scopes by subtask's own planned dates (default for ALL JIRA EPICS mode). Both options available when epic scope = ALL EPICS. Executive card and drawer now use the same scoping logic, fixing the mismatch between the executive summary's "Logged this month" and the drawer's "Logged in range".
+- **2026-06-09**: Replaced the Month selector (`<input type="month">`) in the header controls with a **Date Range** selector (From/To `<input type="date">` pair). Removed the separate "Or use a custom date range" section below the SHOW EPICS toggles. The date range now initializes to the current month boundaries. API backward-compatible via a `_monthShim` property that derives `YYYY-MM` from the From date.
+
 ---
 
 ## Summary
@@ -19,7 +24,7 @@ The report is visually polished with a consistent blue-slate palette and a well-
 **Problem**: The controls area has 3 separate rows (month/project/unit/overdue/toggle/scope/apply → employee → date-filter), presenting 7+ choices to configure before any data is visible.
 
 **Action**:
-- Keep primary row: **Month**, **Project**, **Apply**.
+- Keep primary row: **Date Range (From/To)**, **Project**, **Apply**.
 - Move to a collapsible "Advanced Filters" section (hidden by default, toggleable via a `▾ Advanced` button):
   - Overdue lookback input (`overdue-threshold-input`)
   - On Hold toggle

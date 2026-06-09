@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import argparse
 import json
@@ -1432,8 +1432,10 @@ def _build_html(payload: dict) -> str:
     .team-filter-check {{ display:inline-flex; align-items:center; gap:8px; color:#cfe0ff; font-size:.76rem; font-weight:800; white-space:nowrap; cursor:pointer; }}
     .team-filter-check input {{ width:17px; height:17px; margin:0; accent-color:#60a5fa; }}
     .team-member-list {{ display:grid; gap:8px; padding:14px 16px; }}
-    .team-member-row {{ display:flex; align-items:center; gap:14px; min-height:44px; padding:10px 14px; border:1px solid #223a61; border-radius:12px; background:#0c172b; transition:background .12s,border-color .12s; }}
+    .team-member-row {{ display:flex; align-items:center; gap:14px; min-height:44px; padding:10px 14px; border:1px solid #223a61; border-radius:12px; background:#0c172b; transition:background .12s,border-color .12s; cursor:pointer; user-select:none; }}
     .team-member-row:hover {{ background:#12284b; border-color:#3d679d; }}
+    .team-member-row input[type="checkbox"] {{ width:16px; height:16px; margin:0; accent-color:#60a5fa; flex-shrink:0; cursor:pointer; }}
+    .team-member-row.member-excluded {{ opacity:.5; }}
     .team-member-name {{ flex:1; min-width:0; color:#ecf4ff; font-weight:700; font-size:.88rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
     .team-member-badges {{ display:flex; flex-wrap:nowrap; gap:6px; flex-shrink:0; max-width:45%; }}
     .team-member-chip {{ display:inline-flex; align-items:center; border-radius:999px; padding:3px 9px; font-size:.62rem; font-weight:800; letter-spacing:.03em; text-transform:uppercase; white-space:nowrap; }}
@@ -1964,6 +1966,7 @@ def _build_html(payload: dict) -> str:
     html[data-theme="light"] .team-filter-meta {{ color:#5b769c; }}
     html[data-theme="light"] .team-member-row {{ background:#fbfdff; border-color:#dbe5f3; }}
     html[data-theme="light"] .team-member-row:hover {{ background:#eaf3ff; border-color:#9fc0ea; }}
+    html[data-theme="light"] .team-member-row.member-excluded {{ opacity:.5; }}
     html[data-theme="light"] .team-member-chip {{ background:#edf4ff; border-color:#c6d7ee; color:#305785; }}
     html[data-theme="light"] .team-member-chip.support {{ background:#e0f2fe; border-color:#7dd3fc; color:#075985; }}
     html[data-theme="light"] .team-member-chip.resigned {{ background:#fee2e2; border-color:#fca5a5; color:#991b1b; }}
@@ -2157,6 +2160,8 @@ def _build_html(payload: dict) -> str:
             <div class="filter-menu-head">
               <button type="button" id="teams-select-all" class="filter-action-btn">Select all</button>
               <button type="button" id="teams-clear-all" class="filter-action-btn">Clear all</button>
+              <label class="filter-action-btn" style="display:inline-flex;align-items:center;gap:5px;cursor:pointer;"><input type="checkbox" id="teams-include-support"> Include support</label>
+              <label class="filter-action-btn" style="display:inline-flex;align-items:center;gap:5px;cursor:pointer;"><input type="checkbox" id="teams-include-resigned"> Include resigned</label>
             </div>
             <div id="teams-options" class="filter-options"></div>
           </div>
@@ -2750,9 +2755,9 @@ function openScoreDrawerForAssignee(item) {{
       tone: overloadedApplied ? "neg" : "",
       desc: planningRealismEnabled
         ? "When overload applies, Overload Capping/ Planning Realism caps the final simple score to the delivery ratio (actual/planned)."
-        : "When planned > availability and actual hours are below the safe threshold (planned − threshold%), the shortfall is deducted from the base simple score.",
+        : "When planned > availability and actual hours are below the safe threshold (planned âˆ’ threshold%), the shortfall is deducted from the base simple score.",
       meta: overloadedPenaltyEnabled
-        ? `Overload Capping/ Planning Realism: ${{planningRealismEnabled ? "On" : "Off"}} | Threshold: ${{n(overloadedPenaltyThresholdPct).toFixed(1)}}% | Availability: ${{hoursText(n(item.employee_capacity_hours))}} | Planned Hrs Assigned: ${{hoursText(n(item.planned_hours_assigned))}} | Actual Hrs Spent: ${{hoursText(n(item.total_hours))}} | Safe threshold (planned − ${{n(overloadedPenaltyThresholdPct).toFixed(0)}}%): ${{hoursText((n(item.planned_hours_assigned) * (1 - overloadedPenaltyThresholdPct / 100)).toFixed(1))}} | Penalty: ${{scorePctText(n(item.simple_score_overloaded_penalty_pct))}}`
+        ? `Overload Capping/ Planning Realism: ${{planningRealismEnabled ? "On" : "Off"}} | Threshold: ${{n(overloadedPenaltyThresholdPct).toFixed(1)}}% | Availability: ${{hoursText(n(item.employee_capacity_hours))}} | Planned Hrs Assigned: ${{hoursText(n(item.planned_hours_assigned))}} | Actual Hrs Spent: ${{hoursText(n(item.total_hours))}} | Safe threshold (planned âˆ’ ${{n(overloadedPenaltyThresholdPct).toFixed(0)}}%): ${{hoursText((n(item.planned_hours_assigned) * (1 - overloadedPenaltyThresholdPct / 100)).toFixed(1))}} | Penalty: ${{scorePctText(n(item.simple_score_overloaded_penalty_pct))}}`
         : "Overloaded penalty is turned off.",
     }},
   ];
@@ -2767,7 +2772,7 @@ function openScoreDrawerForAssignee(item) {{
   if (Number.isFinite(baseSimpleScore)) calculationLines.push({{ num: baseSimpleScore.toFixed(1), label: "Base Simple Score", cls: "positive" }});
   if (overloadedApplied) {{
     if (planningRealismApplied) {{
-      calculationLines.push({{ num: "→ " + n(item.simple_score_overloaded).toFixed(1), label: "Capped (Overload / Planning Realism)", cls: "" }});
+      calculationLines.push({{ num: "â†’ " + n(item.simple_score_overloaded).toFixed(1), label: "Capped (Overload / Planning Realism)", cls: "" }});
     }} else {{
       calculationLines.push({{ num: "-" + overloadPenaltyPct.toFixed(1), label: "Overloaded Penalty", cls: "negative" }});
     }}
@@ -3257,6 +3262,25 @@ function datePairContained(start, due, from, to) {{
 }}
 function selectedProjects() {{ return new Set(Array.from(document.getElementById("projects").selectedOptions).map(o => o.value)); }}
 function selectedTeams() {{ return new Set(Array.from(document.getElementById("teams").selectedOptions).map(o => o.value)); }}
+const excludedMembers = new Set();
+let includeSupportTeam = false;
+let includeResignedResources = false;
+function applySupportTeamExclusion() {{
+  supportTeamMemberSet.forEach((key) => {{
+    if (includeSupportTeam) {{ excludedMembers.delete(key); }} else {{ excludedMembers.add(key); }}
+  }});
+}}
+function applyResignedExclusion() {{
+  const toDate = String(document.getElementById("to").value || "");
+  for (const [name, rec] of Object.entries(resourceRecords)) {{
+    if (!rec || !rec.resigned) continue;
+    const key = String(name || "").trim().toLowerCase();
+    if (!key) continue;
+    const resignDate = String(rec.resignation_date || "");
+    const shouldExclude = !includeResignedResources && (!toDate || !resignDate || resignDate <= toDate);
+    if (shouldExclude) {{ excludedMembers.add(key); }} else if (includeResignedResources) {{ excludedMembers.delete(key); }}
+  }}
+}}
 function selectedTeamAssignees() {{
   const tset = selectedTeams();
   const out = new Set();
@@ -3265,7 +3289,7 @@ function selectedTeamAssignees() {{
     if (!tset.has(String(t.team_name || ""))) continue;
     for (const a of (Array.isArray(t.assignees) ? t.assignees : [])) {{
       const key = String(a || "").trim().toLowerCase();
-      if (key) out.add(key);
+      if (key && !excludedMembers.has(key)) out.add(key);
     }}
   }}
   return out;
@@ -4236,10 +4260,15 @@ function compute() {{
     const allowedAssignees = new Set();
     for (const t of teams) {{
       if (tset.has(String(t.team_name || ""))) {{
-        for (const a of (Array.isArray(t.assignees) ? t.assignees : [])) allowedAssignees.add(String(a || "").toLowerCase());
+        for (const a of (Array.isArray(t.assignees) ? t.assignees : [])) {{
+          const key = String(a || "").toLowerCase();
+          if (key && !excludedMembers.has(key)) allowedAssignees.add(key);
+        }}
       }}
     }}
     filteredItems = items.filter((it) => allowedAssignees.has(String(it.assignee || "").toLowerCase()));
+  }} else if (excludedMembers.size > 0) {{
+    filteredItems = items.filter((it) => !excludedMembers.has(String(it.assignee || "").toLowerCase()));
   }}
   filteredItems.sort((a,b)=>n(b.final_score)-n(a.final_score) || a.assignee.localeCompare(b.assignee));
   return filteredItems;
@@ -5513,7 +5542,7 @@ function render(items) {{
   const summarySubAdv = eligibleForScore
     ? `Weighted normalized | ${{(Array.isArray(item.advanced_score_factors) ? item.advanced_score_factors : []).filter((factor) => factor.eligible).length}} eligible factors | Sum: ${{summaryScore.toFixed(2)}} / 100`
     : `Advanced scoring is N/A because Planned Hours Assigned is ${{n(item.planned_hours_assigned).toFixed(1)}}h.`;
-  const summaryMetricsHtml = `<div class="kpis" style="margin-top:8px;"><div class="kpi actionable" data-action="toggle-rmis-list"><div class="k"><span class="material-symbols-outlined" style="font-size:15px;vertical-align:middle;margin-right:4px;">deployed_code</span>RMIs</div><div class="v">${{summaryRmis.toFixed(0)}}</div><div class="kpi-note">${{isRmiListOpen ? "Click to hide RMIs list" : "Click to view RMIs list"}}</div></div><div class="kpi"><div class="k"><span class="material-symbols-outlined" style="font-size:15px;vertical-align:middle;margin-right:4px;">sliders</span>Capacity</div><div class="v">${{summaryCapacity.toFixed(1)}}h</div></div><div class="kpi"><div class="k"><span class="material-symbols-outlined" style="font-size:15px;vertical-align:middle;margin-right:4px;">award_star</span>Scores</div><div class="v" id="summary-score-kpi">S:${{simpleSummaryText}} · A:${{advSummaryText}}</div></div></div>`;
+  const summaryMetricsHtml = `<div class="kpis" style="margin-top:8px;"><div class="kpi actionable" data-action="toggle-rmis-list"><div class="k"><span class="material-symbols-outlined" style="font-size:15px;vertical-align:middle;margin-right:4px;">deployed_code</span>RMIs</div><div class="v">${{summaryRmis.toFixed(0)}}</div><div class="kpi-note">${{isRmiListOpen ? "Click to hide RMIs list" : "Click to view RMIs list"}}</div></div><div class="kpi"><div class="k"><span class="material-symbols-outlined" style="font-size:15px;vertical-align:middle;margin-right:4px;">sliders</span>Capacity</div><div class="v">${{summaryCapacity.toFixed(1)}}h</div></div><div class="kpi"><div class="k"><span class="material-symbols-outlined" style="font-size:15px;vertical-align:middle;margin-right:4px;">award_star</span>Scores</div><div class="v" id="summary-score-kpi">S:${{simpleSummaryText}} Â· A:${{advSummaryText}}</div></div></div>`;
   const assigneeRefresh = assigneeRefreshViewFor(item.assignee);
   const assigneeRefreshBusy = assigneeRefresh.status === "running";
   const assigneeRefreshClass = assigneeRefresh.status === "error" ? "is-error" : (assigneeRefresh.status === "success" ? "is-success" : "");
@@ -5742,6 +5771,8 @@ function render(items) {{
   }}
 }}
 async function renderAll() {{
+  applyResignedExclusion();
+  syncTeamFilterVisualState();
   availabilityBreakdownForAssignee = "";
   plannedHoursBreakdownForAssignee = "";
   actualHoursBreakdownForAssignee = "";
@@ -5873,7 +5904,47 @@ function syncTeamFilterVisualState() {{
     const opt = Array.from(selectEl.options).find((o) => o.value === val);
     cb.checked = opt ? opt.selected : false;
   }});
-  updateFilterTriggerText("teams", "teams-trigger-text");
+  optionsContainer.querySelectorAll(".member-cb").forEach((mcb) => {{
+    const key = mcb.getAttribute("data-member-key") || "";
+    mcb.checked = !excludedMembers.has(key);
+    mcb.closest(".team-member-row").classList.toggle("member-excluded", excludedMembers.has(key));
+    const group = mcb.closest(".team-filter-group");
+    if (group) {{
+      const teamCb = group.querySelector(".team-filter-check input");
+      if (teamCb) {{
+        const allMemberCbs = group.querySelectorAll(".member-cb");
+        const allChecked = Array.from(allMemberCbs).every((c) => c.checked);
+        const noneChecked = Array.from(allMemberCbs).every((c) => !c.checked);
+        teamCb.indeterminate = !allChecked && !noneChecked;
+      }}
+    }}
+  }});
+  updateTeamTriggerTextWithMembers();
+}}
+function updateTeamTriggerTextWithMembers() {{
+  const txt = document.getElementById("teams-trigger-text");
+  if (!txt) return;
+  const selectEl = document.getElementById("teams");
+  if (!selectEl) return;
+  const totalTeams = selectEl.options.length;
+  const selectedCount = selectEl.selectedOptions.length;
+  if (excludedMembers.size === 0) {{
+    txt.textContent = totalTeams === 0 ? "None" : (selectedCount === totalTeams ? "All" : selectedCount + " teams");
+  }} else {{
+    const totalMembers = getAllTeamMemberCount();
+    const activeMembers = totalMembers - excludedMembers.size;
+    txt.textContent = activeMembers + " of " + totalMembers + " members";
+  }}
+}}
+function getAllTeamMemberCount() {{
+  let count = 0;
+  if (!Array.isArray(teams)) return 0;
+  const tset = selectedTeams();
+  for (const t of teams) {{
+    if (tset.size > 0 && !tset.has(String(t.team_name || ""))) continue;
+    count += Array.isArray(t.assignees) ? t.assignees.length : 0;
+  }}
+  return count;
 }}
 function setupTeamFilterDropdown() {{
   const selectEl = document.getElementById("teams");
@@ -5899,7 +5970,9 @@ function setupTeamFilterDropdown() {{
         isSupportTeamMember(member) ? '<span class="team-member-chip support">Support team</span>' : "",
       ].filter(Boolean).join("");
       const badgeHtml = badges ? `<div class="team-member-badges">${{badges}}</div>` : "";
-      return `<div class="team-member-row" data-member-name="${{e(member)}}"><span class="team-member-name">${{e(member)}}</span>${{badgeHtml}}</div>`;
+      const memberKey = member.trim().toLowerCase();
+      const memberChecked = !excludedMembers.has(memberKey);
+      return `<div class="team-member-row${{memberChecked ? "" : " member-excluded"}}" data-member-name="${{e(member)}}"><input type="checkbox" class="member-cb" data-member-key="${{e(memberKey)}}" ${{memberChecked ? "checked" : ""}}><span class="team-member-name">${{e(member)}}</span>${{badgeHtml}}</div>`;
     }}).join("") : '<div class="team-filter-empty">No members configured for this team.</div>';
     return `<section class="team-filter-group" data-team-name="${{e(team.name)}}" data-search-text="${{e([team.name, team.leader, ...team.members].join(" ").toLowerCase())}}"><div class="team-filter-group-head"><div><div class="team-filter-title">${{e(team.name)}}</div><div class="team-filter-meta">Lead: ${{e(team.leader || "-")}} | Members: ${{team.members.length}}</div></div><label class="team-filter-check"><input type="checkbox" data-value="${{e(team.name)}}" ${{isSelected ? "checked" : ""}}> Include team</label></div><div class="team-member-list">${{memberRows}}</div></section>`;
   }}).join("") : '<div class="team-filter-empty">No teams configured.</div>';
@@ -5910,7 +5983,49 @@ function setupTeamFilterDropdown() {{
     renderAll();
   }}
   optionsContainer.querySelectorAll(".team-filter-check input").forEach((cb) => {{
-    cb.addEventListener("change", () => applySelection(cb.getAttribute("data-value") || "", cb.checked));
+    cb.addEventListener("change", () => {{
+      applySelection(cb.getAttribute("data-value") || "", cb.checked);
+      const group = cb.closest(".team-filter-group");
+      if (group) {{
+        group.querySelectorAll(".member-cb").forEach((mcb) => {{
+          const key = mcb.getAttribute("data-member-key") || "";
+          if (cb.checked) {{ excludedMembers.delete(key); }} else {{ excludedMembers.add(key); }}
+          mcb.checked = cb.checked;
+          mcb.closest(".team-member-row").classList.toggle("member-excluded", !cb.checked);
+        }});
+      }}
+      updateTeamTriggerTextWithMembers();
+      renderAll();
+    }});
+  }});
+  optionsContainer.querySelectorAll(".member-cb").forEach((mcb) => {{
+    mcb.addEventListener("change", (ev) => {{
+      ev.stopPropagation();
+      const key = mcb.getAttribute("data-member-key") || "";
+      if (mcb.checked) {{ excludedMembers.delete(key); }} else {{ excludedMembers.add(key); }}
+      mcb.closest(".team-member-row").classList.toggle("member-excluded", !mcb.checked);
+      const group = mcb.closest(".team-filter-group");
+      if (group) {{
+        const teamCb = group.querySelector(".team-filter-check input");
+        const allMemberCbs = group.querySelectorAll(".member-cb");
+        const allChecked = Array.from(allMemberCbs).every((c) => c.checked);
+        const noneChecked = Array.from(allMemberCbs).every((c) => !c.checked);
+        if (teamCb) {{
+          teamCb.checked = !noneChecked;
+          teamCb.indeterminate = !allChecked && !noneChecked;
+          const teamVal = teamCb.getAttribute("data-value") || "";
+          const opt = Array.from(selectEl.options).find((o) => o.value === teamVal);
+          if (opt) opt.selected = !noneChecked;
+        }}
+      }}
+      updateTeamTriggerTextWithMembers();
+      renderAll();
+    }});
+    mcb.closest(".team-member-row").addEventListener("click", (ev) => {{
+      if (ev.target === mcb) return;
+      mcb.checked = !mcb.checked;
+      mcb.dispatchEvent(new Event("change", {{ bubbles: true }}));
+    }});
   }});
   if (searchEl) {{
     searchEl.addEventListener("input", () => {{
@@ -5933,11 +6048,18 @@ function setupTeamFilterDropdown() {{
   }}
   if (selectAllBtn) selectAllBtn.addEventListener("click", () => {{
     Array.from(selectEl.options).forEach((o) => {{ o.selected = true; }});
+    excludedMembers.clear();
+    applySupportTeamExclusion();
+    applyResignedExclusion();
     syncTeamFilterVisualState();
     renderAll();
   }});
   if (clearAllBtn) clearAllBtn.addEventListener("click", () => {{
     Array.from(selectEl.options).forEach((o) => {{ o.selected = false; }});
+    optionsContainer.querySelectorAll(".member-cb").forEach((mcb) => {{
+      const key = mcb.getAttribute("data-member-key") || "";
+      if (key) excludedMembers.add(key);
+    }});
     syncTeamFilterVisualState();
     renderAll();
   }});
@@ -5969,7 +6091,31 @@ function setupTeamFilterDropdown() {{
   syncTeamFilterVisualState();
 }}
 setupFilterDropdown({{ selectId: "projects", triggerId: "projects-trigger", menuId: "projects-menu", searchId: "projects-search", selectAllId: "projects-select-all", clearAllId: "projects-clear-all", optionsId: "projects-options", options: projects.map((p) => ({{ value: p, label: projectDisplayNames[p] || p }})) }});
+applySupportTeamExclusion();
+applyResignedExclusion();
 setupTeamFilterDropdown();
+(function() {{
+  const cb = document.getElementById("teams-include-support");
+  if (!cb) return;
+  cb.checked = includeSupportTeam;
+  cb.addEventListener("change", () => {{
+    includeSupportTeam = cb.checked;
+    applySupportTeamExclusion();
+    syncTeamFilterVisualState();
+    renderAll();
+  }});
+}})();
+(function() {{
+  const cb = document.getElementById("teams-include-resigned");
+  if (!cb) return;
+  cb.checked = includeResignedResources;
+  cb.addEventListener("change", () => {{
+    includeResignedResources = cb.checked;
+    applyResignedExclusion();
+    syncTeamFilterVisualState();
+    renderAll();
+  }});
+}})();
 
 refreshCapacityProfileOptions();
 document.getElementById("from").value = defaultFrom; document.getElementById("to").value = defaultTo;
@@ -6218,7 +6364,7 @@ document.getElementById("leader-search").addEventListener("input", renderAll);
 document.getElementById("search").addEventListener("input", () => {{ render(compute()); }});
 if (epicBasisTkEl) epicBasisTkEl.addEventListener("click", () => syncEpicDateBasisMode("tk_dates"));
 if (epicBasisSubtaskEl) epicBasisSubtaskEl.addEventListener("click", () => syncEpicDateBasisMode("subtask_dates"));
-document.getElementById("reset").addEventListener("click", ()=>{{ document.getElementById("from").value=defaultFrom; document.getElementById("to").value=defaultTo; document.getElementById("search").value=\"\"; document.getElementById("leader-search").value=\"\"; document.getElementById("leader-sort").value=\"score\"; document.getElementById("leader-sort-direction").value=\"desc\"; document.getElementById("leader-scoring-mode").value=\"simple\"; document.getElementById("filter-risk").value=\"all\"; document.getElementById("filter-missed").value=\"all\"; syncSimpleOverrunMode(\"subtasks\"); syncEfficiencyScorecardMode(\"penalty_inclusive\"); syncEpicDateBasisMode(\"tk_dates\", false); setScoringMode(\"simple\", false); setDueCompletionEnabled(true, false); setHeaderPerformanceControlsOpen(false); setSettingsFilterMenuOpen(false); if (assigneeExtendedActualsToggleEl) assigneeExtendedActualsToggleEl.checked = false; extendedActualsEnabled = false; applyPerformanceSettings(settings); syncCapacityProfileSelection(\"auto\", \"\"); selectedTeam = \"\"; setDateFilterStatus(""); Array.from(document.getElementById("projects").options).forEach(o => o.selected=true); Array.from(document.getElementById("teams").options).forEach(o => o.selected=true); updateFilterTriggerText(\"projects\", \"projects-trigger-text\"); syncTeamFilterVisualState(); document.querySelectorAll(\"#projects-options .filter-option input\").forEach((c)=>{{ c.checked = true; }}); if (document.getElementById(\"projects-search\")) document.getElementById(\"projects-search\").value = \"\"; if (document.getElementById(\"teams-search\")) document.getElementById(\"teams-search\").value = \"\"; document.querySelectorAll(\"#projects-options .filter-option\").forEach((r)=>{{ r.classList.remove(\"hidden\"); }}); document.querySelectorAll(\"#teams-options .team-filter-group\").forEach((r)=>{{ r.classList.remove(\"hidden\"); }}); const teamsEmpty = document.querySelector(\"#teams-options .team-filter-search-empty\"); if (teamsEmpty) teamsEmpty.hidden = true; renderAll(); }});
+document.getElementById("reset").addEventListener("click", ()=>{{ document.getElementById("from").value=defaultFrom; document.getElementById("to").value=defaultTo; document.getElementById("search").value=\"\"; document.getElementById("leader-search").value=\"\"; document.getElementById("leader-sort").value=\"score\"; document.getElementById("leader-sort-direction").value=\"desc\"; document.getElementById("leader-scoring-mode").value=\"simple\"; document.getElementById("filter-risk").value=\"all\"; document.getElementById("filter-missed").value=\"all\"; syncSimpleOverrunMode(\"subtasks\"); syncEfficiencyScorecardMode(\"penalty_inclusive\"); syncEpicDateBasisMode(\"tk_dates\", false); setScoringMode(\"simple\", false); setDueCompletionEnabled(true, false); setHeaderPerformanceControlsOpen(false); setSettingsFilterMenuOpen(false); if (assigneeExtendedActualsToggleEl) assigneeExtendedActualsToggleEl.checked = false; extendedActualsEnabled = false; applyPerformanceSettings(settings); syncCapacityProfileSelection(\"auto\", \"\"); selectedTeam = \"\"; setDateFilterStatus(""); Array.from(document.getElementById("projects").options).forEach(o => o.selected=true); Array.from(document.getElementById("teams").options).forEach(o => o.selected=true); excludedMembers.clear(); includeSupportTeam = false; includeResignedResources = false; applySupportTeamExclusion(); applyResignedExclusion(); const stCb = document.getElementById("teams-include-support"); if (stCb) stCb.checked = false; const resCb = document.getElementById("teams-include-resigned"); if (resCb) resCb.checked = false; updateFilterTriggerText(\"projects\", \"projects-trigger-text\"); syncTeamFilterVisualState(); document.querySelectorAll(\"#projects-options .filter-option input\").forEach((c)=>{{ c.checked = true; }}); if (document.getElementById(\"projects-search\")) document.getElementById(\"projects-search\").value = \"\"; if (document.getElementById(\"teams-search\")) document.getElementById(\"teams-search\").value = \"\"; document.querySelectorAll(\"#projects-options .filter-option\").forEach((r)=>{{ r.classList.remove(\"hidden\"); }}); document.querySelectorAll(\"#teams-options .team-filter-group\").forEach((r)=>{{ r.classList.remove(\"hidden\"); }}); const teamsEmpty = document.querySelector(\"#teams-options .team-filter-search-empty\"); if (teamsEmpty) teamsEmpty.hidden = true; renderAll(); }});
 document.getElementById("shortcut-current-month").addEventListener("click", ()=>{{ applyDateShortcut("current_month"); renderAll(); }});
 document.getElementById("shortcut-previous-month").addEventListener("click", ()=>{{ applyDateShortcut("previous_month"); renderAll(); }});
 document.getElementById("shortcut-last-30-days").addEventListener("click", ()=>{{ applyDateShortcut("last_30_days"); renderAll(); }});

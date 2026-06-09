@@ -1169,6 +1169,211 @@ def _load_worklog_metrics(
     return actual_hours_by_epic, has_worklog_through_month_end, last_worklog_date_by_epic, worklog_dates_sorted, total_actual_hours_by_epic
 
 
+def _compute_subtask_dates_actual_hours(
+    db_path: Path,
+    run_id: str,
+    month_start: date,
+    month_end: date,
+    *,
+    include_bug_subtasks: bool = True,
+    selected_project_keys: set[str] | None = None,
+) -> float:
+    """
+    Compute total logged hours using 'subtask_dates' mode:
+    Sum of worklog hours (logged within the month) for subtasks whose
+    start_date OR due_date falls within the selected month range.
+    """
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        # Find subtasks whose own planned dates fall in the month
+        type_filter = "AND issue_type IN ('Sub-task', 'Bug Subtask')" if include_bug_subtasks else "AND issue_type = 'Sub-task'"
+        all_subtasks = conn.execute(
+            f"""
+            SELECT issue_key, project_key, start_date, due_date
+            FROM canonical_issues
+            WHERE run_id = ? {type_filter}
+            """,
+            (run_id,),
+        ).fetchall()
+
+        qualifying_keys: list[str] = []
+        ms_iso = month_start.isoformat()
+        me_iso = month_end.isoformat()
+        for row in all_subtasks:
+            if selected_project_keys:
+                pk = _to_text(row["project_key"]).upper()
+                if pk and pk not in selected_project_keys:
+                    continue
+            sd = _to_text(row["start_date"])
+            dd = _to_text(row["due_date"])
+            sd_in_range = bool(sd and ms_iso <= sd <= me_iso)
+            dd_in_range = bool(dd and ms_iso <= dd <= me_iso)
+            if sd_in_range or dd_in_range:
+                qualifying_keys.append(_to_text(row["issue_key"]).upper())
+
+        if not qualifying_keys:
+            return 0.0
+
+        wl_latest = conn.execute(
+            "SELECT run_id FROM canonical_worklogs ORDER BY rowid DESC LIMIT 1"
+        ).fetchone()
+        wl_run_id = wl_latest[0] if wl_latest else run_id
+
+        total = 0.0
+        for chunk in _chunked(qualifying_keys, 400):
+            placeholders = ",".join("?" for _ in chunk)
+            rows = conn.execute(
+                f"""
+                SELECT hours_logged
+                FROM canonical_worklogs
+                WHERE run_id = ?
+                  AND UPPER(issue_key) IN ({placeholders})
+                  AND started_date >= ? AND started_date <= ?
+                """,
+                [wl_run_id, *chunk, ms_iso, me_iso],
+            ).fetchall()
+            for r in rows:
+                total += float(r["hours_logged"] or 0.0)
+
+    return total
+
+
+def _load_subtask_dates_worklog_detail(
+    db_path: Path,
+    run_id: str,
+    month_start: date,
+    month_end: date,
+    jira_base: str,
+    *,
+    include_bug_subtasks: bool = True,
+    selected_assignees: set[str] | None = None,
+    include_on_hold: bool = False,
+    selected_project_keys: set[str] | None = None,
+) -> list[dict[str, Any]]:
+    """
+    Load per-subtask worklog detail in 'subtask_dates' mode:
+    Returns subtasks whose start_date OR due_date falls within the month range,
+    with their worklogs filtered to the same month.
+    """
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        type_filter = "AND issue_type IN ('Sub-task', 'Bug Subtask')" if include_bug_subtasks else "AND issue_type = 'Sub-task'"
+        all_subtasks = conn.execute(
+            f"""
+            SELECT issue_key, issue_type, summary, story_key, epic_key,
+                   parent_issue_key, original_estimate_hours,
+                   start_date, due_date, total_hours_logged,
+                   assignee, status, project_key
+            FROM canonical_issues
+            WHERE run_id = ? {type_filter}
+            """,
+            (run_id,),
+        ).fetchall()
+
+        ms_iso = month_start.isoformat()
+        me_iso = month_end.isoformat()
+        qualifying: list[dict[str, Any]] = []
+        qualifying_keys: list[str] = []
+        for row in all_subtasks:
+            if selected_project_keys:
+                pk = _to_text(row["project_key"]).upper()
+                if pk and pk not in selected_project_keys:
+                    continue
+            sd = _to_text(row["start_date"])
+            dd = _to_text(row["due_date"])
+            sd_in_range = bool(sd and ms_iso <= sd <= me_iso)
+            dd_in_range = bool(dd and ms_iso <= dd <= me_iso)
+            if sd_in_range or dd_in_range:
+                qualifying.append(dict(row))
+                qualifying_keys.append(_to_text(row["issue_key"]).upper())
+
+        if not qualifying_keys:
+            return []
+
+        # Load worklogs for qualifying subtasks in date range
+        wl_latest = conn.execute(
+            "SELECT run_id FROM canonical_worklogs ORDER BY rowid DESC LIMIT 1"
+        ).fetchone()
+        wl_run_id = wl_latest[0] if wl_latest else run_id
+
+        month_logged_by_issue: dict[str, float] = defaultdict(float)
+        worklogs_by_issue: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        for chunk in _chunked(qualifying_keys, 400):
+            placeholders = ",".join("?" for _ in chunk)
+            for wl_row in conn.execute(
+                f"""
+                SELECT issue_key, started_date, hours_logged, worklog_author
+                FROM canonical_worklogs
+                WHERE run_id = ? AND UPPER(issue_key) IN ({placeholders})
+                  AND started_date >= ? AND started_date <= ?
+                ORDER BY started_date ASC
+                """,
+                [wl_run_id, *chunk, ms_iso, me_iso],
+            ).fetchall():
+                ik = _to_text(wl_row["issue_key"]).upper()
+                if ik:
+                    h = float(wl_row["hours_logged"] or 0.0)
+                    month_logged_by_issue[ik] += h
+                    worklogs_by_issue[ik].append({
+                        "date": _to_text(wl_row["started_date"]),
+                        "hours": _round_hours(h),
+                        "author": _to_text(wl_row["worklog_author"]),
+                    })
+
+    assignee_filter_lowers: set[str] = set()
+    if selected_assignees:
+        assignee_filter_lowers = {
+            _to_text(a).lower() for a in selected_assignees if _to_text(a)
+        }
+
+    result: list[dict[str, Any]] = []
+    for meta in qualifying:
+        ik = _to_text(meta.get("issue_key")).upper()
+        if not ik:
+            continue
+        issue_type_text = _to_text(meta.get("issue_type"))
+        is_bug_subtask = issue_type_text.lower() == "bug subtask"
+        assignee_text = _to_text(meta.get("assignee"))
+        status_text = _to_text(meta.get("status"))
+        is_on_hold = _is_on_hold_status_text(status_text)
+        epic_key = _to_text(meta.get("epic_key")).upper()
+        story_key = _to_text(meta.get("story_key")).upper() or _to_text(meta.get("parent_issue_key")).upper()
+
+        matches_assignees = (
+            True if not assignee_filter_lowers
+            else assignee_text.lower() in assignee_filter_lowers
+        )
+        matches_bug_subtask = include_bug_subtasks or not is_bug_subtask
+        matches_on_hold = include_on_hold or not is_on_hold
+        matches_filters = matches_assignees and matches_bug_subtask and matches_on_hold
+
+        result.append({
+            "issue_key": ik,
+            "issue_type": issue_type_text,
+            "summary": _to_text(meta.get("summary")),
+            "epic_key": epic_key,
+            "story_key": story_key,
+            "assignee": assignee_text,
+            "status": status_text,
+            "is_on_hold": bool(is_on_hold),
+            "is_bug_subtask": bool(is_bug_subtask),
+            "start_date": _to_text(meta.get("start_date")),
+            "due_date": _to_text(meta.get("due_date")),
+            "original_estimate_hours": _round_hours(float(meta.get("original_estimate_hours") or 0.0)),
+            "total_hours_logged": _round_hours(float(meta.get("total_hours_logged") or 0.0)),
+            "month_logged_hours": _round_hours(month_logged_by_issue.get(ik, 0.0)),
+            "jira_url": f"{jira_base}/browse/{ik}" if jira_base else "",
+            "worklogs": worklogs_by_issue.get(ik, []),
+            "matches_assignees": bool(matches_assignees),
+            "matches_bug_subtask": bool(matches_bug_subtask),
+            "matches_on_hold": bool(matches_on_hold),
+            "matches_filters": bool(matches_filters),
+        })
+
+    result.sort(key=lambda r: (_to_text(r["epic_key"]), _to_text(r["story_key"]), _to_text(r["issue_key"])))
+    return result
+
+
 def _approved_dates(
     epic_plan: dict[str, Any],
     planner_row: dict[str, Any] | None = None,
@@ -2196,24 +2401,47 @@ def build_worklog_detail_for_range(
     jira_base_url: str = "",
     selected_assignees: set[str] | None = None,
     include_on_hold: bool = False,
+    logged_hours_mode: str = "tk_dates",
+    selected_projects: set[str] | None = None,
+    epic_keys_in_scope: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     """
     Lightweight standalone function: load per-subtask worklog hours for any
     arbitrary from_date → to_date range, independent of the full monthly payload.
-    Used by the dedicated worklog-detail API endpoint. Returns all subtasks
-    in scope so the drawer can highlight which rows match the active filters
-    (assignee selection, include-on-hold, include-bug-subtasks).
+    Used by the dedicated worklog-detail API endpoint.
+
+    logged_hours_mode controls scoping:
+      - "tk_dates": only show subtasks from in-scope epics (epic_keys_in_scope).
+        If epic_keys_in_scope is None, falls back to all epics.
+      - "subtask_dates": show subtasks whose own start_date OR due_date falls in the range.
     """
     run_id = _to_text(canonical_run_id)
     if not run_id:
         raise ValueError("No successful canonical refresh found.")
     jira_base = _to_text(jira_base_url).rstrip("/")
-    # Always load both subtask + bug-subtask universes so the drawer can show
-    # all candidate rows; matches_bug_subtask flags which rows the active
-    # include_bug_subtasks toggle currently selects.
+
+    if logged_hours_mode == "subtask_dates":
+        selected_project_keys = {
+            _to_text(pk).upper() for pk in (selected_projects or set()) if _to_text(pk)
+        } or None
+        return _load_subtask_dates_worklog_detail(
+            db_path, run_id, from_date, to_date, jira_base,
+            include_bug_subtasks=include_bug_subtasks,
+            selected_assignees=selected_assignees,
+            include_on_hold=include_on_hold,
+            selected_project_keys=selected_project_keys,
+        )
+
+    # tk_dates mode: scope by epic keys
     _, subtask_keys_by_epic = _load_canonical_issue_maps(
         db_path, run_id, include_bug_subtasks=True
     )
+    if epic_keys_in_scope is not None:
+        scope_set = {_to_text(ek).upper() for ek in epic_keys_in_scope if _to_text(ek)}
+        subtask_keys_by_epic = {
+            ek: sks for ek, sks in subtask_keys_by_epic.items()
+            if ek in scope_set
+        }
     return _load_subtask_worklog_detail(
         db_path, run_id, subtask_keys_by_epic, from_date, to_date, jira_base,
         selected_assignees=selected_assignees,
@@ -2236,6 +2464,7 @@ def build_monthly_epic_plan_payload(
     include_on_hold: bool = False,
     include_bug_subtasks: bool = True,
     epic_mode: str = "tk_epics",
+    logged_hours_mode: str = "tk_dates",
 ) -> dict[str, Any]:
     run_id = _to_text(canonical_run_id)
     if not run_id:
@@ -2362,6 +2591,15 @@ def build_monthly_epic_plan_payload(
         excluded_epics.sort(key=lambda e: (_to_text(e.get("project_name")).lower(), _to_text(e.get("approved_start")), _to_text(e.get("epic_key"))))
         by_project_rows = _build_by_project_rows(by_project)
         rounded_totals = _round_totals(totals)
+        # Override actual_hours in subtask_dates mode
+        if logged_hours_mode == "subtask_dates":
+            subtask_dates_total = _compute_subtask_dates_actual_hours(
+                db_path, run_id, month_start, month_end,
+                include_bug_subtasks=include_bug_subtasks,
+                selected_project_keys=selected_project_keys or None,
+            )
+            rounded_totals["actual_hours"] = _round_hours(subtask_dates_total)
+            rounded_totals["actual_days"] = _round_hours(subtask_dates_total / HOURS_PER_DAY)
         estimate_rollup = _load_estimate_rollup_for_epics(
             db_path,
             run_id,
@@ -2384,7 +2622,8 @@ def build_monthly_epic_plan_payload(
             "canonical_run_id": run_id, "selected_projects": sorted(selected_project_keys),
             "overdue_threshold_days": int(overdue_threshold_days), "include_on_hold": bool(include_on_hold),
             "include_bug_subtasks": bool(include_bug_subtasks),
-            "epic_mode": epic_mode, "rows": rows, "by_project": by_project_rows,
+            "epic_mode": epic_mode, "logged_hours_mode": logged_hours_mode,
+            "rows": rows, "by_project": by_project_rows,
             "totals": rounded_totals, "estimate_rollup": estimate_rollup,
             "excluded_epics": excluded_epics, "workforce": workforce,
             "subtask_worklog_detail": subtask_worklog_detail,
@@ -2706,6 +2945,15 @@ def build_monthly_epic_plan_payload(
     excluded_epics.sort(key=lambda e: (_to_text(e.get("project_name")).lower(), _to_text(e.get("approved_start")), _to_text(e.get("epic_key"))))
     by_project_rows = _build_by_project_rows(by_project)
     rounded_totals = _round_totals(totals)
+    # Override actual_hours in subtask_dates mode
+    if logged_hours_mode == "subtask_dates":
+        subtask_dates_total = _compute_subtask_dates_actual_hours(
+            db_path, run_id, month_start, month_end,
+            include_bug_subtasks=include_bug_subtasks,
+            selected_project_keys=selected_project_keys or None,
+        )
+        rounded_totals["actual_hours"] = _round_hours(subtask_dates_total)
+        rounded_totals["actual_days"] = _round_hours(subtask_dates_total / HOURS_PER_DAY)
     estimate_rollup = _load_estimate_rollup_for_epics(
         db_path,
         run_id,
@@ -2738,6 +2986,7 @@ def build_monthly_epic_plan_payload(
         "include_on_hold": bool(include_on_hold),
         "include_bug_subtasks": bool(include_bug_subtasks),
         "epic_mode": epic_mode,
+        "logged_hours_mode": logged_hours_mode,
         "rows": rows,
         "by_project": by_project_rows,
         "totals": rounded_totals,
