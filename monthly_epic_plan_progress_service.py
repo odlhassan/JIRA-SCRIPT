@@ -55,6 +55,13 @@ def _month_bounds(month_value: Any) -> tuple[date, date]:
     return date(year, month, 1), date(year, month, last_day)
 
 
+def _is_resource_active_for_month(resignation_date: Any, month_start: date, month_end: date) -> bool:
+    d = _parse_iso_date(resignation_date)
+    if d is None:
+        return True
+    return d >= month_start
+
+
 def _round_hours(value: float) -> float:
     return round(float(value or 0.0) + 1e-9, 2)
 
@@ -1705,11 +1712,15 @@ def build_workforce_month_payload(
     for name in option_names:
         rec = resignation_by_name.get(name) or {}
         _nlk = name.lower()
+        resign_date = rec.get("resignation_date")
+        active_in_month = _is_resource_active_for_month(resign_date, month_start, month_end)
         employee_options.append(
             {
                 "name": name,
                 "resigned": bool(rec.get("resigned")),
-                "resignation_date": rec.get("resignation_date"),
+                "resigned_for_month": bool(rec.get("resigned")) and not active_in_month,
+                "active_in_month": active_in_month,
+                "resignation_date": resign_date,
                 "leave_hours": _round_hours(float(planned_by_lower.get(_nlk, 0.0))),
                 "planned_leave_hours": _round_hours(float(planned_by_lower.get(_nlk, 0.0))),
                 "unplanned_leave_hours": _round_hours(float(unplanned_by_lower.get(_nlk, 0.0))),
@@ -1718,8 +1729,12 @@ def build_workforce_month_payload(
     for row in assignee_rows:
         nm = _to_text(row.get("name"))
         rec = resignation_by_name.get(nm) or {}
+        resign_date = rec.get("resignation_date")
+        active_in_month = _is_resource_active_for_month(resign_date, month_start, month_end)
         row["resigned"] = bool(rec.get("resigned"))
-        row["resignation_date"] = rec.get("resignation_date")
+        row["resigned_for_month"] = bool(rec.get("resigned")) and not active_in_month
+        row["active_in_month"] = active_in_month
+        row["resignation_date"] = resign_date
 
     teams_sections: list[dict[str, Any]] = []
     grouped_name_lower: set[str] = set()
@@ -1737,11 +1752,15 @@ def build_workforce_month_payload(
             lk = m.lower()
             disp_name = display_by_lower.get(lk) or team_display_by_lower.get(lk) or m
             rec_m = resignation_by_name.get(disp_name) or {}
+            resign_date_m = rec_m.get("resignation_date")
+            active_in_month_m = _is_resource_active_for_month(resign_date_m, month_start, month_end)
             members_out.append(
                 {
                     "name": disp_name,
                     "resigned": bool(rec_m.get("resigned")),
-                    "resignation_date": rec_m.get("resignation_date"),
+                    "resigned_for_month": bool(rec_m.get("resigned")) and not active_in_month_m,
+                    "active_in_month": active_in_month_m,
+                    "resignation_date": resign_date_m,
                     "leave_hours": _round_hours(float(planned_by_lower.get(lk, 0.0))),
                     "planned_leave_hours": _round_hours(float(planned_by_lower.get(lk, 0.0))),
                     "unplanned_leave_hours": _round_hours(float(unplanned_by_lower.get(lk, 0.0))),

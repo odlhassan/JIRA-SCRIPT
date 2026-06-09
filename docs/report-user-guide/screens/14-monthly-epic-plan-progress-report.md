@@ -19,18 +19,18 @@
 
 ### Workforce: Team Roster, Employee Stats, and Resource Planning
 
-- The **Team Roster** drawer is the single source of truth for which employees the workforce numbers describe. By default it leaves only the **active development team** selected; support-team members, employees resigned within the selected month, and process-team resources are unchecked.
+- The **Team Roster** drawer is the single source of truth for which employees the workforce numbers describe. By default it leaves only the **active development team** selected; support-team members, employees whose resignation date is before the selected month, and process-team resources are unchecked.
 - **Include Support Team** toggle:
 	- **On** → the user wants combined active dev + active support stats; support members become eligible for selection.
 	- **Off** (default) → only the active dev team is in scope; support members are force-unchecked.
-- **Employee Stats** cards (head count, capacity, leaves, availability) already reflect the roster selection: head count shows the selected count, and capacity/leaves are recomputed server-side as `team_capacity × (selected ÷ profile headcount)` and the sum of selected members' planned leave.
+- **Employee Stats** cards (head count, capacity, leaves, availability) reflect the roster selection: head count shows the selected count, and capacity/leaves are recomputed server-side as `team_capacity × (selected ÷ profile headcount)` and the sum of selected members' planned leave. Manual selections are preserved when the user reopens either the header employee dropdown or Team Roster and clicks Apply; resignation records do not block explicit selection.
 - **Resource Planning** (Total / Dev / Support resources) now mirrors the same roster selection instead of a fixed `all − process − resigned` formula. The panel is computed client-side from the selected members so it always stays consistent with Employee Stats:
 	- Per-member capacity is uniform: `team_capacity_hours ÷ employee_count_profile` (the same `per_person_capacity_hours` basis the server uses).
 	- **Total** = selected members × per-person capacity; planned leave summed over selected members; availability = capacity − leave.
 	- **Support** = the subset of selected members that belong to the support team (same per-person basis).
 	- **Dev** = Total − Support for every metric, so Dev head count never includes a member the user unchecked.
 	- When Include Support Team is off, no support member is selected, so the Support Resources group is hidden and **Total = Dev**.
-- On first load with no explicit selection, Resource Planning still mirrors the roster default (active dev only, support shown only when Include Support Team is applied on), rather than the full organisation breakdown.
+- On first load with no explicit selection, Resource Planning still mirrors the roster default (active dev only, support shown only when Include Support Team is applied on), rather than the full organisation breakdown. A resignation dated before the selected month is treated as inactive for that month; a resignation dated inside or after the selected month remains selectable and active for that month.
 - The detailed **Technical Support Team** table below Employee Stats continues to list the full support roster as a reference; only the Resource Planning *Support Resources* card is selection-aware.
 
 ## Business Cases
@@ -111,21 +111,21 @@ Jira CSV reconciliation has one important caveat: the downloaded `Σ Time Spent`
 | Epics table | TK Epic Budget | Numeric column | Derived | Shows epic-level TK budget in the selected unit. Blank for rows without planner-backed TK budget. |
 | Epics table | Month Plan / Month Actual / Total Actual | Numeric columns | Derived | Show selected-month plan, selected-month worklogs, and total logged work across the epic. |
 | Team Roster drawer | Include Support Team | Checkbox | Unchecked | When on, support members are selectable and feed Employee Stats + Resource Planning; when off, support members are force-unchecked (dev-only scope). |
-| Team Roster drawer | Member / team checkboxes | Checkboxes | Active dev selected, support/resigned unchecked | Selecting/clearing members defines the workforce scope. `Apply selection` re-fetches the payload with the chosen assignees. |
+| Team Roster drawer | Member / team checkboxes | Checkboxes | Active dev selected, support and before-month resignations unchecked | Selecting/clearing members defines the workforce scope. `Apply selection` re-fetches the payload with the chosen assignees and preserves manually selected employees, including employees with resignation records. |
 | Employee Stats | Head Count / Capacity / Leaves / Availability | Read-only cards | Calculated | Reflect the roster selection (selected count, scaled capacity, selected members' planned leave). |
 | Resource Planning | Total / Dev / Support resources | Read-only cards | Calculated | Mirror the roster selection. Total and Support are computed from selected members at a uniform per-person capacity; Dev = Total − Support. Support group hidden when no support member is selected. |
 
 ## Script Files
 
-- `monthly_epic_plan_progress_service.py` — builds the monthly payload, estimate rollups, top-level Bug Subtask inclusion/exclusion, Story Overrun detail rows, and the standalone `build_worklog_detail_for_range()` function used by the dedicated worklog-detail endpoint.
-- `monthly_epic_plan_progress_report.html` — renders filters, the top-level `Include Bug Subtasks` toggle, estimate bars, detail drawers, the Worklog Detail drawer with From/To date pickers and Apply button, table view, Gantt view, the Team Roster drawer, Employee Stats cards, and the selection-aware Resource Planning panel. The main `<style>` block must close before `<body>` so browser parsing does not treat the report body as CSS text.
+- `monthly_epic_plan_progress_service.py` — builds the monthly payload, estimate rollups, top-level Bug Subtask inclusion/exclusion, Story Overrun detail rows, month-aware resignation eligibility for workforce roster rows, and the standalone `build_worklog_detail_for_range()` function used by the dedicated worklog-detail endpoint.
+- `monthly_epic_plan_progress_report.html` — renders filters, the top-level `Include Bug Subtasks` toggle, estimate bars, detail drawers, the Worklog Detail drawer with From/To date pickers and Apply button, table view, Gantt view, the Team Roster drawer, Employee Stats cards, month-aware resigned/inactive labels, and the selection-aware Resource Planning panel. The main `<style>` block must close before `<body>` so browser parsing does not treat the report body as CSS text.
 - `report_server.py` — serves `/api/monthly-epic-plan-progress/summary` (includes `include_bug_subtasks` param) and the new `/api/monthly-epic-plan-progress/worklog-detail` endpoint (`from_date`, `to_date`, `include_bug_subtasks` params). Syncs canonical report HTML into `report_html/`.
-- `tests/test_monthly_epic_plan_progress.py` — 19 tests covering payload generation, HTML presence, Story Overrun regression, bug-subtask toggle, worklog detail payload, `build_worklog_detail_for_range` with custom dates, and the HTML structural guard that `</style>` appears before `<body>`.
+- `tests/test_monthly_epic_plan_progress.py` — covers payload generation, HTML presence, Story Overrun regression, bug-subtask toggle, worklog detail payload, `build_worklog_detail_for_range` with custom dates, month-aware roster resignation eligibility, manual employee-selection persistence, and the HTML structural guard that `</style>` appears before `<body>`.
 
 ## Dependent & Impacted Files
 
 - `report_server.py` depends on this module because it exposes the summary API consumed by the page.
-- `tests/test_monthly_epic_plan_progress.py` is impacted whenever estimate-rollup payload fields, bug-subtask inclusion rules, or drawer/top-level toggle markup change.
+- `tests/test_monthly_epic_plan_progress.py` is impacted whenever estimate-rollup payload fields, bug-subtask inclusion rules, workforce roster selection rules, resignation eligibility, or drawer/top-level toggle markup change.
 - `report_html/monthly_epic_plan_progress_report.html` is a served copy produced by the sync flow and reflects changes from the canonical root HTML file.
 - Planner-backed Jira link mappings from `epics_management` affect whether the drawer can display story or epic `TK planned` values.
 - `support_center_service.py` reuses this module's support-team capacity helpers (`build_workforce_month_payload`, `HOURS_PER_DAY`, `_month_bounds`) read-only to compute "hours available" for the Support Center report. See `SUPPORT_CENTER_REPORT.md`.
@@ -155,5 +155,5 @@ Jira CSV reconciliation has one important caveat: the downloaded `Σ Time Spent`
 12. Clicking "Download CSV" exports all drawer rows to a file named `worklog_detail_<from>_to_<to>.csv`. Each per-worklog entry becomes a separate row; subtask metadata repeats only on the first row for that subtask.
 12. When the user opens the Story Overrun drawer, the browser starts from the story-level detail rows, defaults the drawer bug toggle to unchecked, recalculates displayed logged/overrun values from the regular-subtask-only fields, and removes rows that no longer overrun.
 13. If the user enables the drawer-local `Include bug subtasks`, the browser re-renders the same rows using the combined totals already supplied by the backend for the current page-level scope.
-14. For workforce numbers, the service returns per-member data in `employee_tree` (name, `resigned`, planned `leave_hours`), the support roster in `support_team.member_rows`, `team_capacity_hours`, `employee_count_profile`, and the active selection (`selected_assignees`, `assignee_filter_active`).
-15. `renderWorkforce` and `renderSupportTeam` call `computeResourcePlanningState`, which derives the effective selected set (from `selected_assignees`, or the active dev-only default when no filter is active), computes Total and Support buckets at a uniform per-person capacity, and `renderResourceSummary` then renders Dev = Total − Support. Changing the Team Roster selection and clicking `Apply selection` re-fetches the payload and re-renders all workforce panels consistently.
+14. For workforce numbers, the service returns per-member data in `employee_tree` (name, static `resigned`, month-aware `active_in_month` / `resigned_for_month`, planned `leave_hours`), the support roster in `support_team.member_rows`, `team_capacity_hours`, `employee_count_profile`, and the active selection (`selected_assignees`, `assignee_filter_active`).
+15. `renderWorkforce` and `renderSupportTeam` call `computeResourcePlanningState`, which derives the effective selected set (from `selected_assignees`, or the active dev-only default when no filter is active), computes Total and Support buckets at a uniform per-person capacity, and `renderResourceSummary` then renders Dev = Total − Support. Changing the header employee dropdown or Team Roster selection and clicking Apply re-fetches the payload and re-renders all workforce panels consistently without reverting newly checked members.

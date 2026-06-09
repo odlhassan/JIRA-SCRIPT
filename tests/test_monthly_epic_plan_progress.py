@@ -11,6 +11,7 @@ from datetime import date
 from monthly_epic_plan_progress_service import (
     _nested_aligned_leave_by_assignee,
     build_monthly_epic_plan_payload,
+    build_workforce_month_payload,
     build_worklog_detail_for_range,
 )
 from report_server import _init_epics_management_db, create_report_server_app
@@ -316,6 +317,33 @@ def _add_performance_team(db_path: Path, team_name: str, team_leader: str, assig
         conn.close()
 
 
+def _add_resource_resignation(db_path: Path, assignee_name: str, resignation_date: str) -> None:
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS performance_resource_resignations (
+                assignee_name TEXT PRIMARY KEY,
+                resignation_date TEXT,
+                updated_at TEXT NOT NULL DEFAULT ''
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO performance_resource_resignations(assignee_name, resignation_date, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(assignee_name) DO UPDATE SET
+              resignation_date = excluded.resignation_date,
+              updated_at = excluded.updated_at
+            """,
+            (assignee_name, resignation_date, "2026-03-01T00:00:00Z"),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 class MonthlyEpicPlanProgressTests(unittest.TestCase):
     def test_nested_aligned_leave_prefers_distributed_buckets(self):
         month_start = date(2026, 4, 1)
@@ -363,6 +391,35 @@ class MonthlyEpicPlanProgressTests(unittest.TestCase):
         _, leave_by, _, src = _nested_aligned_leave_by_assignee(snapshot, month_start, month_end)
         self.assertEqual(src, "daily_planned_buckets")
         self.assertAlmostEqual(leave_by.get("beta", 0), 5.0, places=2)
+
+    def test_workforce_resignation_status_is_month_aware_and_manual_selection_persists(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            db_path = Path(td) / "assignee_hours_capacity.db"
+            _add_performance_team(
+                db_path,
+                "Delivery Team",
+                "Lead",
+                '["Active Member", "Past Resigned", "Future Resigned"]',
+            )
+            _add_resource_resignation(db_path, "Past Resigned", "2026-02-15")
+            _add_resource_resignation(db_path, "Future Resigned", "2026-03-20")
+
+            workforce = build_workforce_month_payload(
+                db_path,
+                date(2026, 3, 1),
+                date(2026, 3, 31),
+                "",
+                selected_assignees={"Past Resigned", "Future Resigned"},
+            )
+
+            team = next(t for t in workforce["employee_tree"]["teams"] if t["team_name"] == "Delivery Team")
+            by_name = {m["name"]: m for m in team["members"]}
+            self.assertFalse(by_name["Past Resigned"]["active_in_month"])
+            self.assertTrue(by_name["Past Resigned"]["resigned_for_month"])
+            self.assertTrue(by_name["Future Resigned"]["active_in_month"])
+            self.assertFalse(by_name["Future Resigned"]["resigned_for_month"])
+            self.assertEqual(set(workforce["selected_assignees"]), {"Past Resigned", "Future Resigned"})
+            self.assertEqual(workforce["selected_employee_count"], 2)
 
     def test_service_includes_epic_when_start_or_due_in_month_and_month_worklogs(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
@@ -796,6 +853,10 @@ class MonthlyEpicPlanProgressTests(unittest.TestCase):
         self.assertIn('id="assignee-select-all"', html)
         self.assertIn("function renderEmployeeDropdown", html)
         self.assertIn("function applyEmployeeDropdownFilter", html)
+        self.assertIn("function selectedEmployeeNameSet", html)
+        self.assertIn("function isEmployeeInactiveForMonth", html)
+        self.assertIn('data-inactive-month="1"', html)
+        self.assertIn('selected.has(employeeNameKey(name))', html)
         self.assertIn('const bid = "emp-cb-leaf-" + (rowSeq++);', html)
         self.assertIn('const tid = "emp-team-cb-" + (teamSeq++);', html)
         self.assertIn("emp-dd-team-cb", html)
@@ -993,8 +1054,8 @@ class MonthlyEpicPlanProgressTests(unittest.TestCase):
         self.assertIn(">Assignee<", html)
         self.assertIn("wld-row-matches-filters", html)
         # Main report custom From/To date inputs
-        self.assertIn('id="df-custom-from"', html)
-        self.assertIn('id="df-custom-to"', html)
+        self.assertIn('id="date-from-input"', html)
+        self.assertIn('id="date-to-input"', html)
 
     def test_build_worklog_detail_for_range_uses_custom_dates(self):
         """build_worklog_detail_for_range returns per-subtask rows for arbitrary date range."""

@@ -3912,6 +3912,18 @@
       return Array.from(els.employeeDdList.querySelectorAll(".emp-dd-leaf:checked")).map((el) => String(el.value || "").trim()).filter(Boolean);
     }
 
+    function employeeNameKey(value) {
+      return String(value || "").trim().toLowerCase();
+    }
+
+    function selectedEmployeeNameSet(names) {
+      return new Set((Array.isArray(names) ? names : []).map(employeeNameKey).filter(Boolean));
+    }
+
+    function isEmployeeInactiveForMonth(row) {
+      return row && row.active_in_month === false;
+    }
+
     function syncTeamCheckboxForGroup(groupEl) {
       const teamCb = groupEl && groupEl.querySelector(".emp-dd-team-cb");
       const leaves = groupEl ? groupEl.querySelectorAll(".emp-dd-leaf") : [];
@@ -4048,7 +4060,7 @@
       bindEmployeeDropdownChromeOnce();
       const payload = wf || {};
       if (!els.employeeDdList) return;
-      const selected = new Set(Array.isArray(payload.selected_assignees) ? payload.selected_assignees : []);
+      const selected = selectedEmployeeNameSet(payload.selected_assignees);
       const active = !!payload.assignee_filter_active;
       const stRows = Array.isArray(payload.support_team && payload.support_team.member_rows)
         ? payload.support_team.member_rows : [];
@@ -4060,17 +4072,20 @@
         const name = String(row && row.name || "").trim();
         if (!name) return "";
         const rid = row.resigned === true || row.resigned === 1;
+        const inactive = isEmployeeInactiveForMonth(row);
         const rdate = row.resignation_date ? String(row.resignation_date).slice(0, 10) : "";
-        const title = rid ? ("Resigned" + (rdate ? " — " + rdate : "")) : "";
+        const title = rid
+          ? ((inactive ? "Resigned before selected month" : "Resignation record") + (rdate ? " — " + rdate : ""))
+          : "";
         const bid = "emp-cb-leaf-" + (rowSeq++);
-        const checked = active && selected.has(name);
+        const checked = active && selected.has(employeeNameKey(name));
         const isSupport = supportSet.has(name);
         return (
           '<label class="emp-dd-row emp-dd-member" title="' + esc(title) + '" data-search="' + esc(name + " " + (rid ? "resigned " + rdate : "")) + '"'
-          + (isSupport ? ' data-support="1"' : "") + (rid ? ' data-resigned="1"' : "") + ">"
+          + (isSupport ? ' data-support="1"' : "") + (rid ? ' data-resigned="1"' : "") + (inactive ? ' data-inactive-month="1"' : "") + ">"
           + '<input type="checkbox" class="emp-dd-leaf" id="' + esc(bid) + '" value="' + esc(name) + '"' + (checked ? " checked" : "") + ">"
           + '<span class="emp-dd-name">' + esc(name) + "</span>"
-          + (rid ? '<span class="emp-dd-res" data-resigned="1">Resigned' + (rdate ? " · " + esc(rdate) : "") + "</span>" : "")
+          + (rid ? '<span class="emp-dd-res" data-resigned="1">' + (inactive ? "Resigned" : "Resigns") + (rdate ? " · " + esc(rdate) : "") + "</span>" : "")
           + "</label>"
         );
       }
@@ -4149,8 +4164,8 @@
         });
         // Uncheck individual support team members (they may live inside any team group)
         els.employeeDdList.querySelectorAll('[data-support="1"] .emp-dd-leaf').forEach(function(cb) { cb.checked = false; });
-        // Uncheck resigned employees
-        els.employeeDdList.querySelectorAll('[data-resigned="1"] .emp-dd-leaf').forEach(function(cb) { cb.checked = false; });
+        // Uncheck employees whose resignation date is before this selected month.
+        els.employeeDdList.querySelectorAll('[data-inactive-month="1"] .emp-dd-leaf').forEach(function(cb) { cb.checked = false; });
         _didAutoExclude = true;
       }
 
@@ -5379,8 +5394,7 @@
         allMembers.forEach(function (m) {
           const lk = String((m && m.name) || "").trim().toLowerCase();
           if (!lk) return;
-          const rid = m.resigned === true || m.resigned === 1;
-          if (rid) return;
+          if (isEmployeeInactiveForMonth(m)) return;
           if (supportSet.has(lk) && !includeSupport) return;
           selectedLowers.add(lk);
         });
@@ -5514,7 +5528,7 @@
       const teams = Array.isArray(tree.teams) ? tree.teams : [];
       const ungrouped = Array.isArray(tree.ungrouped) ? tree.ungrouped : [];
       const active = !!payload.assignee_filter_active;
-      const selected = new Set(Array.isArray(payload.selected_assignees) ? payload.selected_assignees : []);
+      const selected = selectedEmployeeNameSet(payload.selected_assignees);
       const monthStr = els.month ? els.month.value : "";
       const n = Number(payload.employee_count_profile || 0);
 
@@ -5539,19 +5553,19 @@
         const name = String((m && m.name) || "").trim();
         if (!name) return "";
         const rid = m.resigned === true || m.resigned === 1;
+        const inactive = isEmployeeInactiveForMonth(m);
         const lv = Number(m.leave_hours || 0);
         const isSupport = supportTeamSet.has(name);
-        // Default: exclude support team and resigned; when filter active respect selected set (still exclude resigned)
-        const checked = active ? (selected.has(name) && !rid) : (!isSupport && !rid);
+        const checked = active ? selected.has(employeeNameKey(name)) : (!isSupport && !inactive);
         const rdate = m.resignation_date ? String(m.resignation_date).slice(0, 10) : "";
         return (
-          '<label class="hc-member-row" data-hc-name="' + esc(name.toLowerCase()) + '"' + (isSupport ? ' data-support="1"' : "") + '>'
+          '<label class="hc-member-row" data-hc-name="' + esc(name.toLowerCase()) + '"' + (isSupport ? ' data-support="1"' : "") + (inactive ? ' data-inactive-month="1"' : "") + '>'
           + '<input type="checkbox" class="hc-leaf" value="' + esc(name) + '"' + (checked ? " checked" : "") + ">"
           + '<span class="hc-member-name">' + esc(name)
           + (isSupport ? '<span class="hc-support-chip">Support</span>' : "")
           + "</span>"
           + '<span class="hc-member-status ' + (rid ? "resigned" : "active") + '">'
-          + (rid ? ("Resigned" + (rdate ? " · " + rdate : "")) : "Active") + "</span>"
+          + (rid ? ((inactive ? "Resigned" : "Resigns") + (rdate ? " · " + rdate : "")) : "Active") + "</span>"
           + (lv > 0
             ? '<span class="hc-member-leaves has-leave">' + formatNumber(lv) + " h leave</span>"
             : '<span class="hc-member-leaves">—</span>')
@@ -5719,9 +5733,10 @@
       const checked = Array.from(els.hcTree.querySelectorAll(".hc-leaf:checked"))
         .map(function (cb) { return String(cb.value || "").trim(); })
         .filter(Boolean);
+      const checkedSet = selectedEmployeeNameSet(checked);
       if (els.employeeDdList) {
         els.employeeDdList.querySelectorAll(".emp-dd-leaf").forEach(function (cb) {
-          cb.checked = checked.includes(String(cb.value || "").trim());
+          cb.checked = checkedSet.has(employeeNameKey(cb.value));
         });
         els.employeeDdList.querySelectorAll(".emp-dd-group").forEach(syncTeamCheckboxForGroup);
       }
@@ -5935,7 +5950,7 @@
           this.indeterminate = false;
           els.hcTree.querySelectorAll('.hc-leaf').forEach(function (cb) {
             const row = cb.closest('[data-support="1"]');
-            if (row) cb.checked = include;
+            if (row) cb.checked = include && !cb.closest('[data-inactive-month="1"]');
           });
           // Sync team checkboxes
           els.hcTree.querySelectorAll(".hc-team-block").forEach(function (block) {
