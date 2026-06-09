@@ -4191,7 +4191,14 @@
     function updateProjectDropdownSummary() {
       if (!els.projDdSummary) return;
       const selected = selectedProjects();
-      if (!selected.length) {
+      const allCbs = els.projDdList ? els.projDdList.querySelectorAll(".proj-dd-cb") : [];
+      const nonLeavesCbs = els.projDdList
+        ? els.projDdList.querySelectorAll('.proj-dd-item:not([data-leaves="1"]) .proj-dd-cb')
+        : [];
+      const allNonLeavesChecked = nonLeavesCbs.length > 0
+        && Array.from(nonLeavesCbs).every((cb) => cb.checked)
+        && !Array.from(els.projDdList.querySelectorAll('.proj-dd-item[data-leaves="1"] .proj-dd-cb')).some((cb) => cb.checked);
+      if (!selected.length || allNonLeavesChecked) {
         els.projDdSummary.textContent = "All projects";
       } else if (selected.length === 1) {
         const meta = projectMetaByKey.get(selected[0]) || {};
@@ -5126,11 +5133,13 @@
         const key = String(project.project_key || project.key || "").toUpperCase();
         if (!key) return;
         const name = String(project.display_name || project.project_name || key);
-        projectMetaByKey.set(key, { ...project, color_hex: safeColor(project.color_hex) });
+        const isLeaves = !!project.is_leaves_project;
+        projectMetaByKey.set(key, { ...project, color_hex: safeColor(project.color_hex), is_leaves_project: isLeaves });
         const searchText = (name + " " + key).toLowerCase();
+        const checkedAttr = isLeaves ? "" : " checked";
         parts.push(
-          '<label class="emp-dd-row proj-dd-item" data-search-text="' + esc(searchText) + '">'
-          + '<input type="checkbox" class="proj-dd-cb" value="' + esc(key) + '">'
+          '<label class="emp-dd-row proj-dd-item" data-search-text="' + esc(searchText) + '" data-leaves="' + (isLeaves ? "1" : "0") + '">'
+          + '<input type="checkbox" class="proj-dd-cb" value="' + esc(key) + '"' + checkedAttr + '>'
           + '<span class="emp-dd-name">' + esc(name) + ' <span style="color:var(--muted);font-weight:600;font-size:0.78em;">(' + esc(key) + ')</span></span>'
           + '</label>'
         );
@@ -6835,7 +6844,12 @@
     els.apply.addEventListener("click", loadSummary);
     if (els.clearProjects) {
       els.clearProjects.addEventListener("click", () => {
-        if (els.projDdList) els.projDdList.querySelectorAll(".proj-dd-cb").forEach((cb) => { cb.checked = false; });
+        if (els.projDdList) {
+          els.projDdList.querySelectorAll(".proj-dd-cb").forEach((cb) => {
+            const item = cb.closest(".proj-dd-item");
+            cb.checked = !(item && item.dataset.leaves === "1");
+          });
+        }
         updateProjectDropdownSummary();
         loadSummary();
       });
@@ -6877,7 +6891,10 @@
     if (els.projSelectAll) {
       els.projSelectAll.addEventListener("click", () => {
         if (els.projDdList) {
-          els.projDdList.querySelectorAll(".proj-dd-item:not([style*='none']) .proj-dd-cb").forEach((cb) => { cb.checked = true; });
+          els.projDdList.querySelectorAll(".proj-dd-item:not([style*='none']) .proj-dd-cb").forEach((cb) => {
+            const item = cb.closest(".proj-dd-item");
+            cb.checked = !(item && item.dataset.leaves === "1");
+          });
         }
         updateProjectDropdownSummary();
         loadSummary();

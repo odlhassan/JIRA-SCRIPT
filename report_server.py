@@ -40991,6 +40991,8 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         try:
             include_inactive = _to_text(request.args.get("include_inactive")).lower() in {"1", "true", "yes", "y"}
             projects = list_managed_projects(capacity_paths["db_path"], include_inactive=include_inactive)
+            for proj in projects:
+                proj["is_leaves_project"] = _is_rlt_managed_project(proj)
             return jsonify({"projects": projects, "include_inactive": include_inactive, "source": "db"})
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
