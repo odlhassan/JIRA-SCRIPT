@@ -14,6 +14,17 @@ This project can run on Azure App Service for Linux as a Python 3.11 web app.
 Azure App Service auto-detects Flask only when the app entrypoint is `app.py` or `application.py` with an `app` callable.
 
 This repo exposes the Flask app from `wsgi.py`, so configure Azure to use the included `startup.txt` file.
+The startup command runs Gunicorn on Azure's injected `$PORT` with a single worker:
+
+```text
+python -m gunicorn --bind=0.0.0.0:${PORT:-8000} --timeout 600 --workers 1 --access-logfile '-' --error-logfile '-' --capture-output wsgi:app
+```
+
+Use one worker for production because the app initializes and writes SQLite-backed
+settings and canonical-refresh tables during WSGI startup. Multiple workers can race on
+those SQLite files during cold start and terminate before the App Service warmup probe
+succeeds, causing `ContainerTimeout`, `exit code: 1`, and temporary site blocking. The
+`--capture-output` flag sends worker boot exceptions to the App Service log stream.
 
 ## One-time Azure setup
 
@@ -88,6 +99,12 @@ Stream logs:
 ```powershell
 az webapp log tail --resource-group $RESOURCE_GROUP --name $APP
 ```
+
+If the platform log shows `Container has finished running with exit code: 1` during
+startup, check the log stream first. The expected healthy boot path is that Gunicorn
+continues running after the warmup probe and `/introduction.html` returns HTTP 200. If
+the site is temporarily blocked because of repeated cold-start failures, wait for the
+reported unblock time, then restart once after the fixed startup command is deployed.
 
 Restart after config changes:
 
