@@ -4142,6 +4142,7 @@ def _canonical_stage_catalog() -> list[tuple[str, str]]:
         ("fetching_worklogs", "Fetch worklogs"),
         ("persisting_canonical_data", "Persist canonical data"),
         ("rebuilding_derived_data", "Rebuild derived data"),
+        ("syncing_epics_management", "Sync Epics Planner from canonical"),
         ("rebuilding_compatibility_artifacts", "Rebuild compatibility artifacts"),
         ("generating_reports", "Generate dependent reports"),
         ("syncing_report_html", "Sync report output"),
@@ -4966,6 +4967,64 @@ def _canonical_bridge_write_workbook(sheet_title: str, headers: list[str], rows:
     for row in rows:
         sheet.append(row)
     workbook.save(output_path)
+
+
+def _sync_epics_management_from_canonical(db_path: Path, run_id: str) -> dict[str, object]:
+    """Update epics_management rows with fresh Jira data from the latest canonical run.
+
+    Matches rows by epic_key (case-insensitive). Only updates non-user-managed fields:
+    epic_name (Jira summary), start_date, due_date, jira_url. Never clears user-managed
+    fields like plan_status, delivery_status, or epic plan JSON.
+    Returns a stats dict with updated/skipped counts.
+    """
+    run_id_text = _to_text(run_id)
+    if not run_id_text:
+        return {"updated": 0, "skipped": 0}
+    now_utc = _utc_now_iso()
+    updated = 0
+    skipped = 0
+    try:
+        with sqlite3.connect(db_path) as conn:
+            epics = conn.execute(
+                """
+                SELECT issue_key, summary, start_date, due_date, project_key
+                FROM canonical_issues
+                WHERE run_id = ? AND lower(issue_type) LIKE '%epic%'
+                """,
+                (run_id_text,),
+            ).fetchall()
+            for issue_key, summary, start_date, due_date, project_key in epics:
+                issue_key_upper = _to_text(issue_key).upper()
+                if not issue_key_upper:
+                    continue
+                jira_url = f"{BASE_URL}/browse/{issue_key_upper}" if BASE_URL else ""
+                result = conn.execute(
+                    "SELECT id, epic_name, start_date, due_date, jira_url FROM epics_management WHERE upper(epic_key) = ?",
+                    (issue_key_upper,),
+                ).fetchone()
+                if not result:
+                    skipped += 1
+                    continue
+                row_id, cur_name, cur_start, cur_due, cur_url = result
+                new_name = _to_text(summary).strip() or _to_text(cur_name)
+                new_start = _to_text(start_date).strip() or _to_text(cur_start)
+                new_due = _to_text(due_date).strip() or _to_text(cur_due)
+                new_url = jira_url or _to_text(cur_url)
+                if (new_name != _to_text(cur_name)
+                        or new_start != _to_text(cur_start)
+                        or new_due != _to_text(cur_due)
+                        or new_url != _to_text(cur_url)):
+                    conn.execute(
+                        "UPDATE epics_management SET epic_name=?, start_date=?, due_date=?, jira_url=?, updated_at_utc=? WHERE id=?",
+                        (new_name, new_start, new_due, new_url, now_utc, row_id),
+                    )
+                    updated += 1
+                else:
+                    skipped += 1
+            conn.commit()
+    except Exception:
+        pass
+    return {"updated": updated, "skipped": skipped}
 
 
 def _canonical_rebuild_compatibility_artifacts(db_path: Path, run_id: str, base_dir: Path) -> dict[str, object]:
@@ -6096,6 +6155,13 @@ def _run_canonical_phase1_refresh(
         derived_stats = _canonical_rebuild_derived_data(db_path=db_path, run_id=run_id)
         counts_by_stage["rebuilding_derived_data"] = dict(derived_stats)
         completed_stages.add("rebuilding_derived_data")
+
+        if _canonical_is_cancel_requested(db_path, run_id):
+            return _cancel("syncing_epics_management")
+        _update("syncing_epics_management", 94, current_item="Sync Epics Planner from canonical data")
+        epics_sync_stats = _sync_epics_management_from_canonical(db_path, run_id)
+        counts_by_stage["syncing_epics_management"] = epics_sync_stats
+        completed_stages.add("syncing_epics_management")
 
         if _canonical_is_cancel_requested(db_path, run_id):
             return _cancel("rebuilding_compatibility_artifacts")

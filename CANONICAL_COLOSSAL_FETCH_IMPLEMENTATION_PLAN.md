@@ -289,6 +289,7 @@ Implemented so far:
 - **Incremental sync-cache is now warmed per-issue inside the worklog fetch loop** — each issue+worklog pair is written to `jira_sync_cache.db` immediately after being fetched, so a subsequent smart refresh after a failed/cancelled run will skip already-fetched issues automatically (resume behaviour)
 - **Resume (Smart Refresh) banner** added to the Colossal Refresh settings UI — shown when the most recent run was `canceled` or `failed`; clicking it pre-fills the scope year from the last run and starts a smart refresh
 - **Azure split-path output fix** — when `JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH` points to persistent storage such as `/home/data/assignee_hours_capacity.db`, canonical data is stored in that DB but compatibility workbooks, generated report HTML, and `report_html` sync still run from the application root. This prevents successful Colossal Refresh runs from writing fresh artifacts under `/home/data` where the live site does not serve them.
+- **Epics Planner sync from canonical** — new `syncing_epics_management` stage runs after `rebuilding_derived_data`. For each Epic-type issue in the current canonical run, any matching row in `epics_management` (matched by `epic_key`) has its `epic_name`, `start_date`, `due_date`, and `jira_url` updated with the latest Jira values. Only non-user-managed fields are touched; plan fields, delivery status, and plan JSON are never overwritten. This ensures `settings/product-releases` shows current epic names and dates after every Colossal Refresh.
 
 Key implementation location:
 
