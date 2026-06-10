@@ -835,6 +835,32 @@ def _load_leave_metrics(leave_report_path: Path, from_date: str, to_date: str, s
         wb.close()
 
 
+def _backup_capacity_db(db_path: Path) -> None:
+    """Create a dated backup of the capacity DB on startup (best-effort, never raises)."""
+    import datetime, shutil
+    try:
+        if not db_path.exists() or db_path.stat().st_size == 0:
+            return
+        # Keep backups next to the DB in a 'backups' subfolder
+        backup_dir = db_path.parent / "backups"
+        backup_dir.mkdir(parents=True, exist_ok=True)
+        date_tag = datetime.datetime.utcnow().strftime("%Y-%m-%d")
+        backup_path = backup_dir / f"{db_path.stem}_{date_tag}.db"
+        if not backup_path.exists():
+            shutil.copy2(db_path, backup_path)
+        # Prune backups older than 7 days
+        cutoff = datetime.datetime.utcnow() - datetime.timedelta(days=7)
+        for old in backup_dir.glob(f"{db_path.stem}_*.db"):
+            try:
+                mtime = datetime.datetime.utcfromtimestamp(old.stat().st_mtime)
+                if mtime < cutoff:
+                    old.unlink()
+            except OSError:
+                pass
+    except Exception:
+        pass
+
+
 def _init_capacity_db(db_path: Path) -> None:
     def _create_schema(conn: sqlite3.Connection) -> None:
         conn.execute(
@@ -875,6 +901,7 @@ def _init_capacity_db(db_path: Path) -> None:
         conn.commit()
 
     db_path = Path(db_path)
+    _backup_capacity_db(db_path)
     for attempt in range(2):
         try:
             conn = sqlite3.connect(db_path)
