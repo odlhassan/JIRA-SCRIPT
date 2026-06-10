@@ -4970,18 +4970,25 @@ def _canonical_bridge_write_workbook(sheet_title: str, headers: list[str], rows:
 
 
 def _sync_epics_management_from_canonical(db_path: Path, run_id: str) -> dict[str, object]:
-    """Update epics_management rows with fresh Jira data from the latest canonical run.
+    """Sync epics_management with fresh Jira data from the latest canonical run.
 
-    Matches rows by epic_key (case-insensitive). Only updates non-user-managed fields:
-    epic_name (Jira summary), start_date, due_date, jira_url. Never clears user-managed
-    fields like plan_status, delivery_status, or epic plan JSON.
-    Returns a stats dict with updated/skipped counts.
+    For epics that already exist in epics_management (matched by epic_key):
+      - Updates non-user-managed fields: epic_name, start_date, due_date, jira_url.
+      - Never overwrites plan_status, delivery_status, or epic plan JSON.
+
+    For canonical epics that do NOT yet exist in epics_management:
+      - Inserts a new row so the epic appears in the product-releases pool.
+      - project_name is inferred from existing epics_management rows for the same
+        project_key, falling back to the project_key itself.
+      - product_category defaults to '' (user can categorize it afterwards).
+
+    Returns a stats dict with updated/inserted/skipped counts.
     """
     run_id_text = _to_text(run_id)
     if not run_id_text:
-        return {"updated": 0, "skipped": 0}
-    now_utc = _utc_now_iso()
+        return {"updated": 0, "inserted": 0, "skipped": 0}
     updated = 0
+    inserted = 0
     skipped = 0
     try:
         with sqlite3.connect(db_path) as conn:
@@ -4993,38 +5000,91 @@ def _sync_epics_management_from_canonical(db_path: Path, run_id: str) -> dict[st
                 """,
                 (run_id_text,),
             ).fetchall()
+
+            # Build a project_key -> project_name cache from existing rows to avoid
+            # repeated queries.
+            project_name_cache: dict[str, str] = {}
+
             for issue_key, summary, start_date, due_date, project_key in epics:
                 issue_key_upper = _to_text(issue_key).upper()
                 if not issue_key_upper:
                     continue
                 jira_url = f"{BASE_URL}/browse/{issue_key_upper}" if BASE_URL else ""
                 result = conn.execute(
-                    "SELECT id, epic_name, start_date, due_date, jira_url FROM epics_management WHERE upper(epic_key) = ?",
+                    "SELECT id, epic_name, start_date, due_date, jira_url "
+                    "FROM epics_management WHERE upper(epic_key) = ?",
                     (issue_key_upper,),
                 ).fetchone()
-                if not result:
-                    skipped += 1
-                    continue
-                row_id, cur_name, cur_start, cur_due, cur_url = result
-                new_name = _to_text(summary).strip() or _to_text(cur_name)
-                new_start = _to_text(start_date).strip() or _to_text(cur_start)
-                new_due = _to_text(due_date).strip() or _to_text(cur_due)
-                new_url = jira_url or _to_text(cur_url)
-                if (new_name != _to_text(cur_name)
-                        or new_start != _to_text(cur_start)
-                        or new_due != _to_text(cur_due)
-                        or new_url != _to_text(cur_url)):
-                    conn.execute(
-                        "UPDATE epics_management SET epic_name=?, start_date=?, due_date=?, jira_url=?, updated_at_utc=? WHERE id=?",
-                        (new_name, new_start, new_due, new_url, now_utc, row_id),
-                    )
-                    updated += 1
+
+                if result:
+                    # Update existing row (no updated_at_utc column in this table).
+                    row_id, cur_name, cur_start, cur_due, cur_url = result
+                    new_name = _to_text(summary).strip() or _to_text(cur_name)
+                    new_start = _to_text(start_date).strip() or _to_text(cur_start)
+                    new_due = _to_text(due_date).strip() or _to_text(cur_due)
+                    new_url = jira_url or _to_text(cur_url)
+                    if (new_name != _to_text(cur_name)
+                            or new_start != _to_text(cur_start)
+                            or new_due != _to_text(cur_due)
+                            or new_url != _to_text(cur_url)):
+                        conn.execute(
+                            "UPDATE epics_management SET epic_name=?, start_date=?, due_date=?, jira_url=? WHERE id=?",
+                            (new_name, new_start, new_due, new_url, row_id),
+                        )
+                        updated += 1
+                    else:
+                        skipped += 1
                 else:
-                    skipped += 1
+                    # Insert new row so this epic appears in the product-releases pool.
+                    pkey = _to_text(project_key).strip()
+                    if pkey not in project_name_cache:
+                        name_row = conn.execute(
+                            "SELECT project_name FROM epics_management WHERE project_key = ? LIMIT 1",
+                            (pkey,),
+                        ).fetchone()
+                        project_name_cache[pkey] = (
+                            _to_text(name_row[0]).strip() if name_row else pkey
+                        ) or pkey
+                    proj_name = project_name_cache[pkey]
+                    new_id = "epic-row-" + uuid.uuid4().hex
+                    conn.execute(
+                        """
+                        INSERT INTO epics_management
+                            (id, epic_key, project_key, project_name, product_category,
+                             component, epic_name, description, originator, priority,
+                             plan_status, ipp_meeting_planned, actual_production_date,
+                             delivery_status, remarks, jira_url,
+                             epic_plan_json, research_urs_plan_json, dds_plan_json,
+                             development_plan_json, sqa_plan_json, user_manual_plan_json,
+                             production_plan_json, is_sealed, is_tk_epic,
+                             epr_jira_epic_created, start_date, due_date)
+                        VALUES
+                            (?, ?, ?, ?, '',
+                             '', ?, '', '', 'Low',
+                             'Not Planned Yet', 'No', '',
+                             'Yet to start', '', ?,
+                             '{}', '{}', '{}',
+                             '{}', '{}', '{}',
+                             '{}', 0, 0,
+                             0, ?, ?)
+                        """,
+                        (
+                            new_id,
+                            issue_key_upper,
+                            pkey,
+                            proj_name,
+                            _to_text(summary).strip() or issue_key_upper,
+                            jira_url,
+                            _to_text(start_date).strip(),
+                            _to_text(due_date).strip(),
+                        ),
+                    )
+                    inserted += 1
+
             conn.commit()
     except Exception:
         pass
-    return {"updated": updated, "skipped": skipped}
+    return {"updated": updated, "inserted": inserted, "skipped": skipped}
 
 
 def _canonical_rebuild_compatibility_artifacts(db_path: Path, run_id: str, base_dir: Path) -> dict[str, object]:
