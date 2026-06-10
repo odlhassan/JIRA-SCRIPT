@@ -15,6 +15,11 @@
 # committed; large/cache DBs stay gitignored. assignee_hours_capacity.db is typically uploaded once
 # via Kudu if not in Git. jira_sync_cache.db rebuilds on the server from Jira.
 #
+# NOTE: package.json and package-lock.json are intentionally excluded from the deploy ZIP.
+# They are local-dev/Playwright tooling only. Including them causes Oryx to detect Node.js
+# alongside Python, which can make Oryx generate a Node.js startup command instead of using
+# the Python gunicorn startup, crashing the container at runtime (exit code 1).
+#
 # Optional: change AZURE_WEBAPP_NAME below if your app name differs.
 
 name: Azure App Service deploy
@@ -50,6 +55,8 @@ jobs:
             --exclude='.pytest_cache/' \
             --exclude='__pycache__/' \
             --exclude='node_modules/' \
+            --exclude='package.json' \
+            --exclude='package-lock.json' \
             --exclude='tests/' \
             --exclude='test-results/' \
             --exclude='handover/' \
