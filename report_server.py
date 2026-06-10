@@ -30963,7 +30963,8 @@ def _seating_planner_html() -> str:
     /* Body */
     .sp-body{{display:flex;flex:1;overflow:hidden;}}
     /* Canvas */
-    .sp-cw{{flex:1;overflow:auto;background:#f1f5f9;position:relative;}}
+    .sp-cw{{flex:1;overflow:auto;background:#f1f5f9;position:relative;cursor:default;}}
+    .sp-cw.panning{{cursor:grabbing!important;}}
     .sp-canvas{{
       position:relative;width:4000px;height:3000px;
       background-image:radial-gradient(circle,#94a3b8 1px,transparent 1px);
@@ -31586,6 +31587,7 @@ def _seating_planner_html() -> str:
     draggingTable: null,  // {{id,sx,sy,ox,oy}}
     draggingRotate: null, // {{id,cx,cy,startMAngle,startRot}}
     draggingEmp: null,
+    panCanvas: null,      // {{startX,startY,scrollLeft,scrollTop}} — right-click pan
     selectedSeats: new Set(), // "tableId:idx" strings
     rubberBand: null,         // {{x1,y1,x2,y2}} client coords while drawing
     selDrag: null,            // {{employees,startX,startY,started}}
@@ -32725,6 +32727,12 @@ def _seating_planner_html() -> str:
   }}
 
   document.addEventListener('mousemove',e=>{{
+    if(G.panCanvas){{
+      const cw=document.getElementById('cw');
+      cw.scrollLeft=G.panCanvas.scrollLeft-(e.clientX-G.panCanvas.startX);
+      cw.scrollTop =G.panCanvas.scrollTop -(e.clientY-G.panCanvas.startY);
+      return;
+    }}
     if(G.selDrag){{
       const ghost=document.getElementById('selGhost');
       ghost.style.left=(e.clientX+12)+'px'; ghost.style.top=(e.clientY-18)+'px';
@@ -32767,6 +32775,12 @@ def _seating_planner_html() -> str:
   }});
 
   document.addEventListener('mouseup',e=>{{
+    if(G.panCanvas){{
+      G.panCanvas=null;
+      const cw=document.getElementById('cw');
+      cw.style.cursor='';
+      cw.classList.remove('panning');
+    }}
     if(G.selDrag){{
       const under=document.elementsFromPoint(e.clientX, e.clientY);
       const tblEl=under.find(x=>x.classList&&x.classList.contains('sp-tbl'))
@@ -33154,11 +33168,24 @@ def _seating_planner_html() -> str:
   }},{{passive:false}});
 
   document.getElementById('cw').addEventListener('mousedown',e=>{{
+    if(e.button===2){{
+      e.preventDefault();
+      const cw=document.getElementById('cw');
+      G.panCanvas={{startX:e.clientX, startY:e.clientY, scrollLeft:cw.scrollLeft, scrollTop:cw.scrollTop}};
+      cw.style.cursor='grabbing';
+      cw.classList.add('panning');
+      return;
+    }}
     if(e.button!==0) return;
     if(G.selDrag) return;
     if(e.target.closest('.sp-tbl')) return;
     if(G.selectedSeats.size>0){{ clearSelection(); return; }}
     startRubberBand(e);
+  }});
+  document.getElementById('cw').addEventListener('contextmenu',e=>{{
+    if(G.panCanvas) {{ e.preventDefault(); return; }}
+    // Only suppress context menu when right-click originated on blank canvas (not on a table/seat)
+    if(!e.target.closest('.sp-tbl')) e.preventDefault();
   }});
 
   document.getElementById('selClearBtn').addEventListener('click',clearSelection);
