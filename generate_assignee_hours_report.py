@@ -836,8 +836,7 @@ def _load_leave_metrics(leave_report_path: Path, from_date: str, to_date: str, s
 
 
 def _init_capacity_db(db_path: Path) -> None:
-    conn = sqlite3.connect(db_path)
-    try:
+    def _create_schema(conn: sqlite3.Connection) -> None:
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS assignee_capacity_settings (
@@ -874,8 +873,31 @@ def _init_capacity_db(db_path: Path) -> None:
             "CREATE INDEX IF NOT EXISTS idx_tcpa_issue_key ON team_capacity_planned_assignments(issue_key)"
         )
         conn.commit()
-    finally:
-        conn.close()
+
+    db_path = Path(db_path)
+    for attempt in range(2):
+        try:
+            conn = sqlite3.connect(db_path)
+            try:
+                _create_schema(conn)
+            finally:
+                conn.close()
+            return
+        except sqlite3.DatabaseError as exc:
+            if "not a database" in str(exc).lower() and attempt == 0:
+                # Corrupted DB file — remove it so SQLite recreates a fresh one.
+                try:
+                    db_path.unlink()
+                    for sidecar in (
+                        db_path.parent / (db_path.name + "-shm"),
+                        db_path.parent / (db_path.name + "-wal"),
+                    ):
+                        if sidecar.exists():
+                            sidecar.unlink()
+                except OSError:
+                    pass
+            else:
+                raise
 
 
 def _load_capacity_settings(db_path: Path, from_date: str, to_date: str) -> dict:
