@@ -5705,6 +5705,7 @@ def _canonical_replace_run_rows(
 
 def _run_canonical_phase1_refresh(
     db_path: Path,
+    artifact_base_dir: Path,
     run_id: str,
     scope_year: int,
     managed_project_keys: list[str],
@@ -6102,7 +6103,7 @@ def _run_canonical_phase1_refresh(
         bridge_stats = _canonical_rebuild_compatibility_artifacts(
             db_path=db_path,
             run_id=run_id,
-            base_dir=db_path.parent,
+            base_dir=artifact_base_dir,
         )
         counts_by_stage["rebuilding_compatibility_artifacts"] = dict(bridge_stats)
         completed_stages.add("rebuilding_compatibility_artifacts")
@@ -6118,7 +6119,7 @@ def _run_canonical_phase1_refresh(
                 "JIRA_EMP_PERF_INPUT_SOURCE": "canonical_db",
                 "JIRA_EMP_PERF_CANONICAL_RUN_ID": run_id,
             }
-            report_base_dir = db_path.parent
+            report_base_dir = artifact_base_dir
             for script_name in ("generate_rlt_leave_report.py", "generate_employee_performance_report.py", "support_center_sync.py"):
                 if _canonical_is_cancel_requested(db_path, run_id):
                     return _cancel("generating_reports")
@@ -6136,7 +6137,7 @@ def _run_canonical_phase1_refresh(
             return _cancel("syncing_report_html")
         _update("syncing_report_html", 99, current_item="Sync report output")
         try:
-            sync_report_html(db_path.parent, "report_html")
+            sync_report_html(artifact_base_dir, "report_html")
         except Exception:
             pass
         counts_by_stage["syncing_report_html"] = {"synced": True}
@@ -6208,6 +6209,7 @@ def _canonical_run_scope(run_row: dict[str, object] | None) -> tuple[str, str]:
 def _run_canonical_epic_scoped_refresh(
     *,
     db_path: Path,
+    artifact_base_dir: Path,
     run_id: str,
     scope_year: int,
     managed_project_keys: list[str],
@@ -6392,7 +6394,7 @@ def _run_canonical_epic_scoped_refresh(
         bridge_stats = _canonical_rebuild_compatibility_artifacts(
             db_path=db_path,
             run_id=run_id,
-            base_dir=db_path.parent,
+            base_dir=artifact_base_dir,
         )
         counts_by_stage["rebuilding_compatibility_artifacts"] = dict(bridge_stats)
         completed_stages.add("rebuilding_compatibility_artifacts")
@@ -36723,6 +36725,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             try:
                 _run_canonical_phase1_refresh(
                     db_path=capacity_paths["db_path"],
+                    artifact_base_dir=base_dir,
                     run_id=run_id,
                     scope_year=scope_year,
                     managed_project_keys=managed_project_keys,
@@ -36840,6 +36843,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             try:
                 _run_canonical_epic_scoped_refresh(
                     db_path=capacity_paths["db_path"],
+                    artifact_base_dir=base_dir,
                     run_id=run_id,
                     scope_year=scope_year,
                     managed_project_keys=managed_project_keys,
@@ -37139,7 +37143,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             bridge_stats = _canonical_rebuild_compatibility_artifacts(
                 db_path=db_path,
                 run_id=run_id,
-                base_dir=db_path.parent,
+                base_dir=base_dir,
             )
             counts_by_stage["rebuilding_compatibility_artifacts"] = dict(bridge_stats)
             completed_stages.add("rebuilding_compatibility_artifacts")

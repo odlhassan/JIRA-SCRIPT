@@ -288,6 +288,7 @@ Implemented so far:
 - RLT Leave Report refresh now rebuilds directly from canonical DB
 - **Incremental sync-cache is now warmed per-issue inside the worklog fetch loop** — each issue+worklog pair is written to `jira_sync_cache.db` immediately after being fetched, so a subsequent smart refresh after a failed/cancelled run will skip already-fetched issues automatically (resume behaviour)
 - **Resume (Smart Refresh) banner** added to the Colossal Refresh settings UI — shown when the most recent run was `canceled` or `failed`; clicking it pre-fills the scope year from the last run and starts a smart refresh
+- **Azure split-path output fix** — when `JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH` points to persistent storage such as `/home/data/assignee_hours_capacity.db`, canonical data is stored in that DB but compatibility workbooks, generated report HTML, and `report_html` sync still run from the application root. This prevents successful Colossal Refresh runs from writing fresh artifacts under `/home/data` where the live site does not serve them.
 
 Key implementation location:
 
@@ -297,6 +298,52 @@ Current tests added:
 
 - [tests/test_canonical_refresh_api.py](E:/JIRA%20SCRIPT/tests/test_canonical_refresh_api.py)
 - [tests/test_group2_canonical_refresh.py](E:/JIRA%20SCRIPT/tests/test_group2_canonical_refresh.py)
+
+## Business Logic
+
+Colossal Refresh writes canonical Jira issue, hierarchy, worklog, and derived read-model tables to the configured capacity DB. Reports select the latest promoted successful run from `canonical_refresh_state.last_success_run_id`; a refresh is visible only after the run status becomes `success` and that state pointer is updated. On Azure, the DB path may be external (`/home/data`) while generated artifacts must remain under the app root so served static reports use the latest output.
+
+## Business Cases
+
+The module gives the EPR Tool a single Jira fetch for all managed projects, avoiding report-by-report Jira refresh drift. Business users use the output for dashboards, Monthly Epic Plan vs Actual, employee performance, RLT leave reporting, nested views, and planning reports.
+
+## Examples
+
+If Azure has `JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH=/home/data/assignee_hours_capacity.db`, a 2026 Colossal Refresh stores `canonical_issues` and `canonical_worklogs` in `/home/data/assignee_hours_capacity.db`, then rebuilds `1_jira_work_items_export.xlsx`, `nested view.xlsx`, generated reports, and `report_html` from the app root so `https://epreporting.azurewebsites.net/...` serves the fresh artifacts.
+
+## Explanations
+
+The refresh loads active managed projects, discovers Jira issues for the selected year, expands parent/child hierarchy, fetches details and worklogs, stores the result as a canonical run, rebuilds derived tables, regenerates compatibility artifacts for legacy consumers, and syncs generated HTML into the served report folder.
+
+## Front-end UI Fields
+
+The Colossal Refresh settings page exposes the selected year, refresh mode (`full` or `smart`), start/resume/cancel controls, active run progress, stage status, and the latest successful run summary. Report screens then read the latest promoted run without asking users to select a run id.
+
+## Script Files
+
+- `report_server.py` — Flask routes, canonical refresh lifecycle, artifact rebuild orchestration, and report HTML sync.
+- `canonical_report_data.py` — shared canonical DB readers and latest-run resolution.
+- `monthly_epic_plan_progress_service.py` — Monthly Epic Plan vs Actual payload builder from canonical tables.
+- `generate_rlt_leave_report.py`, `generate_employee_performance_report.py`, `support_center_sync.py` — downstream generators invoked by the refresh.
+- `tests/test_canonical_refresh_api.py` — API and Azure split-path regression coverage.
+- `tests/test_group2_canonical_refresh.py` — downstream canonical refresh chain coverage.
+
+## Dependent & Impacted Files
+
+Reports and modules that consume the latest canonical run include dashboard/nested-view APIs in `report_server.py`, `monthly_epic_plan_progress_service.py`, generated report scripts, `report_html/*` served assets, and compatibility workbooks consumed by legacy report generators.
+
+## Table Schema
+
+Primary tables in `assignee_hours_capacity.db` include `canonical_refresh_runs` (run id, scope, status, timestamps, stats), `canonical_refresh_state` (active and last successful run pointers), `canonical_issues` (one row per Jira issue per run), `canonical_issue_links`, `canonical_worklogs`, `canonical_issue_scope_reasons`, derived `canonical_issue_actuals`, `canonical_assignee_period_hours`, `canonical_issue_planning_flags`, `canonical_hierarchy_summary`, and `canonical_project_assignee_summary`.
+
+## Data Flow
+
+1. User starts Colossal Refresh from `/settings/canonical-refresh`.
+2. `report_server.py` writes run state and canonical rows into the configured capacity DB.
+3. The successful run updates `canonical_refresh_state.last_success_run_id`.
+4. Derived tables and compatibility artifacts are rebuilt from that run.
+5. Generated HTML is synced from the app root into `report_html`.
+6. Live report routes and APIs read the latest successful canonical run and served artifacts.
 
 Related regression coverage:
 

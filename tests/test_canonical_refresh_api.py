@@ -424,6 +424,76 @@ class CanonicalRefreshApiTests(unittest.TestCase):
             self.assertFalse(body.get("ok"))
             self.assertIn("No active managed projects", str(body.get("error") or ""))
 
+    def test_refresh_writes_generated_artifacts_to_app_root_when_db_is_external(self):
+        with (
+            tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as app_td,
+            tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as data_td,
+        ):
+            app_root = Path(app_td)
+            data_root = Path(data_td)
+            data_db = data_root / "assignee_hours_capacity.db"
+            (app_root / "report_html").mkdir(parents=True, exist_ok=True)
+            (app_root / "report_html" / "dashboard.html").write_text("<html><body>ok</body></html>", encoding="utf-8")
+
+            with patch.dict(
+                "os.environ",
+                {
+                    "JIRA_PROJECT_KEYS": "",
+                    "JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH": str(data_db),
+                },
+                clear=False,
+            ):
+                app = create_report_server_app(base_dir=app_root, folder_raw="report_html")
+                _seed_managed_projects(data_db)
+                client = app.test_client()
+
+                bridge_base_dirs: list[Path] = []
+                script_cwds: list[Path] = []
+                sync_base_dirs: list[Path] = []
+
+                def _fake_bridge(db_path, run_id, base_dir):
+                    bridge_base_dirs.append(Path(base_dir))
+                    return {"ok": True}
+
+                def _fake_run_script(script_name, cwd, extra_args=None, env_overrides=None):
+                    script_cwds.append(Path(cwd))
+                    return 0, "ok", ""
+
+                def _fake_sync(base_dir, folder_raw):
+                    sync_base_dirs.append(Path(base_dir))
+                    return 0
+
+                with (
+                    patch.object(report_server, "get_session", return_value=object()),
+                    patch.object(report_server, "resolve_jira_start_date_field_id", return_value="customfield_1"),
+                    patch.object(report_server, "resolve_jira_end_date_field_ids", return_value=["duedate"]),
+                    patch.object(report_server, "export_resolve_fix_type_field_id", return_value=""),
+                    patch.object(report_server, "_canonical_collect_discovery_candidates", return_value=({}, {})),
+                    patch.object(report_server, "_canonical_rebuild_derived_data", return_value={}),
+                    patch.object(report_server, "_canonical_rebuild_compatibility_artifacts", side_effect=_fake_bridge),
+                    patch.object(report_server, "_run_script", side_effect=_fake_run_script),
+                    patch.object(report_server, "sync_report_html", side_effect=_fake_sync),
+                ):
+                    resp = client.post("/api/canonical-refresh", json={"year": 2026})
+                    self.assertEqual(resp.status_code, 202)
+                    run_id = str((resp.get_json() or {}).get("run_id") or "")
+                    self.assertTrue(run_id)
+
+                    final_status = ""
+                    for _ in range(60):
+                        status_resp = client.get(f"/api/canonical-refresh/{run_id}")
+                        self.assertEqual(status_resp.status_code, 200)
+                        run = ((status_resp.get_json() or {}).get("run") or {})
+                        final_status = str(run.get("status") or "").lower()
+                        if final_status in {"success", "failed", "canceled"}:
+                            break
+                        time.sleep(0.05)
+
+                self.assertEqual(final_status, "success")
+                self.assertEqual(bridge_base_dirs, [app_root])
+                self.assertEqual(script_cwds, [app_root, app_root, app_root])
+                self.assertEqual(sync_base_dirs, [app_root])
+
     def test_cancel_marks_running_canonical_refresh(self):
         with patch.dict("os.environ", {"JIRA_PROJECT_KEYS": ""}, clear=False), tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             root = Path(td)
@@ -436,7 +506,15 @@ class CanonicalRefreshApiTests(unittest.TestCase):
 
             original_runner = report_server._run_canonical_phase1_refresh
 
-            def _slow_runner(db_path, run_id, scope_year, managed_project_keys, trigger_source="api_refresh_async"):
+            def _slow_runner(
+                db_path,
+                artifact_base_dir,
+                run_id,
+                scope_year,
+                managed_project_keys,
+                mode="full",
+                trigger_source="api_refresh_async",
+            ):
                 started = report_server._canonical_now_utc()
                 with sqlite3.connect(db_path) as conn:
                     conn.execute(

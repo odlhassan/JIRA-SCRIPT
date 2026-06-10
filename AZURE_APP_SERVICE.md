@@ -116,4 +116,50 @@ az webapp restart --resource-group $RESOURCE_GROUP --name $APP
 
 - Use Azure App Service for Linux. Microsoft Learn states Python on App Service on Windows is no longer supported.
 - The normal local rebuild path currently depends on a populated canonical SQLite run state. Deploying the existing generated `report_html` assets is the safer first release path.
-- If you later want Azure to rebuild reports dynamically, validate the writable database path and canonical refresh bootstrap behavior first.
+- Keep live mutable EPR data in `/home/data`, not `/home/site/wwwroot`. Set `JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH=/home/data/assignee_hours_capacity.db` so deploys do not overwrite the SQLite database.
+- Colossal Refresh stores canonical rows in `JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH`, but generated report artifacts must still be written/synced from the app root. If a refresh completes but reports look stale, verify the app setting, then check that `canonical_refresh_state.last_success_run_id` points at the newest successful run and restart the app after any setting change.
+- If you later want Azure to rebuild reports dynamically, validate the writable database path, canonical refresh bootstrap behavior, and generated-report sync path first.
+
+## Business Logic
+
+Azure uses `startup.txt` to run `wsgi:app` with one Gunicorn worker. SQLite-backed runtime state must live under persistent `/home/data`, while generated reports and static assets are served from the deployed application root and `report_html`.
+
+## Business Cases
+
+The Azure deployment hosts the EPR Tool for production users. Persistent DB storage preserves managed projects, seating, page categories, product releases, and canonical Jira refresh data across code deploys and App Service restarts.
+
+## Examples
+
+With `JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH=/home/data/assignee_hours_capacity.db`, a deploy updates code under the app root while keeping the 3.3GB production SQLite DB intact under `/home/data`. A successful Colossal Refresh then updates canonical tables in `/home/data` and serves regenerated report HTML from the app root.
+
+## Explanations
+
+Azure extracts the deployed app to a runtime directory and starts Gunicorn. Anything outside `/home` is disposable. `/home/site/wwwroot` may be affected by deployment packaging, so live mutable SQLite files should use `/home/data`; report HTML remains served through the application root and `report_html`.
+
+## Front-end UI Fields
+
+No Azure-only UI fields are added. Relevant production screens are `/settings/canonical-refresh`, report pages under `report_html`, and settings pages that read/write the persistent capacity DB.
+
+## Script Files
+
+- `startup.txt` — production Gunicorn startup command.
+- `wsgi.py` — Flask app entry point.
+- `report_server.py` — server routes, DB path resolution, refresh orchestration, and report serving.
+- `.github/workflows/azure-appservice-deploy.yml` — GitHub Actions deployment packaging.
+- `AZURE_APP_SERVICE.md` — Azure operations runbook.
+
+## Dependent & Impacted Files
+
+`generate_assignee_hours_report.py`, canonical refresh generators, report HTML outputs, and SQLite-backed settings modules depend on the Azure DB path being persistent and writable.
+
+## Table Schema
+
+Azure does not define new tables directly. It hosts SQLite tables from `assignee_hours_capacity.db`, including managed project/settings tables, canonical refresh tables, seating planner tables, page/category tables, and product release tables.
+
+## Data Flow
+
+1. GitHub Actions deploys tracked code to Azure.
+2. Azure starts `wsgi:app` through `startup.txt`.
+3. `report_server.py` resolves `JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH`.
+4. Runtime settings and canonical refresh data are read/written in `/home/data/assignee_hours_capacity.db`.
+5. Generated reports are synced into the app-served `report_html` path.
