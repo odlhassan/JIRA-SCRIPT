@@ -458,6 +458,15 @@ class EmployeePerformanceReportTests(unittest.TestCase):
             'it.employee_capacity_hours = Math.max(0, n(it.base_capacity_hours) - n(it.planned_leave_hours));',
             html,
         )
+
+    def test_html_normalizes_same_month_next_year_date_range(self):
+        payload = _build_payload([], [], [], dict(DEFAULT_PERFORMANCE_SETTINGS), [], [], [], [])
+        html = _build_html(payload)
+        self.assertIn("function normalizeMonthBoundaryRange(fromIso, toIso)", html)
+        self.assertIn("toYear !== fromYear + 1 || toMonth !== fromMonth", html)
+        self.assertIn("Corrected To date to", html)
+        self.assertIn("const normalizedRange = normalizeDateInputsForMonthBoundary();", html)
+        self.assertGreaterEqual(html.count("normalizeDateInputsForMonthBoundary()"), 3)
         self.assertNotIn(
             'it.employee_capacity_hours = Math.max(0, n(it.base_capacity_hours) - n(it.planned_leave_hours) - n(it.unplanned_leave_hours));',
             html,

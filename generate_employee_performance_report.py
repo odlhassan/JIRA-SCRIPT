@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import argparse
 import json
@@ -3263,9 +3263,15 @@ function selectedTeams() {{ return new Set(Array.from(document.getElementById("t
 const excludedMembers = new Set();
 let includeSupportTeam = false;
 let includeResignedResources = false;
+const supportManualExclusions = new Set();
+const resignedManualExclusions = new Set();
 function applySupportTeamExclusion() {{
   supportTeamMemberSet.forEach((key) => {{
-    if (includeSupportTeam) {{ excludedMembers.delete(key); }} else {{ excludedMembers.add(key); }}
+    if (includeSupportTeam) {{
+      if (!supportManualExclusions.has(key)) excludedMembers.delete(key);
+    }} else {{
+      excludedMembers.add(key);
+    }}
   }});
 }}
 function applyResignedExclusion() {{
@@ -3276,7 +3282,11 @@ function applyResignedExclusion() {{
     if (!key) continue;
     const resignDate = String(rec.resignation_date || "");
     const shouldExclude = !includeResignedResources && (!toDate || !resignDate || resignDate <= toDate);
-    if (shouldExclude) {{ excludedMembers.add(key); }} else if (includeResignedResources) {{ excludedMembers.delete(key); }}
+    if (shouldExclude) {{
+      excludedMembers.add(key);
+    }} else if (includeResignedResources && !resignedManualExclusions.has(key)) {{
+      excludedMembers.delete(key);
+    }}
   }}
 }}
 function selectedTeamAssignees() {{
@@ -3381,8 +3391,9 @@ async function loadScopedSubtasksForCurrentFilters() {{
     scopedSubtasksLoadedKey = "";
     return;
   }}
-  const from = document.getElementById("from").value || defaultFrom;
-  const to = document.getElementById("to").value || defaultTo;
+  const normalizedRange = normalizeDateInputsForMonthBoundary();
+  const from = normalizedRange.from || defaultFrom;
+  const to = normalizedRange.to || defaultTo;
   const cacheKey = scopedSubtasksCacheKey(from, to);
   if (cacheKey === scopedSubtasksLoadedKey) return;
   const params = new URLSearchParams();
@@ -3666,6 +3677,35 @@ function setDateFilterRange(from, to) {{
   document.getElementById("from").value = String(from || "");
   document.getElementById("to").value = String(to || "");
 }}
+function lastDayOfMonthIso(year, monthIndex) {{
+  if (!Number.isInteger(year) || !Number.isInteger(monthIndex) || monthIndex < 0 || monthIndex > 11) return "";
+  return _isoDateLocal(new Date(year, monthIndex + 1, 0));
+}}
+function normalizeMonthBoundaryRange(fromIso, toIso) {{
+  const fromText = String(fromIso || "").trim();
+  const toText = String(toIso || "").trim();
+  if (!/^\\d{{4}}-\\d{{2}}-\\d{{2}}$/.test(fromText) || !/^\\d{{4}}-\\d{{2}}-\\d{{2}}$/.test(toText)) return {{ from: fromText, to: toText, corrected: false }};
+  const fromParts = fromText.split("-").map((part) => Number(part));
+  const toParts = toText.split("-").map((part) => Number(part));
+  if (fromParts.length !== 3 || toParts.length !== 3 || fromParts.some((part) => !Number.isFinite(part)) || toParts.some((part) => !Number.isFinite(part))) return {{ from: fromText, to: toText, corrected: false }};
+  const [fromYear, fromMonth, fromDay] = fromParts;
+  const [toYear, toMonth] = toParts;
+  if (fromDay !== 1 || toYear !== fromYear + 1 || toMonth !== fromMonth) return {{ from: fromText, to: toText, corrected: false }};
+  const correctedTo = lastDayOfMonthIso(fromYear, fromMonth - 1);
+  if (!correctedTo || toText !== lastDayOfMonthIso(toYear, toMonth - 1)) return {{ from: fromText, to: toText, corrected: false }};
+  return {{ from: fromText, to: correctedTo, corrected: correctedTo !== toText }};
+}}
+function normalizeDateInputsForMonthBoundary() {{
+  const fromEl = document.getElementById("from");
+  const toEl = document.getElementById("to");
+  const normalized = normalizeMonthBoundaryRange(fromEl ? fromEl.value || defaultFrom : defaultFrom, toEl ? toEl.value || defaultTo : defaultTo);
+  if (normalized.corrected) {{
+    if (fromEl) fromEl.value = normalized.from;
+    if (toEl) toEl.value = normalized.to;
+    setDateFilterStatus(`Corrected To date to ${{formatDate(normalized.to)}} for one-month filter.`);
+  }}
+  return normalized;
+}}
 function setDateFilterStatus(text) {{
   if (!dateFilterStatusNode) return;
   dateFilterStatusNode.textContent = String(text || "");
@@ -3789,8 +3829,9 @@ function evalFormula(expr, scope) {{
   }}
 }}
 function compute() {{
-  const from = document.getElementById("from").value || defaultFrom;
-  const to = document.getElementById("to").value || defaultTo;
+  const normalizedRange = normalizeDateInputsForMonthBoundary();
+  const from = normalizedRange.from || defaultFrom;
+  const to = normalizedRange.to || defaultTo;
   const activeCapacityProfile = resolveActiveCapacityProfile(from, to);
   updateCapacityProfileMeta(from, to, activeCapacityProfile);
   const s = String(document.getElementById("search").value || "").trim().toLowerCase();
@@ -5987,7 +6028,15 @@ function setupTeamFilterDropdown() {{
       if (group) {{
         group.querySelectorAll(".member-cb").forEach((mcb) => {{
           const key = mcb.getAttribute("data-member-key") || "";
+          const memberName = String(mcb.closest(".team-member-row")?.getAttribute("data-member-name") || "");
           if (cb.checked) {{ excludedMembers.delete(key); }} else {{ excludedMembers.add(key); }}
+          if (cb.checked) {{
+            supportManualExclusions.delete(key);
+            resignedManualExclusions.delete(key);
+          }} else {{
+            if (includeSupportTeam && isSupportTeamMember(memberName)) supportManualExclusions.add(key);
+            if (includeResignedResources && resourceRecordFor(memberName).resigned) resignedManualExclusions.add(key);
+          }}
           mcb.checked = cb.checked;
           mcb.closest(".team-member-row").classList.toggle("member-excluded", !cb.checked);
         }});
@@ -6000,7 +6049,15 @@ function setupTeamFilterDropdown() {{
     mcb.addEventListener("change", (ev) => {{
       ev.stopPropagation();
       const key = mcb.getAttribute("data-member-key") || "";
+      const memberName = String(mcb.closest(".team-member-row")?.getAttribute("data-member-name") || "");
       if (mcb.checked) {{ excludedMembers.delete(key); }} else {{ excludedMembers.add(key); }}
+      if (mcb.checked) {{
+        supportManualExclusions.delete(key);
+        resignedManualExclusions.delete(key);
+      }} else {{
+        if (includeSupportTeam && isSupportTeamMember(memberName)) supportManualExclusions.add(key);
+        if (includeResignedResources && resourceRecordFor(memberName).resigned) resignedManualExclusions.add(key);
+      }}
       mcb.closest(".team-member-row").classList.toggle("member-excluded", !mcb.checked);
       const group = mcb.closest(".team-filter-group");
       if (group) {{
@@ -6047,6 +6104,8 @@ function setupTeamFilterDropdown() {{
   if (selectAllBtn) selectAllBtn.addEventListener("click", () => {{
     Array.from(selectEl.options).forEach((o) => {{ o.selected = true; }});
     excludedMembers.clear();
+    supportManualExclusions.clear();
+    resignedManualExclusions.clear();
     applySupportTeamExclusion();
     applyResignedExclusion();
     syncTeamFilterVisualState();
@@ -6054,6 +6113,8 @@ function setupTeamFilterDropdown() {{
   }});
   if (clearAllBtn) clearAllBtn.addEventListener("click", () => {{
     Array.from(selectEl.options).forEach((o) => {{ o.selected = false; }});
+    supportManualExclusions.clear();
+    resignedManualExclusions.clear();
     optionsContainer.querySelectorAll(".member-cb").forEach((mcb) => {{
       const key = mcb.getAttribute("data-member-key") || "";
       if (key) excludedMembers.add(key);
@@ -6098,6 +6159,7 @@ setupTeamFilterDropdown();
   cb.checked = includeSupportTeam;
   cb.addEventListener("change", () => {{
     includeSupportTeam = cb.checked;
+    supportManualExclusions.clear();
     applySupportTeamExclusion();
     syncTeamFilterVisualState();
     renderAll();
@@ -6109,6 +6171,7 @@ setupTeamFilterDropdown();
   cb.checked = includeResignedResources;
   cb.addEventListener("change", () => {{
     includeResignedResources = cb.checked;
+    resignedManualExclusions.clear();
     applyResignedExclusion();
     syncTeamFilterVisualState();
     renderAll();
@@ -6362,7 +6425,7 @@ document.getElementById("leader-search").addEventListener("input", renderAll);
 document.getElementById("search").addEventListener("input", () => {{ render(compute()); }});
 if (epicBasisTkEl) epicBasisTkEl.addEventListener("click", () => syncEpicDateBasisMode("tk_dates"));
 if (epicBasisSubtaskEl) epicBasisSubtaskEl.addEventListener("click", () => syncEpicDateBasisMode("subtask_dates"));
-document.getElementById("reset").addEventListener("click", ()=>{{ document.getElementById("from").value=defaultFrom; document.getElementById("to").value=defaultTo; document.getElementById("search").value=\"\"; document.getElementById("leader-search").value=\"\"; document.getElementById("leader-sort").value=\"score\"; document.getElementById("leader-sort-direction").value=\"desc\"; document.getElementById("leader-scoring-mode").value=\"simple\"; document.getElementById("filter-risk").value=\"all\"; document.getElementById("filter-missed").value=\"all\"; syncSimpleOverrunMode(\"subtasks\"); syncEfficiencyScorecardMode(\"penalty_inclusive\"); syncEpicDateBasisMode(\"tk_dates\", false); setScoringMode(\"simple\", false); setDueCompletionEnabled(true, false); setHeaderPerformanceControlsOpen(false); setSettingsFilterMenuOpen(false); if (assigneeExtendedActualsToggleEl) assigneeExtendedActualsToggleEl.checked = false; extendedActualsEnabled = false; applyPerformanceSettings(settings); syncCapacityProfileSelection(\"auto\", \"\"); selectedTeam = \"\"; setDateFilterStatus(""); Array.from(document.getElementById("projects").options).forEach(o => o.selected=true); Array.from(document.getElementById("teams").options).forEach(o => o.selected=true); excludedMembers.clear(); includeSupportTeam = false; includeResignedResources = false; applySupportTeamExclusion(); applyResignedExclusion(); const stCb = document.getElementById("teams-include-support"); if (stCb) stCb.checked = false; const resCb = document.getElementById("teams-include-resigned"); if (resCb) resCb.checked = false; updateFilterTriggerText(\"projects\", \"projects-trigger-text\"); syncTeamFilterVisualState(); document.querySelectorAll(\"#projects-options .filter-option input\").forEach((c)=>{{ c.checked = true; }}); if (document.getElementById(\"projects-search\")) document.getElementById(\"projects-search\").value = \"\"; if (document.getElementById(\"teams-search\")) document.getElementById(\"teams-search\").value = \"\"; document.querySelectorAll(\"#projects-options .filter-option\").forEach((r)=>{{ r.classList.remove(\"hidden\"); }}); document.querySelectorAll(\"#teams-options .team-filter-group\").forEach((r)=>{{ r.classList.remove(\"hidden\"); }}); const teamsEmpty = document.querySelector(\"#teams-options .team-filter-search-empty\"); if (teamsEmpty) teamsEmpty.hidden = true; renderAll(); }});
+document.getElementById("reset").addEventListener("click", ()=>{{ document.getElementById("from").value=defaultFrom; document.getElementById("to").value=defaultTo; document.getElementById("search").value=\"\"; document.getElementById("leader-search").value=\"\"; document.getElementById("leader-sort").value=\"score\"; document.getElementById("leader-sort-direction").value=\"desc\"; document.getElementById("leader-scoring-mode").value=\"simple\"; document.getElementById("filter-risk").value=\"all\"; document.getElementById("filter-missed").value=\"all\"; syncSimpleOverrunMode(\"subtasks\"); syncEfficiencyScorecardMode(\"penalty_inclusive\"); syncEpicDateBasisMode(\"tk_dates\", false); setScoringMode(\"simple\", false); setDueCompletionEnabled(true, false); setHeaderPerformanceControlsOpen(false); setSettingsFilterMenuOpen(false); if (assigneeExtendedActualsToggleEl) assigneeExtendedActualsToggleEl.checked = false; extendedActualsEnabled = false; applyPerformanceSettings(settings); syncCapacityProfileSelection(\"auto\", \"\"); selectedTeam = \"\"; setDateFilterStatus(""); Array.from(document.getElementById("projects").options).forEach(o => o.selected=true); Array.from(document.getElementById("teams").options).forEach(o => o.selected=true); excludedMembers.clear(); supportManualExclusions.clear(); resignedManualExclusions.clear(); includeSupportTeam = false; includeResignedResources = false; applySupportTeamExclusion(); applyResignedExclusion(); const stCb = document.getElementById("teams-include-support"); if (stCb) stCb.checked = false; const resCb = document.getElementById("teams-include-resigned"); if (resCb) resCb.checked = false; updateFilterTriggerText(\"projects\", \"projects-trigger-text\"); syncTeamFilterVisualState(); document.querySelectorAll(\"#projects-options .filter-option input\").forEach((c)=>{{ c.checked = true; }}); if (document.getElementById(\"projects-search\")) document.getElementById(\"projects-search\").value = \"\"; if (document.getElementById(\"teams-search\")) document.getElementById(\"teams-search\").value = \"\"; document.querySelectorAll(\"#projects-options .filter-option\").forEach((r)=>{{ r.classList.remove(\"hidden\"); }}); document.querySelectorAll(\"#teams-options .team-filter-group\").forEach((r)=>{{ r.classList.remove(\"hidden\"); }}); const teamsEmpty = document.querySelector(\"#teams-options .team-filter-search-empty\"); if (teamsEmpty) teamsEmpty.hidden = true; renderAll(); }});
 document.getElementById("shortcut-current-month").addEventListener("click", ()=>{{ applyDateShortcut("current_month"); renderAll(); }});
 document.getElementById("shortcut-previous-month").addEventListener("click", ()=>{{ applyDateShortcut("previous_month"); renderAll(); }});
 document.getElementById("shortcut-last-30-days").addEventListener("click", ()=>{{ applyDateShortcut("last_30_days"); renderAll(); }});

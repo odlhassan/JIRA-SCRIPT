@@ -73,6 +73,7 @@
   - Reads the report's active `from` and `to` date filter values.
   - Uses saved profile holidays, Ramadan start/end, and leave daily rows already embedded in the report payload.
   - Updates when the selected profile changes, when Apply/Reset is used, and when the report rerenders after date filter changes.
+- Employee Performance uses the same active-filter concept for its Capacity Profile Expanded Settings panel, with an additional guard in `generate_employee_performance_report.py`: a range shaped like `2026-04-01` to `2027-04-30` is corrected to `2026-04-30` before Business Days and employee capacity are calculated.
 - Live refresh source:
   - `GET /api/capacity/profiles`
 - Settings handoff:

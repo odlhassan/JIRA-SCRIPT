@@ -8,6 +8,13 @@ When the Employee Performance dashboard header `Refresh` runs, is the fetched da
 
 No.
 
+## UI behavior note (2026-06-11)
+
+- In the Employee Performance Teams filter, enabling `Include support` or `Include resigned` now performs a bulk default include without locking member checkboxes.
+- Users can uncheck specific support/resigned members after enabling those toggles, and those manual exclusions remain active until the include toggle is changed again or Reset is used.
+- Implementation is in the team-filter logic embedded by `generate_employee_performance_report.py` and reflected in `employee_performance_report.html` / `report_html/employee_performance_report.html`.
+- Capacity Profile Expanded Settings now corrects the specific one-month date-entry pattern where `From` is the first day of a month but `To` is the last day of the same month in the next year, so Business Days are calculated for the intended month before refresh/scoped calculations run.
+
 The Employee Performance refresh collects only a subset of the shared Jira data pipeline and stores it in an Employee Performance specific snapshot (`epf_*` tables in `assignee_hours_capacity.db`). That is sufficient for rebuilding `employee_performance_report.html`, but it is not sufficient to refresh most other reports as they are currently designed.
 
 There are two reasons:
