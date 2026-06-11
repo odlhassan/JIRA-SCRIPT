@@ -18380,18 +18380,24 @@ def _promote_report_html_if_newer(base_dir: Path, report_dir: Path, report_name:
                 return target_path
         except OSError:
             pass
-    target_path.parent.mkdir(parents=True, exist_ok=True)
-    fd, temp_name = tempfile.mkstemp(
-        prefix=f".{target_path.stem}_",
-        suffix=target_path.suffix,
-        dir=str(target_path.parent),
-    )
-    os.close(fd)
+    try:
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        fd, temp_name = tempfile.mkstemp(
+            prefix=f".{target_path.stem}_",
+            suffix=target_path.suffix,
+            dir=str(target_path.parent),
+        )
+        os.close(fd)
+    except OSError as exc:
+        print(f"[report-html-sync] Warning: could not prepare promotion for {report_name}: {exc}")
+        return target_path
     temp_path = Path(temp_name)
     try:
-        shutil.copy2(str(source_path), str(temp_path))
+        shutil.copyfile(str(source_path), str(temp_path))
         os.replace(str(temp_path), str(target_path))
         print(f"[report-html-sync] Promoted newer HTML: {source_path.name} -> {target_path}")
+    except OSError as exc:
+        print(f"[report-html-sync] Warning: could not promote {report_name}: {exc}")
     finally:
         try:
             temp_path.unlink(missing_ok=True)
