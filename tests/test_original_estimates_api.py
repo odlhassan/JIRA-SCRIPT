@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from openpyxl import Workbook
 
-from report_server import _resolve_capacity_runtime_paths, create_report_server_app
+from report_server import _canonical_sync_cache_path, _resolve_capacity_runtime_paths, create_report_server_app
 
 OE_FIXTURE_RUN_ID = "test-original-estimates-run"
 CANON_STALE_AT = "2020-01-01T00:00:00+00:00"
@@ -38,6 +38,67 @@ class CapacityRuntimePathTests(unittest.TestCase):
                 resolved = _resolve_capacity_runtime_paths(root)["db_path"]
             self.assertEqual(resolved, expected)
             self.assertTrue(expected.parent.exists())
+
+
+class SyncCacheRuntimePathTests(unittest.TestCase):
+    def test_sync_cache_path_strips_accidental_quotes(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            expected = root / "runtime" / "jira_sync_cache.db"
+            with patch.dict("os.environ", {"JIRA_SYNC_DB_PATH": f'"{expected}"'}, clear=False):
+                resolved = _canonical_sync_cache_path(root)
+            self.assertEqual(resolved, expected)
+            self.assertTrue(expected.parent.exists())
+
+    def test_sync_cache_path_falls_back_to_home_data_when_default_is_not_writable(self):
+        with (
+            tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as app_td,
+            tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as home_td,
+        ):
+            app_root = Path(app_td)
+            home_root = Path(home_td)
+            (app_root / "jira_sync_cache.db").mkdir()
+
+            with patch.dict(
+                "os.environ",
+                {
+                    "HOME": str(home_root),
+                    "JIRA_SYNC_DB_PATH": "",
+                },
+                clear=False,
+            ):
+                resolved = _canonical_sync_cache_path(app_root)
+
+            self.assertEqual(resolved, home_root / "data" / "jira_sync_cache.db")
+            self.assertTrue(resolved.parent.exists())
+
+    def test_app_startup_initializes_sync_cache_in_home_data_when_default_is_not_writable(self):
+        with (
+            tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as app_td,
+            tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as home_td,
+        ):
+            app_root = Path(app_td)
+            home_root = Path(home_td)
+            (app_root / "report_html").mkdir(parents=True, exist_ok=True)
+            (app_root / "report_html" / "dashboard.html").write_text("<html><body>ok</body></html>", encoding="utf-8")
+            (app_root / "jira_sync_cache.db").mkdir()
+            fallback = home_root / "data" / "jira_sync_cache.db"
+
+            with patch.dict(
+                "os.environ",
+                {
+                    "HOME": str(home_root),
+                    "JIRA_SYNC_DB_PATH": "",
+                    "JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH": str(app_root / "capacity.db"),
+                },
+                clear=False,
+            ):
+                create_report_server_app(base_dir=app_root, folder_raw="report_html")
+
+            self.assertTrue(fallback.exists())
+            with sqlite3.connect(fallback) as conn:
+                tables = {str(row[0]) for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            self.assertIn("sync_state", tables)
 
 
 def _hierarchy_fixture():

@@ -321,6 +321,7 @@ REPORT_REFRESH_CHAINS: dict[str, list[str]] = {
     ],
 }
 
+DEFAULT_SYNC_CACHE_DB = "jira_sync_cache.db"
 EPF_DEFAULT_RETENTION_RUNS = 5
 ME_DEFAULT_RETENTION_RUNS = 8
 REPORT_REFRESH_DEFAULT_RETENTION_RUNS = 10
@@ -1595,6 +1596,28 @@ def _resolve_writable_capacity_db_path(candidate: Path) -> Path:
         fallback.parent.mkdir(parents=True, exist_ok=True)
         print(
             f"Warning: capacity DB path {candidate} is not writable ({exc}); using {fallback}",
+            file=sys.stderr,
+        )
+        return fallback
+
+
+def _resolve_writable_sync_cache_db_path(candidate: Path) -> Path:
+    candidate = Path(candidate)
+    try:
+        if candidate.exists() and candidate.is_dir():
+            raise OSError(f"sync cache DB path is a directory: {candidate}")
+        candidate.parent.mkdir(parents=True, exist_ok=True)
+        probe = candidate.parent / f".{candidate.name}.write-probe"
+        with open(probe, "a", encoding="utf-8"):
+            pass
+        probe.unlink(missing_ok=True)
+        return candidate
+    except OSError as exc:
+        azure_home = os.getenv("HOME", "")
+        fallback = Path(azure_home) / "data" / DEFAULT_SYNC_CACHE_DB if azure_home else Path(DEFAULT_SYNC_CACHE_DB)
+        fallback.parent.mkdir(parents=True, exist_ok=True)
+        print(
+            f"Warning: sync cache DB path {candidate} is not writable ({exc}); using {fallback}",
             file=sys.stderr,
         )
         return fallback
@@ -3707,11 +3730,14 @@ def _canonical_normalize_mode(value: object) -> str:
 
 
 def _canonical_sync_cache_path(base_dir: Path) -> Path:
-    raw = _to_text(os.getenv("JIRA_SYNC_DB_PATH")) or "jira_sync_cache.db"
+    raw = _normalize_runtime_path_setting(
+        os.getenv("JIRA_SYNC_DB_PATH", DEFAULT_SYNC_CACHE_DB),
+        DEFAULT_SYNC_CACHE_DB,
+    )
     path = Path(raw)
-    if path.is_absolute():
-        return path
-    return base_dir / path
+    if not path.is_absolute():
+        path = base_dir / path
+    return _resolve_writable_sync_cache_db_path(path)
 
 
 def _canonical_find_matching_success_run(

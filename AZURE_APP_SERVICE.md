@@ -128,8 +128,9 @@ az webapp restart --resource-group $RESOURCE_GROUP --name $APP
 
 - Use Azure App Service for Linux. Microsoft Learn states Python on App Service on Windows is no longer supported.
 - The normal local rebuild path currently depends on a populated canonical SQLite run state. Deploying the existing generated `report_html` assets is the safer first release path.
-- Keep live mutable EPR data in `/home/data`, not `/home/site/wwwroot`. Set `JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH=/home/data/assignee_hours_capacity.db` so deploys do not overwrite the SQLite database.
+- Keep live mutable EPR data in `/home/data`, not `/home/site/wwwroot`. Set `JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH=/home/data/assignee_hours_capacity.db` so deploys do not overwrite the SQLite database. The canonical sync cache also writes SQLite journal files, so set `JIRA_SYNC_DB_PATH=/home/data/jira_sync_cache.db` or allow the server to fall back there when the deployed app root is read-only.
 - `report_server.py` trims accidental quotes around `JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH`, creates the parent folder before the first SQLite connection, and verifies the folder is writable. If the configured path is not writable, Azure falls back to `$HOME/data/assignee_hours_capacity.db` and writes a warning to stderr instead of killing the Gunicorn worker during import.
+- `report_server.py` applies the same writable-path guard to `JIRA_SYNC_DB_PATH`; if the default `jira_sync_cache.db` under `/home/site/wwwroot` cannot be created because `WEBSITE_RUN_FROM_PACKAGE` is read-only, the sync cache initializes under `$HOME/data/jira_sync_cache.db` instead of failing Gunicorn startup.
 - Colossal Refresh stores canonical rows in `JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH`, but generated report artifacts must still be written/synced from the app root. If a refresh completes but reports look stale, verify the app setting, then check that `canonical_refresh_state.last_success_run_id` points at the newest successful run and restart the app after any setting change.
 - If you later want Azure to rebuild reports dynamically, validate the writable database path, canonical refresh bootstrap behavior, and generated-report sync path first.
 
@@ -143,7 +144,7 @@ The Azure deployment hosts the EPR Tool for production users. Persistent DB stor
 
 ## Examples
 
-With `JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH=/home/data/assignee_hours_capacity.db`, a deploy updates code under the app root while keeping the 3.3GB production SQLite DB intact under `/home/data`. If the setting is accidentally entered as `"/home/data/assignee_hours_capacity.db"`, the server strips the quotes before opening SQLite. A successful Colossal Refresh then updates canonical tables in `/home/data` and serves regenerated report HTML from the app root.
+With `JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH=/home/data/assignee_hours_capacity.db` and `JIRA_SYNC_DB_PATH=/home/data/jira_sync_cache.db`, a deploy updates code under the app root while keeping the 3.3GB production SQLite DB and the canonical sync cache intact under `/home/data`. If either setting is accidentally entered with surrounding quotes, the server strips the quotes before opening SQLite. A successful Colossal Refresh then updates canonical tables in `/home/data` and serves regenerated report HTML from the app root.
 
 ## Explanations
 
@@ -174,6 +175,7 @@ Azure does not define new tables directly. It hosts SQLite tables from `assignee
 1. GitHub Actions deploys tracked code to Azure.
 2. Azure starts `wsgi:app` through `startup.txt`.
 3. Azure runs executable `startup.txt`; the script prepends `.python_packages/lib/site-packages` to `PYTHONPATH` and starts Gunicorn.
-4. `report_server.py` resolves, normalizes, and validates `JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH`.
+4. `report_server.py` resolves, normalizes, and validates `JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH` and `JIRA_SYNC_DB_PATH`.
 5. Runtime settings and canonical refresh data are read/written in `/home/data/assignee_hours_capacity.db`.
-6. Generated reports are synced into the app-served `report_html` path.
+6. Canonical sync-cache state is read/written in `/home/data/jira_sync_cache.db` when the app root is read-only or that path is configured explicitly.
+7. Generated reports are synced into the app-served `report_html` path.
