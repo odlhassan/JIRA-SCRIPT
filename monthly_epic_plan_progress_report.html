@@ -2465,6 +2465,7 @@
     .res-epic-heading { font-size: 1.05rem; font-weight: 700; color: #2d6aad; margin-bottom: 6px; }
     .res-epic-grid { display: flex; flex-direction: column; gap: 12px; }
     .res-epic-card {
+      appearance: none;
       border: 1px solid var(--line);
       border-radius: 14px;
       padding: 14px 18px;
@@ -2472,7 +2473,14 @@
       display: flex;
       flex-direction: column;
       gap: 10px;
+      width: 100%;
+      color: inherit;
+      font: inherit;
+      text-align: left;
     }
+    button.res-epic-card { cursor: pointer; transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease; }
+    button.res-epic-card:hover { border-color: #93c5fd; box-shadow: 0 10px 24px rgba(37, 99, 235, 0.10); transform: translateY(-1px); }
+    button.res-epic-card:focus-visible { outline: 3px solid rgba(37, 99, 235, 0.24); outline-offset: 2px; }
     .res-epic-card.bf-card {
       background: linear-gradient(135deg, #fff7ed 0%, #fef3e8 100%);
       border-color: #fed7aa;
@@ -2519,6 +2527,55 @@
       background: var(--line);
       align-self: stretch;
       margin: 2px 0;
+    }
+    .carry-audit-note {
+      margin: 0 0 12px;
+      padding: 10px 12px;
+      border: 1px solid #dbeafe;
+      background: #eff6ff;
+      border-radius: 8px;
+      color: #1e3a8a;
+      font-size: 0.82rem;
+      line-height: 1.45;
+    }
+    .carry-audit-status {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 3px 8px;
+      font-size: 0.68rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      background: #e0f2fe;
+      color: #075985;
+      white-space: nowrap;
+    }
+    .carry-audit-status.excluded,
+    .carry-audit-status.excluded_outside_lookback,
+    .carry-audit-status.excluded_completed_before_month,
+    .carry-audit-status.excluded_on_hold,
+    .carry-audit-status.excluded_not_in_current_scope {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+    .carry-audit-status.not_brought_forward_due_in_selected_month {
+      background: #fef3c7;
+      color: #92400e;
+    }
+    .carry-audit-reasons {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      min-width: 280px;
+    }
+    .carry-audit-reasons li {
+      color: #334155;
+      font-size: 0.76rem;
+      line-height: 1.35;
     }
     .res-total-heading { font-size: 1.05rem; font-weight: 700; color: #2d6aad; margin-bottom: 10px; }
     .res-total-cards { display: flex; flex-wrap: wrap; gap: 12px; }
@@ -3380,7 +3437,7 @@
           <div class="res-epic-heading">Epic Work Summary</div>
           <div class="res-epic-grid">
             <!-- Epics planned this month -->
-            <div class="res-epic-card">
+            <button type="button" class="res-epic-card" data-summary-drawer="planned_this_month" aria-label="Open planned this month epic details">
               <div class="res-epic-card-label">Planned This Month</div>
               <div class="res-epic-card-stats">
                 <div class="res-epic-card-stat">
@@ -3398,9 +3455,9 @@
                   <div class="res-epic-card-stat-sub" id="res-epic-inmonth-actual-label">Actual</div>
                 </div>
               </div>
-            </div>
+            </button>
             <!-- Brought forward epics -->
-            <div class="res-epic-card bf-card">
+            <button type="button" class="res-epic-card bf-card" data-summary-drawer="brought_forward" aria-label="Open brought forward epic details">
               <div class="res-epic-card-label">Brought Forward</div>
               <div class="res-epic-card-stats">
                 <div class="res-epic-card-stat">
@@ -3418,9 +3475,9 @@
                   <div class="res-epic-card-stat-sub" id="res-epic-bf-actual-label">Actual</div>
                 </div>
               </div>
-            </div>
+            </button>
             <!-- Carry-forward from this month -->
-            <div class="res-epic-card cf-card">
+            <button type="button" class="res-epic-card cf-card" data-summary-drawer="carrying_to_next_month" aria-label="Open carrying to next month epic details">
               <div class="res-epic-card-label">Carrying to Next Month</div>
               <div class="res-epic-card-stats">
                 <div class="res-epic-card-stat">
@@ -3438,7 +3495,7 @@
                   <div class="res-epic-card-stat-sub" id="res-epic-cf-actual-label">Actual</div>
                 </div>
               </div>
-            </div>
+            </button>
           </div>
         </div>
       </div>
@@ -4774,6 +4831,138 @@
     }
 
     // ── Worklog Detail Drawer ──────────────────────────────────────────────────
+    const SUMMARY_DRAWER_META = {
+      planned_this_month: {
+        title: "Planned This Month",
+        description: "Epics counted as selected-month work because their approved date range overlaps the selected month."
+      },
+      brought_forward: {
+        title: "Brought Forward",
+        description: "Epics due before the selected month, plus nearby candidates that explain why prior carry-out work may not appear in this bucket."
+      },
+      carrying_to_next_month: {
+        title: "Carrying to Next Month",
+        description: "Epics currently expected to continue after the selected month, with the reason that triggered carry-forward."
+      }
+    };
+
+    function summaryAuditRows(bucket) {
+      const audit = Array.isArray(latestPayload && latestPayload.carry_forward_audit)
+        ? latestPayload.carry_forward_audit
+        : [];
+      if (bucket === "brought_forward") {
+        return audit.filter((row) => {
+          const status = String(row.audit_status || "");
+          return !!row.brought_forward
+            || status.indexOf("excluded") === 0
+            || status === "not_brought_forward_due_in_selected_month";
+        });
+      }
+      return audit.filter((row) => Array.isArray(row.buckets) && row.buckets.indexOf(bucket) !== -1);
+    }
+
+    function summaryAuditStatusLabel(row, bucket) {
+      const status = String(row && row.audit_status || "");
+      if (bucket === "carrying_to_next_month" && row && row.carried_forward) return "Included";
+      if (bucket === "planned_this_month" && status === "included") return "Included";
+      if (row && row.brought_forward) return "Included";
+      if (status === "not_brought_forward_due_in_selected_month") return "In month, not carry-in";
+      if (status === "excluded_outside_lookback") return "Outside lookback";
+      if (status === "excluded_completed_before_month") return "Completed before month";
+      if (status === "excluded_on_hold") return "On hold excluded";
+      if (status === "excluded_not_in_current_scope" || status === "excluded") return "Excluded";
+      return status ? status.replace(/_/g, " ") : "Included";
+    }
+
+    function summaryAuditStatusClass(row) {
+      const status = String(row && row.audit_status || "included");
+      if (row && row.brought_forward) return "included";
+      return status || "included";
+    }
+
+    function summaryAuditJira(row) {
+      const key = String(row && row.epic_key || "");
+      const url = String(row && row.jira_url || "");
+      if (!key) return "";
+      if (!url) return esc(key);
+      return '<a class="estimate-jira-button" href="' + esc(url) + '" target="_blank" rel="noopener">'
+        + '<span class="material-symbols-outlined" aria-hidden="true">open_in_new</span>' + esc(key) + '</a>';
+    }
+
+    function summaryAuditEffort(row, kind) {
+      const val = unit === "days" ? Number(row[kind + "_days"] || 0) : Number(row[kind + "_hours"] || 0);
+      return formatNumber(val);
+    }
+
+    function summaryAuditReasonList(row) {
+      const reasons = Array.isArray(row && row.reasons) ? row.reasons.filter(Boolean) : [];
+      if (!reasons.length) return '<ul class="carry-audit-reasons"><li>No explanation supplied.</li></ul>';
+      return '<ul class="carry-audit-reasons">' + reasons.map((reason) => '<li>' + esc(String(reason)) + '</li>').join("") + '</ul>';
+    }
+
+    function renderSummaryAuditDrawer(bucket) {
+      const meta = SUMMARY_DRAWER_META[bucket] || SUMMARY_DRAWER_META.planned_this_month;
+      const rows = summaryAuditRows(bucket);
+      const unitLabel = unit === "days" ? "days" : "hours";
+      const includedRows = rows.filter((row) => {
+        if (bucket === "brought_forward") return !!row.brought_forward;
+        if (bucket === "carrying_to_next_month") return !!row.carried_forward;
+        return Array.isArray(row.buckets) && row.buckets.indexOf("planned_this_month") !== -1;
+      });
+      const plannedTotal = includedRows.reduce((sum, row) => sum + Number(unit === "days" ? row.planned_days : row.planned_hours || 0), 0);
+      const actualTotal = includedRows.reduce((sum, row) => sum + Number(unit === "days" ? row.actual_days : row.actual_hours || 0), 0);
+      if (els.estimateDetailControls) els.estimateDetailControls.hidden = true;
+      if (els.estimateDetailTitle) els.estimateDetailTitle.textContent = meta.title + " Details";
+      if (els.estimateDetailSubtitle) {
+        els.estimateDetailSubtitle.textContent = meta.description + " Showing " + rows.length + " row" + (rows.length === 1 ? "" : "s") + " from the current filters.";
+      }
+      if (!els.estimateDetailBody) return;
+      if (!rows.length) {
+        els.estimateDetailBody.innerHTML = '<div class="estimate-detail-empty">No epic details matched this summary bucket for the current filters.</div>';
+        return;
+      }
+      const note = bucket === "brought_forward"
+        ? '<div class="carry-audit-note">Brought Forward is not a direct copy of the previous month Carrying to Next Month total. It only includes epics whose approved due date is before the selected month, within the overdue lookback window, and not completed before the month started. Epics due in this month stay in Planned This Month; older overdue epics can be hidden by the lookback.</div>'
+        : "";
+      const summary = '<div class="estimate-detail-summary">'
+        + '<span class="estimate-detail-chip">' + rows.length + ' row' + (rows.length === 1 ? '' : 's') + '</span>'
+        + '<span class="estimate-detail-chip">Included: ' + includedRows.length + '</span>'
+        + '<span class="estimate-detail-chip">Planned: ' + formatNumber(plannedTotal) + ' ' + unitLabel + '</span>'
+        + '<span class="estimate-detail-chip">Actual: ' + formatNumber(actualTotal) + ' ' + unitLabel + '</span>'
+        + '</div>';
+      const body = rows.map((row) => {
+        const dateText = (row.approved_start || "-") + " -> " + (row.approved_due || "-");
+        const statusClass = summaryAuditStatusClass(row);
+        return '<tr>'
+          + '<td>' + summaryAuditJira(row) + '</td>'
+          + '<td><div class="estimate-item-name">' + esc(row.epic_name || row.epic_key || "") + '</div><div class="estimate-item-meta">' + esc(row.project_name || row.project_key || "") + '</div></td>'
+          + '<td>' + esc(dateText) + '</td>'
+          + '<td>' + esc(row.jira_status || "-") + '</td>'
+          + '<td><span class="carry-audit-status ' + esc(statusClass) + '">' + esc(summaryAuditStatusLabel(row, bucket)) + '</span></td>'
+          + '<td class="num">' + esc(summaryAuditEffort(row, "planned")) + '</td>'
+          + '<td class="num">' + esc(summaryAuditEffort(row, "actual")) + '</td>'
+          + '<td>' + summaryAuditReasonList(row) + '</td>'
+          + '</tr>';
+      }).join("");
+      els.estimateDetailBody.innerHTML = note + summary
+        + '<div class="estimate-detail-table-wrap"><table class="estimate-detail-table">'
+        + '<thead><tr><th>Jira</th><th>Epic</th><th>Approved dates</th><th>Jira status</th><th>Decision</th><th class="num">Planned</th><th class="num">Actual</th><th>Explanation</th></tr></thead>'
+        + '<tbody>' + body + '</tbody></table></div>';
+    }
+
+    function openEpicSummaryDrawer(bucket) {
+      if (!els.estimateDetailOverlay || !latestPayload) return;
+      currentEstimateDetailMetric = "";
+      estimateDetailIncludeBugSubtasks = false;
+      renderSummaryAuditDrawer(bucket || "planned_this_month");
+      els.estimateDetailOverlay.classList.add("is-open");
+      document.body.style.overflow = "hidden";
+    }
+
+    document.querySelectorAll("[data-summary-drawer]").forEach((button) => {
+      button.addEventListener("click", () => openEpicSummaryDrawer(button.getAttribute("data-summary-drawer") || ""));
+    });
+
     let _worklogDetailIsFullWidth = false;
     let _currentWorklogDetailRows = null;
 
@@ -5303,7 +5492,10 @@
       }
       if (els.kpiWfCapacityLabel) els.kpiWfCapacityLabel.textContent = "Capacity (" + lab + ")";
       if (els.kpiWfCapacity) els.kpiWfCapacity.textContent = formatNumber(cap);
-      if (els.kpiWfCapDetail) els.kpiWfCapDetail.textContent = n > 0 ? n + " employees × profile rate" : "";
+      if (els.kpiWfCapDetail) {
+        const capacityHeadcount = filterActive ? kSel : n;
+        els.kpiWfCapDetail.textContent = capacityHeadcount > 0 ? capacityHeadcount + " employees × profile rate" : "";
+      }
       const plannedLv = dayMode ? Number(payload.planned_leave_days || 0) : Number(payload.planned_leave_hours || 0);
       const unplannedLv = dayMode ? Number(payload.unplanned_leave_days || 0) : Number(payload.unplanned_leave_hours || 0);
       const totalLv = dayMode ? Number(payload.total_leave_days || 0) : Number(payload.total_leave_hours || 0);
@@ -6795,9 +6987,14 @@
     function _syncLoggedHoursModeUI() {
       if (els.modeTkDates) els.modeTkDates.classList.toggle("active", loggedHoursMode === "tk_dates");
       if (els.modeSubtaskDates) els.modeSubtaskDates.classList.toggle("active", loggedHoursMode === "subtask_dates");
+      const epicDateLabel = epicMode === "all_jira_epics";
       // Disable logic based on epic scope
       const tkOnly = epicMode === "tk_epics";
       if (els.modeTkDates) {
+        els.modeTkDates.textContent = epicDateLabel ? "Epic dates" : "TK dates";
+        els.modeTkDates.title = epicDateLabel
+          ? "Sum of worklogs from subtasks under in-scope Jira epics selected by epic-date scope"
+          : "Sum of worklogs from subtasks under in-scope epics selected by TK date scope";
         els.modeTkDates.disabled = false;
         els.modeTkDates.style.opacity = "";
         els.modeTkDates.style.pointerEvents = "";

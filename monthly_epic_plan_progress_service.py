@@ -2239,6 +2239,241 @@ def _compute_actual_headcount(db_path: Path) -> int:
     return sum(1 for m in unique_members if m.lower() not in excluded)
 
 
+def _carry_audit_effort(row: dict[str, Any]) -> dict[str, float]:
+    planned_hours = _round_hours(float(row.get("planned_hours") or 0.0))
+    actual_hours = _round_hours(float(row.get("actual_hours") or 0.0))
+    return {
+        "planned_hours": planned_hours,
+        "planned_days": _round_hours(planned_hours / HOURS_PER_DAY),
+        "actual_hours": actual_hours,
+        "actual_days": _round_hours(actual_hours / HOURS_PER_DAY),
+    }
+
+
+def _carry_audit_item_from_row(
+    row: dict[str, Any],
+    *,
+    month_start: date,
+    month_end: date,
+    overdue_cutoff: date,
+) -> dict[str, Any]:
+    approved_start = _parse_iso_date(_to_text(row.get("approved_start")))
+    approved_due = _parse_iso_date(_to_text(row.get("approved_due")))
+    is_brought_forward = bool(row.get("brought_forward"))
+    is_carried_forward = bool(row.get("carried_forward"))
+    buckets: list[str] = []
+    if is_brought_forward:
+        buckets.append("brought_forward")
+    else:
+        buckets.append("planned_this_month")
+    if is_carried_forward:
+        buckets.append("carrying_to_next_month")
+
+    reasons: list[str] = []
+    audit_status = "included"
+    if is_brought_forward:
+        reasons.append(
+            "Included as brought-forward because approved due is before the selected month, "
+            "inside the overdue lookback window, and the epic was not completed before the month started."
+        )
+    elif approved_start is not None and approved_start < month_start and approved_due is not None and approved_due >= month_start:
+        audit_status = "not_brought_forward_due_in_selected_month"
+        reasons.append(
+            "Not counted as brought-forward because its approved due date is in the selected month or later; "
+            "the report counts it as planned/current-month work instead."
+        )
+    else:
+        reasons.append("Included because approved dates overlap the selected month.")
+
+    carry_reasons = [
+        _to_text(reason)
+        for reason in (row.get("carry_forward_reasons") or [])
+        if _to_text(reason)
+    ]
+    if carry_reasons:
+        reasons.extend(carry_reasons)
+    elif "carrying_to_next_month" in buckets:
+        reasons.append("Carrying to next month because at least one carry-forward condition matched.")
+
+    item = {
+        "epic_key": _to_text(row.get("epic_key")).upper(),
+        "epic_name": _to_text(row.get("epic_name")) or _to_text(row.get("epic_key")).upper(),
+        "project_key": _to_text(row.get("project_key")).upper(),
+        "project_name": _to_text(row.get("project_name")) or _to_text(row.get("project_key")).upper(),
+        "approved_start": _to_text(row.get("approved_start")),
+        "approved_due": _to_text(row.get("approved_due")),
+        "actual_completed_date": _to_text(row.get("actual_completed_date")),
+        "jira_status": _to_text(row.get("jira_status")),
+        "jira_url": _to_text(row.get("jira_url")),
+        "audit_status": audit_status,
+        "buckets": buckets,
+        "reasons": reasons,
+        "carry_forward_reasons": carry_reasons,
+        "brought_forward": is_brought_forward,
+        "carried_forward": is_carried_forward,
+        "overdue_cutoff": overdue_cutoff.isoformat(),
+        "month_start": month_start.isoformat(),
+        "month_end": month_end.isoformat(),
+    }
+    item.update(_carry_audit_effort(row))
+    return item
+
+
+def _build_carry_forward_audit(
+    *,
+    planner_rows: list[dict[str, Any]],
+    rows: list[dict[str, Any]],
+    excluded_epics: list[dict[str, Any]],
+    epic_meta: dict[str, dict[str, Any]],
+    selected_project_keys: set[str],
+    month_start: date,
+    month_end: date,
+    overdue_cutoff: date,
+    include_on_hold: bool,
+    jira_base: str,
+) -> list[dict[str, Any]]:
+    """Explain why epics do or do not appear in summary carry buckets."""
+    audit_items: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        epic_key = _to_text(row.get("epic_key")).upper()
+        if not epic_key:
+            continue
+        audit_items[epic_key] = _carry_audit_item_from_row(
+            row,
+            month_start=month_start,
+            month_end=month_end,
+            overdue_cutoff=overdue_cutoff,
+        )
+
+    for excluded in excluded_epics:
+        epic_key = _to_text(excluded.get("epic_key")).upper()
+        if not epic_key or epic_key in audit_items:
+            continue
+        reasons = [
+            _to_text(reason)
+            for reason in (excluded.get("exclusion_reasons") or [])
+            if _to_text(reason)
+        ] or ["Excluded by current report filters."]
+        item = {
+            "epic_key": epic_key,
+            "epic_name": _to_text(excluded.get("epic_name")) or epic_key,
+            "project_key": _to_text(excluded.get("project_key")).upper(),
+            "project_name": _to_text(excluded.get("project_name")) or _to_text(excluded.get("project_key")).upper(),
+            "approved_start": _to_text(excluded.get("approved_start")),
+            "approved_due": _to_text(excluded.get("approved_due")),
+            "actual_completed_date": _to_text(excluded.get("actual_completed_date")),
+            "jira_status": _to_text(excluded.get("jira_status")),
+            "jira_url": _to_text(excluded.get("jira_url")),
+            "audit_status": "excluded",
+            "buckets": ["brought_forward"],
+            "reasons": reasons,
+            "carry_forward_reasons": [],
+            "brought_forward": False,
+            "carried_forward": False,
+            "overdue_cutoff": overdue_cutoff.isoformat(),
+            "month_start": month_start.isoformat(),
+            "month_end": month_end.isoformat(),
+            "planned_hours": 0.0,
+            "planned_days": 0.0,
+            "actual_hours": 0.0,
+            "actual_days": 0.0,
+        }
+        audit_items[epic_key] = item
+
+    for planner_row in planner_rows:
+        epic_key = _to_text(planner_row.get("epic_key")).upper()
+        if not epic_key or epic_key in audit_items:
+            continue
+        project_key = _to_text(planner_row.get("project_key")).upper()
+        if selected_project_keys and project_key not in selected_project_keys:
+            continue
+        epic_plan = ((planner_row.get("plans") or {}).get("epic_plan") or {})
+        if not isinstance(epic_plan, dict):
+            epic_plan = {}
+        approved_start, approved_due, approved_start_text, approved_due_text = _approved_dates(epic_plan, planner_row)
+        if approved_start is None and approved_due is None:
+            continue
+        canonical_meta = epic_meta.get(epic_key) or {}
+        jira_status = _to_text(canonical_meta.get("jira_status"))
+        is_on_hold = _is_on_hold_status_text(jira_status)
+        scope_excluded = is_on_hold and not include_on_hold
+        actual_completed_text = _to_text(canonical_meta.get("resolved_stable_since_date"))
+        actual_completed_date = _parse_iso_date(actual_completed_text)
+        completed_before_month = actual_completed_date is not None and actual_completed_date < month_start
+        reasons: list[str] = []
+        audit_status = ""
+        include_in_brought_audit = False
+        if approved_due is not None and approved_due < month_start:
+            include_in_brought_audit = True
+            if approved_due < overdue_cutoff:
+                audit_status = "excluded_outside_lookback"
+                reasons.append(
+                    f"Not counted as brought-forward because approved due {approved_due_text} is before the overdue lookback cutoff {overdue_cutoff.isoformat()}."
+                )
+            elif scope_excluded:
+                audit_status = "excluded_on_hold"
+                reasons.append("Not counted because the epic is on hold and Include On Hold is off.")
+            elif completed_before_month:
+                audit_status = "excluded_completed_before_month"
+                reasons.append(
+                    f"Not counted because the epic completed before the selected month ({actual_completed_text})."
+                )
+            else:
+                audit_status = "excluded_not_in_current_scope"
+                reasons.append("Not counted in the current summary after applying the report filters.")
+        elif approved_start is not None and approved_start < month_start and approved_due is not None and approved_due >= month_start:
+            include_in_brought_audit = True
+            audit_status = "not_brought_forward_due_in_selected_month"
+            reasons.append(
+                "Not counted as brought-forward because its approved due date is in the selected month or later; "
+                "the report counts it as planned/current-month work instead."
+            )
+        if not include_in_brought_audit:
+            continue
+        tk_epic_budget_hours = _hours_from_man_days(
+            epic_plan.get("tk_budgeted_man_days")
+            if epic_plan.get("tk_budgeted_man_days") not in (None, "")
+            else epic_plan.get("man_days")
+        )
+        planned_hours = _round_hours(tk_epic_budget_hours or 0.0)
+        jira_url = _to_text(planner_row.get("jira_url"))
+        if not jira_url and jira_base:
+            jira_url = f"{jira_base}/browse/{epic_key}"
+        audit_items[epic_key] = {
+            "epic_key": epic_key,
+            "epic_name": _to_text(planner_row.get("epic_name")) or _to_text(canonical_meta.get("jira_summary")) or epic_key,
+            "project_key": project_key,
+            "project_name": _to_text(planner_row.get("project_name")) or project_key,
+            "approved_start": approved_start_text,
+            "approved_due": approved_due_text,
+            "actual_completed_date": actual_completed_text,
+            "jira_status": jira_status,
+            "jira_url": jira_url,
+            "audit_status": audit_status,
+            "buckets": ["brought_forward"],
+            "reasons": reasons,
+            "carry_forward_reasons": [],
+            "brought_forward": False,
+            "carried_forward": False,
+            "overdue_cutoff": overdue_cutoff.isoformat(),
+            "month_start": month_start.isoformat(),
+            "month_end": month_end.isoformat(),
+            "planned_hours": planned_hours,
+            "planned_days": _round_hours(planned_hours / HOURS_PER_DAY),
+            "actual_hours": 0.0,
+            "actual_days": 0.0,
+        }
+
+    return sorted(
+        audit_items.values(),
+        key=lambda item: (
+            _to_text(item.get("project_name")).lower(),
+            _to_text(item.get("approved_start")),
+            _to_text(item.get("epic_key")),
+        ),
+    )
+
+
 def _build_support_team_payload(
     db_path: Path,
     planned_by_lower: dict[str, float],
@@ -2763,6 +2998,18 @@ def build_monthly_epic_plan_payload(
             tk_planned_hours_by_issue,
             include_bug_subtasks,
         )
+        carry_forward_audit = _build_carry_forward_audit(
+            planner_rows=[],
+            rows=rows,
+            excluded_epics=excluded_epics,
+            epic_meta=epic_meta,
+            selected_project_keys=selected_project_keys,
+            month_start=month_start,
+            month_end=month_end,
+            overdue_cutoff=overdue_cutoff,
+            include_on_hold=include_on_hold,
+            jira_base=jira_base,
+        )
         return {
             "month": month, "from_date": month_start.isoformat(), "to_date": month_end.isoformat(),
             "canonical_run_id": run_id, "selected_projects": sorted(selected_project_keys),
@@ -2771,7 +3018,7 @@ def build_monthly_epic_plan_payload(
             "epic_mode": epic_mode, "logged_hours_mode": logged_hours_mode,
             "rows": rows, "by_project": by_project_rows,
             "totals": rounded_totals, "estimate_rollup": estimate_rollup,
-            "excluded_epics": excluded_epics, "workforce": workforce,
+            "excluded_epics": excluded_epics, "carry_forward_audit": carry_forward_audit, "workforce": workforce,
             "subtask_worklog_detail": subtask_worklog_detail,
             "meta": {
                 "hours_per_day": HOURS_PER_DAY,
@@ -3131,6 +3378,18 @@ def build_monthly_epic_plan_payload(
         tk_planned_hours_by_issue,
         include_bug_subtasks,
     )
+    carry_forward_audit = _build_carry_forward_audit(
+        planner_rows=planner_rows,
+        rows=rows,
+        excluded_epics=excluded_epics,
+        epic_meta=epic_meta,
+        selected_project_keys=selected_project_keys,
+        month_start=month_start,
+        month_end=month_end,
+        overdue_cutoff=overdue_cutoff,
+        include_on_hold=include_on_hold,
+        jira_base=jira_base,
+    )
     return {
         "month": month,
         "from_date": month_start.isoformat(),
@@ -3147,6 +3406,7 @@ def build_monthly_epic_plan_payload(
         "totals": rounded_totals,
         "estimate_rollup": estimate_rollup,
         "excluded_epics": excluded_epics,
+        "carry_forward_audit": carry_forward_audit,
         "workforce": workforce,
         "subtask_worklog_detail": subtask_worklog_detail,
         "meta": {

@@ -14,6 +14,7 @@ from monthly_epic_plan_progress_service import (
     build_workforce_month_payload,
     build_worklog_detail_for_range,
 )
+from generate_assignee_hours_report import _init_capacity_db, _save_capacity_settings
 from report_server import _init_epics_management_db, create_report_server_app
 from report_server import sync_report_html
 
@@ -421,6 +422,43 @@ class MonthlyEpicPlanProgressTests(unittest.TestCase):
             self.assertEqual(set(workforce["selected_assignees"]), {"Past Resigned", "Future Resigned"})
             self.assertEqual(workforce["selected_employee_count"], 2)
 
+    def test_workforce_capacity_scales_to_selected_headcount(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            db_path = Path(td) / "assignee_hours_capacity.db"
+            _init_capacity_db(db_path)
+            _save_capacity_settings(
+                db_path,
+                {
+                    "from_date": "2026-03-01",
+                    "to_date": "2026-03-31",
+                    "employee_count": 35,
+                    "standard_hours_per_day": 8,
+                    "ramadan_start_date": "",
+                    "ramadan_end_date": "",
+                    "ramadan_hours_per_day": 6.5,
+                    "holiday_dates": [],
+                },
+            )
+            selected = {f"Member {index:02d}" for index in range(1, 31)}
+
+            workforce = build_workforce_month_payload(
+                db_path,
+                date(2026, 3, 1),
+                date(2026, 3, 31),
+                "",
+                selected_assignees=selected,
+            )
+
+            self.assertEqual(workforce["employee_count_profile"], 35)
+            self.assertEqual(workforce["selected_employee_count"], 30)
+            self.assertTrue(workforce["assignee_filter_active"])
+            self.assertAlmostEqual(
+                workforce["capacity_hours"],
+                round(workforce["team_capacity_hours"] * (30 / 35), 2),
+                places=2,
+            )
+            self.assertEqual(workforce["availability_hours"], workforce["capacity_hours"])
+
     def test_service_includes_epic_when_start_or_due_in_month_and_month_worklogs(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             db_path = Path(td) / "assignee_hours_capacity.db"
@@ -807,6 +845,47 @@ class MonthlyEpicPlanProgressTests(unittest.TestCase):
             self.assertEqual(by_proj["O2"]["carried_forward_count"], 3)
             self.assertEqual(by_proj["O2"]["carried_forward_planned_hours"], 240.0)
 
+    def test_carry_forward_audit_explains_included_and_skipped_brought_forward_rows(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            db_path = Path(td) / "assignee_hours_capacity.db"
+            _create_canonical_tables(db_path)
+            _add_epic_tree(db_path, "O2-BF", "In Progress", [])
+            _add_epic_tree(db_path, "O2-SPAN", "In Progress", [])
+            _add_epic_tree(db_path, "O2-OLDOUT", "In Progress", [])
+            _add_epic_tree(db_path, "O2-DONEOLD", "Resolved!", [])
+            with sqlite3.connect(db_path) as conn:
+                conn.execute(
+                    """
+                    UPDATE canonical_issues
+                    SET resolved_stable_since_date = '2026-02-20'
+                    WHERE run_id = 'run-1' AND issue_key = 'O2-DONEOLD'
+                    """
+                )
+                conn.commit()
+
+            payload = build_monthly_epic_plan_payload(
+                db_path,
+                "2026-03",
+                [
+                    _planner_row("O2-BF", "Brought Forward", "2026-02-01", "2026-02-25"),
+                    _planner_row("O2-SPAN", "Spans March", "2026-02-15", "2026-03-15"),
+                    _planner_row("O2-OLDOUT", "Outside Lookback", "2026-01-01", "2026-01-15"),
+                    _planner_row("O2-DONEOLD", "Completed Old", "2026-02-01", "2026-02-20"),
+                ],
+                "run-1",
+                selected_projects={"O2"},
+                overdue_threshold_days=30,
+            )
+
+            audit = {row["epic_key"]: row for row in payload["carry_forward_audit"]}
+            self.assertTrue(audit["O2-BF"]["brought_forward"])
+            self.assertIn("brought_forward", audit["O2-BF"]["buckets"])
+            self.assertEqual(audit["O2-SPAN"]["audit_status"], "not_brought_forward_due_in_selected_month")
+            self.assertIn("planned_this_month", audit["O2-SPAN"]["buckets"])
+            self.assertEqual(audit["O2-OLDOUT"]["audit_status"], "excluded_outside_lookback")
+            self.assertIn("2026-01-30", audit["O2-OLDOUT"]["reasons"][0])
+            self.assertEqual(audit["O2-DONEOLD"]["audit_status"], "excluded_completed_before_month")
+
     def test_delivery_status_aligns_when_jira_in_progress_but_planner_yet_to_start(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             db_path = Path(td) / "assignee_hours_capacity.db"
@@ -939,6 +1018,7 @@ class MonthlyEpicPlanProgressTests(unittest.TestCase):
         self.assertIn('id="capacity-profile-select"', html)
         self.assertIn("renderCapacityProfileDropdown", html)
         self.assertIn("capacity_profile", html)
+        self.assertIn("const capacityHeadcount = filterActive ? kSel : n;", html)
         self.assertIn('id="employee-dropdown-toggle"', html)
         self.assertIn('id="employee-dropdown-search"', html)
         self.assertIn('id="employee-dropdown-empty"', html)
@@ -997,10 +1077,19 @@ class MonthlyEpicPlanProgressTests(unittest.TestCase):
         self.assertIn("Include <strong>Bug Subtasks</strong>", html)
         self.assertIn("include_bug_subtasks", html)
         self.assertIn("els.includeBugSubtasks.addEventListener(\"change\", loadSummary)", html)
+        self.assertIn('els.modeTkDates.textContent = epicDateLabel ? "Epic dates" : "TK dates";', html)
+        self.assertIn('epicMode === "all_jira_epics"', html)
+        self.assertIn("in-scope Jira epics selected by epic-date scope", html)
         self.assertIn("function openEstimateDetail", html)
         self.assertIn("function renderEstimateDetailDrawer", html)
         self.assertIn("function estimateDetailRows", html)
         self.assertIn("function estimateDetailDisplayedRows", html)
+        self.assertIn('data-summary-drawer="planned_this_month"', html)
+        self.assertIn('data-summary-drawer="brought_forward"', html)
+        self.assertIn('data-summary-drawer="carrying_to_next_month"', html)
+        self.assertIn("carry_forward_audit", html)
+        self.assertIn("function renderSummaryAuditDrawer", html)
+        self.assertIn("Brought Forward is not a direct copy", html)
         self.assertIn("estimateDetailIncludeBugSubtasks", html)
         self.assertIn("non_bug_logged_hours", html)
         self.assertIn("non_bug_overrun_hours", html)
