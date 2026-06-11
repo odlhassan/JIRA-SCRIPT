@@ -97,7 +97,7 @@ At server startup, `wsgi.py` calls `create_report_server_app()`. The server reso
 | `generate_assignee_hours_report.py` | Capacity formulas, SQLite schema initialization, capacity APIs for standalone server mode, and Assignee Hours generation. |
 | `report_server.py` | Production/local Flask app, shared capacity DB path resolution, startup schema initialization, and settings/report APIs. |
 | `startup.txt` | Azure shell startup script that imports vendored Python dependencies and starts `wsgi:app`. |
-| `.github/workflows/azure-appservice-deploy.yml` | Builds the deploy ZIP, vendors `requirements.txt` into `.python_packages`, marks `startup.txt` executable, and deploys with `sh startup.txt`. |
+| `.github/workflows/azure-appservice-deploy.yml` | Builds the deploy ZIP, vendors `requirements.txt` into `.python_packages`, and marks `startup.txt` executable before packaging. |
 | `ASSIGNEE_HOURS_CAPACITY.md` | Operational and business documentation for capacity storage and behavior. |
 
 ## Table Schema
