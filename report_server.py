@@ -18474,25 +18474,45 @@ def _try_refresh_dashboard_html_from_db(base_dir: Path, report_dir: Path) -> Pat
         return dash_generate_dashboard_html(data)
 
     html = _with_dashboard_env(base_dir, _build)
+    written_paths: list[Path] = []
     for output_path in (root_dashboard, published_dashboard):
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        fd, temp_name = tempfile.mkstemp(
-            prefix=f".{output_path.stem}_",
-            suffix=output_path.suffix,
-            dir=str(output_path.parent),
-        )
-        os.close(fd)
+        try:
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            fd, temp_name = tempfile.mkstemp(
+                prefix=f".{output_path.stem}_",
+                suffix=output_path.suffix,
+                dir=str(output_path.parent),
+            )
+            os.close(fd)
+        except OSError as exc:
+            print(f"[report-html-sync] Warning: could not prepare dashboard rebuild at {output_path}: {exc}")
+            continue
         temp_path = Path(temp_name)
         try:
             temp_path.write_text(html, encoding="utf-8")
             os.replace(str(temp_path), str(output_path))
+            written_paths.append(output_path)
+        except OSError as exc:
+            print(f"[report-html-sync] Warning: could not write dashboard rebuild at {output_path}: {exc}")
         finally:
             try:
                 temp_path.unlink(missing_ok=True)
             except OSError:
                 pass
-    print(f"[report-html-sync] Rebuilt dashboard.html from live data: {published_dashboard}")
-    return published_dashboard
+    if written_paths:
+        print(f"[report-html-sync] Rebuilt dashboard.html from live data: {written_paths[-1]}")
+        return published_dashboard if published_dashboard.exists() else written_paths[-1]
+
+    fallback_root = Path(os.getenv("HOME") or tempfile.gettempdir()) / "data" / "generated_reports"
+    fallback_dashboard = fallback_root / "dashboard.html"
+    try:
+        fallback_root.mkdir(parents=True, exist_ok=True)
+        fallback_dashboard.write_text(html, encoding="utf-8")
+        print(f"[report-html-sync] Rebuilt dashboard.html into writable fallback: {fallback_dashboard}")
+        return fallback_dashboard
+    except OSError as exc:
+        print(f"[report-html-sync] Warning: could not write dashboard fallback {fallback_dashboard}: {exc}")
+        return None
 
 
 def resolve_report_html_dir(base_dir: Path, folder_raw: str) -> Path:
@@ -42645,12 +42665,20 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
 
         if requested_name.lower().endswith(".html"):
             report_name = Path(requested_name).name
+            rebuilt_dashboard_path = None
             if report_name == "dashboard.html":
                 try:
-                    _try_refresh_dashboard_html_from_db(base_dir, report_dir)
+                    rebuilt_dashboard_path = _try_refresh_dashboard_html_from_db(base_dir, report_dir)
                 except Exception as exc:
                     print(f"[report-html-sync] Warning: dashboard live rebuild failed: {exc}")
             promoted_html_path = _promote_report_html_if_newer(base_dir, report_dir, report_name)
+            if (
+                rebuilt_dashboard_path is not None
+                and rebuilt_dashboard_path.exists()
+                and rebuilt_dashboard_path.is_file()
+                and (promoted_html_path is None or not promoted_html_path.exists())
+            ):
+                promoted_html_path = rebuilt_dashboard_path
         else:
             promoted_html_path = None
 
@@ -42668,7 +42696,13 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         if not target.exists() or not target.is_file():
             return jsonify({"error": "Not found"}), 404
         allowed_source = bool(known_source_path and target == known_source_path.resolve())
-        if not allowed_source and report_dir.resolve() not in target.parents and target != report_dir.resolve():
+        allowed_promoted = bool(promoted_html_path and target == promoted_html_path.resolve())
+        if (
+            not allowed_source
+            and not allowed_promoted
+            and report_dir.resolve() not in target.parents
+            and target != report_dir.resolve()
+        ):
             return jsonify({"error": "Invalid path"}), 400
 
         if target.suffix.lower() == ".html":
