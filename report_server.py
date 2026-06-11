@@ -18390,7 +18390,7 @@ def _promote_report_html_if_newer(base_dir: Path, report_dir: Path, report_name:
         os.close(fd)
     except OSError as exc:
         print(f"[report-html-sync] Warning: could not prepare promotion for {report_name}: {exc}")
-        return target_path
+        return target_path if target_path.exists() else source_path
     temp_path = Path(temp_name)
     try:
         shutil.copyfile(str(source_path), str(temp_path))
@@ -42650,12 +42650,25 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                     _try_refresh_dashboard_html_from_db(base_dir, report_dir)
                 except Exception as exc:
                     print(f"[report-html-sync] Warning: dashboard live rebuild failed: {exc}")
-            _promote_report_html_if_newer(base_dir, report_dir, report_name)
+            promoted_html_path = _promote_report_html_if_newer(base_dir, report_dir, report_name)
+        else:
+            promoted_html_path = None
 
         target = (report_dir / requested_path).resolve()
+        known_source_path = None
+        if requested_name.lower().endswith(".html") and Path(requested_name).name == requested_name:
+            known_source_path = _resolve_report_html_sources(base_dir).get(Path(requested_name).name)
+            if (
+                (not target.exists() or not target.is_file())
+                and promoted_html_path is not None
+                and promoted_html_path.exists()
+                and promoted_html_path.is_file()
+            ):
+                target = promoted_html_path.resolve()
         if not target.exists() or not target.is_file():
             return jsonify({"error": "Not found"}), 404
-        if report_dir.resolve() not in target.parents and target != report_dir.resolve():
+        allowed_source = bool(known_source_path and target == known_source_path.resolve())
+        if not allowed_source and report_dir.resolve() not in target.parents and target != report_dir.resolve():
             return jsonify({"error": "Invalid path"}), 400
 
         if target.suffix.lower() == ".html":
