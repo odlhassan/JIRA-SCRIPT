@@ -52,6 +52,94 @@ Detailed functional documentation is available at:
 - `POST /api/capacity/calculate`
 - `GET /api/capacity/profiles`
 
+## Business Logic
+
+- The capacity database path is resolved by `report_server.py` from `JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH`, defaulting to `assignee_hours_capacity.db` under the app root for local development.
+- Runtime path values are trimmed and accidental wrapping quotes are removed before `Path` resolution, so Azure app settings like `"/home/data/assignee_hours_capacity.db"` still resolve to `/home/data/assignee_hours_capacity.db`.
+- The capacity DB parent directory is created before the first SQLite connection in `_init_capacity_db`, which prevents cold-start failure when `/home/data` or a nested local test directory exists only as a configured path.
+- On Azure, an unwritable configured path falls back to `$HOME/data/assignee_hours_capacity.db` with a stderr warning so the web worker can boot instead of returning the generic App Service Application Error page.
+
+## Business Cases
+
+- Production operators keep mutable planning and settings data outside the deployed app folder so code deploys do not overwrite the live SQLite database.
+- Delivery leads need Capacity Settings, Team Capacity Planner, Employee Performance, and refresh screens to remain available immediately after an Azure restart, even if the deployment instance did not preserve an Oryx virtual environment.
+- Developers need local tests to create isolated nested DB paths without manually creating every parent folder.
+
+## Examples
+
+| Input | Output |
+| --- | --- |
+| `JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH=/home/data/assignee_hours_capacity.db` | Server creates `/home/data` if needed and opens `/home/data/assignee_hours_capacity.db`. |
+| `JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH="/home/data/assignee_hours_capacity.db"` | Quotes are stripped; SQLite opens `/home/data/assignee_hours_capacity.db`. |
+| Local test DB path `tmp/nested/capacity/assignee_hours_capacity.db` | `_init_capacity_db` creates `tmp/nested/capacity` before creating the DB. |
+
+## Explanations
+
+At server startup, `wsgi.py` calls `create_report_server_app()`. The server resolves the capacity DB path, verifies that the parent folder can be written, initializes capacity tables, then initializes dependent settings tables used by Employee Performance, Team Capacity Planner, managed projects, page categories, canonical refresh, and report refresh APIs. If the configured production path is unusable, the server logs the fallback path and continues with `$HOME/data/assignee_hours_capacity.db` rather than failing worker boot.
+
+## Front-end UI Fields
+
+| Field | Type | Default | Valid values / range | Controls | Example |
+| --- | --- | --- | --- | --- | --- |
+| Capacity Settings date range | date inputs | report-selected range | ISO dates | Key for saved capacity profile rows | `2026-01-01` to `2026-12-31`. |
+| Employee count | numeric input | configured profile value | non-negative integer | Multiplier for gross capacity | `30`. |
+| Standard hours/day | numeric input | configured profile value | non-negative hours | Normal working-day capacity | `8`. |
+| Ramadan start/end | date inputs | blank | ISO dates or blank | Date range where Ramadan hours apply | `2026-02-18` to `2026-03-19`. |
+| Ramadan hours/day | numeric input | configured profile value | non-negative hours | Working-day capacity during Ramadan | `6`. |
+| Holiday dates | date list/input | blank | ISO dates | Workdays excluded from capacity | `2026-03-23`. |
+| Save Capacity | button | enabled when form valid | click command | Writes or updates the selected profile | Save annual 2026 profile. |
+| Reuse Saved Capacity | selector/button | no profile selected | saved ranges | Loads one saved profile into the current range | Reuse `2026-01-01 - 2026-12-31`. |
+
+## Script Files
+
+| File | Role |
+| --- | --- |
+| `generate_assignee_hours_report.py` | Capacity formulas, SQLite schema initialization, capacity APIs for standalone server mode, and Assignee Hours generation. |
+| `report_server.py` | Production/local Flask app, shared capacity DB path resolution, startup schema initialization, and settings/report APIs. |
+| `startup.txt` | Azure Gunicorn command that imports vendored Python dependencies and starts `wsgi:app`. |
+| `.github/workflows/azure-appservice-deploy.yml` | Builds the deploy ZIP and vendors `requirements.txt` into `.python_packages`. |
+| `ASSIGNEE_HOURS_CAPACITY.md` | Operational and business documentation for capacity storage and behavior. |
+
+## Table Schema
+
+### `assignee_capacity_settings`
+
+| Column | Type | Constraint | Meaning |
+| --- | --- | --- | --- |
+| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | Internal row id. |
+| `from_date` | TEXT | NOT NULL, unique pair with `to_date` | Profile start date. |
+| `to_date` | TEXT | NOT NULL, unique pair with `from_date` | Profile end date. |
+| `employee_count` | INTEGER | NOT NULL | Number of employees represented by the profile. |
+| `standard_hours_per_day` | REAL | NOT NULL | Normal working hours per employee per day. |
+| `ramadan_start_date` | TEXT | nullable | Optional Ramadan period start. |
+| `ramadan_end_date` | TEXT | nullable | Optional Ramadan period end. |
+| `ramadan_hours_per_day` | REAL | NOT NULL | Daily hours inside Ramadan range. |
+| `holiday_dates_json` | TEXT | NOT NULL | JSON array of holiday ISO dates to exclude. |
+| `created_at_utc` | TEXT | NOT NULL | Creation timestamp. |
+| `updated_at_utc` | TEXT | NOT NULL | Last update timestamp. |
+
+### `team_capacity_planned_assignments`
+
+| Column | Type | Constraint | Meaning |
+| --- | --- | --- | --- |
+| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | Internal row id. |
+| `issue_key` | TEXT | NOT NULL, indexed | Jira issue key for planned assignment tracking. |
+| `assignee_display_name` | TEXT | NOT NULL DEFAULT '' | Human-readable assignee name. |
+| `assignee_account_id` | TEXT | NOT NULL DEFAULT '' | Jira account id when available. |
+| `jira_synced` | INTEGER | NOT NULL DEFAULT 0 | Whether the assignment synced back to Jira. |
+| `jira_error` | TEXT | NOT NULL DEFAULT '' | Last sync error message. |
+| `created_at_utc` | TEXT | NOT NULL DEFAULT '' | Creation timestamp. |
+| `updated_at_utc` | TEXT | NOT NULL DEFAULT '' | Last update timestamp. |
+
+## Data Flow
+
+1. Azure or local startup calls `wsgi.py` / `run_server.py`.
+2. `report_server.py` normalizes `JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH`, resolves relative paths against the app root, creates the parent folder, and validates write access.
+3. `_init_capacity_db()` creates capacity tables before dependent modules initialize their own tables in the same SQLite database.
+4. Capacity Settings writes saved profiles through the capacity APIs.
+5. Assignee Hours, Employee Performance, Team Capacity Planner, Nested View, canonical refresh, and settings routes read the shared DB path for profile, team, leave, managed-project, and refresh state.
+6. Reports return HTML/API responses to the browser while SQLite state remains in the resolved persistent DB file.
+
 ## Reuse Saved Capacity
 
 - Capacity settings are saved per date range.

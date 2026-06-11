@@ -4,6 +4,7 @@ import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from openpyxl import Workbook
 
@@ -22,6 +23,21 @@ def _build_app(root: Path):
     ws.append(["O2", "2026-02-01", "2026-02-01", "2026-W05", "2026-02", "Alice", 1.0])
     wb.save(root / "assignee_hours_report.xlsx")
     return create_report_server_app(base_dir=root, folder_raw="report_html")
+
+
+class CapacityRuntimePathTests(unittest.TestCase):
+    def test_capacity_db_path_strips_accidental_quotes(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            expected = root / "runtime" / "capacity.db"
+            with patch.dict(
+                "os.environ",
+                {"JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH": f'"{expected}"'},
+                clear=False,
+            ):
+                resolved = _resolve_capacity_runtime_paths(root)["db_path"]
+            self.assertEqual(resolved, expected)
+            self.assertTrue(expected.parent.exists())
 
 
 def _hierarchy_fixture():

@@ -18,6 +18,7 @@ import threading
 import time
 import uuid
 from pathlib import Path
+from typing import Any
 from urllib.parse import unquote
 
 import requests
@@ -1537,16 +1538,25 @@ def _build_navigation_from_page_categories(db_path: Path) -> dict[str, object]:
 
 
 def _resolve_capacity_runtime_paths(base_dir: Path) -> dict[str, Path]:
-    db_name = os.getenv("JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH", DEFAULT_CAPACITY_DB).strip() or DEFAULT_CAPACITY_DB
-    leave_name = os.getenv("JIRA_LEAVE_REPORT_XLSX_PATH", DEFAULT_LEAVE_REPORT_INPUT_XLSX).strip() or DEFAULT_LEAVE_REPORT_INPUT_XLSX
+    db_name = _normalize_runtime_path_setting(
+        os.getenv("JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH", DEFAULT_CAPACITY_DB),
+        DEFAULT_CAPACITY_DB,
+    )
+    leave_name = _normalize_runtime_path_setting(
+        os.getenv("JIRA_LEAVE_REPORT_XLSX_PATH", DEFAULT_LEAVE_REPORT_INPUT_XLSX),
+        DEFAULT_LEAVE_REPORT_INPUT_XLSX,
+    )
     summary_name = (
-        os.getenv("JIRA_ASSIGNEE_HOURS_SUMMARY_XLSX_PATH", DEFAULT_SUMMARY_OUTPUT_XLSX).strip()
-        or DEFAULT_SUMMARY_OUTPUT_XLSX
+        _normalize_runtime_path_setting(
+            os.getenv("JIRA_ASSIGNEE_HOURS_SUMMARY_XLSX_PATH", DEFAULT_SUMMARY_OUTPUT_XLSX),
+            DEFAULT_SUMMARY_OUTPUT_XLSX,
+        )
     )
 
     db_path = Path(db_name)
     if not db_path.is_absolute():
         db_path = base_dir / db_path
+    db_path = _resolve_writable_capacity_db_path(db_path)
 
     leave_report_path = Path(leave_name)
     if not leave_report_path.is_absolute():
@@ -1561,6 +1571,33 @@ def _resolve_capacity_runtime_paths(base_dir: Path) -> dict[str, Path]:
         "leave_report_path": leave_report_path,
         "summary_path": summary_path,
     }
+
+
+def _normalize_runtime_path_setting(value: object, default: str) -> str:
+    text = str(value or "").strip().strip('"').strip("'").strip()
+    return text or default
+
+
+def _resolve_writable_capacity_db_path(candidate: Path) -> Path:
+    candidate = Path(candidate)
+    try:
+        if candidate.exists() and candidate.is_dir():
+            raise OSError(f"capacity DB path is a directory: {candidate}")
+        candidate.parent.mkdir(parents=True, exist_ok=True)
+        probe = candidate.parent / f".{candidate.name}.write-probe"
+        with open(probe, "a", encoding="utf-8"):
+            pass
+        probe.unlink(missing_ok=True)
+        return candidate
+    except OSError as exc:
+        azure_home = os.getenv("HOME", "")
+        fallback = Path(azure_home) / "data" / DEFAULT_CAPACITY_DB if azure_home else Path(DEFAULT_CAPACITY_DB)
+        fallback.parent.mkdir(parents=True, exist_ok=True)
+        print(
+            f"Warning: capacity DB path {candidate} is not writable ({exc}); using {fallback}",
+            file=sys.stderr,
+        )
+        return fallback
 
 
 def clear_planned_vs_dispensed_cache_tables(db_path: Path) -> None:

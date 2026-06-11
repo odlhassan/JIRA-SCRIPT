@@ -17,6 +17,7 @@ from generate_assignee_hours_report import (
     _read_summary_xlsx,
     _write_summary_xlsx,
     _save_capacity_settings,
+    _init_capacity_db,
     calculate_capacity_metrics,
     create_server_app,
     aggregate_rows,
@@ -31,6 +32,12 @@ from generate_assignee_hours_report import (
 
 
 class AssigneeHoursReportTests(unittest.TestCase):
+    def test_init_capacity_db_creates_parent_directory(self):
+        with tempfile.TemporaryDirectory() as td:
+            db_path = Path(td) / "nested" / "capacity" / "assignee_hours_capacity.db"
+            _init_capacity_db(db_path)
+            self.assertTrue(db_path.exists())
+
     def test_parse_worklog_date(self):
         self.assertEqual(parse_worklog_date("2026-02-20T11:15:00.000+0500"), "2026-02-20")
         self.assertEqual(parse_worklog_date("2026-02-20T11:15:00+05:00"), "2026-02-20")

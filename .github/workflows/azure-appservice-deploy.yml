@@ -71,6 +71,12 @@ jobs:
             --exclude='server.verify.stderr.log' \
             ./ staging/
 
+      - name: Vendor Python packages for zip deploy
+        run: |
+          set -e
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt --target staging/.python_packages/lib/site-packages
+
       - name: Create ZIP
         run: |
           set -e

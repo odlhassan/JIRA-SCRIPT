@@ -901,6 +901,7 @@ def _init_capacity_db(db_path: Path) -> None:
         conn.commit()
 
     db_path = Path(db_path)
+    db_path.parent.mkdir(parents=True, exist_ok=True)
     _backup_capacity_db(db_path)
     for attempt in range(2):
         try:

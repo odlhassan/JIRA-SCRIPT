@@ -7,6 +7,7 @@ This project can run on Azure App Service for Linux as a Python 3.11 web app.
 - **Live URL:** `https://epreporting.azurewebsites.net/`
 - Workflow: `.github/workflows/azure-appservice-deploy.yml` (runs on push to `main` or `master`, and manual `workflow_dispatch`).
 - The deploy ZIP is built from the **GitHub checkout** after staging (excludes tests, `node_modules`, `handover`, `offline_bundles`, root `backup/`, etc.). **Commit and push every file the running app depends on** — anything not in Git will not ship. Do not rely on unpushed local builds.
+- The workflow runs `pip install -r requirements.txt --target staging/.python_packages/lib/site-packages` before zipping. This makes production dependency imports independent of whether Azure creates `/home/site/wwwroot/antenv` during deployment.
 - **Backups:** do not commit local backup trees or `*.backup` files (see `.gitignore`). Do not expect backup-only branches to drive production unless you change the workflow deliberately.
 
 ## Why a startup command is required
@@ -17,7 +18,7 @@ This repo exposes the Flask app from `wsgi.py`, so configure Azure to use the in
 The startup command runs Gunicorn on Azure's injected `$PORT` with a single worker:
 
 ```text
-python -m gunicorn --bind=0.0.0.0:${PORT:-8000} --timeout 600 --workers 1 --access-logfile '-' --error-logfile '-' --capture-output wsgi:app
+PYTHONPATH="$(pwd)/.python_packages/lib/site-packages:${PYTHONPATH:-}" python -m gunicorn --bind=0.0.0.0:${PORT:-8000} --timeout 600 --workers 1 --access-logfile '-' --error-logfile '-' --capture-output wsgi:app
 ```
 
 Use one worker for production because the app initializes and writes SQLite-backed
@@ -25,6 +26,9 @@ settings and canonical-refresh tables during WSGI startup. Multiple workers can 
 those SQLite files during cold start and terminate before the App Service warmup probe
 succeeds, causing `ContainerTimeout`, `exit code: 1`, and temporary site blocking. The
 `--capture-output` flag sends worker boot exceptions to the App Service log stream.
+`PYTHONPATH` includes the workflow-vendored `.python_packages` directory so imports such
+as `openpyxl`, `flask`, and `gunicorn` still resolve if the instance starts from a plain
+ZIP deployment without an Oryx virtual environment.
 
 ## One-time Azure setup
 
@@ -117,12 +121,13 @@ az webapp restart --resource-group $RESOURCE_GROUP --name $APP
 - Use Azure App Service for Linux. Microsoft Learn states Python on App Service on Windows is no longer supported.
 - The normal local rebuild path currently depends on a populated canonical SQLite run state. Deploying the existing generated `report_html` assets is the safer first release path.
 - Keep live mutable EPR data in `/home/data`, not `/home/site/wwwroot`. Set `JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH=/home/data/assignee_hours_capacity.db` so deploys do not overwrite the SQLite database.
+- `report_server.py` trims accidental quotes around `JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH`, creates the parent folder before the first SQLite connection, and verifies the folder is writable. If the configured path is not writable, Azure falls back to `$HOME/data/assignee_hours_capacity.db` and writes a warning to stderr instead of killing the Gunicorn worker during import.
 - Colossal Refresh stores canonical rows in `JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH`, but generated report artifacts must still be written/synced from the app root. If a refresh completes but reports look stale, verify the app setting, then check that `canonical_refresh_state.last_success_run_id` points at the newest successful run and restart the app after any setting change.
 - If you later want Azure to rebuild reports dynamically, validate the writable database path, canonical refresh bootstrap behavior, and generated-report sync path first.
 
 ## Business Logic
 
-Azure uses `startup.txt` to run `wsgi:app` with one Gunicorn worker. SQLite-backed runtime state must live under persistent `/home/data`, while generated reports and static assets are served from the deployed application root and `report_html`.
+Azure uses `startup.txt` to run `wsgi:app` with one Gunicorn worker. SQLite-backed runtime state must live under persistent `/home/data`, while generated reports and static assets are served from the deployed application root and `report_html`. The startup command prepends the deploy ZIP's `.python_packages` directory to `PYTHONPATH` so Python packages remain available without relying on an instance-local virtual environment.
 
 ## Business Cases
 
@@ -130,7 +135,7 @@ The Azure deployment hosts the EPR Tool for production users. Persistent DB stor
 
 ## Examples
 
-With `JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH=/home/data/assignee_hours_capacity.db`, a deploy updates code under the app root while keeping the 3.3GB production SQLite DB intact under `/home/data`. A successful Colossal Refresh then updates canonical tables in `/home/data` and serves regenerated report HTML from the app root.
+With `JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH=/home/data/assignee_hours_capacity.db`, a deploy updates code under the app root while keeping the 3.3GB production SQLite DB intact under `/home/data`. If the setting is accidentally entered as `"/home/data/assignee_hours_capacity.db"`, the server strips the quotes before opening SQLite. A successful Colossal Refresh then updates canonical tables in `/home/data` and serves regenerated report HTML from the app root.
 
 ## Explanations
 
@@ -142,15 +147,15 @@ No Azure-only UI fields are added. Relevant production screens are `/settings/ca
 
 ## Script Files
 
-- `startup.txt` — production Gunicorn startup command.
+- `startup.txt` — production Gunicorn startup command and `.python_packages` import path.
 - `wsgi.py` — Flask app entry point.
 - `report_server.py` — server routes, DB path resolution, refresh orchestration, and report serving.
-- `.github/workflows/azure-appservice-deploy.yml` — GitHub Actions deployment packaging.
+- `.github/workflows/azure-appservice-deploy.yml` — GitHub Actions deployment packaging and dependency vendoring.
 - `AZURE_APP_SERVICE.md` — Azure operations runbook.
 
 ## Dependent & Impacted Files
 
-`generate_assignee_hours_report.py`, canonical refresh generators, report HTML outputs, and SQLite-backed settings modules depend on the Azure DB path being persistent and writable.
+`generate_assignee_hours_report.py`, canonical refresh generators, report HTML outputs, and SQLite-backed settings modules depend on the Azure DB path being persistent and writable. `requirements.txt` is also a production dependency because the workflow vendors it into `.python_packages` for ZIP startup.
 
 ## Table Schema
 
@@ -160,6 +165,7 @@ Azure does not define new tables directly. It hosts SQLite tables from `assignee
 
 1. GitHub Actions deploys tracked code to Azure.
 2. Azure starts `wsgi:app` through `startup.txt`.
-3. `report_server.py` resolves `JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH`.
-4. Runtime settings and canonical refresh data are read/written in `/home/data/assignee_hours_capacity.db`.
-5. Generated reports are synced into the app-served `report_html` path.
+3. `startup.txt` prepends `.python_packages/lib/site-packages` to `PYTHONPATH` and starts Gunicorn.
+4. `report_server.py` resolves, normalizes, and validates `JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH`.
+5. Runtime settings and canonical refresh data are read/written in `/home/data/assignee_hours_capacity.db`.
+6. Generated reports are synced into the app-served `report_html` path.

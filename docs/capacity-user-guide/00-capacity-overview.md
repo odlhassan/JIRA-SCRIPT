@@ -20,6 +20,7 @@ It covers:
 - Run reports via server mode so API endpoints are available.
 - Capacity database file must be accessible:
   - Default: `assignee_hours_capacity.db`
+  - Azure: `JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH` should normally point to `/home/data/assignee_hours_capacity.db`; quoted values are normalized, parent folders are created at startup, and an unwritable configured path falls back to `$HOME/data/assignee_hours_capacity.db` with a server log warning.
 - Leave workbook should exist for leave-adjusted metrics:
   - Default: `rlt_leave_report.xlsx`
 
@@ -89,3 +90,8 @@ Rules:
   - Shows per-resource capacity, leave, logged work, and planned work for a selected team/date range.
   - The resource planned-work bar uses only assigned canonical subtasks in the selected range. Epic and story estimates are ignored even when those work items are assigned to the same resource.
   - The Stats toggle switches resource values between days and hours without reloading data.
+
+## Deployment Notes
+
+- Azure ZIP deploys vendor `requirements.txt` into `.python_packages/lib/site-packages`, and `startup.txt` adds that folder to `PYTHONPATH` before Gunicorn imports `report_server.py`.
+- Capacity startup now creates the SQLite parent directory before opening the DB, which keeps Capacity Settings, Team Capacity Planner, and Employee Performance from failing cold start when the persistent DB folder has not been created yet.

@@ -1,1 +1,1 @@
-python -m gunicorn --bind=0.0.0.0:${PORT:-8000} --timeout 600 --workers 1 --access-logfile '-' --error-logfile '-' --capture-output wsgi:app
+PYTHONPATH="$(pwd)/.python_packages/lib/site-packages:${PYTHONPATH:-}" python -m gunicorn --bind=0.0.0.0:${PORT:-8000} --timeout 600 --workers 1 --access-logfile '-' --error-logfile '-' --capture-output wsgi:app
