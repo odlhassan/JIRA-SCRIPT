@@ -6,6 +6,7 @@ This project can run on Azure App Service for Linux as a Python 3.11 web app.
 
 - **Live URL:** `https://epreporting.azurewebsites.net/`
 - Workflow: `.github/workflows/azure-appservice-deploy.yml` (runs on push to `main` or `master`, and manual `workflow_dispatch`).
+- Workflow concurrency is serialized per ref (`azure-appservice-deploy-${{ github.ref }}`) so only one production deploy job runs at a time and newer runs wait instead of racing OneDeploy.
 - The deploy ZIP is built from the **GitHub checkout** after staging (excludes tests, `node_modules`, `handover`, `offline_bundles`, root `backup/`, etc.). **Commit and push every file the running app depends on** — anything not in Git will not ship. Do not rely on unpushed local builds.
 - The workflow runs `pip install -r requirements.txt --target staging/.python_packages/lib/site-packages` before zipping. This makes production dependency imports independent of whether Azure creates `/home/site/wwwroot/antenv` during deployment.
 - **Backups:** do not commit local backup trees or `*.backup` files (see `.gitignore`). Do not expect backup-only branches to drive production unless you change the workflow deliberately.
@@ -127,7 +128,7 @@ az webapp restart --resource-group $RESOURCE_GROUP --name $APP
 
 ## Business Logic
 
-Azure uses `startup.txt` to run `wsgi:app` with one Gunicorn worker. SQLite-backed runtime state must live under persistent `/home/data`, while generated reports and static assets are served from the deployed application root and `report_html`. The startup command prepends the deploy ZIP's `.python_packages` directory to `PYTHONPATH` so Python packages remain available without relying on an instance-local virtual environment.
+Azure uses `startup.txt` to run `wsgi:app` with one Gunicorn worker. SQLite-backed runtime state must live under persistent `/home/data`, while generated reports and static assets are served from the deployed application root and `report_html`. The startup command prepends the deploy ZIP's `.python_packages` directory to `PYTHONPATH` so Python packages remain available without relying on an instance-local virtual environment. Deploy workflow concurrency is serialized by branch so Azure OneDeploy requests do not overlap and return HTTP 409 conflicts.
 
 ## Business Cases
 
