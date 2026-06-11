@@ -8,8 +8,9 @@ settings and refresh state during WSGI startup; multi-worker cold starts can rac
 schema initialization before the warmup probe succeeds.
 
 The deploy workflow vendors `requirements.txt` into `.python_packages/lib/site-packages`
-inside the ZIP, and `startup.txt` prepends that folder to `PYTHONPATH`. This keeps the
-site bootable even when Azure starts from the ZIP contents without an Oryx-created
+inside the ZIP, marks `startup.txt` executable, and deploys with `sh startup.txt` as the
+startup command. The script prepends `.python_packages` to `PYTHONPATH`, which keeps the
+site bootable even when Azure starts from read-only ZIP contents without an Oryx-created
 virtual environment.
 
 Local development uses:

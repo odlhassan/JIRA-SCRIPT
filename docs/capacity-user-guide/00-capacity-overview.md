@@ -93,5 +93,5 @@ Rules:
 
 ## Deployment Notes
 
-- Azure ZIP deploys vendor `requirements.txt` into `.python_packages/lib/site-packages`, and `startup.txt` adds that folder to `PYTHONPATH` before Gunicorn imports `report_server.py`.
+- Azure ZIP deploys vendor `requirements.txt` into `.python_packages/lib/site-packages`, marks `startup.txt` executable, and uses `sh startup.txt` so the read-only Run From Package mount does not need a runtime chmod. The script adds `.python_packages` to `PYTHONPATH` before Gunicorn imports `report_server.py`.
 - Capacity startup now creates the SQLite parent directory before opening the DB, which keeps Capacity Settings, Team Capacity Planner, and Employee Performance from failing cold start when the persistent DB folder has not been created yet.

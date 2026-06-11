@@ -7,18 +7,26 @@ This project can run on Azure App Service for Linux as a Python 3.11 web app.
 - **Live URL:** `https://epreporting.azurewebsites.net/`
 - Workflow: `.github/workflows/azure-appservice-deploy.yml` (runs on push to `main` or `master`, and manual `workflow_dispatch`).
 - The deploy ZIP is built from the **GitHub checkout** after staging (excludes tests, `node_modules`, `handover`, `offline_bundles`, root `backup/`, etc.). **Commit and push every file the running app depends on** — anything not in Git will not ship. Do not rely on unpushed local builds.
-- The workflow runs `pip install -r requirements.txt --target staging/.python_packages/lib/site-packages` before zipping. This makes production dependency imports independent of whether Azure creates `/home/site/wwwroot/antenv` during deployment.
+- The workflow runs `pip install -r requirements.txt --target staging/.python_packages/lib/site-packages` before zipping. This makes production dependency imports independent of whether Azure creates `/home/site/wwwroot/antenv` during deployment. It also marks `startup.txt` executable and deploys with `startup-command: sh startup.txt` so App Service can launch from a read-only `WEBSITE_RUN_FROM_PACKAGE` mount without trying to chmod the startup file.
 - **Backups:** do not commit local backup trees or `*.backup` files (see `.gitignore`). Do not expect backup-only branches to drive production unless you change the workflow deliberately.
 
 ## Why a startup command is required
 
 Azure App Service auto-detects Flask only when the app entrypoint is `app.py` or `application.py` with an `app` callable.
 
-This repo exposes the Flask app from `wsgi.py`, so configure Azure to use the included `startup.txt` file.
-The startup command runs Gunicorn on Azure's injected `$PORT` with a single worker:
+This repo exposes the Flask app from `wsgi.py`, so configure Azure to run the included `startup.txt` script through `sh`.
+The startup script runs Gunicorn on Azure's injected `$PORT` with a single worker:
 
 ```text
-PYTHONPATH="$(pwd)/.python_packages/lib/site-packages:${PYTHONPATH:-}" python -m gunicorn --bind=0.0.0.0:${PORT:-8000} --timeout 600 --workers 1 --access-logfile '-' --error-logfile '-' --capture-output wsgi:app
+sh startup.txt
+```
+
+Inside `startup.txt`, the script prepends `.python_packages/lib/site-packages` to
+`PYTHONPATH` and then execs Gunicorn:
+
+```sh
+export PYTHONPATH="$(pwd)/.python_packages/lib/site-packages:${PYTHONPATH:-}"
+exec python -m gunicorn --bind=0.0.0.0:${PORT:-8000} --timeout 600 --workers 1 --access-logfile '-' --error-logfile '-' --capture-output wsgi:app
 ```
 
 Use one worker for production because the app initializes and writes SQLite-backed
@@ -49,10 +57,10 @@ az appservice plan create --name $PLAN --resource-group $RESOURCE_GROUP --sku B1
 az webapp create --resource-group $RESOURCE_GROUP --plan $PLAN --name $APP --runtime "PYTHON:3.11"
 ```
 
-Configure the startup command to use the repo file:
+Configure the startup command to run the repo script through `sh`:
 
 ```powershell
-az webapp config set --resource-group $RESOURCE_GROUP --name $APP --startup-file "startup.txt"
+az webapp config set --resource-group $RESOURCE_GROUP --name $APP --startup-file "sh startup.txt"
 ```
 
 Set required app settings:
@@ -127,7 +135,7 @@ az webapp restart --resource-group $RESOURCE_GROUP --name $APP
 
 ## Business Logic
 
-Azure uses `startup.txt` to run `wsgi:app` with one Gunicorn worker. SQLite-backed runtime state must live under persistent `/home/data`, while generated reports and static assets are served from the deployed application root and `report_html`. The startup command prepends the deploy ZIP's `.python_packages` directory to `PYTHONPATH` so Python packages remain available without relying on an instance-local virtual environment.
+Azure uses `sh startup.txt` to run `wsgi:app` with one Gunicorn worker. SQLite-backed runtime state must live under persistent `/home/data`, while generated reports and static assets are served from the deployed application root and `report_html`. The startup script prepends the deploy ZIP's `.python_packages` directory to `PYTHONPATH` so Python packages remain available without relying on an instance-local virtual environment. Running the file through `sh` avoids `Permission denied` failures when `WEBSITE_RUN_FROM_PACKAGE` mounts `/home/site/wwwroot` read-only.
 
 ## Business Cases
 
@@ -147,10 +155,10 @@ No Azure-only UI fields are added. Relevant production screens are `/settings/ca
 
 ## Script Files
 
-- `startup.txt` — production Gunicorn startup command and `.python_packages` import path.
+- `startup.txt` — production shell startup script, Gunicorn command, and `.python_packages` import path.
 - `wsgi.py` — Flask app entry point.
 - `report_server.py` — server routes, DB path resolution, refresh orchestration, and report serving.
-- `.github/workflows/azure-appservice-deploy.yml` — GitHub Actions deployment packaging and dependency vendoring.
+- `.github/workflows/azure-appservice-deploy.yml` — GitHub Actions deployment packaging, dependency vendoring, executable startup mode, and `sh startup.txt` deploy command.
 - `AZURE_APP_SERVICE.md` — Azure operations runbook.
 
 ## Dependent & Impacted Files
@@ -165,7 +173,7 @@ Azure does not define new tables directly. It hosts SQLite tables from `assignee
 
 1. GitHub Actions deploys tracked code to Azure.
 2. Azure starts `wsgi:app` through `startup.txt`.
-3. `startup.txt` prepends `.python_packages/lib/site-packages` to `PYTHONPATH` and starts Gunicorn.
+3. Azure runs `sh startup.txt`; the script prepends `.python_packages/lib/site-packages` to `PYTHONPATH` and starts Gunicorn.
 4. `report_server.py` resolves, normalizes, and validates `JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH`.
 5. Runtime settings and canonical refresh data are read/written in `/home/data/assignee_hours_capacity.db`.
 6. Generated reports are synced into the app-served `report_html` path.
