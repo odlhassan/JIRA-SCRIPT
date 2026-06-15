@@ -5012,12 +5012,37 @@ def _canonical_rebuild_derived_data(db_path: Path, run_id: str) -> dict[str, int
     }
 
 
+def _is_writable_directory(path: Path) -> bool:
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        probe = path / ".write-probe"
+        with open(probe, "a", encoding="utf-8"):
+            pass
+        probe.unlink(missing_ok=True)
+        return True
+    except OSError:
+        return False
+
+
+def _canonical_bridge_artifact_base_dir(base_dir: Path) -> Path:
+    configured = _to_text(os.getenv("JIRA_CANONICAL_ARTIFACT_DIR")).strip()
+    if configured:
+        path = Path(configured)
+        return path if path.is_absolute() else base_dir / path
+    if _is_writable_directory(base_dir):
+        return base_dir
+    return Path(os.getenv("HOME") or tempfile.gettempdir()) / "data" / "canonical_artifacts"
+
+
 def _canonical_bridge_output_paths(base_dir: Path) -> dict[str, Path]:
+    artifact_base_dir = _canonical_bridge_artifact_base_dir(base_dir)
     return {
-        "work_items": _resolve_work_items_xlsx_path(base_dir),
-        "worklogs": _resolve_worklog_xlsx_path(base_dir),
-        "rollup": base_dir / "3_jira_subtask_worklog_rollup.xlsx",
-        "nested_view": base_dir / "nested view.xlsx",
+        "artifact_base_dir": artifact_base_dir,
+        "work_items": _resolve_work_items_xlsx_path(artifact_base_dir),
+        "worklogs": _resolve_worklog_xlsx_path(artifact_base_dir),
+        "rollup": artifact_base_dir / "3_jira_subtask_worklog_rollup.xlsx",
+        "nested_view": artifact_base_dir / "nested view.xlsx",
+        "exports_db": artifact_base_dir / DEFAULT_EXPORTS_DB,
     }
 
 
@@ -5394,6 +5419,8 @@ def _canonical_rebuild_compatibility_artifacts(db_path: Path, run_id: str, base_
                     nested_rows.append([f"      {subtask_key} - {_to_text(subtask.get('summary'))}", _round_hours(float(subtask.get("original_estimate_hours") or 0) / 8.0), _round_hours(float(subtask.get("original_estimate_hours") or 0)), _round_hours(float(subtask_actual.get("total_worklog_hours") or subtask.get("total_hours_logged") or 0)), _round_hours(float(subtask_actual.get("total_worklog_hours") or subtask.get("total_hours_logged") or 0) / 8.0), _to_text(subtask.get("start_date")), _to_text(subtask.get("due_date"))])
     _canonical_bridge_write_workbook("NestedView", nested_headers, nested_rows, outputs["nested_view"])
 
+    previous_exports_db_path = os.environ.get("JIRA_EXPORTS_DB_PATH")
+    os.environ["JIRA_EXPORTS_DB_PATH"] = str(outputs["exports_db"])
     export_conn = jira_export_db_connect()
     try:
         jira_export_db_ensure_schema(export_conn)
@@ -5402,13 +5429,18 @@ def _canonical_rebuild_compatibility_artifacts(db_path: Path, run_id: str, base_
         jira_export_write_rollup(export_conn, rollup_rows)
     finally:
         export_conn.close()
+        if previous_exports_db_path is None:
+            os.environ.pop("JIRA_EXPORTS_DB_PATH", None)
+        else:
+            os.environ["JIRA_EXPORTS_DB_PATH"] = previous_exports_db_path
 
     return {
+        "artifact_base_dir": str(outputs["artifact_base_dir"]),
         "work_items_path": str(outputs["work_items"]),
         "worklogs_path": str(outputs["worklogs"]),
         "rollup_path": str(outputs["rollup"]),
         "nested_view_path": str(outputs["nested_view"]),
-        "jira_exports_db_path": str((db_path.parent / DEFAULT_EXPORTS_DB).resolve()),
+        "jira_exports_db_path": str(outputs["exports_db"].resolve()),
         "work_items_rows": len(work_items_rows),
         "worklog_rows": len(worklog_rows),
         "rollup_rows": len(rollup_rows),

@@ -594,6 +594,67 @@ class CanonicalRefreshApiTests(unittest.TestCase):
                 self.assertEqual(script_cwds, [app_root, app_root, app_root])
                 self.assertEqual(sync_base_dirs, [app_root])
 
+    def test_compatibility_artifacts_fall_back_when_app_root_is_not_writable(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            home = root / "home"
+            app_root = root / "app"
+            app_root.mkdir(parents=True, exist_ok=True)
+            (app_root / "report_html").mkdir(parents=True, exist_ok=True)
+            (app_root / "report_html" / "dashboard.html").write_text("<html><body>ok</body></html>", encoding="utf-8")
+            app = create_report_server_app(base_dir=app_root, folder_raw="report_html")
+            db_path = app_root / "assignee_hours_capacity.db"
+            run_id = "canonical-artifact-fallback"
+
+            with sqlite3.connect(db_path) as conn:
+                now = report_server._canonical_now_utc()
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO canonical_refresh_runs(
+                        run_id, scope_year, managed_project_keys_json, started_at_utc, ended_at_utc,
+                        status, trigger_source, error_message, stats_json,
+                        progress_step, progress_pct, cancel_requested, updated_at_utc
+                    ) VALUES (?, 2026, '["O2"]', ?, ?, 'success', 'test', '', '{}', 'done', 100, 0, ?)
+                    """,
+                    (run_id, now, now, now),
+                )
+                conn.execute(
+                    """
+                    INSERT INTO canonical_issues(
+                        run_id, issue_id, issue_key, project_key, issue_type, summary, status, assignee,
+                        start_date, due_date, created_utc, updated_utc, resolved_stable_since_date,
+                        original_estimate_hours, total_hours_logged, fix_type, parent_issue_key,
+                        story_key, epic_key, raw_payload_json
+                    ) VALUES (?, '1001', 'O2-1', 'O2', 'Task', 'Task One', 'Open', 'Alice',
+                        '2026-01-01', '2026-01-31', ?, ?, '', 8, 0, '', '', '', '', '{}')
+                    """,
+                    (run_id, now, now),
+                )
+                conn.execute(
+                    """
+                    INSERT INTO canonical_issue_links(run_id, issue_key, parent_issue_key, story_key, epic_key, hierarchy_level)
+                    VALUES (?, 'O2-1', '', '', '', 'task')
+                    """,
+                    (run_id,),
+                )
+                conn.commit()
+
+            with (
+                patch.dict("os.environ", {"HOME": str(home)}, clear=False),
+                patch.object(report_server, "_is_writable_directory", return_value=False),
+            ):
+                stats = report_server._canonical_rebuild_compatibility_artifacts(db_path, run_id, app_root)
+
+            artifact_dir = home / "data" / "canonical_artifacts"
+            self.assertEqual(Path(stats["artifact_base_dir"]), artifact_dir)
+            self.assertTrue((artifact_dir / "1_jira_work_items_export.xlsx").exists())
+            self.assertTrue((artifact_dir / "2_jira_subtask_worklogs.xlsx").exists())
+            self.assertTrue((artifact_dir / "3_jira_subtask_worklog_rollup.xlsx").exists())
+            self.assertTrue((artifact_dir / "nested view.xlsx").exists())
+            self.assertTrue((artifact_dir / "jira_exports.db").exists())
+            self.assertFalse((app_root / "1_jira_work_items_export.xlsx").exists())
+            self.assertFalse((app_root / "jira_exports.db").exists())
+
     def test_cancel_marks_running_canonical_refresh(self):
         with patch.dict("os.environ", {"JIRA_PROJECT_KEYS": ""}, clear=False), tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             root = Path(td)
