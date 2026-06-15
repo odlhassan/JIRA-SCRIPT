@@ -2528,6 +2528,82 @@
       align-self: stretch;
       margin: 2px 0;
     }
+    .efficiency-scores-panel {
+      margin-top: 20px;
+      padding-top: 18px;
+      border-top: 1px solid var(--line);
+    }
+    .efficiency-scores-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+    .efficiency-scores-title {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: #2d6aad;
+    }
+    .efficiency-warning {
+      display: none;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 10px 12px;
+      border: 1px solid #fde68a;
+      border-radius: 10px;
+      background: #fffbeb;
+      color: #92400e;
+      font-size: 0.82rem;
+      font-weight: 650;
+      line-height: 1.4;
+      margin-bottom: 12px;
+    }
+    .efficiency-warning.is-visible { display: flex; }
+    .efficiency-warning .material-symbols-outlined {
+      font-size: 18px;
+      line-height: 1.2;
+      flex: 0 0 auto;
+    }
+    .efficiency-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 12px;
+    }
+    .efficiency-card {
+      border: 1px solid #bfdbfe;
+      border-radius: 12px;
+      background: #eff6ff;
+      padding: 14px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .efficiency-card-label {
+      font-size: 0.72rem;
+      font-weight: 800;
+      color: #1d4ed8;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    .efficiency-card-value {
+      font-size: 2rem;
+      font-weight: 800;
+      color: #0f172a;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+    }
+    .efficiency-card-detail,
+    .efficiency-card-formula {
+      font-size: 0.8rem;
+      font-weight: 650;
+      color: #475569;
+      line-height: 1.35;
+    }
+    .efficiency-card-formula {
+      color: #1e3a8a;
+    }
     .carry-audit-note {
       margin: 0 0 12px;
       padding: 10px 12px;
@@ -3186,6 +3262,24 @@
             <div class="kpi-progress-bar">
               <div class="kpi-progress-fill" id="kpi-completion-bar" style="width:0%"></div>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="efficiency-scores-panel" id="efficiency-scores-panel">
+        <div class="efficiency-scores-head">
+          <div class="efficiency-scores-title">Efficiency Scores</div>
+        </div>
+        <div class="efficiency-warning" id="efficiency-current-month-warning" role="status" aria-live="polite">
+          <span class="material-symbols-outlined" aria-hidden="true">warning</span>
+          <span id="efficiency-current-month-warning-text"></span>
+        </div>
+        <div class="efficiency-grid">
+          <div class="efficiency-card">
+            <div class="efficiency-card-label">EPR Efficiency Score</div>
+            <div class="efficiency-card-value" id="epr-efficiency-score">--</div>
+            <div class="efficiency-card-detail" id="epr-efficiency-detail">Waiting for monthly data.</div>
+            <div class="efficiency-card-formula" id="epr-efficiency-formula">((Planned selected month - Brought Forward next month) / Planned selected month) x 100</div>
           </div>
         </div>
       </div>
@@ -3928,6 +4022,11 @@
       resEpicCfPlannedLabel: document.getElementById("res-epic-cf-planned-label"),
       resEpicCfActual: document.getElementById("res-epic-cf-actual"),
       resEpicCfActualLabel: document.getElementById("res-epic-cf-actual-label"),
+      efficiencyCurrentMonthWarning: document.getElementById("efficiency-current-month-warning"),
+      efficiencyCurrentMonthWarningText: document.getElementById("efficiency-current-month-warning-text"),
+      eprEfficiencyScore: document.getElementById("epr-efficiency-score"),
+      eprEfficiencyDetail: document.getElementById("epr-efficiency-detail"),
+      eprEfficiencyFormula: document.getElementById("epr-efficiency-formula"),
       capacityProfile: document.getElementById("capacity-profile-select"),
       modeTkEpics: document.getElementById("mode-tk-epics"),
       modeAllEpics: document.getElementById("mode-all-epics"),
@@ -3963,6 +4062,8 @@
     let _hcIncludeSupportApplied = false;
     let employeeDropdownInteractionsBound = false;
     let _resSummaryState = { total: {}, support: {}, epics: {} };
+    let _efficiencyScoreState = { month: "", loading: false };
+    let _efficiencyRequestSeq = 0;
 
     function getCheckedEmployeeNames() {
       if (!els.employeeDdList) return [];
@@ -6786,9 +6887,7 @@
       body.innerHTML = parts.join("");
     }
 
-    async function loadSummary() {
-      const month = els.month.value || monthNow();
-      els.month.value = month;
+    function buildSummaryParamsForMonth(month) {
       const params = new URLSearchParams({ month });
       const projects = selectedProjects();
       if (projects.length) params.set("projects", projects.join(","));
@@ -6802,6 +6901,126 @@
       if (els.includeOnHold && els.includeOnHold.checked) params.set("include_on_hold", "1");
       if (els.includeBugSubtasks && !els.includeBugSubtasks.checked) params.set("include_bug_subtasks", "0");
       if (dfDateFilter === "range") params.set("date_filter", "range");
+      return params;
+    }
+
+    function nextMonthYm(month) {
+      if (!month || !/^\d{4}-\d{2}$/.test(month)) return "";
+      const parts = month.split("-").map(Number);
+      const d = new Date(parts[0], parts[1], 1);
+      return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+    }
+
+    function monthLabelFromYm(month) {
+      if (!month || !/^\d{4}-\d{2}$/.test(month)) return month || "";
+      const parts = month.split("-").map(Number);
+      const names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+      return names[parts[1] - 1] + " " + parts[0];
+    }
+
+    function isCurrentIncompleteMonth(month) {
+      return !!month && month === todayIso().slice(0, 7);
+    }
+
+    function renderEfficiencyScores(state) {
+      const s = state || {};
+      const currentMonth = String(s.month || (latestPayload && latestPayload.month) || "");
+      const currentLabel = monthLabelFromYm(currentMonth);
+      const warningVisible = isCurrentIncompleteMonth(currentMonth);
+      if (els.efficiencyCurrentMonthWarning) {
+        els.efficiencyCurrentMonthWarning.classList.toggle("is-visible", warningVisible);
+      }
+      if (els.efficiencyCurrentMonthWarningText) {
+        els.efficiencyCurrentMonthWarningText.textContent = warningVisible
+          ? currentLabel + " is still in progress. Performance and efficiency stats are provisional; re-check after " + currentLabel + " ends for trustable stats."
+          : "";
+      }
+      if (els.eprEfficiencyFormula) {
+        els.eprEfficiencyFormula.textContent = "((Planned selected month - Brought Forward next month) / Planned selected month) x 100";
+      }
+      if (s.loading) {
+        if (els.eprEfficiencyScore) els.eprEfficiencyScore.textContent = "--";
+        if (els.eprEfficiencyDetail) els.eprEfficiencyDetail.textContent = "Loading next-month brought-forward data...";
+        return;
+      }
+      if (s.error) {
+        if (els.eprEfficiencyScore) els.eprEfficiencyScore.textContent = "--";
+        if (els.eprEfficiencyDetail) els.eprEfficiencyDetail.textContent = s.error;
+        return;
+      }
+      const planned = Number(s.planned_hours || 0);
+      const nextBroughtForward = Number(s.next_brought_forward_planned_hours || 0);
+      if (planned <= 0) {
+        if (els.eprEfficiencyScore) els.eprEfficiencyScore.textContent = "--";
+        if (els.eprEfficiencyDetail) els.eprEfficiencyDetail.textContent = "No selected-month planned hours to score.";
+        return;
+      }
+      const score = ((planned - nextBroughtForward) / planned) * 100;
+      const scoreText = Number.isFinite(score) ? Math.round(score) + "%" : "--";
+      if (els.eprEfficiencyScore) els.eprEfficiencyScore.textContent = scoreText;
+      if (els.eprEfficiencyDetail) {
+        els.eprEfficiencyDetail.textContent =
+          "Planned " + formatNumber(planned) + " h; next-month Brought Forward " + formatNumber(nextBroughtForward) + " h.";
+      }
+    }
+
+    async function loadEfficiencyScores(selectedPayload, baseParams) {
+      const month = String((selectedPayload && selectedPayload.month) || (els.month && els.month.value) || "");
+      const totals = (selectedPayload && selectedPayload.totals) || {};
+      const plannedHours = Math.max(
+        0,
+        Number(totals.in_month_planned_hours != null
+          ? totals.in_month_planned_hours
+          : Number(totals.planned_hours || 0) - Number(totals.brought_forward_planned_hours || 0))
+      );
+      const nextMonth = nextMonthYm(month);
+      const seq = ++_efficiencyRequestSeq;
+      _efficiencyScoreState = {
+        month,
+        next_month: nextMonth,
+        planned_hours: plannedHours,
+        next_brought_forward_planned_hours: 0,
+        loading: true,
+      };
+      renderEfficiencyScores(_efficiencyScoreState);
+      if (!month || !nextMonth) {
+        _efficiencyScoreState = { month, loading: false, error: "Select a valid month to calculate EPR efficiency." };
+        renderEfficiencyScores(_efficiencyScoreState);
+        return;
+      }
+      try {
+        const nextParams = new URLSearchParams(baseParams ? baseParams.toString() : buildSummaryParamsForMonth(month).toString());
+        nextParams.set("month", nextMonth);
+        const response = await fetch(API_SUMMARY + "?" + nextParams.toString(), { cache: "no-store", headers: { "Accept": "application/json" } });
+        const body = await response.json().catch(() => ({}));
+        if (seq !== _efficiencyRequestSeq) return;
+        if (!response.ok || !body.ok) throw new Error(body.error || "Failed to load next-month summary.");
+        const nextTotals = body.totals || {};
+        _efficiencyScoreState = {
+          month,
+          next_month: nextMonth,
+          planned_hours: plannedHours,
+          next_brought_forward_planned_hours: Number(nextTotals.brought_forward_planned_hours || 0),
+          loading: false,
+        };
+        renderEfficiencyScores(_efficiencyScoreState);
+      } catch (err) {
+        if (seq !== _efficiencyRequestSeq) return;
+        _efficiencyScoreState = {
+          month,
+          next_month: nextMonth,
+          planned_hours: plannedHours,
+          loading: false,
+          error: "Could not load next-month brought-forward data for the EPR efficiency score.",
+        };
+        renderEfficiencyScores(_efficiencyScoreState);
+      }
+    }
+
+    async function loadSummary() {
+      const month = els.month.value || monthNow();
+      els.month.value = month;
+      const params = buildSummaryParamsForMonth(month);
       updateDateFilterMonthLabels();
       els.status.textContent = "Loading monthly epic report...";
       try {
@@ -6809,8 +7028,12 @@
         const body = await response.json().catch(() => ({}));
         if (!response.ok || !body.ok) throw new Error(body.error || "Failed to load report.");
         renderSummary(body, { resetTableProjectFilter: true });
+        loadEfficiencyScores(body, params);
         els.status.textContent = "Loaded " + (body.rows || []).length + " epics for " + esc(body.month || month) + ".";
       } catch (err) {
+        _efficiencyRequestSeq++;
+        _efficiencyScoreState = { month, loading: false, error: "Load the monthly report to calculate EPR efficiency." };
+        renderEfficiencyScores(_efficiencyScoreState);
         latestPayload = null;
         tableProjectFilterKey = "";
         const isCanonicalMissing = (err.message || "").includes("No successful canonical refresh found");

@@ -43,3 +43,5 @@ Each info item contains:
 - `docs/report-user-guide/screens/11-rnd-data-story-report.md`
 - `docs/report-user-guide/screens/12-epics-planner-tk-estimates.md`
 - `docs/report-user-guide/screens/13-rmi-jira-gantt-report.md`
+- `docs/report-user-guide/screens/14-monthly-epic-plan-progress-report.md`
+- `docs/report-user-guide/screens/15-epic-explorer-report.md`

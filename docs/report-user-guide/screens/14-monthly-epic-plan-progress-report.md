@@ -35,6 +35,16 @@
 - On first load with no explicit selection, Resource Planning still mirrors the roster default (active dev only, support shown only when Include Support Team is applied on), rather than the full organisation breakdown. A resignation dated before the selected month is treated as inactive for that month; a resignation dated inside or after the selected month remains selectable and active for that month.
 - The detailed **Technical Support Team** table below Employee Stats continues to list the full support roster as a reference; only the Resource Planning *Support Resources* card is selection-aware.
 
+### Efficiency Scores
+
+- The **Efficiency Scores** section appears inside the Resource Planning panel below the Resource Planning and Epic Work Summary blocks.
+- **EPR Efficiency Score** measures how much of the selected month's planned epic effort did not become next month's brought-forward planned effort.
+- Formula: `((Planned Filter Selected Month - Brought Forward of Next Month) / Planned Filter Selected Month) * 100`.
+- `Planned Filter Selected Month` uses the same filtered selected-month planned-hours basis as the visible Epic Work Summary `Planned This Month` card.
+- `Brought Forward of Next Month` is loaded from a second summary API request for the next calendar month using the same project, employee, capacity profile, epic-scope, logged-hours, overdue-lookback, on-hold, and bug-subtask filters.
+- The score is rounded to a whole percent for display. When selected-month planned hours are zero, the score is blank and the card explains that there is no selected-month plan to score.
+- If the selected month is the current month, the section still displays the current performance and efficiency values, but shows a warning that the month is still in progress and stats should be re-checked after the month ends.
+
 ## Business Cases
 
 - Delivery leads use the report to compare month commitments against actual Jira execution for epics that should be progressing this month.
@@ -118,11 +128,12 @@ Jira CSV reconciliation has one important caveat: Jira's time-spent export colum
 | Team Roster drawer | Member / team checkboxes | Checkboxes | Active dev selected, support and before-month resignations unchecked | Selecting/clearing members defines the workforce scope. `Apply selection` re-fetches the payload with the chosen assignees and preserves manually selected employees, including employees with resignation records. |
 | Employee Stats | Head Count / Capacity / Leaves / Availability | Read-only cards | Calculated | Reflect the roster selection (selected count, scaled capacity, selected members' planned leave). |
 | Resource Planning | Total / Dev / Support resources | Read-only cards | Calculated | Mirror the roster selection. Total and Support are computed from selected members at a uniform per-person capacity; Dev = Total − Support. Support group hidden when no support member is selected. |
+| Efficiency Scores | EPR Efficiency Score | Read-only card | Calculated | Uses selected-month planned hours and the next month's brought-forward planned hours from the same filters. Shows a provisional warning when the selected month is the current in-progress month. |
 
 ## Script Files
 
 - `monthly_epic_plan_progress_service.py` — builds the monthly payload, Epic Work Summary carry-forward audit rows, estimate rollups, top-level Bug Subtask inclusion/exclusion, Story Overrun detail rows, month-aware resignation eligibility for workforce roster rows, and the standalone `build_worklog_detail_for_range()` function used by the dedicated worklog-detail endpoint.
-- `monthly_epic_plan_progress_report.html` — renders filters, the top-level `Include Bug Subtasks` toggle, clickable Epic Work Summary cards, estimate bars, detail drawers, the Worklog Detail drawer with From/To date pickers and Apply button, table view, Gantt view, the Team Roster drawer, Employee Stats cards, month-aware resigned/inactive labels, and the selection-aware Resource Planning panel. The main `<style>` block must close before `<body>` so browser parsing does not treat the report body as CSS text.
+- `monthly_epic_plan_progress_report.html` — renders filters, the top-level `Include Bug Subtasks` toggle, clickable Epic Work Summary cards, estimate bars, detail drawers, the Worklog Detail drawer with From/To date pickers and Apply button, table view, Gantt view, the Team Roster drawer, Employee Stats cards, month-aware resigned/inactive labels, the selection-aware Resource Planning panel, and the EPR Efficiency Score card that performs the client-side next-month summary lookup. The main `<style>` block must close before `<body>` so browser parsing does not treat the report body as CSS text.
 - `report_server.py` — serves `/api/monthly-epic-plan-progress/summary` (includes `include_bug_subtasks` param) and the new `/api/monthly-epic-plan-progress/worklog-detail` endpoint (`from_date`, `to_date`, `include_bug_subtasks` params). Syncs canonical report HTML into `report_html/`.
 - `tests/test_monthly_epic_plan_progress.py` — covers payload generation, carry-forward audit reasons, HTML presence, Story Overrun regression, bug-subtask toggle, worklog detail payload, `build_worklog_detail_for_range` with custom dates, month-aware roster resignation eligibility, manual employee-selection persistence, and the HTML structural guard that `</style>` appears before `<body>`.
 
@@ -162,3 +173,4 @@ Jira CSV reconciliation has one important caveat: Jira's time-spent export colum
 13. If the user enables the drawer-local `Include bug subtasks`, the browser re-renders the same rows using the combined totals already supplied by the backend for the current page-level scope.
 14. For workforce numbers, the service returns per-member data in `employee_tree` (name, static `resigned`, month-aware `active_in_month` / `resigned_for_month`, planned `leave_hours`), the support roster in `support_team.member_rows`, `team_capacity_hours`, `employee_count_profile`, and the active selection (`selected_assignees`, `assignee_filter_active`).
 15. `renderWorkforce` and `renderSupportTeam` call `computeResourcePlanningState`, which derives the effective selected set (from `selected_assignees`, or the active dev-only default when no filter is active), computes Total and Support buckets at a uniform per-person capacity, and `renderResourceSummary` then renders Dev = Total − Support. Changing the header employee dropdown or Team Roster selection and clicking Apply re-fetches the payload and re-renders all workforce panels consistently without reverting newly checked members.
+16. After the selected-month summary loads, the browser calls the same summary API for the next calendar month with the same filters. The Efficiency Scores card calculates EPR Efficiency Score from selected-month planned hours and next-month brought-forward planned hours, then shows a provisional warning when the selected month equals the browser's current month.

@@ -1131,6 +1131,17 @@ class MonthlyEpicPlanProgressTests(unittest.TestCase):
         self.assertIn("Total resources", html)
         self.assertIn("Dev Resources", html)
         self.assertIn("Support Resources", html)
+        self.assertIn("Efficiency Scores", html)
+        self.assertIn("EPR Efficiency Score", html)
+        self.assertIn('id="epr-efficiency-score"', html)
+        self.assertIn('id="epr-efficiency-detail"', html)
+        self.assertIn('id="efficiency-current-month-warning"', html)
+        self.assertIn("function buildSummaryParamsForMonth", html)
+        self.assertIn("function nextMonthYm", html)
+        self.assertIn("function loadEfficiencyScores", html)
+        self.assertIn("nextTotals.brought_forward_planned_hours", html)
+        self.assertIn("((planned - nextBroughtForward) / planned) * 100", html)
+        self.assertIn("is still in progress. Performance and efficiency stats are provisional", html)
 
     def test_process_team_auto_exclusion_present_in_html(self):
         html_path = Path(__file__).resolve().parents[1] / "monthly_epic_plan_progress_report.html"

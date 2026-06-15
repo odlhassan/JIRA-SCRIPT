@@ -191,6 +191,7 @@ from delayed_epic_chain_gantt_service import (
     normalize_assignee_mode as delayed_epic_normalize_assignee_mode,
     save_ui_settings as delayed_epic_save_ui_settings,
 )
+from epic_explorer_service import build_epic_explorer_payload
 from monthly_epic_plan_progress_service import (
     build_monthly_epic_plan_payload,
     build_worklog_detail_for_range,
@@ -239,6 +240,7 @@ REPORT_FILENAME_TO_ID: dict[str, str] = {
     "original_estimates_hierarchy_report.html": "original_estimates_hierarchy",
     "delayed_epic_chain_gantt_report.html": "delayed_epic_chain_gantt",
     "monthly_epic_plan_progress_report.html": "monthly_epic_plan_progress",
+    "epic_explorer_report.html": "epic_explorer",
     "support_center_report.html": "support_center",
     "team_capacity_planner.html": "team_capacity_planner",
 }
@@ -315,6 +317,8 @@ REPORT_REFRESH_CHAINS: dict[str, list[str]] = {
     "delayed_epic_chain_gantt": [],
     # This report is API-driven and DB-backed.
     "monthly_epic_plan_progress": [],
+    # This report is API-driven and canonical-DB-backed.
+    "epic_explorer": [],
     "support_center": [
         "support_center_sync.py",
         "generate_support_center_report.py",
@@ -380,6 +384,7 @@ STATIC_REPORT_NAV_ITEMS: list[dict[str, object]] = [
     {"page_key": "original_estimates_hierarchy_report", "title": "Epic Estimate Report", "href": "/original_estimates_hierarchy_report.html", "icon": "schema", "file": "original_estimates_hierarchy_report.html", "default_nav_order": 130, "page_type": "report"},
     {"page_key": "delayed_epic_chain_gantt", "title": "Delayed Epic Chain Gantt", "href": "/delayed_epic_chain_gantt_report.html", "icon": "timeline", "file": "delayed_epic_chain_gantt_report.html", "default_nav_order": 140, "page_type": "report"},
     {"page_key": "monthly_epic_plan_progress", "title": "Monthly Epic Plan vs Actual", "href": "/monthly_epic_plan_progress_report.html", "icon": "event_available", "file": "monthly_epic_plan_progress_report.html", "default_nav_order": 145, "page_type": "report"},
+    {"page_key": "epic_explorer", "title": "Epic Explorer", "href": "/epic_explorer_report.html", "icon": "travel_explore", "file": "epic_explorer_report.html", "default_nav_order": 146, "page_type": "report"},
     {"page_key": "support_center_report", "title": "Support Center", "href": "/support_center_report.html", "icon": "support_agent", "file": "support_center_report.html", "default_nav_order": 146, "page_type": "report"},
     {"page_key": "team_capacity_planner", "title": "Team Capacity Planner", "href": TCP_SETTINGS_ROUTE, "icon": "group_work", "path": TCP_SETTINGS_ROUTE, "default_nav_order": 147, "page_type": "configuration"},
     {"page_key": "ipp_meeting_dashboard", "title": "IPP Meeting Dashboard", "href": "/ipp_meeting_dashboard.html", "icon": "groups", "file": "ipp_meeting_dashboard.html", "default_nav_order": 150, "page_type": "report"},
@@ -18332,6 +18337,9 @@ def _resolve_report_html_sources(base_dir: Path) -> dict[str, Path]:
         ),
         "monthly_epic_plan_progress_report.html": _resolve_output_html_path(
             "JIRA_MONTHLY_EPIC_PLAN_PROGRESS_HTML_PATH", "monthly_epic_plan_progress_report.html", base_dir
+        ),
+        "epic_explorer_report.html": _resolve_output_html_path(
+            "JIRA_EPIC_EXPLORER_HTML_PATH", "epic_explorer_report.html", base_dir
         ),
         "support_center_report.html": _resolve_output_html_path(
             "JIRA_SUPPORT_CENTER_HTML_PATH", "support_center_report.html", base_dir
@@ -36962,6 +36970,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 "error": "No active managed projects found. Configure Managed Projects first.",
             }, 400
         refresh_mode = _canonical_normalize_mode(mode)
+
         with canonical_jobs_lock:
             active_runtime_run = _to_text(canonical_runtime_state.get("active_run_id"))
             if active_runtime_run:
@@ -38312,6 +38321,32 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             return jsonify({"ok": True, "members": saved})
         except Exception as exc:
             return jsonify({"ok": False, "error": str(exc)}), 500
+
+    @app.route("/api/epic-explorer/summary", methods=["GET"])
+    def epic_explorer_summary():
+        try:
+            projects_raw = _to_text(request.args.get("projects"))
+            selected_projects = {
+                _to_text(item).upper()
+                for item in projects_raw.split(",")
+                if _to_text(item)
+            } if projects_raw else set()
+            payload = build_epic_explorer_payload(
+                capacity_paths["db_path"],
+                _load_epics_management_rows(capacity_paths["db_path"]),
+                _canonical_last_success_run_id(capacity_paths["db_path"]),
+                from_date=_to_text(request.args.get("from_date")) or None,
+                to_date=_to_text(request.args.get("to_date")) or None,
+                selected_projects=selected_projects,
+                jira_base_url=BASE_URL,
+            )
+            return jsonify({"ok": True, **payload})
+        except ValueError as exc:
+            message = str(exc)
+            status_code = 409 if "No successful canonical refresh found" in message else 400
+            return jsonify({"ok": False, "error": message}), status_code
+        except Exception as exc:
+            return jsonify({"ok": False, "error": f"Failed to load Epic Explorer: {exc}"}), 500
 
     def _support_center_date_range():
         from_raw = _parse_iso_date(_to_text(request.args.get("from")))
