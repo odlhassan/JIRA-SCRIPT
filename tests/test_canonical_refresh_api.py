@@ -42,6 +42,27 @@ def _seed_managed_projects(db_path: Path) -> None:
         conn.commit()
 
 
+def _seed_running_canonical_run(db_path: Path, run_id: str = "orphaned-run") -> str:
+    now = report_server._canonical_now_utc()
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO canonical_refresh_runs(
+                run_id, scope_year, managed_project_keys_json, started_at_utc, ended_at_utc,
+                status, trigger_source, error_message, stats_json,
+                progress_step, progress_pct, cancel_requested, updated_at_utc
+            ) VALUES (?, 2026, '["O2"]', ?, NULL, 'running', 'test', '', '{}', 'queued', 1, 0, ?)
+            """,
+            (run_id, now, now),
+        )
+        conn.execute(
+            "UPDATE canonical_refresh_state SET active_run_id = ?, updated_at_utc = ? WHERE id = 1",
+            (run_id, now),
+        )
+        conn.commit()
+    return run_id
+
+
 class CanonicalRefreshApiTests(unittest.TestCase):
     def test_schema_and_refresh_run_use_only_active_managed_projects(self):
         with patch.dict("os.environ", {"JIRA_PROJECT_KEYS": ""}, clear=False), tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
@@ -423,6 +444,85 @@ class CanonicalRefreshApiTests(unittest.TestCase):
             body = resp.get_json() or {}
             self.assertFalse(body.get("ok"))
             self.assertIn("No active managed projects", str(body.get("error") or ""))
+
+    def test_start_clears_orphaned_running_canonical_run_before_starting_new_one(self):
+        with patch.dict("os.environ", {"JIRA_PROJECT_KEYS": ""}, clear=False), tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            (root / "report_html").mkdir(parents=True, exist_ok=True)
+            (root / "report_html" / "dashboard.html").write_text("<html><body>ok</body></html>", encoding="utf-8")
+            app = create_report_server_app(base_dir=root, folder_raw="report_html")
+            db_path = root / "assignee_hours_capacity.db"
+            _seed_managed_projects(db_path)
+            old_run_id = _seed_running_canonical_run(db_path)
+            client = app.test_client()
+
+            def _fake_runner(
+                db_path,
+                artifact_base_dir,
+                run_id,
+                scope_year,
+                managed_project_keys,
+                mode="full",
+                trigger_source="api_refresh_async",
+            ):
+                report_server._canonical_mark_run_status(
+                    db_path,
+                    run_id=run_id,
+                    status="success",
+                    stats={"mode": mode, "summary": {"mode": mode}},
+                    activate=True,
+                )
+                return {"ok": True, "run_id": run_id, "status": "success"}, 200
+
+            with patch.object(report_server, "_run_canonical_phase1_refresh", side_effect=_fake_runner):
+                resp = client.post("/api/canonical-refresh", json={"year": 2026, "mode": "smart"})
+
+                self.assertEqual(resp.status_code, 202)
+                new_run_id = str((resp.get_json() or {}).get("run_id") or "")
+                self.assertTrue(new_run_id)
+                self.assertNotEqual(new_run_id, old_run_id)
+
+                for _ in range(30):
+                    with sqlite3.connect(db_path) as conn:
+                        old_status, old_error = conn.execute(
+                            "SELECT status, error_message FROM canonical_refresh_runs WHERE run_id = ?",
+                            (old_run_id,),
+                        ).fetchone()
+                        new_status = conn.execute(
+                            "SELECT status FROM canonical_refresh_runs WHERE run_id = ?",
+                            (new_run_id,),
+                        ).fetchone()[0]
+                    if new_status == "success":
+                        break
+                    time.sleep(0.05)
+
+            self.assertEqual(old_status, "failed")
+            self.assertIn("no longer has an active worker", old_error)
+            self.assertEqual(new_status, "success")
+
+    def test_current_marks_orphaned_running_canonical_run_failed(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            (root / "report_html").mkdir(parents=True, exist_ok=True)
+            (root / "report_html" / "dashboard.html").write_text("<html><body>ok</body></html>", encoding="utf-8")
+            app = create_report_server_app(base_dir=root, folder_raw="report_html")
+            db_path = root / "assignee_hours_capacity.db"
+            old_run_id = _seed_running_canonical_run(db_path)
+            client = app.test_client()
+
+            resp = client.get("/api/canonical-refresh/current")
+
+            self.assertEqual(resp.status_code, 200)
+            run = (resp.get_json() or {}).get("run") or {}
+            self.assertEqual(run.get("run_id"), old_run_id)
+            self.assertEqual(run.get("status"), "failed")
+            self.assertIn("no longer has an active worker", str(run.get("error") or ""))
+            with sqlite3.connect(db_path) as conn:
+                state = conn.execute(
+                    "SELECT active_run_id, last_success_run_id FROM canonical_refresh_state WHERE id = 1"
+                ).fetchone()
+            self.assertEqual(str(state[0] or ""), "")
+            self.assertEqual(str(state[1] or ""), "")
 
     def test_refresh_writes_generated_artifacts_to_app_root_when_db_is_external(self):
         with (

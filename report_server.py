@@ -36882,6 +36882,46 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             }
         )
 
+    def _canonical_runtime_worker_alive(run_id: str) -> bool:
+        run_id_text = _to_text(run_id)
+        if not run_id_text:
+            return False
+        active = _to_text(canonical_runtime_state.get("active_run_id"))
+        return active == run_id_text and refresh_lock.locked()
+
+    def _canonical_clear_orphaned_running_run(run_row: dict[str, object] | None) -> bool:
+        row = run_row or {}
+        run_id_text = _to_text(row.get("run_id"))
+        if not run_id_text or _to_text(row.get("status")).lower() != "running":
+            return False
+        if _canonical_runtime_worker_alive(run_id_text):
+            return False
+        stats: dict[str, object] = {}
+        try:
+            parsed = json.loads(_to_text(row.get("stats_json")) or "{}")
+            if isinstance(parsed, dict):
+                stats = parsed
+        except Exception:
+            stats = {}
+        stats["orphaned_run_recovery"] = {
+            "cleared_at_utc": _canonical_now_utc(),
+            "previous_step": _to_text(row.get("progress_step")),
+            "previous_progress_pct": int(row.get("progress_pct") or 0),
+            "reason": "No active Flask worker owns this running canonical refresh.",
+        }
+        _canonical_mark_run_status(
+            capacity_paths["db_path"],
+            run_id=run_id_text,
+            status="failed",
+            error_message="Canonical refresh was abandoned because the server process no longer has an active worker for this run. Previous successful snapshot was kept.",
+            stats=stats,
+            activate=False,
+        )
+        _canonical_update_progress_and_stats(capacity_paths["db_path"], run_id_text, "failed", 100, stats)
+        if _to_text(canonical_runtime_state.get("active_run_id")) == run_id_text:
+            canonical_runtime_state["active_run_id"] = ""
+        return True
+
     def _start_canonical_refresh_async(scope_year: int, mode: str = "full", trigger_source: str = "api_refresh_async") -> tuple[dict[str, object], int]:
         managed_project_keys = _managed_project_keys_all_active()
         if not managed_project_keys:
@@ -36895,20 +36935,27 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             if active_runtime_run:
                 current = _canonical_get_run(capacity_paths["db_path"], active_runtime_run)
                 if current and _to_text(current.get("status")) == "running":
+                    if _canonical_clear_orphaned_running_run(current):
+                        current = None
+                    else:
+                        return {
+                            "ok": False,
+                            "error": "Another canonical refresh is already running. Try again shortly.",
+                            "run": _canonical_serialize_run(current),
+                        }, 409
+                if not current:
+                    canonical_runtime_state["active_run_id"] = ""
+            db_running = _canonical_find_running_run(capacity_paths["db_path"])
+            if db_running:
+                if _canonical_clear_orphaned_running_run(db_running):
+                    db_running = None
+                else:
+                    canonical_runtime_state["active_run_id"] = _to_text(db_running.get("run_id"))
                     return {
                         "ok": False,
                         "error": "Another canonical refresh is already running. Try again shortly.",
-                        "run": _canonical_serialize_run(current),
+                        "run": _canonical_serialize_run(db_running),
                     }, 409
-                canonical_runtime_state["active_run_id"] = ""
-            db_running = _canonical_find_running_run(capacity_paths["db_path"])
-            if db_running:
-                canonical_runtime_state["active_run_id"] = _to_text(db_running.get("run_id"))
-                return {
-                    "ok": False,
-                    "error": "Another canonical refresh is already running. Try again shortly.",
-                    "run": _canonical_serialize_run(db_running),
-                }, 409
             if not refresh_lock.acquire(blocking=False):
                 return {
                     "ok": False,
@@ -37649,6 +37696,11 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         with canonical_jobs_lock:
             active_runtime_run = _to_text(canonical_runtime_state.get("active_run_id"))
         row = _canonical_get_run(capacity_paths["db_path"], active_runtime_run) if active_runtime_run else _canonical_find_running_run(capacity_paths["db_path"])
+        if row and _to_text(row.get("status")).lower() == "running":
+            with canonical_jobs_lock:
+                run_id_text = _to_text(row.get("run_id"))
+                if _canonical_clear_orphaned_running_run(row):
+                    row = _canonical_get_run(capacity_paths["db_path"], run_id_text)
         if not row:
             row = _canonical_latest_run(capacity_paths["db_path"])
             if not row:
