@@ -17,6 +17,7 @@ from report_server import (
     PERFORMANCE_SETTINGS_ROUTE,
     PROJECTS_SETTINGS_ROUTE,
     REPORT_ENTITIES_SETTINGS_ROUTE,
+    SEATING_PLANNER_SETTINGS_ROUTE,
     SQL_CONSOLE_SETTINGS_ROUTE,
     create_report_server_app,
 )
@@ -63,6 +64,21 @@ class AdminNavigationTests(unittest.TestCase):
                     self.assertNotIn('aria-current="page"', html)
                     self.assertIn('href="/shared-nav.css"', html)
                     self.assertIn('src="/shared-nav.js"', html)
+
+    def test_seating_planner_omits_shared_side_navigation(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            app = self._build_app(root)
+            client = app.test_client()
+
+            resp = client.get(SEATING_PLANNER_SETTINGS_ROUTE)
+
+            self.assertEqual(resp.status_code, 200)
+            html = resp.get_data(as_text=True)
+            self.assertNotIn('href="/shared-nav.css"', html)
+            self.assertNotIn('src="/shared-nav.js"', html)
+            self.assertIn('href="/material-symbols.css"', html)
+            self.assertIn('class="sp-bar"', html)
 
     def test_report_html_lists_admin_and_reports_sections(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:

@@ -31178,7 +31178,6 @@ def _seating_planner_html() -> str:
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Seating Planner</title>
-  <link rel="stylesheet" href="/shared-nav.css">
   <link rel="stylesheet" href="/material-symbols.css">
   <style>
     :root {{
@@ -31823,7 +31822,6 @@ def _seating_planner_html() -> str:
   </div>
 
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-  <script src="/shared-nav.js"></script>
   <script>
   // ── State ──────────────────────────────────────────────────────────────────
   const G = {{
@@ -42763,6 +42761,10 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         html = _inject_shared_date_filter_script(html)
         html = _inject_refresh_ui(html, "planned_vs_dispensed")
         return html
+
+    @app.route("/", methods=["GET"])
+    def landing_page_redirect():
+        return redirect("/introduction.html", code=302)
 
     @app.route("/<path:requested_path>", methods=["GET"])
     def serve_report_asset(requested_path: str):
