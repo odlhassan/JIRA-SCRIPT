@@ -35308,15 +35308,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
 
     @app.route("/")
     def index():
-        _promote_report_html_if_newer(base_dir, report_dir, "introduction.html")
-        intro_path = report_dir / "introduction.html"
-        if intro_path.exists():
-            return redirect("/introduction.html", code=302)
-        _promote_report_html_if_newer(base_dir, report_dir, "dashboard.html")
-        dashboard_path = report_dir / "dashboard.html"
-        if dashboard_path.exists():
-            return redirect("/dashboard.html", code=302)
-        return redirect("/report_html/", code=302)
+        return redirect("/introduction.html", code=302)
 
     @app.route("/report_html/")
     def list_reports():
@@ -42761,10 +42753,6 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         html = _inject_shared_date_filter_script(html)
         html = _inject_refresh_ui(html, "planned_vs_dispensed")
         return html
-
-    @app.route("/", methods=["GET"])
-    def landing_page_redirect():
-        return redirect("/introduction.html", code=302)
 
     @app.route("/<path:requested_path>", methods=["GET"])
     def serve_report_asset(requested_path: str):

@@ -20,7 +20,8 @@ class ReportHtmlPromotionTests(unittest.TestCase):
             app = create_report_server_app(base_dir=root, folder_raw="report_html")
             client = app.test_client()
 
-            resp = client.get("/")
+            with patch("report_server.tempfile.mkstemp", side_effect=OSError("read-only file system")):
+                resp = client.get("/")
 
             self.assertEqual(resp.status_code, 302)
             self.assertEqual(resp.headers["Location"], "/introduction.html")
