@@ -1606,6 +1606,28 @@ def _resolve_writable_capacity_db_path(candidate: Path) -> Path:
         return fallback
 
 
+def _parse_truthy_flag(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    return _to_text(value).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _create_canonical_refresh_db_backup(db_path: Path, base_dir: Path, run_id: str) -> Path:
+    source = Path(db_path)
+    if not source.exists():
+        raise FileNotFoundError(f"capacity DB not found: {source}")
+    backup_dir = Path(base_dir) / "backups" / "canonical_refresh"
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    safe_run_id = re.sub(r"[^A-Za-z0-9_.-]+", "-", _to_text(run_id)) or "run"
+    backup_path = backup_dir / f"{source.stem}.full-refresh-{stamp}-{safe_run_id}{source.suffix}.bak"
+    with sqlite3.connect(source) as src_conn, sqlite3.connect(backup_path) as dst_conn:
+        src_conn.backup(dst_conn)
+    return backup_path
+
+
 def _resolve_writable_sync_cache_db_path(candidate: Path) -> Path:
     candidate = Path(candidate)
     try:
@@ -5930,6 +5952,8 @@ def _run_canonical_phase1_refresh(
     managed_project_keys: list[str],
     mode: str = "full",
     trigger_source: str = "api_refresh_async",
+    create_db_backup: bool = False,
+    db_backup_path: str = "",
 ) -> tuple[dict[str, object], int]:
     started = time.perf_counter()
     run_started_at = _canonical_now_utc()
@@ -5955,6 +5979,9 @@ def _run_canonical_phase1_refresh(
         "persisted_worklogs": 0,
         "skipped_items": 0,
         "removed_items": 0,
+        "db_backup_requested": bool(create_db_backup),
+        "db_backup_created": bool(db_backup_path),
+        "db_backup_path": _to_text(db_backup_path),
     }
     detail_items: list[dict[str, object]] = []
 
@@ -5973,6 +6000,11 @@ def _run_canonical_phase1_refresh(
             "mode": requested_mode,
             "effective_mode": effective_mode,
             "previous_run_id": previous_run_id,
+            "db_backup": {
+                "requested": bool(create_db_backup),
+                "created": bool(db_backup_path),
+                "path": _to_text(db_backup_path),
+            },
             "summary": dict(summary),
             "current_item": _to_text(current_item),
             "current_detail": _to_text(current_detail),
@@ -10050,6 +10082,36 @@ def _canonical_refresh_settings_html() -> str:
       font-size:.95rem;
       background:#fff;
     }}
+    .backup-option {{
+      display:flex;
+      align-items:flex-start;
+      gap:10px;
+      width:100%;
+      max-width:460px;
+      padding:10px 12px;
+      border:1px solid var(--line);
+      border-radius:12px;
+      background:#f8fbff;
+    }}
+    .backup-option input {{
+      width:18px;
+      height:18px;
+      margin:2px 0 0;
+      flex:0 0 auto;
+      accent-color:var(--brand);
+    }}
+    .backup-option label {{
+      margin:0;
+      cursor:pointer;
+    }}
+    .backup-option .backup-note {{
+      display:block;
+      margin-top:3px;
+      color:var(--muted);
+      font-size:.76rem;
+      font-weight:500;
+      line-height:1.35;
+    }}
     .controls {{
       display:grid;
       gap:14px;
@@ -10511,6 +10573,13 @@ def _canonical_refresh_settings_html() -> str:
           <input id="scope-year" type="number" min="2000" max="2100" value="{current_year}">
         </div>
         <div class="row">
+          <div class="backup-option">
+            <input id="create-db-backup" type="checkbox" value="1">
+            <label for="create-db-backup">
+              Create DB backup before Full Refresh
+              <span class="backup-note">Off by default. When enabled, the capacity database is copied to backups/canonical_refresh before the full run starts.</span>
+            </label>
+          </div>
           <button id="start-smart-btn" class="btn" type="button">
             <span class="material-symbols-outlined">bolt</span>
             Start Smart Refresh
@@ -10573,6 +10642,7 @@ def _canonical_refresh_settings_html() -> str:
           <div class="meta-item"><strong>Started At</strong><span id="meta-started">-</span></div>
           <div class="meta-item"><strong>Last Updated</strong><span id="meta-updated">-</span></div>
           <div class="meta-item"><strong>Ended At</strong><span id="meta-ended">-</span></div>
+          <div class="meta-item"><strong>DB Backup</strong><span id="meta-db-backup">-</span></div>
         </div>
         <div id="summary-grid" class="summary-grid"></div>
       </div>
@@ -10693,6 +10763,7 @@ def _canonical_refresh_settings_html() -> str:
     const ABANDON_API = "/api/canonical-refresh/abandon-stale";
     const statusEl = document.getElementById("status");
     const scopeYearEl = document.getElementById("scope-year");
+    const createDbBackupEl = document.getElementById("create-db-backup");
     const startSmartBtn = document.getElementById("start-smart-btn");
     const startFullBtn = document.getElementById("start-full-btn");
     const cancelBtn = document.getElementById("cancel-btn");
@@ -10713,6 +10784,7 @@ def _canonical_refresh_settings_html() -> str:
     const metaStarted = document.getElementById("meta-started");
     const metaUpdated = document.getElementById("meta-updated");
     const metaEnded = document.getElementById("meta-ended");
+    const metaDbBackup = document.getElementById("meta-db-backup");
     let activeRunId = "";
     let activeRunYear = "";
     let pollTimer = 0;
@@ -10826,6 +10898,7 @@ def _canonical_refresh_settings_html() -> str:
     }}
 
     function setBusy(isBusy) {{
+      createDbBackupEl.disabled = !!isBusy;
       startSmartBtn.disabled = !!isBusy;
       startFullBtn.disabled = !!isBusy;
       cancelBtn.disabled = !isBusy || !activeRunId;
@@ -10906,6 +10979,10 @@ def _canonical_refresh_settings_html() -> str:
       metaStarted.innerHTML = formatTimestampHtml(item.started_at_utc);
       metaUpdated.innerHTML = formatTimestampHtml(item.updated_at_utc);
       metaEnded.innerHTML = formatTimestampHtml(item.ended_at_utc);
+      const dbBackup = stats.db_backup && typeof stats.db_backup === "object" ? stats.db_backup : {{}};
+      const backupPath = String(dbBackup.path || summary.db_backup_path || "");
+      const backupRequested = !!(dbBackup.requested || summary.db_backup_requested);
+      metaDbBackup.textContent = backupPath || (backupRequested ? "Requested; waiting to create." : "Off");
       managedProjectPill.textContent = projectKeys.length
         ? `Managed Projects: ${{projectKeys.join(", ")}}`
         : "Managed Projects: none";
@@ -10991,11 +11068,12 @@ def _canonical_refresh_settings_html() -> str:
         throw new Error("Year must be between 2000 and 2100.");
       }}
       setBusy(true);
-      setStatus("Starting " + labelize(mode) + " refresh...", "");
+      const createDbBackup = mode === "full" && !!createDbBackupEl.checked;
+      setStatus("Starting " + labelize(mode) + " refresh" + (createDbBackup ? " with DB backup" : "") + "...", "");
       const resp = await fetch(START_API, {{
         method: "POST",
         headers: {{ "Content-Type": "application/json" }},
-        body: JSON.stringify({{ year: yearValue, mode }}),
+        body: JSON.stringify({{ year: yearValue, mode, create_db_backup: createDbBackup }}),
       }});
       const body = await resp.json().catch(function () {{ return {{}}; }});
       if (resp.status === 409 && body.run) {{
@@ -11005,6 +11083,7 @@ def _canonical_refresh_settings_html() -> str:
         return;
       }}
       if (!resp.ok) {{
+        setBusy(false);
         throw new Error(String(body.error || body.message || "Request failed."));
       }}
       const run = body.run || null;
@@ -36952,7 +37031,12 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             canonical_runtime_state["active_run_id"] = ""
         return True
 
-    def _start_canonical_refresh_async(scope_year: int, mode: str = "full", trigger_source: str = "api_refresh_async") -> tuple[dict[str, object], int]:
+    def _start_canonical_refresh_async(
+        scope_year: int,
+        mode: str = "full",
+        trigger_source: str = "api_refresh_async",
+        create_db_backup: bool = False,
+    ) -> tuple[dict[str, object], int]:
         managed_project_keys = _managed_project_keys_all_active()
         if not managed_project_keys:
             return {
@@ -36994,12 +37078,39 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 }, 409
             run_id = f"canonical-{int(time.time())}-{uuid.uuid4().hex[:8]}"
             canonical_runtime_state["active_run_id"] = run_id
+        db_backup_path = ""
+        should_create_backup = bool(create_db_backup) and refresh_mode == "full"
+        if should_create_backup:
+            try:
+                db_backup_path = str(_create_canonical_refresh_db_backup(capacity_paths["db_path"], base_dir, run_id))
+            except Exception as exc:
+                with canonical_jobs_lock:
+                    if _to_text(canonical_runtime_state.get("active_run_id")) == run_id:
+                        canonical_runtime_state["active_run_id"] = ""
+                try:
+                    refresh_lock.release()
+                except Exception:
+                    pass
+                return {
+                    "ok": False,
+                    "error": f"Failed to create database backup before full refresh: {exc}",
+                }, 500
         run_started_at = _canonical_now_utc()
         with sqlite3.connect(capacity_paths["db_path"]) as conn:
             initial_stats = {
                 "mode": refresh_mode,
                 "effective_mode": refresh_mode,
-                "summary": {"mode": refresh_mode},
+                "db_backup": {
+                    "requested": should_create_backup,
+                    "created": bool(db_backup_path),
+                    "path": db_backup_path,
+                },
+                "summary": {
+                    "mode": refresh_mode,
+                    "db_backup_requested": should_create_backup,
+                    "db_backup_created": bool(db_backup_path),
+                    "db_backup_path": db_backup_path,
+                },
                 "current_item": "Queued",
                 "current_detail": "Refresh request accepted. Waiting for worker thread.",
                 "stages": _canonical_stage_payload("loading_managed_project_scope", set(), counts_by_stage={}),
@@ -37051,6 +37162,8 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                     managed_project_keys=managed_project_keys,
                     mode=refresh_mode,
                     trigger_source=trigger_source,
+                    create_db_backup=should_create_backup,
+                    db_backup_path=db_backup_path,
                 )
             finally:
                 with canonical_jobs_lock:
@@ -37069,6 +37182,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             "mode": refresh_mode,
             "run_id": run_id,
             "status": "running",
+            "db_backup_path": db_backup_path,
             "run": _canonical_serialize_run(run_row),
         }, 202
 
@@ -37703,6 +37817,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         payload = request.get_json(silent=True) or {}
         year_raw = _to_text(payload.get("year"))
         refresh_mode = _canonical_normalize_mode(payload.get("mode"))
+        create_db_backup = _parse_truthy_flag(payload.get("create_db_backup"))
         if year_raw:
             try:
                 scope_year = int(year_raw)
@@ -37712,7 +37827,12 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             scope_year = datetime.now().year
         if scope_year < 2000 or scope_year > 2100:
             return jsonify({"ok": False, "error": "Invalid year. Expected range 2000-2100."}), 400
-        response, status_code = _start_canonical_refresh_async(scope_year=scope_year, mode=refresh_mode, trigger_source="api_refresh_async")
+        response, status_code = _start_canonical_refresh_async(
+            scope_year=scope_year,
+            mode=refresh_mode,
+            trigger_source="api_refresh_async",
+            create_db_backup=create_db_backup,
+        )
         return jsonify(response), status_code
 
     @app.route("/api/canonical-refresh/<path:run_id>", methods=["GET"])

@@ -496,6 +496,10 @@ class ReportUiSmokeTests(unittest.TestCase):
             self.assertIn(".timestamp-display", html)
             self.assertIn('metaStarted.innerHTML = formatTimestampHtml(item.started_at_utc);', html)
             self.assertIn('title="UTC: ${esc(raw)}"', html)
+            self.assertIn('id="create-db-backup" type="checkbox"', html)
+            self.assertNotIn('id="create-db-backup" type="checkbox" checked', html)
+            self.assertIn("create_db_backup: createDbBackup", html)
+            self.assertIn('id="meta-db-backup"', html)
 
     def test_manage_fields_page_and_settings_links_exist(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:

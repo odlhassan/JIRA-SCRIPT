@@ -445,6 +445,116 @@ class CanonicalRefreshApiTests(unittest.TestCase):
             self.assertFalse(body.get("ok"))
             self.assertIn("No active managed projects", str(body.get("error") or ""))
 
+    def test_full_refresh_backup_option_defaults_off(self):
+        with patch.dict("os.environ", {"JIRA_PROJECT_KEYS": ""}, clear=False), tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            (root / "report_html").mkdir(parents=True, exist_ok=True)
+            (root / "report_html" / "dashboard.html").write_text("<html><body>ok</body></html>", encoding="utf-8")
+            app = create_report_server_app(base_dir=root, folder_raw="report_html")
+            db_path = root / "assignee_hours_capacity.db"
+            _seed_managed_projects(db_path)
+            client = app.test_client()
+            seen: dict[str, object] = {}
+
+            def _fake_runner(
+                db_path,
+                artifact_base_dir,
+                run_id,
+                scope_year,
+                managed_project_keys,
+                mode="full",
+                trigger_source="api_refresh_async",
+                create_db_backup=False,
+                db_backup_path="",
+            ):
+                seen["create_db_backup"] = create_db_backup
+                seen["db_backup_path"] = db_backup_path
+                report_server._canonical_mark_run_status(
+                    db_path,
+                    run_id=run_id,
+                    status="success",
+                    stats={"mode": mode, "summary": {"mode": mode}},
+                    activate=True,
+                )
+                return {"ok": True, "run_id": run_id, "status": "success"}, 200
+
+            with (
+                patch.object(report_server, "_create_canonical_refresh_db_backup", side_effect=AssertionError("backup should be opt-in")),
+                patch.object(report_server, "_run_canonical_phase1_refresh", side_effect=_fake_runner),
+            ):
+                resp = client.post("/api/canonical-refresh", json={"year": 2026, "mode": "full"})
+                for _ in range(30):
+                    if "create_db_backup" in seen:
+                        break
+                    time.sleep(0.05)
+
+            self.assertEqual(resp.status_code, 202)
+            body = resp.get_json() or {}
+            self.assertEqual(str(body.get("db_backup_path") or ""), "")
+            self.assertFalse(bool(seen.get("create_db_backup")))
+            self.assertEqual(str(seen.get("db_backup_path") or ""), "")
+
+    def test_full_refresh_creates_db_backup_when_requested(self):
+        with patch.dict("os.environ", {"JIRA_PROJECT_KEYS": ""}, clear=False), tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            (root / "report_html").mkdir(parents=True, exist_ok=True)
+            (root / "report_html" / "dashboard.html").write_text("<html><body>ok</body></html>", encoding="utf-8")
+            app = create_report_server_app(base_dir=root, folder_raw="report_html")
+            db_path = root / "assignee_hours_capacity.db"
+            _seed_managed_projects(db_path)
+            client = app.test_client()
+            seen: dict[str, object] = {}
+
+            def _fake_runner(
+                db_path,
+                artifact_base_dir,
+                run_id,
+                scope_year,
+                managed_project_keys,
+                mode="full",
+                trigger_source="api_refresh_async",
+                create_db_backup=False,
+                db_backup_path="",
+            ):
+                seen["create_db_backup"] = create_db_backup
+                seen["db_backup_path"] = db_backup_path
+                report_server._canonical_mark_run_status(
+                    db_path,
+                    run_id=run_id,
+                    status="success",
+                    stats={
+                        "mode": mode,
+                        "db_backup": {
+                            "requested": bool(create_db_backup),
+                            "created": bool(db_backup_path),
+                            "path": db_backup_path,
+                        },
+                        "summary": {
+                            "mode": mode,
+                            "db_backup_requested": bool(create_db_backup),
+                            "db_backup_created": bool(db_backup_path),
+                            "db_backup_path": db_backup_path,
+                        },
+                    },
+                    activate=True,
+                )
+                return {"ok": True, "run_id": run_id, "status": "success"}, 200
+
+            with patch.object(report_server, "_run_canonical_phase1_refresh", side_effect=_fake_runner):
+                resp = client.post("/api/canonical-refresh", json={"year": 2026, "mode": "full", "create_db_backup": True})
+                for _ in range(30):
+                    if "create_db_backup" in seen:
+                        break
+                    time.sleep(0.05)
+
+            self.assertEqual(resp.status_code, 202)
+            body = resp.get_json() or {}
+            backup_path = Path(str(body.get("db_backup_path") or ""))
+            self.assertTrue(backup_path.exists())
+            self.assertEqual(backup_path.parent, root / "backups" / "canonical_refresh")
+            self.assertTrue(bool(seen.get("create_db_backup")))
+            self.assertEqual(Path(str(seen.get("db_backup_path") or "")), backup_path)
+
     def test_start_clears_orphaned_running_canonical_run_before_starting_new_one(self):
         with patch.dict("os.environ", {"JIRA_PROJECT_KEYS": ""}, clear=False), tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             root = Path(td)
@@ -464,6 +574,8 @@ class CanonicalRefreshApiTests(unittest.TestCase):
                 managed_project_keys,
                 mode="full",
                 trigger_source="api_refresh_async",
+                create_db_backup=False,
+                db_backup_path="",
             ):
                 report_server._canonical_mark_run_status(
                     db_path,
@@ -675,6 +787,8 @@ class CanonicalRefreshApiTests(unittest.TestCase):
                 managed_project_keys,
                 mode="full",
                 trigger_source="api_refresh_async",
+                create_db_backup=False,
+                db_backup_path="",
             ):
                 started = report_server._canonical_now_utc()
                 with sqlite3.connect(db_path) as conn:

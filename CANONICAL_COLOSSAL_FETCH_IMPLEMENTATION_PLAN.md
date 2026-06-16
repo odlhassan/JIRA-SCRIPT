@@ -318,7 +318,12 @@ The refresh loads active managed projects, discovers Jira issues for the selecte
 
 ## Front-end UI Fields
 
-The Colossal Refresh settings page exposes the selected year, refresh mode (`full` or `smart`), start/resume/cancel controls, active run progress, stage status, and the latest successful run summary. Report screens then read the latest promoted run without asking users to select a run id.
+The Colossal Refresh settings page exposes the selected year, refresh mode (`full` or `smart`), start/resume/cancel controls, optional full-refresh database backup, active run progress, stage status, and the latest successful run summary. Report screens then read the latest promoted run without asking users to select a run id.
+
+| Field | Type | Default | Applies To | Side Effect |
+| --- | --- | --- | --- | --- |
+| Scope Year | Number input | Current year | Smart and Full Refresh | Sets the canonical yearly Jira date window. |
+| Create DB backup before Full Refresh | Checkbox | Off | Full Refresh only | When checked, `POST /api/canonical-refresh` sends `create_db_backup: true`; the server writes a timestamped copy of the configured capacity SQLite DB to `backups/canonical_refresh` before the full run starts. Smart Refresh ignores this option. |
 
 ## Script Files
 
@@ -340,11 +345,12 @@ Primary tables in `assignee_hours_capacity.db` include `canonical_refresh_runs` 
 ## Data Flow
 
 1. User starts Colossal Refresh from `/settings/canonical-refresh`.
-2. `report_server.py` writes run state and canonical rows into the configured capacity DB.
-3. The successful run updates `canonical_refresh_state.last_success_run_id`.
-4. Derived tables and compatibility artifacts are rebuilt from that run.
-5. Generated HTML is synced from the app root into `report_html`.
-6. Live report routes and APIs read the latest successful canonical run and served artifacts.
+2. If the user checked `Create DB backup before Full Refresh` and started a full refresh, `report_server.py` creates a timestamped backup under `backups/canonical_refresh`.
+3. `report_server.py` writes run state and canonical rows into the configured capacity DB.
+4. The successful run updates `canonical_refresh_state.last_success_run_id`.
+5. Derived tables and compatibility artifacts are rebuilt from that run.
+6. Generated HTML is synced from the app root into `report_html`.
+7. Live report routes and APIs read the latest successful canonical run and served artifacts.
 
 Related regression coverage:
 
