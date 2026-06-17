@@ -1,0 +1,970 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Epic Explorer</title>
+  <link rel="stylesheet" href="/shared-nav.css">
+  <link rel="stylesheet" href="/material-symbols.css">
+  <style>
+    :root {
+      --bg: #f7f8fb;
+      --panel: #ffffff;
+      --ink: #172033;
+      --muted: #667085;
+      --line: #d8dee9;
+      --blue: #2563eb;
+      --green: #16a34a;
+      --red: #dc2626;
+      --orange: #f59e0b;
+      --violet: #7c3aed;
+      --teal: #0891b2;
+      --shadow: 0 18px 44px rgba(15, 23, 42, 0.16);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--bg);
+      font-family: "Segoe UI", Arial, sans-serif;
+      font-size: 14px;
+    }
+    .page { padding: 18px 22px 28px; }
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 14px;
+    }
+    h1 {
+      margin: 0;
+      font-size: 24px;
+      font-weight: 750;
+      letter-spacing: 0;
+    }
+    .meta-line {
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 3px;
+    }
+    .filters {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: end;
+      gap: 10px;
+      padding: 12px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      margin-bottom: 12px;
+    }
+    label {
+      display: grid;
+      gap: 5px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 650;
+    }
+    input[type="date"], button, .project-picker-toggle {
+      min-height: 34px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--ink);
+      font: inherit;
+    }
+    input[type="date"] { padding: 6px 9px; }
+    button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 6px 10px;
+      cursor: pointer;
+    }
+    button.primary {
+      border-color: var(--blue);
+      background: var(--blue);
+      color: #fff;
+    }
+    button.icon-btn {
+      width: 30px;
+      height: 30px;
+      padding: 0;
+    }
+    button.icon-btn .material-symbols-outlined { font-size: 18px; }
+    .project-picker { position: relative; min-width: 210px; }
+    .project-picker-toggle {
+      width: 100%;
+      padding: 6px 9px;
+      justify-content: space-between;
+    }
+    .project-menu {
+      position: absolute;
+      z-index: 30;
+      left: 0;
+      top: calc(100% + 4px);
+      min-width: 260px;
+      max-height: 280px;
+      overflow: auto;
+      display: none;
+      padding: 8px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+    .project-picker.open .project-menu { display: block; }
+    .check-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 4px;
+      color: var(--ink);
+      font-size: 13px;
+    }
+    .summary-strip {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(130px, 1fr));
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .metric {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+    }
+    .metric .label { color: var(--muted); font-size: 11px; font-weight: 700; text-transform: uppercase; }
+    .metric .value { margin-top: 3px; font-size: 20px; font-weight: 760; }
+    .table-wrap {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      max-height: calc(100vh - 235px);
+      overflow: auto;
+    }
+    table {
+      width: 100%;
+      min-width: 1440px;
+      border-collapse: collapse;
+    }
+    th, td {
+      padding: 6px 8px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: middle;
+    }
+    th {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      background: #edf2f7;
+      color: #344054;
+      font-size: 12px;
+      font-weight: 750;
+    }
+    #epic-table th.row-number-col,
+    #epic-table td.row-number-col {
+      position: sticky;
+      left: 0;
+      z-index: 4;
+      width: 52px;
+      min-width: 52px;
+      max-width: 52px;
+      text-align: right;
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+      border-right: 1px solid var(--line);
+    }
+    #epic-table th.epic-name-col,
+    #epic-table td.epic-name-col {
+      position: sticky;
+      left: 52px;
+      z-index: 4;
+      min-width: 360px;
+      max-width: 420px;
+      border-right: 1px solid var(--line);
+      box-shadow: 8px 0 12px -12px rgba(15, 23, 42, 0.45);
+    }
+    #epic-table th.row-number-col,
+    #epic-table th.epic-name-col {
+      z-index: 6;
+      background: #edf2f7;
+    }
+    tr.epic-row.odd td { background: #ffffff; }
+    tr.epic-row.even td { background: #f7faff; }
+    tr.epic-row:hover td { background: #eef6ff; }
+    td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .row-number { font-weight: 700; }
+    .epic-name-cell {
+      display: grid;
+      grid-template-columns: 28px minmax(0, 1fr) auto 28px;
+      align-items: center;
+      gap: 7px;
+      min-width: 0;
+    }
+    .epic-open {
+      justify-content: start;
+      min-height: 28px;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: var(--blue);
+      font-weight: 700;
+      text-align: left;
+      min-width: 0;
+      line-height: 1.25;
+    }
+    .epic-title-inline {
+      display: inline;
+      overflow-wrap: anywhere;
+    }
+    .epic-key-inline {
+      color: #526177;
+      font-weight: 750;
+      white-space: nowrap;
+    }
+    .jira-link {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      color: var(--blue);
+      border-radius: 6px;
+      text-decoration: none;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 2px 8px;
+      background: #e2e8f0;
+      color: #334155;
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .pill.green { background: #dcfce7; color: #166534; }
+    .pill.red { background: #fee2e2; color: #991b1b; }
+    .pill.blue { background: #dbeafe; color: #1d4ed8; }
+    .muted { color: var(--muted); }
+    .drilldown-row td {
+      background: #fbfcff;
+      padding: 0;
+    }
+    .nested {
+      padding: 10px 12px 14px 104px;
+      display: grid;
+      gap: 8px;
+    }
+    .nested-table {
+      min-width: 960px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .nested-table table { min-width: 0; }
+    .nested-table th { position: static; background: #f5f7fb; }
+    .drawer-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      display: none;
+      background: rgba(15, 23, 42, 0.28);
+    }
+    .drawer-overlay.open { display: block; }
+    .drawer {
+      position: absolute;
+      top: 0;
+      right: 0;
+      width: 50vw;
+      min-width: 520px;
+      max-width: 96vw;
+      height: 100%;
+      background: #fff;
+      box-shadow: var(--shadow);
+      overflow: auto;
+    }
+    .drawer-resizer {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 8px;
+      height: 100%;
+      cursor: col-resize;
+      background: #e5e7eb;
+    }
+    .drawer-inner { padding: 18px 20px 24px; }
+    .drawer-head {
+      display: flex;
+      align-items: start;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+    .drawer-title { margin: 0; font-size: 21px; font-weight: 760; }
+    .chart-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(280px, 1fr));
+      gap: 12px;
+    }
+    .chart-panel {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      min-height: 170px;
+      overflow: auto;
+    }
+    .chart-panel.wide { grid-column: 1 / -1; }
+    .chart-title { margin: 0 0 10px; font-size: 14px; font-weight: 760; }
+    .chart-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .chart-head .chart-title { margin: 0; }
+    .chart-toggle {
+      display: inline-flex;
+      gap: 2px;
+      padding: 2px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #f8fafc;
+    }
+    .chart-toggle button {
+      min-height: 26px;
+      padding: 3px 8px;
+      border: 0;
+      background: transparent;
+      font-size: 12px;
+    }
+    .chart-toggle button.active {
+      background: var(--blue);
+      color: #fff;
+    }
+    .bars { display: grid; gap: 7px; }
+    .bar-row {
+      display: grid;
+      grid-template-columns: 92px 1fr 84px;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+    }
+    .bar-track {
+      position: relative;
+      height: 18px;
+      background: #eef2f7;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .bar {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      min-width: 2px;
+    }
+    .bar.plan { left: 0; background: var(--blue); opacity: 0.72; }
+    .bar.actual { left: 0; background: var(--green); }
+    .mini-table { width: 100%; min-width: 0; }
+    .mini-table th, .mini-table td { padding: 6px 7px; font-size: 12px; }
+    .gantt-scroll { overflow: auto; }
+    .gantt-grid {
+      display: grid;
+      gap: 2px;
+      align-items: center;
+      font-size: 11px;
+    }
+    .gantt-header-grid {
+      display: grid;
+      gap: 2px;
+      align-items: center;
+      margin-bottom: 2px;
+      font-size: 10px;
+      color: #475467;
+    }
+    .gantt-header-cell {
+      height: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid #d8dee9;
+      background: #f3f6fa;
+      border-radius: 3px;
+      white-space: nowrap;
+      overflow: hidden;
+    }
+    .gantt-header-cell.month { font-weight: 750; background: #e8eef7; }
+    .gantt-header-cell.week { font-weight: 650; background: #f6f8fb; }
+    .gantt-label {
+      position: sticky;
+      left: 0;
+      z-index: 1;
+      background: #fff;
+      min-width: 130px;
+      padding-right: 8px;
+      font-weight: 650;
+    }
+    .day-cell {
+      width: 12px;
+      height: 18px;
+      border: 1px solid #e5e7eb;
+      background: #fff;
+    }
+    .day-cell.actual { background: var(--green); border-color: var(--green); }
+    .day-cell.planned { background: var(--orange); border-color: var(--orange); }
+    .day-cell.unplanned { background: var(--red); border-color: var(--red); }
+    .day-cell.mixed { background: linear-gradient(90deg, var(--green), var(--orange), var(--red)); }
+    .line-chart {
+      width: 100%;
+      min-height: 190px;
+      overflow: auto;
+    }
+    .line-chart svg {
+      width: 100%;
+      min-width: 420px;
+      height: 190px;
+    }
+    .legend {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 6px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .legend-dot {
+      display: inline-block;
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      margin-right: 4px;
+      vertical-align: middle;
+    }
+    .scorecards {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(110px, 1fr));
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .scorecard {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 9px;
+      background: #f8fafc;
+    }
+    .scorecard .score-label { color: var(--muted); font-size: 11px; font-weight: 750; }
+    .scorecard .score-value { margin-top: 3px; font-size: 20px; font-weight: 780; }
+    .count-link {
+      min-height: 26px;
+      padding: 2px 8px;
+      border-color: #bfdbfe;
+      background: #eff6ff;
+      color: var(--blue);
+      font-weight: 750;
+    }
+    .detail-box {
+      margin-top: 10px;
+      border-top: 1px solid var(--line);
+      padding-top: 10px;
+    }
+    @media (max-width: 900px) {
+      .page { padding: 12px; }
+      .summary-strip { grid-template-columns: repeat(2, minmax(130px, 1fr)); }
+      .drawer { width: 94vw; min-width: 0; }
+      .chart-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="topbar">
+      <div>
+        <h1>Epic Explorer</h1>
+        <div class="meta-line" id="run-meta">Loading canonical data...</div>
+      </div>
+      <button id="download-csv" title="Export to CSV"><span class="material-symbols-outlined">download</span>CSV</button>
+    </div>
+
+    <section class="filters">
+      <label>From<input id="from-date" type="date"></label>
+      <label>To<input id="to-date" type="date"></label>
+      <button id="apply-date-filters" class="primary"><span class="material-symbols-outlined">date_range</span>Apply dates</button>
+      <button id="clear-date-filters"><span class="material-symbols-outlined">event_busy</span>Clear dates</button>
+      <label class="project-picker" id="project-picker">
+        Projects
+        <button type="button" class="project-picker-toggle" id="project-toggle">All projects <span class="material-symbols-outlined">expand_more</span></button>
+        <span class="project-menu" id="project-menu"></span>
+      </label>
+      <button id="apply-project-filters" class="primary"><span class="material-symbols-outlined">work</span>Apply projects</button>
+      <button id="clear-project-filters"><span class="material-symbols-outlined">filter_alt_off</span>Clear projects</button>
+    </section>
+
+    <section class="summary-strip" id="summary-strip"></section>
+
+    <section class="table-wrap">
+      <table id="epic-table">
+        <thead>
+          <tr>
+            <th class="row-number-col">#</th>
+            <th class="epic-name-col">Epic Name</th>
+            <th>Assignee</th>
+            <th>Product</th>
+            <th>TK Budget</th>
+            <th>Jira Original Estimate</th>
+            <th>Story Estimates</th>
+            <th>Subtask Estimates</th>
+            <th>Jira Epics' Planned Dates</th>
+            <th>Total Actual Hours</th>
+            <th>Actual Complete Date</th>
+            <th>Epic Status</th>
+            <th>Headcount</th>
+          </tr>
+        </thead>
+        <tbody id="epic-tbody">
+          <tr><td colspan="13" class="muted">Loading...</td></tr>
+        </tbody>
+      </table>
+    </section>
+  </div>
+
+  <div class="drawer-overlay" id="drawer-overlay">
+    <aside class="drawer" id="drawer">
+      <div class="drawer-resizer" id="drawer-resizer" title="Drag to resize"></div>
+      <div class="drawer-inner" id="drawer-content"></div>
+    </aside>
+  </div>
+
+  <script src="/shared-nav.js"></script>
+  <script>
+    const state = {
+      payload: null,
+      appliedProjects: new Set(),
+      pendingProjects: new Set(),
+      expandedEpics: new Set(),
+      expandedStories: new Set(),
+      expandedSubtasks: new Set(),
+      drawerEpicKey: "",
+      planActualMode: "bar",
+      completionDetailBucket: "",
+      resizing: false
+    };
+    const els = {
+      meta: document.getElementById("run-meta"),
+      from: document.getElementById("from-date"),
+      to: document.getElementById("to-date"),
+      projectPicker: document.getElementById("project-picker"),
+      projectToggle: document.getElementById("project-toggle"),
+      projectMenu: document.getElementById("project-menu"),
+      summary: document.getElementById("summary-strip"),
+      tbody: document.getElementById("epic-tbody"),
+      applyDates: document.getElementById("apply-date-filters"),
+      clearDates: document.getElementById("clear-date-filters"),
+      applyProjects: document.getElementById("apply-project-filters"),
+      clearProjects: document.getElementById("clear-project-filters"),
+      csv: document.getElementById("download-csv"),
+      overlay: document.getElementById("drawer-overlay"),
+      drawer: document.getElementById("drawer"),
+      drawerContent: document.getElementById("drawer-content"),
+      drawerResizer: document.getElementById("drawer-resizer")
+    };
+    const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+    const n = (v) => Number(v || 0);
+    const hours = (v) => Number.isFinite(n(v)) ? n(v).toFixed(2) + "h" : "-";
+    const dateText = (v) => String(v || "").slice(0, 10) || "-";
+    const keyPart = (v) => String(v || "").replace(/[^A-Za-z0-9_-]/g, "_");
+    function selectedProjectCsv(){ return Array.from(state.appliedProjects).sort().join(","); }
+    function apiUrl(){
+      const params = new URLSearchParams();
+      if (els.from.value && els.to.value) {
+        params.set("from_date", els.from.value);
+        params.set("to_date", els.to.value);
+      }
+      if (state.appliedProjects.size) params.set("projects", selectedProjectCsv());
+      return "/api/epic-explorer/summary" + (params.toString() ? "?" + params.toString() : "");
+    }
+    async function loadReport(){
+      els.tbody.innerHTML = '<tr><td colspan="13" class="muted">Loading...</td></tr>';
+      const resp = await fetch(apiUrl(), {headers: {"Accept": "application/json"}});
+      const data = await resp.json();
+      if (!resp.ok || !data.ok) throw new Error(data.error || "Failed to load Epic Explorer");
+      state.payload = data;
+      renderAll();
+    }
+    function renderProjectMenu(){
+      const options = (state.payload?.project_options || []);
+      els.projectMenu.innerHTML = options.map((p) => {
+        const key = String(p.project_key || "");
+        const checked = state.pendingProjects.has(key) ? "checked" : "";
+        return `<label class="check-row"><input type="checkbox" data-project="${esc(key)}" ${checked}>${esc(p.project_name || key)}</label>`;
+      }).join("") || '<span class="muted">No projects</span>';
+      const count = state.pendingProjects.size;
+      const selectedNames = options.filter((p) => state.pendingProjects.has(String(p.project_key || ""))).map((p) => p.project_name || p.project_key);
+      els.projectToggle.firstChild.nodeValue = count ? selectedNames.slice(0, 2).join(", ") + (count > 2 ? ` +${count - 2}` : "") : "All projects ";
+    }
+    function renderSummary(){
+      const t = state.payload?.totals || {};
+      const cells = [
+        ["Epics", t.epic_count || 0],
+        ["Work Items", t.story_count || 0],
+        ["Subtasks", t.subtask_count || 0],
+        ["TK Budget", hours(t.tk_budget_hours)],
+        ["Actual Hours", hours(t.total_actual_hours)],
+        ["Headcount", t.headcount || 0]
+      ];
+      els.summary.innerHTML = cells.map(([label, value]) => `<div class="metric"><div class="label">${esc(label)}</div><div class="value">${esc(value)}</div></div>`).join("");
+      const dateScope = state.payload?.date_filter_active ? `${dateText(state.payload.from_date)} to ${dateText(state.payload.to_date)}` : "No date filter";
+      els.meta.textContent = `${state.payload?.canonical_run_id || ""} | ${dateScope} | ${state.payload?.rows?.length || 0} epics`;
+    }
+    function statusPill(value){
+      const text = String(value || "-");
+      const low = text.toLowerCase();
+      const cls = low.includes("done") || low.includes("resolved") || low.includes("closed") ? "green" : (low.includes("hold") || low.includes("late") ? "red" : "blue");
+      return `<span class="pill ${cls}">${esc(text)}</span>`;
+    }
+    function epicRow(row, rowNumber){
+      const key = String(row.epic_key || "");
+      const isOpen = state.expandedEpics.has(key);
+      const planned = `${dateText(row.planned_start)} to ${dateText(row.planned_due)}`;
+      const rowTone = rowNumber % 2 === 0 ? "even" : "odd";
+      return `<tr class="epic-row ${rowTone}" data-epic-row="${esc(key)}">
+        <td class="row-number-col row-number">${esc(rowNumber)}</td>
+        <td class="epic-name-col"><div class="epic-name-cell">
+          <button class="icon-btn" data-toggle-epic="${esc(key)}" title="${isOpen ? "Collapse" : "Expand"}"><span class="material-symbols-outlined">${isOpen ? "expand_less" : "chevron_right"}</span></button>
+          <button class="epic-open" data-open-epic="${esc(key)}"><span class="epic-title-inline">${esc(row.epic_name || key)}</span></button>
+          <span class="epic-key-inline">${esc(key)}</span>
+          <a class="jira-link" href="${esc(row.jira_url || "#")}" target="_blank" rel="noopener" title="Open in Jira"><span class="material-symbols-outlined">open_in_new</span></a>
+        </div></td>
+        <td>${esc(row.assignee || "-")}</td>
+        <td>${esc(row.product || "-")}</td>
+        <td class="num">${row.tk_budget_hours == null ? "-" : hours(row.tk_budget_hours)}</td>
+        <td class="num">${hours(row.jira_original_estimate_hours)}</td>
+        <td class="num">${hours(row.story_estimate_hours)}</td>
+        <td class="num">${hours(row.subtask_estimate_hours)}</td>
+        <td>${esc(planned)}</td>
+        <td class="num">${hours(row.total_actual_hours)}</td>
+        <td>${esc(dateText(row.actual_complete_date))}</td>
+        <td>${statusPill(row.epic_status)}</td>
+        <td class="num">${esc(row.headcount || 0)}</td>
+      </tr>${isOpen ? drilldownRow(row) : ""}`;
+    }
+    function drilldownRow(row){
+      return `<tr class="drilldown-row"><td colspan="13"><div class="nested">${storyTable(row)}</div></td></tr>`;
+    }
+    function storyTable(row){
+      const stories = row.stories || [];
+      if (!stories.length) return '<div class="muted">No work items found.</div>';
+      const body = stories.map((story) => {
+        const sid = `${row.epic_key}:${story.issue_key}`;
+        const open = state.expandedStories.has(sid);
+        return `<tr>
+          <td><button class="icon-btn" data-toggle-story="${esc(sid)}"><span class="material-symbols-outlined">${open ? "expand_less" : "chevron_right"}</span></button></td>
+          <td><a href="${esc(story.jira_url || "#")}" target="_blank" rel="noopener">${esc(story.issue_key)}</a><div class="muted">${esc(story.summary)}</div></td>
+          <td>${esc(story.issue_type || "-")}</td><td>${esc(story.assignee || "-")}</td><td>${esc(story.status || "-")}</td>
+          <td>${esc(dateText(story.start_date))}</td><td>${esc(dateText(story.due_date))}</td>
+          <td class="num">${hours(story.original_estimate_hours)}</td><td class="num">${hours(story.actual_hours)}</td>
+          <td>${esc(dateText(story.actual_complete_date))}</td>
+        </tr>${open ? `<tr><td colspan="10">${subtaskTable(row, story)}</td></tr>` : ""}`;
+      }).join("");
+      return `<div class="nested-table"><table><thead><tr><th></th><th>Work Item</th><th>Type</th><th>Assignee</th><th>Status</th><th>Start</th><th>Due</th><th>Estimate</th><th>Actual</th><th>Complete</th></tr></thead><tbody>${body}</tbody></table></div>`;
+    }
+    function subtaskTable(row, story){
+      const subs = story.subtasks || [];
+      if (!subs.length) return '<div class="nested muted">No subtasks found.</div>';
+      const body = subs.map((sub) => {
+        const sid = `${row.epic_key}:${story.issue_key}:${sub.issue_key}`;
+        const open = state.expandedSubtasks.has(sid);
+        return `<tr>
+          <td><button class="icon-btn" data-toggle-subtask="${esc(sid)}"><span class="material-symbols-outlined">${open ? "expand_less" : "chevron_right"}</span></button></td>
+          <td><a href="${esc(sub.jira_url || "#")}" target="_blank" rel="noopener">${esc(sub.issue_key)}</a><div class="muted">${esc(sub.summary)}</div></td>
+          <td>${esc(sub.issue_type || "-")}</td><td>${esc(sub.assignee || "-")}</td><td>${esc(sub.status || "-")}</td>
+          <td class="num">${hours(sub.original_estimate_hours)}</td><td class="num">${hours(sub.actual_hours)}</td><td>${esc(dateText(sub.actual_complete_date))}</td>
+        </tr>${open ? `<tr><td colspan="8">${worklogTable(sub)}</td></tr>` : ""}`;
+      }).join("");
+      return `<div class="nested-table"><table><thead><tr><th></th><th>Subtask</th><th>Type</th><th>Assignee</th><th>Status</th><th>Estimate</th><th>Actual</th><th>Complete</th></tr></thead><tbody>${body}</tbody></table></div>`;
+    }
+    function worklogTable(sub){
+      const logs = sub.worklogs || [];
+      if (!logs.length) return '<div class="nested muted">No worklogs found.</div>';
+      return `<div class="nested-table"><table><thead><tr><th>Date</th><th>Author</th><th>Hours</th></tr></thead><tbody>${logs.map((log) => `<tr><td>${esc(dateText(log.date))}</td><td>${esc(log.author || "-")}</td><td class="num">${hours(log.hours)}</td></tr>`).join("")}</tbody></table></div>`;
+    }
+    function renderTable(){
+      const rows = state.payload?.rows || [];
+      els.tbody.innerHTML = rows.length ? rows.map((row, index) => epicRow(row, index + 1)).join("") : '<tr><td colspan="13" class="muted">No epics match the current filters.</td></tr>';
+    }
+    function findEpic(key){ return (state.payload?.rows || []).find((row) => String(row.epic_key) === String(key)); }
+    function renderAll(){
+      renderProjectMenu();
+      renderSummary();
+      renderTable();
+      if (state.drawerEpicKey) renderDrawer(findEpic(state.drawerEpicKey));
+    }
+    function metricBars(rows, labelKey, valueKey, pctKey){
+      if (!rows.length) return '<div class="muted">No data</div>';
+      const max = Math.max(...rows.map((r) => n(r[valueKey])), 1);
+      return `<div class="bars">${rows.map((r) => `<div class="bar-row"><span>${esc(r[labelKey] || r.month || "-")}</span><div class="bar-track"><span class="bar actual" style="width:${Math.max(2, n(r[valueKey]) / max * 100)}%"></span></div><span class="num">${hours(r[valueKey])}${pctKey ? " / " + n(r[pctKey]).toFixed(1) + "%" : ""}</span></div>`).join("")}</div>`;
+    }
+    function bucketLabel(bucket){
+      return ({
+        before_due: "Completed before due date",
+        on_due: "Completed on due date",
+        after_due: "Completed after due date",
+        not_completed: "Not completed",
+        no_due_date: "No due date"
+      })[bucket] || String(bucket || "-").replace(/_/g, " ");
+    }
+    function planActualChart(rows){
+      if (!rows.length) return '<div class="muted">No data</div>';
+      if (state.planActualMode === "line") return planActualLineChart(rows);
+      const max = Math.max(...rows.map((r) => Math.max(n(r.planned_hours), n(r.actual_hours))), 1);
+      return `<div class="bars">${rows.map((r) => `<div class="bar-row"><span>${esc(r.month)}</span><div class="bar-track"><span class="bar plan" style="width:${n(r.planned_hours) / max * 100}%"></span><span class="bar actual" style="width:${n(r.actual_hours) / max * 100}%"></span></div><span>${hours(r.planned_hours)} / ${hours(r.actual_hours)}</span></div>`).join("")}</div>`;
+    }
+    function planActualLineChart(rows){
+      const width = Math.max(420, rows.length * 72);
+      const height = 170;
+      const pad = { left: 42, right: 16, top: 14, bottom: 32 };
+      const max = Math.max(...rows.map((r) => Math.max(n(r.planned_hours), n(r.actual_hours))), 1);
+      const x = (i) => rows.length === 1 ? width / 2 : pad.left + (i * (width - pad.left - pad.right) / (rows.length - 1));
+      const y = (v) => pad.top + (height - pad.top - pad.bottom) * (1 - (n(v) / max));
+      const points = (key) => rows.map((r, i) => `${x(i)},${y(r[key])}`).join(" ");
+      const labels = rows.map((r, i) => `<text x="${x(i)}" y="${height - 10}" text-anchor="middle" font-size="10" fill="#667085">${esc(r.month)}</text>`).join("");
+      return `<div class="line-chart"><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Month plan actual line chart">
+        <line x1="${pad.left}" y1="${height - pad.bottom}" x2="${width - pad.right}" y2="${height - pad.bottom}" stroke="#d8dee9"/>
+        <line x1="${pad.left}" y1="${pad.top}" x2="${pad.left}" y2="${height - pad.bottom}" stroke="#d8dee9"/>
+        <polyline points="${points("planned_hours")}" fill="none" stroke="#2563eb" stroke-width="3"/>
+        <polyline points="${points("actual_hours")}" fill="none" stroke="#16a34a" stroke-width="3"/>
+        ${rows.map((r, i) => `<circle cx="${x(i)}" cy="${y(r.planned_hours)}" r="4" fill="#2563eb"><title>${esc(r.month)} planned ${hours(r.planned_hours)}</title></circle><circle cx="${x(i)}" cy="${y(r.actual_hours)}" r="4" fill="#16a34a"><title>${esc(r.month)} actual ${hours(r.actual_hours)}</title></circle>`).join("")}
+        ${labels}
+      </svg></div><div class="legend"><span><i class="legend-dot" style="background:#2563eb"></i>Planned</span><span><i class="legend-dot" style="background:#16a34a"></i>Actual</span></div>`;
+    }
+    function dateList(start, end){
+      const out = [];
+      let d = new Date(`${start}T00:00:00`);
+      const last = new Date(`${end}T00:00:00`);
+      while (d <= last && out.length < 732) {
+        out.push(d.toISOString().slice(0, 10));
+        d.setDate(d.getDate() + 1);
+      }
+      return out;
+    }
+    function monthLabel(iso){
+      const d = new Date(`${iso}T00:00:00`);
+      return d.toLocaleString(undefined, { month: "short", year: "numeric" });
+    }
+    function weekOfMonth(iso){
+      const d = new Date(`${iso}T00:00:00`);
+      return Math.floor((d.getDate() - 1) / 7) + 1;
+    }
+    function groupedSegments(days, keyFn, labelFn){
+      const segments = [];
+      days.forEach((day, index) => {
+        const key = keyFn(day);
+        const last = segments[segments.length - 1];
+        if (last && last.key === key) {
+          last.length += 1;
+        } else {
+          segments.push({ key, label: labelFn(day), start: index, length: 1 });
+        }
+      });
+      return segments;
+    }
+    function ganttHeader(days, cols){
+      const months = groupedSegments(days, (d) => d.slice(0, 7), monthLabel);
+      const weeks = groupedSegments(days, (d) => `${d.slice(0, 7)}-w${weekOfMonth(d)}`, (d) => `W${weekOfMonth(d)}`);
+      const dayCells = days.map((d) => `<div class="gantt-header-cell" title="${esc(d)}">${esc(String(Number(d.slice(8, 10))))}</div>`).join("");
+      const monthCells = months.map((seg) => `<div class="gantt-header-cell month" style="grid-column:${seg.start + 2} / span ${seg.length}" title="${esc(seg.label)}">${esc(seg.label)}</div>`).join("");
+      const weekCells = weeks.map((seg) => `<div class="gantt-header-cell week" style="grid-column:${seg.start + 2} / span ${seg.length}" title="${esc(seg.label)}">${esc(seg.label)}</div>`).join("");
+      return `<div class="gantt-header-grid" style="grid-template-columns:${cols}"><div class="gantt-label"></div>${monthCells}</div>
+        <div class="gantt-header-grid" style="grid-template-columns:${cols}"><div class="gantt-label"></div>${weekCells}</div>
+        <div class="gantt-header-grid" style="grid-template-columns:${cols}"><div class="gantt-label">Resource / Day</div>${dayCells}</div>`;
+    }
+    function ganttChart(gantt){
+      const days = dateList(gantt?.start_date || "", gantt?.end_date || "");
+      if (!days.length) return '<div class="muted">No date data</div>';
+      const byResource = new Map();
+      (gantt.worklogs || []).forEach((log) => {
+        const res = log.author || "Unassigned";
+        if (!byResource.has(res)) byResource.set(res, {});
+        const cell = byResource.get(res)[log.date] || {actual:0, planned:0, unplanned:0};
+        cell.actual += n(log.hours);
+        byResource.get(res)[log.date] = cell;
+      });
+      (gantt.leaves || []).forEach((leaf) => {
+        const res = leaf.assignee || "Unassigned";
+        if (!byResource.has(res)) byResource.set(res, {});
+        const cell = byResource.get(res)[leaf.date] || {actual:0, planned:0, unplanned:0};
+        if (leaf.leave_class === "unplanned") cell.unplanned += n(leaf.hours); else cell.planned += n(leaf.hours);
+        byResource.get(res)[leaf.date] = cell;
+      });
+      const cols = `150px repeat(${days.length}, 12px)`;
+      const header = ganttHeader(days, cols);
+      const rows = Array.from(byResource.entries()).sort((a, b) => a[0].localeCompare(b[0])).map(([res, cells]) => {
+        const cellHtml = days.map((d) => {
+          const c = cells[d] || {};
+          const cls = c.actual && (c.planned || c.unplanned) ? "mixed" : (c.actual ? "actual" : (c.unplanned ? "unplanned" : (c.planned ? "planned" : "")));
+          const title = `${d} | ${res} | actual ${n(c.actual).toFixed(2)}h | planned leave ${n(c.planned).toFixed(2)}h | unplanned leave ${n(c.unplanned).toFixed(2)}h`;
+          return `<div class="day-cell ${cls}" title="${esc(title)}"></div>`;
+        }).join("");
+        return `<div class="gantt-grid" style="grid-template-columns:${cols}"><div class="gantt-label">${esc(res)}</div>${cellHtml}</div>`;
+      }).join("");
+      return `<div class="gantt-scroll">${header}${rows || '<div class="muted">No worklogs or leaves</div>'}</div>`;
+    }
+    function simpleTable(rows, columns){
+      if (!rows.length) return '<div class="muted">No data</div>';
+      return `<table class="mini-table"><thead><tr>${columns.map((c) => `<th>${esc(c.label)}</th>`).join("")}</tr></thead><tbody>${rows.map((r) => `<tr>${columns.map((c) => `<td class="${c.num ? "num" : ""}">${c.format ? c.format(r[c.key], r) : esc(r[c.key] ?? "-")}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+    }
+    function taskCompletionSection(stats){
+      const rows = (stats || []).filter((r) => n(r.count) > 0);
+      if (!rows.length) return '<div class="muted">No completion data</div>';
+      const active = state.completionDetailBucket || rows[0].bucket;
+      const activeRow = rows.find((r) => r.bucket === active) || rows[0];
+      const table = simpleTable(activeRow.items || [], [
+        {key:"summary", label:"Task"},
+        {key:"story_name", label:"Work Item"},
+        {key:"assignee", label:"Assignee"},
+        {key:"status", label:"Status"},
+        {key:"due_date", label:"Due"},
+        {key:"actual_complete_date", label:"Complete"}
+      ]);
+      return `<table class="mini-table"><thead><tr><th>Bucket</th><th>Count</th></tr></thead><tbody>${rows.map((r) => `<tr><td>${esc(r.label || bucketLabel(r.bucket))}</td><td class="num"><button class="count-link" data-completion-bucket="${esc(r.bucket)}">${esc(r.count)}</button></td></tr>`).join("")}</tbody></table>
+        <div class="detail-box"><h4 class="chart-title">${esc(activeRow.label || bucketLabel(activeRow.bucket))}</h4>${table}</div>`;
+    }
+    function resourceUtilizationVisual(rows){
+      if (!rows.length) return '<div class="muted">No utilization data</div>';
+      const byResource = new Map();
+      rows.forEach((r) => {
+        const name = r.assignee || "Unassigned";
+        const current = byResource.get(name) || { assignee: name, epic_hours: 0, available_hours: 0 };
+        current.epic_hours += n(r.epic_hours);
+        current.available_hours += n(r.available_hours);
+        byResource.set(name, current);
+      });
+      const values = Array.from(byResource.values()).map((r) => ({...r, utilization_pct: r.available_hours ? (r.epic_hours / r.available_hours) * 100 : 0})).sort((a, b) => b.epic_hours - a.epic_hours);
+      return metricBars(values, "assignee", "epic_hours", "utilization_pct");
+    }
+    function estimateQualityScorecards(eq){
+      const assessed = n(eq.subtask_count);
+      const within = n(eq.within_original_estimate_count);
+      return `<div class="scorecards">
+        <div class="scorecard"><div class="score-label">Assessed subtasks</div><div class="score-value">${esc(assessed)}</div></div>
+        <div class="scorecard"><div class="score-label">Within estimate</div><div class="score-value">${esc(within)}</div></div>
+        <div class="scorecard"><div class="score-label">Over estimate</div><div class="score-value">${esc(eq.subtasks_over_original_estimate_count || 0)}</div></div>
+        <div class="scorecard"><div class="score-label">Equal to parent estimate</div><div class="score-value">${esc(eq.subtasks_equal_story_estimate_count || 0)}</div></div>
+        <div class="scorecard"><div class="score-label">Equal-parent rate</div><div class="score-value">${n(eq.equal_story_estimate_pct).toFixed(1)}%</div></div>
+        <div class="scorecard"><div class="score-label">Overrun rate</div><div class="score-value">${n(eq.over_original_estimate_pct).toFixed(1)}%</div></div>
+      </div>`;
+    }
+    function renderDrawer(row){
+      if (!row) return;
+      const a = row.analytics || {};
+      const eq = a.estimate_quality || {};
+      els.drawerContent.innerHTML = `<div class="drawer-head">
+        <div><h2 class="drawer-title">${esc(row.epic_name || row.epic_key)}</h2><div class="meta-line">${esc(row.epic_key)} | ${esc(row.project_name || row.project_key)} | ${statusPill(row.epic_status)}</div></div>
+        <button class="icon-btn" id="drawer-close" title="Close"><span class="material-symbols-outlined">close</span></button>
+      </div>
+      <div class="chart-grid">
+        <section class="chart-panel wide"><div class="chart-head"><h3 class="chart-title">Month Plan vs Actual</h3><div class="chart-toggle"><button data-plan-mode="bar" class="${state.planActualMode === "bar" ? "active" : ""}">Bar</button><button data-plan-mode="line" class="${state.planActualMode === "line" ? "active" : ""}">Line</button></div></div>${planActualChart(a.monthly_plan_actual || [])}</section>
+        <section class="chart-panel wide"><h3 class="chart-title">Daily Work And Leave Gantt</h3>${ganttChart(a.gantt || {})}</section>
+        <section class="chart-panel wide"><h3 class="chart-title">Task Completion</h3>${taskCompletionSection(a.completion_stats || [])}</section>
+        <section class="chart-panel"><h3 class="chart-title">Resource Effort</h3>${metricBars(a.resource_effort || [], "assignee", "hours", "pct")}</section>
+        <section class="chart-panel"><h3 class="chart-title">Work Item Effort</h3>${metricBars((a.story_effort || []).map((r) => ({...r, label: r.story_name || r.story_key})), "label", "hours", "pct")}</section>
+        <section class="chart-panel"><h3 class="chart-title">Team Effort</h3>${metricBars(a.team_effort || [], "team", "hours", "pct")}</section>
+        <section class="chart-panel wide"><h3 class="chart-title">Resource Utilization</h3>${resourceUtilizationVisual(a.resource_utilization || [])}${simpleTable(a.resource_utilization || [], [{key:"month", label:"Month"}, {key:"assignee", label:"Resource"}, {key:"epic_hours", label:"Epic", num:true, format:hours}, {key:"available_hours", label:"Available", num:true, format:hours}, {key:"utilization_pct", label:"%", num:true, format:(v)=>n(v).toFixed(1)+"%"}])}</section>
+        <section class="chart-panel"><h3 class="chart-title">Support Resources</h3>${simpleTable(a.support_effort || [], [{key:"assignee", label:"Resource"}, {key:"hours", label:"Hours", num:true, format:hours}])}</section>
+        <section class="chart-panel"><h3 class="chart-title">Estimate Quality</h3>${estimateQualityScorecards(eq)}${simpleTable(eq.details || [], [{key:"summary", label:"Task"}, {key:"story_name", label:"Work Item"}, {key:"assignee", label:"Assignee"}, {key:"original_estimate_hours", label:"Estimate", num:true, format:hours}, {key:"actual_hours", label:"Actual", num:true, format:hours}])}</section>
+        <section class="chart-panel"><h3 class="chart-title">Leaves By Resource</h3>${simpleTable(a.leave_summary || [], [{key:"assignee", label:"Resource"}, {key:"planned_hours", label:"Planned", num:true, format:hours}, {key:"unplanned_hours", label:"Unplanned", num:true, format:hours}])}</section>
+      </div>`;
+      document.getElementById("drawer-close").addEventListener("click", closeDrawer);
+      els.drawerContent.querySelectorAll("[data-plan-mode]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          state.planActualMode = btn.dataset.planMode || "bar";
+          renderDrawer(row);
+        });
+      });
+      els.drawerContent.querySelectorAll("[data-completion-bucket]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          state.completionDetailBucket = btn.dataset.completionBucket || "";
+          renderDrawer(row);
+        });
+      });
+    }
+    function openDrawer(key){
+      state.drawerEpicKey = key;
+      renderDrawer(findEpic(key));
+      els.overlay.classList.add("open");
+    }
+    function closeDrawer(){
+      state.drawerEpicKey = "";
+      els.overlay.classList.remove("open");
+    }
+    function downloadCsv(){
+      const rows = state.payload?.rows || [];
+      const headers = ["Epic Key","Epic Name","Assignee","Product","TK Budget Hours","Jira Original Estimate","Story Estimates","Subtask Estimates","Planned Start","Planned Due","Total Actual Hours","Actual Complete Date","Epic Status","Headcount"];
+      const csvRows = [headers, ...rows.map((r) => [r.epic_key, r.epic_name, r.assignee, r.product, r.tk_budget_hours, r.jira_original_estimate_hours, r.story_estimate_hours, r.subtask_estimate_hours, r.planned_start, r.planned_due, r.total_actual_hours, r.actual_complete_date, r.epic_status, r.headcount])];
+      const csv = csvRows.map((row) => row.map((v) => `"${String(v ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
+      const blob = new Blob([csv], {type: "text/csv;charset=utf-8"});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "epic_explorer.csv";
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+    els.tbody.addEventListener("click", (ev) => {
+      const btn = ev.target.closest("button");
+      if (!btn) return;
+      const epic = btn.dataset.toggleEpic;
+      const story = btn.dataset.toggleStory;
+      const subtask = btn.dataset.toggleSubtask;
+      const openEpic = btn.dataset.openEpic;
+      if (epic) { state.expandedEpics[state.expandedEpics.has(epic) ? "delete" : "add"](epic); renderTable(); }
+      if (story) { state.expandedStories[state.expandedStories.has(story) ? "delete" : "add"](story); renderTable(); }
+      if (subtask) { state.expandedSubtasks[state.expandedSubtasks.has(subtask) ? "delete" : "add"](subtask); renderTable(); }
+      if (openEpic) openDrawer(openEpic);
+    });
+    els.projectToggle.addEventListener("click", () => els.projectPicker.classList.toggle("open"));
+    els.projectMenu.addEventListener("change", (ev) => {
+      const cb = ev.target.closest("input[data-project]");
+      if (!cb) return;
+      if (cb.checked) state.pendingProjects.add(cb.dataset.project); else state.pendingProjects.delete(cb.dataset.project);
+      renderProjectMenu();
+    });
+    document.addEventListener("click", (ev) => {
+      if (!els.projectPicker.contains(ev.target)) els.projectPicker.classList.remove("open");
+    });
+    els.applyDates.addEventListener("click", () => loadReport().catch((err) => { els.tbody.innerHTML = `<tr><td colspan="13">${esc(err.message)}</td></tr>`; }));
+    els.clearDates.addEventListener("click", () => {
+      els.from.value = "";
+      els.to.value = "";
+      loadReport().catch((err) => { els.tbody.innerHTML = `<tr><td colspan="13">${esc(err.message)}</td></tr>`; });
+    });
+    els.applyProjects.addEventListener("click", () => {
+      state.appliedProjects = new Set(state.pendingProjects);
+      loadReport().catch((err) => { els.tbody.innerHTML = `<tr><td colspan="13">${esc(err.message)}</td></tr>`; });
+    });
+    els.clearProjects.addEventListener("click", () => {
+      state.pendingProjects.clear();
+      state.appliedProjects.clear();
+      loadReport().catch((err) => { els.tbody.innerHTML = `<tr><td colspan="13">${esc(err.message)}</td></tr>`; });
+    });
+    els.csv.addEventListener("click", downloadCsv);
+    els.overlay.addEventListener("click", (ev) => { if (ev.target === els.overlay) closeDrawer(); });
+    els.drawerResizer.addEventListener("mousedown", (ev) => {
+      state.resizing = true;
+      ev.preventDefault();
+    });
+    document.addEventListener("mousemove", (ev) => {
+      if (!state.resizing) return;
+      const width = Math.min(window.innerWidth * 0.96, Math.max(window.innerWidth * 0.5, window.innerWidth - ev.clientX));
+      els.drawer.style.width = `${width}px`;
+    });
+    document.addEventListener("mouseup", () => { state.resizing = false; });
+    loadReport().catch((err) => { els.meta.textContent = "Failed"; els.tbody.innerHTML = `<tr><td colspan="13">${esc(err.message)}</td></tr>`; });
+  </script>
+</body>
+</html>

@@ -526,8 +526,11 @@ class MonthlyEpicPlanProgressTests(unittest.TestCase):
             )
 
             rows_by_key = {row["epic_key"]: row for row in payload["rows"]}
-            self.assertEqual(set(rows_by_key), {"O2-BF", "O2-IN"})
+            # Lookback removed: O2-OUT (due 2026-01-15) is now brought forward too, but like
+            # any brought-forward epic it must NOT inflate the planned-this-month estimate rollup.
+            self.assertEqual(set(rows_by_key), {"O2-BF", "O2-IN", "O2-OUT"})
             self.assertTrue(rows_by_key["O2-BF"]["brought_forward"])
+            self.assertTrue(rows_by_key["O2-OUT"]["brought_forward"])
             rollup = payload["estimate_rollup"]
             self.assertEqual(rollup["epic_count"], 1)
             self.assertEqual(rollup["story_count"], 2)
@@ -882,8 +885,10 @@ class MonthlyEpicPlanProgressTests(unittest.TestCase):
             self.assertIn("brought_forward", audit["O2-BF"]["buckets"])
             self.assertEqual(audit["O2-SPAN"]["audit_status"], "not_brought_forward_due_in_selected_month")
             self.assertIn("planned_this_month", audit["O2-SPAN"]["buckets"])
-            self.assertEqual(audit["O2-OLDOUT"]["audit_status"], "excluded_outside_lookback")
-            self.assertIn("2026-01-30", audit["O2-OLDOUT"]["reasons"][0])
+            # Lookback window removed: an epic due far in the past (2026-01-15) is now
+            # brought forward into the selected month regardless of age.
+            self.assertTrue(audit["O2-OLDOUT"]["brought_forward"])
+            self.assertIn("brought_forward", audit["O2-OLDOUT"]["buckets"])
             self.assertEqual(audit["O2-DONEOLD"]["audit_status"], "excluded_completed_before_month")
 
     def test_delivery_status_aligns_when_jira_in_progress_but_planner_yet_to_start(self):
@@ -1089,7 +1094,11 @@ class MonthlyEpicPlanProgressTests(unittest.TestCase):
         self.assertIn('data-summary-drawer="carrying_to_next_month"', html)
         self.assertIn("carry_forward_audit", html)
         self.assertIn("function renderSummaryAuditDrawer", html)
-        self.assertIn("Brought Forward is not a direct copy", html)
+        self.assertIn("function summaryAuditIsIncluded", html)
+        self.assertIn("function summaryAuditSortCompare", html)
+        self.assertIn("carry-audit-section-row", html)
+        self.assertIn('renderSummaryAuditSection("Excluded"', html)
+        self.assertIn("This count exactly matches the previous month", html)
         self.assertIn("estimateDetailIncludeBugSubtasks", html)
         self.assertIn("non_bug_logged_hours", html)
         self.assertIn("non_bug_overrun_hours", html)
@@ -1105,7 +1114,7 @@ class MonthlyEpicPlanProgressTests(unittest.TestCase):
         self.assertIn("aggregateEstimateRollupFromRows", html)
         self.assertIn("const setBar = (el, value)", html)
         self.assertIn("estimate_rollup", html)
-        row_to_html = re.search(r"function rowToHtml\(row\) \{(?P<body>.*?)\n    // Sort order:", html, re.S)
+        row_to_html = re.search(r"function rowToHtml\(row, sectionType\) \{(?P<body>.*?)\n    // Sort order:", html, re.S)
         self.assertIsNotNone(row_to_html)
         self.assertIn('const monthYm = els.month ? String(els.month.value || "").trim() : "";', row_to_html.group("body"))
         self.assertIn('optionalEffortText(row, "tk_epic_budget_hours", "tk_epic_budget_days")', row_to_html.group("body"))

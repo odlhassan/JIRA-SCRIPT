@@ -2078,18 +2078,13 @@ def _load_all_jira_epic_rows(
         brought_forward = bool(
             approved_due is not None
             and approved_due < month_start
-            and approved_due >= overdue_cutoff
             and not scope_excluded
             and not completed_before_month
         )
 
         if not overlaps_month and not has_story_date_overlap and not brought_forward:
-            would_be_brought_forward = (
-                approved_due is not None
-                and approved_due < month_start
-                and approved_due >= overdue_cutoff
-            )
-            if (overlaps_month or would_be_brought_forward) and scope_excluded:
+            past_due = approved_due is not None and approved_due < month_start
+            if (overlaps_month or past_due) and scope_excluded:
                 excl_url = f"{jira_base}/browse/{epic_key}" if jira_base else ""
                 excluded_epics.append({
                     "epic_key": epic_key,
@@ -2119,46 +2114,55 @@ def _load_all_jira_epic_rows(
             and not is_resolved
         )
 
-        # Carry-forward logic:
-        # - On-hold epics are never carried forward; they stay in their own month.
-        # - Brought-forward overdue epics: carried forward only if NOT resolved in the selected month.
-        # - In-month epics: carried forward when one or more risk conditions are met.
-        carry_forward_reasons: list[str] = []
-        if not is_on_hold:
-            if brought_forward:
-                if not is_resolved:
-                    carry_forward_reasons.append("Brought forward — not resolved in selected month")
-            elif overlaps_month:
-                if start_slip:
-                    carry_forward_reasons.append("Start slipped — no worklog logged by month end")
-                if end_slip:
-                    carry_forward_reasons.append("End slipped — not resolved by due date in selected month")
-                due_past_today = bool(
-                    approved_due is not None and approved_due < today and not is_resolved
-                )
-                if due_past_today:
-                    carry_forward_reasons.append(
-                        f"Due date passed ({due_text}) — epic still open"
-                    )
-                due_within_or_before_month = approved_due is None or approved_due <= month_end
-                last_wl = last_worklog_date_by_epic.get(epic_key)
-                no_recent_activity = (
-                    due_within_or_before_month
-                    and not is_resolved
-                    and (last_wl is None or last_wl < today - timedelta(days=7))
-                )
-                if no_recent_activity:
-                    last_wl_str = last_wl.isoformat() if last_wl else "never"
-                    carry_forward_reasons.append(
-                        f"No worklog activity in last 7 days (last logged: {last_wl_str})"
-                    )
-                if due_within_or_before_month and not is_resolved and planned_hours > 0 and actual_hours > planned_hours * 1.5 and (actual_hours - planned_hours) >= 4:
-                    pct = int(round(actual_hours / planned_hours * 100))
-                    carry_forward_reasons.append(
-                        f"Over budget — {actual_hours:.1f}h logged vs {planned_hours:.1f}h planned ({pct}%)"
-                    )
+        # Carry-forward: epic will appear as Brought Forward in next month's report.
+        # It uses the SAME predicate next month's brought_forward will use, so the counts
+        # match exactly: due on/before month end, not on hold, and NOT completed before the
+        # next month started (resolution measured by completion date, identical to how
+        # brought_forward measures completed_before_month). Status-based `is_resolved` is
+        # intentionally NOT used here, otherwise epics resolved without a stable completion
+        # date (or resolved after month end) would drop out of the carry-forward count while
+        # still appearing as brought_forward next month — the source of the count mismatch.
+        next_month_start = month_end + timedelta(days=1)
+        completed_before_next_month = (
+            actual_completed_date is not None and actual_completed_date < next_month_start
+        )
+        carried_forward = bool(
+            approved_due is not None
+            and approved_due <= month_end
+            and not completed_before_next_month
+            and not scope_excluded
+        )
+        under_risk = bool(not brought_forward and carried_forward)
 
-        carried_forward = bool(carry_forward_reasons)
+        # Risk signal reasons kept for display chips in the Under Risk table section.
+        carry_forward_reasons: list[str] = []
+        if under_risk:
+            if start_slip:
+                carry_forward_reasons.append("Start slipped — no worklog logged by month end")
+            if end_slip:
+                carry_forward_reasons.append("End slipped — not resolved by due date in selected month")
+            due_past_today = bool(approved_due is not None and approved_due < today)
+            if due_past_today:
+                carry_forward_reasons.append(
+                    f"Due date passed ({due_text}) — epic still open"
+                )
+            last_wl = last_worklog_date_by_epic.get(epic_key)
+            if last_wl is None or last_wl < today - timedelta(days=7):
+                last_wl_str = last_wl.isoformat() if last_wl else "never"
+                carry_forward_reasons.append(
+                    f"No worklog activity in last 7 days (last logged: {last_wl_str})"
+                )
+            if planned_hours > 0 and actual_hours > planned_hours * 1.5 and (actual_hours - planned_hours) >= 4:
+                pct = int(round(actual_hours / planned_hours * 100))
+                carry_forward_reasons.append(
+                    f"Over budget — {actual_hours:.1f}h logged vs {planned_hours:.1f}h planned ({pct}%)"
+                )
+
+        months_overdue = 0
+        if brought_forward and approved_due is not None:
+            months_overdue = (month_start.year - approved_due.year) * 12 + (month_start.month - approved_due.month)
+            if months_overdue < 1:
+                months_overdue = 1
 
         no_stories_in_month = bool(not brought_forward and planned_hours == 0.0)
         if no_stories_in_month:
@@ -2198,6 +2202,8 @@ def _load_all_jira_epic_rows(
             "end_slip": end_slip,
             "brought_forward": brought_forward,
             "carried_forward": carried_forward,
+            "under_risk": under_risk,
+            "months_overdue": months_overdue,
             "carry_forward_reasons": carry_forward_reasons,
             "is_on_hold": is_on_hold,
             "no_stories_in_month": no_stories_in_month,
@@ -2405,12 +2411,7 @@ def _build_carry_forward_audit(
         include_in_brought_audit = False
         if approved_due is not None and approved_due < month_start:
             include_in_brought_audit = True
-            if approved_due < overdue_cutoff:
-                audit_status = "excluded_outside_lookback"
-                reasons.append(
-                    f"Not counted as brought-forward because approved due {approved_due_text} is before the overdue lookback cutoff {overdue_cutoff.isoformat()}."
-                )
-            elif scope_excluded:
+            if scope_excluded:
                 audit_status = "excluded_on_hold"
                 reasons.append("Not counted because the epic is on hold and Include On Hold is off.")
             elif completed_before_month:
@@ -2890,9 +2891,16 @@ def build_monthly_epic_plan_payload(
             _scope_excl = _is_on_hold_status_text(_js) and not include_on_hold
             _acd = _parse_iso_date(_je["resolved_stable_since_date"])
             _completed_before = _acd is not None and _acd < month_start
-            _bf = _ad is not None and _ad < month_start and _ad >= overdue_cutoff and not _scope_excl and not _completed_before
+            # Match the MAIN loop's row-inclusion exactly (no overdue lookback, no resolved-by-
+            # status exclusion) so every brought-forward / carry-forward row epic is in the
+            # candidate set; otherwise its planned/total/gantt hours default to 0 and the same
+            # epic shows different budgets across months.
+            _next_month_start = month_end + timedelta(days=1)
+            _completed_before_next = _acd is not None and _acd < _next_month_start
+            _bf = _ad is not None and _ad < month_start and not _scope_excl and not _completed_before
+            _cf = _ad is not None and _ad <= month_end and not _scope_excl and not _completed_before_next
             _overlaps = _as is not None and _ad is not None and _as <= month_end and _ad >= month_start
-            if _overlaps or _bf or _ek in story_date_epic_keys:
+            if _overlaps or _bf or _cf or _ek in story_date_epic_keys:
                 all_jira_keys.append(_ek)
         story_planned_hours_by_epic = _load_story_planned_hours(
             db_path,
@@ -3050,13 +3058,21 @@ def build_monthly_epic_plan_payload(
         if _as is None and _ad is None:
             continue
         _js = _to_text((epic_meta.get(_ek) or {}).get("jira_status"))
-        _eff_res = _is_resolved_status_text(_js) or (_is_on_hold_status_text(_js) and not include_on_hold)
+        # Match the MAIN loop's row-inclusion exactly so every epic that becomes a row is in
+        # the candidate set. brought_forward/carried_forward in the main loop do NOT exclude
+        # resolved-by-status epics (only completion-by-date), so the pre-pass must not either —
+        # otherwise such an epic becomes a brought-forward row with total_planned/story/gantt
+        # hours defaulting to 0, and the same epic shows different budgets across months.
+        _scope_excluded = _is_on_hold_status_text(_js) and not include_on_hold
         _acd_text = _to_text((epic_meta.get(_ek) or {}).get("resolved_stable_since_date"))
         _acd = _parse_iso_date(_acd_text)
         _completed_before = _acd is not None and _acd < month_start
-        _bf = _ad is not None and _ad < month_start and _ad >= overdue_cutoff and not _eff_res and not _completed_before
+        _next_month_start = month_end + timedelta(days=1)
+        _completed_before_next = _acd is not None and _acd < _next_month_start
+        _bf = _ad is not None and _ad < month_start and not _scope_excluded and not _completed_before
+        _cf = _ad is not None and _ad <= month_end and not _scope_excluded and not _completed_before_next
         _overlaps = _as is not None and _ad is not None and _as <= month_end and _ad >= month_start
-        if _overlaps or _bf:
+        if _overlaps or _bf or _cf:
             _all_candidate_epic_keys.append(_ek)
 
     story_planned_hours_by_epic: dict[str, float] = _load_story_planned_hours(
@@ -3145,7 +3161,6 @@ def build_monthly_epic_plan_payload(
         brought_forward = bool(
             approved_due is not None
             and approved_due < month_start
-            and approved_due >= overdue_cutoff
             and not scope_excluded
             and not completed_before_month
         )
@@ -3162,12 +3177,8 @@ def build_monthly_epic_plan_payload(
 
         # Capture on-hold epics excluded from scope that have month-relevant dates.
         if not overlaps_month and not brought_forward:
-            would_be_brought_forward = (
-                approved_due is not None
-                and approved_due < month_start
-                and approved_due >= overdue_cutoff
-            )
-            if (overlaps_month or would_be_brought_forward) and scope_excluded:
+            past_due = approved_due is not None and approved_due < month_start
+            if (overlaps_month or past_due) and scope_excluded:
                 excl_url = _to_text(planner_row.get("jira_url"))
                 if not excl_url and jira_base:
                     excl_url = f"{jira_base}/browse/{epic_key}"
@@ -3212,46 +3223,54 @@ def build_monthly_epic_plan_payload(
             and not is_resolved
         )
 
-        # Carry-forward logic:
-        # - On-hold epics are never carried forward; they stay in their own month.
-        # - Brought-forward overdue epics: carried forward only if NOT resolved in the selected month.
-        # - In-month epics: carried forward when one or more risk conditions are met.
-        carry_forward_reasons: list[str] = []
-        if not is_on_hold:
-            if brought_forward:
-                if not is_resolved:
-                    carry_forward_reasons.append("Brought forward — not resolved in selected month")
-            elif overlaps_month:
-                if start_slip:
-                    carry_forward_reasons.append("Start slipped — no worklog logged by month end")
-                if end_slip:
-                    carry_forward_reasons.append("End slipped — not resolved by due date in selected month")
-                due_past_today = bool(
-                    approved_due is not None and approved_due < today and not is_resolved
-                )
-                if due_past_today:
-                    carry_forward_reasons.append(
-                        f"Due date passed ({approved_due_text}) — epic still open"
-                    )
-                due_within_or_before_month = approved_due is None or approved_due <= month_end
-                last_wl = last_worklog_date_by_epic.get(epic_key)
-                no_recent_activity = (
-                    due_within_or_before_month
-                    and not is_resolved
-                    and (last_wl is None or last_wl < today - timedelta(days=7))
-                )
-                if no_recent_activity:
-                    last_wl_str = last_wl.isoformat() if last_wl else "never"
-                    carry_forward_reasons.append(
-                        f"No worklog activity in last 7 days (last logged: {last_wl_str})"
-                    )
-                if due_within_or_before_month and not is_resolved and planned_hours > 0 and actual_hours > planned_hours * 1.5 and (actual_hours - planned_hours) >= 4:
-                    pct = int(round(actual_hours / planned_hours * 100))
-                    carry_forward_reasons.append(
-                        f"Over budget — {actual_hours:.1f}h logged vs {planned_hours:.1f}h planned ({pct}%)"
-                    )
+        # Carry-forward: epic will appear as Brought Forward in next month's report.
+        # It uses the SAME predicate next month's brought_forward will use, so the counts
+        # match exactly: due on/before month end, not on hold, and NOT completed before the
+        # next month started (resolution measured by completion date, identical to how
+        # brought_forward measures completed_before_month). Status-based `is_resolved` is
+        # intentionally NOT used here, otherwise epics resolved without a stable completion
+        # date (or resolved after month end) would drop out of the carry-forward count while
+        # still appearing as brought_forward next month — the source of the count mismatch.
+        next_month_start = month_end + timedelta(days=1)
+        completed_before_next_month = (
+            actual_completed_date is not None and actual_completed_date < next_month_start
+        )
+        carried_forward = bool(
+            approved_due is not None
+            and approved_due <= month_end
+            and not completed_before_next_month
+            and not scope_excluded
+        )
+        under_risk = bool(not brought_forward and carried_forward)
 
-        carried_forward = bool(carry_forward_reasons)
+        # Risk signal reasons kept for display chips in the Under Risk table section.
+        carry_forward_reasons: list[str] = []
+        if under_risk:
+            if start_slip:
+                carry_forward_reasons.append("Start slipped — no worklog logged by month end")
+            if end_slip:
+                carry_forward_reasons.append("End slipped — not resolved by due date in selected month")
+            due_past_today = bool(approved_due is not None and approved_due < today)
+            if due_past_today:
+                carry_forward_reasons.append(
+                    f"Due date passed ({approved_due_text}) — epic still open"
+                )
+            last_wl = last_worklog_date_by_epic.get(epic_key)
+            if last_wl is None or last_wl < today - timedelta(days=7):
+                last_wl_str = last_wl.isoformat() if last_wl else "never"
+                carry_forward_reasons.append(
+                    f"No worklog activity in last 7 days (last logged: {last_wl_str})"
+                )
+            if planned_hours > 0 and actual_hours > planned_hours * 1.5 and (actual_hours - planned_hours) >= 4:
+                pct = int(round(actual_hours / planned_hours * 100))
+                carry_forward_reasons.append(
+                    f"Over budget — {actual_hours:.1f}h logged vs {planned_hours:.1f}h planned ({pct}%)"
+                )
+        months_overdue = 0
+        if brought_forward and approved_due is not None:
+            months_overdue = (month_start.year - approved_due.year) * 12 + (month_start.month - approved_due.month)
+            if months_overdue < 1:
+                months_overdue = 1
 
         # Flag in-month epics that contributed 0 planned hours (no stories in this month).
         no_stories_in_month = bool(not brought_forward and planned_hours == 0.0)
@@ -3298,6 +3317,8 @@ def build_monthly_epic_plan_payload(
                 "end_slip": end_slip,
                 "brought_forward": brought_forward,
                 "carried_forward": carried_forward,
+                "under_risk": under_risk,
+                "months_overdue": months_overdue,
                 "carry_forward_reasons": carry_forward_reasons,
                 "is_on_hold": is_on_hold,
                 "no_stories_in_month": no_stories_in_month,

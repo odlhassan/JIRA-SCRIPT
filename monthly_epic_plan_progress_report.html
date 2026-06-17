@@ -1136,6 +1136,55 @@
       --group-border: #ef4444;
       --group-line: #fecaca;
     }
+    .group-header-row.group-confirmed-delayed td {
+      --group-bg: linear-gradient(90deg, #fef2f2 0%, #fafafa 60%);
+      --group-text: #7f1d1d;
+      --group-border: #dc2626;
+      --group-line: #fecaca;
+    }
+    .group-header-row.group-under-risk td {
+      --group-bg: linear-gradient(90deg, #fffbeb 0%, #fafafa 60%);
+      --group-text: #78350f;
+      --group-border: #f59e0b;
+      --group-line: #fde68a;
+    }
+    .group-header-row.group-on-track td {
+      --group-bg: linear-gradient(90deg, #f0fdf4 0%, #fafafa 60%);
+      --group-text: #14532d;
+      --group-border: #16a34a;
+      --group-line: #bbf7d0;
+    }
+    tbody tr.row-confirmed-delayed td:first-child { box-shadow: inset 3px 0 0 #dc2626; }
+    tbody tr.row-confirmed-delayed { background: #fff8f8; }
+    tbody tr.row-confirmed-delayed:hover { background: #fef2f2 !important; }
+    tbody tr.row-under-risk td:first-child { box-shadow: inset 3px 0 0 #f59e0b; }
+    tbody tr.row-under-risk { background: #fffdf4; }
+    tbody tr.row-under-risk:hover { background: #fffbeb !important; }
+    tbody tr.row-persistent td:first-child { box-shadow: inset 4px 0 0 #7f1d1d !important; }
+    tbody tr.row-persistent { background: #fff0f0 !important; }
+    tbody tr.row-persistent:hover { background: #ffe4e4 !important; }
+    .persistent-badge {
+      display: inline-flex; align-items: center; gap: 3px;
+      font-size: 0.67rem; font-weight: 700; padding: 2px 7px 2px 5px;
+      border-radius: 3px; background: #7f1d1d; color: #fef2f2;
+      white-space: nowrap; vertical-align: middle; margin-left: 5px;
+      letter-spacing: 0.02em;
+    }
+    .persistent-badge .material-symbols-outlined { font-size: 0.78rem; }
+    .months-overdue-badge {
+      display: inline-flex; align-items: center; gap: 3px;
+      font-size: 0.68rem; font-weight: 700; padding: 2px 6px;
+      border-radius: 999px; background: #dc2626; color: #fff;
+      white-space: nowrap; vertical-align: middle; margin-left: 4px;
+    }
+    .risk-reason-chips { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 3px; }
+    .risk-reason-chip {
+      display: inline-flex; align-items: center; gap: 3px;
+      font-size: 0.65rem; font-weight: 600; padding: 2px 6px;
+      border-radius: 999px; background: #fef3c7; color: #78350f;
+      border: 1px solid #fde68a; white-space: nowrap;
+    }
+    .risk-reason-chip .material-symbols-outlined { font-size: 11px; }
     .group-label {
       display: flex;
       align-items: center;
@@ -1468,23 +1517,23 @@
       border-bottom: 1px solid var(--group-line, #d0dbe8);
       min-height: 36px;
     }
-    .gantt-group-row.group-bf {
-      --group-bg: linear-gradient(90deg, #fff3e0 0%, #fafafa 60%);
-      --group-text: #7c3500;
-      --group-border: #f97316;
-      --group-line: #fddcb5;
-    }
-    .gantt-group-row.group-month {
-      --group-bg: linear-gradient(90deg, #e8f0fe 0%, #fafbff 60%);
-      --group-text: #1a3560;
-      --group-border: #2563eb;
-      --group-line: #bfdbfe;
-    }
-    .gantt-group-row.group-cf {
-      --group-bg: linear-gradient(90deg, #fef0f0 0%, #fafafa 60%);
+    .gantt-group-row.group-confirmed-delayed {
+      --group-bg: linear-gradient(90deg, #fef2f2 0%, #fafafa 60%);
       --group-text: #7f1d1d;
-      --group-border: #ef4444;
+      --group-border: #dc2626;
       --group-line: #fecaca;
+    }
+    .gantt-group-row.group-under-risk {
+      --group-bg: linear-gradient(90deg, #fffbeb 0%, #fafafa 60%);
+      --group-text: #78350f;
+      --group-border: #f59e0b;
+      --group-line: #fde68a;
+    }
+    .gantt-group-row.group-on-track {
+      --group-bg: linear-gradient(90deg, #f0fdf4 0%, #fafafa 60%);
+      --group-text: #14532d;
+      --group-border: #16a34a;
+      --group-line: #bbf7d0;
     }
     /* Info cell content */
     .gantt-info-epic { margin-bottom: 3px; }
@@ -2528,6 +2577,68 @@
       align-self: stretch;
       margin: 2px 0;
     }
+    .res-epic-bf-breakdown {
+      margin-top: 8px;
+      padding-top: 7px;
+      border-top: 1px solid #fcd9a0;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .res-epic-bf-bk-row {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 0.75rem;
+      color: #78350f;
+    }
+    .res-bf-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .res-bf-dot--fresh  { background: #f59e0b; }
+    .res-bf-dot--older  { background: #dc2626; }
+    .res-epic-bf-bk-label { color: #92400e; }
+    .res-epic-bf-bk-hrs { color: #b45309; font-size: 0.73rem; white-space: nowrap; margin-left: auto; padding-left: 4px; }
+    .res-epic-bf-note {
+      font-size: 0.68rem;
+      color: #a16207;
+      opacity: 0.75;
+      margin-top: 3px;
+      font-style: italic;
+    }
+    .res-epic-cf-note {
+      font-size: 0.68rem;
+      color: #9f3a3a;
+      opacity: 0.75;
+      margin-top: 3px;
+      font-style: italic;
+    }
+    .res-epic-cf-breakdown {
+      margin-top: 8px;
+      padding-top: 7px;
+      border-top: 1px solid #fca5a5;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .res-epic-cf-bk-row {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 0.75rem;
+      color: #7f1d1d;
+    }
+    .res-cf-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .res-cf-dot--warn { background: #f59e0b; }
+    .res-cf-dot--bad  { background: #dc2626; }
+    .res-epic-cf-bk-label { color: #9f3a3a; }
+    .res-epic-cf-bk-hrs { color: #b45454; font-size: 0.73rem; white-space: nowrap; margin-left: auto; padding-left: 4px; }
     .efficiency-scores-panel {
       margin-top: 20px;
       padding-top: 18px;
@@ -2638,6 +2749,33 @@
     .carry-audit-status.not_brought_forward_due_in_selected_month {
       background: #fef3c7;
       color: #92400e;
+    }
+    .carry-audit-section-row td {
+      background: #f1f5f9;
+      color: #334155;
+      font-size: 0.72rem;
+      font-weight: 850;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding: 10px 12px;
+      border-top: 2px solid #cbd5e1;
+      border-bottom: 1px solid #dbe3ee;
+    }
+    .carry-audit-section-row:first-child td {
+      border-top: none;
+    }
+    .carry-audit-section-row .carry-audit-section-count {
+      margin-left: 8px;
+      color: #64748b;
+      font-weight: 700;
+      text-transform: none;
+      letter-spacing: 0;
+    }
+    .carry-audit-section-divider td {
+      height: 10px;
+      padding: 0;
+      background: linear-gradient(180deg, #e2e8f0 0%, #f8fafc 100%);
+      border-bottom: 1px solid #dbe3ee;
     }
     .carry-audit-reasons {
       margin: 0;
@@ -3100,10 +3238,6 @@
             <label for="unit-days">Days</label>
           </div>
         </div>
-        <div class="control">
-          <label for="overdue-threshold-input" title="Only epics whose approved due date falls within this many days before the selected month are treated as overdue carry-forwards. Default: 30 days.">Overdue lookback (days)</label>
-          <input type="number" id="overdue-threshold-input" min="1" max="3650" value="30" style="width:72px;padding:4px 8px;border:1px solid #c5d2e0;border-radius:4px;font-size:0.9rem;">
-        </div>
         <div class="control" style="align-self:end;padding-bottom:2px;">
           <label class="df-toggle" for="include-on-hold-toggle" style="gap:8px;" title="When checked, On Hold epics are counted in overdue and carry-forward totals. Off by default.">
             <input type="checkbox" class="df-toggle-input" id="include-on-hold-toggle">
@@ -3219,6 +3353,18 @@
               <span class="kpi-br-dot bad"></span>
               <span class="kpi-br-count" id="kpi-carried-forward-count">0</span>
               <span class="kpi-br-label">carrying forward to next month</span>
+            </div>
+            <div style="padding-left:14px;margin-bottom:2px;">
+              <div class="kpi-br-row" style="font-size:0.78rem;opacity:0.85;">
+                <span class="kpi-br-dot warn" style="width:6px;height:6px;min-width:6px;"></span>
+                <span class="kpi-br-count" id="kpi-cf-from-bf-count" style="font-size:0.8rem;">0</span>
+                <span class="kpi-br-label" style="font-size:0.78rem;">previously overdue</span>
+              </div>
+              <div class="kpi-br-row" style="font-size:0.78rem;opacity:0.85;">
+                <span class="kpi-br-dot bad" style="width:6px;height:6px;min-width:6px;"></span>
+                <span class="kpi-br-count" id="kpi-cf-in-month-count" style="font-size:0.8rem;">0</span>
+                <span class="kpi-br-label" style="font-size:0.78rem;">due this month, not resolved</span>
+              </div>
             </div>
             <div class="kpi-br-row" style="border-top:1px solid #e0e0e0;margin-top:4px;padding-top:4px;">
               <span class="kpi-br-dot muted"></span>
@@ -3569,6 +3715,21 @@
                   <div class="res-epic-card-stat-sub" id="res-epic-bf-actual-label">Actual</div>
                 </div>
               </div>
+              <div class="res-epic-bf-breakdown">
+                <div class="res-epic-bf-bk-row">
+                  <span class="res-bf-dot res-bf-dot--fresh"></span>
+                  <span id="res-epic-bf-fresh-count">0</span>
+                  <span class="res-epic-bf-bk-label">not completed last month</span>
+                  <span class="res-epic-bf-bk-hrs" id="res-epic-bf-fresh-planned">(0 hrs)</span>
+                </div>
+                <div class="res-epic-bf-bk-row">
+                  <span class="res-bf-dot res-bf-dot--older"></span>
+                  <span id="res-epic-bf-older-count">0</span>
+                  <span class="res-epic-bf-bk-label">persistently overdue (2+ months)</span>
+                  <span class="res-epic-bf-bk-hrs" id="res-epic-bf-older-planned">(0 hrs)</span>
+                </div>
+                <div class="res-epic-bf-note" id="res-epic-bf-note">Remaining = Total Budget − Hours Logged to date</div>
+              </div>
             </button>
             <!-- Carry-forward from this month -->
             <button type="button" class="res-epic-card cf-card" data-summary-drawer="carrying_to_next_month" aria-label="Open carrying to next month epic details">
@@ -3588,6 +3749,21 @@
                   <div class="res-epic-card-stat-value" id="res-epic-cf-actual">0.00</div>
                   <div class="res-epic-card-stat-sub" id="res-epic-cf-actual-label">Actual</div>
                 </div>
+              </div>
+              <div class="res-epic-cf-breakdown">
+                <div class="res-epic-cf-bk-row">
+                  <span class="res-cf-dot res-cf-dot--warn"></span>
+                  <span id="res-epic-cf-from-bf-count">0</span>
+                  <span class="res-epic-cf-bk-label">previously overdue</span>
+                  <span class="res-epic-cf-bk-hrs" id="res-epic-cf-from-bf-planned">(0 hrs)</span>
+                </div>
+                <div class="res-epic-cf-bk-row">
+                  <span class="res-cf-dot res-cf-dot--bad"></span>
+                  <span id="res-epic-cf-in-month-count">0</span>
+                  <span class="res-epic-cf-bk-label">due this month, not resolved</span>
+                  <span class="res-epic-cf-bk-hrs" id="res-epic-cf-in-month-planned">(0 hrs)</span>
+                </div>
+                <div class="res-epic-cf-note" id="res-epic-cf-note">Remaining = Total Budget − Hours Logged to date</div>
               </div>
             </button>
           </div>
@@ -3882,6 +4058,10 @@
       kpiBroughtForwardPlanned: document.getElementById("kpi-brought-forward-planned"),
       kpiCarriedForwardCount: document.getElementById("kpi-carried-forward-count"),
       kpiCarriedForwardPlanned: document.getElementById("kpi-carried-forward-planned"),
+      kpiCfFromBfCount: document.getElementById("kpi-cf-from-bf-count"),
+      kpiCfInMonthCount: document.getElementById("kpi-cf-in-month-count"),
+      kpiUnderRiskCount: document.getElementById("kpi-under-risk-count"),
+      kpiUnderRiskPlanned: document.getElementById("kpi-under-risk-planned"),
       kpiCompletionPct: document.getElementById("kpi-completion-pct"),
       kpiCompletionBar: document.getElementById("kpi-completion-bar"),
       kpiPlannedTotal: document.getElementById("kpi-planned-total"),
@@ -4017,11 +4197,21 @@
       resEpicBfPlannedLabel: document.getElementById("res-epic-bf-planned-label"),
       resEpicBfActual: document.getElementById("res-epic-bf-actual"),
       resEpicBfActualLabel: document.getElementById("res-epic-bf-actual-label"),
+      resEpicBfFreshCount: document.getElementById("res-epic-bf-fresh-count"),
+      resEpicBfFreshPlanned: document.getElementById("res-epic-bf-fresh-planned"),
+      resEpicBfOlderCount: document.getElementById("res-epic-bf-older-count"),
+      resEpicBfOlderPlanned: document.getElementById("res-epic-bf-older-planned"),
+      resEpicBfNote: document.getElementById("res-epic-bf-note"),
       resEpicCfCount: document.getElementById("res-epic-cf-count"),
       resEpicCfPlanned: document.getElementById("res-epic-cf-planned"),
       resEpicCfPlannedLabel: document.getElementById("res-epic-cf-planned-label"),
       resEpicCfActual: document.getElementById("res-epic-cf-actual"),
       resEpicCfActualLabel: document.getElementById("res-epic-cf-actual-label"),
+      resEpicCfFromBfCount: document.getElementById("res-epic-cf-from-bf-count"),
+      resEpicCfFromBfPlanned: document.getElementById("res-epic-cf-from-bf-planned"),
+      resEpicCfInMonthCount: document.getElementById("res-epic-cf-in-month-count"),
+      resEpicCfInMonthPlanned: document.getElementById("res-epic-cf-in-month-planned"),
+      resEpicCfNote: document.getElementById("res-epic-cf-note"),
       efficiencyCurrentMonthWarning: document.getElementById("efficiency-current-month-warning"),
       efficiencyCurrentMonthWarningText: document.getElementById("efficiency-current-month-warning-text"),
       eprEfficiencyScore: document.getElementById("epr-efficiency-score"),
@@ -4033,7 +4223,6 @@
       modeAllJiraEpics: document.getElementById("mode-all-jira-epics"),
       onlyPlannerRow: document.getElementById("only-planner-row"),
       onlyFromPlanner: document.getElementById("only-from-planner"),
-      overdueThreshold: document.getElementById("overdue-threshold-input"),
       includeOnHold: document.getElementById("include-on-hold-toggle"),
       includeBugSubtasks: document.getElementById("include-bug-subtasks-toggle"),
       loggedHoursModeWrap: document.getElementById("logged-hours-mode-wrap"),
@@ -4486,6 +4675,12 @@
     function recomputeKpiTotalsFromRows(rows) {
       let epic_count = 0, planned_hours = 0, planned_days = 0, actual_hours = 0, actual_days = 0;
       let brought_forward_count = 0, brought_forward_planned_hours = 0, brought_forward_planned_days = 0;
+      // bf_fresh = due in the immediately preceding calendar month (months_overdue == 1)
+      // bf_older = due 2+ calendar months ago (months_overdue >= 2)
+      // Track gross budget (total estimate) and logged (actuals to date) per group so the
+      // breakdown can show: Remaining = Budget − Logged (negative = over budget, still open).
+      let bf_fresh_count = 0, bf_fresh_budget_hours = 0, bf_fresh_logged_hours = 0, bf_fresh_over_count = 0;
+      let bf_older_count = 0, bf_older_budget_hours = 0, bf_older_logged_hours = 0, bf_older_over_count = 0;
       let carried_forward_count = 0, carried_forward_planned_hours = 0, carried_forward_planned_days = 0;
       let carried_forward_actual_hours = 0, carried_forward_actual_days = 0;
       let in_month_epic_count = 0, in_month_planned_hours = 0, in_month_planned_days = 0;
@@ -4493,6 +4688,13 @@
       let bf_actual_hours = 0, bf_actual_days = 0;
       let in_month_cf_count = 0, in_month_cf_planned_hours = 0, in_month_cf_planned_days = 0;
       let in_month_cf_actual_hours = 0, in_month_cf_actual_days = 0;
+      // under_risk = in-month epics with carry risk signals (separate from confirmed delayed carryover)
+      let under_risk_count = 0, under_risk_planned_hours = 0, under_risk_planned_days = 0;
+      let under_risk_actual_hours = 0, under_risk_actual_days = 0;
+      // Breakdown of carried_forward: how many came from overdue vs in-month.
+      // Same budget/logged tracking as brought_forward groups.
+      let cf_from_bf_count = 0, cf_from_bf_budget_hours = 0, cf_from_bf_logged_hours = 0, cf_from_bf_over_count = 0;
+      let cf_in_month_count = 0, cf_in_month_budget_hours = 0, cf_in_month_logged_hours = 0, cf_in_month_over_count = 0;
       for (const r of (rows || [])) {
         epic_count++;
         planned_hours += Number(r.planned_hours || 0);
@@ -4505,6 +4707,32 @@
           brought_forward_planned_days += Number(r.planned_days || 0);
           bf_actual_hours += Number(r.actual_hours || 0);
           bf_actual_days += Number(r.actual_days || 0);
+          const mo = Number(r.months_overdue || 0);
+          const rBudget = Number(r.total_planned_hours || 0);
+          const rLogged = Number(r.total_actual_hours || 0);
+          const rOver = rLogged > rBudget ? 1 : 0;
+          if (mo <= 1) {
+            bf_fresh_count++;
+            bf_fresh_budget_hours += rBudget;
+            bf_fresh_logged_hours += rLogged;
+            bf_fresh_over_count += rOver;
+          } else {
+            bf_older_count++;
+            bf_older_budget_hours += rBudget;
+            bf_older_logged_hours += rLogged;
+            bf_older_over_count += rOver;
+          }
+          if (r.carried_forward) {
+            carried_forward_count++;
+            cf_from_bf_count++;
+            cf_from_bf_budget_hours += rBudget;
+            cf_from_bf_logged_hours += rLogged;
+            cf_from_bf_over_count += rOver;
+            carried_forward_planned_hours += Number(r.planned_hours || 0);
+            carried_forward_planned_days += Number(r.planned_days || 0);
+            carried_forward_actual_hours += Number(r.actual_hours || 0);
+            carried_forward_actual_days += Number(r.actual_days || 0);
+          }
         } else {
           in_month_epic_count++;
           in_month_planned_hours += Number(r.planned_hours || 0);
@@ -4512,6 +4740,22 @@
           in_month_actual_hours += Number(r.actual_hours || 0);
           in_month_actual_days += Number(r.actual_days || 0);
           if (r.carried_forward) {
+            // In-month epics due this month but not resolved = Under Risk
+            under_risk_count++;
+            under_risk_planned_hours += Number(r.planned_hours || 0);
+            under_risk_planned_days += Number(r.planned_days || 0);
+            under_risk_actual_hours += Number(r.actual_hours || 0);
+            under_risk_actual_days += Number(r.actual_days || 0);
+            // Also count in total carried_forward so the stat = next month's Brought Forward
+            carried_forward_count++;
+            cf_in_month_count++;
+            cf_in_month_budget_hours += Number(r.total_planned_hours || 0);
+            cf_in_month_logged_hours += Number(r.total_actual_hours || 0);
+            cf_in_month_over_count += (Number(r.total_actual_hours || 0) > Number(r.total_planned_hours || 0)) ? 1 : 0;
+            carried_forward_planned_hours += Number(r.planned_hours || 0);
+            carried_forward_planned_days += Number(r.planned_days || 0);
+            carried_forward_actual_hours += Number(r.actual_hours || 0);
+            carried_forward_actual_days += Number(r.actual_days || 0);
             in_month_cf_count++;
             in_month_cf_planned_hours += Number(r.planned_hours || 0);
             in_month_cf_planned_days += Number(r.planned_days || 0);
@@ -4519,19 +4763,18 @@
             in_month_cf_actual_days += Number(r.actual_days || 0);
           }
         }
-        if (r.carried_forward) {
-          carried_forward_count++;
-          carried_forward_planned_hours += Number(r.planned_hours || 0);
-          carried_forward_planned_days += Number(r.planned_days || 0);
-          carried_forward_actual_hours += Number(r.actual_hours || 0);
-          carried_forward_actual_days += Number(r.actual_days || 0);
-        }
       }
       return {
         epic_count, planned_hours, planned_days, actual_hours, actual_days,
         brought_forward_count, brought_forward_planned_hours, brought_forward_planned_days,
+        bf_fresh_count, bf_fresh_budget_hours, bf_fresh_logged_hours, bf_fresh_over_count,
+        bf_older_count, bf_older_budget_hours, bf_older_logged_hours, bf_older_over_count,
         carried_forward_count, carried_forward_planned_hours, carried_forward_planned_days,
         carried_forward_actual_hours, carried_forward_actual_days,
+        cf_from_bf_count, cf_from_bf_budget_hours, cf_from_bf_logged_hours, cf_from_bf_over_count,
+        cf_in_month_count, cf_in_month_budget_hours, cf_in_month_logged_hours, cf_in_month_over_count,
+        under_risk_count, under_risk_planned_hours, under_risk_planned_days,
+        under_risk_actual_hours, under_risk_actual_days,
         in_month_epic_count, in_month_planned_hours, in_month_planned_days,
         in_month_actual_hours, in_month_actual_days,
         bf_actual_hours, bf_actual_days,
@@ -4559,6 +4802,11 @@
       if (els.kpiBroughtForwardPlanned) els.kpiBroughtForwardPlanned.textContent = formatNumber(bh) + " " + suffixShort;
       if (els.kpiCarriedForwardCount) els.kpiCarriedForwardCount.textContent = String(totals.carried_forward_count || 0);
       if (els.kpiCarriedForwardPlanned) els.kpiCarriedForwardPlanned.textContent = formatNumber(ch) + " " + suffixShort;
+      if (els.kpiCfFromBfCount) els.kpiCfFromBfCount.textContent = String(totals.cf_from_bf_count || 0);
+      if (els.kpiCfInMonthCount) els.kpiCfInMonthCount.textContent = String(totals.cf_in_month_count || 0);
+      const urh = unit === "days" ? (totals.under_risk_planned_days || 0) : (totals.under_risk_planned_hours || 0);
+      if (els.kpiUnderRiskCount) els.kpiUnderRiskCount.textContent = String(totals.under_risk_count || 0);
+      if (els.kpiUnderRiskPlanned) els.kpiUnderRiskPlanned.textContent = formatNumber(urh) + " " + suffixShort;
       if (els.kpiPlannedTotal) els.kpiPlannedTotal.textContent = formatNumber(totalPlanned) + " " + suffixShort;
       const pct = totalPlanned > 0 ? Math.min(100, (actualVal / totalPlanned) * 100) : 0;
       const pctText = totalPlanned > 0 ? pct.toFixed(1) + "%" : "—";
@@ -4577,11 +4825,27 @@
         bf_planned_days: Number(totals.brought_forward_planned_days || 0),
         bf_actual_hours: Number(totals.bf_actual_hours || 0),
         bf_actual_days: Number(totals.bf_actual_days || 0),
+        bf_fresh_count: Number(totals.bf_fresh_count || 0),
+        bf_fresh_budget_hours: Number(totals.bf_fresh_budget_hours || 0),
+        bf_fresh_logged_hours: Number(totals.bf_fresh_logged_hours || 0),
+        bf_fresh_over_count: Number(totals.bf_fresh_over_count || 0),
+        bf_older_count: Number(totals.bf_older_count || 0),
+        bf_older_budget_hours: Number(totals.bf_older_budget_hours || 0),
+        bf_older_logged_hours: Number(totals.bf_older_logged_hours || 0),
+        bf_older_over_count: Number(totals.bf_older_over_count || 0),
         cf_count: Number(totals.carried_forward_count || 0),
         cf_planned_hours: Number(totals.carried_forward_planned_hours || 0),
         cf_planned_days: Number(totals.carried_forward_planned_days || 0),
         cf_actual_hours: Number(totals.carried_forward_actual_hours || 0),
         cf_actual_days: Number(totals.carried_forward_actual_days || 0),
+        cf_from_bf_count: Number(totals.cf_from_bf_count || 0),
+        cf_from_bf_budget_hours: Number(totals.cf_from_bf_budget_hours || 0),
+        cf_from_bf_logged_hours: Number(totals.cf_from_bf_logged_hours || 0),
+        cf_from_bf_over_count: Number(totals.cf_from_bf_over_count || 0),
+        cf_in_month_count: Number(totals.cf_in_month_count || 0),
+        cf_in_month_budget_hours: Number(totals.cf_in_month_budget_hours || 0),
+        cf_in_month_logged_hours: Number(totals.cf_in_month_logged_hours || 0),
+        cf_in_month_over_count: Number(totals.cf_in_month_over_count || 0),
       };
       renderResourceSummary();
     }
@@ -4962,23 +5226,41 @@
       return audit.filter((row) => Array.isArray(row.buckets) && row.buckets.indexOf(bucket) !== -1);
     }
 
+    function summaryAuditIsIncluded(row, bucket) {
+      if (bucket === "brought_forward") return !!(row && row.brought_forward);
+      if (bucket === "carrying_to_next_month") return !!(row && row.carried_forward);
+      if (bucket === "planned_this_month") return String(row && row.audit_status || "") === "included";
+      return false;
+    }
+
+    function summaryAuditSortCompare(a, b) {
+      const projectA = String(a && a.project_name || a && a.project_key || "").toLowerCase();
+      const projectB = String(b && b.project_name || b && b.project_key || "").toLowerCase();
+      if (projectA !== projectB) return projectA < projectB ? -1 : 1;
+      const startA = String(a && a.approved_start || "");
+      const startB = String(b && b.approved_start || "");
+      if (startA !== startB) return startA < startB ? -1 : 1;
+      const keyA = String(a && a.epic_key || "").toUpperCase();
+      const keyB = String(b && b.epic_key || "").toUpperCase();
+      if (keyA !== keyB) return keyA < keyB ? -1 : 1;
+      return 0;
+    }
+
     function summaryAuditStatusLabel(row, bucket) {
       const status = String(row && row.audit_status || "");
-      if (bucket === "carrying_to_next_month" && row && row.carried_forward) return "Included";
-      if (bucket === "planned_this_month" && status === "included") return "Included";
-      if (row && row.brought_forward) return "Included";
-      if (status === "not_brought_forward_due_in_selected_month") return "In month, not carry-in";
+      if (summaryAuditIsIncluded(row, bucket)) return "Included";
+      if (status === "not_brought_forward_due_in_selected_month") return "Excluded";
       if (status === "excluded_outside_lookback") return "Outside lookback";
       if (status === "excluded_completed_before_month") return "Completed before month";
       if (status === "excluded_on_hold") return "On hold excluded";
       if (status === "excluded_not_in_current_scope" || status === "excluded") return "Excluded";
-      return status ? status.replace(/_/g, " ") : "Included";
+      return status ? status.replace(/_/g, " ") : "Excluded";
     }
 
-    function summaryAuditStatusClass(row) {
+    function summaryAuditStatusClass(row, bucket) {
       const status = String(row && row.audit_status || "included");
-      if (row && row.brought_forward) return "included";
-      return status || "included";
+      if (summaryAuditIsIncluded(row, bucket)) return "included";
+      return status || "excluded";
     }
 
     function summaryAuditJira(row) {
@@ -5001,15 +5283,36 @@
       return '<ul class="carry-audit-reasons">' + reasons.map((reason) => '<li>' + esc(String(reason)) + '</li>').join("") + '</ul>';
     }
 
+    function renderSummaryAuditRow(row, bucket) {
+      const dateText = (row.approved_start || "-") + " -> " + (row.approved_due || "-");
+      const statusClass = summaryAuditStatusClass(row, bucket);
+      return '<tr>'
+        + '<td>' + summaryAuditJira(row) + '</td>'
+        + '<td><div class="estimate-item-name">' + esc(row.epic_name || row.epic_key || "") + '</div><div class="estimate-item-meta">' + esc(row.project_name || row.project_key || "") + '</div></td>'
+        + '<td>' + esc(dateText) + '</td>'
+        + '<td>' + esc(row.jira_status || "-") + '</td>'
+        + '<td><span class="carry-audit-status ' + esc(statusClass) + '">' + esc(summaryAuditStatusLabel(row, bucket)) + '</span></td>'
+        + '<td class="num">' + esc(summaryAuditEffort(row, "planned")) + '</td>'
+        + '<td class="num">' + esc(summaryAuditEffort(row, "actual")) + '</td>'
+        + '<td>' + summaryAuditReasonList(row) + '</td>'
+        + '</tr>';
+    }
+
+    function renderSummaryAuditSection(title, sectionRows, bucket) {
+      if (!sectionRows.length) return "";
+      const sectionHeader = '<tr class="carry-audit-section-row"><td colspan="8">'
+        + esc(title)
+        + '<span class="carry-audit-section-count">' + sectionRows.length + ' row' + (sectionRows.length === 1 ? "" : "s") + '</span>'
+        + '</td></tr>';
+      return sectionHeader + sectionRows.map((row) => renderSummaryAuditRow(row, bucket)).join("");
+    }
+
     function renderSummaryAuditDrawer(bucket) {
       const meta = SUMMARY_DRAWER_META[bucket] || SUMMARY_DRAWER_META.planned_this_month;
       const rows = summaryAuditRows(bucket);
       const unitLabel = unit === "days" ? "days" : "hours";
-      const includedRows = rows.filter((row) => {
-        if (bucket === "brought_forward") return !!row.brought_forward;
-        if (bucket === "carrying_to_next_month") return !!row.carried_forward;
-        return Array.isArray(row.buckets) && row.buckets.indexOf("planned_this_month") !== -1;
-      });
+      const includedRows = rows.filter((row) => summaryAuditIsIncluded(row, bucket)).sort(summaryAuditSortCompare);
+      const excludedRows = rows.filter((row) => !summaryAuditIsIncluded(row, bucket)).sort(summaryAuditSortCompare);
       const plannedTotal = includedRows.reduce((sum, row) => sum + Number(unit === "days" ? row.planned_days : row.planned_hours || 0), 0);
       const actualTotal = includedRows.reduce((sum, row) => sum + Number(unit === "days" ? row.actual_days : row.actual_hours || 0), 0);
       if (els.estimateDetailControls) els.estimateDetailControls.hidden = true;
@@ -5023,28 +5326,37 @@
         return;
       }
       const note = bucket === "brought_forward"
-        ? '<div class="carry-audit-note">Brought Forward is not a direct copy of the previous month Carrying to Next Month total. It only includes epics whose approved due date is before the selected month, within the overdue lookback window, and not completed before the month started. Epics due in this month stay in Planned This Month; older overdue epics can be hidden by the lookback.</div>'
+        ? '<div class="carry-audit-note">Brought Forward shows ALL epics whose approved due date is before the selected month and that were not completed before the month started — regardless of how far back the due date is. This count exactly matches the previous month\'s Carrying to Next Month total.</div>'
+        : bucket === "carrying_to_next_month"
+        ? '<div class="carry-audit-note">Carrying to Next Month = all epics whose approved due date falls on or before the end of this month and are still unresolved. This total will exactly equal next month\'s Brought Forward count.</div>'
         : "";
       const summary = '<div class="estimate-detail-summary">'
         + '<span class="estimate-detail-chip">' + rows.length + ' row' + (rows.length === 1 ? '' : 's') + '</span>'
         + '<span class="estimate-detail-chip">Included: ' + includedRows.length + '</span>'
+        + '<span class="estimate-detail-chip">Excluded: ' + excludedRows.length + '</span>'
         + '<span class="estimate-detail-chip">Planned: ' + formatNumber(plannedTotal) + ' ' + unitLabel + '</span>'
         + '<span class="estimate-detail-chip">Actual: ' + formatNumber(actualTotal) + ' ' + unitLabel + '</span>'
         + '</div>';
-      const body = rows.map((row) => {
-        const dateText = (row.approved_start || "-") + " -> " + (row.approved_due || "-");
-        const statusClass = summaryAuditStatusClass(row);
-        return '<tr>'
-          + '<td>' + summaryAuditJira(row) + '</td>'
-          + '<td><div class="estimate-item-name">' + esc(row.epic_name || row.epic_key || "") + '</div><div class="estimate-item-meta">' + esc(row.project_name || row.project_key || "") + '</div></td>'
-          + '<td>' + esc(dateText) + '</td>'
-          + '<td>' + esc(row.jira_status || "-") + '</td>'
-          + '<td><span class="carry-audit-status ' + esc(statusClass) + '">' + esc(summaryAuditStatusLabel(row, bucket)) + '</span></td>'
-          + '<td class="num">' + esc(summaryAuditEffort(row, "planned")) + '</td>'
-          + '<td class="num">' + esc(summaryAuditEffort(row, "actual")) + '</td>'
-          + '<td>' + summaryAuditReasonList(row) + '</td>'
-          + '</tr>';
-      }).join("");
+      let body;
+      if (bucket === "carrying_to_next_month") {
+        const overdueRows    = includedRows.filter((r) => r.brought_forward).sort(summaryAuditSortCompare);
+        const inMonthCfRows  = includedRows.filter((r) => !r.brought_forward).sort(summaryAuditSortCompare);
+        body = renderSummaryAuditSection("Previously Overdue (" + overdueRows.length + " epics — already past due, still unresolved)", overdueRows, bucket);
+        if (overdueRows.length && inMonthCfRows.length) {
+          body += '<tr class="carry-audit-section-divider"><td colspan="8" aria-hidden="true"></td></tr>';
+        }
+        body += renderSummaryAuditSection("Due This Month, Not Resolved (" + inMonthCfRows.length + " epics — due on or before month end, not closed)", inMonthCfRows, bucket);
+        if (includedRows.length && excludedRows.length) {
+          body += '<tr class="carry-audit-section-divider"><td colspan="8" aria-hidden="true"></td></tr>';
+        }
+        body += renderSummaryAuditSection("Excluded", excludedRows, bucket);
+      } else {
+        body = renderSummaryAuditSection("Included", includedRows, bucket);
+        if (includedRows.length && excludedRows.length) {
+          body += '<tr class="carry-audit-section-divider"><td colspan="8" aria-hidden="true"></td></tr>';
+        }
+        body += renderSummaryAuditSection("Excluded", excludedRows, bucket);
+      }
       els.estimateDetailBody.innerHTML = note + summary
         + '<div class="estimate-detail-table-wrap"><table class="estimate-detail-table">'
         + '<thead><tr><th>Jira</th><th>Epic</th><th>Approved dates</th><th>Jira status</th><th>Decision</th><th class="num">Planned</th><th class="num">Actual</th><th>Explanation</th></tr></thead>'
@@ -5547,6 +5859,11 @@
       if (els.kpiBroughtForwardPlanned) els.kpiBroughtForwardPlanned.textContent = formatNumber(bh) + " " + suffixShort;
       if (els.kpiCarriedForwardCount) els.kpiCarriedForwardCount.textContent = String(totals.carried_forward_count || 0);
       if (els.kpiCarriedForwardPlanned) els.kpiCarriedForwardPlanned.textContent = formatNumber(ch) + " " + suffixShort;
+      if (els.kpiCfFromBfCount) els.kpiCfFromBfCount.textContent = String(totals.cf_from_bf_count || 0);
+      if (els.kpiCfInMonthCount) els.kpiCfInMonthCount.textContent = String(totals.cf_in_month_count || 0);
+      const urh2 = unit === "days" ? (totals.under_risk_planned_days || 0) : (totals.under_risk_planned_hours || 0);
+      if (els.kpiUnderRiskCount) els.kpiUnderRiskCount.textContent = String(totals.under_risk_count || 0);
+      if (els.kpiUnderRiskPlanned) els.kpiUnderRiskPlanned.textContent = formatNumber(urh2) + " " + suffixShort;
       if (els.kpiPlannedTotal) els.kpiPlannedTotal.textContent = formatNumber(totalPlanned) + " " + suffixShort;
       const pct = totalPlanned > 0 ? Math.min(100, (actualVal / totalPlanned) * 100) : 0;
       const pctText = totalPlanned > 0 ? pct.toFixed(1) + "%" : "—";
@@ -5788,12 +6105,51 @@
       setTxt("resEpicBfPlannedLabel", "Planned (" + efLabel + ")");
       setTxt("resEpicBfActual", formatNumber(bfActual));
       setTxt("resEpicBfActualLabel", "Actual (" + efLabel + ")");
+      // ── BF & CF breakdown · Remaining = Budget − Logged (net; negative = over budget) ──
+      const toUnit = (h) => dayMode ? (Number(h || 0) / 8) : Number(h || 0);
+      function breakdownChip(budgetH, loggedH) {
+        const net = toUnit(budgetH) - toUnit(loggedH);
+        return net >= 0
+          ? "(" + formatNumber(net) + " remaining)"
+          : "(over budget by " + formatNumber(Math.abs(net)) + ")";
+      }
+      function groupNote(budgetH, loggedH, overCount) {
+        const b = toUnit(budgetH), l = toUnit(loggedH), net = b - l;
+        let s = "Remaining = Total Budget − Hours Logged to date   ·   "
+              + formatNumber(b) + " budgeted − " + formatNumber(l) + " logged = "
+              + (net >= 0 ? formatNumber(net) + " " + efLabel + " remaining"
+                          : formatNumber(Math.abs(net)) + " " + efLabel + " over budget");
+        if (overCount > 0) {
+          s += "   ·   " + overCount + " epic" + (overCount === 1 ? "" : "s")
+             + " over budget but still open (counted as 0 remaining)";
+        }
+        return s;
+      }
+
+      setTxt("resEpicBfFreshCount", String(Number(e.bf_fresh_count || 0)));
+      setTxt("resEpicBfFreshPlanned", breakdownChip(e.bf_fresh_budget_hours, e.bf_fresh_logged_hours));
+      setTxt("resEpicBfOlderCount", String(Number(e.bf_older_count || 0)));
+      setTxt("resEpicBfOlderPlanned", breakdownChip(e.bf_older_budget_hours, e.bf_older_logged_hours));
+      setTxt("resEpicBfNote", groupNote(
+        Number(e.bf_fresh_budget_hours || 0) + Number(e.bf_older_budget_hours || 0),
+        Number(e.bf_fresh_logged_hours || 0) + Number(e.bf_older_logged_hours || 0),
+        Number(e.bf_fresh_over_count || 0) + Number(e.bf_older_over_count || 0)
+      ));
 
       setTxt("resEpicCfCount", String(Number(e.cf_count || 0)));
       setTxt("resEpicCfPlanned", formatNumber(cfPlanned));
       setTxt("resEpicCfPlannedLabel", "Planned (" + efLabel + ")");
       setTxt("resEpicCfActual", formatNumber(cfActual));
       setTxt("resEpicCfActualLabel", "Actual (" + efLabel + ")");
+      setTxt("resEpicCfFromBfCount", String(Number(e.cf_from_bf_count || 0)));
+      setTxt("resEpicCfFromBfPlanned", breakdownChip(e.cf_from_bf_budget_hours, e.cf_from_bf_logged_hours));
+      setTxt("resEpicCfInMonthCount", String(Number(e.cf_in_month_count || 0)));
+      setTxt("resEpicCfInMonthPlanned", breakdownChip(e.cf_in_month_budget_hours, e.cf_in_month_logged_hours));
+      setTxt("resEpicCfNote", groupNote(
+        Number(e.cf_from_bf_budget_hours || 0) + Number(e.cf_in_month_budget_hours || 0),
+        Number(e.cf_from_bf_logged_hours || 0) + Number(e.cf_in_month_logged_hours || 0),
+        Number(e.cf_from_bf_over_count || 0) + Number(e.cf_in_month_over_count || 0)
+      ));
     }
 
     function openHeadcountDrawer() {
@@ -6606,7 +6962,7 @@
         + '<tbody>' + body + '</tbody></table></div>';
     }
 
-    function rowToHtml(row) {
+    function rowToHtml(row, sectionType) {
       const monthYm = els.month ? String(els.month.value || "").trim() : "";
       const epicKey = row.epic_key || "";
       const childId = "child-" + epicKey.replace(/[^A-Za-z0-9]/g, "_");
@@ -6616,11 +6972,32 @@
           + '<span class="material-symbols-outlined">expand_more</span></button>'
         : '<span style="width:22px;display:inline-block;flex:0 0 auto;"></span>';
       const epicTitle = esc(row.epic_name || epicKey);
+
+      // months_overdue badge + persistent label for confirmed delayed rows
+      const mo = sectionType === 'confirmed-delayed' ? Number(row.months_overdue || 0) : 0;
+      const isPersistent = mo >= 2;
+      const monthsOverdueBadge = mo > 0
+        ? '<span class="months-overdue-badge">' + mo + 'm overdue</span>'
+        : '';
+      const persistentBadge = isPersistent
+        ? '<span class="persistent-badge"><span class="material-symbols-outlined">repeat</span>Persistently Incomplete</span>'
+        : '';
+
+      // risk reason chips for under-risk rows
+      const riskChipsHtml = (sectionType === 'under-risk' && Array.isArray(row.carry_forward_reasons) && row.carry_forward_reasons.length)
+        ? '<div class="risk-reason-chips">'
+          + row.carry_forward_reasons.map(function(r) {
+              return '<span class="risk-reason-chip"><span class="material-symbols-outlined">warning</span>' + esc(r) + '</span>';
+            }).join('')
+          + '</div>'
+        : '';
+
+      const epicTitleHtml = '<div class="epic-title">' + epicTitle + monthsOverdueBadge + persistentBadge + '</div>' + riskChipsHtml;
       const epicCell = row.jira_url
-        ? '<div class="epic-cell">' + toggleBtn + '<div><div class="epic-title">' + epicTitle + '</div></div>'
+        ? '<div class="epic-cell">' + toggleBtn + '<div>' + epicTitleHtml + '</div>'
           + '<a class="epic-open-link" href="' + esc(row.jira_url) + '" target="_blank" rel="noopener" aria-label="Open epic in Jira">'
           + '<span class="material-symbols-outlined" aria-hidden="true">open_in_new</span></a></div>'
-        : '<div class="epic-cell">' + toggleBtn + '<div class="epic-title">' + epicTitle + '</div></div>';
+        : '<div class="epic-cell">' + toggleBtn + '<div>' + epicTitleHtml + '</div></div>';
       const projectKey = String(row.project_key || "").toUpperCase();
       const projectHex = projectColor(projectKey);
       const projectStyle = '--project-color:' + projectHex + ';--project-bg:' + colorToSoftBg(projectHex);
@@ -6648,7 +7025,12 @@
         if (totalOverburn) h += '<span class="overburn-pill ob-total" title="' + esc(tTip) + '">⚠ Total +' + tPct + '%</span>';
         return h || '<span style="color:#94a3b8;">—</span>';
       })();
-      const rowClass = monthOverburn ? ' class="row-overburn-month"' : (totalOverburn ? ' class="row-overburn-total"' : '');
+      const sectionRowClass = sectionType === 'confirmed-delayed'
+        ? (isPersistent ? 'row-confirmed-delayed row-persistent' : 'row-confirmed-delayed')
+        : sectionType === 'under-risk' ? 'row-under-risk' : '';
+      const overburnRowClass = monthOverburn ? 'row-overburn-month' : totalOverburn ? 'row-overburn-total' : '';
+      const combinedRowClass = [overburnRowClass, sectionRowClass].filter(Boolean).join(' ');
+      const rowClass = combinedRowClass ? ' class="' + combinedRowClass + '"' : '';
       const rowAttrs = rowClass
         + ' data-project-key="' + esc(projectKey) + '"'
         + ' style="' + esc(rowProjectStyle) + '"';
@@ -6665,7 +7047,7 @@
         + '<td class="num">' + formatNumber(effortValue(row, "planned")) + '</td>'
         + '<td class="' + actualCellClass + '">' + formatNumber(effortValue(row, "actual")) + '</td>'
         + '<td class="num">' + formatNumber(tActual) + '</td>'
-        + '<td>' + (row.brought_forward ? '<span class="pill info">Brought forward</span>' : '<span class="pill good">No</span>') + '</td>'
+        + '<td>' + (row.brought_forward ? '<span class="pill bad">Confirmed Delayed</span>' : '<span class="pill good">No</span>') + '</td>'
         + '<td>' + (function() {
             // Start Signal: start was in this month — did the epic actually begin?
             if (!row.approved_start || row.approved_start.slice(0, 7) > monthYm)
@@ -6731,32 +7113,40 @@
         return;
       }
 
-      const bfRows = sortByStatus(displayRows.filter((r) => r.brought_forward));
-      const cfRows = sortByStatus(displayRows.filter((r) => r.carried_forward));
-      const monthRows = sortByStatus(displayRows.filter((r) => !r.brought_forward && !r.carried_forward));
+      // Three clean non-overlapping sections — no row appears in more than one.
+      const confirmedDelayedRows = sortByStatus(displayRows.filter((r) => r.brought_forward));
+      const underRiskRows = sortByStatus(displayRows.filter((r) => !r.brought_forward && r.carried_forward));
+      const onTrackRows = sortByStatus(displayRows.filter((r) => !r.brought_forward && !r.carried_forward));
       const monthName = monthDisplayName(els.month ? els.month.value : "");
 
-      function groupHeader(cls, iconName, label, count) {
+      function groupHeader(cls, iconName, label, count, sublabel) {
         return '<tr class="group-header-row ' + cls + '">'
           + '<td colspan="15"><div class="group-label">'
           + '<span class="group-icon material-symbols-outlined" aria-hidden="true">' + iconName + '</span>'
           + '<span class="group-title">' + esc(label) + '</span>'
           + '<span class="group-badge">' + count + '</span>'
+          + (sublabel ? '<span style="font-size:0.7rem;font-weight:500;text-transform:none;letter-spacing:0;opacity:0.75;margin-left:6px;">' + esc(sublabel) + '</span>' : '')
           + '</div></td></tr>';
       }
 
       const parts = [];
-      if (bfRows.length) {
-        parts.push(groupHeader("group-bf", "history", "Brought Forward - Overdue Epics", bfRows.length));
-        bfRows.forEach((r) => parts.push(rowToHtml(r)));
+
+      // ── Section 1: Confirmed Delayed — past due, not resolved ──────
+      if (confirmedDelayedRows.length) {
+        parts.push(groupHeader("group-confirmed-delayed", "error", "Confirmed Delayed", confirmedDelayedRows.length, "Due date passed — must be completed"));
+        confirmedDelayedRows.forEach((r) => parts.push(rowToHtml(r, "confirmed-delayed")));
       }
-      if (monthRows.length) {
-        parts.push(groupHeader("group-month", "calendar_month", monthName + " Epics", monthRows.length));
-        monthRows.forEach((r) => parts.push(rowToHtml(r)));
+
+      // ── Section 2: Under Risk — in-month epics with risk signals ───
+      if (underRiskRows.length) {
+        parts.push(groupHeader("group-under-risk", "warning", "Under Risk", underRiskRows.length, "In-month epics showing risk signals"));
+        underRiskRows.forEach((r) => parts.push(rowToHtml(r, "under-risk")));
       }
-      if (cfRows.length) {
-        parts.push(groupHeader("group-cf", "trending_flat", "Carried Forward - Slipping Epics", cfRows.length));
-        cfRows.forEach((r) => parts.push(rowToHtml(r)));
+
+      // ── Section 3: On Track — in-month epics, no risk signals ──────
+      if (onTrackRows.length) {
+        parts.push(groupHeader("group-on-track", "check_circle", monthName + " — On Track", onTrackRows.length, "No risk signals detected"));
+        onTrackRows.forEach((r) => parts.push(rowToHtml(r, "on-track")));
       }
 
       els.rows.innerHTML = parts.join("");
@@ -6896,8 +7286,7 @@
       params.set("epic_mode", epicMode);
       params.set("logged_hours_mode", loggedHoursMode);
       if (epicMode === "all_epics" && els.onlyFromPlanner && els.onlyFromPlanner.checked) params.set("only_from_planner", "1");
-      const overdueThresholdVal = els.overdueThreshold ? parseInt(els.overdueThreshold.value, 10) : 30;
-      params.set("overdue_threshold_days", String(isNaN(overdueThresholdVal) || overdueThresholdVal < 1 ? 30 : overdueThresholdVal));
+
       if (els.includeOnHold && els.includeOnHold.checked) params.set("include_on_hold", "1");
       if (els.includeBugSubtasks && !els.includeBugSubtasks.checked) params.set("include_bug_subtasks", "0");
       if (dfDateFilter === "range") params.set("date_filter", "range");
@@ -7057,6 +7446,10 @@
         if (els.kpiBroughtForwardPlanned) els.kpiBroughtForwardPlanned.textContent = formatNumber(0) + " " + suffixShort;
         if (els.kpiCarriedForwardCount) els.kpiCarriedForwardCount.textContent = "0";
         if (els.kpiCarriedForwardPlanned) els.kpiCarriedForwardPlanned.textContent = formatNumber(0) + " " + suffixShort;
+        if (els.kpiCfFromBfCount) els.kpiCfFromBfCount.textContent = "0";
+        if (els.kpiCfInMonthCount) els.kpiCfInMonthCount.textContent = "0";
+        if (els.kpiUnderRiskCount) els.kpiUnderRiskCount.textContent = "0";
+        if (els.kpiUnderRiskPlanned) els.kpiUnderRiskPlanned.textContent = formatNumber(0) + " " + suffixShort;
         if (els.kpiPlannedTotal) els.kpiPlannedTotal.textContent = formatNumber(0) + " " + suffixShort;
         if (els.kpiCompletionPct) els.kpiCompletionPct.textContent = "—";
         if (els.kpiCompletionBar) els.kpiCompletionBar.style.width = "0%";
@@ -7725,16 +8118,16 @@
         parts.push('<div style="padding:28px;text-align:center;color:var(--muted);font-size:0.9rem;">No epics to show in Gantt view.</div>');
       } else {
         if (bfRows.length) {
-          parts.push(groupRowHtml("group-bf", "history", "Brought Forward — Overdue Epics", bfRows.length));
+          parts.push(groupRowHtml("group-confirmed-delayed", "error", "Confirmed Delayed", bfRows.length));
           bfRows.forEach(function(r) { parts.push(epicRowHtml(r)); });
         }
-        if (monthRows.length) {
-          parts.push(groupRowHtml("group-month", "calendar_month", curMonthName + " Epics", monthRows.length));
-          monthRows.forEach(function(r) { parts.push(epicRowHtml(r)); });
-        }
         if (cfRows.length) {
-          parts.push(groupRowHtml("group-cf", "trending_flat", "Carried Forward — Slipping Epics", cfRows.length));
+          parts.push(groupRowHtml("group-under-risk", "warning", "Under Risk", cfRows.length));
           cfRows.forEach(function(r) { parts.push(epicRowHtml(r)); });
+        }
+        if (monthRows.length) {
+          parts.push(groupRowHtml("group-on-track", "check_circle", curMonthName + " — On Track", monthRows.length));
+          monthRows.forEach(function(r) { parts.push(epicRowHtml(r)); });
         }
       }
 
@@ -7902,9 +8295,18 @@
         : "";
 
       let catBadge = "";
-      if (row.brought_forward) catBadge = '<span class="pill warn" style="font-size:0.72rem;">Brought Forward</span>';
-      else if (row.carried_forward) catBadge = '<span class="pill danger" style="font-size:0.72rem;">Carried Forward</span>';
-      else catBadge = '<span class="pill info" style="font-size:0.72rem;">This Month</span>';
+      if (row.brought_forward) {
+        const mo = Number(row.months_overdue || 0);
+        const moText = mo > 0 ? ' · ' + mo + 'm overdue' : '';
+        catBadge = '<span class="pill bad" style="font-size:0.72rem;">Confirmed Delayed' + moText + '</span>';
+        if (mo >= 2) {
+          catBadge += '<span class="persistent-badge" style="margin-left:6px;"><span class="material-symbols-outlined">repeat</span>Persistently Incomplete</span>';
+        }
+      } else if (row.carried_forward) {
+        catBadge = '<span class="pill warn" style="font-size:0.72rem;">Under Risk</span>';
+      } else {
+        catBadge = '<span class="pill good" style="font-size:0.72rem;">On Track</span>';
+      }
 
       document.getElementById("epic-detail-header").innerHTML =
         '<div class="epic-detail-header-top">'
