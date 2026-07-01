@@ -39,6 +39,11 @@ Epic Explorer is a canonical-database report for inspecting every Jira epic and 
 | Table | Jira Epics' Planned Dates | Date range | Blank when missing | Canonical epic `start_date` to `due_date`. |
 | Table | Total Actual Hours | Numeric hours | 0 | Lifetime sum of worklog hours on descendant subtasks and bug subtasks. |
 | Table | Actual Complete Date | Date | Blank when missing | Later of descendant subtask last worklog date and epic `resolved_stable_since_date`. |
+| Table | Planned vs Actual Hours | Numeric pair | 0 / 0 | Compares planned total hours with lifetime actual hours. Planned total uses TK budget first, then Jira epic original estimate, then story estimate total, then subtask estimate total. |
+| Table | Planned vs Actual Delivery | Date pair | Blank | Compares planned epic due date with actual complete date. |
+| Table | SV Date | Signed days | Blank when no due date | Schedule variance by date: planned due date minus actual complete date, or current date for incomplete epics. Negative values mean behind schedule. |
+| Table | SV Hours | Signed hours and percent | Blank when no planned-to-date hours | Schedule variance by effort: actual-to-date hours minus planned-to-date hours. Negative values mean behind schedule. |
+| Table | Est. Accuracy | Percent | Blank when no actual hours | Estimated hours divided by actual hours multiplied by 100. The ideal range is 85% to 115%; below 70% indicates a broken estimation process. |
 | Table | Epic Status | Status pill | Derived | Canonical epic `status`. |
 | Table | Headcount | Integer | 0 | Distinct worklog authors on descendant subtasks and bug subtasks. |
 
@@ -53,6 +58,9 @@ Epic Explorer is a canonical-database report for inspecting every Jira epic and 
 - Actual complete date mirrors existing completion logic: use the later of last logged date and resolved-stable-since when both exist, otherwise use whichever exists.
 - Drawer month plan vs actual compares month-bucketed planned original estimates with worklogs by month.
 - Drawer month plan vs actual compares month-bucketed planned original estimates with worklogs by month and can be switched between bar and line chart views.
+- Drawer Schedule Variance KPIs show date SV, hour SV, planned vs actual hours, planned vs actual delivery date, estimation accuracy, the last-three-month SV trend, and SV per assignee working on the epic.
+- SV trend uses the latest three months available up to the epic status month. Trend is improving when the latest signed hour SV is higher than the first month in the window, declining when lower, and flat when unchanged.
+- SV per assignee compares each assignee's planned-to-date estimate allocation with actual worklog hours on the epic.
 - Drawer Gantt uses month, week, and day header rows. Each resource/day cell is green for actual work, orange for planned leave, red for unplanned leave, and mixed when more than one signal lands on the same resource/day.
 - Leave overlays and the Leaves By Resource table are limited to people assigned subtasks in the selected epic; unrelated leave-only resources are not shown.
 - Estimate quality counts subtasks whose original estimate equals their parent work-item estimate and subtasks whose logged actuals exceed their own original estimate. The section shows scorecards plus task-level detail rows.

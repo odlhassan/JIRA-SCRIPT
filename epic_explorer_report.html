@@ -126,7 +126,7 @@
     }
     .summary-strip {
       display: grid;
-      grid-template-columns: repeat(6, minmax(130px, 1fr));
+      grid-template-columns: repeat(8, minmax(130px, 1fr));
       gap: 8px;
       margin-bottom: 12px;
     }
@@ -147,7 +147,7 @@
     }
     table {
       width: 100%;
-      min-width: 1440px;
+      min-width: 1840px;
       border-collapse: collapse;
     }
     th, td {
@@ -250,6 +250,20 @@
     .pill.green { background: #dcfce7; color: #166534; }
     .pill.red { background: #fee2e2; color: #991b1b; }
     .pill.blue { background: #dbeafe; color: #1d4ed8; }
+    .kpi-text {
+      display: inline-flex;
+      flex-direction: column;
+      gap: 2px;
+      line-height: 1.2;
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums;
+    }
+    .kpi-text strong { font-size: 12px; }
+    .kpi-text span { color: var(--muted); font-size: 11px; }
+    .kpi-text.good strong { color: var(--green); }
+    .kpi-text.bad strong { color: var(--red); }
+    .kpi-text.warn strong { color: var(--orange); }
+    .kpi-text.neutral strong { color: #334155; }
     .muted { color: var(--muted); }
     .drilldown-row td {
       background: #fbfcff;
@@ -522,12 +536,17 @@
             <th>Jira Epics' Planned Dates</th>
             <th>Total Actual Hours</th>
             <th>Actual Complete Date</th>
+            <th>Planned vs Actual Hours</th>
+            <th>Planned vs Actual Delivery</th>
+            <th>SV Date</th>
+            <th>SV Hours</th>
+            <th>Est. Accuracy</th>
             <th>Epic Status</th>
             <th>Headcount</th>
           </tr>
         </thead>
         <tbody id="epic-tbody">
-          <tr><td colspan="13" class="muted">Loading...</td></tr>
+          <tr><td colspan="18" class="muted">Loading...</td></tr>
         </tbody>
       </table>
     </section>
@@ -578,6 +597,41 @@
     const hours = (v) => Number.isFinite(n(v)) ? n(v).toFixed(2) + "h" : "-";
     const dateText = (v) => String(v || "").slice(0, 10) || "-";
     const keyPart = (v) => String(v || "").replace(/[^A-Za-z0-9_-]/g, "_");
+    const pct = (v) => v == null || v === "" ? "-" : `${n(v).toFixed(1)}%`;
+    function kpiClass(position, value){
+      if (position === "ahead" || position === "ideal") return "good";
+      if (position === "behind" || position === "broken") return "bad";
+      if (position === "outside_ideal") return "warn";
+      if (n(value) < 0) return "bad";
+      if (n(value) > 0) return "good";
+      return "neutral";
+    }
+    function signedHours(value){
+      if (value == null || value === "") return "-";
+      const val = n(value);
+      return `${val > 0 ? "+" : ""}${val.toFixed(2)}h`;
+    }
+    function signedDays(value){
+      if (value == null || value === "") return "-";
+      const val = n(value);
+      return `${val > 0 ? "+" : ""}${val.toFixed(0)}d`;
+    }
+    function positionText(position){
+      return ({ahead:"ahead", behind:"behind", on_track:"on track", ideal:"ideal", broken:"broken", outside_ideal:"outside ideal", no_actuals:"no actuals", insufficient_data:"insufficient data", improving:"improving", declining:"declining", flat:"flat"})[position] || String(position || "-").replace(/_/g, " ");
+    }
+    function kpiText(primary, secondary, cls){
+      return `<span class="kpi-text ${esc(cls || "neutral")}"><strong>${esc(primary)}</strong><span>${esc(secondary || "")}</span></span>`;
+    }
+    function scheduleDaysText(row){
+      return kpiText(signedDays(row.schedule_variance_days), positionText(row.schedule_variance_date_position), kpiClass(row.schedule_variance_date_position, row.schedule_variance_days));
+    }
+    function scheduleHoursText(row){
+      const secondary = row.schedule_variance_pct == null ? positionText(row.schedule_variance_hours_position) : `${pct(row.schedule_variance_pct)} ${positionText(row.schedule_variance_hours_position)}`;
+      return kpiText(signedHours(row.schedule_variance_hours), secondary, kpiClass(row.schedule_variance_hours_position, row.schedule_variance_hours));
+    }
+    function estimationAccuracyText(row){
+      return kpiText(pct(row.estimation_accuracy_pct), positionText(row.estimation_accuracy_status), kpiClass(row.estimation_accuracy_status, row.estimation_accuracy_pct));
+    }
     function selectedProjectCsv(){ return Array.from(state.appliedProjects).sort().join(","); }
     function apiUrl(){
       const params = new URLSearchParams();
@@ -589,7 +643,7 @@
       return "/api/epic-explorer/summary" + (params.toString() ? "?" + params.toString() : "");
     }
     async function loadReport(){
-      els.tbody.innerHTML = '<tr><td colspan="13" class="muted">Loading...</td></tr>';
+      els.tbody.innerHTML = '<tr><td colspan="18" class="muted">Loading...</td></tr>';
       const resp = await fetch(apiUrl(), {headers: {"Accept": "application/json"}});
       const data = await resp.json();
       if (!resp.ok || !data.ok) throw new Error(data.error || "Failed to load Epic Explorer");
@@ -615,6 +669,8 @@
         ["Subtasks", t.subtask_count || 0],
         ["TK Budget", hours(t.tk_budget_hours)],
         ["Actual Hours", hours(t.total_actual_hours)],
+        ["SV Hours", `${signedHours(t.schedule_variance_hours)} / ${pct(t.schedule_variance_pct)}`],
+        ["Est. Accuracy", pct(t.estimation_accuracy_pct)],
         ["Headcount", t.headcount || 0]
       ];
       els.summary.innerHTML = cells.map(([label, value]) => `<div class="metric"><div class="label">${esc(label)}</div><div class="value">${esc(value)}</div></div>`).join("");
@@ -649,12 +705,17 @@
         <td>${esc(planned)}</td>
         <td class="num">${hours(row.total_actual_hours)}</td>
         <td>${esc(dateText(row.actual_complete_date))}</td>
+        <td>${kpiText(`${hours(row.planned_total_hours)} / ${hours(row.total_actual_hours)}`, "planned / actual", "neutral")}</td>
+        <td>${kpiText(`${dateText(row.planned_due)} / ${dateText(row.actual_complete_date)}`, "planned / actual", "neutral")}</td>
+        <td>${scheduleDaysText(row)}</td>
+        <td>${scheduleHoursText(row)}</td>
+        <td>${estimationAccuracyText(row)}</td>
         <td>${statusPill(row.epic_status)}</td>
         <td class="num">${esc(row.headcount || 0)}</td>
       </tr>${isOpen ? drilldownRow(row) : ""}`;
     }
     function drilldownRow(row){
-      return `<tr class="drilldown-row"><td colspan="13"><div class="nested">${storyTable(row)}</div></td></tr>`;
+      return `<tr class="drilldown-row"><td colspan="18"><div class="nested">${storyTable(row)}</div></td></tr>`;
     }
     function storyTable(row){
       const stories = row.stories || [];
@@ -695,7 +756,7 @@
     }
     function renderTable(){
       const rows = state.payload?.rows || [];
-      els.tbody.innerHTML = rows.length ? rows.map((row, index) => epicRow(row, index + 1)).join("") : '<tr><td colspan="13" class="muted">No epics match the current filters.</td></tr>';
+      els.tbody.innerHTML = rows.length ? rows.map((row, index) => epicRow(row, index + 1)).join("") : '<tr><td colspan="18" class="muted">No epics match the current filters.</td></tr>';
     }
     function findEpic(key){ return (state.payload?.rows || []).find((row) => String(row.epic_key) === String(key)); }
     function renderAll(){
@@ -859,6 +920,39 @@
         <div class="scorecard"><div class="score-label">Overrun rate</div><div class="score-value">${n(eq.over_original_estimate_pct).toFixed(1)}%</div></div>
       </div>`;
     }
+    function scheduleVarianceScorecards(row, sv){
+      const trend = sv.trend_3_months || {};
+      return `<div class="scorecards">
+        <div class="scorecard"><div class="score-label">SV By Date</div><div class="score-value">${scheduleDaysText(row)}</div></div>
+        <div class="scorecard"><div class="score-label">SV By Hours</div><div class="score-value">${scheduleHoursText(row)}</div></div>
+        <div class="scorecard"><div class="score-label">Planned vs Actual Hours</div><div class="score-value">${hours(sv.planned_total_hours)} / ${hours(sv.actual_total_hours)}</div></div>
+        <div class="scorecard"><div class="score-label">Planned vs Actual Delivery</div><div class="score-value">${esc(dateText(sv.planned_due))} / ${esc(dateText(sv.actual_complete_date))}</div></div>
+        <div class="scorecard"><div class="score-label">Estimation Accuracy</div><div class="score-value">${estimationAccuracyText(row)}</div></div>
+        <div class="scorecard"><div class="score-label">3 Month SV Trend</div><div class="score-value">${kpiText(positionText(trend.direction), signedHours(trend.delta_hours), kpiClass(trend.direction, trend.delta_hours))}</div></div>
+      </div>`;
+    }
+    function scheduleVarianceSection(row){
+      const sv = row.analytics?.schedule_variance || {};
+      const trend = sv.trend_3_months || {};
+      const trendRows = trend.months || [];
+      return `${scheduleVarianceScorecards(row, sv)}
+        <div class="detail-box"><h4 class="chart-title">SV Trend Over Last 3 Months</h4>${simpleTable(trendRows, [
+          {key:"month", label:"Month"},
+          {key:"planned_hours", label:"Planned", num:true, format:hours},
+          {key:"actual_hours", label:"Actual", num:true, format:hours},
+          {key:"schedule_variance_hours", label:"SV Hours", num:true, format:signedHours},
+          {key:"schedule_variance_pct", label:"SV %", num:true, format:pct},
+          {key:"schedule_position", label:"Position", format:positionText}
+        ])}</div>
+        <div class="detail-box"><h4 class="chart-title">SV Per Assignee</h4>${simpleTable(sv.assignees || [], [
+          {key:"assignee", label:"Assignee"},
+          {key:"planned_to_date_hours", label:"Planned To Date", num:true, format:hours},
+          {key:"actual_to_date_hours", label:"Actual To Date", num:true, format:hours},
+          {key:"schedule_variance_hours", label:"SV Hours", num:true, format:signedHours},
+          {key:"schedule_variance_pct", label:"SV %", num:true, format:pct},
+          {key:"schedule_position", label:"Position", format:positionText}
+        ])}</div>`;
+    }
     function renderDrawer(row){
       if (!row) return;
       const a = row.analytics || {};
@@ -868,6 +962,7 @@
         <button class="icon-btn" id="drawer-close" title="Close"><span class="material-symbols-outlined">close</span></button>
       </div>
       <div class="chart-grid">
+        <section class="chart-panel wide"><h3 class="chart-title">Schedule Variance KPIs</h3>${scheduleVarianceSection(row)}</section>
         <section class="chart-panel wide"><div class="chart-head"><h3 class="chart-title">Month Plan vs Actual</h3><div class="chart-toggle"><button data-plan-mode="bar" class="${state.planActualMode === "bar" ? "active" : ""}">Bar</button><button data-plan-mode="line" class="${state.planActualMode === "line" ? "active" : ""}">Line</button></div></div>${planActualChart(a.monthly_plan_actual || [])}</section>
         <section class="chart-panel wide"><h3 class="chart-title">Daily Work And Leave Gantt</h3>${ganttChart(a.gantt || {})}</section>
         <section class="chart-panel wide"><h3 class="chart-title">Task Completion</h3>${taskCompletionSection(a.completion_stats || [])}</section>
@@ -904,8 +999,8 @@
     }
     function downloadCsv(){
       const rows = state.payload?.rows || [];
-      const headers = ["Epic Key","Epic Name","Assignee","Product","TK Budget Hours","Jira Original Estimate","Story Estimates","Subtask Estimates","Planned Start","Planned Due","Total Actual Hours","Actual Complete Date","Epic Status","Headcount"];
-      const csvRows = [headers, ...rows.map((r) => [r.epic_key, r.epic_name, r.assignee, r.product, r.tk_budget_hours, r.jira_original_estimate_hours, r.story_estimate_hours, r.subtask_estimate_hours, r.planned_start, r.planned_due, r.total_actual_hours, r.actual_complete_date, r.epic_status, r.headcount])];
+      const headers = ["Epic Key","Epic Name","Assignee","Product","TK Budget Hours","Jira Original Estimate","Story Estimates","Subtask Estimates","Planned Start","Planned Due","Planned Total Hours","Total Actual Hours","Actual Complete Date","Schedule Variance Days","Planned To Date Hours","Actual To Date Hours","Schedule Variance Hours","Schedule Variance %","Estimation Accuracy %","Epic Status","Headcount"];
+      const csvRows = [headers, ...rows.map((r) => [r.epic_key, r.epic_name, r.assignee, r.product, r.tk_budget_hours, r.jira_original_estimate_hours, r.story_estimate_hours, r.subtask_estimate_hours, r.planned_start, r.planned_due, r.planned_total_hours, r.total_actual_hours, r.actual_complete_date, r.schedule_variance_days, r.planned_to_date_hours, r.actual_to_date_hours, r.schedule_variance_hours, r.schedule_variance_pct, r.estimation_accuracy_pct, r.epic_status, r.headcount])];
       const csv = csvRows.map((row) => row.map((v) => `"${String(v ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
       const blob = new Blob([csv], {type: "text/csv;charset=utf-8"});
       const url = URL.createObjectURL(blob);
@@ -937,20 +1032,20 @@
     document.addEventListener("click", (ev) => {
       if (!els.projectPicker.contains(ev.target)) els.projectPicker.classList.remove("open");
     });
-    els.applyDates.addEventListener("click", () => loadReport().catch((err) => { els.tbody.innerHTML = `<tr><td colspan="13">${esc(err.message)}</td></tr>`; }));
+    els.applyDates.addEventListener("click", () => loadReport().catch((err) => { els.tbody.innerHTML = `<tr><td colspan="18">${esc(err.message)}</td></tr>`; }));
     els.clearDates.addEventListener("click", () => {
       els.from.value = "";
       els.to.value = "";
-      loadReport().catch((err) => { els.tbody.innerHTML = `<tr><td colspan="13">${esc(err.message)}</td></tr>`; });
+      loadReport().catch((err) => { els.tbody.innerHTML = `<tr><td colspan="18">${esc(err.message)}</td></tr>`; });
     });
     els.applyProjects.addEventListener("click", () => {
       state.appliedProjects = new Set(state.pendingProjects);
-      loadReport().catch((err) => { els.tbody.innerHTML = `<tr><td colspan="13">${esc(err.message)}</td></tr>`; });
+      loadReport().catch((err) => { els.tbody.innerHTML = `<tr><td colspan="18">${esc(err.message)}</td></tr>`; });
     });
     els.clearProjects.addEventListener("click", () => {
       state.pendingProjects.clear();
       state.appliedProjects.clear();
-      loadReport().catch((err) => { els.tbody.innerHTML = `<tr><td colspan="13">${esc(err.message)}</td></tr>`; });
+      loadReport().catch((err) => { els.tbody.innerHTML = `<tr><td colspan="18">${esc(err.message)}</td></tr>`; });
     });
     els.csv.addEventListener("click", downloadCsv);
     els.overlay.addEventListener("click", (ev) => { if (ev.target === els.overlay) closeDrawer(); });
@@ -964,7 +1059,7 @@
       els.drawer.style.width = `${width}px`;
     });
     document.addEventListener("mouseup", () => { state.resizing = false; });
-    loadReport().catch((err) => { els.meta.textContent = "Failed"; els.tbody.innerHTML = `<tr><td colspan="13">${esc(err.message)}</td></tr>`; });
+    loadReport().catch((err) => { els.meta.textContent = "Failed"; els.tbody.innerHTML = `<tr><td colspan="18">${esc(err.message)}</td></tr>`; });
   </script>
 </body>
 </html>

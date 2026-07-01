@@ -32,6 +32,10 @@ def _round_hours(value: Any) -> float:
     return round(_to_float(value) + 1e-9, 2)
 
 
+def _round_pct(value: Any) -> float:
+    return round(_to_float(value) + 1e-9, 1)
+
+
 def _parse_iso_date(value: Any) -> date | None:
     text = _to_text(value)
     if not text:
@@ -165,6 +169,10 @@ def _month_bounds(month_code: str) -> tuple[date, date]:
     return date(year, month, 1), date(year, month, calendar.monthrange(year, month)[1])
 
 
+def _month_end(month_code: str) -> date:
+    return _month_bounds(month_code)[1]
+
+
 def _iter_months(start_day: date, end_day: date) -> list[str]:
     months: list[str] = []
     y, m = start_day.year, start_day.month
@@ -176,6 +184,34 @@ def _iter_months(start_day: date, end_day: date) -> list[str]:
         else:
             m += 1
     return months
+
+
+def _planned_effort_hours(*values: Any) -> float:
+    for value in values:
+        if value is None:
+            continue
+        hours = _round_hours(value)
+        if hours > 0:
+            return hours
+    return 0.0
+
+
+def _schedule_position(value: float) -> str:
+    if value < -0.01:
+        return "behind"
+    if value > 0.01:
+        return "ahead"
+    return "on_track"
+
+
+def _estimate_accuracy_status(value: float | None) -> str:
+    if value is None:
+        return "no_actuals"
+    if value < 70:
+        return "broken"
+    if 85 <= value <= 115:
+        return "ideal"
+    return "outside_ideal"
 
 
 def _load_canonical_rows(db_path: Path, run_id: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -557,6 +593,42 @@ def build_epic_explorer_payload(
             }
             for month in month_codes
         ]
+        for item in monthly_plan_actual:
+            planned = _to_float(item.get("planned_hours"))
+            actual = _to_float(item.get("actual_hours"))
+            variance = _round_hours(actual - planned)
+            item["schedule_variance_hours"] = variance
+            item["schedule_variance_pct"] = _round_pct((variance / planned) * 100) if planned else None
+            item["schedule_position"] = _schedule_position(variance)
+
+        status_day = _parse_iso_date(completion["actual_complete_date"]) or date.today()
+        status_month = _month_code(status_day)
+        planned_to_date_hours = _round_hours(
+            sum(_to_float(item.get("planned_hours")) for item in monthly_plan_actual if _month_end(item["month"]) <= _month_end(status_month))
+        )
+        actual_to_date_hours = _round_hours(
+            sum(_to_float(item.get("actual_hours")) for item in monthly_plan_actual if _month_end(item["month"]) <= _month_end(status_month))
+        )
+        schedule_variance_hours = _round_hours(actual_to_date_hours - planned_to_date_hours)
+        schedule_variance_pct = _round_pct((schedule_variance_hours / planned_to_date_hours) * 100) if planned_to_date_hours else None
+        planned_due_day = _parse_iso_date(epic.get("due_date"))
+        schedule_variance_days = (planned_due_day - status_day).days if planned_due_day else None
+        planned_total_hours = _planned_effort_hours(tk_budget_hours, epic.get("original_estimate_hours"), story_estimate_hours, subtask_estimate_hours)
+        estimation_accuracy_pct = _round_pct((planned_total_hours / total_actual_hours) * 100) if total_actual_hours else None
+        recent_sv_trend = [item for item in monthly_plan_actual if _month_end(item["month"]) <= _month_end(status_month)][-3:]
+        if len(recent_sv_trend) >= 2:
+            first_sv = _to_float(recent_sv_trend[0].get("schedule_variance_hours"))
+            last_sv = _to_float(recent_sv_trend[-1].get("schedule_variance_hours"))
+            trend_delta = _round_hours(last_sv - first_sv)
+            trend_direction = "improving" if trend_delta > 0.01 else ("declining" if trend_delta < -0.01 else "flat")
+        else:
+            trend_delta = 0.0
+            trend_direction = "insufficient_data"
+        schedule_variance_trend = {
+            "months": recent_sv_trend,
+            "delta_hours": trend_delta,
+            "direction": trend_direction,
+        }
 
         leaves_for_epic = []
         for leaf in leave_rows:
@@ -608,6 +680,46 @@ def build_epic_explorer_payload(
             )
 
         resource_utilization: list[dict[str, Any]] = []
+        planned_by_assignee_month: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
+        for subtask in subtasks:
+            assignee = _to_text(subtask.get("assignee")) or "Unassigned"
+            for month in month_codes:
+                ms, me = _month_bounds(month)
+                if _date_range_overlaps(subtask.get("start_date"), subtask.get("due_date"), ms, me):
+                    planned_by_assignee_month[assignee][month] += _to_float(subtask.get("original_estimate_hours"))
+        story_keys_with_subtasks = {
+            _to_text(subtask.get("story_key")).upper() or _to_text(subtask.get("parent_issue_key")).upper()
+            for subtask in subtasks
+        }
+        for story in stories:
+            story_key = _to_text(story.get("issue_key")).upper()
+            if story_key in story_keys_with_subtasks:
+                continue
+            assignee = _to_text(story.get("assignee")) or "Unassigned"
+            for month in month_codes:
+                ms, me = _month_bounds(month)
+                if _date_range_overlaps(story.get("start_date"), story.get("due_date"), ms, me):
+                    planned_by_assignee_month[assignee][month] += _to_float(story.get("original_estimate_hours"))
+
+        assignee_schedule_variance: list[dict[str, Any]] = []
+        assignee_names = set(planned_by_assignee_month.keys()) | set(actual_by_epic_author.get(epic_key, {}).keys())
+        for assignee in sorted(assignee_names, key=lambda value: value.lower()):
+            planned = _round_hours(
+                sum(hours for month, hours in planned_by_assignee_month.get(assignee, {}).items() if _month_end(month) <= _month_end(status_month))
+            )
+            actual = _round_hours(actual_by_epic_author.get(epic_key, {}).get(assignee, 0.0))
+            variance = _round_hours(actual - planned)
+            assignee_schedule_variance.append(
+                {
+                    "assignee": assignee,
+                    "planned_to_date_hours": planned,
+                    "actual_to_date_hours": actual,
+                    "schedule_variance_hours": variance,
+                    "schedule_variance_pct": _round_pct((variance / planned) * 100) if planned else None,
+                    "schedule_position": _schedule_position(variance),
+                }
+            )
+
         for author, hours in sorted(actual_by_epic_author.get(epic_key, {}).items(), key=lambda item: (-item[1], item[0].lower())):
             for month in month_codes:
                 epic_hours = _round_hours(sum(_to_float(log.get("hours")) for sub in subtasks for log in worklogs_by_issue.get(_to_text(sub.get("issue_key")).upper(), []) if _to_text(log.get("author")) == author and _to_text(log.get("date")).startswith(month)))
@@ -635,6 +747,7 @@ def build_epic_explorer_payload(
             "tk_budget_hours": tk_budget_hours,
             "tk_budget_days": None if tk_budget_hours is None else _round_hours(tk_budget_hours / HOURS_PER_DAY),
             "jira_original_estimate_hours": _round_hours(epic.get("original_estimate_hours")),
+            "planned_total_hours": planned_total_hours,
             "story_estimate_hours": story_estimate_hours,
             "subtask_estimate_hours": subtask_estimate_hours,
             "planned_start": _to_text(epic.get("start_date")),
@@ -648,9 +761,39 @@ def build_epic_explorer_payload(
             "headcount": len(headcount_by_epic.get(epic_key, set())),
             "story_count": len(stories),
             "subtask_count": len(subtasks),
+            "planned_to_date_hours": planned_to_date_hours,
+            "actual_to_date_hours": actual_to_date_hours,
+            "schedule_variance_days": schedule_variance_days,
+            "schedule_variance_date_basis": completion["actual_complete_date"] or status_day.isoformat(),
+            "schedule_variance_date_basis_type": "actual_complete_date" if completion["actual_complete_date"] else "current_date",
+            "schedule_variance_date_position": _schedule_position(float(schedule_variance_days or 0)),
+            "schedule_variance_hours": schedule_variance_hours,
+            "schedule_variance_pct": schedule_variance_pct,
+            "schedule_variance_hours_position": _schedule_position(schedule_variance_hours),
+            "estimation_accuracy_pct": estimation_accuracy_pct,
+            "estimation_accuracy_status": _estimate_accuracy_status(estimation_accuracy_pct),
             "stories": nested_stories,
             "analytics": {
                 "monthly_plan_actual": monthly_plan_actual,
+                "schedule_variance": {
+                    "planned_to_date_hours": planned_to_date_hours,
+                    "actual_to_date_hours": actual_to_date_hours,
+                    "schedule_variance_hours": schedule_variance_hours,
+                    "schedule_variance_pct": schedule_variance_pct,
+                    "schedule_variance_hours_position": _schedule_position(schedule_variance_hours),
+                    "schedule_variance_days": schedule_variance_days,
+                    "schedule_variance_date_position": _schedule_position(float(schedule_variance_days or 0)),
+                    "schedule_variance_date_basis": completion["actual_complete_date"] or status_day.isoformat(),
+                    "schedule_variance_date_basis_type": "actual_complete_date" if completion["actual_complete_date"] else "current_date",
+                    "planned_total_hours": planned_total_hours,
+                    "actual_total_hours": total_actual_hours,
+                    "planned_due": _to_text(epic.get("due_date")),
+                    "actual_complete_date": completion["actual_complete_date"],
+                    "estimation_accuracy_pct": estimation_accuracy_pct,
+                    "estimation_accuracy_status": _estimate_accuracy_status(estimation_accuracy_pct),
+                    "trend_3_months": schedule_variance_trend,
+                    "assignees": assignee_schedule_variance,
+                },
                 "gantt": {
                     "start_date": epic_start.isoformat(),
                     "end_date": epic_end.isoformat(),
@@ -741,11 +884,17 @@ def build_epic_explorer_payload(
         "subtask_count": sum(int(row.get("subtask_count") or 0) for row in rows),
         "tk_budget_hours": _round_hours(sum(_to_float(row.get("tk_budget_hours")) for row in rows)),
         "jira_original_estimate_hours": _round_hours(sum(_to_float(row.get("jira_original_estimate_hours")) for row in rows)),
+        "planned_total_hours": _round_hours(sum(_to_float(row.get("planned_total_hours")) for row in rows)),
         "story_estimate_hours": _round_hours(sum(_to_float(row.get("story_estimate_hours")) for row in rows)),
         "subtask_estimate_hours": _round_hours(sum(_to_float(row.get("subtask_estimate_hours")) for row in rows)),
+        "planned_to_date_hours": _round_hours(sum(_to_float(row.get("planned_to_date_hours")) for row in rows)),
+        "actual_to_date_hours": _round_hours(sum(_to_float(row.get("actual_to_date_hours")) for row in rows)),
+        "schedule_variance_hours": _round_hours(sum(_to_float(row.get("schedule_variance_hours")) for row in rows)),
         "total_actual_hours": _round_hours(sum(_to_float(row.get("total_actual_hours")) for row in rows)),
         "headcount": len({log.get("author").casefold() for row in rows for story in row.get("stories", []) for sub in story.get("subtasks", []) for log in sub.get("worklogs", []) if _to_text(log.get("author"))}),
     }
+    totals["schedule_variance_pct"] = _round_pct((totals["schedule_variance_hours"] / totals["planned_to_date_hours"]) * 100) if totals["planned_to_date_hours"] else None
+    totals["estimation_accuracy_pct"] = _round_pct((totals["planned_total_hours"] / totals["total_actual_hours"]) * 100) if totals["total_actual_hours"] else None
     return {
         "canonical_run_id": run_id,
         "from_date": range_start.isoformat() if range_start else "",
@@ -759,5 +908,7 @@ def build_epic_explorer_payload(
             "hours_per_day": HOURS_PER_DAY,
             "scope_basis": "Default scope includes every canonical Jira epic. Date and project filters only include/exclude epics; nested stories, subtasks, and worklogs remain full epic-lifetime data.",
             "actual_complete_basis": "Later of descendant subtask last worklog date and epic resolved-stable-since date, matching existing completion logic.",
+            "schedule_variance_basis": "Date SV is planned due date minus actual/current date; hour SV is actual-to-date minus planned-to-date. Negative values mean behind schedule.",
+            "estimation_accuracy_basis": "Estimated hours divided by actual hours multiplied by 100. The ideal range is 85% to 115%; below 70% is marked broken.",
         },
     }
