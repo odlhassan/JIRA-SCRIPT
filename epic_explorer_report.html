@@ -667,7 +667,7 @@
         ["Epics", t.epic_count || 0],
         ["Work Items", t.story_count || 0],
         ["Subtasks", t.subtask_count || 0],
-        ["TK Budget", hours(t.tk_budget_hours)],
+        ["Planned Hours", hours(t.planned_total_hours)],
         ["Actual Hours", hours(t.total_actual_hours)],
         ["SV Hours", `${signedHours(t.schedule_variance_hours)} / ${pct(t.schedule_variance_pct)}`],
         ["Est. Accuracy", pct(t.estimation_accuracy_pct)],

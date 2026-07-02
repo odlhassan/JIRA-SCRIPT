@@ -39,11 +39,11 @@ Epic Explorer is a canonical-database report for inspecting every Jira epic and 
 | Table | Jira Epics' Planned Dates | Date range | Blank when missing | Canonical epic `start_date` to `due_date`. |
 | Table | Total Actual Hours | Numeric hours | 0 | Lifetime sum of worklog hours on descendant subtasks and bug subtasks. |
 | Table | Actual Complete Date | Date | Blank when missing | Later of descendant subtask last worklog date and epic `resolved_stable_since_date`. |
-| Table | Planned vs Actual Hours | Numeric pair | 0 / 0 | Compares planned total hours with lifetime actual hours. Planned total uses TK budget first, then Jira epic original estimate, then story estimate total, then subtask estimate total. |
-| Table | Planned vs Actual Delivery | Date pair | Blank | Compares planned epic due date with actual complete date. |
-| Table | SV Date | Signed days | Blank when no due date | Schedule variance by date: planned due date minus actual complete date, or current date for incomplete epics. Negative values mean behind schedule. |
-| Table | SV Hours | Signed hours and percent | Blank when no planned-to-date hours | Schedule variance by effort: actual-to-date hours minus planned-to-date hours. Negative values mean behind schedule. |
-| Table | Est. Accuracy | Percent | Blank when no actual hours | Estimated hours divided by actual hours multiplied by 100. The ideal range is 85% to 115%; below 70% indicates a broken estimation process. |
+| Table | Planned vs Actual Hours | Numeric comparison | 0 / 0 | Planned value uses canonical epic `original_estimate_hours`; actual value uses descendant subtask and bug-subtask worklogs. TK Budget, story estimates, and subtask estimates are comparison/fallback values only. |
+| Table | Planned vs Actual Delivery | Date comparison | Blank when missing | Planned value uses the canonical epic `due_date`; actual value uses the calculated Actual Complete Date. |
+| Table | SV Date | Signed days | Blank when missing | Jira epic planned due date minus actual/current date. Negative means behind. |
+| Table | SV Hours | Signed hours and percent | Blank when no planned basis | Actual-to-date hours minus planned-to-date hours. Planned-to-date is prorated from the Jira epic original estimate across the epic planned dates and reaches the full original estimate after the planned due date. |
+| Table | Est. Accuracy | Percent | Blank when no actuals | Jira epic original estimate divided by actual hours multiplied by 100. |
 | Table | Epic Status | Status pill | Derived | Canonical epic `status`. |
 | Table | Headcount | Integer | 0 | Distinct worklog authors on descendant subtasks and bug subtasks. |
 
@@ -56,6 +56,7 @@ Epic Explorer is a canonical-database report for inspecting every Jira epic and 
 - The top-level table uses compact rows, alternating row shading, visible row numbers, vertical scrolling, and sticky row-number/name columns so wide tables stay traceable while scrolling.
 - Actual hours roll up from descendant `Sub-task` and `Bug Subtask` worklogs only.
 - Actual complete date mirrors existing completion logic: use the later of last logged date and resolved-stable-since when both exist, otherwise use whichever exists.
+- Top-level Planned vs Actual, SV Hours, and Est. Accuracy use the Jira epic's own planned dates and canonical epic `original_estimate_hours` as the primary planned basis. TK Budget, story estimates, and subtask estimates do not drive these calculations unless the epic original estimate is missing or zero.
 - Drawer month plan vs actual compares month-bucketed planned original estimates with worklogs by month.
 - Drawer month plan vs actual compares month-bucketed planned original estimates with worklogs by month and can be switched between bar and line chart views.
 - Drawer Schedule Variance KPIs show date SV, hour SV, planned vs actual hours, planned vs actual delivery date, estimation accuracy, the last-three-month SV trend, and SV per assignee working on the epic.
