@@ -90,6 +90,8 @@ Rules:
   - Shows per-resource capacity, leave, logged work, and planned work for a selected team/date range.
   - The resource planned-work bar uses only assigned canonical subtasks in the selected range. Epic and story estimates are ignored even when those work items are assigned to the same resource.
   - The Stats toggle switches resource values between days and hours without reloading data.
+- Support Hour Bookings (`/settings/performance`):
+  - Reuses a saved capacity profile to compute each Technical Support Team member's system capacity hours for an admin-selected month, then lets the admin set leave/booking hours and per-project percentage allocations. See `docs/capacity-user-guide/screens/07-support-hour-bookings.md`.
 
 ## Deployment Notes
 

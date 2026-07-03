@@ -91,6 +91,15 @@ from managed_projects_registry import (
     soft_delete_managed_project,
     update_managed_project,
 )
+from support_booking_registry import (
+    delete_booking_header as sb_delete_booking_header,
+    get_month_matrix as sb_get_month_matrix,
+    init_month_bookings as sb_init_month_bookings,
+    init_support_booking_db,
+    list_capacity_profile_options as sb_list_capacity_profile_options,
+    upsert_allocation as sb_upsert_allocation,
+    upsert_booking_header as sb_upsert_booking_header,
+)
 from report_entity_registry import (
     REPORT_ENTITY_GLOBAL_SETTING_KEYS,
     init_report_entities_db,
@@ -104,6 +113,7 @@ from ipp_meeting_utils import (
     resolve_jira_end_date_field_ids,
     resolve_jira_start_date_field_id,
 )
+from db_journal_mode import apply_journal_mode
 from jira_client import BASE_URL, extract_jira_key_from_url, get_session
 from jira_client import get_write_session
 from jira_export_db import (
@@ -3160,7 +3170,7 @@ def _canonical_mark_run_abandoned(db_path: Path, run_id: str) -> tuple[bool, str
 def _init_canonical_refresh_db(db_path: Path) -> None:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(db_path) as conn:
-        conn.execute("PRAGMA journal_mode=WAL")
+        apply_journal_mode(conn)
         conn.execute("PRAGMA busy_timeout=5000")
         conn.execute(
             """
@@ -7362,6 +7372,18 @@ def _performance_settings_html() -> str:
     .team-item:last-child { margin-bottom:0; }
     .team-name { font-weight:700; font-size:.88rem; }
     .team-members { margin-top:4px; color:var(--muted); font-size:.8rem; }
+    #shb-table th, #shb-table td { border:1px solid #e2e8f0; padding:6px 8px; text-align:right; white-space:nowrap; }
+    #shb-table th { background:#f4f9fc; position:sticky; top:0; z-index:1; font-size:.76rem; text-transform:uppercase; letter-spacing:.02em; color:#334155; }
+    #shb-table td:first-child, #shb-table th:first-child { text-align:left; position:sticky; left:0; background:#fff; z-index:1; }
+    #shb-table th:first-child { background:#f4f9fc; z-index:2; }
+    #shb-table input { width:72px; padding:4px 6px; font-size:.82rem; text-align:right; }
+    #shb-table .shb-pct-input { width:56px; }
+    #shb-table tr.shb-over-alloc td:first-child { box-shadow:inset 3px 0 0 #f59e0b; }
+    #shb-table tr.shb-over-capacity input.shb-booking-input { border-color:#dc2626; background:#fef2f2; }
+    #shb-table .shb-hours-cell { color:#0f766e; font-weight:700; cursor:pointer; }
+    #shb-table .shb-hours-cell:hover { background:#ecfeff; }
+    #shb-table .shb-readonly { color:var(--muted); }
+    #shb-table .shb-total-row td { background:#f8fafc; font-weight:700; }
     .guide { margin-top:16px; border:1px solid #c7d2fe; border-radius:12px; background:linear-gradient(135deg,#eef2ff,#f0fdf4); padding:14px; }
     .guide-title { display:flex; align-items:center; gap:8px; margin:0 0 8px; font-size:1.02rem; }
     .guide-title .material-symbols-outlined { color:#1d4ed8; font-size:1.2rem; }
@@ -7621,6 +7643,37 @@ def _performance_settings_html() -> str:
       <div style="display:flex;align-items:center;gap:12px;margin-top:10px;flex-wrap:wrap;">
         <button class="btn" type="button" id="st-save-btn">Save Support Team</button>
         <span id="st-status" style="font-size:.83rem;font-weight:600;min-height:1.2em;"></span>
+      </div>
+    </section>
+    <section class="team-wrap" id="support-bookings" style="scroll-margin-top:24px;">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;flex-wrap:wrap;">
+        <span class="material-symbols-outlined" style="font-size:1.15rem;color:#7c3aed;">calendar_month</span>
+        <h2 style="margin:0;font-size:1rem;">Support Hour Bookings</h2>
+      </div>
+      <p style="margin:0 0 12px;color:var(--muted);font-size:.88rem;">Create each Technical Support Team member's booked hours for a given month, then split those hours across projects by percentage. Where these bookings surface in reports will be decided separately — this is just the configuration control.</p>
+      <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:flex-end;">
+        <div>
+          <label for="shb-month">Month</label>
+          <input type="month" id="shb-month" style="min-width:150px;">
+        </div>
+        <div>
+          <label for="shb-profile">Capacity profile</label>
+          <select id="shb-profile" style="min-width:220px;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:.92rem;"></select>
+        </div>
+        <div>
+          <label for="shb-default-leave">Assumed leave hours (new members)</label>
+          <input type="number" id="shb-default-leave" value="16" min="0" step="0.5" style="max-width:120px;">
+        </div>
+        <div>
+          <button class="btn" type="button" id="shb-load-btn">Load / Initialize month</button>
+        </div>
+      </div>
+      <div id="shb-status" style="font-size:.83rem;font-weight:600;min-height:1.2em;margin-bottom:8px;"></div>
+      <div class="team-list" id="shb-wrap" style="max-height:520px;padding:0;overflow:auto;">
+        <table id="shb-table" style="width:100%;border-collapse:collapse;font-size:.82rem;">
+          <thead id="shb-thead"></thead>
+          <tbody id="shb-tbody"></tbody>
+        </table>
       </div>
     </section>
     <div id="status"></div>
@@ -8196,6 +8249,203 @@ def _performance_settings_html() -> str:
     });
 
     Promise.all([loadSettings(), loadAssignees(), loadTeams()]).then(() => loadSupportTeam()).catch((e) => setStatus(e.message || String(e), "err"));
+
+    // ── Support Hour Bookings ────────────────────────────────────────
+    (function () {
+      const SHB_API = "/api/performance/support-bookings";
+      const SHB_PROFILES_API = "/api/performance/support-bookings/capacity-profiles";
+      const monthEl = document.getElementById("shb-month");
+      const profileEl = document.getElementById("shb-profile");
+      const defaultLeaveEl = document.getElementById("shb-default-leave");
+      const loadBtn = document.getElementById("shb-load-btn");
+      const statusEl2 = document.getElementById("shb-status");
+      const theadEl = document.getElementById("shb-thead");
+      const tbodyEl = document.getElementById("shb-tbody");
+      let currentMatrix = null;
+      let saveTimers = {};
+
+      function shbSetStatus(msg, kind) {
+        statusEl2.textContent = msg || "";
+        statusEl2.style.color = kind === "err" ? "var(--err)" : kind === "ok" ? "var(--ok)" : "var(--muted)";
+      }
+
+      function defaultMonthValue() {
+        const now = new Date();
+        return now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0");
+      }
+      monthEl.value = defaultMonthValue();
+
+      async function loadProfiles() {
+        try {
+          const resp = await fetch(SHB_PROFILES_API, { cache: "no-store" });
+          const body = await resp.json().catch(() => ({}));
+          const profiles = Array.isArray(body.profiles) ? body.profiles : [];
+          profileEl.innerHTML = profiles.map((p) =>
+            '<option value="' + p.capacity_profile_key + '">' + p.from_date + ' → ' + p.to_date + ' (' + p.standard_hours_per_day + 'h/day)</option>'
+          ).join("") || '<option value="">No capacity profiles saved yet</option>';
+        } catch (_e) {
+          profileEl.innerHTML = '<option value="">Failed to load profiles</option>';
+        }
+      }
+
+      function renderMatrix(matrix) {
+        currentMatrix = matrix;
+        const columns = matrix.project_columns || [];
+        let theadHtml = "<tr><th>Team member</th><th>Capacity (h)</th><th>Leave (h)</th><th>Availability (h)</th><th>Booking (h)</th>";
+        columns.forEach((c) => { theadHtml += "<th>" + c + " %</th><th>" + c + " (h)</th>"; });
+        theadHtml += "</tr>";
+        theadEl.innerHTML = theadHtml;
+
+        let bodyHtml = "";
+        const totals = {};
+        columns.forEach((c) => { totals[c] = 0; });
+        let totalBooking = 0;
+
+        (matrix.members || []).forEach((m) => {
+          const rowClasses = [];
+          if (m.over_allocated) rowClasses.push("shb-over-alloc");
+          if (m.over_capacity) rowClasses.push("shb-over-capacity");
+          bodyHtml += '<tr class="' + rowClasses.join(" ") + '" data-member="' + encodeURIComponent(m.team_member) + '">';
+          bodyHtml += "<td>" + m.team_member + "</td>";
+          bodyHtml += '<td class="shb-readonly">' + m.system_capacity_hours.toFixed(1) + "</td>";
+          bodyHtml += '<td><input type="number" class="shb-leave-input" step="0.5" min="0" value="' + m.leave_hours + '"></td>';
+          bodyHtml += '<td class="shb-readonly">' + m.availability_hours.toFixed(1) + "</td>";
+          bodyHtml += '<td><input type="number" class="shb-booking-input" step="0.5" min="0" value="' + m.booking_hours + '"></td>';
+          columns.forEach((c) => {
+            const pct = (m.allocations && m.allocations[c]) || 0;
+            const hrs = (m.hours && m.hours[c]) || 0;
+            totals[c] += hrs;
+            bodyHtml += '<td><input type="number" class="shb-pct-input shb-pct-cell" data-project="' + c + '" step="0.05" min="0" max="2" value="' + pct + '"></td>';
+            bodyHtml += '<td class="shb-hours-cell" title="Click to copy" data-copy="' + hrs.toFixed(1) + '">' + hrs.toFixed(1) + "</td>";
+          });
+          bodyHtml += "</tr>";
+          totalBooking += Number(m.booking_hours || 0);
+        });
+
+        bodyHtml += '<tr class="shb-total-row"><td>Total</td><td></td><td></td><td></td><td>' + totalBooking.toFixed(1) + "</td>";
+        columns.forEach((c) => { bodyHtml += "<td></td><td>" + totals[c].toFixed(1) + "</td>"; });
+        bodyHtml += "</tr>";
+
+        tbodyEl.innerHTML = bodyHtml;
+        wireRowEvents();
+      }
+
+      function wireRowEvents() {
+        tbodyEl.querySelectorAll(".shb-hours-cell[data-copy]").forEach((cell) => {
+          cell.addEventListener("click", async () => {
+            const value = cell.getAttribute("data-copy");
+            try {
+              await navigator.clipboard.writeText(value);
+              const original = cell.textContent;
+              cell.textContent = "✓ " + value;
+              setTimeout(() => { cell.textContent = original; }, 700);
+            } catch (_e) { /* clipboard not available; ignore */ }
+          });
+        });
+
+        tbodyEl.querySelectorAll("tr[data-member]").forEach((row) => {
+          const member = decodeURIComponent(row.getAttribute("data-member"));
+
+          const leaveInput = row.querySelector(".shb-leave-input");
+          const bookingInput = row.querySelector(".shb-booking-input");
+
+          function saveHeader() {
+            const key = "header:" + member;
+            clearTimeout(saveTimers[key]);
+            saveTimers[key] = setTimeout(async () => {
+              try {
+                const resp = await fetch(SHB_API + "/" + encodeURIComponent(member), {
+                  method: "PUT",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    month: monthEl.value,
+                    leave_hours: Number(leaveInput.value || 0),
+                    booking_hours: Number(bookingInput.value || 0),
+                  }),
+                });
+                const body = await resp.json().catch(() => ({}));
+                if (!resp.ok) throw new Error(body.error || "Save failed");
+                shbSetStatus("✓ Saved " + member, "ok");
+                await loadMonth(false);
+              } catch (err) {
+                shbSetStatus("Error saving " + member + ": " + (err.message || err), "err");
+              }
+            }, 500);
+          }
+
+          if (leaveInput) leaveInput.addEventListener("change", saveHeader);
+          if (bookingInput) bookingInput.addEventListener("change", saveHeader);
+
+          row.querySelectorAll(".shb-pct-cell").forEach((pctInput) => {
+            pctInput.addEventListener("change", () => {
+              const key = "alloc:" + member;
+              clearTimeout(saveTimers[key]);
+              saveTimers[key] = setTimeout(async () => {
+                const allocations = {};
+                row.querySelectorAll(".shb-pct-cell").forEach((el2) => {
+                  allocations[el2.getAttribute("data-project")] = Number(el2.value || 0);
+                });
+                try {
+                  const resp = await fetch(SHB_API + "/" + encodeURIComponent(member) + "/allocations", {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ month: monthEl.value, allocations }),
+                  });
+                  const body = await resp.json().catch(() => ({}));
+                  if (!resp.ok) throw new Error(body.error || "Save failed");
+                  shbSetStatus("✓ Saved allocations for " + member, "ok");
+                  renderMatrix(body.matrix);
+                } catch (err) {
+                  shbSetStatus("Error saving allocations for " + member + ": " + (err.message || err), "err");
+                }
+              }, 500);
+            });
+          });
+        });
+      }
+
+      async function loadMonth(quiet) {
+        const month = monthEl.value;
+        if (!month) { shbSetStatus("Pick a month first.", "err"); return; }
+        if (!quiet) shbSetStatus("Loading…");
+        try {
+          const resp = await fetch(SHB_API + "?month=" + encodeURIComponent(month), { cache: "no-store" });
+          const body = await resp.json().catch(() => ({}));
+          if (!resp.ok) throw new Error(body.error || "Failed to load");
+          renderMatrix(body);
+          if (!quiet) shbSetStatus((body.members || []).length ? "Loaded." : "No bookings yet for this month — click Load / Initialize month.", "ok");
+        } catch (err) {
+          shbSetStatus("Error: " + (err.message || err), "err");
+        }
+      }
+
+      loadBtn.addEventListener("click", async () => {
+        const month = monthEl.value;
+        const profileKey = profileEl.value;
+        if (!month) { shbSetStatus("Pick a month first.", "err"); return; }
+        if (!profileKey) { shbSetStatus("Pick a capacity profile first.", "err"); return; }
+        shbSetStatus("Initializing…");
+        try {
+          const resp = await fetch(SHB_API + "/init-month", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              month,
+              capacity_profile_key: profileKey,
+              default_leave_hours: Number(defaultLeaveEl.value || 16),
+            }),
+          });
+          const body = await resp.json().catch(() => ({}));
+          if (!resp.ok) throw new Error(body.error || "Failed to initialize");
+          renderMatrix(body);
+          shbSetStatus("✓ Ready for " + month, "ok");
+        } catch (err) {
+          shbSetStatus("Error: " + (err.message || err), "err");
+        }
+      });
+
+      loadProfiles().then(() => loadMonth(true));
+    })();
   </script>
   <script src="/shared-nav.js"></script>
 </body>
@@ -10574,10 +10824,10 @@ def _canonical_refresh_settings_html() -> str:
         </div>
         <div class="row">
           <div class="backup-option">
-            <input id="create-db-backup" type="checkbox" value="1">
+            <input id="create-db-backup" type="checkbox" value="1" disabled>
             <label for="create-db-backup">
-              Create DB backup before Full Refresh
-              <span class="backup-note">Off by default. When enabled, the capacity database is copied to backups/canonical_refresh before the full run starts.</span>
+              Create DB backup before Full Refresh (disabled)
+              <span class="backup-note">Disabled: this full-DB copy filled up production disk. The backend now ignores this flag regardless of checkbox state.</span>
             </label>
           </div>
           <button id="start-smart-btn" class="btn" type="button">
@@ -30597,6 +30847,7 @@ def _tcp_build_team_data(
     exclude_bugs: bool = True,
     epic_mode: str = "story",
     date_match: str = "overlap",
+    include_past_epics: bool = False,
 ) -> dict:
     """Assemble per-member capacity/leave/availability/assigned-epics payload."""
     teams = _list_performance_teams(db_path)
@@ -30653,12 +30904,12 @@ def _tcp_build_team_data(
         epic_keys_by_member: dict[str, set[str]] = {name: set() for name in members}
         planned_hours_by_member: dict[str, float] = {name: 0.0 for name in members}
         logged_hours_by_member: dict[str, float] = {name: 0.0 for name in members}
-        if canonical_run_id and in_range_epics and member_lowers:
+        if canonical_run_id and member_lowers and (in_range_epics or include_past_epics):
             bug_filter_s = " AND lower(s.issue_type) NOT LIKE '%bug%'" if exclude_bugs else ""
             bug_filter_alias = " AND lower(ci.issue_type) NOT LIKE '%bug%'" if exclude_bugs else ""
             epic_list = sorted(in_range_epics_upper)
             member_ph = ",".join("?" for _ in member_lowers)
-            ek_ph = ",".join("?" for _ in epic_list)
+            ek_ph = ",".join("?" for _ in epic_list) if epic_list else None
             try:
                 rows = conn.execute(
                     f"""SELECT lower(member_name) AS member_key, upper(eff_epic) AS ek FROM (
@@ -30719,24 +30970,43 @@ def _tcp_build_team_data(
             except Exception:
                 pass
             try:
-                rows = conn.execute(
-                    f"""SELECT lower(wl.issue_assignee) AS member_key,
-                               COALESCE(SUM(wl.hours_logged), 0) AS logged_hours
-                       FROM canonical_worklogs wl
-                       JOIN canonical_issues ci
-                         ON ci.run_id = wl.run_id AND ci.issue_key = wl.issue_key
-                       LEFT JOIN canonical_issues p
-                         ON p.run_id = ci.run_id AND upper(p.issue_key) = upper(ci.parent_issue_key)
-                       WHERE wl.run_id = ?
-                         AND lower(wl.issue_assignee) IN ({member_ph})
-                         AND upper(wl.project_key) != 'RLT'
-                         AND wl.started_date >= ? AND wl.started_date <= ?
-                         AND {_tcp_issue_type_is_subtask_sql('ci')}
-                         {bug_filter_alias}
-                         AND (upper(ci.epic_key) IN ({ek_ph}) OR upper(p.epic_key) IN ({ek_ph}))
-                       GROUP BY lower(wl.issue_assignee)""",
-                    [canonical_run_id] + member_lowers + [from_date, to_date] + epic_list + epic_list,
-                ).fetchall()
+                if include_past_epics:
+                    rows = conn.execute(
+                        f"""SELECT lower(wl.issue_assignee) AS member_key,
+                                   COALESCE(SUM(wl.hours_logged), 0) AS logged_hours
+                           FROM canonical_worklogs wl
+                           JOIN canonical_issues ci
+                             ON ci.run_id = wl.run_id AND ci.issue_key = wl.issue_key
+                           WHERE wl.run_id = ?
+                             AND lower(wl.issue_assignee) IN ({member_ph})
+                             AND upper(wl.project_key) != 'RLT'
+                             AND wl.started_date >= ? AND wl.started_date <= ?
+                             AND {_tcp_issue_type_is_subtask_sql('ci')}
+                             {bug_filter_alias}
+                           GROUP BY lower(wl.issue_assignee)""",
+                        [canonical_run_id] + member_lowers + [from_date, to_date],
+                    ).fetchall()
+                elif ek_ph:
+                    rows = conn.execute(
+                        f"""SELECT lower(wl.issue_assignee) AS member_key,
+                                   COALESCE(SUM(wl.hours_logged), 0) AS logged_hours
+                           FROM canonical_worklogs wl
+                           JOIN canonical_issues ci
+                             ON ci.run_id = wl.run_id AND ci.issue_key = wl.issue_key
+                           LEFT JOIN canonical_issues p
+                             ON p.run_id = ci.run_id AND upper(p.issue_key) = upper(ci.parent_issue_key)
+                           WHERE wl.run_id = ?
+                             AND lower(wl.issue_assignee) IN ({member_ph})
+                             AND upper(wl.project_key) != 'RLT'
+                             AND wl.started_date >= ? AND wl.started_date <= ?
+                             AND {_tcp_issue_type_is_subtask_sql('ci')}
+                             {bug_filter_alias}
+                             AND (upper(ci.epic_key) IN ({ek_ph}) OR upper(p.epic_key) IN ({ek_ph}))
+                           GROUP BY lower(wl.issue_assignee)""",
+                        [canonical_run_id] + member_lowers + [from_date, to_date] + epic_list + epic_list,
+                    ).fetchall()
+                else:
+                    rows = []
                 for r in rows:
                     member_name = member_name_by_lower.get(_to_text(r["member_key"]).lower())
                     if member_name:
@@ -33597,6 +33867,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
     init_report_entities_db(capacity_paths["db_path"])
     init_manage_fields_db(capacity_paths["db_path"])
     init_managed_projects_db(capacity_paths["db_path"])
+    init_support_booking_db(capacity_paths["db_path"])
     _init_page_categories_db(capacity_paths["db_path"])
     pactv_init_db(capacity_paths["db_path"])
     _init_missed_entries_refresh_db(capacity_paths["db_path"])
@@ -37079,7 +37350,10 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             run_id = f"canonical-{int(time.time())}-{uuid.uuid4().hex[:8]}"
             canonical_runtime_state["active_run_id"] = run_id
         db_backup_path = ""
-        should_create_backup = bool(create_db_backup) and refresh_mode == "full"
+        # Full-DB backups before Full Refresh are disabled: the capacity DB is multi-GB in
+        # production and copying it on every refresh filled up disk there. The
+        # create_db_backup request flag is accepted (for API/back-compat) but ignored.
+        should_create_backup = False
         if should_create_backup:
             try:
                 db_backup_path = str(_create_canonical_refresh_db_backup(capacity_paths["db_path"], base_dir, run_id))
@@ -41359,6 +41633,108 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
 
+    @app.route("/api/performance/support-bookings/capacity-profiles", methods=["GET"])
+    def list_support_booking_capacity_profiles():
+        try:
+            return jsonify({"profiles": sb_list_capacity_profile_options(capacity_paths["db_path"])})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @app.route("/api/performance/support-bookings", methods=["GET"])
+    def get_support_bookings():
+        try:
+            month = _to_text(request.args.get("month"))
+            if not month:
+                return jsonify({"error": "month is required (YYYY-MM)."}), 400
+            active_projects = list_managed_projects(capacity_paths["db_path"], include_inactive=False)
+            project_keys = [_to_text(item.get("project_key")).upper() for item in active_projects if item.get("project_key")]
+            matrix = sb_get_month_matrix(capacity_paths["db_path"], month, project_keys=project_keys)
+            matrix["projects"] = active_projects
+            return jsonify(matrix)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"error": f"Failed to load support bookings: {exc}"}), 500
+
+    @app.route("/api/performance/support-bookings/init-month", methods=["POST"])
+    def init_support_bookings_month():
+        try:
+            payload = request.get_json(silent=True) or {}
+            month = _to_text(payload.get("month"))
+            capacity_profile_key = _to_text(payload.get("capacity_profile_key"))
+            if not month:
+                return jsonify({"error": "month is required (YYYY-MM)."}), 400
+            if not capacity_profile_key:
+                return jsonify({"error": "capacity_profile_key is required."}), 400
+            default_leave_hours = payload.get("default_leave_hours")
+            kwargs = {}
+            if default_leave_hours not in (None, ""):
+                kwargs["default_leave_hours"] = float(default_leave_hours)
+            sb_init_month_bookings(capacity_paths["db_path"], month, capacity_profile_key, **kwargs)
+            active_projects = list_managed_projects(capacity_paths["db_path"], include_inactive=False)
+            project_keys = [_to_text(item.get("project_key")).upper() for item in active_projects if item.get("project_key")]
+            matrix = sb_get_month_matrix(capacity_paths["db_path"], month, project_keys=project_keys)
+            matrix["projects"] = active_projects
+            return jsonify(matrix)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"error": f"Failed to initialize support bookings month: {exc}"}), 500
+
+    @app.route("/api/performance/support-bookings/<path:team_member>", methods=["PUT"])
+    def update_support_booking_header(team_member: str):
+        try:
+            name = unquote(team_member)
+            payload = request.get_json(silent=True) or {}
+            month = _to_text(payload.get("month"))
+            if not month:
+                return jsonify({"error": "month is required (YYYY-MM)."}), 400
+            saved = sb_upsert_booking_header(capacity_paths["db_path"], month, name, payload)
+            return jsonify({"header": saved})
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"error": f"Failed to save booking: {exc}"}), 500
+
+    @app.route("/api/performance/support-bookings/<path:team_member>", methods=["DELETE"])
+    def delete_support_booking_header(team_member: str):
+        try:
+            name = unquote(team_member)
+            month = _to_text(request.args.get("month"))
+            if not month:
+                return jsonify({"error": "month is required (YYYY-MM)."}), 400
+            deleted = sb_delete_booking_header(capacity_paths["db_path"], month, name)
+            return jsonify({"deleted": bool(deleted), "team_member": name})
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"error": f"Failed to delete booking: {exc}"}), 500
+
+    @app.route("/api/performance/support-bookings/<path:team_member>/allocations", methods=["PUT"])
+    def update_support_booking_allocations(team_member: str):
+        try:
+            name = unquote(team_member)
+            payload = request.get_json(silent=True) or {}
+            month = _to_text(payload.get("month"))
+            allocations = payload.get("allocations") or {}
+            if not month:
+                return jsonify({"error": "month is required (YYYY-MM)."}), 400
+            if not isinstance(allocations, dict):
+                return jsonify({"error": "allocations must be an object of {project_key: percentage}."}), 400
+            saved = []
+            for project_key, percentage in allocations.items():
+                saved.append(
+                    sb_upsert_allocation(capacity_paths["db_path"], month, name, project_key, percentage)
+                )
+            active_projects = list_managed_projects(capacity_paths["db_path"], include_inactive=False)
+            project_keys = [_to_text(item.get("project_key")).upper() for item in active_projects if item.get("project_key")]
+            matrix = sb_get_month_matrix(capacity_paths["db_path"], month, project_keys=project_keys)
+            return jsonify({"saved": saved, "matrix": matrix})
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"error": f"Failed to save allocations: {exc}"}), 500
+
     @app.route("/api/report-entities", methods=["GET"])
     def get_report_entities():
         try:
@@ -43001,6 +43377,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         except Exception:
             pass
         exclude_bugs = _to_text(request.args.get("exclude_bugs", "1")).strip().lower() not in ("0", "false", "no", "")
+        include_past_epics = _to_text(request.args.get("include_past_epics", "0")).strip().lower() not in ("0", "false", "no", "")
         epic_mode = _to_text(request.args.get("epic_mode", "story")).strip().lower()
         if epic_mode not in ("story", "subtask"):
             epic_mode = "story"
@@ -43018,8 +43395,9 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 exclude_bugs=exclude_bugs,
                 epic_mode=epic_mode,
                 date_match=date_match,
+                include_past_epics=include_past_epics,
             )
-            return jsonify({"ok": True, "exclude_bugs": exclude_bugs, "epic_mode": epic_mode, "date_match": date_match, **payload})
+            return jsonify({"ok": True, "exclude_bugs": exclude_bugs, "epic_mode": epic_mode, "date_match": date_match, "include_past_epics": include_past_epics, **payload})
         except LookupError as exc:
             return jsonify({"ok": False, "error": str(exc)}), 404
         except Exception as exc:
@@ -43038,6 +43416,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         if kind not in ("planned", "logged"):
             kind = "planned"
         exclude_bugs = _to_text(request.args.get("exclude_bugs", "1")).strip().lower() not in ("0", "false", "no", "")
+        include_past_epics = _to_text(request.args.get("include_past_epics", "0")).strip().lower() not in ("0", "false", "no", "")
         epic_mode = _to_text(request.args.get("epic_mode", "story")).strip().lower()
         if epic_mode not in ("story", "subtask"):
             epic_mode = "story"
@@ -43054,60 +43433,89 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 conn.row_factory = sqlite3.Row
                 subtask_sql = _tcp_issue_type_is_subtask_sql("ci")
                 bug_filter = " AND lower(ci.issue_type) NOT LIKE '%bug%'" if exclude_bugs else ""
-                in_range_epics = _tcp_epics_in_range(conn, canonical_run_id, from_date, to_date, epic_mode, date_match)
-                if not in_range_epics:
-                    rows = []
+
+                # When include_past_epics is on for logged kind, bypass the epic-date gate entirely
+                # and show all subtasks the person actually logged time on in the range.
+                if kind == "logged" and include_past_epics:
+                    rows = conn.execute(
+                        f"""
+                        SELECT ci.issue_key, ci.summary, ci.issue_type, ci.status,
+                               ci.start_date, ci.due_date,
+                               ci.original_estimate_hours, ci.total_hours_logged,
+                               ci.parent_issue_key, ci.story_key, ci.epic_key,
+                               ci.project_key,
+                               COALESCE(SUM(wl.hours_logged), 0) AS logged_in_range
+                        FROM canonical_worklogs wl
+                        JOIN canonical_issues ci
+                          ON ci.run_id = wl.run_id AND ci.issue_key = wl.issue_key
+                        LEFT JOIN canonical_issues p
+                          ON p.run_id = ci.run_id AND upper(p.issue_key) = upper(ci.parent_issue_key)
+                        WHERE wl.run_id = ?
+                          AND lower(wl.issue_assignee) = lower(?)
+                          AND upper(wl.project_key) != 'RLT'
+                          AND wl.started_date >= ? AND wl.started_date <= ?
+                          AND {subtask_sql}
+                          {bug_filter}
+                        GROUP BY ci.issue_key
+                        ORDER BY ci.issue_key
+                        """,
+                        [canonical_run_id, assignee, from_date, to_date],
+                    ).fetchall()
                 else:
-                    ek_ph = ",".join("?" for _ in in_range_epics)
-                    if kind == "planned":
-                        rows = conn.execute(
-                            f"""
-                            SELECT ci.issue_key, ci.summary, ci.issue_type, ci.status,
-                                   ci.start_date, ci.due_date,
-                                   ci.original_estimate_hours, ci.total_hours_logged,
-                                   ci.parent_issue_key, ci.story_key, ci.epic_key,
-                                   ci.project_key
-                            FROM canonical_issues ci
-                            LEFT JOIN canonical_issues p
-                              ON p.run_id = ci.run_id AND upper(p.issue_key) = upper(ci.parent_issue_key)
-                            WHERE ci.run_id = ?
-                              AND lower(ci.assignee) = lower(?)
-                              AND {subtask_sql}
-                              {bug_filter}
-                              AND upper(ci.project_key) != 'RLT'
-                              AND ci.start_date != '' AND ci.due_date != ''
-                              AND ci.start_date <= ? AND ci.due_date >= ?
-                              AND (upper(ci.epic_key) IN ({ek_ph}) OR upper(p.epic_key) IN ({ek_ph}))
-                            ORDER BY COALESCE(NULLIF(ci.start_date,''), ci.due_date), ci.issue_key
-                            """,
-                            [canonical_run_id, assignee, to_date, from_date] + in_range_epics + in_range_epics,
-                        ).fetchall()
+                    in_range_epics = _tcp_epics_in_range(conn, canonical_run_id, from_date, to_date, epic_mode, date_match)
+                    if not in_range_epics:
+                        rows = []
                     else:
-                        rows = conn.execute(
-                            f"""
-                            SELECT ci.issue_key, ci.summary, ci.issue_type, ci.status,
-                                   ci.start_date, ci.due_date,
-                                   ci.original_estimate_hours, ci.total_hours_logged,
-                                   ci.parent_issue_key, ci.story_key, ci.epic_key,
-                                   ci.project_key,
-                                   COALESCE(SUM(wl.hours_logged), 0) AS logged_in_range
-                            FROM canonical_worklogs wl
-                            JOIN canonical_issues ci
-                              ON ci.run_id = wl.run_id AND ci.issue_key = wl.issue_key
-                            LEFT JOIN canonical_issues p
-                              ON p.run_id = ci.run_id AND upper(p.issue_key) = upper(ci.parent_issue_key)
-                            WHERE wl.run_id = ?
-                              AND lower(wl.issue_assignee) = lower(?)
-                              AND upper(wl.project_key) != 'RLT'
-                              AND wl.started_date >= ? AND wl.started_date <= ?
-                              AND {subtask_sql}
-                              {bug_filter}
-                              AND (upper(ci.epic_key) IN ({ek_ph}) OR upper(p.epic_key) IN ({ek_ph}))
-                            GROUP BY ci.issue_key
-                            ORDER BY ci.issue_key
-                            """,
-                            [canonical_run_id, assignee, from_date, to_date] + in_range_epics + in_range_epics,
-                        ).fetchall()
+                        ek_ph = ",".join("?" for _ in in_range_epics)
+                        if kind == "planned":
+                            rows = conn.execute(
+                                f"""
+                                SELECT ci.issue_key, ci.summary, ci.issue_type, ci.status,
+                                       ci.start_date, ci.due_date,
+                                       ci.original_estimate_hours, ci.total_hours_logged,
+                                       ci.parent_issue_key, ci.story_key, ci.epic_key,
+                                       ci.project_key
+                                FROM canonical_issues ci
+                                LEFT JOIN canonical_issues p
+                                  ON p.run_id = ci.run_id AND upper(p.issue_key) = upper(ci.parent_issue_key)
+                                WHERE ci.run_id = ?
+                                  AND lower(ci.assignee) = lower(?)
+                                  AND {subtask_sql}
+                                  {bug_filter}
+                                  AND upper(ci.project_key) != 'RLT'
+                                  AND ci.start_date != '' AND ci.due_date != ''
+                                  AND ci.start_date <= ? AND ci.due_date >= ?
+                                  AND (upper(ci.epic_key) IN ({ek_ph}) OR upper(p.epic_key) IN ({ek_ph}))
+                                ORDER BY COALESCE(NULLIF(ci.start_date,''), ci.due_date), ci.issue_key
+                                """,
+                                [canonical_run_id, assignee, to_date, from_date] + in_range_epics + in_range_epics,
+                            ).fetchall()
+                        else:
+                            rows = conn.execute(
+                                f"""
+                                SELECT ci.issue_key, ci.summary, ci.issue_type, ci.status,
+                                       ci.start_date, ci.due_date,
+                                       ci.original_estimate_hours, ci.total_hours_logged,
+                                       ci.parent_issue_key, ci.story_key, ci.epic_key,
+                                       ci.project_key,
+                                       COALESCE(SUM(wl.hours_logged), 0) AS logged_in_range
+                                FROM canonical_worklogs wl
+                                JOIN canonical_issues ci
+                                  ON ci.run_id = wl.run_id AND ci.issue_key = wl.issue_key
+                                LEFT JOIN canonical_issues p
+                                  ON p.run_id = ci.run_id AND upper(p.issue_key) = upper(ci.parent_issue_key)
+                                WHERE wl.run_id = ?
+                                  AND lower(wl.issue_assignee) = lower(?)
+                                  AND upper(wl.project_key) != 'RLT'
+                                  AND wl.started_date >= ? AND wl.started_date <= ?
+                                  AND {subtask_sql}
+                                  {bug_filter}
+                                  AND (upper(ci.epic_key) IN ({ek_ph}) OR upper(p.epic_key) IN ({ek_ph}))
+                                GROUP BY ci.issue_key
+                                ORDER BY ci.issue_key
+                                """,
+                                [canonical_run_id, assignee, from_date, to_date] + in_range_epics + in_range_epics,
+                            ).fetchall()
 
                 issue_keys = [r["issue_key"] for r in rows]
                 worklogs_by_issue: dict[str, list[dict]] = {k: [] for k in issue_keys}

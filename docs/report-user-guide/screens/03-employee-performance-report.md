@@ -81,6 +81,7 @@ The Teams filter is still backed by a hidden multi-select (`#teams`) so existing
 - `report_server.py` injects the shared refresh widget, busy-modal CSS, and 409-conflict handling used by this screen.
 - `monthly_epic_plan_progress_service.py` owns the `support_team_config` table and support-team roster model that the Employee Performance Teams filter reads read-only for member chips.
 - `support_center_service.py` and `SUPPORT_CENTER_REPORT.md` also depend on the same support-team roster for support availability reporting.
+- `support_booking_registry.py` (new) also reads `support_team_config` read-only, to seed the per-month Support Hour Bookings admin control under `/settings/performance`. See `docs/capacity-user-guide/screens/07-support-hour-bookings.md`.
 - `tests/test_report_date_filter_api.py` verifies the served Employee Performance HTML keeps valid busy-modal overlay CSS.
 - `docs/report-user-guide/screens/02-dashboard-report.md` tracks the same shared refresh widget behavior used by dashboard-style reports.
 
