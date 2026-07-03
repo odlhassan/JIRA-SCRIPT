@@ -17,6 +17,9 @@ Epic Explorer is a canonical-database report for inspecting every Jira epic and 
 5. Click the epic name to open the right-side analytics drawer. Drag the drawer's left edge to resize from half page width toward full width.
 6. Click the Jira open icon beside an epic name to open the epic in Jira.
 7. Click CSV to export the visible top-level epic table.
+8. Use the Executive Summary section above the main table to pin one or more epics (via the "Add epics" dropdown with checkboxes and a search box) into a leadership-ready mini dashboard. Click Apply to pin the checked epics; pinned epics persist across reloads via browser local storage.
+9. In the Executive Summary mini dashboard, click an epic name to open the same detailed analytics drawer used by the main table. Click the chevron icon to quick-expand a week-over-week schedule variance trend for that epic without leaving the mini dashboard. Click the close icon to unpin an epic.
+10. Review the Month Over Month Average Schedule Variance Trend chart and the Portfolio Budget vs Actual Hours chart below the mini dashboard table for a portfolio-level view of the pinned epics.
 
 ## Fields And Validations
 
@@ -46,6 +49,32 @@ Epic Explorer is a canonical-database report for inspecting every Jira epic and 
 | Table | Est. Accuracy | Percent | Blank when no actuals | Jira epic original estimate divided by actual hours multiplied by 100. |
 | Table | Epic Status | Status pill | Derived | Canonical epic `status`. |
 | Table | Headcount | Integer | 0 | Distinct worklog authors on descendant subtasks and bug subtasks. |
+
+## Executive Summary Mini Dashboard Fields
+
+| Area | Field | Type | Default | Behavior |
+|---|---|---|---|---|
+| Picker | Add epics | Dropdown with search + checkboxes | None selected | Client-side only; lists every epic currently loaded in the page's payload. Search box filters by epic name or key. Clear all / Apply buttons commit the pending selection. |
+| Table | Epic Name | Button | - | Opens the same analytics drawer as the main table. |
+| Table | Budget | Numeric hours | Blank when missing | Row's `tk_budget_hours` (falls back to `planned_total_hours` in the leadership chart when TK budget is missing). |
+| Table | Actual Hours | Numeric hours | 0 | Row's `total_actual_hours`. |
+| Table | Planned Start / Planned Due | Date | Blank when missing | Row's `planned_start` / `planned_due`. |
+| Table | Actual Complete Date | Date with hover tooltip | Blank when missing | Row's `actual_complete_date`; hovering shows plain-English reasoning derived from `actual_complete_source` (e.g. "Later of last logged worklog date and epic resolved-stable-since date."). |
+| Table | SV Date / SV Hours | Signed KPI text | Blank when missing | Reuses the main table's `scheduleDaysText` / `scheduleHoursText` renderers, so the same epic-level basis and coloring apply. |
+| Table | Quick-expand toggle | Chevron button | Collapsed | Expands an inline week-over-week schedule variance panel for that epic only, without opening the full drawer. |
+| Table | Remove | Icon button | - | Unpins the epic from the mini dashboard and updates local storage. |
+| Chart | Month Over Month Average Schedule Variance Trend | Dual-line SVG chart | - | Plots, for up to the last 6 calendar months (partial current month included), the average SV Hours and an average SV Date "day-equivalent" across all pinned epics. |
+| Chart | Portfolio Budget vs Actual Hours | Horizontal bar chart | - | One bar pair (budget vs actual) per pinned epic, for leadership-level comparison. |
+
+## Business Rules — Executive Summary
+
+- The Executive Summary section is entirely client-side: it reuses the same `/api/epic-explorer/summary` payload already loaded for the main table and adds no new API calls or database schema.
+- Pinned epic keys are stored in the browser's `localStorage` under `epicExplorerExecSummaryEpics` so the mini dashboard persists across page reloads on the same browser/device. Keys no longer present in the current payload are simply not rendered (no error).
+- Week-over-week schedule variance uses story-level precision: each work item's own `original_estimate_hours` is linearly prorated across that story's own `start_date`..`due_date` (calendar days), then summed across all stories in the epic to get planned-to-date hours for a given week-ending date. Actual-to-date hours sum descendant subtask worklogs up to that date. The variance (actual minus planned) determines whether the epic was ahead, on track, or behind for that week.
+- If a story is missing start/due dates, its own planned-to-date contribution is treated as 0 until due-date-only completion, keeping the trend conservative rather than guessing.
+- The weekly trend range runs from the earliest story start date to the earlier of the latest story due date or today, in 7-day steps ending on the epic's actual due date.
+- Month-over-month averages are computed over the pinned epics for up to the last 6 calendar months (partial current month included). Avg SV Hours is the mean of (epic actual-to-date minus epic planned-to-date) at each month end. Avg SV Date is a derived day-equivalent proxy: SV hours divided by each epic's own average daily planned rate (`planned_total_hours` / total planned days), documented as a proxy rather than a literal day count.
+- The Portfolio Budget vs Actual Hours chart is an additional leadership-visibility chart requested for at-a-glance comparison; it uses the same `tk_budget_hours` (or `planned_total_hours` fallback) and `total_actual_hours` values already shown in the main table.
 
 ## Business Rules
 
@@ -85,11 +114,12 @@ Epic Explorer is a canonical-database report for inspecting every Jira epic and 
 ## Related Code
 
 - `epic_explorer_service.py` - builds the API payload, rollups, nested hierarchy, drawer analytics, leave overlays, team effort, support effort, and resource utilization rows.
-- `epic_explorer_report.html` - renders filters, table, nested expand/collapse drilldown, resizable analytics drawer, charts, Gantt cells, and CSV export.
+- `epic_explorer_report.html` - renders filters, table, nested expand/collapse drilldown, resizable analytics drawer, charts, Gantt cells, CSV export, and the client-side Executive Summary mini dashboard (epic picker, pinned-epic table, week-over-week quick-expand trend, month-over-month SV trend chart, and portfolio budget-vs-actual chart).
 - `report_server.py` - registers `epic_explorer_report.html`, exposes `/api/epic-explorer/summary`, syncs the root HTML file into `report_html/`, and adds the report to page categorization.
-- `tests/test_epic_explorer.py` - verifies rollups, filter semantics, route registration, page catalog registration, HTML sync, and required UI controls.
+- `tests/test_epic_explorer.py` - verifies rollups, filter semantics, route registration, page catalog registration, HTML sync, required UI controls, and the Executive Summary mini dashboard controls (epic picker, pinned table, quick-expand trend, month-over-month chart, leadership chart).
 
 ## Change Notes
 
 - This report does not add or change database schema.
 - `report_html/epic_explorer_report.html` is generated by the existing report HTML sync flow from the root `epic_explorer_report.html` source.
+- Added the Executive Summary mini dashboard: an epic picker (dropdown + checkboxes + search), a pinned-epics table with quick-expand week-over-week schedule variance, month-over-month average schedule variance trend chart, and a portfolio budget-vs-actual leadership chart. This feature is entirely client-side (reuses the existing `/api/epic-explorer/summary` payload) and adds no new backend routes or schema changes. Pinned epic selection persists via browser `localStorage`.

@@ -487,11 +487,104 @@
       border-top: 1px solid var(--line);
       padding-top: 10px;
     }
+    .exec-summary {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 12px;
+    }
+    .exec-summary-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 10px;
+    }
+    .exec-summary-head h2 {
+      margin: 0;
+      font-size: 17px;
+      font-weight: 760;
+    }
+    .exec-summary-head .meta-line { margin: 2px 0 0; }
+    .exec-summary-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .epic-picker { position: relative; min-width: 230px; }
+    .epic-picker-menu {
+      position: absolute;
+      z-index: 30;
+      right: 0;
+      top: calc(100% + 4px);
+      min-width: 320px;
+      max-height: 340px;
+      overflow: auto;
+      display: none;
+      padding: 8px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+    .epic-picker.open .epic-picker-menu { display: block; }
+    .epic-picker-search {
+      width: 100%;
+      margin-bottom: 6px;
+      padding: 6px 9px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      font: inherit;
+    }
+    .epic-picker-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 6px;
+      margin-top: 6px;
+      padding-top: 6px;
+      border-top: 1px solid var(--line);
+    }
+    .exec-empty {
+      color: var(--muted);
+      padding: 18px 10px;
+      text-align: center;
+      border: 1px dashed var(--line);
+      border-radius: 8px;
+    }
+    .exec-table-wrap {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: auto;
+      margin-bottom: 12px;
+    }
+    .exec-table { width: 100%; min-width: 1180px; border-collapse: collapse; }
+    .exec-table th, .exec-table td {
+      padding: 7px 9px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: middle;
+      font-size: 12px;
+    }
+    .exec-table th { background: #edf2f7; color: #344054; font-weight: 750; position: sticky; top: 0; }
+    .exec-table td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .exec-complete-cell { cursor: help; border-bottom: 1px dashed var(--muted); }
+    .exec-remove-btn {
+      width: 26px;
+      height: 26px;
+      padding: 0;
+      border-color: #fecaca;
+      background: #fff5f5;
+      color: var(--red);
+    }
+    .exec-expand-row td {
+      background: #fbfcff;
+      padding: 0;
+    }
+    .exec-expand-inner { padding: 10px 14px 14px; display: grid; gap: 10px; }
     @media (max-width: 900px) {
       .page { padding: 12px; }
       .summary-strip { grid-template-columns: repeat(2, minmax(130px, 1fr)); }
       .drawer { width: 94vw; min-width: 0; }
       .chart-grid { grid-template-columns: 1fr; }
+      .exec-table { min-width: 900px; }
     }
   </style>
 </head>
@@ -517,6 +610,24 @@
       </label>
       <button id="apply-project-filters" class="primary"><span class="material-symbols-outlined">work</span>Apply projects</button>
       <button id="clear-project-filters"><span class="material-symbols-outlined">filter_alt_off</span>Clear projects</button>
+    </section>
+
+    <section class="exec-summary" id="exec-summary">
+      <div class="exec-summary-head">
+        <div>
+          <h2>Executive Summary</h2>
+          <div class="meta-line">Pin epics to a mini dashboard for a leadership-ready snapshot. Click an epic name to open its full drawer.</div>
+        </div>
+        <div class="exec-summary-controls">
+          <label class="epic-picker" id="epic-picker">
+            <button type="button" class="project-picker-toggle" id="epic-picker-toggle">Add epics <span class="material-symbols-outlined">expand_more</span></button>
+            <span class="epic-picker-menu" id="epic-picker-menu"></span>
+          </label>
+        </div>
+      </div>
+      <div id="exec-trend-cards"></div>
+      <div class="exec-table-wrap" id="exec-table-wrap"></div>
+      <div id="exec-leadership-chart"></div>
     </section>
 
     <section class="summary-strip" id="summary-strip"></section>
@@ -571,8 +682,28 @@
       drawerEpicKey: "",
       planActualMode: "bar",
       completionDetailBucket: "",
-      resizing: false
+      resizing: false,
+      execEpics: new Set(),
+      execPendingEpics: new Set(),
+      execExpandedRows: new Set(),
+      execEpicSearch: ""
     };
+    const EXEC_SUMMARY_STORAGE_KEY = "epicExplorerExecSummaryEpics";
+    function loadExecEpicsFromStorage(){
+      try {
+        const raw = window.localStorage.getItem(EXEC_SUMMARY_STORAGE_KEY);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed.filter((v) => typeof v === "string") : [];
+      } catch (err) {
+        return [];
+      }
+    }
+    function saveExecEpicsToStorage(){
+      try {
+        window.localStorage.setItem(EXEC_SUMMARY_STORAGE_KEY, JSON.stringify(Array.from(state.execEpics)));
+      } catch (err) { /* storage unavailable, ignore */ }
+    }
+    loadExecEpicsFromStorage().forEach((key) => state.execEpics.add(key));
     const els = {
       meta: document.getElementById("run-meta"),
       from: document.getElementById("from-date"),
@@ -590,7 +721,13 @@
       overlay: document.getElementById("drawer-overlay"),
       drawer: document.getElementById("drawer"),
       drawerContent: document.getElementById("drawer-content"),
-      drawerResizer: document.getElementById("drawer-resizer")
+      drawerResizer: document.getElementById("drawer-resizer"),
+      execPicker: document.getElementById("epic-picker"),
+      execPickerToggle: document.getElementById("epic-picker-toggle"),
+      execPickerMenu: document.getElementById("epic-picker-menu"),
+      execTrendCards: document.getElementById("exec-trend-cards"),
+      execTableWrap: document.getElementById("exec-table-wrap"),
+      execLeadershipChart: document.getElementById("exec-leadership-chart")
     };
     const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
     const n = (v) => Number(v || 0);
@@ -759,10 +896,225 @@
       els.tbody.innerHTML = rows.length ? rows.map((row, index) => epicRow(row, index + 1)).join("") : '<tr><td colspan="18" class="muted">No epics match the current filters.</td></tr>';
     }
     function findEpic(key){ return (state.payload?.rows || []).find((row) => String(row.epic_key) === String(key)); }
+    function execWeekDates(startIso, endIso){
+      const out = [];
+      if (!startIso || !endIso) return out;
+      let d = new Date(`${startIso}T00:00:00`);
+      const end = new Date(`${endIso}T00:00:00`);
+      if (Number.isNaN(d.getTime()) || Number.isNaN(end.getTime()) || end < d) return out;
+      while (d < end) {
+        out.push(d.toISOString().slice(0, 10));
+        d.setDate(d.getDate() + 7);
+      }
+      out.push(end.toISOString().slice(0, 10));
+      return out;
+    }
+    function storyPlannedToDate(story, asOfIso){
+      const total = n(story.original_estimate_hours);
+      if (total <= 0) return 0;
+      const startIso = story.start_date ? String(story.start_date).slice(0, 10) : "";
+      const dueIso = story.due_date ? String(story.due_date).slice(0, 10) : "";
+      if (!dueIso) return 0;
+      if (!startIso || dueIso < startIso) return asOfIso >= dueIso ? total : 0;
+      if (asOfIso < startIso) return 0;
+      if (asOfIso >= dueIso) return total;
+      const start = new Date(`${startIso}T00:00:00`);
+      const due = new Date(`${dueIso}T00:00:00`);
+      const asOf = new Date(`${asOfIso}T00:00:00`);
+      const totalDays = Math.round((due - start) / 86400000) + 1;
+      const elapsedDays = Math.round((asOf - start) / 86400000) + 1;
+      return total * (elapsedDays / totalDays);
+    }
+    function storyActualToDate(story, asOfIso){
+      let sum = 0;
+      (story.subtasks || []).forEach((sub) => {
+        (sub.worklogs || []).forEach((log) => {
+          if (String(log.date || "").slice(0, 10) <= asOfIso) sum += n(log.hours);
+        });
+      });
+      return sum;
+    }
+    function epicPlannedToDate(row, asOfIso){
+      return (row.stories || []).reduce((sum, story) => sum + storyPlannedToDate(story, asOfIso), 0);
+    }
+    function epicActualToDate(row, asOfIso){
+      return (row.stories || []).reduce((sum, story) => sum + storyActualToDate(story, asOfIso), 0);
+    }
+    function svPosition(varianceHours){
+      if (varianceHours > 0.01) return "ahead";
+      if (varianceHours < -0.01) return "behind";
+      return "on_track";
+    }
+    function execWeeklyTrend(row){
+      const storyDates = (row.stories || []).flatMap((s) => [s.start_date, s.due_date]).filter(Boolean).map((d) => String(d).slice(0, 10));
+      const fallbackStart = row.planned_start ? String(row.planned_start).slice(0, 10) : "";
+      const fallbackDue = row.planned_due ? String(row.planned_due).slice(0, 10) : "";
+      const allDates = storyDates.length ? storyDates : [fallbackStart, fallbackDue].filter(Boolean);
+      if (!allDates.length) return [];
+      const start = allDates.reduce((a, b) => (a < b ? a : b));
+      const due = allDates.reduce((a, b) => (a > b ? a : b));
+      const today = new Date().toISOString().slice(0, 10);
+      const end = due < today ? due : today;
+      return execWeekDates(start, end).map((asOf) => {
+        const planned = epicPlannedToDate(row, asOf);
+        const actual = epicActualToDate(row, asOf);
+        const variance = actual - planned;
+        return { week_end: asOf, planned_hours: planned, actual_hours: actual, variance_hours: variance, position: svPosition(variance) };
+      });
+    }
+    function execMonthEnds(monthsBack){
+      const today = new Date();
+      const months = [];
+      for (let i = monthsBack - 1; i >= 0; i--) {
+        const d = new Date(today.getFullYear(), today.getMonth() - i + 1, 0);
+        if (d > today) d.setTime(today.getTime());
+        months.push({ label: d.toLocaleString(undefined, { month: "short", year: "2-digit" }), date: d.toISOString().slice(0, 10) });
+      }
+      return months;
+    }
+    function execMonthlyAverages(rows){
+      const months = execMonthEnds(6);
+      const avg = (list) => (list.length ? list.reduce((a, b) => a + b, 0) / list.length : 0);
+      return months.map((m) => {
+        const svHoursList = [];
+        const svDateList = [];
+        rows.forEach((row) => {
+          const planned = epicPlannedToDate(row, m.date);
+          const actual = epicActualToDate(row, m.date);
+          const svHours = actual - planned;
+          svHoursList.push(svHours);
+          const totalPlanned = n(row.planned_total_hours);
+          const startIso = row.planned_start ? String(row.planned_start).slice(0, 10) : "";
+          const dueIso = row.planned_due ? String(row.planned_due).slice(0, 10) : "";
+          let totalDays = 0;
+          if (startIso && dueIso && dueIso >= startIso) {
+            totalDays = Math.round((new Date(`${dueIso}T00:00:00`) - new Date(`${startIso}T00:00:00`)) / 86400000) + 1;
+          }
+          const dailyRate = totalDays > 0 && totalPlanned > 0 ? totalPlanned / totalDays : 0;
+          svDateList.push(dailyRate > 0 ? svHours / dailyRate : 0);
+        });
+        return { label: m.label, avg_sv_hours: avg(svHoursList), avg_sv_days: avg(svDateList) };
+      });
+    }
+    function execCompleteTooltip(row){
+      return ({
+        max_last_logged_resolved_stable: "Later of last logged worklog date and epic resolved-stable-since date.",
+        last_logged_date: "Derived from the last logged worklog date on descendant subtasks.",
+        resolved_stable_since_date: "Derived from the epic's resolved-stable-since date (no worklogs found).",
+        none: "No signal available yet to infer a completion date."
+      })[row.actual_complete_source] || "Derivation unknown.";
+    }
+    function execWeeklyTrendTable(row){
+      const weeks = execWeeklyTrend(row);
+      if (!weeks.length) return '<div class="muted">Not enough planned/actual data to compute a weekly trend.</div>';
+      return `<div class="nested-table"><table><thead><tr><th>Week Ending</th><th>Planned To Date</th><th>Actual To Date</th><th>SV Hours</th><th>Status</th></tr></thead><tbody>${weeks.map((w) => `<tr><td>${esc(w.week_end)}</td><td class="num">${hours(w.planned_hours)}</td><td class="num">${hours(w.actual_hours)}</td><td class="num">${signedHours(w.variance_hours)}</td><td>${esc(positionText(w.position))}</td></tr>`).join("")}</tbody></table></div>`;
+    }
+    function execExpandRow(row){
+      return `<tr class="exec-expand-row"><td colspan="11"><div class="exec-expand-inner"><h4 class="chart-title">Week-over-week schedule variance (story-level estimate proration)</h4>${execWeeklyTrendTable(row)}</div></td></tr>`;
+    }
+    function execRow(row, index){
+      const key = String(row.epic_key || "");
+      const expanded = state.execExpandedRows.has(key);
+      return `<tr>
+        <td class="num">${index}</td>
+        <td><button class="icon-btn" data-exec-toggle="${esc(key)}" title="${expanded ? "Collapse" : "Expand"} weekly trend"><span class="material-symbols-outlined">${expanded ? "expand_less" : "chevron_right"}</span></button></td>
+        <td><button class="epic-open" data-open-epic="${esc(key)}">${esc(row.epic_name || key)}</button><div class="muted">${esc(key)}</div></td>
+        <td class="num">${row.tk_budget_hours == null ? "-" : hours(row.tk_budget_hours)}</td>
+        <td class="num">${hours(row.total_actual_hours)}</td>
+        <td>${esc(dateText(row.planned_start))}</td>
+        <td>${esc(dateText(row.planned_due))}</td>
+        <td class="exec-complete-cell" title="${esc(execCompleteTooltip(row))}">${esc(dateText(row.actual_complete_date))}</td>
+        <td>${scheduleDaysText(row)}</td>
+        <td>${scheduleHoursText(row)}</td>
+        <td><button class="icon-btn exec-remove-btn" data-exec-remove="${esc(key)}" title="Remove from dashboard"><span class="material-symbols-outlined">close</span></button></td>
+      </tr>${expanded ? execExpandRow(row) : ""}`;
+    }
+    function execLeadershipChartHtml(rows){
+      if (!rows.length) return "";
+      const max = Math.max(...rows.map((r) => Math.max(n(r.tk_budget_hours ?? r.planned_total_hours), n(r.total_actual_hours))), 1);
+      return `<section class="chart-panel wide"><h3 class="chart-title">Portfolio Budget vs Actual Hours</h3><div class="bars">${rows.map((r) => `<div class="bar-row"><span>${esc(r.epic_name || r.epic_key)}</span><div class="bar-track"><span class="bar plan" style="width:${(n(r.tk_budget_hours ?? r.planned_total_hours) / max) * 100}%"></span><span class="bar actual" style="width:${(n(r.total_actual_hours) / max) * 100}%"></span></div><span>${hours(r.tk_budget_hours ?? r.planned_total_hours)} / ${hours(r.total_actual_hours)}</span></div>`).join("")}</div><div class="legend"><span><i class="legend-dot" style="background:#2563eb"></i>Budget</span><span><i class="legend-dot" style="background:#16a34a"></i>Actual</span></div></section>`;
+    }
+    function svTrendLineChart(months){
+      const width = Math.max(420, months.length * 80);
+      const height = 190;
+      const pad = { left: 46, right: 16, top: 16, bottom: 32 };
+      const hoursVals = months.map((m) => m.avg_sv_hours);
+      const daysVals = months.map((m) => m.avg_sv_days);
+      const maxAbs = Math.max(...hoursVals.map(Math.abs), ...daysVals.map(Math.abs), 1);
+      const x = (i) => (months.length === 1 ? width / 2 : pad.left + (i * (width - pad.left - pad.right) / (months.length - 1)));
+      const zeroY = pad.top + (height - pad.top - pad.bottom) / 2;
+      const y = (v) => zeroY - ((height - pad.top - pad.bottom) / 2) * (v / maxAbs);
+      const points = (vals) => vals.map((v, i) => `${x(i)},${y(v)}`).join(" ");
+      const labels = months.map((m, i) => `<text x="${x(i)}" y="${height - 10}" text-anchor="middle" font-size="10" fill="#667085">${esc(m.label)}</text>`).join("");
+      return `<div class="line-chart"><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Month over month average schedule variance trend">
+        <line x1="${pad.left}" y1="${zeroY}" x2="${width - pad.right}" y2="${zeroY}" stroke="#d8dee9" stroke-dasharray="3,3"/>
+        <line x1="${pad.left}" y1="${pad.top}" x2="${pad.left}" y2="${height - pad.bottom}" stroke="#d8dee9"/>
+        <polyline points="${points(hoursVals)}" fill="none" stroke="#7c3aed" stroke-width="3"/>
+        <polyline points="${points(daysVals)}" fill="none" stroke="#0891b2" stroke-width="3"/>
+        ${months.map((m, i) => `<circle cx="${x(i)}" cy="${y(m.avg_sv_hours)}" r="4" fill="#7c3aed"><title>${esc(m.label)} avg SV hours ${signedHours(m.avg_sv_hours)}</title></circle><circle cx="${x(i)}" cy="${y(m.avg_sv_days)}" r="4" fill="#0891b2"><title>${esc(m.label)} avg SV days ${signedDays(m.avg_sv_days)}</title></circle>`).join("")}
+        ${labels}
+      </svg></div><div class="legend"><span><i class="legend-dot" style="background:#7c3aed"></i>Avg SV Hours</span><span><i class="legend-dot" style="background:#0891b2"></i>Avg SV Days (day-equivalent)</span></div>`;
+    }
+    function execTrendChartHtml(rows){
+      if (!rows.length) return "";
+      const months = execMonthlyAverages(rows);
+      return `<section class="chart-panel wide"><h3 class="chart-title">Month Over Month Average Schedule Variance Trend</h3>${svTrendLineChart(months)}</section>`;
+    }
+    function renderEpicPickerMenu(){
+      const rows = state.payload?.rows || [];
+      const search = state.execEpicSearch.toLowerCase();
+      const filtered = rows.filter((r) => !search || `${r.epic_name} ${r.epic_key}`.toLowerCase().includes(search));
+      const list = filtered.map((r) => {
+        const key = String(r.epic_key || "");
+        const checked = state.execPendingEpics.has(key) ? "checked" : "";
+        return `<label class="check-row"><input type="checkbox" data-exec-epic="${esc(key)}" ${checked}>${esc(r.epic_name || key)} <span class="muted">(${esc(key)})</span></label>`;
+      }).join("") || '<div class="muted">No epics match search.</div>';
+      els.execPickerMenu.innerHTML = `
+        <input type="search" class="epic-picker-search" id="epic-picker-search" placeholder="Search epics..." value="${esc(state.execEpicSearch)}">
+        <div>${list}</div>
+        <div class="epic-picker-actions">
+          <button type="button" id="epic-picker-clear">Clear all</button>
+          <button type="button" id="epic-picker-add" class="primary">Apply</button>
+        </div>`;
+      const count = state.execEpics.size;
+      els.execPickerToggle.firstChild.nodeValue = count ? `${count} epic${count === 1 ? "" : "s"} pinned ` : "Add epics ";
+      const searchInput = document.getElementById("epic-picker-search");
+      searchInput.addEventListener("input", (ev) => { state.execEpicSearch = ev.target.value; renderEpicPickerMenu(); });
+      searchInput.addEventListener("click", (ev) => ev.stopPropagation());
+      els.execPickerMenu.querySelectorAll("input[data-exec-epic]").forEach((cb) => {
+        cb.addEventListener("change", (ev) => {
+          if (ev.target.checked) state.execPendingEpics.add(ev.target.dataset.execEpic); else state.execPendingEpics.delete(ev.target.dataset.execEpic);
+        });
+      });
+      document.getElementById("epic-picker-clear").addEventListener("click", () => { state.execPendingEpics.clear(); renderEpicPickerMenu(); });
+      document.getElementById("epic-picker-add").addEventListener("click", () => {
+        state.execEpics = new Set(state.execPendingEpics);
+        saveExecEpicsToStorage();
+        els.execPicker.classList.remove("open");
+        renderAll();
+      });
+    }
+    function renderExecSummary(){
+      const allRows = state.payload?.rows || [];
+      const selectedRows = allRows.filter((r) => state.execEpics.has(String(r.epic_key)));
+      if (!selectedRows.length) {
+        els.execTrendCards.innerHTML = "";
+        els.execTableWrap.innerHTML = '<div class="exec-empty">No epics pinned yet. Use "Add epics" above to build your mini dashboard.</div>';
+        els.execLeadershipChart.innerHTML = "";
+        return;
+      }
+      els.execTrendCards.innerHTML = `<div class="chart-grid">${execTrendChartHtml(selectedRows)}</div>`;
+      els.execTableWrap.innerHTML = `<table class="exec-table"><thead><tr>
+        <th>#</th><th></th><th>Epic Name</th><th>Budget</th><th>Actual Hours</th><th>Planned Start</th><th>Planned Due</th><th>Actual Complete Date</th><th>SV Date</th><th>SV Hours</th><th></th>
+      </tr></thead><tbody>${selectedRows.map((row, index) => execRow(row, index + 1)).join("")}</tbody></table>`;
+      els.execLeadershipChart.innerHTML = execLeadershipChartHtml(selectedRows);
+    }
     function renderAll(){
       renderProjectMenu();
       renderSummary();
       renderTable();
+      renderEpicPickerMenu();
+      renderExecSummary();
       if (state.drawerEpicKey) renderDrawer(findEpic(state.drawerEpicKey));
     }
     function metricBars(rows, labelKey, valueKey, pctKey){
@@ -1029,8 +1381,28 @@
       if (cb.checked) state.pendingProjects.add(cb.dataset.project); else state.pendingProjects.delete(cb.dataset.project);
       renderProjectMenu();
     });
+    els.execPickerToggle.addEventListener("click", () => {
+      const opening = !els.execPicker.classList.contains("open");
+      if (opening) {
+        state.execPendingEpics = new Set(state.execEpics);
+        state.execEpicSearch = "";
+        renderEpicPickerMenu();
+      }
+      els.execPicker.classList.toggle("open");
+    });
+    els.execTableWrap.addEventListener("click", (ev) => {
+      const btn = ev.target.closest("button");
+      if (!btn) return;
+      const openEpic = btn.dataset.openEpic;
+      const toggleKey = btn.dataset.execToggle;
+      const removeKey = btn.dataset.execRemove;
+      if (openEpic) openDrawer(openEpic);
+      if (toggleKey) { state.execExpandedRows[state.execExpandedRows.has(toggleKey) ? "delete" : "add"](toggleKey); renderExecSummary(); }
+      if (removeKey) { state.execEpics.delete(removeKey); saveExecEpicsToStorage(); renderExecSummary(); }
+    });
     document.addEventListener("click", (ev) => {
       if (!els.projectPicker.contains(ev.target)) els.projectPicker.classList.remove("open");
+      if (!els.execPicker.contains(ev.target)) els.execPicker.classList.remove("open");
     });
     els.applyDates.addEventListener("click", () => loadReport().catch((err) => { els.tbody.innerHTML = `<tr><td colspan="18">${esc(err.message)}</td></tr>`; }));
     els.clearDates.addEventListener("click", () => {
