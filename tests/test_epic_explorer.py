@@ -367,6 +367,7 @@ class EpicExplorerTests(unittest.TestCase):
         self.assertIn("Month Over Month Average Schedule Variance Trend", html)
         self.assertIn("execTrendChartHtml", html)
         self.assertIn("svTrendLineChart", html)
+        self.assertIn("syncExecSummarySelection", html)
         self.assertIn("Portfolio Budget vs Actual Hours", html)
         self.assertIn("execLeadershipChartHtml", html)
         self.assertIn("execCompleteTooltip", html)

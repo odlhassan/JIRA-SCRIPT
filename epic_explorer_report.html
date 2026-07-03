@@ -1060,6 +1060,11 @@
       const months = execMonthlyAverages(rows);
       return `<section class="chart-panel wide"><h3 class="chart-title">Month Over Month Average Schedule Variance Trend</h3>${svTrendLineChart(months)}</section>`;
     }
+    function syncExecSummarySelection(){
+      state.execEpics = new Set(state.execPendingEpics);
+      saveExecEpicsToStorage();
+      renderAll();
+    }
     function renderEpicPickerMenu(){
       const rows = state.payload?.rows || [];
       const search = state.execEpicSearch.toLowerCase();
@@ -1084,14 +1089,16 @@
       els.execPickerMenu.querySelectorAll("input[data-exec-epic]").forEach((cb) => {
         cb.addEventListener("change", (ev) => {
           if (ev.target.checked) state.execPendingEpics.add(ev.target.dataset.execEpic); else state.execPendingEpics.delete(ev.target.dataset.execEpic);
+          syncExecSummarySelection();
         });
       });
-      document.getElementById("epic-picker-clear").addEventListener("click", () => { state.execPendingEpics.clear(); renderEpicPickerMenu(); });
+      document.getElementById("epic-picker-clear").addEventListener("click", () => {
+        state.execPendingEpics.clear();
+        syncExecSummarySelection();
+      });
       document.getElementById("epic-picker-add").addEventListener("click", () => {
-        state.execEpics = new Set(state.execPendingEpics);
-        saveExecEpicsToStorage();
         els.execPicker.classList.remove("open");
-        renderAll();
+        syncExecSummarySelection();
       });
     }
     function renderExecSummary(){
