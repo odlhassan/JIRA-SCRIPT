@@ -283,6 +283,16 @@
     }
     .nested-table table { min-width: 0; }
     .nested-table th { position: static; background: #f5f7fb; }
+    .weekly-trend-table th,
+    .weekly-trend-table td {
+      text-align: center;
+    }
+    .weekly-trend-table td.num {
+      text-align: center;
+    }
+    .weekly-trend-table td:last-child {
+      white-space: nowrap;
+    }
     .drawer-overlay {
       position: fixed;
       inset: 0;
@@ -1007,7 +1017,7 @@
     function execWeeklyTrendTable(row){
       const weeks = execWeeklyTrend(row);
       if (!weeks.length) return '<div class="muted">Not enough planned/actual data to compute a weekly trend.</div>';
-      return `<div class="nested-table"><table><thead><tr><th>Week Ending</th><th>Planned To Date</th><th>Actual To Date</th><th>SV Hours</th><th>Status</th></tr></thead><tbody>${weeks.map((w) => `<tr><td>${esc(w.week_end)}</td><td class="num">${hours(w.planned_hours)}</td><td class="num">${hours(w.actual_hours)}</td><td class="num">${signedHours(w.variance_hours)}</td><td>${esc(positionText(w.position))}</td></tr>`).join("")}</tbody></table></div>`;
+      return `<div class="nested-table"><table class="weekly-trend-table"><thead><tr><th>Week Ending</th><th>Planned To Date</th><th>Actual To Date</th><th>SV Hours</th><th>Status</th></tr></thead><tbody>${weeks.map((w) => `<tr><td>${esc(w.week_end)}</td><td class="num">${hours(w.planned_hours)}</td><td class="num">${hours(w.actual_hours)}</td><td class="num">${signedHours(w.variance_hours)}</td><td>${esc(positionText(w.position))}</td></tr>`).join("")}</tbody></table></div>`;
     }
     function execWeeklyTrendLineChart(weeks){
       if (!weeks.length) return "";
