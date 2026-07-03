@@ -40,5 +40,11 @@ def safe_journal_mode() -> str:
 def apply_journal_mode(conn: sqlite3.Connection) -> str:
     """Set the journal mode (always DELETE unless EPR_FORCE_WAL=1) and return it."""
     mode = safe_journal_mode()
-    conn.execute(f"PRAGMA journal_mode={mode}")
+    try:
+        conn.execute(f"PRAGMA journal_mode={mode}")
+    except sqlite3.OperationalError as exc:
+        message = str(exc).lower()
+        if "database is locked" in message:
+            return mode
+        raise
     return mode
