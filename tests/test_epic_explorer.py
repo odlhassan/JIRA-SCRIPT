@@ -361,6 +361,8 @@ class EpicExplorerTests(unittest.TestCase):
         self.assertIn("epicExplorerExecSummaryEpics", html)
         self.assertIn("execWeeklyTrend", html)
         self.assertIn("execWeeklyTrendTable", html)
+        self.assertIn("execWeeklyTrendLineChart", html)
+        self.assertIn("Story-level estimate proration line chart", html)
         self.assertIn("storyPlannedToDate", html)
         self.assertIn("storyActualToDate", html)
         self.assertIn("execMonthlyAverages", html)
