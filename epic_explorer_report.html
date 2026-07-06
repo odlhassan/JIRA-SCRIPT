@@ -1015,6 +1015,10 @@
         none: "No signal available yet to infer a completion date."
       })[row.actual_complete_source] || "Derivation unknown.";
     }
+    function execBudgetHours(row){
+      const tkBudget = n(row.tk_budget_hours);
+      return tkBudget > 0 ? tkBudget : n(row.planned_total_hours);
+    }
     function execWeeklyTrendTable(row){
       const weeks = execWeeklyTrend(row);
       if (!weeks.length) return '<div class="muted">Not enough planned/actual data to compute a weekly trend.</div>';
@@ -1054,7 +1058,7 @@
         <td><button class="icon-btn" data-exec-toggle="${esc(key)}" title="${expanded ? "Collapse" : "Expand"} weekly trend"><span class="material-symbols-outlined">${expanded ? "expand_less" : "chevron_right"}</span></button></td>
         <td><button class="epic-open" data-open-epic="${esc(key)}">${esc(row.epic_name || key)}</button><div class="muted">${esc(key)}</div></td>
         <td>${statusPill(row.epic_status)}</td>
-        <td class="num">${row.tk_budget_hours == null ? "-" : hours(row.tk_budget_hours)}</td>
+        <td class="num">${execBudgetHours(row) > 0 ? hours(execBudgetHours(row)) : "-"}</td>
         <td class="num">${hours(row.total_actual_hours)}</td>
         <td>${esc(dateText(row.planned_start))}</td>
         <td>${esc(dateText(row.planned_due))}</td>
@@ -1066,9 +1070,9 @@
     }
     function execLeadershipChartHtml(rows){
       if (!rows.length) return "";
-      const max = Math.max(...rows.map((r) => Math.max(n(r.tk_budget_hours ?? r.planned_total_hours), n(r.total_actual_hours))), 1);
+      const max = Math.max(...rows.map((r) => Math.max(execBudgetHours(r), n(r.total_actual_hours))), 1);
       return `<section class="chart-panel wide"><h3 class="chart-title">Portfolio Budget vs Actual Hours</h3><div class="bars">${rows.map((r) => {
-        const budget = n(r.tk_budget_hours ?? r.planned_total_hours);
+        const budget = execBudgetHours(r);
         const actual = n(r.total_actual_hours);
         const budgetOverlay = budget > 0 && budget <= actual ? " overlay" : "";
         const actualOverlay = actual > 0 && actual < budget ? " overlay" : "";
