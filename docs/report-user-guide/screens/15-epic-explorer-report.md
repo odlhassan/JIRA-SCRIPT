@@ -59,8 +59,8 @@ Epic Explorer is a canonical-database report for inspecting every Jira epic and 
 | Table | Status | Status pill | Derived | Row's `epic_status`, showing whether the pinned epic is resolved, in progress, on hold, or any other Jira status present in the canonical payload. |
 | Table | Budget | Numeric hours | Blank when no planned basis exists | Uses row `tk_budget_hours` when it is positive; otherwise falls back to `planned_total_hours`, matching the planned value shown in the epic details drawer. |
 | Table | Actual Hours | Numeric hours | 0 | Row's `total_actual_hours`. |
-| Table | Planned Start / Planned Due | Date | Blank when missing | Row's `planned_start` / `planned_due`. |
-| Table | Actual Complete Date | Date with hover tooltip | Blank when missing | Row's `actual_complete_date`; hovering shows plain-English reasoning derived from `actual_complete_source` (e.g. "Later of last logged worklog date and epic resolved-stable-since date."). |
+| Table | Planned Start / Planned Due | Date (`MMM-DD-YY`) | Blank when missing | Row's `planned_start` / `planned_due`, displayed in `MMM-DD-YY` format for the Executive Summary table. |
+| Table | Actual Complete Date | Date with hover tooltip (`MMM-DD-YY`) | Blank when missing | Row's `actual_complete_date`, displayed in `MMM-DD-YY`; hovering shows plain-English reasoning derived from `actual_complete_source` (e.g. "Later of last logged worklog date and epic resolved-stable-since date."). |
 | Table | SV Date / SV Hours | Signed KPI text | Blank when missing | Reuses the main table's `scheduleDaysText` / `scheduleHoursText` renderers, so the same epic-level basis and coloring apply. |
 | Table | Quick-expand toggle | Chevron button | Collapsed | Expands an inline week-over-week schedule variance panel for that epic only, without opening the full drawer. The panel includes a story-level estimate proration line chart plus a centered weekly data table. |
 | Table | Remove | Icon button | - | Unpins the epic from the mini dashboard, updates local storage, and refreshes the count and charts immediately. |
@@ -75,7 +75,9 @@ Epic Explorer is a canonical-database report for inspecting every Jira epic and 
 - Each checkbox toggle in the epic picker commits the current pinned set immediately so the count and charts stay live while the picker is open.
 - Week-over-week schedule variance uses story-level precision: each work item's own `original_estimate_hours` is linearly prorated across that story's own `start_date`..`due_date` (calendar days), then summed across all stories in the epic to get planned-to-date hours for a given week-ending date. Actual-to-date hours sum descendant subtask worklogs up to that date. The variance (actual minus planned) determines whether the epic was ahead, on track, or behind for that week.
 - The quick-expanded weekly trend panel renders both a line chart and the weekly table from the same calculated planned/actual rows so the chart stays aligned with the visible data.
+- The quick-expanded weekly trend chart x-axis uses `MMM-DD` labels, and the Weekly Trend table `Week Ending` column uses `MMM-DD-YYYY`.
 - The weekly trend table centers the header text and cell values to make the week-ending, planned, actual, variance, and status columns easier to scan.
+- The Executive Summary pinned-epics table centers text across columns (including Budget and Actual Hours) for consistent scanability.
 - If a story is missing start/due dates, its own planned-to-date contribution is treated as 0 until due-date-only completion, keeping the trend conservative rather than guessing.
 - The weekly trend range runs from the earliest story start date to the earlier of the latest story due date or today, in 7-day steps ending on the epic's actual due date.
 - Month-over-month averages are computed over the pinned epics for up to the last 6 calendar months (partial current month included). Avg SV Hours is the mean of (epic actual-to-date minus epic planned-to-date) at each month end. Avg SV Date is a derived day-equivalent proxy: SV hours divided by each epic's own average daily planned rate (`planned_total_hours` / total planned days), documented as a proxy rather than a literal day count.
@@ -130,6 +132,7 @@ Epic Explorer is a canonical-database report for inspecting every Jira epic and 
 - Added the Executive Summary mini dashboard: an epic picker (dropdown + checkboxes + search), a pinned-epics table with quick-expand week-over-week schedule variance, month-over-month average schedule variance trend chart, and a portfolio budget-vs-actual leadership chart. This feature is entirely client-side (reuses the existing `/api/epic-explorer/summary` payload) and adds no new backend routes or schema changes. Pinned epic selection persists via browser `localStorage`.
 - Updated the Executive Summary mini dashboard to show each pinned epic's status, keep search typing focused while filtering the picker list, and render the lower budget/actual bar above the larger bar so both values remain visible.
 - Updated Executive Summary Budget values so zero TK budget no longer masks the Jira planned estimate; the pinned table and portfolio bar chart now match the drawer's planned-hours basis.
+- Updated Executive Summary date formatting and alignment: weekly-trend chart labels now use `MMM-DD`, weekly-trend `Week Ending` uses `MMM-DD-YYYY`, pinned-table planned/actual date columns use `MMM-DD-YY`, and pinned-table text is centered (including Budget and Actual Hours).
 
 ## Business Logic
 

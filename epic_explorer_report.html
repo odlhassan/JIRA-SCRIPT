@@ -570,12 +570,12 @@
     .exec-table th, .exec-table td {
       padding: 7px 9px;
       border-bottom: 1px solid var(--line);
-      text-align: left;
+      text-align: center;
       vertical-align: middle;
       font-size: 12px;
     }
     .exec-table th { background: #edf2f7; color: #344054; font-weight: 750; position: sticky; top: 0; }
-    .exec-table td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .exec-table td.num { text-align: center; font-variant-numeric: tabular-nums; white-space: nowrap; }
     .exec-complete-cell { cursor: help; border-bottom: 1px dashed var(--muted); }
     .exec-remove-btn {
       width: 26px;
@@ -744,6 +744,35 @@
     const n = (v) => Number(v || 0);
     const hours = (v) => Number.isFinite(n(v)) ? n(v).toFixed(2) + "h" : "-";
     const dateText = (v) => String(v || "").slice(0, 10) || "-";
+    function parseIsoDateParts(value){
+      const iso = String(value || "").slice(0, 10);
+      const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+      if (!match) return null;
+      return {
+        year: match[1],
+        month: Number(match[2]),
+        day: match[3]
+      };
+    }
+    function formatDateMmmDd(value){
+      const parts = parseIsoDateParts(value);
+      if (!parts) return String(value || "-");
+      const month = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][parts.month - 1] || "";
+      return month ? `${month}-${parts.day}` : String(value || "-");
+    }
+    function formatDateMmmDdYyyy(value){
+      const parts = parseIsoDateParts(value);
+      if (!parts) return String(value || "-");
+      const month = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][parts.month - 1] || "";
+      return month ? `${month}-${parts.day}-${parts.year}` : String(value || "-");
+    }
+    function formatDateMmmDdYy(value){
+      const parts = parseIsoDateParts(value);
+      if (!parts) return String(value || "-");
+      const month = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][parts.month - 1] || "";
+      const yearShort = parts.year.slice(-2);
+      return month ? `${month}-${parts.day}-${yearShort}` : String(value || "-");
+    }
     const keyPart = (v) => String(v || "").replace(/[^A-Za-z0-9_-]/g, "_");
     const pct = (v) => v == null || v === "" ? "-" : `${n(v).toFixed(1)}%`;
     function kpiClass(position, value){
@@ -1022,7 +1051,7 @@
     function execWeeklyTrendTable(row){
       const weeks = execWeeklyTrend(row);
       if (!weeks.length) return '<div class="muted">Not enough planned/actual data to compute a weekly trend.</div>';
-      return `<div class="nested-table"><table class="weekly-trend-table"><thead><tr><th>Week Ending</th><th>Planned To Date</th><th>Actual To Date</th><th>SV Hours</th><th>Status</th></tr></thead><tbody>${weeks.map((w) => `<tr><td>${esc(w.week_end)}</td><td class="num">${hours(w.planned_hours)}</td><td class="num">${hours(w.actual_hours)}</td><td class="num">${signedHours(w.variance_hours)}</td><td>${esc(positionText(w.position))}</td></tr>`).join("")}</tbody></table></div>`;
+      return `<div class="nested-table"><table class="weekly-trend-table"><thead><tr><th>Week Ending</th><th>Planned To Date</th><th>Actual To Date</th><th>SV Hours</th><th>Status</th></tr></thead><tbody>${weeks.map((w) => `<tr><td>${esc(formatDateMmmDdYyyy(w.week_end))}</td><td class="num">${hours(w.planned_hours)}</td><td class="num">${hours(w.actual_hours)}</td><td class="num">${signedHours(w.variance_hours)}</td><td>${esc(positionText(w.position))}</td></tr>`).join("")}</tbody></table></div>`;
     }
     function execWeeklyTrendLineChart(weeks){
       if (!weeks.length) return "";
@@ -1036,13 +1065,13 @@
       const y = (v) => pad.top + (height - pad.top - pad.bottom) * (1 - (v / max));
       const plannedPoints = weeks.map((w, i) => `${x(i)},${y(n(w.planned_hours))}`).join(" ");
       const actualPoints = weeks.map((w, i) => `${x(i)},${y(n(w.actual_hours))}`).join(" ");
-      const labels = weeks.map((w, i) => `<text x="${x(i)}" y="${height - 10}" text-anchor="middle" font-size="10" fill="#667085">${esc(String(w.week_end).slice(5))}</text>`).join("");
+      const labels = weeks.map((w, i) => `<text x="${x(i)}" y="${height - 10}" text-anchor="middle" font-size="10" fill="#667085">${esc(formatDateMmmDd(w.week_end))}</text>`).join("");
       return `<div class="line-chart"><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Story-level estimate proration line chart">
         <line x1="${pad.left}" y1="${height - pad.bottom}" x2="${width - pad.right}" y2="${height - pad.bottom}" stroke="#d8dee9"/>
         <line x1="${pad.left}" y1="${pad.top}" x2="${pad.left}" y2="${height - pad.bottom}" stroke="#d8dee9"/>
         <polyline points="${plannedPoints}" fill="none" stroke="#2563eb" stroke-width="3"/>
         <polyline points="${actualPoints}" fill="none" stroke="#16a34a" stroke-width="3"/>
-        ${weeks.map((w, i) => `<circle cx="${x(i)}" cy="${y(n(w.planned_hours))}" r="4" fill="#2563eb"><title>${esc(w.week_end)} planned ${hours(w.planned_hours)}</title></circle><circle cx="${x(i)}" cy="${y(n(w.actual_hours))}" r="4" fill="#16a34a"><title>${esc(w.week_end)} actual ${hours(w.actual_hours)}</title></circle>`).join("")}
+        ${weeks.map((w, i) => `<circle cx="${x(i)}" cy="${y(n(w.planned_hours))}" r="4" fill="#2563eb"><title>${esc(formatDateMmmDdYyyy(w.week_end))} planned ${hours(w.planned_hours)}</title></circle><circle cx="${x(i)}" cy="${y(n(w.actual_hours))}" r="4" fill="#16a34a"><title>${esc(formatDateMmmDdYyyy(w.week_end))} actual ${hours(w.actual_hours)}</title></circle>`).join("")}
         ${labels}
       </svg></div><div class="legend"><span><i class="legend-dot" style="background:#2563eb"></i>Planned To Date</span><span><i class="legend-dot" style="background:#16a34a"></i>Actual To Date</span></div>`;
     }
@@ -1060,9 +1089,9 @@
         <td>${statusPill(row.epic_status)}</td>
         <td class="num">${execBudgetHours(row) > 0 ? hours(execBudgetHours(row)) : "-"}</td>
         <td class="num">${hours(row.total_actual_hours)}</td>
-        <td>${esc(dateText(row.planned_start))}</td>
-        <td>${esc(dateText(row.planned_due))}</td>
-        <td class="exec-complete-cell" title="${esc(execCompleteTooltip(row))}">${esc(dateText(row.actual_complete_date))}</td>
+        <td>${esc(formatDateMmmDdYy(row.planned_start))}</td>
+        <td>${esc(formatDateMmmDdYy(row.planned_due))}</td>
+        <td class="exec-complete-cell" title="${esc(execCompleteTooltip(row))}">${esc(formatDateMmmDdYy(row.actual_complete_date))}</td>
         <td>${scheduleDaysText(row)}</td>
         <td>${scheduleHoursText(row)}</td>
         <td><button class="icon-btn exec-remove-btn" data-exec-remove="${esc(key)}" title="Remove from dashboard"><span class="material-symbols-outlined">close</span></button></td>
