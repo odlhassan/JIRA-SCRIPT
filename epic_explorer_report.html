@@ -393,8 +393,9 @@
       bottom: 0;
       min-width: 2px;
     }
-    .bar.plan { left: 0; background: var(--blue); opacity: 0.72; }
-    .bar.actual { left: 0; background: var(--green); }
+    .bar.plan { left: 0; background: var(--blue); opacity: 0.72; z-index: 1; }
+    .bar.actual { left: 0; background: var(--green); z-index: 1; }
+    .bar.overlay { opacity: 1; z-index: 2; }
     .mini-table { width: 100%; min-width: 0; }
     .mini-table th, .mini-table td { padding: 6px 7px; font-size: 12px; }
     .gantt-scroll { overflow: auto; }
@@ -565,7 +566,7 @@
       overflow: auto;
       margin-bottom: 12px;
     }
-    .exec-table { width: 100%; min-width: 1180px; border-collapse: collapse; }
+    .exec-table { width: 100%; min-width: 1240px; border-collapse: collapse; }
     .exec-table th, .exec-table td {
       padding: 7px 9px;
       border-bottom: 1px solid var(--line);
@@ -1043,7 +1044,7 @@
     }
     function execExpandRow(row){
       const weeks = execWeeklyTrend(row);
-      return `<tr class="exec-expand-row"><td colspan="11"><div class="exec-expand-inner"><h4 class="chart-title">Week-over-week schedule variance (story-level estimate proration)</h4>${weeks.length ? `<div class="detail-box"><h4 class="chart-title">Story-level estimate proration line chart</h4>${execWeeklyTrendLineChart(weeks)}</div>` : '<div class="muted">Not enough planned/actual data to compute a weekly trend.</div>'}${execWeeklyTrendTable(row)}</div></td></tr>`;
+      return `<tr class="exec-expand-row"><td colspan="12"><div class="exec-expand-inner"><h4 class="chart-title">Week-over-week schedule variance (story-level estimate proration)</h4>${weeks.length ? `<div class="detail-box"><h4 class="chart-title">Story-level estimate proration line chart</h4>${execWeeklyTrendLineChart(weeks)}</div>` : '<div class="muted">Not enough planned/actual data to compute a weekly trend.</div>'}${execWeeklyTrendTable(row)}</div></td></tr>`;
     }
     function execRow(row, index){
       const key = String(row.epic_key || "");
@@ -1052,6 +1053,7 @@
         <td class="num">${index}</td>
         <td><button class="icon-btn" data-exec-toggle="${esc(key)}" title="${expanded ? "Collapse" : "Expand"} weekly trend"><span class="material-symbols-outlined">${expanded ? "expand_less" : "chevron_right"}</span></button></td>
         <td><button class="epic-open" data-open-epic="${esc(key)}">${esc(row.epic_name || key)}</button><div class="muted">${esc(key)}</div></td>
+        <td>${statusPill(row.epic_status)}</td>
         <td class="num">${row.tk_budget_hours == null ? "-" : hours(row.tk_budget_hours)}</td>
         <td class="num">${hours(row.total_actual_hours)}</td>
         <td>${esc(dateText(row.planned_start))}</td>
@@ -1065,7 +1067,13 @@
     function execLeadershipChartHtml(rows){
       if (!rows.length) return "";
       const max = Math.max(...rows.map((r) => Math.max(n(r.tk_budget_hours ?? r.planned_total_hours), n(r.total_actual_hours))), 1);
-      return `<section class="chart-panel wide"><h3 class="chart-title">Portfolio Budget vs Actual Hours</h3><div class="bars">${rows.map((r) => `<div class="bar-row"><span>${esc(r.epic_name || r.epic_key)}</span><div class="bar-track"><span class="bar plan" style="width:${(n(r.tk_budget_hours ?? r.planned_total_hours) / max) * 100}%"></span><span class="bar actual" style="width:${(n(r.total_actual_hours) / max) * 100}%"></span></div><span>${hours(r.tk_budget_hours ?? r.planned_total_hours)} / ${hours(r.total_actual_hours)}</span></div>`).join("")}</div><div class="legend"><span><i class="legend-dot" style="background:#2563eb"></i>Budget</span><span><i class="legend-dot" style="background:#16a34a"></i>Actual</span></div></section>`;
+      return `<section class="chart-panel wide"><h3 class="chart-title">Portfolio Budget vs Actual Hours</h3><div class="bars">${rows.map((r) => {
+        const budget = n(r.tk_budget_hours ?? r.planned_total_hours);
+        const actual = n(r.total_actual_hours);
+        const budgetOverlay = budget > 0 && budget <= actual ? " overlay" : "";
+        const actualOverlay = actual > 0 && actual < budget ? " overlay" : "";
+        return `<div class="bar-row"><span>${esc(r.epic_name || r.epic_key)}</span><div class="bar-track"><span class="bar plan${budgetOverlay}" style="width:${(budget / max) * 100}%"></span><span class="bar actual${actualOverlay}" style="width:${(actual / max) * 100}%"></span></div><span>${hours(budget)} / ${hours(actual)}</span></div>`;
+      }).join("")}</div><div class="legend"><span><i class="legend-dot" style="background:#2563eb"></i>Budget</span><span><i class="legend-dot" style="background:#16a34a"></i>Actual</span></div></section>`;
     }
     function svTrendLineChart(months){
       const width = Math.max(420, months.length * 80);
@@ -1098,7 +1106,7 @@
       saveExecEpicsToStorage();
       renderAll();
     }
-    function renderEpicPickerMenu(){
+    function renderEpicPickerOptions(){
       const rows = state.payload?.rows || [];
       const search = state.execEpicSearch.toLowerCase();
       const filtered = rows.filter((r) => !search || `${r.epic_name} ${r.epic_key}`.toLowerCase().includes(search));
@@ -1107,32 +1115,47 @@
         const checked = state.execPendingEpics.has(key) ? "checked" : "";
         return `<label class="check-row"><input type="checkbox" data-exec-epic="${esc(key)}" ${checked}>${esc(r.epic_name || key)} <span class="muted">(${esc(key)})</span></label>`;
       }).join("") || '<div class="muted">No epics match search.</div>';
+      const options = document.getElementById("epic-picker-options");
+      if (options) options.innerHTML = list;
+    }
+    function bindEpicPickerMenu(){
+      const searchInput = document.getElementById("epic-picker-search");
+      searchInput.addEventListener("input", (ev) => {
+        state.execEpicSearch = ev.target.value;
+        renderEpicPickerOptions();
+      });
+      searchInput.addEventListener("click", (ev) => ev.stopPropagation());
+      if (els.execPickerMenu.dataset.bound === "1") return;
+      els.execPickerMenu.addEventListener("change", (ev) => {
+        const cb = ev.target.closest("input[data-exec-epic]");
+        if (!cb) return;
+        if (cb.checked) state.execPendingEpics.add(cb.dataset.execEpic); else state.execPendingEpics.delete(cb.dataset.execEpic);
+        syncExecSummarySelection();
+      });
+      els.execPickerMenu.addEventListener("click", (ev) => {
+        if (ev.target.closest("#epic-picker-clear")) {
+          state.execPendingEpics.clear();
+          syncExecSummarySelection();
+        }
+        if (ev.target.closest("#epic-picker-add")) {
+          els.execPicker.classList.remove("open");
+          syncExecSummarySelection();
+        }
+      });
+      els.execPickerMenu.dataset.bound = "1";
+    }
+    function renderEpicPickerMenu(){
       els.execPickerMenu.innerHTML = `
         <input type="search" class="epic-picker-search" id="epic-picker-search" placeholder="Search epics..." value="${esc(state.execEpicSearch)}">
-        <div>${list}</div>
+        <div id="epic-picker-options"></div>
         <div class="epic-picker-actions">
           <button type="button" id="epic-picker-clear">Clear all</button>
           <button type="button" id="epic-picker-add" class="primary">Apply</button>
         </div>`;
       const count = state.execEpics.size;
       els.execPickerToggle.firstChild.nodeValue = count ? `${count} epic${count === 1 ? "" : "s"} pinned ` : "Add epics ";
-      const searchInput = document.getElementById("epic-picker-search");
-      searchInput.addEventListener("input", (ev) => { state.execEpicSearch = ev.target.value; renderEpicPickerMenu(); });
-      searchInput.addEventListener("click", (ev) => ev.stopPropagation());
-      els.execPickerMenu.querySelectorAll("input[data-exec-epic]").forEach((cb) => {
-        cb.addEventListener("change", (ev) => {
-          if (ev.target.checked) state.execPendingEpics.add(ev.target.dataset.execEpic); else state.execPendingEpics.delete(ev.target.dataset.execEpic);
-          syncExecSummarySelection();
-        });
-      });
-      document.getElementById("epic-picker-clear").addEventListener("click", () => {
-        state.execPendingEpics.clear();
-        syncExecSummarySelection();
-      });
-      document.getElementById("epic-picker-add").addEventListener("click", () => {
-        els.execPicker.classList.remove("open");
-        syncExecSummarySelection();
-      });
+      renderEpicPickerOptions();
+      bindEpicPickerMenu();
     }
     function renderExecSummary(){
       const allRows = state.payload?.rows || [];
@@ -1145,7 +1168,7 @@
       }
       els.execTrendCards.innerHTML = `<div class="chart-grid">${execTrendChartHtml(selectedRows)}</div>`;
       els.execTableWrap.innerHTML = `<table class="exec-table"><thead><tr>
-        <th>#</th><th></th><th>Epic Name</th><th>Budget</th><th>Actual Hours</th><th>Planned Start</th><th>Planned Due</th><th>Actual Complete Date</th><th>SV Date</th><th>SV Hours</th><th></th>
+        <th>#</th><th></th><th>Epic Name</th><th>Status</th><th>Budget</th><th>Actual Hours</th><th>Planned Start</th><th>Planned Due</th><th>Actual Complete Date</th><th>SV Date</th><th>SV Hours</th><th></th>
       </tr></thead><tbody>${selectedRows.map((row, index) => execRow(row, index + 1)).join("")}</tbody></table>`;
       els.execLeadershipChart.innerHTML = execLeadershipChartHtml(selectedRows);
     }

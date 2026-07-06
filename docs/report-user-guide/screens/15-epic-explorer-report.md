@@ -17,7 +17,7 @@ Epic Explorer is a canonical-database report for inspecting every Jira epic and 
 5. Click the epic name to open the right-side analytics drawer. Drag the drawer's left edge to resize from half page width toward full width.
 6. Click the Jira open icon beside an epic name to open the epic in Jira.
 7. Click CSV to export the visible top-level epic table.
-8. Use the Executive Summary section above the main table to pin one or more epics (via the "Add epics" dropdown with checkboxes and a search box) into a leadership-ready mini dashboard. Each checkbox change immediately refreshes the pinned-epic count and charts, and Apply simply closes the picker after saving the live selection; pinned epics persist across reloads via browser local storage.
+8. Use the Executive Summary section above the main table to pin one or more epics (via the "Add epics" dropdown with checkboxes and a search box) into a leadership-ready mini dashboard. Typing in the search box filters the checkbox list without closing or replacing the focused search field. Each checkbox change immediately refreshes the pinned-epic count and charts, and Apply simply closes the picker after saving the live selection; pinned epics persist across reloads via browser local storage.
 9. In the Executive Summary mini dashboard, click an epic name to open the same detailed analytics drawer used by the main table. Click the chevron icon to quick-expand a week-over-week schedule variance trend for that epic without leaving the mini dashboard; the expanded panel now includes a line chart built from the same weekly values shown in the table. Click the close icon to unpin an epic and refresh the dashboard immediately.
 10. Review the Month Over Month Average Schedule Variance Trend chart and the Portfolio Budget vs Actual Hours chart below the mini dashboard table for a portfolio-level view of the pinned epics.
 
@@ -56,6 +56,7 @@ Epic Explorer is a canonical-database report for inspecting every Jira epic and 
 |---|---|---|---|---|
 | Picker | Add epics | Dropdown with search + checkboxes | None selected | Client-side only; lists every epic currently loaded in the page's payload. Search box filters by epic name or key. Each checkbox change saves the live selection, refreshes the count and charts, and keeps the picker state in sync. |
 | Table | Epic Name | Button | - | Opens the same analytics drawer as the main table. |
+| Table | Status | Status pill | Derived | Row's `epic_status`, showing whether the pinned epic is resolved, in progress, on hold, or any other Jira status present in the canonical payload. |
 | Table | Budget | Numeric hours | Blank when missing | Row's `tk_budget_hours` (falls back to `planned_total_hours` in the leadership chart when TK budget is missing). |
 | Table | Actual Hours | Numeric hours | 0 | Row's `total_actual_hours`. |
 | Table | Planned Start / Planned Due | Date | Blank when missing | Row's `planned_start` / `planned_due`. |
@@ -64,12 +65,13 @@ Epic Explorer is a canonical-database report for inspecting every Jira epic and 
 | Table | Quick-expand toggle | Chevron button | Collapsed | Expands an inline week-over-week schedule variance panel for that epic only, without opening the full drawer. The panel includes a story-level estimate proration line chart plus a centered weekly data table. |
 | Table | Remove | Icon button | - | Unpins the epic from the mini dashboard, updates local storage, and refreshes the count and charts immediately. |
 | Chart | Month Over Month Average Schedule Variance Trend | Dual-line SVG chart | - | Plots, for up to the last 6 calendar months (partial current month included), the average SV Hours and an average SV Date "day-equivalent" across all pinned epics. |
-| Chart | Portfolio Budget vs Actual Hours | Horizontal bar chart | - | One bar pair (budget vs actual) per pinned epic, for leadership-level comparison. |
+| Chart | Portfolio Budget vs Actual Hours | Horizontal bar chart | - | One bar pair (budget vs actual) per pinned epic, for leadership-level comparison. Budget remains blue and actual remains green; when values overlap, the lower value is rendered above the larger value so budget remains visible when actual exceeds budget. |
 
 ## Business Rules — Executive Summary
 
 - The Executive Summary section is entirely client-side: it reuses the same `/api/epic-explorer/summary` payload already loaded for the main table and adds no new API calls or database schema.
 - Pinned epic keys are stored in the browser's `localStorage` under `epicExplorerExecSummaryEpics` so the mini dashboard persists across page reloads on the same browser/device. Keys no longer present in the current payload are simply not rendered (no error).
+- The epic picker search input updates only the checkbox list while the user types, preserving focus and typed text for seamless filtering.
 - Each checkbox toggle in the epic picker commits the current pinned set immediately so the count and charts stay live while the picker is open.
 - Week-over-week schedule variance uses story-level precision: each work item's own `original_estimate_hours` is linearly prorated across that story's own `start_date`..`due_date` (calendar days), then summed across all stories in the epic to get planned-to-date hours for a given week-ending date. Actual-to-date hours sum descendant subtask worklogs up to that date. The variance (actual minus planned) determines whether the epic was ahead, on track, or behind for that week.
 - The quick-expanded weekly trend panel renders both a line chart and the weekly table from the same calculated planned/actual rows so the chart stays aligned with the visible data.
@@ -77,7 +79,7 @@ Epic Explorer is a canonical-database report for inspecting every Jira epic and 
 - If a story is missing start/due dates, its own planned-to-date contribution is treated as 0 until due-date-only completion, keeping the trend conservative rather than guessing.
 - The weekly trend range runs from the earliest story start date to the earlier of the latest story due date or today, in 7-day steps ending on the epic's actual due date.
 - Month-over-month averages are computed over the pinned epics for up to the last 6 calendar months (partial current month included). Avg SV Hours is the mean of (epic actual-to-date minus epic planned-to-date) at each month end. Avg SV Date is a derived day-equivalent proxy: SV hours divided by each epic's own average daily planned rate (`planned_total_hours` / total planned days), documented as a proxy rather than a literal day count.
-- The Portfolio Budget vs Actual Hours chart is an additional leadership-visibility chart requested for at-a-glance comparison; it uses the same `tk_budget_hours` (or `planned_total_hours` fallback) and `total_actual_hours` values already shown in the main table.
+- The Portfolio Budget vs Actual Hours chart is an additional leadership-visibility chart requested for at-a-glance comparison; it uses the same `tk_budget_hours` (or `planned_total_hours` fallback) and `total_actual_hours` values already shown in the main table. The shorter bar overlays the longer bar so an over-budget actual value does not hide the blue budget indicator.
 
 ## Business Rules
 
@@ -126,11 +128,13 @@ Epic Explorer is a canonical-database report for inspecting every Jira epic and 
 - This report does not add or change database schema.
 - `report_html/epic_explorer_report.html` is generated by the existing report HTML sync flow from the root `epic_explorer_report.html` source.
 - Added the Executive Summary mini dashboard: an epic picker (dropdown + checkboxes + search), a pinned-epics table with quick-expand week-over-week schedule variance, month-over-month average schedule variance trend chart, and a portfolio budget-vs-actual leadership chart. This feature is entirely client-side (reuses the existing `/api/epic-explorer/summary` payload) and adds no new backend routes or schema changes. Pinned epic selection persists via browser `localStorage`.
+- Updated the Executive Summary mini dashboard to show each pinned epic's status, keep search typing focused while filtering the picker list, and render the lower budget/actual bar above the larger bar so both values remain visible.
 
 ## Business Logic
 
 - The Executive Summary reuses the active epic summary payload already loaded for the page.
 - The picker keeps a pending set for UI rendering, but every checkbox change immediately syncs that set into the pinned-epic dashboard state so charts and counts stay current.
+- The picker search field is rendered once per menu render and filters the dedicated options container instead of rebuilding the whole menu on every keystroke.
 - Apply is now a close-and-commit action, not the only moment when the dashboard changes.
 
 ## Business Cases
@@ -140,18 +144,21 @@ Epic Explorer is a canonical-database report for inspecting every Jira epic and 
 
 ## Examples
 
+- Type multiple letters in the picker search field: the checkbox list filters in place and the typed search stays focused.
 - Check one more epic in the picker: the pinned count increments right away and the portfolio chart adds one more bar pair.
 - Uncheck a pinned epic: its row disappears from the mini dashboard immediately and the local storage snapshot updates.
 
 ## Explanations
 
 - Open the epic picker, search for a key or name, and toggle the checkboxes you want pinned.
+- Read the Status pill beside each pinned epic to distinguish resolved work from in-progress or blocked work.
 - Expand an epic in the mini dashboard to see the line chart and data table for the same week-by-week proration values.
 - The dashboard refreshes as soon as a checkbox changes, so you can see whether the new epic belongs in the leadership view before closing the picker.
 
 ## Front-end UI Fields
 
 - Add epics: searchable checkbox dropdown; shows all loaded epics.
+- Status: status pill in the pinned-epics table using the canonical epic status.
 - Apply: closes the picker after the current live selection has already been saved.
 - Clear all: removes every pinned epic and clears the dashboard immediately.
 - Remove icon: unpins a single epic from the mini dashboard.
