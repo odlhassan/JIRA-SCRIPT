@@ -380,6 +380,9 @@
       gap: 8px;
       font-size: 12px;
     }
+    .portfolio-bar-row {
+      grid-template-columns: 184px 1fr 84px;
+    }
     .bar-track {
       position: relative;
       height: 18px;
@@ -576,6 +579,10 @@
     }
     .exec-table th { background: #edf2f7; color: #344054; font-weight: 750; position: sticky; top: 0; }
     .exec-table td.num { text-align: center; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .exec-table th:nth-child(3),
+    .exec-table td:nth-child(3) {
+      text-align: left;
+    }
     .exec-complete-cell { cursor: help; border-bottom: 1px dashed var(--muted); }
     .exec-remove-btn {
       width: 26px;
@@ -1105,7 +1112,7 @@
         const actual = n(r.total_actual_hours);
         const budgetOverlay = budget > 0 && budget <= actual ? " overlay" : "";
         const actualOverlay = actual > 0 && actual < budget ? " overlay" : "";
-        return `<div class="bar-row"><span>${esc(r.epic_name || r.epic_key)}</span><div class="bar-track"><span class="bar plan${budgetOverlay}" style="width:${(budget / max) * 100}%"></span><span class="bar actual${actualOverlay}" style="width:${(actual / max) * 100}%"></span></div><span>${hours(budget)} / ${hours(actual)}</span></div>`;
+        return `<div class="bar-row portfolio-bar-row"><span>${esc(r.epic_name || r.epic_key)}</span><div class="bar-track"><span class="bar plan${budgetOverlay}" style="width:${(budget / max) * 100}%"></span><span class="bar actual${actualOverlay}" style="width:${(actual / max) * 100}%"></span></div><span>${hours(budget)} / ${hours(actual)}</span></div>`;
       }).join("")}</div><div class="legend"><span><i class="legend-dot" style="background:#2563eb"></i>Budget</span><span><i class="legend-dot" style="background:#16a34a"></i>Actual</span></div></section>`;
     }
     function svTrendLineChart(months){

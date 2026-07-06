@@ -78,6 +78,7 @@ Epic Explorer is a canonical-database report for inspecting every Jira epic and 
 - The quick-expanded weekly trend chart x-axis uses `MMM-DD` labels, and the Weekly Trend table `Week Ending` column uses `MMM-DD-YYYY`.
 - The weekly trend table centers the header text and cell values to make the week-ending, planned, actual, variance, and status columns easier to scan.
 - The Executive Summary pinned-epics table centers text across columns (including Budget and Actual Hours) for consistent scanability.
+- The Executive Summary pinned-epics table keeps the Epic Name column left-aligned while the remaining columns stay centered for readability.
 - If a story is missing start/due dates, its own planned-to-date contribution is treated as 0 until due-date-only completion, keeping the trend conservative rather than guessing.
 - The weekly trend range runs from the earliest story start date to the earlier of the latest story due date or today, in 7-day steps ending on the epic's actual due date.
 - Month-over-month averages are computed over the pinned epics for up to the last 6 calendar months (partial current month included). Avg SV Hours is the mean of (epic actual-to-date minus epic planned-to-date) at each month end. Avg SV Date is a derived day-equivalent proxy: SV hours divided by each epic's own average daily planned rate (`planned_total_hours` / total planned days), documented as a proxy rather than a literal day count.
@@ -133,6 +134,7 @@ Epic Explorer is a canonical-database report for inspecting every Jira epic and 
 - Updated the Executive Summary mini dashboard to show each pinned epic's status, keep search typing focused while filtering the picker list, and render the lower budget/actual bar above the larger bar so both values remain visible.
 - Updated Executive Summary Budget values so zero TK budget no longer masks the Jira planned estimate; the pinned table and portfolio bar chart now match the drawer's planned-hours basis.
 - Updated Executive Summary date formatting and alignment: weekly-trend chart labels now use `MMM-DD`, weekly-trend `Week Ending` uses `MMM-DD-YYYY`, pinned-table planned/actual date columns use `MMM-DD-YY`, and pinned-table text is centered (including Budget and Actual Hours).
+- Adjusted Executive Summary layout so the Epic Name column is not centered, and increased Portfolio Budget vs Actual chart label width from 92px to 184px to reduce multi-line wrapping on long epic names.
 
 ## Business Logic
 
