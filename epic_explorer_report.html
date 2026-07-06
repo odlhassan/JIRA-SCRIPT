@@ -1055,6 +1055,14 @@
       const tkBudget = n(row.tk_budget_hours);
       return tkBudget > 0 ? tkBudget : n(row.planned_total_hours);
     }
+    function execBudgetVarianceText(row){
+      const budget = execBudgetHours(row);
+      const variance = n(row.total_actual_hours) - budget;
+      if (budget <= 0) return kpiText("-", "insufficient data", "neutral");
+      const variancePosition = variance < -0.01 ? "behind" : (variance > 0.01 ? "ahead" : "on_track");
+      const variancePct = (variance / budget) * 100;
+      return kpiText(signedHours(variance), `${pct(variancePct)} ${positionText(variancePosition)}`, kpiClass(variancePosition, variance));
+    }
     function execWeeklyTrendTable(row){
       const weeks = execWeeklyTrend(row);
       if (!weeks.length) return '<div class="muted">Not enough planned/actual data to compute a weekly trend.</div>';
@@ -1100,7 +1108,7 @@
         <td>${esc(formatDateMmmDdYy(row.planned_due))}</td>
         <td class="exec-complete-cell" title="${esc(execCompleteTooltip(row))}">${esc(formatDateMmmDdYy(row.actual_complete_date))}</td>
         <td>${scheduleDaysText(row)}</td>
-        <td>${scheduleHoursText(row)}</td>
+        <td>${execBudgetVarianceText(row)}</td>
         <td><button class="icon-btn exec-remove-btn" data-exec-remove="${esc(key)}" title="Remove from dashboard"><span class="material-symbols-outlined">close</span></button></td>
       </tr>${expanded ? execExpandRow(row) : ""}`;
     }
