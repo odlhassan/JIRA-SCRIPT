@@ -1052,8 +1052,8 @@
       })[row.actual_complete_source] || "Derivation unknown.";
     }
     function execBudgetHours(row){
-      const tkBudget = n(row.tk_budget_hours);
-      return tkBudget > 0 ? tkBudget : n(row.planned_total_hours);
+      const jiraOriginalEstimate = n(row.jira_original_estimate_hours);
+      return jiraOriginalEstimate > 0 ? jiraOriginalEstimate : n(row.planned_total_hours);
     }
     function execBudgetVarianceText(row){
       const budget = execBudgetHours(row);
