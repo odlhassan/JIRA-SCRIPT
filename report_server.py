@@ -18741,12 +18741,15 @@ def _promote_report_html_if_newer(base_dir: Path, report_dir: Path, report_name:
             target_stat = target_path.stat()
             source_mtime_ns = int(getattr(source_stat, "st_mtime_ns", int(source_stat.st_mtime * 1_000_000_000)))
             target_mtime_ns = int(getattr(target_stat, "st_mtime_ns", int(target_stat.st_mtime * 1_000_000_000)))
-            # If timestamps tie (common on rapid regenerations), fall back to file size
-            # so changed content is still promoted.
+            # Runtime-promoted files can have newer mtimes than freshly deployed root
+            # sources. Compare content before skipping so report-only deploys are not
+            # pinned behind a stale promoted copy.
             if source_mtime_ns < target_mtime_ns:
-                return target_path
+                if source_path.read_bytes() == target_path.read_bytes():
+                    return target_path
             if source_mtime_ns == target_mtime_ns and source_stat.st_size == target_stat.st_size:
-                return target_path
+                if source_path.read_bytes() == target_path.read_bytes():
+                    return target_path
         except OSError:
             pass
     try:

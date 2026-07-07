@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -69,6 +71,29 @@ class ReportHtmlPromotionTests(unittest.TestCase):
 
             self.assertEqual(html_resp.status_code, 200)
             self.assertIn("source monthly", html_resp.get_data(as_text=True))
+
+    def test_changed_root_source_promotes_even_when_report_html_copy_has_newer_mtime(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            report_dir = root / "report_html"
+            report_dir.mkdir(parents=True, exist_ok=True)
+            (report_dir / "dashboard.html").write_text("<html><body>ok</body></html>", encoding="utf-8")
+            source = root / "epic_explorer_report.html"
+            target = report_dir / "epic_explorer_report.html"
+            source.write_text("<html><body>new epic explorer source</body></html>", encoding="utf-8")
+            target.write_text("<html><body>stale epic explorer copy</body></html>", encoding="utf-8")
+            newer = time.time() + 60
+            older = time.time() - 60
+            os.utime(source, (older, older))
+            os.utime(target, (newer, newer))
+
+            app = create_report_server_app(base_dir=root, folder_raw="report_html")
+            client = app.test_client()
+            html_resp = client.get("/epic_explorer_report.html")
+
+            self.assertEqual(html_resp.status_code, 200)
+            self.assertIn("new epic explorer source", html_resp.get_data(as_text=True))
+            self.assertIn("new epic explorer source", target.read_text(encoding="utf-8"))
 
     def test_dashboard_html_serves_generated_fallback_when_package_paths_are_read_only(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
