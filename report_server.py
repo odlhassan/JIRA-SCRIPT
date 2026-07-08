@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from dataclasses import asdict
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
 import io
@@ -99,6 +100,8 @@ from support_booking_registry import (
     list_capacity_profile_options as sb_list_capacity_profile_options,
     upsert_allocation as sb_upsert_allocation,
     upsert_booking_header as sb_upsert_booking_header,
+    sort_support_booking_projects,
+    support_booking_project_label,
 )
 from report_entity_registry import (
     REPORT_ENTITY_GLOBAL_SETTING_KEYS,
@@ -207,6 +210,22 @@ from monthly_epic_plan_progress_service import (
     build_worklog_detail_for_range,
     load_support_team,
     save_support_team,
+)
+from rnd_muscle_utilization_service import (
+    add_epic_to_rnd_muscle_backlog,
+    add_epic_to_rnd_muscle_planner,
+    add_rnd_muscle_skill,
+    delete_rnd_muscle_team,
+    list_rnd_muscle_project_tabs,
+    load_rnd_muscle_utilization_page_state,
+    remove_epic_from_rnd_muscle_backlog,
+    remove_epic_from_rnd_muscle_planner,
+    reorder_rnd_muscle_backlog,
+    reorder_rnd_muscle_planner_epics,
+    reorder_rnd_muscle_epic_resources,
+    save_rnd_muscle_epic_resource_mapping,
+    save_rnd_muscle_team,
+    search_rnd_muscle_epics,
 )
 from support_center_service import (
     build_support_center_overview,
@@ -363,6 +382,8 @@ EPIC_PHASES_SETTINGS_ROUTE = "/settings/epic-phases"
 DASHBOARD_RISK_SETTINGS_ROUTE = "/settings/dashboard-risk"
 EXECUTIVE_DASHBOARD_SETTINGS_ROUTE = "/settings/executive-dashboard"
 PAGE_CATEGORIES_SETTINGS_ROUTE = "/settings/page-categories"
+RND_MUSCLE_UTILIZATION_SETTINGS_ROUTE = "/settings/rnd-muscle-utilization"
+RND_MUSCLE_UTILIZATION_VIEW_ROUTE = "/settings/rnd-muscle-utilization/view"
 CANONICAL_REFRESH_SETTINGS_ROUTE = "/settings/canonical-refresh"
 SQL_CONSOLE_SETTINGS_ROUTE = "/settings/sql-console"
 TCP_SETTINGS_ROUTE = "/settings/team-capacity-planner"
@@ -413,6 +434,7 @@ STATIC_ADMIN_NAV_ITEMS: list[dict[str, object]] = [
     {"page_key": "epics_planner_import", "title": "Epics Planner Import", "href": EPICS_MANAGEMENT_IMPORT_ROUTE, "icon": "upload_file", "path": EPICS_MANAGEMENT_IMPORT_ROUTE, "default_nav_order": 82, "page_type": "configuration"},
     {"page_key": "ipp_meeting_planner", "title": "IPP Meeting Planner", "href": IPP_MEETING_PLANNER_SETTINGS_ROUTE, "icon": "groups", "path": IPP_MEETING_PLANNER_SETTINGS_ROUTE, "default_nav_order": 85, "page_type": "configuration"},
     {"page_key": "product_releases", "title": "Product Releases", "href": PRODUCT_RELEASES_SETTINGS_ROUTE, "icon": "rocket_launch", "path": PRODUCT_RELEASES_SETTINGS_ROUTE, "default_nav_order": 87, "page_type": "configuration"},
+    {"page_key": "rnd_muscle_utilization", "title": "RnD Muscle Utilization", "href": RND_MUSCLE_UTILIZATION_SETTINGS_ROUTE, "icon": "hub", "path": RND_MUSCLE_UTILIZATION_SETTINGS_ROUTE, "default_nav_order": 88, "page_type": "configuration"},
     {"page_key": "page_categories", "title": "Page Categories", "href": PAGE_CATEGORIES_SETTINGS_ROUTE, "icon": "category", "path": PAGE_CATEGORIES_SETTINGS_ROUTE, "default_nav_order": 90, "page_type": "configuration"},
     {"page_key": "canonical_refresh_settings", "title": "Colossal Refresh", "href": CANONICAL_REFRESH_SETTINGS_ROUTE, "icon": "sync", "path": CANONICAL_REFRESH_SETTINGS_ROUTE, "default_nav_order": 100, "page_type": "configuration"},
     {"page_key": "sql_console", "title": "SQL Console", "href": SQL_CONSOLE_SETTINGS_ROUTE, "icon": "query_stats", "path": SQL_CONSOLE_SETTINGS_ROUTE, "default_nav_order": 110, "page_type": "configuration"},
@@ -437,6 +459,7 @@ def _settings_nav_items() -> list[tuple[str, str]]:
         ("Epic Phases", EPIC_PHASES_SETTINGS_ROUTE),
         ("Epics Planner", EPICS_MANAGEMENT_SETTINGS_ROUTE),
         ("Epics Planner Import", EPICS_MANAGEMENT_IMPORT_ROUTE),
+        ("RnD Muscle Utilization", RND_MUSCLE_UTILIZATION_SETTINGS_ROUTE),
         ("DB Migration", DB_MIGRATION_SETTINGS_ROUTE),
     ]
 
@@ -8291,8 +8314,19 @@ def _performance_settings_html() -> str:
       function renderMatrix(matrix) {
         currentMatrix = matrix;
         const columns = matrix.project_columns || [];
+        const projectLabels = {};
+        (Array.isArray(matrix.projects) ? matrix.projects : []).forEach((project) => {
+          const key = String((project && project.project_key) || "").trim().toUpperCase();
+          if (!key) return;
+          projectLabels[key] = String(
+            (project && project.display_name) || (project && project.project_name) || (project && project.project_key) || key
+          ).trim() || key;
+        });
         let theadHtml = "<tr><th>Team member</th><th>Capacity (h)</th><th>Leave (h)</th><th>Availability (h)</th><th>Booking (h)</th>";
-        columns.forEach((c) => { theadHtml += "<th>" + c + " %</th><th>" + c + " (h)</th>"; });
+        columns.forEach((c) => {
+          const label = projectLabels[String(c || "").toUpperCase()] || c;
+          theadHtml += '<th title="' + esc(label + " (" + c + ")") + '">' + esc(label) + ' %</th><th title="' + esc(label + " (" + c + ")") + '">' + esc(label) + ' (h)</th>';
+        });
         theadHtml += "</tr>";
         theadEl.innerHTML = theadHtml;
 
@@ -12656,6 +12690,1618 @@ def _page_categories_settings_html() -> str:
   <script src="/shared-nav.js"></script>
 </body>
 </html>""".replace("__SETTINGS_TOP_NAV__", _settings_top_nav_html(PAGE_CATEGORIES_SETTINGS_ROUTE))
+
+
+def _rnd_muscle_state_payload(state) -> dict[str, object]:
+    return {"ok": True, "state": asdict(state), "source": "rnd_muscle_utilization"}
+
+
+def _rnd_muscle_project_keys_from_request() -> tuple[str, ...]:
+    raw_values = request.args.getlist("project_key") + request.args.getlist("project_keys")
+    keys: list[str] = []
+    for raw in raw_values:
+        keys.extend(part.strip().upper() for part in _to_text(raw).split(",") if part.strip())
+    return tuple(dict.fromkeys(keys))
+
+
+def _rnd_muscle_utilization_settings_html(planner_only: bool = False) -> str:
+    return """<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>RnD Muscle Utilization</title>
+  <link rel="stylesheet" href="/shared-nav.css">
+  <script src="/shared-nav.js"></script>
+  <style>
+    :root { --radius:6px; --border:#3c3c3c; --muted:#9aa0a6; --text:#cccccc; --panel:#252526; --panel-2:#2d2d30; --panel-3:#333337; --row:#1f1f1f; --control:#313131; --control-hover:#3a3d41; --chrome:#1e1e1e; --bg:#181818; --accent:#007acc; --accent-strong:#3794ff; --accent-soft:rgba(0,122,204,.18); --accent-text:#ffffff; --danger:#f48771; --scrollbar-track:var(--panel-2); --scrollbar-thumb:var(--accent); --scrollbar-thumb-hover:var(--accent-strong); }
+    body[data-rnd-theme="light"] { --border:#d0d0d0; --muted:#616161; --text:#1f1f1f; --panel:#ffffff; --panel-2:#f3f3f3; --panel-3:#e9e9e9; --row:#ffffff; --control:#ffffff; --control-hover:#f3f3f3; --chrome:#f8f8f8; --bg:#f3f3f3; --danger:#a1260d; --scrollbar-track:#f3f3f3; }
+    body[data-rnd-theme="dark"] { --border:#3c3c3c; --muted:#9aa0a6; --text:#cccccc; --panel:#252526; --panel-2:#2d2d30; --panel-3:#333337; --row:#1f1f1f; --control:#313131; --control-hover:#3a3d41; --chrome:#1e1e1e; --bg:#181818; --danger:#f48771; --scrollbar-track:#2d2d30; }
+    * { box-sizing:border-box; }
+    [hidden] { display:none !important; }
+    body { margin:0; font-family:Arial,sans-serif; font-size:12px; background:var(--bg); color:var(--text); overflow:hidden; }
+    body[data-rnd-theme] * { scrollbar-color:var(--scrollbar-thumb) var(--scrollbar-track); scrollbar-width:thin; }
+    body[data-rnd-theme] *::-webkit-scrollbar { width:10px; height:10px; }
+    body[data-rnd-theme] *::-webkit-scrollbar-track { background:var(--scrollbar-track); }
+    body[data-rnd-theme] *::-webkit-scrollbar-thumb { background:var(--scrollbar-thumb); border:2px solid var(--scrollbar-track); border-radius:999px; }
+    body[data-rnd-theme] *::-webkit-scrollbar-thumb:hover { background:var(--scrollbar-thumb-hover); }
+    .page { padding:12px; height:100vh; display:flex; flex-direction:column; overflow:hidden; }
+    .topbar { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; border:1px solid var(--border); background:var(--chrome); border-radius:var(--radius); padding:10px; }
+    h1 { margin:0; font-size:18px; line-height:1.2; }
+    .muted { color:var(--muted); }
+    .btn, .input, select { border:1px solid var(--border); border-radius:var(--radius); background:var(--control); color:var(--text); font-size:12px; min-height:28px; padding:5px 8px; }
+    .btn { cursor:pointer; font-weight:600; }
+    a.btn { display:inline-flex; align-items:center; text-decoration:none; }
+    .btn:hover, .tab:hover { background:var(--control-hover); }
+    .btn.primary { background:var(--accent); color:var(--accent-text); border-color:var(--accent-strong); }
+    .btn.danger { color:var(--danger); border-color:var(--danger); background:var(--control); }
+    .input::placeholder { color:var(--muted); }
+    .theme-controls { display:flex; align-items:center; gap:6px; padding:3px; border:1px solid var(--border); border-radius:var(--radius); background:var(--panel-2); }
+    .theme-controls label { display:flex; align-items:center; gap:5px; color:var(--muted); font-size:11px; }
+    .theme-controls select { width:auto; min-height:26px; }
+    .theme-controls input[type="color"] { width:30px; height:26px; min-height:26px; padding:2px; border:1px solid var(--border); border-radius:var(--radius); background:var(--control); }
+    .stats { display:grid; grid-template-columns:repeat(4,minmax(120px,1fr)); gap:8px; margin-bottom:10px; }
+    .stat { background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); padding:8px; }
+    .stat strong { display:block; font-size:16px; margin-bottom:2px; }
+    .layout { display:grid; grid-template-columns:minmax(230px,1fr) minmax(460px,2.2fr) minmax(230px,1fr); gap:10px; flex:1; min-height:0; }
+    .page.planner-only .layout { grid-template-columns:minmax(0,1fr); }
+    .page.planner-only .catalog-panel, .page.planner-only .stats, .page.planner-only .config-band,
+    .page.planner-only #rnd-create-team-btn, .page.planner-only #rnd-add-skill-btn, .page.planner-only #rnd-configure-projects-btn { display:none; }
+    .panel { background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); min-width:0; display:flex; flex-direction:column; overflow:hidden; }
+    .panel-head { padding:8px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:6px; justify-content:space-between; }
+    .panel-head h2 { margin:0; font-size:13px; }
+    .panel-body { padding:8px; overflow:auto; min-height:0; }
+    .filter-row, .tabs, .toolbar { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+    .filter-row { margin-bottom:8px; }
+    .input { width:100%; }
+    .epic-list, .resource-list { display:grid; gap:6px; align-content:start; }
+    .row { border:1px solid var(--border); border-radius:var(--radius); padding:7px; background:var(--row); }
+    .row-title { font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .row-meta { display:flex; gap:6px; flex-wrap:wrap; margin-top:4px; color:var(--muted); font-size:11px; }
+    .pill { border:1px solid var(--border); border-radius:999px; padding:2px 6px; background:var(--panel-2); }
+    .tab { border:1px solid var(--border); background:var(--control); color:var(--text); border-radius:var(--radius); padding:5px 8px; font-size:12px; cursor:pointer; }
+    .tab.active { background:var(--accent); color:var(--accent-text); border-color:var(--accent-strong); }
+    .planner { display:grid; grid-template-rows:auto minmax(0,1fr) auto; gap:8px; height:100%; }
+    .canvas { border:1px solid var(--border); border-radius:var(--radius); background:var(--chrome); padding:8px; overflow:auto; min-height:0; }
+    .drop-active { outline:1px solid var(--accent-strong); outline-offset:-2px; background:var(--accent-soft) !important; }
+    .canvas-grid { display:grid; grid-template-columns:minmax(260px,.9fr) minmax(320px,1.1fr); gap:8px; min-height:100%; }
+    .canvas-col { border:1px solid var(--border); border-radius:var(--radius); background:var(--panel-2); padding:8px; min-height:0; overflow:auto; }
+    .canvas-col h3 { margin:0 0 8px 0; font-size:12px; }
+    .staged-epics { display:grid; gap:6px; align-content:start; }
+    .staged-card { border:1px solid var(--border); border-radius:var(--radius); padding:6px 7px; background:var(--row); display:grid; gap:4px; min-height:40px; }
+    .staged-card .staged-title { font-weight:700; font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .staged-card .staged-actions { display:flex; gap:6px; }
+    .staged-card .btn { padding:3px 7px; min-height:24px; font-size:11px; }
+    .staged-card .btn.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+    .staged-card { cursor:pointer; }
+    .staged-card.dragging { opacity:.46; }
+    .staged-card.selected { border-color:var(--accent-strong); box-shadow:0 0 0 1px var(--accent-strong); background:var(--accent-soft); }
+    .staged-card.drop-active { outline:1px solid var(--accent-strong); outline-offset:-2px; background:var(--accent-soft); }
+    .staged-drop-placeholder { border:1.5px dashed var(--accent-strong); border-radius:var(--radius); background:var(--accent-soft); min-height:44px; display:grid; place-items:center; color:var(--accent-strong); font-size:11px; font-weight:700; opacity:.95; }
+    .staged-resources { display:grid; gap:6px; align-content:start; margin-top:8px; }
+    .resource-card { border:1px solid rgba(255,255,255,.25); border-radius:6px; padding:6px 8px; min-height:34px; color:#fff; display:flex; align-items:center; justify-content:space-between; gap:8px; cursor:grab; }
+    .resource-card-title { font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .resource-card-meta { opacity:.82; font-size:11px; white-space:nowrap; }
+    .resource-card button { border:1px solid rgba(255,255,255,.45); background:rgba(0,0,0,.18); color:#fff; border-radius:999px; min-width:22px; min-height:22px; cursor:pointer; }
+    .staged-mapped, .staged-empty-map { display:none; }
+    .view-content { margin-top:8px; border-top:1px solid var(--border); padding-top:8px; }
+    .view-empty { color:var(--muted); font-size:11px; padding:6px 2px; }
+    .view-group { margin-bottom:10px; }
+    .view-group > .view-group-head { font-weight:700; font-size:12px; margin-bottom:6px; display:flex; align-items:center; gap:6px; }
+    .view-node { border:1px solid var(--border); border-radius:var(--radius); padding:6px 8px; background:var(--row); margin-bottom:6px; }
+    .view-node-title { font-weight:600; font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .view-children { margin-top:5px; display:grid; gap:4px; padding-left:8px; border-left:2px solid var(--border); }
+    .view-child { font-size:11px; color:var(--text); display:flex; align-items:center; gap:6px; }
+    .view-child .muted { color:var(--muted); }
+    .team-dot { width:9px; height:9px; border-radius:50%; display:inline-block; flex:none; border:1px solid rgba(0,0,0,.12); }
+    .bubble-strip { display:flex; flex-wrap:wrap; gap:6px; align-content:flex-start; }
+    .bubble { width:34px; height:34px; border-radius:50%; display:grid; place-items:center; color:#fff; font-weight:700; background:#2563eb; }
+    .cluster-planner { display:grid; grid-template-columns:260px minmax(0,1fr); gap:8px; min-height:100%; }
+    .cluster-epics { border:1px solid var(--border); border-radius:var(--radius); background:var(--panel-2); padding:8px; overflow:auto; }
+    .cluster-epic { width:100%; text-align:left; border:1px solid var(--border); border-radius:var(--radius); background:var(--row); color:var(--text); padding:7px; margin-bottom:6px; cursor:pointer; }
+    .cluster-epic.active { border-color:var(--accent-strong); background:var(--accent-soft); }
+    .cluster-stage { position:relative; min-height:420px; border:1px solid var(--border); border-radius:var(--radius); background:var(--row); overflow:hidden; }
+    .cluster-lines { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
+    .cluster-bubble { position:absolute; width:42px; height:42px; border-radius:50%; display:grid; place-items:center; color:#fff; font-weight:700; border:2px solid rgba(255,255,255,.75); box-shadow:0 8px 22px rgba(0,0,0,.28); transition:left .22s ease, top .22s ease, transform .22s ease, opacity .18s ease; }
+    .cluster-bubble.dim { opacity:.35; transform:scale(.86); }
+    .cluster-legend { position:absolute; left:10px; bottom:10px; right:10px; display:flex; gap:8px; flex-wrap:wrap; background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); padding:8px; }
+    .cluster-legend-item { display:flex; align-items:center; gap:5px; color:var(--muted); }
+    .backlog { border:1px solid var(--border); border-radius:var(--radius); background:var(--panel-2); padding:8px; overflow:auto; min-height:120px; }
+    .backlog h3 { margin:0 0 8px 0; font-size:12px; }
+    table { width:100%; border-collapse:collapse; font-size:11px; }
+    th, td { border-bottom:1px solid var(--border); padding:5px; text-align:left; vertical-align:top; }
+    th { background:var(--panel-2); position:sticky; top:0; }
+    .config-band { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
+    .config-chip { border:1px solid var(--border); border-radius:var(--radius); background:var(--panel); padding:5px 8px; }
+    .status { min-height:18px; margin-bottom:8px; color:var(--muted); }
+    .status.err { color:#b91c1c; }
+    .status.ok { color:#166534; }
+    dialog { border:1px solid var(--border); border-radius:var(--radius); padding:0; width:min(560px,calc(100vw - 24px)); background:var(--panel); color:var(--text); }
+    dialog::backdrop { background:rgba(15,23,42,.35); }
+    .dialog-body { padding:12px; display:grid; gap:8px; }
+    .dialog-head { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:10px 12px; border-bottom:1px solid var(--border); }
+    .dialog-head h2 { margin:0; font-size:14px; }
+    .check-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:6px; max-height:180px; overflow:auto; border:1px solid var(--border); border-radius:var(--radius); padding:8px; }
+    .check-row { display:flex; align-items:center; gap:6px; min-width:0; }
+    .check-row span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .row-actions { display:flex; gap:6px; margin-top:6px; flex-wrap:wrap; }
+    .row[draggable="true"] { cursor:grab; }
+    .row[draggable="true"]:active { cursor:grabbing; }
+    tr.selected td { background:#f5f3ff; }
+    .skill-list { display:grid; gap:6px; max-height:180px; overflow:auto; border:1px solid var(--border); border-radius:var(--radius); padding:8px; }
+    @media (max-width:1100px) {
+      .layout { grid-template-columns:1fr; }
+      .stats { grid-template-columns:repeat(2,minmax(120px,1fr)); }
+      .canvas-grid, .cluster-planner { grid-template-columns:1fr; }
+    }
+  </style>
+</head>
+<body>
+__SETTINGS_TOP_NAV__
+<main class="page __RND_PAGE_MODE_CLASS__">
+  <div class="topbar">
+    <div>
+      <h1>RnD Muscle Utilization</h1>
+      <div class="muted">Admin planner scaffold for epic-to-resource utilization.</div>
+    </div>
+    <div class="toolbar">
+      <div class="theme-controls" aria-label="Theme controls">
+        <label for="rnd-theme-mode">Theme
+          <select id="rnd-theme-mode" aria-label="Theme mode">
+            <option value="dark">Dark</option>
+            <option value="light">Light</option>
+          </select>
+        </label>
+        <label for="rnd-theme-color">Color
+          <input id="rnd-theme-color" type="color" value="#007acc" aria-label="Theme color">
+        </label>
+      </div>
+      __RND_VIEW_MODE_BUTTON__
+      <button class="btn" id="rnd-create-team-btn" type="button">Create Team</button>
+      <button class="btn" id="rnd-add-skill-btn" type="button">Add Skill</button>
+      <button class="btn" id="rnd-configure-projects-btn" type="button">Configure Projects</button>
+    </div>
+  </div>
+  <div id="rnd-status" class="status" role="status" aria-live="polite"></div>
+  <section class="stats" aria-label="Quick stats">
+    <div class="stat"><strong id="rnd-stat-associated">0</strong><span>Resources associated with epics</span></div>
+    <div class="stat"><strong id="rnd-stat-unassociated">0</strong><span>Resources not yet associated</span></div>
+    <div class="stat"><strong id="rnd-stat-high-unassigned">0</strong><span>High priority unassigned epics</span></div>
+    <div class="stat"><strong id="rnd-stat-active-epics">0</strong><span>Active project epics</span></div>
+  </section>
+  <section class="config-band" aria-label="Configuration summary">
+    <span class="config-chip">Teams: color-coded skillset groups</span>
+    <span class="config-chip">Default view: hierarchical horizontal</span>
+    <span class="config-chip">Priority source: Epics Planner Import</span>
+  </section>
+  <section class="layout" aria-label="RnD Muscle Utilization planner">
+    <aside class="panel catalog-panel">
+      <div class="panel-head"><h2>Epics</h2><span class="muted">Search and filter</span></div>
+      <div class="panel-body">
+        <div class="filter-row">
+          <input id="rnd-epic-search" class="input" type="search" placeholder="Search epics">
+          <select id="rnd-project-filter" class="input" aria-label="Project filter"><option value="">All projects</option></select>
+        </div>
+        <div id="rnd-epic-list" class="epic-list">
+          <div class="row">
+            <div class="row-title">Loading epics...</div>
+          </div>
+        </div>
+      </div>
+    </aside>
+    <section class="panel planner-panel">
+      <div class="panel-head"><h2>Planner</h2><div id="rnd-project-tabs" class="tabs"><button class="tab active" type="button">All 0</button></div></div>
+      <div class="panel-body planner">
+        <div class="toolbar">
+          <button id="rnd-view-hierarchical" class="tab active" type="button">Hierarchical</button>
+          <button id="rnd-view-cluster" class="tab" type="button">Cluster</button>
+        </div>
+        <div class="canvas">
+          <div id="rnd-hierarchical-planner" class="hierarchical-planner">
+            <div class="canvas-grid">
+              <div id="rnd-epic-drop-zone" class="canvas-col">
+                <h3>Mapped epics</h3>
+                <div id="rnd-mapped-epics-caption" class="muted">Drop epics here. Select an epic to view its mapped resources.</div>
+                <div id="rnd-staged-epics" class="staged-epics"></div>
+              </div>
+              <div id="rnd-resource-drop-zone" class="canvas-col">
+                <h3>Mapped resources</h3>
+                <div id="rnd-selected-epic-label" class="muted">Select a planner epic to see its resources.</div>
+                <div id="rnd-staged-resources" class="staged-resources"></div>
+              </div>
+            </div>
+          </div>
+          <div id="rnd-cluster-planner" class="cluster-planner" hidden>
+            <div class="cluster-epics">
+              <h3>Mapped epics</h3>
+              <div id="rnd-cluster-epics"></div>
+            </div>
+            <div id="rnd-cluster-stage" class="cluster-stage">
+              <svg id="rnd-cluster-lines" class="cluster-lines" aria-hidden="true"></svg>
+              <div id="rnd-cluster-bubbles"></div>
+              <div id="rnd-cluster-legend" class="cluster-legend"></div>
+            </div>
+          </div>
+        </div>
+        <div id="rnd-backlog-drop-zone" class="backlog" aria-label="Backlog drop area">
+          <h3>Backlog</h3>
+          <table>
+            <thead><tr><th>Epic</th><th>Priority</th><th>Budget</th><th>Dates</th><th>Actions</th></tr></thead>
+            <tbody id="rnd-backlog-body"><tr><td class="muted" colspan="5">Loading backlog...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+    <aside class="panel catalog-panel">
+      <div class="panel-head"><h2>Resources</h2><span class="muted">Team color source</span></div>
+      <div class="panel-body">
+        <div id="rnd-resource-list" class="resource-list">
+          <div class="row">
+            <div class="row-title">Loading resources...</div>
+          </div>
+        </div>
+      </div>
+    </aside>
+  </section>
+</main>
+<dialog id="rnd-team-dialog">
+  <form method="dialog">
+    <div class="dialog-head"><h2 id="rnd-team-dialog-title">Create Team</h2><button class="btn" value="cancel" type="submit">Close</button></div>
+  </form>
+  <div class="dialog-body" style="padding-bottom:0">
+    <div id="rnd-team-list-section">
+      <strong style="font-size:12px">Existing Teams</strong>
+      <div id="rnd-team-list" style="margin-top:6px;display:grid;gap:6px;max-height:180px;overflow:auto;border:1px solid var(--border);border-radius:6px;padding:8px;"></div>
+    </div>
+    <hr style="margin:10px 0;border:none;border-top:1px solid var(--border)">
+  </div>
+  <form id="rnd-team-form" class="dialog-body">
+    <input type="hidden" id="rnd-team-id" value="">
+    <label>Team name <input id="rnd-team-name" class="input" required></label>
+    <label>Team color <input id="rnd-team-color" class="input" type="color" value="#2563eb"></label>
+    <label>Skills</label>
+    <div id="rnd-team-skills" class="check-grid"></div>
+    <label>Resources</label>
+    <div id="rnd-team-resources" class="check-grid"></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <button class="btn" id="rnd-team-submit-btn" type="submit">Create Team</button>
+      <button class="btn" id="rnd-team-cancel-edit-btn" type="button" style="display:none;background:#f8fafc;color:var(--text);border-color:var(--border)">Cancel Edit</button>
+    </div>
+  </form>
+</dialog>
+<dialog id="rnd-skill-dialog">
+  <form method="dialog">
+    <div class="dialog-head"><h2>Add Skill</h2><button class="btn" value="cancel" type="submit">Close</button></div>
+  </form>
+  <form id="rnd-skill-form" class="dialog-body">
+    <label>Existing skills</label>
+    <div id="rnd-existing-skills" class="skill-list"></div>
+    <label>Skill name <input id="rnd-skill-name" class="input" required></label>
+    <button class="btn" type="submit">Add Skill</button>
+  </form>
+</dialog>
+<dialog id="rnd-project-dialog">
+  <form method="dialog">
+    <div class="dialog-head"><h2>Project Tabs</h2><button class="btn" value="cancel" type="submit">Close</button></div>
+  </form>
+  <form id="rnd-project-form" class="dialog-body">
+    <div id="rnd-project-dialog-body" class="check-grid"></div>
+    <button class="btn" type="submit">Apply Project Tabs</button>
+  </form>
+</dialog>
+<script>
+(function(){
+  const API = "/api/rnd-muscle-utilization";
+  let state = null;
+  let searchTimer = null;
+  let selectedCanvasEpicKey = "";
+  let canvasEpicKeys = [];
+  let plannerEpicDragKey = "";
+  let currentView = "hierarchical";
+  let selectedClusterEpicKey = "";
+  const PROJECT_SELECTION_KEY = "rnd-muscle-selected-projects-v1";
+  let selectedProjectKeys = new Set(JSON.parse(localStorage.getItem(PROJECT_SELECTION_KEY) || "[]"));
+  const THEME_MODE_KEY = "rnd-muscle-theme-mode-v1";
+  const THEME_COLOR_KEY = "rnd-muscle-theme-color-v1";
+  const byId = (id) => document.getElementById(id);
+  function normalizeHexColor(value, fallback){
+    const text = String(value || "").trim();
+    if (/^#[0-9a-fA-F]{6}$/.test(text)) return text.toLowerCase();
+    return fallback;
+  }
+  function hexToRgb(hex){
+    const clean = normalizeHexColor(hex, "#007acc").slice(1);
+    return {
+      r: parseInt(clean.slice(0, 2), 16),
+      g: parseInt(clean.slice(2, 4), 16),
+      b: parseInt(clean.slice(4, 6), 16)
+    };
+  }
+  function mixColor(hex, targetHex, weight){
+    const a = hexToRgb(hex);
+    const b = hexToRgb(targetHex);
+    const w = Math.max(0, Math.min(1, Number(weight) || 0));
+    const toHex = (n) => Math.round(n).toString(16).padStart(2, "0");
+    return "#" + toHex(a.r * (1 - w) + b.r * w) + toHex(a.g * (1 - w) + b.g * w) + toHex(a.b * (1 - w) + b.b * w);
+  }
+  function applyTheme(mode, color){
+    const themeMode = mode === "light" ? "light" : "dark";
+    const accent = normalizeHexColor(color, "#007acc");
+    document.body.dataset.rndTheme = themeMode;
+    document.documentElement.style.setProperty("--accent", accent);
+    document.documentElement.style.setProperty("--accent-strong", mixColor(accent, themeMode === "light" ? "#000000" : "#ffffff", themeMode === "light" ? 0.12 : 0.35));
+    const rgb = hexToRgb(accent);
+    document.documentElement.style.setProperty("--accent-soft", "rgba(" + rgb.r + "," + rgb.g + "," + rgb.b + ",.18)");
+    document.documentElement.style.setProperty("--accent-text", readableTextColor(accent));
+    const modeEl = byId("rnd-theme-mode");
+    const colorEl = byId("rnd-theme-color");
+    if (modeEl) modeEl.value = themeMode;
+    if (colorEl) colorEl.value = accent;
+  }
+  function loadThemePreference(){
+    let mode = "dark";
+    let color = "#007acc";
+    try {
+      mode = localStorage.getItem(THEME_MODE_KEY) || mode;
+      color = localStorage.getItem(THEME_COLOR_KEY) || color;
+    } catch (e) {}
+    applyTheme(mode, color);
+  }
+  function saveThemePreference(){
+    const mode = byId("rnd-theme-mode").value === "light" ? "light" : "dark";
+    const color = normalizeHexColor(byId("rnd-theme-color").value, "#007acc");
+    try {
+      localStorage.setItem(THEME_MODE_KEY, mode);
+      localStorage.setItem(THEME_COLOR_KEY, color);
+    } catch (e) {}
+    applyTheme(mode, color);
+    setStatus("Theme saved for configuration and view mode.", "ok");
+  }
+  function setStatus(message, kind){
+    const el = byId("rnd-status");
+    if (!el) return;
+    el.textContent = message || "";
+    el.className = "status" + (kind ? " " + kind : "");
+  }
+  async function apiJson(url, options){
+    const resp = await fetch(url, Object.assign({ headers: { "Content-Type": "application/json" } }, options || {}));
+    const body = await resp.json().catch(() => ({}));
+    if (!resp.ok || body.ok === false) throw new Error(body.error || "Request failed.");
+    return body;
+  }
+  function fmt(value){ return value === null || value === undefined || value === "" ? "-" : String(value); }
+  function dateRange(item){
+    const start = item && item.start_date ? item.start_date : "";
+    const due = item && item.due_date ? item.due_date : "";
+    return start || due ? (fmt(start) + " -> " + fmt(due)) : "-";
+  }
+  function reset(node){
+    while (node && node.firstChild) node.removeChild(node.firstChild);
+  }
+  function addPill(parent, text){
+    const pill = document.createElement("span");
+    pill.className = "pill";
+    pill.textContent = text;
+    parent.appendChild(pill);
+  }
+  function projectTabsForDisplay(){
+    const tabs = (state && state.project_tabs) || [];
+    const projectTabs = tabs.filter((tab) => !tab.is_all_tab);
+    const visibleProjects = selectedProjectKeys.size ? projectTabs.filter((tab) => selectedProjectKeys.has(tab.project_key || "")) : projectTabs;
+    const allCount = selectedProjectKeys.size
+      ? visibleProjects.reduce((total, tab) => total + Number(tab.epic_count || 0), 0)
+      : Number(((tabs.find((tab) => tab.is_all_tab) || {}).epic_count) || 0);
+    return [{ project_key:"ALL", project_name:"All Projects", epic_count:allCount, is_all_tab:true }].concat(visibleProjects);
+  }
+  function saveProjectSelection(){
+    localStorage.setItem(PROJECT_SELECTION_KEY, JSON.stringify(Array.from(selectedProjectKeys)));
+  }
+  function renderStats(){
+    const stats = (state && state.quick_stats) || {};
+    byId("rnd-stat-associated").textContent = Number(stats.resources_associated_with_epics || 0);
+    byId("rnd-stat-unassociated").textContent = Number(stats.resources_not_yet_associated || 0);
+    byId("rnd-stat-high-unassigned").textContent = Number(stats.high_priority_unassigned_epic_count || 0);
+    byId("rnd-stat-active-epics").textContent = Number(stats.selected_project_epic_count || 0);
+  }
+  function plannerEpicKeys(){
+    return (((state && state.planner) || {}).planner_epics || []).map((item) => item.epic_key);
+  }
+  function syncPlannerSelection(){
+    canvasEpicKeys = plannerEpicKeys();
+    if (selectedCanvasEpicKey && !canvasEpicKeys.includes(selectedCanvasEpicKey)) selectedCanvasEpicKey = "";
+    if (!selectedCanvasEpicKey && canvasEpicKeys.length) {
+      const mappedEpicKeys = new Set((((state && state.planner) || {}).mappings || []).map((mapping) => mapping.epic_key));
+      selectedCanvasEpicKey = canvasEpicKeys.find((key) => mappedEpicKeys.has(key)) || canvasEpicKeys[0];
+    }
+    if (selectedClusterEpicKey && !canvasEpicKeys.includes(selectedClusterEpicKey)) selectedClusterEpicKey = "";
+  }
+  function clearPlannerEpicDropPlaceholder(){
+    const placeholder = document.querySelector(".staged-drop-placeholder");
+    if (placeholder) placeholder.remove();
+  }
+  function showPlannerEpicDropPlaceholder(targetCard, position){
+    const host = byId("rnd-staged-epics");
+    if (!host) return;
+    let placeholder = host.querySelector(".staged-drop-placeholder");
+    if (!placeholder) {
+      placeholder = document.createElement("div");
+      placeholder.className = "staged-drop-placeholder";
+      placeholder.textContent = "Drop epic here";
+    }
+    placeholder.dataset.targetEpicKey = targetCard ? String(targetCard.dataset.epicKey || "") : "";
+    placeholder.dataset.position = position || "end";
+    if (!targetCard) {
+      host.appendChild(placeholder);
+      return;
+    }
+    if (position === "after") {
+      host.insertBefore(placeholder, targetCard.nextSibling);
+    } else {
+      host.insertBefore(placeholder, targetCard);
+    }
+  }
+  function plannerDropTargetFromPlaceholder(fallbackTargetEpicKey, fallbackPosition){
+    const host = byId("rnd-staged-epics");
+    const placeholder = host ? host.querySelector(".staged-drop-placeholder") : null;
+    return {
+      targetEpicKey: placeholder ? String(placeholder.dataset.targetEpicKey || "") : String(fallbackTargetEpicKey || ""),
+      position: placeholder ? String(placeholder.dataset.position || "before") : String(fallbackPosition || "before")
+    };
+  }
+  function readableTextColor(hex){
+    const cleaned = String(hex || "").replace("#", "");
+    if (!/^[0-9a-fA-F]{6}$/.test(cleaned)) return "#fff";
+    const r = parseInt(cleaned.slice(0, 2), 16);
+    const g = parseInt(cleaned.slice(2, 4), 16);
+    const b = parseInt(cleaned.slice(4, 6), 16);
+    return ((r * 299 + g * 587 + b * 114) / 1000) > 150 ? "#071625" : "#fff";
+  }
+  function renderProjectControls(){
+    const tabs = projectTabsForDisplay();
+    const filter = byId("rnd-project-filter");
+    const current = filter.value;
+    reset(filter);
+    const allOpt = document.createElement("option");
+    allOpt.value = "";
+    allOpt.textContent = "All projects";
+    filter.appendChild(allOpt);
+    tabs.filter((tab) => !tab.is_all_tab).forEach((tab) => {
+      const opt = document.createElement("option");
+      opt.value = tab.project_key || "";
+      opt.textContent = (tab.project_name || tab.project_key || "Project") + " (" + Number(tab.epic_count || 0) + ")";
+      filter.appendChild(opt);
+    });
+    filter.value = Array.from(filter.options).some((opt) => opt.value === current) ? current : "";
+    const tabsEl = byId("rnd-project-tabs");
+    reset(tabsEl);
+    tabs.forEach((tab) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "tab" + ((filter.value || "ALL") === (tab.project_key || "ALL") ? " active" : "");
+      btn.textContent = (tab.is_all_tab ? "All" : (tab.project_name || tab.project_key)) + " " + Number(tab.epic_count || 0);
+      btn.addEventListener("click", () => {
+        filter.value = tab.is_all_tab ? "" : (tab.project_key || "");
+        loadState();
+      });
+      tabsEl.appendChild(btn);
+    });
+  }
+  function renderEpics(){
+    const list = byId("rnd-epic-list");
+    reset(list);
+    const epics = (state && state.epics) || [];
+    if (!epics.length){
+      const empty = document.createElement("div");
+      empty.className = "row muted";
+      empty.textContent = "No epics found.";
+      list.appendChild(empty);
+      return;
+    }
+    const plannerKeys = new Set(plannerEpicKeys());
+    const backlogKeys = new Set((((state && state.planner) || {}).backlog || []).map((item) => item.epic_key));
+    epics.slice(0, 150).forEach((epic) => {
+      const row = document.createElement("div");
+      row.className = "row";
+      row.draggable = true;
+      row.addEventListener("dragstart", (event) => {
+        event.dataTransfer.setData("application/x-rnd-epic", epic.epic_key);
+        event.dataTransfer.effectAllowed = "copy";
+      });
+      const title = document.createElement("div");
+      title.className = "row-title";
+      title.textContent = epic.epic_key + " - " + (epic.epic_name || "");
+      const meta = document.createElement("div");
+      meta.className = "row-meta";
+      addPill(meta, "P" + fmt(epic.priority));
+      addPill(meta, fmt(epic.project_key));
+      addPill(meta, Number(epic.budgeted_hours || 0).toFixed(1) + "h");
+      const actions = document.createElement("div");
+      actions.className = "row-actions";
+      const toCanvas = document.createElement("button");
+      toCanvas.className = "btn";
+      toCanvas.type = "button";
+      toCanvas.textContent = plannerKeys.has(epic.epic_key) ? "In Planner" : "Planner";
+      toCanvas.disabled = plannerKeys.has(epic.epic_key);
+      toCanvas.addEventListener("click", () => addToCanvas(epic.epic_key));
+      const toBacklog = document.createElement("button");
+      toBacklog.className = "btn";
+      toBacklog.type = "button";
+      toBacklog.textContent = backlogKeys.has(epic.epic_key) ? "In Backlog" : "Backlog";
+      toBacklog.disabled = backlogKeys.has(epic.epic_key);
+      toBacklog.addEventListener("click", () => addToBacklog(epic.epic_key));
+      actions.appendChild(toCanvas); actions.appendChild(toBacklog);
+      row.appendChild(title); row.appendChild(meta); row.appendChild(actions);
+      list.appendChild(row);
+    });
+  }
+  function findEpic(epicKey){
+    return ((state && state.epics) || []).find((e) => e.epic_key === epicKey) || null;
+  }
+  function persistCanvas(){
+    canvasEpicKeys = plannerEpicKeys();
+  }
+  async function addToCanvas(epicKey){
+    if (!epicKey) return;
+    if (canvasEpicKeys.includes(epicKey)){
+      selectedCanvasEpicKey = epicKey;
+      renderAll();
+      setStatus(epicKey + " is already in the planner.", "");
+      return;
+    }
+    try {
+      setStatus("Adding epic to planner...", "");
+      const body = await apiJson(API + "/planner", { method:"POST", body:JSON.stringify({ epic_key: epicKey }) });
+      state = body.state || {};
+      selectedCanvasEpicKey = epicKey;
+      renderAll();
+      setStatus("Added " + epicKey + " to mapped epics. Drop resources into mapped resources to connect them.", "ok");
+    } catch (err) {
+      setStatus(err.message || String(err), "err");
+    }
+  }
+  async function removeFromCanvas(epicKey){
+    try {
+      setStatus("Removing epic from planner...", "");
+      const body = await apiJson(API + "/planner/" + encodeURIComponent(epicKey), { method:"DELETE" });
+      state = body.state || {};
+      if (selectedCanvasEpicKey === epicKey) selectedCanvasEpicKey = "";
+      renderAll();
+      setStatus("Removed " + epicKey + " from mapped epics.", "ok");
+    } catch (err) {
+      setStatus(err.message || String(err), "err");
+    }
+  }
+  function mappedResourcesFor(epicKey){
+    return (((state && state.planner) || {}).mappings || []).filter((m) => m.epic_key === epicKey);
+  }
+  function renderCanvas(){
+    const host = byId("rnd-staged-epics");
+    if (!host) return;
+    reset(host);
+    syncPlannerSelection();
+    const caption = byId("rnd-mapped-epics-caption");
+    if (caption) caption.hidden = canvasEpicKeys.length > 0;
+    if (!canvasEpicKeys.length){
+      const hint = document.createElement("div");
+      hint.className = "muted";
+      hint.textContent = "Drop an epic here or use the Planner button to start mapping resources.";
+      host.appendChild(hint);
+      renderSelectedResources();
+      return;
+    }
+    const resourceById = new Map(((state && state.resources) || []).map((r) => [r.resource_id, r]));
+    const teamById = new Map(((state && state.teams) || []).map((t) => [t.team_id, t]));
+    canvasEpicKeys.forEach((epicKey) => {
+      const epic = findEpic(epicKey);
+      const card = document.createElement("div");
+      card.className = "staged-card" + (selectedCanvasEpicKey === epicKey ? " selected" : "");
+      card.draggable = true;
+      card.dataset.epicKey = epicKey;
+      card.addEventListener("click", () => {
+        selectedCanvasEpicKey = epicKey;
+        renderCanvas();
+        setStatus("Selected " + epicKey + ". Mapped resources now shows only resources connected to this epic.", "ok");
+      });
+      card.addEventListener("dragstart", (event) => {
+        plannerEpicDragKey = epicKey;
+        card.classList.add("dragging");
+        event.dataTransfer.setData("application/x-rnd-planner-epic", epicKey);
+        event.dataTransfer.effectAllowed = "move";
+      });
+      card.addEventListener("dragend", () => {
+        plannerEpicDragKey = "";
+        card.classList.remove("dragging");
+        clearPlannerEpicDropPlaceholder();
+      });
+      card.addEventListener("dragover", (event) => {
+        if (event.dataTransfer.types.includes("application/x-rnd-planner-epic")) {
+          event.preventDefault();
+          event.stopPropagation();
+          const rect = card.getBoundingClientRect();
+          const position = event.clientY > rect.top + (rect.height / 2) ? "after" : "before";
+          showPlannerEpicDropPlaceholder(card, position);
+          if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+          return;
+        }
+        if (event.dataTransfer.types.includes("application/x-rnd-resource")) {
+          event.preventDefault();
+          event.stopPropagation();
+          clearPlannerEpicDropPlaceholder();
+          card.classList.add("drop-active");
+          if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+        }
+      });
+      card.addEventListener("dragleave", () => card.classList.remove("drop-active"));
+      card.addEventListener("drop", (event) => {
+        card.classList.remove("drop-active");
+        const draggedEpicKey = event.dataTransfer.getData("application/x-rnd-planner-epic");
+        if (draggedEpicKey) {
+          event.preventDefault();
+          event.stopPropagation();
+          const dropTarget = plannerDropTargetFromPlaceholder(epicKey, "before");
+          clearPlannerEpicDropPlaceholder();
+          reorderPlannerEpic(draggedEpicKey, dropTarget.targetEpicKey, dropTarget.position);
+          return;
+        }
+        const resourceId = event.dataTransfer.getData("application/x-rnd-resource");
+        if (resourceId) {
+          event.preventDefault();
+          event.stopPropagation();
+          selectedCanvasEpicKey = epicKey;
+          mapResourceToEpic(epicKey, resourceId);
+        }
+      });
+      const title = document.createElement("div");
+      title.className = "staged-title";
+      title.textContent = epicKey + (epic && epic.epic_name ? " - " + epic.epic_name : "");
+      card.appendChild(title);
+      const meta = document.createElement("div");
+      meta.className = "row-meta";
+      addPill(meta, mappedResourcesFor(epicKey).length + " resources");
+      card.appendChild(meta);
+      if (selectedCanvasEpicKey === epicKey){
+        const mapped = mappedResourcesFor(epicKey);
+        const wrap = document.createElement("div");
+        wrap.className = "staged-mapped";
+        if (!mapped.length){
+          const none = document.createElement("div");
+          none.className = "staged-empty-map";
+          none.textContent = "No resources mapped yet. Drag a resource here.";
+          wrap.appendChild(none);
+        } else {
+          mapped.forEach((m) => {
+            const res = resourceById.get(m.resource_id);
+            const team = teamById.get(res && res.team_id);
+            const chip = document.createElement("span");
+            chip.className = "chip";
+            const dot = document.createElement("span");
+            dot.className = "team-dot";
+            dot.style.background = (team && team.color_hex) || "#cbd5e1";
+            chip.appendChild(dot);
+            const name = document.createElement("span");
+            name.textContent = (res && res.display_name) || m.resource_id;
+            chip.appendChild(name);
+            const x = document.createElement("span");
+            x.className = "chip-x";
+            x.textContent = "×";
+            x.title = "Unmap";
+            x.addEventListener("click", (ev) => { ev.stopPropagation(); unmapResourceFromEpic(epicKey, m.resource_id); });
+            chip.appendChild(x);
+            wrap.appendChild(chip);
+          });
+        }
+        card.appendChild(wrap);
+      }
+      const actions = document.createElement("div");
+      actions.className = "staged-actions";
+      const removeBtn = document.createElement("button");
+      removeBtn.className = "btn";
+      removeBtn.type = "button";
+      removeBtn.textContent = "Remove";
+      removeBtn.addEventListener("click", (ev) => { ev.stopPropagation(); removeFromCanvas(epicKey); });
+      actions.appendChild(removeBtn);
+      card.appendChild(actions);
+      host.appendChild(card);
+    });
+    renderSelectedResources();
+  }
+  function renderSelectedResources(){
+    const host = byId("rnd-staged-resources");
+    const label = byId("rnd-selected-epic-label");
+    if (!host) return;
+    reset(host);
+    if (!selectedCanvasEpicKey){
+      if (label) label.textContent = "Select a planner epic to see its resources.";
+      const empty = document.createElement("div");
+      empty.className = "muted";
+      empty.textContent = "No epic selected.";
+      host.appendChild(empty);
+      return;
+    }
+    const selectedEpic = findEpic(selectedCanvasEpicKey);
+    if (label) label.textContent = selectedCanvasEpicKey + (selectedEpic && selectedEpic.epic_name ? " - " + selectedEpic.epic_name : "");
+    const resourceById = new Map(((state && state.resources) || []).map((r) => [r.resource_id, r]));
+    const teamById = new Map(((state && state.teams) || []).map((t) => [t.team_id, t]));
+    const mapped = mappedResourcesFor(selectedCanvasEpicKey);
+    if (!mapped.length){
+      const none = document.createElement("div");
+      none.className = "muted";
+      none.textContent = "No resources are mapped to " + selectedCanvasEpicKey + ". Drop resources here to connect them.";
+      host.appendChild(none);
+      return;
+    }
+    mapped.forEach((m) => {
+      const resource = resourceById.get(m.resource_id);
+      const team = teamById.get(resource && resource.team_id);
+      const color = (team && team.color_hex) || "#3b5f86";
+      const card = document.createElement("div");
+      card.className = "resource-card";
+      card.draggable = true;
+      card.dataset.resourceId = m.resource_id;
+      card.style.background = color;
+      card.style.color = readableTextColor(color);
+      card.addEventListener("dragstart", (event) => {
+        event.dataTransfer.setData("application/x-rnd-planner-resource", m.resource_id);
+        event.dataTransfer.effectAllowed = "move";
+      });
+      card.addEventListener("dragover", (event) => {
+        if (event.dataTransfer.types.includes("application/x-rnd-planner-resource")) {
+          event.preventDefault();
+          card.classList.add("drop-active");
+        }
+      });
+      card.addEventListener("dragleave", () => card.classList.remove("drop-active"));
+      card.addEventListener("drop", (event) => {
+        card.classList.remove("drop-active");
+        const draggedResourceId = event.dataTransfer.getData("application/x-rnd-planner-resource");
+        if (draggedResourceId) {
+          event.preventDefault();
+          reorderSelectedEpicResource(draggedResourceId, m.resource_id);
+        }
+      });
+      const text = document.createElement("div");
+      text.style.minWidth = "0";
+      const title = document.createElement("div");
+      title.className = "resource-card-title";
+      title.textContent = (resource && resource.display_name) || m.resource_id;
+      const meta = document.createElement("div");
+      meta.className = "resource-card-meta";
+      meta.textContent = (team && team.name) || "No team";
+      text.appendChild(title);
+      text.appendChild(meta);
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.textContent = "x";
+      remove.title = "Unmap";
+      remove.addEventListener("click", () => unmapResourceFromEpic(selectedCanvasEpicKey, m.resource_id));
+      card.appendChild(text);
+      card.appendChild(remove);
+      host.appendChild(card);
+    });
+  }
+  function renderBacklog(){
+    const body = byId("rnd-backlog-body");
+    if (!body) return;
+    reset(body);
+    const backlog = ((state && state.planner) || {}).backlog || [];
+    if (!backlog.length){
+      const tr = document.createElement("tr");
+      const td = document.createElement("td");
+      td.colSpan = 5; td.className = "muted"; td.textContent = "No backlog epics yet.";
+      tr.appendChild(td); body.appendChild(tr); return;
+    }
+    const plannerKeys = new Set(plannerEpicKeys());
+    backlog.forEach((item) => {
+      const tr = document.createElement("tr");
+      tr.dataset.epicKey = item.epic_key;
+      [item.epic_key, "P" + fmt(item.priority), Number(item.budgeted_hours || 0).toFixed(1) + "h", dateRange(item)].forEach((value) => {
+        const td = document.createElement("td");
+        td.textContent = value;
+        tr.appendChild(td);
+      });
+      const actionTd = document.createElement("td");
+      const moveBtn = document.createElement("button");
+      moveBtn.className = "btn";
+      moveBtn.type = "button";
+      moveBtn.textContent = plannerKeys.has(item.epic_key) ? "In Planner" : "Add to planner";
+      moveBtn.disabled = plannerKeys.has(item.epic_key);
+      moveBtn.addEventListener("click", () => addBacklogToPlanner(item.epic_key));
+      const removeBtn = document.createElement("button");
+      removeBtn.className = "btn";
+      removeBtn.type = "button";
+      removeBtn.textContent = "Remove";
+      removeBtn.style.marginLeft = "6px";
+      removeBtn.addEventListener("click", () => removeFromBacklog(item.epic_key));
+      actionTd.appendChild(moveBtn); actionTd.appendChild(removeBtn);
+      tr.appendChild(actionTd);
+      body.appendChild(tr);
+    });
+  }
+  function renderResources(){
+    const list = byId("rnd-resource-list");
+    reset(list);
+    const resources = (state && state.resources) || [];
+    const teamById = new Map(((state && state.teams) || []).map((team) => [team.team_id, team]));
+    if (!resources.length){
+      const empty = document.createElement("div");
+      empty.className = "row muted";
+      empty.textContent = "No resources configured yet.";
+      list.appendChild(empty);
+      return;
+    }
+    resources.forEach((resource) => {
+      const team = teamById.get(resource.team_id) || {};
+      const row = document.createElement("div");
+      row.className = "row";
+      row.draggable = true;
+      row.addEventListener("dragstart", (event) => {
+        event.dataTransfer.setData("application/x-rnd-resource", resource.resource_id);
+        event.dataTransfer.effectAllowed = "copy";
+      });
+      const title = document.createElement("div");
+      title.className = "row-title";
+      title.textContent = resource.display_name || resource.resource_id;
+      const meta = document.createElement("div");
+      meta.className = "row-meta";
+      addPill(meta, team.name || "No team");
+      addPill(meta, (resource.skill_ids || []).length + " skills");
+      row.appendChild(title); row.appendChild(meta);
+      list.appendChild(row);
+    });
+  }
+  function renderClusterView(){
+    const epicHost = byId("rnd-cluster-epics");
+    const bubbleHost = byId("rnd-cluster-bubbles");
+    const lineHost = byId("rnd-cluster-lines");
+    const legendHost = byId("rnd-cluster-legend");
+    const stage = byId("rnd-cluster-stage");
+    if (!epicHost || !bubbleHost || !lineHost || !legendHost || !stage) return;
+    reset(epicHost); reset(bubbleHost); reset(lineHost); reset(legendHost);
+    syncPlannerSelection();
+    const resources = ((state && state.resources) || []);
+    const teams = ((state && state.teams) || []);
+    const mappings = (((state && state.planner) || {}).mappings || []).filter((m) => canvasEpicKeys.includes(m.epic_key));
+    const resourceById = new Map(resources.map((r) => [r.resource_id, r]));
+    const teamById = new Map(teams.map((t) => [t.team_id, t]));
+    if (!canvasEpicKeys.length){
+      const empty = document.createElement("div");
+      empty.className = "muted";
+      empty.textContent = "No planner epics yet.";
+      epicHost.appendChild(empty);
+    }
+    canvasEpicKeys.forEach((epicKey) => {
+      const epic = findEpic(epicKey);
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "cluster-epic" + (selectedClusterEpicKey === epicKey ? " active" : "");
+      btn.textContent = epicKey + (epic && epic.epic_name ? " - " + epic.epic_name : "");
+      btn.addEventListener("click", () => {
+        selectedClusterEpicKey = selectedClusterEpicKey === epicKey ? "" : epicKey;
+        renderClusterView();
+      });
+      epicHost.appendChild(btn);
+    });
+    const legendTeams = new Map();
+    resources.forEach((resource) => {
+      const team = teamById.get(resource.team_id);
+      const key = (team && team.team_id) || "__none__";
+      if (!legendTeams.has(key)) legendTeams.set(key, { name:(team && team.name) || "No team", color:(team && team.color_hex) || "#3b5f86" });
+    });
+    Array.from(legendTeams.values()).forEach((team) => {
+      const item = document.createElement("span");
+      item.className = "cluster-legend-item";
+      const dot = document.createElement("span");
+      dot.className = "team-dot";
+      dot.style.background = team.color;
+      item.appendChild(dot);
+      const label = document.createElement("span");
+      label.textContent = team.name;
+      item.appendChild(label);
+      legendHost.appendChild(item);
+    });
+    const activeResourceIds = Array.from(new Set(mappings.map((m) => m.resource_id)));
+    const selectedResourceIds = new Set(mappings.filter((m) => m.epic_key === selectedClusterEpicKey).map((m) => m.resource_id));
+    const stageWidth = Math.max(stage.clientWidth || 720, 520);
+    const stageHeight = Math.max(stage.clientHeight || 420, 360);
+    activeResourceIds.forEach((resourceId, idx) => {
+      const resource = resourceById.get(resourceId);
+      const team = teamById.get(resource && resource.team_id);
+      const color = (team && team.color_hex) || "#3b5f86";
+      const bubble = document.createElement("div");
+      bubble.className = "cluster-bubble" + (selectedClusterEpicKey && !selectedResourceIds.has(resourceId) ? " dim" : "");
+      bubble.textContent = (resource && resource.initials) || "?";
+      bubble.title = (resource && resource.display_name) || resourceId;
+      bubble.style.background = color;
+      bubble.style.color = readableTextColor(color);
+      let x;
+      let y;
+      if (selectedClusterEpicKey && selectedResourceIds.has(resourceId)){
+        const selectedIndex = Array.from(selectedResourceIds).indexOf(resourceId);
+        x = 80 + (selectedIndex % 4) * 58;
+        y = 82 + Math.floor(selectedIndex / 4) * 58;
+      } else {
+        const angle = idx * 0.82;
+        const radius = 42 + (idx % 5) * 9;
+        x = stageWidth * 0.58 + Math.cos(angle) * radius;
+        y = stageHeight * 0.46 + Math.sin(angle) * radius;
+      }
+      bubble.style.left = Math.max(8, Math.min(stageWidth - 54, x)) + "px";
+      bubble.style.top = Math.max(8, Math.min(stageHeight - 54, y)) + "px";
+      bubbleHost.appendChild(bubble);
+    });
+    mappings.forEach((m) => {
+      if (selectedClusterEpicKey && m.epic_key !== selectedClusterEpicKey) return;
+      const resourceIndex = activeResourceIds.indexOf(m.resource_id);
+      if (resourceIndex < 0) return;
+      const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      const selected = m.epic_key === selectedClusterEpicKey;
+      line.setAttribute("x1", "24");
+      line.setAttribute("y1", String(72 + Math.max(0, canvasEpicKeys.indexOf(m.epic_key)) * 46));
+      const bubble = bubbleHost.children[resourceIndex];
+      line.setAttribute("x2", String((parseFloat(bubble.style.left) || 0) + 21));
+      line.setAttribute("y2", String((parseFloat(bubble.style.top) || 0) + 21));
+      line.setAttribute("stroke", selected ? "#d5e7ff" : "#6f86a1");
+      line.setAttribute("stroke-width", selected ? "3" : "1");
+      line.setAttribute("opacity", selected ? "0.9" : "0.32");
+      lineHost.appendChild(line);
+    });
+  }
+  function renderViewContent(){
+    const hierarchical = byId("rnd-hierarchical-planner");
+    const cluster = byId("rnd-cluster-planner");
+    if (currentView === "hierarchical"){
+      if (hierarchical) hierarchical.hidden = false;
+      if (cluster) cluster.hidden = true;
+      return;
+    }
+    if (hierarchical) hierarchical.hidden = true;
+    if (cluster) cluster.hidden = false;
+    renderClusterView();
+    return;
+    const host = byId("rnd-view-content");
+    if (!host) return;
+    reset(host);
+    const canvasKeys = canvasEpicKeys.slice();
+    const mappings = ((state && state.planner && state.planner.mappings) || []);
+    const resources = ((state && state.resources) || []);
+    const teams = ((state && state.teams) || []);
+    const resourceById = new Map(resources.map((r) => [r.resource_id, r]));
+    const teamById = new Map(teams.map((t) => [t.team_id, t]));
+    const epicNameByKey = new Map(((state && state.epics) || []).map((e) => [e.epic_key, e.epic_name || ""]));
+    function epicLabel(epicKey){
+      const name = epicNameByKey.get(epicKey);
+      return epicKey + (name ? " - " + name : "");
+    }
+    function teamDot(resource){
+      const dot = document.createElement("span");
+      dot.className = "team-dot";
+      const team = teamById.get(resource && resource.team_id);
+      dot.style.background = (team && team.color_hex) || "#cbd5e1";
+      return dot;
+    }
+    if (!canvasKeys.length){
+      const empty = document.createElement("div");
+      empty.className = "view-empty";
+      empty.textContent = "No epics on the canvas yet. Add an epic to the canvas and map resources to see it here.";
+      host.appendChild(empty);
+      return;
+    }
+    if (currentView === "hierarchical"){
+      canvasKeys.forEach((epicKey) => {
+        const node = document.createElement("div");
+        node.className = "view-node";
+        const title = document.createElement("div");
+        title.className = "view-node-title";
+        title.textContent = epicLabel(epicKey);
+        node.appendChild(title);
+        const mapped = mappings.filter((m) => m.epic_key === epicKey);
+        const kids = document.createElement("div");
+        kids.className = "view-children";
+        if (!mapped.length){
+          const none = document.createElement("div");
+          none.className = "view-child muted";
+          none.textContent = "No resources mapped yet.";
+          kids.appendChild(none);
+        } else {
+          mapped.forEach((m) => {
+            const res = resourceById.get(m.resource_id);
+            const child = document.createElement("div");
+            child.className = "view-child";
+            child.appendChild(teamDot(res));
+            const name = document.createElement("span");
+            name.textContent = (res && res.display_name) || m.resource_id;
+            child.appendChild(name);
+            if (Number(m.allocation_hours || 0) > 0){
+              const alloc = document.createElement("span");
+              alloc.className = "muted";
+              alloc.textContent = "(" + Number(m.allocation_hours).toFixed(1) + "h)";
+              child.appendChild(alloc);
+            }
+            kids.appendChild(child);
+          });
+        }
+        node.appendChild(kids);
+        host.appendChild(node);
+      });
+      return;
+    }
+    const canvasKeySet = new Set(canvasKeys);
+    const epicsByResource = new Map();
+    mappings.forEach((m) => {
+      if (!canvasKeySet.has(m.epic_key)) return;
+      if (!epicsByResource.has(m.resource_id)) epicsByResource.set(m.resource_id, []);
+      epicsByResource.get(m.resource_id).push(m);
+    });
+    const groups = new Map();
+    const groupOrder = [];
+    function groupFor(teamKey, label, color){
+      if (!groups.has(teamKey)){
+        groups.set(teamKey, { label: label, color: color, resourceIds: [] });
+        groupOrder.push(teamKey);
+      }
+      return groups.get(teamKey);
+    }
+    const activeResourceIds = Array.from(epicsByResource.keys());
+    if (!activeResourceIds.length){
+      const empty = document.createElement("div");
+      empty.className = "view-empty";
+      empty.textContent = "No resources are mapped to any canvas epic yet. Drop a resource onto a canvas epic to build clusters.";
+      host.appendChild(empty);
+      return;
+    }
+    activeResourceIds.forEach((resourceId) => {
+      const res = resourceById.get(resourceId);
+      const team = teamById.get(res && res.team_id);
+      const key = (team && team.team_id) || "__none__";
+      const grp = groupFor(key, (team && team.name) || "No team", (team && team.color_hex) || "#cbd5e1");
+      grp.resourceIds.push(resourceId);
+    });
+    groupOrder.forEach((key) => {
+      const grp = groups.get(key);
+      const wrap = document.createElement("div");
+      wrap.className = "view-group";
+      const head = document.createElement("div");
+      head.className = "view-group-head";
+      const dot = document.createElement("span");
+      dot.className = "team-dot";
+      dot.style.background = grp.color;
+      head.appendChild(dot);
+      const label = document.createElement("span");
+      label.textContent = grp.label + " (" + grp.resourceIds.length + ")";
+      head.appendChild(label);
+      wrap.appendChild(head);
+      grp.resourceIds.forEach((resourceId) => {
+        const res = resourceById.get(resourceId);
+        const node = document.createElement("div");
+        node.className = "view-node";
+        const title = document.createElement("div");
+        title.className = "view-node-title";
+        title.textContent = (res && res.display_name) || resourceId;
+        node.appendChild(title);
+        const kids = document.createElement("div");
+        kids.className = "view-children";
+        (epicsByResource.get(resourceId) || []).forEach((m) => {
+          const child = document.createElement("div");
+          child.className = "view-child";
+          const name = document.createElement("span");
+          name.textContent = epicLabel(m.epic_key);
+          child.appendChild(name);
+          if (Number(m.allocation_hours || 0) > 0){
+            const alloc = document.createElement("span");
+            alloc.className = "muted";
+            alloc.textContent = "(" + Number(m.allocation_hours).toFixed(1) + "h)";
+            child.appendChild(alloc);
+          }
+          kids.appendChild(child);
+        });
+        node.appendChild(kids);
+        wrap.appendChild(node);
+      });
+      host.appendChild(wrap);
+    });
+  }
+  function renderTeamDialogOptions(editingTeam){
+    const skillBox = byId("rnd-team-skills");
+    const resourceBox = byId("rnd-team-resources");
+    reset(skillBox); reset(resourceBox);
+    const editSkillIds = new Set((editingTeam && editingTeam.skill_ids) || []);
+    ((state && state.skills) || []).forEach((skill) => {
+      const label = document.createElement("label");
+      label.className = "check-row";
+      const input = document.createElement("input");
+      input.type = "checkbox"; input.value = skill.skill_id;
+      if (editSkillIds.has(skill.skill_id)) input.checked = true;
+      const span = document.createElement("span");
+      span.textContent = skill.name;
+      label.appendChild(input); label.appendChild(span); skillBox.appendChild(label);
+    });
+    const editResourceIds = new Set((editingTeam && editingTeam.resource_ids) || []);
+    const resources = (state && state.resources) || [];
+    if (!resources.length){
+      const empty = document.createElement("span");
+      empty.className = "muted";
+      empty.textContent = "No resources configured.";
+      resourceBox.appendChild(empty);
+    }
+    resources.forEach((resource) => {
+      const label = document.createElement("label");
+      label.className = "check-row";
+      const input = document.createElement("input");
+      input.type = "checkbox"; input.value = resource.resource_id;
+      if (editResourceIds.has(resource.resource_id)) input.checked = true;
+      const span = document.createElement("span");
+      span.textContent = resource.display_name || resource.resource_id;
+      label.appendChild(input); label.appendChild(span); resourceBox.appendChild(label);
+    });
+  }
+  function renderTeamList(){
+    const list = byId("rnd-team-list");
+    reset(list);
+    const teams = (state && state.teams) || [];
+    if (!teams.length){
+      const empty = document.createElement("div");
+      empty.className = "muted";
+      empty.textContent = "No teams yet.";
+      list.appendChild(empty);
+      return;
+    }
+    teams.forEach((team) => {
+      const row = document.createElement("div");
+      row.style.cssText = "display:flex;align-items:center;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px solid var(--border)";
+      const left = document.createElement("div");
+      left.style.display = "flex";
+      left.style.alignItems = "center";
+      left.style.gap = "8px";
+      const swatch = document.createElement("span");
+      swatch.style.cssText = "width:14px;height:14px;border-radius:50%;flex-shrink:0;border:1px solid rgba(0,0,0,.12)";
+      swatch.style.background = team.color_hex || "#2563eb";
+      const nameEl = document.createElement("span");
+      nameEl.style.fontWeight = "600";
+      nameEl.style.fontSize = "12px";
+      nameEl.textContent = team.name;
+      const meta = document.createElement("span");
+      meta.style.color = "var(--muted)";
+      meta.style.fontSize = "11px";
+      meta.textContent = "(" + Number((team.resource_ids || []).length) + " resources, " + Number((team.skill_ids || []).length) + " skills)";
+      left.appendChild(swatch); left.appendChild(nameEl); left.appendChild(meta);
+      const actions = document.createElement("div");
+      actions.style.display = "flex";
+      actions.style.gap = "6px";
+      const editBtn = document.createElement("button");
+      editBtn.type = "button";
+      editBtn.className = "btn";
+      editBtn.style.cssText = "font-size:11px;padding:3px 8px;background:#ede9fe;color:#4c1d95;border-color:#c4b5fd";
+      editBtn.textContent = "Edit";
+      editBtn.addEventListener("click", () => openEditTeam(team));
+      const delBtn = document.createElement("button");
+      delBtn.type = "button";
+      delBtn.className = "btn";
+      delBtn.style.cssText = "font-size:11px;padding:3px 8px;background:#fff;color:#b91c1c;border-color:#fca5a5";
+      delBtn.textContent = "Delete";
+      delBtn.addEventListener("click", () => deleteTeam(team));
+      actions.appendChild(editBtn); actions.appendChild(delBtn);
+      row.appendChild(left); row.appendChild(actions);
+      list.appendChild(row);
+    });
+  }
+  function openCreateTeam(){
+    byId("rnd-team-id").value = "";
+    byId("rnd-team-name").value = "";
+    byId("rnd-team-color").value = "#2563eb";
+    byId("rnd-team-dialog-title").textContent = "Create Team";
+    byId("rnd-team-submit-btn").textContent = "Create Team";
+    byId("rnd-team-cancel-edit-btn").style.display = "none";
+    renderTeamDialogOptions(null);
+    renderTeamList();
+    byId("rnd-team-dialog").showModal();
+  }
+  function openEditTeam(team){
+    byId("rnd-team-id").value = team.team_id || "";
+    byId("rnd-team-name").value = team.name || "";
+    byId("rnd-team-color").value = team.color_hex || "#2563eb";
+    byId("rnd-team-dialog-title").textContent = "Edit Team";
+    byId("rnd-team-submit-btn").textContent = "Save Changes";
+    byId("rnd-team-cancel-edit-btn").style.display = "";
+    renderTeamDialogOptions(team);
+  }
+  async function deleteTeam(team){
+    if (!confirm('Delete team "' + team.name + '"? Resources will be unassigned.')) return;
+    try {
+      setStatus("Deleting team...", "");
+      const body = await apiJson(API + "/teams/" + encodeURIComponent(team.team_id), { method:"DELETE" });
+      state = body.state || {};
+      renderAll();
+      renderTeamList();
+      byId("rnd-team-id").value = "";
+      byId("rnd-team-name").value = "";
+      byId("rnd-team-color").value = "#2563eb";
+      byId("rnd-team-dialog-title").textContent = "Create Team";
+      byId("rnd-team-submit-btn").textContent = "Create Team";
+      byId("rnd-team-cancel-edit-btn").style.display = "none";
+      renderTeamDialogOptions(null);
+      setStatus("Team deleted.", "ok");
+    } catch (err) {
+      setStatus(err.message || String(err), "err");
+    }
+  }
+  function renderExistingSkills(){
+    const list = byId("rnd-existing-skills");
+    reset(list);
+    ((state && state.skills) || []).forEach((skill) => {
+      const row = document.createElement("div");
+      row.className = "row";
+      row.textContent = skill.name + (skill.is_default ? " (default)" : "");
+      list.appendChild(row);
+    });
+    if (!list.childNodes.length){
+      const empty = document.createElement("div");
+      empty.className = "muted";
+      empty.textContent = "No skills yet.";
+      list.appendChild(empty);
+    }
+  }
+  function renderProjectDialog(){
+    const body = byId("rnd-project-dialog-body");
+    reset(body);
+    ((state && state.project_tabs) || []).filter((tab) => !tab.is_all_tab).forEach((tab) => {
+      const label = document.createElement("label");
+      label.className = "check-row";
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      input.value = tab.project_key || "";
+      input.checked = !selectedProjectKeys.size || selectedProjectKeys.has(tab.project_key || "");
+      const span = document.createElement("span");
+      span.textContent = (tab.project_name || tab.project_key) + " (" + Number(tab.epic_count || 0) + ")";
+      label.appendChild(input);
+      label.appendChild(span);
+      body.appendChild(label);
+    });
+  }
+  function renderAll(){
+    renderStats();
+    renderProjectControls();
+    renderEpics();
+    renderCanvas();
+    renderBacklog();
+    renderResources();
+    renderViewContent();
+  }
+  async function loadState(){
+    const search = byId("rnd-epic-search").value.trim();
+    const project = byId("rnd-project-filter").value.trim();
+    const params = new URLSearchParams();
+    if (search) params.set("search", search);
+    if (project) params.set("project_key", project);
+    try {
+      setStatus("Loading...", "");
+      const body = await apiJson(API + (params.toString() ? "?" + params.toString() : ""));
+      state = body.state || {};
+      renderAll();
+      setStatus("Ready", "ok");
+    } catch (err) {
+      setStatus(err.message || String(err), "err");
+    }
+  }
+  async function addToBacklog(epicKey){
+    if (!epicKey) return;
+    const backlogKeys = new Set((((state && state.planner) || {}).backlog || []).map((item) => item.epic_key));
+    if (backlogKeys.has(epicKey)){
+      setStatus(epicKey + " is already in the backlog.", "");
+      return;
+    }
+    try {
+      setStatus("Adding epic to backlog...", "");
+      const body = await apiJson(API + "/backlog", { method:"POST", body:JSON.stringify({ epic_key: epicKey }) });
+      state = body.state || {};
+      renderAll();
+      setStatus("Epic added to backlog.", "ok");
+    } catch (err) {
+      setStatus(err.message || String(err), "err");
+    }
+  }
+  async function removeFromBacklog(epicKey){
+    try {
+      setStatus("Removing epic from backlog...", "");
+      const body = await apiJson(API + "/backlog/" + encodeURIComponent(epicKey), { method:"DELETE" });
+      state = body.state || {};
+      renderAll();
+      setStatus("Epic removed from backlog.", "ok");
+    } catch (err) {
+      setStatus(err.message || String(err), "err");
+    }
+  }
+  async function addBacklogToPlanner(epicKey){
+    try {
+      setStatus("Adding " + epicKey + " to planner...", "");
+      const body = await apiJson(API + "/planner", { method:"POST", body:JSON.stringify({ epic_key: epicKey }) });
+      state = body.state || {};
+      selectedCanvasEpicKey = epicKey;
+      renderAll();
+      setStatus("Added " + epicKey + " to mapped epics.", "ok");
+    } catch (err) {
+      setStatus(err.message || String(err), "err");
+    }
+  }
+  function epicKeyFromDrag(event){
+    return event.dataTransfer.getData("application/x-rnd-epic") || event.dataTransfer.getData("application/x-rnd-planner-epic");
+  }
+  function dragHasEpic(event){
+    return event.dataTransfer.types.includes("application/x-rnd-epic") || event.dataTransfer.types.includes("application/x-rnd-planner-epic");
+  }
+  async function unmapResourceFromEpic(epicKey, resourceId){
+    const remaining = (((state && state.planner) || {}).mappings || [])
+      .filter((m) => m.epic_key === epicKey && m.resource_id !== resourceId);
+    const resourceIds = remaining.map((m) => m.resource_id);
+    const allocation = {};
+    remaining.forEach((m) => { allocation[m.resource_id] = Number(m.allocation_hours || 0); });
+    try {
+      setStatus("Unmapping resource...", "");
+      const body = await apiJson(API + "/mappings", {
+        method:"POST",
+        body:JSON.stringify({ epic_key:epicKey, resource_ids:resourceIds, allocation_hours_by_resource_id:allocation })
+      });
+      state = body.state || {};
+      renderAll();
+      setStatus("Resource unmapped from " + epicKey + ".", "ok");
+    } catch (err) {
+      setStatus(err.message || String(err), "err");
+    }
+  }
+  async function mapResourceToEpic(epicKey, resourceId){
+    const existing = (((state && state.planner) || {}).mappings || []).filter((mapping) => mapping.epic_key === epicKey);
+    const resourceIds = Array.from(new Set(existing.map((mapping) => mapping.resource_id).concat([resourceId])));
+    const allocation = {};
+    existing.forEach((mapping) => { allocation[mapping.resource_id] = Number(mapping.allocation_hours || 0); });
+    if (!(resourceId in allocation)) allocation[resourceId] = 0;
+    try {
+      setStatus("Mapping resource to epic...", "");
+      const body = await apiJson(API + "/mappings", {
+        method:"POST",
+        body:JSON.stringify({ epic_key:epicKey, resource_ids:resourceIds, allocation_hours_by_resource_id:allocation })
+      });
+      state = body.state || {};
+      renderAll();
+      setStatus("Resource mapped to " + epicKey + ".", "ok");
+    } catch (err) {
+      setStatus(err.message || String(err), "err");
+    }
+  }
+  function moveItemBefore(items, draggedId, targetId){
+    const next = items.filter((item) => item !== draggedId);
+    const targetIndex = next.indexOf(targetId);
+    if (targetIndex === -1) next.push(draggedId);
+    else next.splice(targetIndex, 0, draggedId);
+    return next;
+  }
+  function movePlannerEpicToPosition(items, draggedId, targetId, position){
+    if (targetId && draggedId === targetId) return items.slice();
+    const next = items.filter((item) => item !== draggedId);
+    if (!targetId) {
+      next.push(draggedId);
+      return next;
+    }
+    const targetIndex = next.indexOf(targetId);
+    if (targetIndex === -1) {
+      next.push(draggedId);
+      return next;
+    }
+    const insertIndex = position === "after" ? targetIndex + 1 : targetIndex;
+    next.splice(insertIndex, 0, draggedId);
+    return next;
+  }
+  async function reorderPlannerEpic(draggedEpicKey, targetEpicKey, position){
+    if (!draggedEpicKey) return;
+    const epicKeys = movePlannerEpicToPosition(plannerEpicKeys(), draggedEpicKey, targetEpicKey, position || "before");
+    if (epicKeys.join("\\u0001") === plannerEpicKeys().join("\\u0001")) return;
+    try {
+      setStatus("Saving planner epic order...", "");
+      const body = await apiJson(API + "/planner/reorder", { method:"POST", body:JSON.stringify({ epic_keys:epicKeys }) });
+      state = body.state || {};
+      selectedCanvasEpicKey = draggedEpicKey;
+      renderAll();
+      setStatus("Planner epic order saved.", "ok");
+    } catch (err) {
+      setStatus(err.message || String(err), "err");
+    }
+  }
+  async function reorderSelectedEpicResource(draggedResourceId, targetResourceId){
+    if (!selectedCanvasEpicKey || !draggedResourceId || !targetResourceId || draggedResourceId === targetResourceId) return;
+    const resourceIds = moveItemBefore(mappedResourcesFor(selectedCanvasEpicKey).map((m) => m.resource_id), draggedResourceId, targetResourceId);
+    try {
+      setStatus("Saving resource order...", "");
+      const body = await apiJson(API + "/mappings/reorder", {
+        method:"POST",
+        body:JSON.stringify({ epic_key:selectedCanvasEpicKey, resource_ids:resourceIds })
+      });
+      state = body.state || {};
+      renderAll();
+      setStatus("Resource order saved for " + selectedCanvasEpicKey + ".", "ok");
+    } catch (err) {
+      setStatus(err.message || String(err), "err");
+    }
+  }
+  byId("rnd-create-team-btn").addEventListener("click", openCreateTeam);
+  byId("rnd-theme-mode").addEventListener("change", saveThemePreference);
+  byId("rnd-theme-color").addEventListener("input", saveThemePreference);
+  byId("rnd-add-skill-btn").addEventListener("click", () => {
+    byId("rnd-skill-name").value = "";
+    renderExistingSkills();
+    byId("rnd-skill-dialog").showModal();
+  });
+  byId("rnd-configure-projects-btn").addEventListener("click", () => {
+    renderProjectDialog();
+    byId("rnd-project-dialog").showModal();
+  });
+  byId("rnd-project-form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    selectedProjectKeys = new Set(Array.from(byId("rnd-project-dialog-body").querySelectorAll("input:checked")).map((input) => input.value));
+    const allProjectCount = ((state && state.project_tabs) || []).filter((tab) => !tab.is_all_tab).length;
+    if (selectedProjectKeys.size === allProjectCount) selectedProjectKeys.clear();
+    saveProjectSelection();
+    byId("rnd-project-dialog").close();
+    byId("rnd-project-filter").value = "";
+    renderProjectControls();
+    setStatus("Project tabs updated.", "ok");
+  });
+  byId("rnd-team-cancel-edit-btn").addEventListener("click", () => {
+    byId("rnd-team-id").value = "";
+    byId("rnd-team-name").value = "";
+    byId("rnd-team-color").value = "#2563eb";
+    byId("rnd-team-dialog-title").textContent = "Create Team";
+    byId("rnd-team-submit-btn").textContent = "Create Team";
+    byId("rnd-team-cancel-edit-btn").style.display = "none";
+    renderTeamDialogOptions(null);
+  });
+  byId("rnd-team-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const teamId = byId("rnd-team-id").value.trim();
+    const skillIds = Array.from(byId("rnd-team-skills").querySelectorAll("input:checked")).map((input) => input.value);
+    const resourceIds = Array.from(byId("rnd-team-resources").querySelectorAll("input:checked")).map((input) => input.value);
+    const payload = { name:byId("rnd-team-name").value, color_hex:byId("rnd-team-color").value, skill_ids:skillIds, resource_ids:resourceIds };
+    try {
+      let body;
+      if (teamId) {
+        body = await apiJson(API + "/teams/" + encodeURIComponent(teamId), { method:"PUT", body:JSON.stringify(payload) });
+      } else {
+        body = await apiJson(API + "/teams", { method:"POST", body:JSON.stringify(payload) });
+      }
+      state = body.state || {};
+      byId("rnd-team-id").value = "";
+      byId("rnd-team-name").value = "";
+      byId("rnd-team-color").value = "#2563eb";
+      byId("rnd-team-dialog-title").textContent = "Create Team";
+      byId("rnd-team-submit-btn").textContent = "Create Team";
+      byId("rnd-team-cancel-edit-btn").style.display = "none";
+      renderTeamDialogOptions(null);
+      renderTeamList();
+      renderAll();
+      setStatus(teamId ? "Team updated." : "Team created.", "ok");
+    } catch (err) {
+      setStatus(err.message || String(err), "err");
+    }
+  });
+  byId("rnd-skill-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    try {
+      const body = await apiJson(API + "/skills", { method:"POST", body:JSON.stringify({ name:byId("rnd-skill-name").value }) });
+      state = body.state || {};
+      byId("rnd-skill-dialog").close();
+      renderAll();
+      renderExistingSkills();
+      setStatus("Skill added.", "ok");
+    } catch (err) {
+      setStatus(err.message || String(err), "err");
+    }
+  });
+  byId("rnd-epic-search").addEventListener("input", () => {
+    window.clearTimeout(searchTimer);
+    searchTimer = window.setTimeout(loadState, 220);
+  });
+  byId("rnd-project-filter").addEventListener("change", loadState);
+  byId("rnd-epic-drop-zone").addEventListener("dragover", (event) => {
+    if (event.dataTransfer.types.includes("application/x-rnd-planner-epic")) {
+      event.preventDefault();
+      const targetCard = event.target && event.target.closest ? event.target.closest(".staged-card") : null;
+      if (!targetCard) {
+        showPlannerEpicDropPlaceholder(null, "end");
+      }
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+      return;
+    }
+    if (event.dataTransfer.types.includes("application/x-rnd-epic")) {
+      event.preventDefault();
+      clearPlannerEpicDropPlaceholder();
+      byId("rnd-epic-drop-zone").classList.add("drop-active");
+    }
+  });
+  byId("rnd-epic-drop-zone").addEventListener("dragleave", (event) => {
+    if (event.currentTarget.contains(event.relatedTarget)) return;
+    byId("rnd-epic-drop-zone").classList.remove("drop-active");
+    clearPlannerEpicDropPlaceholder();
+  });
+  byId("rnd-epic-drop-zone").addEventListener("drop", (event) => {
+    byId("rnd-epic-drop-zone").classList.remove("drop-active");
+    const draggedEpicKey = event.dataTransfer.getData("application/x-rnd-planner-epic");
+    if (draggedEpicKey) {
+      event.preventDefault();
+      const dropTarget = plannerDropTargetFromPlaceholder("", "end");
+      clearPlannerEpicDropPlaceholder();
+      reorderPlannerEpic(draggedEpicKey, dropTarget.targetEpicKey, dropTarget.position);
+      return;
+    }
+    const epicKey = event.dataTransfer.getData("application/x-rnd-epic");
+    if (epicKey) {
+      event.preventDefault();
+      clearPlannerEpicDropPlaceholder();
+      addToCanvas(epicKey);
+    }
+  });
+  byId("rnd-backlog-drop-zone").addEventListener("dragover", (event) => {
+    if (dragHasEpic(event)) {
+      event.preventDefault();
+      byId("rnd-backlog-drop-zone").classList.add("drop-active");
+    }
+  });
+  byId("rnd-backlog-drop-zone").addEventListener("dragleave", () => byId("rnd-backlog-drop-zone").classList.remove("drop-active"));
+  byId("rnd-backlog-drop-zone").addEventListener("drop", (event) => {
+    byId("rnd-backlog-drop-zone").classList.remove("drop-active");
+    const epicKey = epicKeyFromDrag(event);
+    if (epicKey) {
+      event.preventDefault();
+      addToBacklog(epicKey);
+    }
+  });
+  byId("rnd-resource-drop-zone").addEventListener("dragover", (event) => {
+    if (event.dataTransfer.types.includes("application/x-rnd-resource")) {
+      event.preventDefault();
+      byId("rnd-resource-drop-zone").classList.add("drop-active");
+    }
+  });
+  byId("rnd-resource-drop-zone").addEventListener("dragleave", () => byId("rnd-resource-drop-zone").classList.remove("drop-active"));
+  byId("rnd-resource-drop-zone").addEventListener("drop", (event) => {
+    byId("rnd-resource-drop-zone").classList.remove("drop-active");
+    const resourceId = event.dataTransfer.getData("application/x-rnd-resource");
+    if (!resourceId) return;
+    event.preventDefault();
+    if (!selectedCanvasEpicKey) {
+      setStatus("Select a canvas epic before dropping a resource.", "err");
+      return;
+    }
+    mapResourceToEpic(selectedCanvasEpicKey, resourceId);
+  });
+  byId("rnd-view-hierarchical").addEventListener("click", () => {
+    currentView = "hierarchical";
+    byId("rnd-view-hierarchical").classList.add("active");
+    byId("rnd-view-cluster").classList.remove("active");
+    renderViewContent();
+    setStatus("Hierarchical view: epics with their mapped resources.", "ok");
+  });
+  byId("rnd-view-cluster").addEventListener("click", () => {
+    currentView = "cluster";
+    byId("rnd-view-cluster").classList.add("active");
+    byId("rnd-view-hierarchical").classList.remove("active");
+    renderViewContent();
+    setStatus("Cluster view: resource bubbles align to the selected epic and show team-color connections.", "ok");
+  });
+  loadThemePreference();
+  loadState();
+})();
+</script>
+</body>
+</html>""".replace(
+        "__SETTINGS_TOP_NAV__",
+        _settings_top_nav_html(RND_MUSCLE_UTILIZATION_VIEW_ROUTE if planner_only else RND_MUSCLE_UTILIZATION_SETTINGS_ROUTE),
+    ).replace(
+        "__RND_PAGE_MODE_CLASS__",
+        "planner-only" if planner_only else "",
+    ).replace(
+        "__RND_VIEW_MODE_BUTTON__",
+        (
+            f'<a class="btn primary" href="{RND_MUSCLE_UTILIZATION_SETTINGS_ROUTE}">Configuration</a>'
+            if planner_only
+            else f'<a class="btn primary" href="{RND_MUSCLE_UTILIZATION_VIEW_ROUTE}" target="_blank" rel="noopener noreferrer">View Mode</a>'
+        ),
+    )
 
 
 def _epics_dropdown_options_settings_html() -> str:
@@ -20997,12 +22643,14 @@ def _resolve_work_items_xlsx_path(base_dir: Path) -> Path:
 
 def _priority_for_epics_management(value: object) -> str:
     text = _to_text(value).casefold()
-    if text == "highest":
+    if text in {"1", "p1", "highest"}:
         return "Highest"
-    if text == "high":
+    if text in {"high"}:
         return "High"
-    if text in {"medium", "meidum"}:
+    if text in {"2", "p2", "medium", "meidum"}:
         return "Medium"
+    if text in {"3", "p3", "low"}:
+        return "Low"
     return "Low"
 
 
@@ -21049,37 +22697,52 @@ _EPICS_MANAGEMENT_DEFAULT_PLAN_COLUMNS: tuple[dict[str, object], ...] = (
         "most_likely_enabled": True, "tk_budgeted_enabled": True, "formula_role": "dev_sqa_split",
     },
     {
-        "key": "qa_handover", "label": "Handover", "jira_link_enabled": True, "sort_order": 5,
+        "key": "readapi_support_plan", "label": "ReadAPI Sup", "jira_link_enabled": True, "sort_order": 5,
+        "base_phase_key": "readapi_support", "base_phase_label": "ReadAPI Sup", "phase_role": "most_likely_input",
+        "most_likely_enabled": True, "tk_budgeted_enabled": True, "formula_role": "direct",
+    },
+    {
+        "key": "sitelayout_support_plan", "label": "SiteLayout Sup", "jira_link_enabled": True, "sort_order": 6,
+        "base_phase_key": "sitelayout_support", "base_phase_label": "SiteLayout Sup", "phase_role": "most_likely_input",
+        "most_likely_enabled": True, "tk_budgeted_enabled": True, "formula_role": "direct",
+    },
+    {
+        "key": "omniagent_support_plan", "label": "OmniAgent Sup", "jira_link_enabled": True, "sort_order": 7,
+        "base_phase_key": "omniagent_support", "base_phase_label": "OmniAgent Sup", "phase_role": "most_likely_input",
+        "most_likely_enabled": True, "tk_budgeted_enabled": True, "formula_role": "direct",
+    },
+    {
+        "key": "qa_handover", "label": "Handover", "jira_link_enabled": True, "sort_order": 8,
         "base_phase_key": "handover", "base_phase_label": "Handover", "phase_role": "formula_managed",
         "most_likely_enabled": False, "tk_budgeted_enabled": True, "formula_role": "fixed_if_dev", "fixed_man_days": 0.5,
     },
     {
-        "key": "sqa_plan", "label": "SQA", "jira_link_enabled": True, "sort_order": 6,
+        "key": "sqa_plan", "label": "SQA", "jira_link_enabled": True, "sort_order": 9,
         "base_phase_key": "sqa", "base_phase_label": "SQA", "phase_role": "most_likely_input",
         "most_likely_enabled": True, "tk_budgeted_enabled": True, "formula_role": "dev_sqa_split",
     },
     {
-        "key": "bug_fixing", "label": "Bug Fixing", "jira_link_enabled": True, "sort_order": 7,
+        "key": "bug_fixing", "label": "Bug Fixing", "jira_link_enabled": True, "sort_order": 10,
         "base_phase_key": "bug_fixing", "base_phase_label": "Bug Fixing", "phase_role": "formula_managed",
         "most_likely_enabled": False, "tk_budgeted_enabled": True, "formula_role": "percentage_always", "estimate_percent": 15.0,
     },
     {
-        "key": "process_qa_testing", "label": "Process QA Testing", "jira_link_enabled": False, "sort_order": 8,
+        "key": "process_qa_testing", "label": "Process QA Testing", "jira_link_enabled": False, "sort_order": 11,
         "base_phase_key": "process_qa_testing", "base_phase_label": "Process QA Testing", "phase_role": "most_likely_input",
         "most_likely_enabled": True, "tk_budgeted_enabled": True, "formula_role": "direct",
     },
     {
-        "key": "user_manual_plan", "label": "Doc / User Manual", "jira_link_enabled": True, "sort_order": 9,
+        "key": "user_manual_plan", "label": "Doc / User Manual", "jira_link_enabled": True, "sort_order": 12,
         "base_phase_key": "doc_user_manual", "base_phase_label": "Doc / User Manual", "phase_role": "most_likely_input",
         "most_likely_enabled": True, "tk_budgeted_enabled": True, "formula_role": "percentage_if_input", "estimate_percent": 5.0,
     },
     {
-        "key": "regression_sqa_testing", "label": "Regression SQA Testing", "jira_link_enabled": False, "sort_order": 10,
+        "key": "regression_sqa_testing", "label": "Regression SQA Testing", "jira_link_enabled": False, "sort_order": 13,
         "base_phase_key": "regression_sqa_testing", "base_phase_label": "Regression SQA Testing", "phase_role": "most_likely_input",
         "most_likely_enabled": True, "tk_budgeted_enabled": True, "formula_role": "percentage_if_input", "estimate_percent": 10.0,
     },
     {
-        "key": "production_plan", "label": "Release", "jira_link_enabled": True, "sort_order": 11,
+        "key": "production_plan", "label": "Release", "jira_link_enabled": True, "sort_order": 14,
         "base_phase_key": "release", "base_phase_label": "Release", "phase_role": "formula_managed",
         "most_likely_enabled": False, "tk_budgeted_enabled": True, "formula_role": "fixed_if_tk", "fixed_man_days": 2.0,
     },
@@ -26026,6 +27689,9 @@ _EPICS_IMPORT_PHASES = [
   {"excel_header": "R/URS", "plan_key": "research_urs_plan", "label": "R/URS", "aliases": ["r/urs", "urs", "research"]},
   {"excel_header": "R/DDS", "plan_key": "dds_plan", "label": "R/DDS", "aliases": ["r/dds", "dds", "design document"]},
   {"excel_header": "Dev", "plan_key": "development_plan", "label": "Dev", "aliases": ["dev", "development"]},
+  {"excel_header": "ReadAPI Sup", "plan_key": "readapi_support_plan", "label": "ReadAPI Sup", "aliases": ["readapi sup", "read api support", "readapi support"]},
+  {"excel_header": "SiteLayout Sup", "plan_key": "sitelayout_support_plan", "label": "SiteLayout Sup", "aliases": ["sitelayout sup", "site layout support", "sitelayout support"]},
+  {"excel_header": "OmniAgent Sup", "plan_key": "omniagent_support_plan", "label": "OmniAgent Sup", "aliases": ["omniagent sup", "omniagent support", "omni agent support"]},
   {"excel_header": "SQA", "plan_key": "sqa_plan", "label": "SQA", "aliases": ["sqa", "qa", "testing"]},
   {"excel_header": "Prc Test", "plan_key": "process_qa_testing", "label": "Prc Test", "aliases": ["process qa", "prc test", "process testing"]},
   {"excel_header": "Doc", "plan_key": "user_manual_plan", "label": "Doc", "aliases": ["doc", "documentation", "manual", "user manual"]},
@@ -26115,6 +27781,19 @@ def _find_header_col(headers: dict[str, int], *names: str) -> int:
     if header.casefold() in wanted:
       return col_idx
   return 0
+
+
+def _find_header_cols(ws, *names: str) -> list[int]:
+  wanted = {name.casefold() for name in names}
+  out: list[int] = []
+  for col_idx in range(1, ws.max_column + 1):
+    raw_value = ws.cell(2, col_idx).value
+    if raw_value in (None, ""):
+      raw_value = ws.cell(1, col_idx).value
+    header = re.sub(r"\s+", " ", _to_text(raw_value).strip()).casefold()
+    if header in wanted:
+      out.append(col_idx)
+  return out
 
 
 def _build_ws_headers(ws) -> dict[str, int]:
@@ -26216,6 +27895,7 @@ def _extract_epics_import_rows_from_workbook(workbook_path: Path) -> list[dict[s
       roadmap_col = _find_header_col(headers, "Road Map Items", "Roadmap Items")
       jira_col = _find_header_col(headers, "Jira ID", "JIRA ID")
       originator_col = _find_header_col(headers, "Originator")
+      priority_cols = _find_header_cols(ws, "Priority")
       plan_status_col = _find_header_col(headers, "Plan Status")
       work_status_col = _find_header_col(headers, "Work Status")
       start_date_col = _find_header_col(headers, "Start Date")
@@ -26234,6 +27914,11 @@ def _extract_epics_import_rows_from_workbook(workbook_path: Path) -> list[dict[s
           current_component = component_value
         jira_url = _excel_hyperlink_or_text(ws.cell(row_idx, jira_col)) if jira_col else ""
         roadmap_item = _to_text(ws.cell(row_idx, roadmap_col).value).strip() if roadmap_col else ""
+        priority_value = ""
+        for priority_col in priority_cols:
+          priority_value = _to_text(ws.cell(row_idx, priority_col).value).strip()
+          if priority_value:
+            break
         phase_values: dict[str, object] = {}
         for phase in _EPICS_IMPORT_PHASES:
           plan_key = _to_text(phase["plan_key"])
@@ -26265,6 +27950,7 @@ def _extract_epics_import_rows_from_workbook(workbook_path: Path) -> list[dict[s
           "jira_url": jira_url,
           "epic_key": epic_key,
           "originator": _to_text(ws.cell(row_idx, originator_col).value).strip() if originator_col else "",
+          "priority": _priority_for_epics_management(priority_value) if priority_value else "",
           "source_plan_status": _to_text(ws.cell(row_idx, plan_status_col).value).strip() if plan_status_col else "",
           "work_status": _to_text(ws.cell(row_idx, work_status_col).value).strip() if work_status_col else "",
           "phases": phase_values,
@@ -26523,7 +28209,7 @@ def _submit_epics_import_mapping(settings_db_path: Path, payload: dict) -> dict[
         "epic_name": _to_text(raw_row.get("epic_name")) or epic_key,
         "description": _to_text(raw_row.get("description")),
         "originator": _to_text(raw_row.get("originator")),
-        "priority": "High",
+        "priority": _to_text(raw_row.get("priority")) or "High",
         "plan_status": "Planned",
         "jira_url": _to_text(raw_row.get("jira_url")),
         "is_tk_epic": 1,
@@ -41649,7 +43335,9 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             month = _to_text(request.args.get("month"))
             if not month:
                 return jsonify({"error": "month is required (YYYY-MM)."}), 400
-            active_projects = list_managed_projects(capacity_paths["db_path"], include_inactive=False)
+            active_projects = sort_support_booking_projects(
+                list_managed_projects(capacity_paths["db_path"], include_inactive=False)
+            )
             project_keys = [_to_text(item.get("project_key")).upper() for item in active_projects if item.get("project_key")]
             matrix = sb_get_month_matrix(capacity_paths["db_path"], month, project_keys=project_keys)
             matrix["projects"] = active_projects
@@ -41674,7 +43362,9 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             if default_leave_hours not in (None, ""):
                 kwargs["default_leave_hours"] = float(default_leave_hours)
             sb_init_month_bookings(capacity_paths["db_path"], month, capacity_profile_key, **kwargs)
-            active_projects = list_managed_projects(capacity_paths["db_path"], include_inactive=False)
+            active_projects = sort_support_booking_projects(
+                list_managed_projects(capacity_paths["db_path"], include_inactive=False)
+            )
             project_keys = [_to_text(item.get("project_key")).upper() for item in active_projects if item.get("project_key")]
             matrix = sb_get_month_matrix(capacity_paths["db_path"], month, project_keys=project_keys)
             matrix["projects"] = active_projects
@@ -41729,9 +43419,12 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 saved.append(
                     sb_upsert_allocation(capacity_paths["db_path"], month, name, project_key, percentage)
                 )
-            active_projects = list_managed_projects(capacity_paths["db_path"], include_inactive=False)
+            active_projects = sort_support_booking_projects(
+                list_managed_projects(capacity_paths["db_path"], include_inactive=False)
+            )
             project_keys = [_to_text(item.get("project_key")).upper() for item in active_projects if item.get("project_key")]
             matrix = sb_get_month_matrix(capacity_paths["db_path"], month, project_keys=project_keys)
+            matrix["projects"] = active_projects
             return jsonify({"saved": saved, "matrix": matrix})
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
@@ -42720,6 +44413,199 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
     @app.route(PAGE_CATEGORIES_SETTINGS_ROUTE, methods=["GET"])
     def page_categories_settings():
         return _page_categories_settings_html()
+
+    @app.route("/api/rnd-muscle-utilization", methods=["GET"])
+    def rnd_muscle_utilization_state_api():
+        try:
+            search_text = _to_text(request.args.get("search"))
+            project_keys = _rnd_muscle_project_keys_from_request()
+            if search_text or project_keys:
+                state = search_rnd_muscle_epics(capacity_paths["db_path"], search_text, project_keys)
+            else:
+                state = load_rnd_muscle_utilization_page_state(capacity_paths["db_path"])
+            return jsonify(_rnd_muscle_state_payload(state))
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+
+    @app.route("/api/rnd-muscle-utilization/project-tabs", methods=["GET"])
+    def rnd_muscle_utilization_project_tabs_api():
+        try:
+            state = list_rnd_muscle_project_tabs(
+                capacity_paths["db_path"],
+                _rnd_muscle_project_keys_from_request(),
+            )
+            return jsonify(_rnd_muscle_state_payload(state))
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+
+    @app.route("/api/rnd-muscle-utilization/skills", methods=["POST"])
+    def rnd_muscle_utilization_add_skill_api():
+        try:
+            payload = request.get_json(silent=True) or {}
+            state = add_rnd_muscle_skill(capacity_paths["db_path"], _to_text(payload.get("name")))
+            return jsonify(_rnd_muscle_state_payload(state)), 201
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+
+    @app.route("/api/rnd-muscle-utilization/teams", methods=["POST", "PUT"])
+    def rnd_muscle_utilization_save_team_api():
+        try:
+            payload = request.get_json(silent=True) or {}
+            state = save_rnd_muscle_team(capacity_paths["db_path"], payload)
+            return jsonify(_rnd_muscle_state_payload(state))
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+
+    @app.route("/api/rnd-muscle-utilization/teams/<path:team_id>", methods=["PUT"])
+    def rnd_muscle_utilization_update_team_api(team_id: str):
+        try:
+            payload = request.get_json(silent=True) or {}
+            payload["team_id"] = _to_text(team_id)
+            state = save_rnd_muscle_team(capacity_paths["db_path"], payload)
+            return jsonify(_rnd_muscle_state_payload(state))
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+
+    @app.route("/api/rnd-muscle-utilization/teams/<path:team_id>", methods=["DELETE"])
+    def rnd_muscle_utilization_delete_team_api(team_id: str):
+        try:
+            state = delete_rnd_muscle_team(capacity_paths["db_path"], _to_text(team_id))
+            return jsonify(_rnd_muscle_state_payload(state))
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+
+    @app.route("/api/rnd-muscle-utilization/backlog", methods=["POST"])
+    def rnd_muscle_utilization_add_backlog_api():
+        try:
+            payload = request.get_json(silent=True) or {}
+            raw_sort_order = payload.get("sort_order")
+            sort_order = None if raw_sort_order in (None, "") else int(raw_sort_order)
+            state = add_epic_to_rnd_muscle_backlog(
+                capacity_paths["db_path"],
+                _to_text(payload.get("epic_key")),
+                sort_order=sort_order,
+            )
+            return jsonify(_rnd_muscle_state_payload(state)), 201
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+
+    @app.route("/api/rnd-muscle-utilization/backlog/<path:epic_key>", methods=["DELETE"])
+    def rnd_muscle_utilization_remove_backlog_api(epic_key: str):
+        try:
+            state = remove_epic_from_rnd_muscle_backlog(capacity_paths["db_path"], epic_key)
+            return jsonify(_rnd_muscle_state_payload(state))
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+
+    @app.route("/api/rnd-muscle-utilization/backlog/reorder", methods=["POST"])
+    def rnd_muscle_utilization_reorder_backlog_api():
+        try:
+            payload = request.get_json(silent=True) or {}
+            raw_epic_keys = payload.get("epic_keys") or []
+            if not isinstance(raw_epic_keys, list):
+                raise ValueError("epic_keys must be an array.")
+            state = reorder_rnd_muscle_backlog(
+                capacity_paths["db_path"],
+                [_to_text(item) for item in raw_epic_keys],
+            )
+            return jsonify(_rnd_muscle_state_payload(state))
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+
+    @app.route("/api/rnd-muscle-utilization/planner", methods=["POST"])
+    def rnd_muscle_utilization_add_planner_api():
+        try:
+            payload = request.get_json(silent=True) or {}
+            raw_sort_order = payload.get("sort_order")
+            sort_order = None if raw_sort_order in (None, "") else int(raw_sort_order)
+            state = add_epic_to_rnd_muscle_planner(
+                capacity_paths["db_path"],
+                _to_text(payload.get("epic_key")),
+                sort_order=sort_order,
+            )
+            return jsonify(_rnd_muscle_state_payload(state)), 201
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+
+    @app.route("/api/rnd-muscle-utilization/planner/<path:epic_key>", methods=["DELETE"])
+    def rnd_muscle_utilization_remove_planner_api(epic_key: str):
+        try:
+            state = remove_epic_from_rnd_muscle_planner(capacity_paths["db_path"], epic_key)
+            return jsonify(_rnd_muscle_state_payload(state))
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+
+    @app.route("/api/rnd-muscle-utilization/planner/reorder", methods=["POST"])
+    def rnd_muscle_utilization_reorder_planner_api():
+        try:
+            payload = request.get_json(silent=True) or {}
+            raw_epic_keys = payload.get("epic_keys") or []
+            if not isinstance(raw_epic_keys, list):
+                raise ValueError("epic_keys must be an array.")
+            state = reorder_rnd_muscle_planner_epics(
+                capacity_paths["db_path"],
+                [_to_text(item) for item in raw_epic_keys],
+            )
+            return jsonify(_rnd_muscle_state_payload(state))
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+
+    @app.route("/api/rnd-muscle-utilization/mappings", methods=["POST"])
+    def rnd_muscle_utilization_save_mapping_api():
+        try:
+            payload = request.get_json(silent=True) or {}
+            state = save_rnd_muscle_epic_resource_mapping(capacity_paths["db_path"], payload)
+            return jsonify(_rnd_muscle_state_payload(state))
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+
+    @app.route("/api/rnd-muscle-utilization/mappings/reorder", methods=["POST"])
+    def rnd_muscle_utilization_reorder_mapping_api():
+        try:
+            payload = request.get_json(silent=True) or {}
+            raw_resource_ids = payload.get("resource_ids") or []
+            if not isinstance(raw_resource_ids, list):
+                raise ValueError("resource_ids must be an array.")
+            state = reorder_rnd_muscle_epic_resources(
+                capacity_paths["db_path"],
+                _to_text(payload.get("epic_key")),
+                [_to_text(item) for item in raw_resource_ids],
+            )
+            return jsonify(_rnd_muscle_state_payload(state))
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+
+    @app.route(RND_MUSCLE_UTILIZATION_SETTINGS_ROUTE, methods=["GET"])
+    def rnd_muscle_utilization_settings():
+        return _rnd_muscle_utilization_settings_html()
+
+    @app.route(RND_MUSCLE_UTILIZATION_VIEW_ROUTE, methods=["GET"])
+    def rnd_muscle_utilization_view():
+        return _rnd_muscle_utilization_settings_html(planner_only=True)
 
     @app.route(EPICS_DROPDOWN_OPTIONS_SETTINGS_ROUTE, methods=["GET"])
     def epics_dropdown_options_settings():
