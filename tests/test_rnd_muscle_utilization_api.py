@@ -55,6 +55,32 @@ def _seed_canonical_resource(root: Path) -> None:
         conn.close()
 
 
+def _seed_resource_resignation(root: Path, assignee_name: str, resignation_date: str) -> None:
+    import sqlite3
+
+    conn = sqlite3.connect(root / "assignee_hours_capacity.db")
+    try:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS performance_resource_resignations (
+                assignee_name TEXT PRIMARY KEY,
+                resignation_date TEXT,
+                updated_at TEXT NOT NULL DEFAULT ''
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO performance_resource_resignations(assignee_name, resignation_date, updated_at)
+            VALUES(?,?,?)
+            """,
+            (assignee_name, resignation_date, "2026-07-08T00:00:00Z"),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def _seed_epics_and_resources(root: Path) -> None:
     import sqlite3
 
@@ -193,6 +219,8 @@ class RndMuscleUtilizationApiTests(unittest.TestCase):
         self.assertIn('body[data-rnd-theme] *::-webkit-scrollbar-thumb', html)
         self.assertIn('scrollbar-color:var(--scrollbar-thumb) var(--scrollbar-track)', html)
         self.assertIn('resource-row.team-colored', html)
+        self.assertIn('resource-resigned-chip', html)
+        self.assertIn('resource.resigned', html)
         self.assertIn('--resource-team-soft', html)
         self.assertIn('--resource-team-accent', html)
         self.assertIn('--resource-team-text', html)
@@ -302,6 +330,7 @@ class RndMuscleUtilizationApiTests(unittest.TestCase):
             root = Path(td)
             app = _build_app(root)
             _seed_canonical_resource(root)
+            _seed_resource_resignation(root, "Ayesha Khan", "2026-06-30")
             client = app.test_client()
 
             state_resp = client.get("/api/rnd-muscle-utilization")
@@ -310,6 +339,8 @@ class RndMuscleUtilizationApiTests(unittest.TestCase):
             self.assertTrue(initial_body["ok"])
             self.assertGreaterEqual(len(initial_body["state"]["skills"]), 11)
             resource = next(item for item in initial_body["state"]["resources"] if item["display_name"] == "Ayesha Khan")
+            self.assertTrue(resource["resigned"])
+            self.assertEqual(resource["resignation_date"], "2026-06-30")
 
             skill_resp = client.post("/api/rnd-muscle-utilization/skills", json={"name": "Data Engineering"})
             self.assertEqual(skill_resp.status_code, 201)

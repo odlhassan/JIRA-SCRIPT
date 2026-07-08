@@ -12811,6 +12811,9 @@ def _rnd_muscle_utilization_settings_html(planner_only: bool = False) -> str:
     .resource-row.team-colored .row-meta { color:var(--resource-team-muted); }
     .resource-row.team-colored .pill { border-color:var(--resource-team-border); background:var(--resource-team-pill); color:var(--resource-team-text); }
     .row-title { font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .resource-title-line { display:flex; align-items:center; gap:6px; min-width:0; }
+    .resource-title-line .row-title { min-width:0; }
+    .resource-resigned-chip { display:inline-flex; align-items:center; min-height:16px; padding:1px 5px; border:1px solid #fed7aa; border-radius:999px; background:#ffedd5; color:#9a3412; font-size:10px; font-weight:800; line-height:1; text-transform:uppercase; flex:none; }
     .row-meta { display:flex; gap:6px; flex-wrap:wrap; margin-top:4px; color:var(--muted); font-size:11px; }
     .pill { border:1px solid var(--border); border-radius:999px; padding:2px 6px; background:var(--panel-2); }
     .tab { border:1px solid var(--border); background:var(--control); color:var(--text); border-radius:var(--radius); padding:5px 8px; font-size:12px; cursor:pointer; }
@@ -13682,9 +13685,19 @@ __SETTINGS_TOP_NAV__
         event.dataTransfer.effectAllowed = "copy";
       });
       row.addEventListener("dragend", () => row.classList.remove("dragging"));
+      const titleLine = document.createElement("div");
+      titleLine.className = "resource-title-line";
       const title = document.createElement("div");
       title.className = "row-title";
       title.textContent = resource.display_name || resource.resource_id;
+      titleLine.appendChild(title);
+      if (resource.resigned) {
+        const resignedChip = document.createElement("span");
+        resignedChip.className = "resource-resigned-chip";
+        resignedChip.textContent = "Resigned";
+        resignedChip.title = resource.resignation_date ? "Resigned: " + resource.resignation_date : "Marked resigned";
+        titleLine.appendChild(resignedChip);
+      }
       const meta = document.createElement("div");
       meta.className = "row-meta";
       addPill(meta, team.name || "No team");
@@ -13699,7 +13712,7 @@ __SETTINGS_TOP_NAV__
       skillsBtn.textContent = "Edit skills";
       skillsBtn.addEventListener("click", () => openResourceSkills(resource));
       actions.appendChild(skillsBtn);
-      row.appendChild(title); row.appendChild(meta); row.appendChild(actions);
+      row.appendChild(titleLine); row.appendChild(meta); row.appendChild(actions);
       list.appendChild(row);
     });
   }

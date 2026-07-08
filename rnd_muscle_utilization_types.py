@@ -46,6 +46,8 @@ class RndMuscleResource:
     email: str = ""
     team_id: str = ""
     skill_ids: tuple[str, ...] = ()
+    resigned: bool = False
+    resignation_date: str = ""
 
 
 @dataclass(frozen=True, slots=True)

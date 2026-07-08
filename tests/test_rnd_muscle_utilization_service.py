@@ -297,15 +297,34 @@ class RndMuscleUtilizationServiceTests(unittest.TestCase):
                 )
                 conn.execute("INSERT INTO canonical_issues VALUES('r1','O2-1','O2','Task','One','Done','Ayesha Khan')")
                 conn.execute("INSERT INTO canonical_worklogs VALUES('r1','O2-1','Bilal Ahmed','Ayesha Khan')")
+                conn.execute(
+                    """
+                    CREATE TABLE performance_resource_resignations (
+                        assignee_name TEXT PRIMARY KEY,
+                        resignation_date TEXT,
+                        updated_at TEXT NOT NULL DEFAULT ''
+                    )
+                    """
+                )
+                conn.execute(
+                    """
+                    INSERT INTO performance_resource_resignations(assignee_name, resignation_date, updated_at)
+                    VALUES('Ayesha Khan', '2026-06-30', '2026-07-08T00:00:00Z')
+                    """
+                )
                 conn.commit()
             finally:
                 conn.close()
 
             state = load_rnd_muscle_utilization_page_state(db_path)
             names = {resource.display_name for resource in state.resources}
+            resource_by_name = {resource.display_name: resource for resource in state.resources}
 
         self.assertIn("Ayesha Khan", names)
         self.assertIn("Bilal Ahmed", names)
+        self.assertTrue(resource_by_name["Ayesha Khan"].resigned)
+        self.assertEqual(resource_by_name["Ayesha Khan"].resignation_date, "2026-06-30")
+        self.assertFalse(resource_by_name["Bilal Ahmed"].resigned)
 
     def test_backlog_remove_keeps_planner_mapping_separate(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:

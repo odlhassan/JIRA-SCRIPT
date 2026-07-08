@@ -451,6 +451,15 @@ def _load_page_state_from_conn(
     resource_skills_by_id: dict[str, list[str]] = {}
     for row in resource_skill_rows:
         resource_skills_by_id.setdefault(row["resource_id"], []).append(row["skill_id"])
+    resignation_by_name: dict[str, str] = {}
+    if _table_exists(conn, "performance_resource_resignations", schema=source_schema):
+        resignations_table = _qualified_table(source_schema, "performance_resource_resignations")
+        for row in conn.execute(
+            f"SELECT assignee_name, resignation_date FROM {resignations_table}"
+        ).fetchall():
+            name = str(row["assignee_name"] or "").strip().casefold()
+            if name:
+                resignation_by_name[name] = str(row["resignation_date"] or "")
 
     resources = tuple(
         RndMuscleResource(
@@ -460,6 +469,8 @@ def _load_page_state_from_conn(
             email=row["email"],
             team_id=row["team_id"],
             skill_ids=tuple(resource_skills_by_id.get(row["resource_id"], [])),
+            resigned=str(row["display_name"] or "").strip().casefold() in resignation_by_name,
+            resignation_date=resignation_by_name.get(str(row["display_name"] or "").strip().casefold(), ""),
         )
         for row in resource_rows
     )
