@@ -12755,7 +12755,12 @@ def _rnd_muscle_utilization_settings_html(planner_only: bool = False) -> str:
     .filter-row { margin-bottom:8px; }
     .input { width:100%; }
     .epic-list, .resource-list { display:grid; gap:6px; align-content:start; }
-    .row { border:1px solid var(--border); border-radius:var(--radius); padding:7px; background:var(--row); }
+    .row { border:1px solid var(--border); border-radius:var(--radius); padding:7px; background:var(--row); transition:transform .14s ease, box-shadow .14s ease, border-color .14s ease, background-color .14s ease, opacity .14s ease; }
+    .row[draggable="true"]:hover, .staged-card:hover, .resource-card:hover { transform:translateY(-1px); box-shadow:0 6px 16px rgba(0,0,0,.14); }
+    .row.dragging, .resource-card.dragging { opacity:.56; transform:scale(.985); }
+    .resource-row.team-colored { border-color:color-mix(in srgb, var(--resource-team-color) 72%, var(--border)); background:linear-gradient(90deg, color-mix(in srgb, var(--resource-team-color) 92%, #000 8%), color-mix(in srgb, var(--resource-team-color) 78%, var(--panel) 22%)); color:var(--resource-team-text); }
+    .resource-row.team-colored .row-meta { color:color-mix(in srgb, var(--resource-team-text) 82%, transparent); }
+    .resource-row.team-colored .pill { border-color:color-mix(in srgb, var(--resource-team-text) 38%, transparent); background:color-mix(in srgb, var(--resource-team-text) 14%, transparent); color:var(--resource-team-text); }
     .row-title { font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .row-meta { display:flex; gap:6px; flex-wrap:wrap; margin-top:4px; color:var(--muted); font-size:11px; }
     .pill { border:1px solid var(--border); border-radius:999px; padding:2px 6px; background:var(--panel-2); }
@@ -12768,18 +12773,18 @@ def _rnd_muscle_utilization_settings_html(planner_only: bool = False) -> str:
     .canvas-col { border:1px solid var(--border); border-radius:var(--radius); background:var(--panel-2); padding:8px; min-height:0; overflow:auto; }
     .canvas-col h3 { margin:0 0 8px 0; font-size:12px; }
     .staged-epics { display:grid; gap:6px; align-content:start; }
-    .staged-card { border:1px solid var(--border); border-radius:var(--radius); padding:6px 7px; background:var(--row); display:grid; gap:4px; min-height:40px; }
+    .staged-card { border:1px solid var(--border); border-radius:var(--radius); padding:6px 7px; background:var(--row); display:grid; gap:4px; min-height:40px; transition:transform .14s ease, box-shadow .14s ease, border-color .14s ease, background-color .14s ease, opacity .14s ease; }
     .staged-card .staged-title { font-weight:700; font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .staged-card .staged-actions { display:flex; gap:6px; }
     .staged-card .btn { padding:3px 7px; min-height:24px; font-size:11px; }
     .staged-card .btn.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
     .staged-card { cursor:pointer; }
-    .staged-card.dragging { opacity:.46; }
+    .staged-card.dragging { opacity:.46; transform:scale(.985); }
     .staged-card.selected { border-color:var(--accent-strong); box-shadow:0 0 0 1px var(--accent-strong); background:var(--accent-soft); }
     .staged-card.drop-active { outline:1px solid var(--accent-strong); outline-offset:-2px; background:var(--accent-soft); }
-    .staged-drop-placeholder { border:1.5px dashed var(--accent-strong); border-radius:var(--radius); background:var(--accent-soft); min-height:44px; display:grid; place-items:center; color:var(--accent-strong); font-size:11px; font-weight:700; opacity:.95; }
+    .staged-drop-placeholder { border:1.5px dashed var(--accent-strong); border-radius:var(--radius); background:var(--accent-soft); min-height:44px; display:grid; place-items:center; color:var(--accent-strong); font-size:11px; font-weight:700; opacity:.95; animation:rndDropPulse 1.2s ease-in-out infinite; }
     .staged-resources { display:grid; gap:6px; align-content:start; margin-top:8px; }
-    .resource-card { border:1px solid rgba(255,255,255,.25); border-radius:6px; padding:6px 8px; min-height:34px; color:#fff; display:flex; align-items:center; justify-content:space-between; gap:8px; cursor:grab; }
+    .resource-card { border:1px solid rgba(255,255,255,.25); border-radius:6px; padding:6px 8px; min-height:34px; color:#fff; display:flex; align-items:center; justify-content:space-between; gap:8px; cursor:grab; transition:transform .14s ease, box-shadow .14s ease, opacity .14s ease, filter .14s ease; }
     .resource-card-title { font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .resource-card-meta { opacity:.82; font-size:11px; white-space:nowrap; }
     .resource-card button { border:1px solid rgba(255,255,255,.45); background:rgba(0,0,0,.18); color:#fff; border-radius:999px; min-width:22px; min-height:22px; cursor:pointer; }
@@ -12802,7 +12807,12 @@ def _rnd_muscle_utilization_settings_html(planner_only: bool = False) -> str:
     .cluster-epic.active { border-color:var(--accent-strong); background:var(--accent-soft); }
     .cluster-stage { position:relative; min-height:420px; border:1px solid var(--border); border-radius:var(--radius); background:var(--row); overflow:hidden; }
     .cluster-lines { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
-    .cluster-bubble { position:absolute; width:42px; height:42px; border-radius:50%; display:grid; place-items:center; color:#fff; font-weight:700; border:2px solid rgba(255,255,255,.75); box-shadow:0 8px 22px rgba(0,0,0,.28); transition:left .22s ease, top .22s ease, transform .22s ease, opacity .18s ease; }
+    .cluster-bubble { position:absolute; width:42px; height:42px; border-radius:50%; display:grid; place-items:center; color:#fff; font-weight:700; border:2px solid rgba(255,255,255,.75); box-shadow:0 8px 22px rgba(0,0,0,.28); transition:left .22s ease, top .22s ease, transform .22s ease, opacity .18s ease; z-index:1; }
+    .cluster-bubble:hover { z-index:4; }
+    .cluster-bubble-detail { position:absolute; left:50px; top:50%; transform:translateY(-50%); min-width:170px; max-width:260px; padding:7px 9px; border:1px solid var(--border); border-radius:var(--radius); background:var(--panel); color:var(--text); box-shadow:0 10px 24px rgba(0,0,0,.28); opacity:0; pointer-events:none; transition:opacity .12s ease; font-weight:400; line-height:1.25; text-align:left; }
+    .cluster-bubble-detail strong { display:block; font-size:12px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .cluster-bubble-detail span { display:block; margin-top:2px; color:var(--muted); font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .cluster-bubble:hover .cluster-bubble-detail { opacity:1; }
     .cluster-bubble.dim { opacity:.35; transform:scale(.86); }
     .cluster-legend { position:absolute; left:10px; bottom:10px; right:10px; display:flex; gap:8px; flex-wrap:wrap; background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); padding:8px; }
     .cluster-legend-item { display:flex; align-items:center; gap:5px; color:var(--muted); }
@@ -12829,6 +12839,10 @@ def _rnd_muscle_utilization_settings_html(planner_only: bool = False) -> str:
     .row[draggable="true"]:active { cursor:grabbing; }
     tr.selected td { background:#f5f3ff; }
     .skill-list { display:grid; gap:6px; max-height:180px; overflow:auto; border:1px solid var(--border); border-radius:var(--radius); padding:8px; }
+    @keyframes rndDropPulse {
+      0%, 100% { box-shadow:inset 0 0 0 0 rgba(0,0,0,0); }
+      50% { box-shadow:inset 0 0 0 1px var(--accent-strong); }
+    }
     @media (max-width:1100px) {
       .layout { grid-template-columns:1fr; }
       .stats { grid-template-columns:repeat(2,minmax(120px,1fr)); }
@@ -13441,9 +13455,11 @@ __SETTINGS_TOP_NAV__
       card.style.background = color;
       card.style.color = readableTextColor(color);
       card.addEventListener("dragstart", (event) => {
+        card.classList.add("dragging");
         event.dataTransfer.setData("application/x-rnd-planner-resource", m.resource_id);
         event.dataTransfer.effectAllowed = "move";
       });
+      card.addEventListener("dragend", () => card.classList.remove("dragging"));
       card.addEventListener("dragover", (event) => {
         if (event.dataTransfer.types.includes("application/x-rnd-planner-resource")) {
           event.preventDefault();
@@ -13532,12 +13548,19 @@ __SETTINGS_TOP_NAV__
     resources.forEach((resource) => {
       const team = teamById.get(resource.team_id) || {};
       const row = document.createElement("div");
-      row.className = "row";
+      row.className = "row resource-row" + (team.team_id ? " team-colored" : "");
       row.draggable = true;
+      if (team.team_id) {
+        const color = team.color_hex || "#3b5f86";
+        row.style.setProperty("--resource-team-color", color);
+        row.style.setProperty("--resource-team-text", readableTextColor(color));
+      }
       row.addEventListener("dragstart", (event) => {
+        row.classList.add("dragging");
         event.dataTransfer.setData("application/x-rnd-resource", resource.resource_id);
         event.dataTransfer.effectAllowed = "copy";
       });
+      row.addEventListener("dragend", () => row.classList.remove("dragging"));
       const title = document.createElement("div");
       title.className = "row-title";
       title.textContent = resource.display_name || resource.resource_id;
@@ -13610,7 +13633,18 @@ __SETTINGS_TOP_NAV__
       const bubble = document.createElement("div");
       bubble.className = "cluster-bubble" + (selectedClusterEpicKey && !selectedResourceIds.has(resourceId) ? " dim" : "");
       bubble.textContent = (resource && resource.initials) || "?";
-      bubble.title = (resource && resource.display_name) || resourceId;
+      const resourceName = (resource && resource.display_name) || resourceId;
+      const teamName = (team && team.name) || "No team";
+      bubble.title = resourceName + " - " + teamName;
+      const detail = document.createElement("span");
+      detail.className = "cluster-bubble-detail";
+      const detailName = document.createElement("strong");
+      detailName.textContent = resourceName;
+      const detailTeam = document.createElement("span");
+      detailTeam.textContent = teamName;
+      detail.appendChild(detailName);
+      detail.appendChild(detailTeam);
+      bubble.appendChild(detail);
       bubble.style.background = color;
       bubble.style.color = readableTextColor(color);
       let x;
@@ -14202,7 +14236,8 @@ __SETTINGS_TOP_NAV__
     if (event.dataTransfer.types.includes("application/x-rnd-planner-epic")) {
       event.preventDefault();
       const targetCard = event.target && event.target.closest ? event.target.closest(".staged-card") : null;
-      if (!targetCard) {
+      const targetPlaceholder = event.target && event.target.closest ? event.target.closest(".staged-drop-placeholder") : null;
+      if (!targetCard && !targetPlaceholder) {
         showPlannerEpicDropPlaceholder(null, "end");
       }
       if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
