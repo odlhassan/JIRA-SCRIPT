@@ -12883,7 +12883,6 @@ def _rnd_muscle_utilization_settings_html(planner_only: bool = False) -> str:
     .check-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:6px; max-height:180px; overflow:auto; border:1px solid var(--border); border-radius:var(--radius); padding:8px; }
     .check-row { display:flex; align-items:center; gap:6px; min-width:0; }
     .check-row span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    .skill-pill-list { display:flex; flex-wrap:wrap; gap:6px; min-height:26px; border:1px solid var(--border); border-radius:var(--radius); padding:8px; background:var(--panel-2); }
     .resource-row-actions { display:flex; gap:6px; margin-top:6px; }
     .resource-row-actions .btn { min-height:24px; padding:3px 7px; font-size:11px; }
     .team-color-grid { display:grid; grid-template-columns:repeat(5,minmax(42px,1fr)); gap:7px; border:1px solid var(--border); border-radius:var(--radius); padding:8px; background:var(--panel-2); }
@@ -13057,9 +13056,7 @@ __SETTINGS_TOP_NAV__
   </form>
   <form id="rnd-resource-skill-form" class="dialog-body">
     <input type="hidden" id="rnd-resource-skill-id" value="">
-    <label>Inherited from team</label>
-    <div id="rnd-resource-inherited-skills" class="skill-pill-list"></div>
-    <label>Resource-specific skills</label>
+    <label>Resource skills</label>
     <div id="rnd-resource-direct-skills" class="check-grid"></div>
     <button class="btn" type="submit">Save Resource Skills</button>
   </form>
@@ -13214,24 +13211,8 @@ __SETTINGS_TOP_NAV__
     parent.appendChild(pill);
     return pill;
   }
-  function skillById(){
-    return new Map(((state && state.skills) || []).map((skill) => [skill.skill_id, skill]));
-  }
   function teamById(){
     return new Map(((state && state.teams) || []).map((team) => [team.team_id, team]));
-  }
-  function inheritedSkillIdsForResource(resource){
-    const team = teamById().get(resource && resource.team_id);
-    return new Set((team && team.skill_ids) || []);
-  }
-  function effectiveSkillIdsForResource(resource){
-    const ids = new Set(resource && resource.skill_ids ? resource.skill_ids : []);
-    inheritedSkillIdsForResource(resource).forEach((skillId) => ids.add(skillId));
-    return ids;
-  }
-  function skillName(skillId){
-    const skill = skillById().get(skillId);
-    return (skill && skill.name) || skillId;
   }
   function projectTabsForDisplay(){
     const tabs = (state && state.project_tabs) || [];
@@ -13707,10 +13688,9 @@ __SETTINGS_TOP_NAV__
       const meta = document.createElement("div");
       meta.className = "row-meta";
       addPill(meta, team.name || "No team");
-      const effectiveSkillCount = effectiveSkillIdsForResource(resource).size;
       const directSkillCount = (resource.skill_ids || []).length;
-      const skillPill = addPill(meta, effectiveSkillCount + " skills");
-      skillPill.title = effectiveSkillCount + " total: " + ((team.skill_ids || []).length) + " team, " + directSkillCount + " resource-specific";
+      const skillPill = addPill(meta, directSkillCount + " skills");
+      skillPill.title = directSkillCount + " resource skills selected";
       const actions = document.createElement("div");
       actions.className = "resource-row-actions";
       const skillsBtn = document.createElement("button");
@@ -14020,24 +14000,14 @@ __SETTINGS_TOP_NAV__
     });
   }
   function renderResourceSkillDialog(resource){
-    const inheritedHost = byId("rnd-resource-inherited-skills");
     const directHost = byId("rnd-resource-direct-skills");
-    reset(inheritedHost); reset(directHost);
-    const inheritedIds = inheritedSkillIdsForResource(resource);
+    reset(directHost);
     const directIds = new Set((resource && resource.skill_ids) || []);
-    if (!inheritedIds.size){
-      const empty = document.createElement("span");
-      empty.className = "muted";
-      empty.textContent = "No team skills inherited.";
-      inheritedHost.appendChild(empty);
-    } else {
-      Array.from(inheritedIds).forEach((skillId) => addPill(inheritedHost, skillName(skillId)));
-    }
-    const selectableSkills = ((state && state.skills) || []).filter((skill) => !inheritedIds.has(skill.skill_id));
+    const selectableSkills = (state && state.skills) || [];
     if (!selectableSkills.length){
       const empty = document.createElement("span");
       empty.className = "muted";
-      empty.textContent = "All available skills already come from the team.";
+      empty.textContent = "No skills are available yet.";
       directHost.appendChild(empty);
       return;
     }
