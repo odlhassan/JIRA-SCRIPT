@@ -56,9 +56,9 @@ def _seed_canonical_resource(root: Path) -> None:
 def _seed_epics_and_resources(root: Path) -> None:
     import sqlite3
 
-    conn = sqlite3.connect(root / "assignee_hours_capacity.db")
+    capacity_conn = sqlite3.connect(root / "assignee_hours_capacity.db")
     try:
-        conn.execute(
+        capacity_conn.execute(
             """
             CREATE TABLE epics_management (
                 id TEXT PRIMARY KEY,
@@ -73,7 +73,7 @@ def _seed_epics_and_resources(root: Path) -> None:
             )
             """
         )
-        conn.executemany(
+        capacity_conn.executemany(
             """
             INSERT INTO epics_management(id, epic_key, project_key, project_name, epic_name, priority)
             VALUES(?,?,?,?,?,?)
@@ -83,7 +83,13 @@ def _seed_epics_and_resources(root: Path) -> None:
                 ("row-2", "FF-200", "FF", "Fintech Fuel", "Second Epic", "Low"),
             ],
         )
-        conn.executemany(
+        capacity_conn.commit()
+    finally:
+        capacity_conn.close()
+
+    rnd_conn = sqlite3.connect(root / "rnd_muscle_utilization.db")
+    try:
+        rnd_conn.executemany(
             """
             INSERT INTO rnd_muscle_resources(resource_id, display_name, initials, email, team_id)
             VALUES(?,?,?,?,?)
@@ -93,12 +99,41 @@ def _seed_epics_and_resources(root: Path) -> None:
                 ("res-2", "Ayesha Khan", "AK", "ayesha@example.com", ""),
             ],
         )
-        conn.commit()
+        rnd_conn.commit()
     finally:
-        conn.close()
+        rnd_conn.close()
 
 
 class RndMuscleUtilizationApiTests(unittest.TestCase):
+    def test_feature_owned_tables_are_created_in_rnd_database_not_capacity_database(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            app = _build_app(root)
+            client = app.test_client()
+
+            resp = client.get("/api/rnd-muscle-utilization")
+
+            import sqlite3
+
+            with sqlite3.connect(root / "rnd_muscle_utilization.db") as rnd_conn:
+                rnd_tables = {
+                    row[0]
+                    for row in rnd_conn.execute(
+                        "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'rnd_muscle_%'"
+                    ).fetchall()
+                }
+            with sqlite3.connect(root / "assignee_hours_capacity.db") as capacity_conn:
+                capacity_tables = {
+                    row[0]
+                    for row in capacity_conn.execute(
+                        "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'rnd_muscle_%'"
+                    ).fetchall()
+                }
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("rnd_muscle_resources", rnd_tables)
+        self.assertEqual(capacity_tables, set())
+
     def test_page_controls_are_wired_to_client_handlers(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             app = _build_app(Path(td))
@@ -112,7 +147,11 @@ class RndMuscleUtilizationApiTests(unittest.TestCase):
         self.assertIn('id="rnd-add-skill-btn"', html)
         self.assertIn('id="rnd-configure-projects-btn"', html)
         self.assertIn('id="rnd-theme-mode"', html)
+        self.assertIn('role="switch"', html)
+        self.assertIn('class="theme-switch"', html)
         self.assertIn('id="rnd-theme-color"', html)
+        self.assertIn('id="rnd-team-color-grid"', html)
+        self.assertIn('TEAM_COLOR_PALETTE', html)
         self.assertIn('rnd-muscle-theme-mode-v1', html)
         self.assertIn('rnd-muscle-theme-color-v1', html)
         self.assertIn('Theme saved for configuration and view mode.', html)
@@ -124,9 +163,13 @@ class RndMuscleUtilizationApiTests(unittest.TestCase):
         self.assertIn('body[data-rnd-theme] *::-webkit-scrollbar-thumb', html)
         self.assertIn('scrollbar-color:var(--scrollbar-thumb) var(--scrollbar-track)', html)
         self.assertIn('resource-row.team-colored', html)
-        self.assertIn('--resource-team-color', html)
+        self.assertIn('--resource-team-soft', html)
+        self.assertIn('--resource-team-accent', html)
         self.assertIn('--resource-team-text', html)
         self.assertIn('row.className = "row resource-row" + (team.team_id ? " team-colored" : "")', html)
+        self.assertIn('renderTeamColorPalette', html)
+        self.assertIn('setTeamColor', html)
+        self.assertIn('byId("rnd-theme-mode").checked ? "light" : "dark"', html)
         self.assertIn('@keyframes rndDropPulse', html)
         self.assertIn('card.classList.add("dragging")', html)
         self.assertIn('row.classList.add("dragging")', html)
@@ -260,6 +303,20 @@ class RndMuscleUtilizationApiTests(unittest.TestCase):
         self.assertEqual(resp.status_code, 400)
         self.assertFalse(resp.get_json()["ok"])
         self.assertIn("Invalid color_hex", resp.get_json()["error"])
+
+    def test_non_palette_team_color_returns_400(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            app = _build_app(Path(td))
+            client = app.test_client()
+
+            resp = client.post(
+                "/api/rnd-muscle-utilization/teams",
+                json={"name": "Off Palette", "color_hex": "#123456"},
+            )
+
+        self.assertEqual(resp.status_code, 400)
+        self.assertFalse(resp.get_json()["ok"])
+        self.assertIn("10 supported RnD team colors", resp.get_json()["error"])
 
 
 if __name__ == "__main__":

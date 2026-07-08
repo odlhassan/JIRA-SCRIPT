@@ -26,11 +26,37 @@ from rnd_muscle_utilization_types import (
 )
 
 
+RND_SOURCE_SCHEMA = "source_db"
+DEFAULT_RND_MUSCLE_UTILIZATION_DB = "rnd_muscle_utilization.db"
+RND_MUSCLE_TEAM_COLOR_PALETTE: tuple[str, ...] = (
+    "#2563eb",
+    "#16a34a",
+    "#dc2626",
+    "#f97316",
+    "#ca8a04",
+    "#0891b2",
+    "#7c3aed",
+    "#db2777",
+    "#475569",
+    "#0f766e",
+)
+RND_MUSCLE_TABLES: tuple[str, ...] = (
+    "rnd_muscle_skills",
+    "rnd_muscle_teams",
+    "rnd_muscle_team_skills",
+    "rnd_muscle_resources",
+    "rnd_muscle_resource_skills",
+    "rnd_muscle_backlog",
+    "rnd_muscle_planner_epics",
+    "rnd_muscle_epic_resource_mappings",
+)
+
+
 def _now_utc() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
-def _init_rnd_muscle_utilization_db(settings_db_path: Path) -> None:
+def _init_rnd_muscle_utilization_db(settings_db_path: Path, *, seed_defaults: bool = True) -> None:
     settings_db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(settings_db_path)
     try:
@@ -141,7 +167,7 @@ def _init_rnd_muscle_utilization_db(settings_db_path: Path) -> None:
             )
         # Seed default skills if none exist yet
         existing_skills = conn.execute("SELECT COUNT(*) FROM rnd_muscle_skills").fetchone()[0]
-        if existing_skills == 0:
+        if seed_defaults and existing_skills == 0:
             now = _now_utc()
             for skill_name in DEFAULT_RND_MUSCLE_SKILLS:
                 conn.execute(
@@ -151,6 +177,97 @@ def _init_rnd_muscle_utilization_db(settings_db_path: Path) -> None:
         conn.commit()
     finally:
         conn.close()
+
+
+def migrate_legacy_rnd_muscle_tables(
+    legacy_db_path: Path,
+    rnd_db_path: Path,
+    *,
+    drop_legacy: bool = False,
+) -> dict[str, object]:
+    """Copy legacy rnd_muscle_* tables out of the capacity DB into the dedicated RnD DB."""
+    legacy_db_path = Path(legacy_db_path)
+    rnd_db_path = Path(rnd_db_path)
+    _init_rnd_muscle_utilization_db(rnd_db_path, seed_defaults=False)
+    copied: dict[str, int] = {}
+    skipped: list[str] = []
+    dropped: list[str] = []
+    removed_duplicate_skills = 0
+
+    with sqlite3.connect(legacy_db_path) as legacy_conn, sqlite3.connect(rnd_db_path) as rnd_conn:
+        legacy_conn.row_factory = sqlite3.Row
+        rnd_conn.row_factory = sqlite3.Row
+        for table_name in RND_MUSCLE_TABLES:
+            if not _table_exists(legacy_conn, table_name):
+                skipped.append(table_name)
+                continue
+            source_cols = _table_columns(legacy_conn, table_name)
+            target_cols = _table_column_names(rnd_conn, table_name)
+            common_cols = [col for col in target_cols if col in source_cols]
+            if not common_cols:
+                skipped.append(table_name)
+                continue
+            col_sql = ", ".join(common_cols)
+            placeholder_sql = ", ".join("?" for _ in common_cols)
+            rows = legacy_conn.execute(f"SELECT {col_sql} FROM {table_name}").fetchall()
+            if rows:
+                rnd_conn.executemany(
+                    f"INSERT OR REPLACE INTO {table_name} ({col_sql}) VALUES ({placeholder_sql})",
+                    [[row[col] for col in common_cols] for row in rows],
+                )
+            copied[table_name] = len(rows)
+        skill_rows = rnd_conn.execute(
+            "SELECT rowid, skill_id, lower(name) AS normalized_name FROM rnd_muscle_skills ORDER BY rowid ASC"
+        ).fetchall()
+        referenced_skill_ids = {
+            str(row[0])
+            for row in rnd_conn.execute("SELECT skill_id FROM rnd_muscle_team_skills").fetchall()
+        }
+        referenced_skill_ids.update(
+            str(row[0])
+            for row in rnd_conn.execute("SELECT skill_id FROM rnd_muscle_resource_skills").fetchall()
+        )
+        first_rowid_by_name: dict[str, int] = {}
+        referenced_rowid_by_name: dict[str, int] = {}
+        for row in skill_rows:
+            normalized_name = str(row["normalized_name"] or "")
+            rowid = int(row["rowid"])
+            first_rowid_by_name.setdefault(normalized_name, rowid)
+            if str(row["skill_id"]) in referenced_skill_ids:
+                referenced_rowid_by_name.setdefault(normalized_name, rowid)
+        duplicate_skill_rowids: list[int] = []
+        for row in skill_rows:
+            normalized_name = str(row["normalized_name"] or "")
+            rowid = int(row["rowid"])
+            keep_rowid = referenced_rowid_by_name.get(normalized_name, first_rowid_by_name.get(normalized_name, rowid))
+            if rowid != keep_rowid and str(row["skill_id"]) not in referenced_skill_ids:
+                duplicate_skill_rowids.append(rowid)
+        for rowid in duplicate_skill_rowids:
+            rnd_conn.execute("DELETE FROM rnd_muscle_skills WHERE rowid = ?", (rowid,))
+            removed_duplicate_skills += 1
+        rnd_conn.commit()
+
+        if drop_legacy:
+            for table_name, source_count in copied.items():
+                target_count = rnd_conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0]
+                if target_count < source_count:
+                    raise RuntimeError(
+                        f"Refusing to drop {table_name}: target has {target_count} rows after copying {source_count} rows."
+                    )
+            for table_name in reversed(RND_MUSCLE_TABLES):
+                if _table_exists(legacy_conn, table_name):
+                    legacy_conn.execute(f"DROP TABLE {table_name}")
+                    dropped.append(table_name)
+            legacy_conn.commit()
+
+    return {
+        "legacy_db_path": str(legacy_db_path),
+        "rnd_db_path": str(rnd_db_path),
+        "copied": copied,
+        "skipped": skipped,
+        "dropped": dropped,
+        "removed_duplicate_skills": removed_duplicate_skills,
+    }
 
 
 def _priority_int(val: str) -> "int | None":
@@ -168,12 +285,57 @@ def _priority_int(val: str) -> "int | None":
     return mapping.get(text)
 
 
-def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
+def _source_schema(rnd_db_path: Path, source_db_path: Path | None) -> str:
+    if source_db_path is None:
+        return "main"
+    try:
+        if Path(rnd_db_path).resolve() == Path(source_db_path).resolve():
+            return "main"
+    except OSError:
+        if Path(rnd_db_path) == Path(source_db_path):
+            return "main"
+    return RND_SOURCE_SCHEMA
+
+
+def _attach_source_db(conn: sqlite3.Connection, rnd_db_path: Path, source_db_path: Path | None) -> str:
+    schema = _source_schema(rnd_db_path, source_db_path)
+    if schema == "main":
+        return schema
+    source = Path(source_db_path or rnd_db_path)
+    source.parent.mkdir(parents=True, exist_ok=True)
+    conn.execute(f"ATTACH DATABASE ? AS {RND_SOURCE_SCHEMA}", (str(source),))
+    return schema
+
+
+def _connect_rnd_db(rnd_db_path: Path, source_db_path: Path | None = None) -> tuple[sqlite3.Connection, str]:
+    conn = sqlite3.connect(rnd_db_path)
+    source_schema = _attach_source_db(conn, rnd_db_path, source_db_path)
+    return conn, source_schema
+
+
+def _qualified_table(schema: str, table_name: str) -> str:
+    if schema not in {"main", RND_SOURCE_SCHEMA}:
+        raise ValueError(f"Unsupported SQLite schema alias: {schema}")
+    if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", table_name):
+        raise ValueError(f"Unsupported SQLite table name: {table_name}")
+    return f"{schema}.{table_name}"
+
+
+def _table_exists(conn: sqlite3.Connection, table_name: str, *, schema: str = "main") -> bool:
+    master_table = _qualified_table(schema, "sqlite_master")
     row = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+        f"SELECT 1 FROM {master_table} WHERE type='table' AND name=?",
         (table_name,),
     ).fetchone()
     return row is not None
+
+
+def _table_columns(conn: sqlite3.Connection, table_name: str, *, schema: str = "main") -> set[str]:
+    return {str(col[1]) for col in conn.execute(f"PRAGMA {schema}.table_info({table_name})").fetchall()}
+
+
+def _table_column_names(conn: sqlite3.Connection, table_name: str, *, schema: str = "main") -> list[str]:
+    return [str(col[1]) for col in conn.execute(f"PRAGMA {schema}.table_info({table_name})").fetchall()]
 
 
 def _resource_id_for_name(display_name: str) -> str:
@@ -191,30 +353,32 @@ def _initials_for_name(display_name: str) -> str:
     return (parts[0][:1] + parts[-1][:1]).upper()
 
 
-def _canonical_resource_names(conn: sqlite3.Connection) -> set[str]:
+def _canonical_resource_names(conn: sqlite3.Connection, source_schema: str = "main") -> set[str]:
     names: set[str] = set()
-    if _table_exists(conn, "canonical_issues"):
-        issue_cols = {str(col[1]) for col in conn.execute("PRAGMA table_info(canonical_issues)").fetchall()}
+    if _table_exists(conn, "canonical_issues", schema=source_schema):
+        issue_cols = _table_columns(conn, "canonical_issues", schema=source_schema)
         if "assignee" in issue_cols:
-            for row in conn.execute("SELECT DISTINCT assignee FROM canonical_issues WHERE trim(COALESCE(assignee, '')) != ''").fetchall():
+            issues_table = _qualified_table(source_schema, "canonical_issues")
+            for row in conn.execute(f"SELECT DISTINCT assignee FROM {issues_table} WHERE trim(COALESCE(assignee, '')) != ''").fetchall():
                 name = str(row[0] or "").strip()
                 if name and name.casefold() != "unassigned":
                     names.add(name)
-    if _table_exists(conn, "canonical_worklogs"):
-        table_cols = {str(col[1]) for col in conn.execute("PRAGMA table_info(canonical_worklogs)").fetchall()}
+    if _table_exists(conn, "canonical_worklogs", schema=source_schema):
+        table_cols = _table_columns(conn, "canonical_worklogs", schema=source_schema)
+        worklogs_table = _qualified_table(source_schema, "canonical_worklogs")
         for column_name in ("worklog_author", "issue_assignee"):
             if column_name not in table_cols:
                 continue
-            for row in conn.execute(f"SELECT DISTINCT {column_name} FROM canonical_worklogs WHERE trim(COALESCE({column_name}, '')) != ''").fetchall():
+            for row in conn.execute(f"SELECT DISTINCT {column_name} FROM {worklogs_table} WHERE trim(COALESCE({column_name}, '')) != ''").fetchall():
                 name = str(row[0] or "").strip()
                 if name and name.casefold() != "unassigned":
                     names.add(name)
     return names
 
 
-def _sync_canonical_resources(conn: sqlite3.Connection) -> None:
+def _sync_canonical_resources(conn: sqlite3.Connection, source_schema: str = "main") -> None:
     now = _now_utc()
-    for display_name in sorted(_canonical_resource_names(conn), key=str.casefold):
+    for display_name in sorted(_canonical_resource_names(conn, source_schema), key=str.casefold):
         resource_id = _resource_id_for_name(display_name)
         conn.execute(
             """
@@ -229,11 +393,12 @@ def _sync_canonical_resources(conn: sqlite3.Connection) -> None:
 def _load_page_state_from_conn(
     conn: sqlite3.Connection,
     *,
+    source_schema: str = "main",
     epic_filter_text: str = "",
     epic_project_keys: tuple[str, ...] = (),
 ) -> RndMuscleUtilizationPageState:
     conn.row_factory = sqlite3.Row
-    _sync_canonical_resources(conn)
+    _sync_canonical_resources(conn, source_schema)
     conn.commit()
 
     # --- Skills ---
@@ -299,20 +464,22 @@ def _load_page_state_from_conn(
     )
 
     # --- Epics from Epics Planner rows ---
-    epics_query = """
+    epics_table = _qualified_table(source_schema, "epics_management")
+    epics_query = f"""
         SELECT em.epic_key, em.epic_name, em.project_key, em.project_name,
                em.priority, em.start_date, em.due_date, em.jira_url
-        FROM epics_management em
+        FROM {epics_table} em
         ORDER BY em.project_key ASC, em.epic_key ASC
     """
-    epic_rows = conn.execute(epics_query).fetchall() if _table_exists(conn, "epics_management") else []
+    epic_rows = conn.execute(epics_query).fetchall() if _table_exists(conn, "epics_management", schema=source_schema) else []
 
     # Budgeted hours from epic_plan column
+    plan_values_table = _qualified_table(source_schema, "epics_management_plan_values")
     plan_val_rows = (
         conn.execute(
-            "SELECT epic_key, plan_json FROM epics_management_plan_values WHERE column_key = 'epic_plan'"
+            f"SELECT epic_key, plan_json FROM {plan_values_table} WHERE column_key = 'epic_plan'"
         ).fetchall()
-        if _table_exists(conn, "epics_management_plan_values")
+        if _table_exists(conn, "epics_management_plan_values", schema=source_schema)
         else []
     )
     budgeted_hours_by_key: dict[str, float] = {}
@@ -469,23 +636,32 @@ def _load_page_state_from_conn(
     )
 
 
-def load_rnd_muscle_utilization_page_state(settings_db_path: Path) -> RndMuscleUtilizationPageState:
-    """Business logic: load the complete RnD Muscle Utilization admin page state from the shared settings database. The final implementation should combine Epics Planner rows, imported priority data, configured teams, skills, resource assignments, project tab counts, backlog entries, live mappings, and quick stats into one strict page-state object."""
+def load_rnd_muscle_utilization_page_state(
+    settings_db_path: Path,
+    source_db_path: Path | None = None,
+) -> RndMuscleUtilizationPageState:
+    """Load RnD Muscle Utilization state from the feature DB and source planner/canonical DB."""
     _init_rnd_muscle_utilization_db(settings_db_path)
-    conn = sqlite3.connect(settings_db_path)
+    conn, source_schema = _connect_rnd_db(settings_db_path, source_db_path)
     try:
-        return _load_page_state_from_conn(conn)
+        return _load_page_state_from_conn(conn, source_schema=source_schema)
     finally:
         conn.close()
 
 
-def search_rnd_muscle_epics(settings_db_path: Path, search_text: str, project_keys: tuple[str, ...]) -> RndMuscleUtilizationPageState:
+def search_rnd_muscle_epics(
+    settings_db_path: Path,
+    search_text: str,
+    project_keys: tuple[str, ...],
+    source_db_path: Path | None = None,
+) -> RndMuscleUtilizationPageState:
     """Business logic: filter the left-panel epic catalog by text and selected projects while preserving the same page-state contract used by initial load. Priority should come from Epics Planner Import data when available, falling back to the planner row/default priority rules."""
     _init_rnd_muscle_utilization_db(settings_db_path)
-    conn = sqlite3.connect(settings_db_path)
+    conn, source_schema = _connect_rnd_db(settings_db_path, source_db_path)
     try:
         return _load_page_state_from_conn(
             conn,
+            source_schema=source_schema,
             epic_filter_text=(search_text or "").strip(),
             epic_project_keys=project_keys,
         )
@@ -499,10 +675,17 @@ def _validate_color_hex(color_hex: str) -> str:
         return "#2563eb"
     if not re.match(r"^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$", cleaned):
         raise ValueError(f"Invalid color_hex '{cleaned}': must be a 3- or 6-digit hex color like #abc or #1a2b3c.")
-    return cleaned.lower()
+    normalized = cleaned.lower()
+    if normalized not in RND_MUSCLE_TEAM_COLOR_PALETTE:
+        raise ValueError("Invalid color_hex: choose one of the 10 supported RnD team colors.")
+    return normalized
 
 
-def save_rnd_muscle_team(settings_db_path: Path, payload: RndMuscleTeamPayload) -> RndMuscleUtilizationPageState:
+def save_rnd_muscle_team(
+    settings_db_path: Path,
+    payload: RndMuscleTeamPayload,
+    source_db_path: Path | None = None,
+) -> RndMuscleUtilizationPageState:
     """Business logic: create or update a manager-defined skillset team, assign its color, associate people, and attach default or custom skills. The final implementation should validate team colors, resource ids, skill ids, duplicate names, and return the refreshed page state."""
     _init_rnd_muscle_utilization_db(settings_db_path)
     team_id = str(payload.get("team_id") or "").strip()
@@ -520,10 +703,10 @@ def save_rnd_muscle_team(settings_db_path: Path, payload: RndMuscleTeamPayload) 
     resource_ids: list[str] = [str(r).strip() for r in (raw_resource_ids or []) if str(r).strip()]
 
     now = _now_utc()
-    conn = sqlite3.connect(settings_db_path)
+    conn, source_schema = _connect_rnd_db(settings_db_path, source_db_path)
     try:
         conn.row_factory = sqlite3.Row
-        _sync_canonical_resources(conn)
+        _sync_canonical_resources(conn, source_schema)
 
         # Validate skill_ids
         if skill_ids:
@@ -594,19 +777,23 @@ def save_rnd_muscle_team(settings_db_path: Path, payload: RndMuscleTeamPayload) 
                 )
 
         conn.commit()
-        return _load_page_state_from_conn(conn)
+        return _load_page_state_from_conn(conn, source_schema=source_schema)
     finally:
         conn.close()
 
 
-def add_rnd_muscle_skill(settings_db_path: Path, skill_name: str) -> RndMuscleUtilizationPageState:
+def add_rnd_muscle_skill(
+    settings_db_path: Path,
+    skill_name: str,
+    source_db_path: Path | None = None,
+) -> RndMuscleUtilizationPageState:
     """Business logic: add a manager-defined skill option without duplicating the default skills or existing custom skills, then return the refreshed team/skill configuration state."""
     _init_rnd_muscle_utilization_db(settings_db_path)
     name = (skill_name or "").strip()
     if not name:
         raise ValueError("Skill name is required.")
 
-    conn = sqlite3.connect(settings_db_path)
+    conn, source_schema = _connect_rnd_db(settings_db_path, source_db_path)
     try:
         conn.row_factory = sqlite3.Row
         dup = conn.execute(
@@ -622,26 +809,31 @@ def add_rnd_muscle_skill(settings_db_path: Path, skill_name: str) -> RndMuscleUt
             (skill_id, name, now, now),
         )
         conn.commit()
-        return _load_page_state_from_conn(conn)
+        return _load_page_state_from_conn(conn, source_schema=source_schema)
     finally:
         conn.close()
 
 
-def add_epic_to_rnd_muscle_backlog(settings_db_path: Path, epic_key: str, sort_order: int | None = None) -> RndMuscleUtilizationPageState:
+def add_epic_to_rnd_muscle_backlog(
+    settings_db_path: Path,
+    epic_key: str,
+    sort_order: int | None = None,
+    source_db_path: Path | None = None,
+) -> RndMuscleUtilizationPageState:
     """Business logic: move an epic from the left catalog into the planner backlog so it can be prioritized and mapped to resources. The final implementation should preserve imported priority, budgeted hours, dates, and project context."""
     _init_rnd_muscle_utilization_db(settings_db_path)
     key = (epic_key or "").strip().upper()
     if not key:
         raise ValueError("epic_key is required.")
 
-    conn = sqlite3.connect(settings_db_path)
+    conn, source_schema = _connect_rnd_db(settings_db_path, source_db_path)
     try:
         conn.row_factory = sqlite3.Row
-        if not _table_exists(conn, "epics_management"):
+        if not _table_exists(conn, "epics_management", schema=source_schema):
             raise ValueError("Epics Planner table epics_management is not initialized.")
         # Verify epic exists in epics_management
         epic = conn.execute(
-            "SELECT epic_key FROM epics_management WHERE upper(epic_key) = ?", (key,)
+            f"SELECT epic_key FROM {_qualified_table(source_schema, 'epics_management')} WHERE upper(epic_key) = ?", (key,)
         ).fetchone()
         if not epic:
             raise ValueError(f"Epic '{key}' not found in Epics Planner.")
@@ -663,24 +855,28 @@ def add_epic_to_rnd_muscle_backlog(settings_db_path: Path, epic_key: str, sort_o
             (key, sort_order, now, now),
         )
         conn.commit()
-        return _load_page_state_from_conn(conn)
+        return _load_page_state_from_conn(conn, source_schema=source_schema)
     finally:
         conn.close()
 
 
-def remove_epic_from_rnd_muscle_backlog(settings_db_path: Path, epic_key: str) -> RndMuscleUtilizationPageState:
+def remove_epic_from_rnd_muscle_backlog(
+    settings_db_path: Path,
+    epic_key: str,
+    source_db_path: Path | None = None,
+) -> RndMuscleUtilizationPageState:
     _init_rnd_muscle_utilization_db(settings_db_path)
     key = (epic_key or "").strip().upper()
     if not key:
         raise ValueError("epic_key is required.")
-    conn = sqlite3.connect(settings_db_path)
+    conn, source_schema = _connect_rnd_db(settings_db_path, source_db_path)
     try:
         conn.row_factory = sqlite3.Row
         cur = conn.execute("DELETE FROM rnd_muscle_backlog WHERE upper(epic_key) = ?", (key,))
         if cur.rowcount == 0:
             raise ValueError(f"Epic '{key}' is not in the backlog.")
         conn.commit()
-        return _load_page_state_from_conn(conn)
+        return _load_page_state_from_conn(conn, source_schema=source_schema)
     finally:
         conn.close()
 
@@ -689,19 +885,20 @@ def add_epic_to_rnd_muscle_planner(
     settings_db_path: Path,
     epic_key: str,
     sort_order: int | None = None,
+    source_db_path: Path | None = None,
 ) -> RndMuscleUtilizationPageState:
     _init_rnd_muscle_utilization_db(settings_db_path)
     key = (epic_key or "").strip().upper()
     if not key:
         raise ValueError("epic_key is required.")
 
-    conn = sqlite3.connect(settings_db_path)
+    conn, source_schema = _connect_rnd_db(settings_db_path, source_db_path)
     try:
         conn.row_factory = sqlite3.Row
-        if not _table_exists(conn, "epics_management"):
+        if not _table_exists(conn, "epics_management", schema=source_schema):
             raise ValueError("Epics Planner table epics_management is not initialized.")
         epic = conn.execute(
-            "SELECT epic_key FROM epics_management WHERE upper(epic_key) = ?", (key,)
+            f"SELECT epic_key FROM {_qualified_table(source_schema, 'epics_management')} WHERE upper(epic_key) = ?", (key,)
         ).fetchone()
         if not epic:
             raise ValueError(f"Epic '{key}' not found in Epics Planner.")
@@ -718,17 +915,21 @@ def add_epic_to_rnd_muscle_planner(
             (key, sort_order, now, now),
         )
         conn.commit()
-        return _load_page_state_from_conn(conn)
+        return _load_page_state_from_conn(conn, source_schema=source_schema)
     finally:
         conn.close()
 
 
-def remove_epic_from_rnd_muscle_planner(settings_db_path: Path, epic_key: str) -> RndMuscleUtilizationPageState:
+def remove_epic_from_rnd_muscle_planner(
+    settings_db_path: Path,
+    epic_key: str,
+    source_db_path: Path | None = None,
+) -> RndMuscleUtilizationPageState:
     _init_rnd_muscle_utilization_db(settings_db_path)
     key = (epic_key or "").strip().upper()
     if not key:
         raise ValueError("epic_key is required.")
-    conn = sqlite3.connect(settings_db_path)
+    conn, source_schema = _connect_rnd_db(settings_db_path, source_db_path)
     try:
         conn.row_factory = sqlite3.Row
         conn.execute("DELETE FROM rnd_muscle_epic_resource_mappings WHERE upper(epic_key) = ?", (key,))
@@ -736,7 +937,7 @@ def remove_epic_from_rnd_muscle_planner(settings_db_path: Path, epic_key: str) -
         if cur.rowcount == 0:
             raise ValueError(f"Epic '{key}' is not in the planner.")
         conn.commit()
-        return _load_page_state_from_conn(conn)
+        return _load_page_state_from_conn(conn, source_schema=source_schema)
     finally:
         conn.close()
 
@@ -744,6 +945,7 @@ def remove_epic_from_rnd_muscle_planner(settings_db_path: Path, epic_key: str) -
 def save_rnd_muscle_epic_resource_mapping(
     settings_db_path: Path,
     payload: RndMusclePlannerMappingPayload,
+    source_db_path: Path | None = None,
 ) -> RndMuscleUtilizationPageState:
     """Business logic: persist resource assignments to an epic on the fly as the manager drops resources onto the hierarchical canvas or adjusts a cluster-view mapping. The final implementation should update quick stats and project-filtered planner state immediately."""
     _init_rnd_muscle_utilization_db(settings_db_path)
@@ -768,13 +970,13 @@ def save_rnd_muscle_epic_resource_mapping(
         allocation_hours_by_resource_id[str(k).strip()] = hours
 
     now = _now_utc()
-    conn = sqlite3.connect(settings_db_path)
+    conn, source_schema = _connect_rnd_db(settings_db_path, source_db_path)
     try:
         conn.row_factory = sqlite3.Row
-        if not _table_exists(conn, "epics_management"):
+        if not _table_exists(conn, "epics_management", schema=source_schema):
             raise ValueError("Epics Planner table epics_management is not initialized.")
         epic = conn.execute(
-            "SELECT epic_key FROM epics_management WHERE upper(epic_key) = ?",
+            f"SELECT epic_key FROM {_qualified_table(source_schema, 'epics_management')} WHERE upper(epic_key) = ?",
             (epic_key,),
         ).fetchone()
         if not epic:
@@ -816,7 +1018,7 @@ def save_rnd_muscle_epic_resource_mapping(
             )
 
         conn.commit()
-        return _load_page_state_from_conn(conn)
+        return _load_page_state_from_conn(conn, source_schema=source_schema)
     finally:
         conn.close()
 
@@ -824,6 +1026,7 @@ def save_rnd_muscle_epic_resource_mapping(
 def reorder_rnd_muscle_backlog(
     settings_db_path: Path,
     epic_keys: list[str] | tuple[str, ...],
+    source_db_path: Path | None = None,
 ) -> RndMuscleUtilizationPageState:
     _init_rnd_muscle_utilization_db(settings_db_path)
     ordered_keys = [str(key or "").strip().upper() for key in epic_keys if str(key or "").strip()]
@@ -833,7 +1036,7 @@ def reorder_rnd_muscle_backlog(
         raise ValueError("epic_keys must not contain duplicates.")
 
     now = _now_utc()
-    conn = sqlite3.connect(settings_db_path)
+    conn, source_schema = _connect_rnd_db(settings_db_path, source_db_path)
     try:
         conn.row_factory = sqlite3.Row
         existing_keys = {
@@ -849,7 +1052,7 @@ def reorder_rnd_muscle_backlog(
                 (idx, now, epic_key),
             )
         conn.commit()
-        return _load_page_state_from_conn(conn)
+        return _load_page_state_from_conn(conn, source_schema=source_schema)
     finally:
         conn.close()
 
@@ -857,6 +1060,7 @@ def reorder_rnd_muscle_backlog(
 def reorder_rnd_muscle_planner_epics(
     settings_db_path: Path,
     epic_keys: list[str] | tuple[str, ...],
+    source_db_path: Path | None = None,
 ) -> RndMuscleUtilizationPageState:
     _init_rnd_muscle_utilization_db(settings_db_path)
     ordered_keys = [str(key or "").strip().upper() for key in epic_keys if str(key or "").strip()]
@@ -866,7 +1070,7 @@ def reorder_rnd_muscle_planner_epics(
         raise ValueError("epic_keys must not contain duplicates.")
 
     now = _now_utc()
-    conn = sqlite3.connect(settings_db_path)
+    conn, source_schema = _connect_rnd_db(settings_db_path, source_db_path)
     try:
         conn.row_factory = sqlite3.Row
         existing_keys = {
@@ -882,7 +1086,7 @@ def reorder_rnd_muscle_planner_epics(
                 (idx, now, epic_key),
             )
         conn.commit()
-        return _load_page_state_from_conn(conn)
+        return _load_page_state_from_conn(conn, source_schema=source_schema)
     finally:
         conn.close()
 
@@ -891,6 +1095,7 @@ def reorder_rnd_muscle_epic_resources(
     settings_db_path: Path,
     epic_key: str,
     resource_ids: list[str] | tuple[str, ...],
+    source_db_path: Path | None = None,
 ) -> RndMuscleUtilizationPageState:
     _init_rnd_muscle_utilization_db(settings_db_path)
     key = str(epic_key or "").strip().upper()
@@ -901,7 +1106,7 @@ def reorder_rnd_muscle_epic_resources(
         raise ValueError("resource_ids must not contain duplicates.")
 
     now = _now_utc()
-    conn = sqlite3.connect(settings_db_path)
+    conn, source_schema = _connect_rnd_db(settings_db_path, source_db_path)
     try:
         conn.row_factory = sqlite3.Row
         existing = [
@@ -923,15 +1128,19 @@ def reorder_rnd_muscle_epic_resources(
                 (idx, now, key, resource_id),
             )
         conn.commit()
-        return _load_page_state_from_conn(conn)
+        return _load_page_state_from_conn(conn, source_schema=source_schema)
     finally:
         conn.close()
 
 
-def list_rnd_muscle_project_tabs(settings_db_path: Path, selected_project_keys: tuple[str, ...]) -> RndMuscleUtilizationPageState:
+def list_rnd_muscle_project_tabs(
+    settings_db_path: Path,
+    selected_project_keys: tuple[str, ...],
+    source_db_path: Path | None = None,
+) -> RndMuscleUtilizationPageState:
     """Business logic: build the planner tab strip from configured projects, including the default ALL tab and per-project epic counts for all epics currently participating in the resource planner."""
     _init_rnd_muscle_utilization_db(settings_db_path)
-    conn = sqlite3.connect(settings_db_path)
+    conn, source_schema = _connect_rnd_db(settings_db_path, source_db_path)
     try:
         conn.row_factory = sqlite3.Row
         # Get epics that are actively participating in the resource planner.
@@ -942,9 +1151,9 @@ def list_rnd_muscle_project_tabs(settings_db_path: Path, selected_project_keys: 
 
         epic_rows = (
             conn.execute(
-                "SELECT epic_key, project_key, project_name FROM epics_management ORDER BY project_key ASC"
+                f"SELECT epic_key, project_key, project_name FROM {_qualified_table(source_schema, 'epics_management')} ORDER BY project_key ASC"
             ).fetchall()
-            if _table_exists(conn, "epics_management")
+            if _table_exists(conn, "epics_management", schema=source_schema)
             else []
         )
 
@@ -982,7 +1191,7 @@ def list_rnd_muscle_project_tabs(settings_db_path: Path, selected_project_keys: 
                 )
             )
 
-        page_state = _load_page_state_from_conn(conn)
+        page_state = _load_page_state_from_conn(conn, source_schema=source_schema)
         # Return page state with the filtered project_tabs
         return RndMuscleUtilizationPageState(
             report_name=page_state.report_name,
@@ -998,13 +1207,17 @@ def list_rnd_muscle_project_tabs(settings_db_path: Path, selected_project_keys: 
         conn.close()
 
 
-def delete_rnd_muscle_team(settings_db_path: Path, team_id: str) -> RndMuscleUtilizationPageState:
+def delete_rnd_muscle_team(
+    settings_db_path: Path,
+    team_id: str,
+    source_db_path: Path | None = None,
+) -> RndMuscleUtilizationPageState:
     """Delete a manager-defined team by team_id. Clears the team membership from all resources that belonged to this team. Returns the refreshed page state."""
     _init_rnd_muscle_utilization_db(settings_db_path)
     tid = (team_id or "").strip()
     if not tid:
         raise ValueError("team_id is required.")
-    conn = sqlite3.connect(settings_db_path)
+    conn, source_schema = _connect_rnd_db(settings_db_path, source_db_path)
     try:
         conn.row_factory = sqlite3.Row
         existing = conn.execute(
@@ -1023,6 +1236,6 @@ def delete_rnd_muscle_team(settings_db_path: Path, team_id: str) -> RndMuscleUti
         # Delete the team
         conn.execute("DELETE FROM rnd_muscle_teams WHERE team_id=?", (tid,))
         conn.commit()
-        return _load_page_state_from_conn(conn)
+        return _load_page_state_from_conn(conn, source_schema=source_schema)
     finally:
         conn.close()

@@ -10,6 +10,7 @@ from rnd_muscle_utilization_service import (
     add_epic_to_rnd_muscle_planner,
     add_rnd_muscle_skill,
     load_rnd_muscle_utilization_page_state,
+    migrate_legacy_rnd_muscle_tables,
     remove_epic_from_rnd_muscle_backlog,
     remove_epic_from_rnd_muscle_planner,
     reorder_rnd_muscle_backlog,
@@ -73,6 +74,58 @@ def _create_epics_management_table(db_path: Path) -> None:
 
 
 class RndMuscleUtilizationServiceTests(unittest.TestCase):
+    def test_separate_rnd_database_reads_epics_from_source_database(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            source_db_path = root / "assignee_hours_capacity.db"
+            rnd_db_path = root / "rnd_muscle_utilization.db"
+            _create_epics_management_table(source_db_path)
+
+            state = add_epic_to_rnd_muscle_backlog(rnd_db_path, "O2-100", source_db_path=source_db_path)
+
+            with sqlite3.connect(rnd_db_path) as rnd_conn:
+                rnd_tables = {
+                    row[0]
+                    for row in rnd_conn.execute(
+                        "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'rnd_muscle_%'"
+                    ).fetchall()
+                }
+            with sqlite3.connect(source_db_path) as source_conn:
+                source_rnd_tables = {
+                    row[0]
+                    for row in source_conn.execute(
+                        "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'rnd_muscle_%'"
+                    ).fetchall()
+                }
+
+        self.assertEqual([item.epic_key for item in state.planner.backlog], ["O2-100"])
+        self.assertIn("rnd_muscle_backlog", rnd_tables)
+        self.assertEqual(source_rnd_tables, set())
+
+    def test_migrate_legacy_tables_copies_to_rnd_db_and_can_drop_source_tables(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            legacy_db_path = root / "assignee_hours_capacity.db"
+            rnd_db_path = root / "rnd_muscle_utilization.db"
+            legacy_state = add_rnd_muscle_skill(legacy_db_path, "Data Platform")
+            skill_id = next(skill.skill_id for skill in legacy_state.skills if skill.name == "Data Platform")
+
+            result = migrate_legacy_rnd_muscle_tables(legacy_db_path, rnd_db_path, drop_legacy=True)
+
+            migrated_state = load_rnd_muscle_utilization_page_state(rnd_db_path)
+            with sqlite3.connect(legacy_db_path) as legacy_conn:
+                legacy_tables = {
+                    row[0]
+                    for row in legacy_conn.execute(
+                        "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'rnd_muscle_%'"
+                    ).fetchall()
+                }
+
+        self.assertIn("rnd_muscle_skills", result["copied"])
+        self.assertIn("rnd_muscle_skills", result["dropped"])
+        self.assertTrue(any(skill.skill_id == skill_id for skill in migrated_state.skills))
+        self.assertEqual(legacy_tables, set())
+
     def test_load_on_fresh_db_seeds_default_skills_without_epics_tables(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             state = load_rnd_muscle_utilization_page_state(Path(td) / "settings.db")

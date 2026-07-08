@@ -212,6 +212,8 @@ from monthly_epic_plan_progress_service import (
     save_support_team,
 )
 from rnd_muscle_utilization_service import (
+    DEFAULT_RND_MUSCLE_UTILIZATION_DB,
+    RND_MUSCLE_TEAM_COLOR_PALETTE,
     add_epic_to_rnd_muscle_backlog,
     add_epic_to_rnd_muscle_planner,
     add_rnd_muscle_skill,
@@ -1591,6 +1593,10 @@ def _resolve_capacity_runtime_paths(base_dir: Path) -> dict[str, Path]:
             DEFAULT_SUMMARY_OUTPUT_XLSX,
         )
     )
+    rnd_muscle_db_name = _normalize_runtime_path_setting(
+        os.getenv("JIRA_RND_MUSCLE_UTILIZATION_DB_PATH", DEFAULT_RND_MUSCLE_UTILIZATION_DB),
+        DEFAULT_RND_MUSCLE_UTILIZATION_DB,
+    )
 
     db_path = Path(db_name)
     if not db_path.is_absolute():
@@ -1605,8 +1611,14 @@ def _resolve_capacity_runtime_paths(base_dir: Path) -> dict[str, Path]:
     if not summary_path.is_absolute():
         summary_path = base_dir / summary_path
 
+    rnd_muscle_db_path = Path(rnd_muscle_db_name)
+    if not rnd_muscle_db_path.is_absolute():
+        rnd_muscle_db_path = base_dir / rnd_muscle_db_path
+    rnd_muscle_db_path.parent.mkdir(parents=True, exist_ok=True)
+
     return {
         "db_path": db_path,
+        "rnd_muscle_db_path": rnd_muscle_db_path,
         "leave_report_path": leave_report_path,
         "summary_path": summary_path,
     }
@@ -12705,6 +12717,7 @@ def _rnd_muscle_project_keys_from_request() -> tuple[str, ...]:
 
 
 def _rnd_muscle_utilization_settings_html(planner_only: bool = False) -> str:
+    team_color_palette_json = json.dumps(list(RND_MUSCLE_TEAM_COLOR_PALETTE))
     return """<!doctype html>
 <html lang="en">
 <head>
@@ -12736,9 +12749,14 @@ def _rnd_muscle_utilization_settings_html(planner_only: bool = False) -> str:
     .btn.primary { background:var(--accent); color:var(--accent-text); border-color:var(--accent-strong); }
     .btn.danger { color:var(--danger); border-color:var(--danger); background:var(--control); }
     .input::placeholder { color:var(--muted); }
-    .theme-controls { display:flex; align-items:center; gap:6px; padding:3px; border:1px solid var(--border); border-radius:var(--radius); background:var(--panel-2); }
-    .theme-controls label { display:flex; align-items:center; gap:5px; color:var(--muted); font-size:11px; }
-    .theme-controls select { width:auto; min-height:26px; }
+    .theme-controls { display:flex; align-items:center; gap:8px; padding:3px 4px; border:1px solid var(--border); border-radius:999px; background:var(--panel-2); }
+    .theme-switch { position:relative; display:grid; grid-template-columns:1fr 1fr; width:132px; min-height:30px; border:1px solid var(--border); border-radius:999px; background:var(--control); padding:2px; overflow:hidden; cursor:pointer; box-shadow:inset 0 1px 1px rgba(0,0,0,.16); }
+    .theme-switch input { position:absolute; opacity:0; pointer-events:none; }
+    .theme-switch::before { content:""; position:absolute; top:2px; bottom:2px; left:2px; width:calc(50% - 2px); border-radius:999px; background:linear-gradient(135deg,var(--accent),var(--accent-strong)); box-shadow:0 5px 14px rgba(0,0,0,.24); transition:transform .18s ease; }
+    .theme-switch:has(input:checked)::before { transform:translateX(100%); }
+    .theme-switch span { position:relative; z-index:1; display:grid; place-items:center; color:var(--muted); font-size:11px; font-weight:800; line-height:1; }
+    .theme-switch input:not(:checked) ~ span:first-of-type,
+    .theme-switch input:checked ~ span:last-of-type { color:var(--accent-text); }
     .theme-controls input[type="color"] { width:30px; height:26px; min-height:26px; padding:2px; border:1px solid var(--border); border-radius:var(--radius); background:var(--control); }
     .stats { display:grid; grid-template-columns:repeat(4,minmax(120px,1fr)); gap:8px; margin-bottom:10px; }
     .stat { background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); padding:8px; }
@@ -12758,9 +12776,9 @@ def _rnd_muscle_utilization_settings_html(planner_only: bool = False) -> str:
     .row { border:1px solid var(--border); border-radius:var(--radius); padding:7px; background:var(--row); transition:transform .14s ease, box-shadow .14s ease, border-color .14s ease, background-color .14s ease, opacity .14s ease; }
     .row[draggable="true"]:hover, .staged-card:hover, .resource-card:hover { transform:translateY(-1px); box-shadow:0 6px 16px rgba(0,0,0,.14); }
     .row.dragging, .resource-card.dragging { opacity:.56; transform:scale(.985); }
-    .resource-row.team-colored { border-color:color-mix(in srgb, var(--resource-team-color) 72%, var(--border)); background:linear-gradient(90deg, color-mix(in srgb, var(--resource-team-color) 92%, #000 8%), color-mix(in srgb, var(--resource-team-color) 78%, var(--panel) 22%)); color:var(--resource-team-text); }
-    .resource-row.team-colored .row-meta { color:color-mix(in srgb, var(--resource-team-text) 82%, transparent); }
-    .resource-row.team-colored .pill { border-color:color-mix(in srgb, var(--resource-team-text) 38%, transparent); background:color-mix(in srgb, var(--resource-team-text) 14%, transparent); color:var(--resource-team-text); }
+    .resource-row.team-colored { border-color:var(--resource-team-border); background:linear-gradient(90deg,var(--resource-team-soft),var(--row)); color:var(--resource-team-text); box-shadow:inset 3px 0 0 var(--resource-team-accent); }
+    .resource-row.team-colored .row-meta { color:var(--resource-team-muted); }
+    .resource-row.team-colored .pill { border-color:var(--resource-team-border); background:var(--resource-team-pill); color:var(--resource-team-text); }
     .row-title { font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .row-meta { display:flex; gap:6px; flex-wrap:wrap; margin-top:4px; color:var(--muted); font-size:11px; }
     .pill { border:1px solid var(--border); border-radius:999px; padding:2px 6px; background:var(--panel-2); }
@@ -12834,6 +12852,10 @@ def _rnd_muscle_utilization_settings_html(planner_only: bool = False) -> str:
     .check-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:6px; max-height:180px; overflow:auto; border:1px solid var(--border); border-radius:var(--radius); padding:8px; }
     .check-row { display:flex; align-items:center; gap:6px; min-width:0; }
     .check-row span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .team-color-grid { display:grid; grid-template-columns:repeat(5,minmax(42px,1fr)); gap:7px; border:1px solid var(--border); border-radius:var(--radius); padding:8px; background:var(--panel-2); }
+    .team-color-btn { position:relative; height:34px; border:1px solid var(--border); border-radius:6px; background:var(--team-color-soft); cursor:pointer; box-shadow:inset 0 -10px 18px rgba(255,255,255,.18); }
+    .team-color-btn::before { content:""; position:absolute; left:7px; right:7px; top:8px; height:6px; border-radius:999px; background:var(--team-color); }
+    .team-color-btn[aria-pressed="true"] { border-color:var(--team-color); box-shadow:0 0 0 2px var(--team-color-soft), inset 0 -10px 18px rgba(255,255,255,.18); }
     .row-actions { display:flex; gap:6px; margin-top:6px; flex-wrap:wrap; }
     .row[draggable="true"] { cursor:grab; }
     .row[draggable="true"]:active { cursor:grabbing; }
@@ -12860,11 +12882,10 @@ __SETTINGS_TOP_NAV__
     </div>
     <div class="toolbar">
       <div class="theme-controls" aria-label="Theme controls">
-        <label for="rnd-theme-mode">Theme
-          <select id="rnd-theme-mode" aria-label="Theme mode">
-            <option value="dark">Dark</option>
-            <option value="light">Light</option>
-          </select>
+        <label class="theme-switch" for="rnd-theme-mode" aria-label="Theme mode">
+          <input id="rnd-theme-mode" type="checkbox" role="switch" aria-label="Theme mode">
+          <span>Dark</span>
+          <span>Light</span>
         </label>
         <label for="rnd-theme-color">Color
           <input id="rnd-theme-color" type="color" value="#007acc" aria-label="Theme color">
@@ -12972,7 +12993,9 @@ __SETTINGS_TOP_NAV__
   <form id="rnd-team-form" class="dialog-body">
     <input type="hidden" id="rnd-team-id" value="">
     <label>Team name <input id="rnd-team-name" class="input" required></label>
-    <label>Team color <input id="rnd-team-color" class="input" type="color" value="#2563eb"></label>
+    <label>Team color</label>
+    <input id="rnd-team-color" type="hidden" value="#2563eb">
+    <div id="rnd-team-color-grid" class="team-color-grid" aria-label="Team color choices"></div>
     <label>Skills</label>
     <div id="rnd-team-skills" class="check-grid"></div>
     <label>Resources</label>
@@ -13017,6 +13040,7 @@ __SETTINGS_TOP_NAV__
   let selectedProjectKeys = new Set(JSON.parse(localStorage.getItem(PROJECT_SELECTION_KEY) || "[]"));
   const THEME_MODE_KEY = "rnd-muscle-theme-mode-v1";
   const THEME_COLOR_KEY = "rnd-muscle-theme-color-v1";
+  const TEAM_COLOR_PALETTE = __RND_TEAM_COLOR_PALETTE__;
   const byId = (id) => document.getElementById(id);
   function normalizeHexColor(value, fallback){
     const text = String(value || "").trim();
@@ -13038,6 +13062,22 @@ __SETTINGS_TOP_NAV__
     const toHex = (n) => Math.round(n).toString(16).padStart(2, "0");
     return "#" + toHex(a.r * (1 - w) + b.r * w) + toHex(a.g * (1 - w) + b.g * w) + toHex(a.b * (1 - w) + b.b * w);
   }
+  function currentThemeMode(){
+    return document.body.dataset.rndTheme === "light" ? "light" : "dark";
+  }
+  function teamTone(color){
+    const base = normalizeHexColor(color, TEAM_COLOR_PALETTE[0] || "#2563eb");
+    const lightMode = currentThemeMode() === "light";
+    const soft = mixColor(base, lightMode ? "#ffffff" : "#252526", lightMode ? 0.86 : 0.74);
+    return {
+      base: base,
+      soft: soft,
+      border: mixColor(base, lightMode ? "#ffffff" : "#9aa0a6", lightMode ? 0.45 : 0.38),
+      pill: mixColor(base, lightMode ? "#ffffff" : "#2d2d30", lightMode ? 0.78 : 0.66),
+      text: readableTextColor(soft),
+      muted: mixColor(readableTextColor(soft), soft, 0.34)
+    };
+  }
   function applyTheme(mode, color){
     const themeMode = mode === "light" ? "light" : "dark";
     const accent = normalizeHexColor(color, "#007acc");
@@ -13049,7 +13089,10 @@ __SETTINGS_TOP_NAV__
     document.documentElement.style.setProperty("--accent-text", readableTextColor(accent));
     const modeEl = byId("rnd-theme-mode");
     const colorEl = byId("rnd-theme-color");
-    if (modeEl) modeEl.value = themeMode;
+    if (modeEl) {
+      modeEl.checked = themeMode === "light";
+      modeEl.setAttribute("aria-checked", themeMode === "light" ? "true" : "false");
+    }
     if (colorEl) colorEl.value = accent;
   }
   function loadThemePreference(){
@@ -13062,14 +13105,39 @@ __SETTINGS_TOP_NAV__
     applyTheme(mode, color);
   }
   function saveThemePreference(){
-    const mode = byId("rnd-theme-mode").value === "light" ? "light" : "dark";
+    const mode = byId("rnd-theme-mode").checked ? "light" : "dark";
     const color = normalizeHexColor(byId("rnd-theme-color").value, "#007acc");
     try {
       localStorage.setItem(THEME_MODE_KEY, mode);
       localStorage.setItem(THEME_COLOR_KEY, color);
     } catch (e) {}
     applyTheme(mode, color);
+    renderResources();
     setStatus("Theme saved for configuration and view mode.", "ok");
+  }
+  function setTeamColor(color){
+    const selected = TEAM_COLOR_PALETTE.includes(normalizeHexColor(color, "")) ? normalizeHexColor(color, "") : TEAM_COLOR_PALETTE[0];
+    byId("rnd-team-color").value = selected;
+    Array.from(byId("rnd-team-color-grid").querySelectorAll(".team-color-btn")).forEach((button) => {
+      button.setAttribute("aria-pressed", button.dataset.color === selected ? "true" : "false");
+    });
+  }
+  function renderTeamColorPalette(selectedColor){
+    const grid = byId("rnd-team-color-grid");
+    reset(grid);
+    TEAM_COLOR_PALETTE.forEach((color, index) => {
+      const tone = teamTone(color);
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "team-color-btn";
+      button.dataset.color = color;
+      button.title = "Team color " + (index + 1);
+      button.style.setProperty("--team-color", color);
+      button.style.setProperty("--team-color-soft", tone.soft);
+      button.addEventListener("click", () => setTeamColor(color));
+      grid.appendChild(button);
+    });
+    setTeamColor(selectedColor || TEAM_COLOR_PALETTE[0]);
   }
   function setStatus(message, kind){
     const el = byId("rnd-status");
@@ -13552,8 +13620,13 @@ __SETTINGS_TOP_NAV__
       row.draggable = true;
       if (team.team_id) {
         const color = team.color_hex || "#3b5f86";
-        row.style.setProperty("--resource-team-color", color);
-        row.style.setProperty("--resource-team-text", readableTextColor(color));
+        const tone = teamTone(color);
+        row.style.setProperty("--resource-team-accent", tone.base);
+        row.style.setProperty("--resource-team-soft", tone.soft);
+        row.style.setProperty("--resource-team-border", tone.border);
+        row.style.setProperty("--resource-team-pill", tone.pill);
+        row.style.setProperty("--resource-team-text", tone.text);
+        row.style.setProperty("--resource-team-muted", tone.muted);
       }
       row.addEventListener("dragstart", (event) => {
         row.classList.add("dragging");
@@ -13921,7 +13994,7 @@ __SETTINGS_TOP_NAV__
   function openCreateTeam(){
     byId("rnd-team-id").value = "";
     byId("rnd-team-name").value = "";
-    byId("rnd-team-color").value = "#2563eb";
+    renderTeamColorPalette("#2563eb");
     byId("rnd-team-dialog-title").textContent = "Create Team";
     byId("rnd-team-submit-btn").textContent = "Create Team";
     byId("rnd-team-cancel-edit-btn").style.display = "none";
@@ -13932,7 +14005,7 @@ __SETTINGS_TOP_NAV__
   function openEditTeam(team){
     byId("rnd-team-id").value = team.team_id || "";
     byId("rnd-team-name").value = team.name || "";
-    byId("rnd-team-color").value = team.color_hex || "#2563eb";
+    renderTeamColorPalette(team.color_hex || "#2563eb");
     byId("rnd-team-dialog-title").textContent = "Edit Team";
     byId("rnd-team-submit-btn").textContent = "Save Changes";
     byId("rnd-team-cancel-edit-btn").style.display = "";
@@ -13948,7 +14021,7 @@ __SETTINGS_TOP_NAV__
       renderTeamList();
       byId("rnd-team-id").value = "";
       byId("rnd-team-name").value = "";
-      byId("rnd-team-color").value = "#2563eb";
+      renderTeamColorPalette("#2563eb");
       byId("rnd-team-dialog-title").textContent = "Create Team";
       byId("rnd-team-submit-btn").textContent = "Create Team";
       byId("rnd-team-cancel-edit-btn").style.display = "none";
@@ -14180,7 +14253,7 @@ __SETTINGS_TOP_NAV__
   byId("rnd-team-cancel-edit-btn").addEventListener("click", () => {
     byId("rnd-team-id").value = "";
     byId("rnd-team-name").value = "";
-    byId("rnd-team-color").value = "#2563eb";
+    renderTeamColorPalette("#2563eb");
     byId("rnd-team-dialog-title").textContent = "Create Team";
     byId("rnd-team-submit-btn").textContent = "Create Team";
     byId("rnd-team-cancel-edit-btn").style.display = "none";
@@ -14202,7 +14275,7 @@ __SETTINGS_TOP_NAV__
       state = body.state || {};
       byId("rnd-team-id").value = "";
       byId("rnd-team-name").value = "";
-      byId("rnd-team-color").value = "#2563eb";
+      renderTeamColorPalette("#2563eb");
       byId("rnd-team-dialog-title").textContent = "Create Team";
       byId("rnd-team-submit-btn").textContent = "Create Team";
       byId("rnd-team-cancel-edit-btn").style.display = "none";
@@ -14329,6 +14402,9 @@ __SETTINGS_TOP_NAV__
     ).replace(
         "__RND_PAGE_MODE_CLASS__",
         "planner-only" if planner_only else "",
+    ).replace(
+        "__RND_TEAM_COLOR_PALETTE__",
+        team_color_palette_json,
     ).replace(
         "__RND_VIEW_MODE_BUTTON__",
         (
@@ -44455,9 +44531,17 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             search_text = _to_text(request.args.get("search"))
             project_keys = _rnd_muscle_project_keys_from_request()
             if search_text or project_keys:
-                state = search_rnd_muscle_epics(capacity_paths["db_path"], search_text, project_keys)
+                state = search_rnd_muscle_epics(
+                    capacity_paths["rnd_muscle_db_path"],
+                    search_text,
+                    project_keys,
+                    capacity_paths["db_path"],
+                )
             else:
-                state = load_rnd_muscle_utilization_page_state(capacity_paths["db_path"])
+                state = load_rnd_muscle_utilization_page_state(
+                    capacity_paths["rnd_muscle_db_path"],
+                    capacity_paths["db_path"],
+                )
             return jsonify(_rnd_muscle_state_payload(state))
         except Exception as exc:
             return jsonify({"ok": False, "error": str(exc)}), 500
@@ -44466,8 +44550,9 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
     def rnd_muscle_utilization_project_tabs_api():
         try:
             state = list_rnd_muscle_project_tabs(
-                capacity_paths["db_path"],
+                capacity_paths["rnd_muscle_db_path"],
                 _rnd_muscle_project_keys_from_request(),
+                capacity_paths["db_path"],
             )
             return jsonify(_rnd_muscle_state_payload(state))
         except Exception as exc:
@@ -44477,7 +44562,11 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
     def rnd_muscle_utilization_add_skill_api():
         try:
             payload = request.get_json(silent=True) or {}
-            state = add_rnd_muscle_skill(capacity_paths["db_path"], _to_text(payload.get("name")))
+            state = add_rnd_muscle_skill(
+                capacity_paths["rnd_muscle_db_path"],
+                _to_text(payload.get("name")),
+                capacity_paths["db_path"],
+            )
             return jsonify(_rnd_muscle_state_payload(state)), 201
         except ValueError as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400
@@ -44488,7 +44577,11 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
     def rnd_muscle_utilization_save_team_api():
         try:
             payload = request.get_json(silent=True) or {}
-            state = save_rnd_muscle_team(capacity_paths["db_path"], payload)
+            state = save_rnd_muscle_team(
+                capacity_paths["rnd_muscle_db_path"],
+                payload,
+                capacity_paths["db_path"],
+            )
             return jsonify(_rnd_muscle_state_payload(state))
         except ValueError as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400
@@ -44500,7 +44593,11 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         try:
             payload = request.get_json(silent=True) or {}
             payload["team_id"] = _to_text(team_id)
-            state = save_rnd_muscle_team(capacity_paths["db_path"], payload)
+            state = save_rnd_muscle_team(
+                capacity_paths["rnd_muscle_db_path"],
+                payload,
+                capacity_paths["db_path"],
+            )
             return jsonify(_rnd_muscle_state_payload(state))
         except ValueError as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400
@@ -44510,7 +44607,11 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
     @app.route("/api/rnd-muscle-utilization/teams/<path:team_id>", methods=["DELETE"])
     def rnd_muscle_utilization_delete_team_api(team_id: str):
         try:
-            state = delete_rnd_muscle_team(capacity_paths["db_path"], _to_text(team_id))
+            state = delete_rnd_muscle_team(
+                capacity_paths["rnd_muscle_db_path"],
+                _to_text(team_id),
+                capacity_paths["db_path"],
+            )
             return jsonify(_rnd_muscle_state_payload(state))
         except ValueError as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400
@@ -44524,9 +44625,10 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             raw_sort_order = payload.get("sort_order")
             sort_order = None if raw_sort_order in (None, "") else int(raw_sort_order)
             state = add_epic_to_rnd_muscle_backlog(
-                capacity_paths["db_path"],
+                capacity_paths["rnd_muscle_db_path"],
                 _to_text(payload.get("epic_key")),
                 sort_order=sort_order,
+                source_db_path=capacity_paths["db_path"],
             )
             return jsonify(_rnd_muscle_state_payload(state)), 201
         except ValueError as exc:
@@ -44537,7 +44639,11 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
     @app.route("/api/rnd-muscle-utilization/backlog/<path:epic_key>", methods=["DELETE"])
     def rnd_muscle_utilization_remove_backlog_api(epic_key: str):
         try:
-            state = remove_epic_from_rnd_muscle_backlog(capacity_paths["db_path"], epic_key)
+            state = remove_epic_from_rnd_muscle_backlog(
+                capacity_paths["rnd_muscle_db_path"],
+                epic_key,
+                capacity_paths["db_path"],
+            )
             return jsonify(_rnd_muscle_state_payload(state))
         except ValueError as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400
@@ -44552,8 +44658,9 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             if not isinstance(raw_epic_keys, list):
                 raise ValueError("epic_keys must be an array.")
             state = reorder_rnd_muscle_backlog(
-                capacity_paths["db_path"],
+                capacity_paths["rnd_muscle_db_path"],
                 [_to_text(item) for item in raw_epic_keys],
+                capacity_paths["db_path"],
             )
             return jsonify(_rnd_muscle_state_payload(state))
         except ValueError as exc:
@@ -44568,9 +44675,10 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             raw_sort_order = payload.get("sort_order")
             sort_order = None if raw_sort_order in (None, "") else int(raw_sort_order)
             state = add_epic_to_rnd_muscle_planner(
-                capacity_paths["db_path"],
+                capacity_paths["rnd_muscle_db_path"],
                 _to_text(payload.get("epic_key")),
                 sort_order=sort_order,
+                source_db_path=capacity_paths["db_path"],
             )
             return jsonify(_rnd_muscle_state_payload(state)), 201
         except ValueError as exc:
@@ -44581,7 +44689,11 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
     @app.route("/api/rnd-muscle-utilization/planner/<path:epic_key>", methods=["DELETE"])
     def rnd_muscle_utilization_remove_planner_api(epic_key: str):
         try:
-            state = remove_epic_from_rnd_muscle_planner(capacity_paths["db_path"], epic_key)
+            state = remove_epic_from_rnd_muscle_planner(
+                capacity_paths["rnd_muscle_db_path"],
+                epic_key,
+                capacity_paths["db_path"],
+            )
             return jsonify(_rnd_muscle_state_payload(state))
         except ValueError as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400
@@ -44596,8 +44708,9 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             if not isinstance(raw_epic_keys, list):
                 raise ValueError("epic_keys must be an array.")
             state = reorder_rnd_muscle_planner_epics(
-                capacity_paths["db_path"],
+                capacity_paths["rnd_muscle_db_path"],
                 [_to_text(item) for item in raw_epic_keys],
+                capacity_paths["db_path"],
             )
             return jsonify(_rnd_muscle_state_payload(state))
         except ValueError as exc:
@@ -44609,7 +44722,11 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
     def rnd_muscle_utilization_save_mapping_api():
         try:
             payload = request.get_json(silent=True) or {}
-            state = save_rnd_muscle_epic_resource_mapping(capacity_paths["db_path"], payload)
+            state = save_rnd_muscle_epic_resource_mapping(
+                capacity_paths["rnd_muscle_db_path"],
+                payload,
+                capacity_paths["db_path"],
+            )
             return jsonify(_rnd_muscle_state_payload(state))
         except ValueError as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400
@@ -44624,9 +44741,10 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             if not isinstance(raw_resource_ids, list):
                 raise ValueError("resource_ids must be an array.")
             state = reorder_rnd_muscle_epic_resources(
-                capacity_paths["db_path"],
+                capacity_paths["rnd_muscle_db_path"],
                 _to_text(payload.get("epic_key")),
                 [_to_text(item) for item in raw_resource_ids],
+                capacity_paths["db_path"],
             )
             return jsonify(_rnd_muscle_state_payload(state))
         except ValueError as exc:
