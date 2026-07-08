@@ -24,6 +24,13 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 DEFAULT_ASSUMED_LEAVE_HOURS = 16.0  # ~2 leave days x 8h/day, per admin's stated default assumption
+PREFERRED_SUPPORT_BOOKING_PROJECT_NAMES = (
+    "OmniConnect",
+    "OmniChat",
+    "Fintech Fuel",
+    "Digital Log",
+    "ODL Miscellaneous",
+)
 
 
 def _utc_now_iso() -> str:
@@ -72,6 +79,32 @@ def normalize_project_key(value: object) -> str:
     if not key:
         raise ValueError("project_key is required.")
     return key
+
+
+def support_booking_project_label(project: dict | object) -> str:
+    if not isinstance(project, dict):
+        return ""
+    for field in ("display_name", "project_name", "project_key"):
+        label = _to_text(project.get(field))
+        if label:
+            return label
+    return ""
+
+
+def sort_support_booking_projects(projects: list[dict]) -> list[dict]:
+    priority_map = {name.casefold(): idx for idx, name in enumerate(PREFERRED_SUPPORT_BOOKING_PROJECT_NAMES)}
+
+    def sort_key(project: dict) -> tuple[int, int, str, str]:
+        label = support_booking_project_label(project)
+        project_key = _to_text(project.get("project_key")).upper()
+        rank = priority_map.get(label.casefold())
+        if rank is None:
+            rank = priority_map.get(project_key.casefold())
+        if rank is None:
+            return (1, len(priority_map), label.casefold(), project_key)
+        return (0, rank, label.casefold(), project_key)
+
+    return sorted(projects, key=sort_key)
 
 
 def normalize_percentage(value: object) -> float:
@@ -548,11 +581,21 @@ def get_month_matrix(db_path: Path, booking_month: str, project_keys: list[str] 
     for row in allocations:
         alloc_by_member.setdefault(row["team_member"], {})[row["project_key"]] = row["percentage"]
 
-    columns = list(project_keys or [])
+    columns = list(dict.fromkeys(project_keys or []))
+    seen_columns = set(columns)
     # make sure any project already allocated (even if since made inactive) still shows up
     for row in allocations:
-        if row["project_key"] not in columns:
-            columns.append(row["project_key"])
+        project_key = row["project_key"]
+        if project_key in seen_columns:
+            continue
+        seen_columns.add(project_key)
+        columns.append(project_key)
+    if len(columns) > 1:
+        active_prefix = list(dict.fromkeys(project_keys or []))
+        active_prefix_set = set(active_prefix)
+        extra_columns = [key for key in columns if key not in active_prefix_set]
+        extra_columns.sort(key=str.casefold)
+        columns = active_prefix + extra_columns
 
     members_out = []
     for header in headers:
