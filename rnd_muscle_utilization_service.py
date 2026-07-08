@@ -19,6 +19,7 @@ from rnd_muscle_utilization_types import (
     RndMuscleProjectTab,
     RndMuscleQuickStats,
     RndMuscleResource,
+    RndMuscleResourceSkillPayload,
     RndMuscleSkill,
     RndMuscleTeam,
     RndMuscleTeamPayload,
@@ -808,6 +809,56 @@ def add_rnd_muscle_skill(
             "INSERT INTO rnd_muscle_skills(skill_id, name, is_default, created_at_utc, updated_at_utc) VALUES(?,?,0,?,?)",
             (skill_id, name, now, now),
         )
+        conn.commit()
+        return _load_page_state_from_conn(conn, source_schema=source_schema)
+    finally:
+        conn.close()
+
+
+def save_rnd_muscle_resource_skills(
+    settings_db_path: Path,
+    payload: RndMuscleResourceSkillPayload,
+    source_db_path: Path | None = None,
+) -> RndMuscleUtilizationPageState:
+    """Persist skills that are explicitly mapped to one resource."""
+    _init_rnd_muscle_utilization_db(settings_db_path)
+    resource_id = str(payload.get("resource_id") or "").strip()
+    if not resource_id:
+        raise ValueError("resource_id is required.")
+    raw_skill_ids = payload.get("skill_ids")
+    if raw_skill_ids is None:
+        raw_skill_ids = []
+    if not isinstance(raw_skill_ids, (list, tuple)):
+        raise ValueError("skill_ids must be an array.")
+    skill_ids = [str(skill_id).strip() for skill_id in raw_skill_ids if str(skill_id).strip()]
+    if len(skill_ids) != len(set(skill_ids)):
+        raise ValueError("skill_ids must not contain duplicates.")
+
+    conn, source_schema = _connect_rnd_db(settings_db_path, source_db_path)
+    try:
+        conn.row_factory = sqlite3.Row
+        _sync_canonical_resources(conn, source_schema)
+        resource = conn.execute(
+            "SELECT resource_id FROM rnd_muscle_resources WHERE resource_id = ?",
+            (resource_id,),
+        ).fetchone()
+        if not resource:
+            raise ValueError(f"Resource not found: {resource_id}")
+
+        if skill_ids:
+            existing_skill_ids = {
+                row["skill_id"] for row in conn.execute("SELECT skill_id FROM rnd_muscle_skills").fetchall()
+            }
+            unknown = set(skill_ids) - existing_skill_ids
+            if unknown:
+                raise ValueError(f"Unknown skill_id(s): {sorted(unknown)}")
+
+        conn.execute("DELETE FROM rnd_muscle_resource_skills WHERE resource_id = ?", (resource_id,))
+        for skill_id in skill_ids:
+            conn.execute(
+                "INSERT OR IGNORE INTO rnd_muscle_resource_skills(resource_id, skill_id) VALUES(?,?)",
+                (resource_id, skill_id),
+            )
         conn.commit()
         return _load_page_state_from_conn(conn, source_schema=source_schema)
     finally:

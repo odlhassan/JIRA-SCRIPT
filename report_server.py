@@ -226,6 +226,7 @@ from rnd_muscle_utilization_service import (
     reorder_rnd_muscle_planner_epics,
     reorder_rnd_muscle_epic_resources,
     save_rnd_muscle_epic_resource_mapping,
+    save_rnd_muscle_resource_skills,
     save_rnd_muscle_team,
     search_rnd_muscle_epics,
 )
@@ -12878,6 +12879,9 @@ def _rnd_muscle_utilization_settings_html(planner_only: bool = False) -> str:
     .check-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:6px; max-height:180px; overflow:auto; border:1px solid var(--border); border-radius:var(--radius); padding:8px; }
     .check-row { display:flex; align-items:center; gap:6px; min-width:0; }
     .check-row span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .skill-pill-list { display:flex; flex-wrap:wrap; gap:6px; min-height:26px; border:1px solid var(--border); border-radius:var(--radius); padding:8px; background:var(--panel-2); }
+    .resource-row-actions { display:flex; gap:6px; margin-top:6px; }
+    .resource-row-actions .btn { min-height:24px; padding:3px 7px; font-size:11px; }
     .team-color-grid { display:grid; grid-template-columns:repeat(5,minmax(42px,1fr)); gap:7px; border:1px solid var(--border); border-radius:var(--radius); padding:8px; background:var(--panel-2); }
     .team-color-btn { position:relative; height:34px; border:1px solid var(--border); border-radius:6px; background:var(--team-color-soft); cursor:pointer; box-shadow:inset 0 -10px 18px rgba(255,255,255,.18); }
     .team-color-btn::before { content:""; position:absolute; left:7px; right:7px; top:8px; height:6px; border-radius:999px; background:var(--team-color); }
@@ -13043,6 +13047,19 @@ __SETTINGS_TOP_NAV__
     <button class="btn" type="submit">Add Skill</button>
   </form>
 </dialog>
+<dialog id="rnd-resource-skill-dialog">
+  <form method="dialog">
+    <div class="dialog-head"><h2 id="rnd-resource-skill-title">Resource Skills</h2><button class="btn" value="cancel" type="submit">Close</button></div>
+  </form>
+  <form id="rnd-resource-skill-form" class="dialog-body">
+    <input type="hidden" id="rnd-resource-skill-id" value="">
+    <label>Inherited from team</label>
+    <div id="rnd-resource-inherited-skills" class="skill-pill-list"></div>
+    <label>Resource-specific skills</label>
+    <div id="rnd-resource-direct-skills" class="check-grid"></div>
+    <button class="btn" type="submit">Save Resource Skills</button>
+  </form>
+</dialog>
 <dialog id="rnd-project-dialog">
   <form method="dialog">
     <div class="dialog-head"><h2>Project Tabs</h2><button class="btn" value="cancel" type="submit">Close</button></div>
@@ -13191,6 +13208,26 @@ __SETTINGS_TOP_NAV__
     pill.className = "pill";
     pill.textContent = text;
     parent.appendChild(pill);
+    return pill;
+  }
+  function skillById(){
+    return new Map(((state && state.skills) || []).map((skill) => [skill.skill_id, skill]));
+  }
+  function teamById(){
+    return new Map(((state && state.teams) || []).map((team) => [team.team_id, team]));
+  }
+  function inheritedSkillIdsForResource(resource){
+    const team = teamById().get(resource && resource.team_id);
+    return new Set((team && team.skill_ids) || []);
+  }
+  function effectiveSkillIdsForResource(resource){
+    const ids = new Set(resource && resource.skill_ids ? resource.skill_ids : []);
+    inheritedSkillIdsForResource(resource).forEach((skillId) => ids.add(skillId));
+    return ids;
+  }
+  function skillName(skillId){
+    const skill = skillById().get(skillId);
+    return (skill && skill.name) || skillId;
   }
   function projectTabsForDisplay(){
     const tabs = (state && state.project_tabs) || [];
@@ -13631,7 +13668,7 @@ __SETTINGS_TOP_NAV__
     const list = byId("rnd-resource-list");
     reset(list);
     const resources = (state && state.resources) || [];
-    const teamById = new Map(((state && state.teams) || []).map((team) => [team.team_id, team]));
+    const teamsById = teamById();
     if (!resources.length){
       const empty = document.createElement("div");
       empty.className = "row muted";
@@ -13640,7 +13677,7 @@ __SETTINGS_TOP_NAV__
       return;
     }
     resources.forEach((resource) => {
-      const team = teamById.get(resource.team_id) || {};
+      const team = teamsById.get(resource.team_id) || {};
       const row = document.createElement("div");
       row.className = "row resource-row" + (team.team_id ? " team-colored" : "");
       row.draggable = true;
@@ -13666,8 +13703,19 @@ __SETTINGS_TOP_NAV__
       const meta = document.createElement("div");
       meta.className = "row-meta";
       addPill(meta, team.name || "No team");
-      addPill(meta, (resource.skill_ids || []).length + " skills");
-      row.appendChild(title); row.appendChild(meta);
+      const effectiveSkillCount = effectiveSkillIdsForResource(resource).size;
+      const directSkillCount = (resource.skill_ids || []).length;
+      const skillPill = addPill(meta, effectiveSkillCount + " skills");
+      skillPill.title = effectiveSkillCount + " total: " + ((team.skill_ids || []).length) + " team, " + directSkillCount + " resource-specific";
+      const actions = document.createElement("div");
+      actions.className = "resource-row-actions";
+      const skillsBtn = document.createElement("button");
+      skillsBtn.type = "button";
+      skillsBtn.className = "btn";
+      skillsBtn.textContent = "Edit skills";
+      skillsBtn.addEventListener("click", () => openResourceSkills(resource));
+      actions.appendChild(skillsBtn);
+      row.appendChild(title); row.appendChild(meta); row.appendChild(actions);
       list.appendChild(row);
     });
   }
@@ -13966,6 +14014,48 @@ __SETTINGS_TOP_NAV__
       span.textContent = resource.display_name || resource.resource_id;
       label.appendChild(input); label.appendChild(span); resourceBox.appendChild(label);
     });
+  }
+  function renderResourceSkillDialog(resource){
+    const inheritedHost = byId("rnd-resource-inherited-skills");
+    const directHost = byId("rnd-resource-direct-skills");
+    reset(inheritedHost); reset(directHost);
+    const inheritedIds = inheritedSkillIdsForResource(resource);
+    const directIds = new Set((resource && resource.skill_ids) || []);
+    if (!inheritedIds.size){
+      const empty = document.createElement("span");
+      empty.className = "muted";
+      empty.textContent = "No team skills inherited.";
+      inheritedHost.appendChild(empty);
+    } else {
+      Array.from(inheritedIds).forEach((skillId) => addPill(inheritedHost, skillName(skillId)));
+    }
+    const selectableSkills = ((state && state.skills) || []).filter((skill) => !inheritedIds.has(skill.skill_id));
+    if (!selectableSkills.length){
+      const empty = document.createElement("span");
+      empty.className = "muted";
+      empty.textContent = "All available skills already come from the team.";
+      directHost.appendChild(empty);
+      return;
+    }
+    selectableSkills.forEach((skill) => {
+      const label = document.createElement("label");
+      label.className = "check-row";
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      input.value = skill.skill_id;
+      input.checked = directIds.has(skill.skill_id);
+      const span = document.createElement("span");
+      span.textContent = skill.name;
+      label.appendChild(input);
+      label.appendChild(span);
+      directHost.appendChild(label);
+    });
+  }
+  function openResourceSkills(resource){
+    byId("rnd-resource-skill-id").value = resource.resource_id || "";
+    byId("rnd-resource-skill-title").textContent = "Skills - " + (resource.display_name || resource.resource_id);
+    renderResourceSkillDialog(resource);
+    byId("rnd-resource-skill-dialog").showModal();
   }
   function renderTeamList(){
     const list = byId("rnd-team-list");
@@ -14309,6 +14399,23 @@ __SETTINGS_TOP_NAV__
       renderTeamList();
       renderAll();
       setStatus(teamId ? "Team updated." : "Team created.", "ok");
+    } catch (err) {
+      setStatus(err.message || String(err), "err");
+    }
+  });
+  byId("rnd-resource-skill-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const resourceId = byId("rnd-resource-skill-id").value.trim();
+    const skillIds = Array.from(byId("rnd-resource-direct-skills").querySelectorAll("input:checked")).map((input) => input.value);
+    try {
+      const body = await apiJson(API + "/resources/" + encodeURIComponent(resourceId) + "/skills", {
+        method:"PUT",
+        body:JSON.stringify({ skill_ids:skillIds })
+      });
+      state = body.state || {};
+      byId("rnd-resource-skill-dialog").close();
+      renderAll();
+      setStatus("Resource skills updated.", "ok");
     } catch (err) {
       setStatus(err.message || String(err), "err");
     }
@@ -44636,6 +44743,22 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             state = delete_rnd_muscle_team(
                 capacity_paths["rnd_muscle_db_path"],
                 _to_text(team_id),
+                capacity_paths["db_path"],
+            )
+            return jsonify(_rnd_muscle_state_payload(state))
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+
+    @app.route("/api/rnd-muscle-utilization/resources/<path:resource_id>/skills", methods=["PUT"])
+    def rnd_muscle_utilization_save_resource_skills_api(resource_id: str):
+        try:
+            payload = request.get_json(silent=True) or {}
+            payload["resource_id"] = _to_text(resource_id)
+            state = save_rnd_muscle_resource_skills(
+                capacity_paths["rnd_muscle_db_path"],
+                payload,
                 capacity_paths["db_path"],
             )
             return jsonify(_rnd_muscle_state_payload(state))

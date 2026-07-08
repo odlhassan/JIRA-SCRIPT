@@ -217,6 +217,13 @@ class RndMuscleUtilizationApiTests(unittest.TestCase):
         self.assertIn(RND_MUSCLE_UTILIZATION_VIEW_ROUTE, html)
         self.assertIn('id="rnd-staged-resources"', html)
         self.assertIn('id="rnd-cluster-stage"', html)
+        self.assertIn('id="rnd-resource-skill-dialog"', html)
+        self.assertIn('id="rnd-resource-direct-skills"', html)
+        self.assertIn('openResourceSkills', html)
+        self.assertIn('effectiveSkillIdsForResource', html)
+        self.assertIn('inheritedSkillIdsForResource', html)
+        self.assertIn('"/resources/" + encodeURIComponent(resourceId) + "/skills"', html)
+        self.assertIn('Edit skills', html)
         self.assertIn('[hidden] { display:none !important; }', html)
         self.assertIn('<h3>Mapped epics</h3>', html)
         self.assertIn('<h3>Mapped resources</h3>', html)
@@ -324,6 +331,22 @@ class RndMuscleUtilizationApiTests(unittest.TestCase):
             team = next(item for item in team_body["state"]["teams"] if item["name"] == "Platform")
             self.assertEqual(team["skill_ids"], [skill["skill_id"]])
             self.assertEqual(team["resource_ids"], [resource["resource_id"]])
+
+            direct_skill_resp = client.post("/api/rnd-muscle-utilization/skills", json={"name": "Architecture"})
+            self.assertEqual(direct_skill_resp.status_code, 201)
+            direct_skill = next(item for item in direct_skill_resp.get_json()["state"]["skills"] if item["name"] == "Architecture")
+
+            resource_skill_resp = client.put(
+                f"/api/rnd-muscle-utilization/resources/{resource['resource_id']}/skills",
+                json={"skill_ids": [direct_skill["skill_id"]]},
+            )
+            self.assertEqual(resource_skill_resp.status_code, 200)
+            resource_after = next(
+                item
+                for item in resource_skill_resp.get_json()["state"]["resources"]
+                if item["resource_id"] == resource["resource_id"]
+            )
+            self.assertEqual(resource_after["skill_ids"], [direct_skill["skill_id"]])
 
     def test_invalid_team_payload_returns_400_instead_of_silent_halt(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:

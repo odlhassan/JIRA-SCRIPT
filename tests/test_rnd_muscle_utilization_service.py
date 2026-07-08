@@ -17,6 +17,7 @@ from rnd_muscle_utilization_service import (
     reorder_rnd_muscle_planner_epics,
     reorder_rnd_muscle_epic_resources,
     save_rnd_muscle_epic_resource_mapping,
+    save_rnd_muscle_resource_skills,
     save_rnd_muscle_team,
 )
 
@@ -182,6 +183,55 @@ class RndMuscleUtilizationServiceTests(unittest.TestCase):
 
             self.assertEqual(updated_team.skill_ids, (skill_id,))
             self.assertEqual(updated_team.resource_ids, ("res-1",))
+
+    def test_resource_skill_mapping_persists_direct_skills(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            db_path = Path(td) / "settings.db"
+            _create_epics_management_table(db_path)
+            state = add_rnd_muscle_skill(db_path, "Data Platform")
+            skill_id = next(skill.skill_id for skill in state.skills if skill.name == "Data Platform")
+            conn = sqlite3.connect(db_path)
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO rnd_muscle_resources(resource_id, display_name, initials, email, team_id)
+                    VALUES('res-1', 'Hassan Malik', 'HM', 'hassan@example.com', '')
+                    """
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            updated = save_rnd_muscle_resource_skills(
+                db_path,
+                {"resource_id": "res-1", "skill_ids": [skill_id]},
+            )
+            resource = next(item for item in updated.resources if item.resource_id == "res-1")
+
+        self.assertEqual(resource.skill_ids, (skill_id,))
+
+    def test_resource_skill_mapping_rejects_unknown_resource_and_skill(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            db_path = Path(td) / "settings.db"
+            _create_epics_management_table(db_path)
+            state = load_rnd_muscle_utilization_page_state(db_path)
+            skill_id = state.skills[0].skill_id
+            conn = sqlite3.connect(db_path)
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO rnd_muscle_resources(resource_id, display_name, initials, email, team_id)
+                    VALUES('res-1', 'Hassan Malik', 'HM', 'hassan@example.com', '')
+                    """
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            with self.assertRaisesRegex(ValueError, "Resource not found"):
+                save_rnd_muscle_resource_skills(db_path, {"resource_id": "missing", "skill_ids": [skill_id]})
+            with self.assertRaisesRegex(ValueError, "Unknown skill_id"):
+                save_rnd_muscle_resource_skills(db_path, {"resource_id": "res-1", "skill_ids": ["missing"]})
 
     def test_resource_mapping_rejects_unknown_ids_and_negative_hours(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:

@@ -126,6 +126,11 @@ class RndMuscleTeamPayload(TypedDict, total=False):
     resource_ids: list[str]
 
 
+class RndMuscleResourceSkillPayload(TypedDict, total=False):
+    resource_id: str
+    skill_ids: list[str]
+
+
 class RndMusclePlannerMappingPayload(TypedDict, total=False):
     epic_key: str
     resource_ids: list[str]
