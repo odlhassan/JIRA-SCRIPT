@@ -3,12 +3,14 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from openpyxl import Workbook
 
 from report_server import (
     RND_MUSCLE_UTILIZATION_SETTINGS_ROUTE,
     RND_MUSCLE_UTILIZATION_VIEW_ROUTE,
+    _resolve_capacity_runtime_paths,
     create_report_server_app,
 )
 
@@ -105,6 +107,39 @@ def _seed_epics_and_resources(root: Path) -> None:
 
 
 class RndMuscleUtilizationApiTests(unittest.TestCase):
+    def test_rnd_db_path_strips_accidental_quotes(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            expected = root / "runtime" / "rnd.db"
+
+            with patch.dict("os.environ", {"JIRA_RND_MUSCLE_UTILIZATION_DB_PATH": f'"{expected}"'}, clear=False):
+                resolved = _resolve_capacity_runtime_paths(root)["rnd_muscle_db_path"]
+
+            self.assertEqual(resolved, expected)
+            self.assertTrue(expected.parent.exists())
+
+    def test_rnd_db_path_falls_back_to_home_data_when_default_is_not_writable(self):
+        with (
+            tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as app_td,
+            tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as home_td,
+        ):
+            app_root = Path(app_td)
+            home_root = Path(home_td)
+            (app_root / "rnd_muscle_utilization.db").mkdir()
+
+            with patch.dict(
+                "os.environ",
+                {
+                    "HOME": str(home_root),
+                    "JIRA_RND_MUSCLE_UTILIZATION_DB_PATH": "",
+                },
+                clear=False,
+            ):
+                resolved = _resolve_capacity_runtime_paths(app_root)["rnd_muscle_db_path"]
+
+            self.assertEqual(resolved, home_root / "data" / "rnd_muscle_utilization.db")
+            self.assertTrue(resolved.parent.exists())
+
     def test_feature_owned_tables_are_created_in_rnd_database_not_capacity_database(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             root = Path(td)

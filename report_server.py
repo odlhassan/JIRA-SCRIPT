@@ -1614,7 +1614,7 @@ def _resolve_capacity_runtime_paths(base_dir: Path) -> dict[str, Path]:
     rnd_muscle_db_path = Path(rnd_muscle_db_name)
     if not rnd_muscle_db_path.is_absolute():
         rnd_muscle_db_path = base_dir / rnd_muscle_db_path
-    rnd_muscle_db_path.parent.mkdir(parents=True, exist_ok=True)
+    rnd_muscle_db_path = _resolve_writable_rnd_muscle_db_path(rnd_muscle_db_path)
 
     return {
         "db_path": db_path,
@@ -1646,6 +1646,32 @@ def _resolve_writable_capacity_db_path(candidate: Path) -> Path:
         fallback.parent.mkdir(parents=True, exist_ok=True)
         print(
             f"Warning: capacity DB path {candidate} is not writable ({exc}); using {fallback}",
+            file=sys.stderr,
+        )
+        return fallback
+
+
+def _resolve_writable_rnd_muscle_db_path(candidate: Path) -> Path:
+    candidate = Path(candidate)
+    try:
+        if candidate.exists() and candidate.is_dir():
+            raise OSError(f"RnD Muscle DB path is a directory: {candidate}")
+        candidate.parent.mkdir(parents=True, exist_ok=True)
+        probe = candidate.parent / f".{candidate.name}.write-probe"
+        with open(probe, "a", encoding="utf-8"):
+            pass
+        probe.unlink(missing_ok=True)
+        return candidate
+    except OSError as exc:
+        azure_home = os.getenv("HOME", "")
+        fallback = (
+            Path(azure_home) / "data" / DEFAULT_RND_MUSCLE_UTILIZATION_DB
+            if azure_home
+            else Path(DEFAULT_RND_MUSCLE_UTILIZATION_DB)
+        )
+        fallback.parent.mkdir(parents=True, exist_ok=True)
+        print(
+            f"Warning: RnD Muscle DB path {candidate} is not writable ({exc}); using {fallback}",
             file=sys.stderr,
         )
         return fallback
