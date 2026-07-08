@@ -85,13 +85,7 @@ def _seed_epics_and_resources(root: Path) -> None:
                 ("row-2", "FF-200", "FF", "Fintech Fuel", "Second Epic", "Low"),
             ],
         )
-        capacity_conn.commit()
-    finally:
-        capacity_conn.close()
-
-    rnd_conn = sqlite3.connect(root / "rnd_muscle_utilization.db")
-    try:
-        rnd_conn.executemany(
+        capacity_conn.executemany(
             """
             INSERT INTO rnd_muscle_resources(resource_id, display_name, initials, email, team_id)
             VALUES(?,?,?,?,?)
@@ -101,9 +95,9 @@ def _seed_epics_and_resources(root: Path) -> None:
                 ("res-2", "Ayesha Khan", "AK", "ayesha@example.com", ""),
             ],
         )
-        rnd_conn.commit()
+        capacity_conn.commit()
     finally:
-        rnd_conn.close()
+        capacity_conn.close()
 
 
 class RndMuscleUtilizationApiTests(unittest.TestCase):
@@ -118,7 +112,16 @@ class RndMuscleUtilizationApiTests(unittest.TestCase):
             self.assertEqual(resolved, expected)
             self.assertTrue(expected.parent.exists())
 
-    def test_rnd_db_path_falls_back_to_home_data_when_default_is_not_writable(self):
+    def test_rnd_db_defaults_to_capacity_db_when_not_explicitly_configured(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+
+            with patch.dict("os.environ", {"JIRA_RND_MUSCLE_UTILIZATION_DB_PATH": ""}, clear=False):
+                resolved = _resolve_capacity_runtime_paths(root)
+
+            self.assertEqual(resolved["rnd_muscle_db_path"], resolved["db_path"])
+
+    def test_explicit_rnd_db_path_falls_back_to_home_data_when_not_writable(self):
         with (
             tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as app_td,
             tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as home_td,
@@ -131,7 +134,7 @@ class RndMuscleUtilizationApiTests(unittest.TestCase):
                 "os.environ",
                 {
                     "HOME": str(home_root),
-                    "JIRA_RND_MUSCLE_UTILIZATION_DB_PATH": "",
+                    "JIRA_RND_MUSCLE_UTILIZATION_DB_PATH": "rnd_muscle_utilization.db",
                 },
                 clear=False,
             ):
@@ -140,7 +143,7 @@ class RndMuscleUtilizationApiTests(unittest.TestCase):
             self.assertEqual(resolved, home_root / "data" / "rnd_muscle_utilization.db")
             self.assertTrue(resolved.parent.exists())
 
-    def test_feature_owned_tables_are_created_in_rnd_database_not_capacity_database(self):
+    def test_default_rnd_tables_are_created_in_existing_capacity_database(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             root = Path(td)
             app = _build_app(root)
@@ -150,13 +153,6 @@ class RndMuscleUtilizationApiTests(unittest.TestCase):
 
             import sqlite3
 
-            with sqlite3.connect(root / "rnd_muscle_utilization.db") as rnd_conn:
-                rnd_tables = {
-                    row[0]
-                    for row in rnd_conn.execute(
-                        "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'rnd_muscle_%'"
-                    ).fetchall()
-                }
             with sqlite3.connect(root / "assignee_hours_capacity.db") as capacity_conn:
                 capacity_tables = {
                     row[0]
@@ -166,8 +162,7 @@ class RndMuscleUtilizationApiTests(unittest.TestCase):
                 }
 
         self.assertEqual(resp.status_code, 200)
-        self.assertIn("rnd_muscle_resources", rnd_tables)
-        self.assertEqual(capacity_tables, set())
+        self.assertIn("rnd_muscle_resources", capacity_tables)
 
     def test_page_controls_are_wired_to_client_handlers(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:

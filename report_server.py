@@ -1594,10 +1594,7 @@ def _resolve_capacity_runtime_paths(base_dir: Path) -> dict[str, Path]:
             DEFAULT_SUMMARY_OUTPUT_XLSX,
         )
     )
-    rnd_muscle_db_name = _normalize_runtime_path_setting(
-        os.getenv("JIRA_RND_MUSCLE_UTILIZATION_DB_PATH", DEFAULT_RND_MUSCLE_UTILIZATION_DB),
-        DEFAULT_RND_MUSCLE_UTILIZATION_DB,
-    )
+    raw_rnd_muscle_db_name = os.getenv("JIRA_RND_MUSCLE_UTILIZATION_DB_PATH")
 
     db_path = Path(db_name)
     if not db_path.is_absolute():
@@ -1612,10 +1609,17 @@ def _resolve_capacity_runtime_paths(base_dir: Path) -> dict[str, Path]:
     if not summary_path.is_absolute():
         summary_path = base_dir / summary_path
 
-    rnd_muscle_db_path = Path(rnd_muscle_db_name)
-    if not rnd_muscle_db_path.is_absolute():
-        rnd_muscle_db_path = base_dir / rnd_muscle_db_path
-    rnd_muscle_db_path = _resolve_writable_rnd_muscle_db_path(rnd_muscle_db_path)
+    if raw_rnd_muscle_db_name is None or not _normalize_runtime_path_setting(raw_rnd_muscle_db_name, ""):
+        rnd_muscle_db_path = db_path
+    else:
+        rnd_muscle_db_name = _normalize_runtime_path_setting(
+            raw_rnd_muscle_db_name,
+            DEFAULT_RND_MUSCLE_UTILIZATION_DB,
+        )
+        rnd_muscle_db_path = Path(rnd_muscle_db_name)
+        if not rnd_muscle_db_path.is_absolute():
+            rnd_muscle_db_path = base_dir / rnd_muscle_db_path
+        rnd_muscle_db_path = _resolve_writable_rnd_muscle_db_path(rnd_muscle_db_path)
 
     return {
         "db_path": db_path,

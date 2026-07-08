@@ -56,9 +56,9 @@ The page loads live state through `/api/rnd-muscle-utilization`, supports skill/
 | `rnd_muscle_backlog` | epic_key PK, sort_order | Epics queued for later planning, rendered under the mapping section with Remove and Add to planner actions. |
 | `rnd_muscle_epic_resource_mappings` | (epic_key, resource_id) PK, allocation_hours, sort_order | Resource-to-epic assignment with optional hour allocation and selected-epic resource card order. |
 
-All `rnd_muscle_*` tables are stored in the dedicated feature DB (`rnd_muscle_utilization.db`) and auto-created by `_init_rnd_muscle_utilization_db`. The path can be overridden with `JIRA_RND_MUSCLE_UTILIZATION_DB_PATH`.
+By default, `rnd_muscle_*` tables stay in the existing capacity DB (`assignee_hours_capacity.db`) so existing production team/resource configuration remains available. If `JIRA_RND_MUSCLE_UTILIZATION_DB_PATH` is explicitly configured, those tables are stored in that dedicated feature DB (`rnd_muscle_utilization.db` is the conventional filename) and auto-created by `_init_rnd_muscle_utilization_db`.
 
-The feature still reads Epics Planner and canonical Jira data from the source capacity DB (`assignee_hours_capacity.db` by default, or `JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH` when configured). `report_server.py` passes both paths to the service: the RnD DB for feature-owned writes and the capacity DB for read-only source lookups.
+The feature reads Epics Planner and canonical Jira data from the source capacity DB (`assignee_hours_capacity.db` by default, or `JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH` when configured). When a separate RnD DB is explicitly configured, `report_server.py` passes both paths to the service: the RnD DB for feature-owned writes and the capacity DB for read-only source lookups.
 
 ## Data Flow
 
