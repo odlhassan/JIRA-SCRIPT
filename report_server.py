@@ -12868,6 +12868,27 @@ def _rnd_muscle_utilization_settings_html(planner_only: bool = False) -> str:
     .cluster-bubble.dim { opacity:.35; transform:scale(.86); }
     .cluster-legend { position:absolute; left:10px; bottom:10px; right:10px; display:flex; gap:8px; flex-wrap:wrap; background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); padding:8px; }
     .cluster-legend-item { display:flex; align-items:center; gap:5px; color:var(--muted); }
+    .insights-planner { display:grid; grid-template-columns:minmax(0,1.5fr) minmax(230px,.7fr); gap:8px; min-height:100%; }
+    .insights-main, .insights-detail { border:1px solid var(--border); border-radius:var(--radius); background:var(--panel-2); padding:8px; min-height:0; overflow:auto; }
+    .insights-head { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px; }
+    .insights-head h3, .insights-detail h3 { margin:0; font-size:12px; }
+    .insights-mode-tabs { display:flex; gap:5px; flex-wrap:wrap; }
+    .insights-mode-tabs .tab { min-height:25px; padding:4px 7px; font-size:11px; }
+    .insights-summary { display:grid; grid-template-columns:repeat(3,minmax(90px,1fr)); gap:6px; margin-bottom:8px; }
+    .insights-stat { border:1px solid var(--border); border-radius:var(--radius); background:var(--row); padding:7px; }
+    .insights-stat strong { display:block; font-size:15px; margin-bottom:2px; }
+    .treemap { display:flex; align-content:stretch; align-items:stretch; flex-wrap:wrap; gap:8px; min-height:310px; }
+    .treemap-tile { border:1px solid var(--tile-border,var(--border)); border-radius:var(--radius); background:linear-gradient(145deg,var(--tile-bg,var(--row)),var(--row)); color:var(--tile-text,var(--text)); min-width:145px; min-height:112px; padding:9px; display:flex; flex-direction:column; justify-content:space-between; gap:8px; cursor:pointer; box-shadow:inset 0 0 0 1px rgba(255,255,255,.05); transition:transform .14s ease, box-shadow .14s ease, border-color .14s ease; }
+    .treemap-tile:hover, .treemap-tile.active { transform:translateY(-1px); border-color:var(--accent-strong); box-shadow:0 8px 20px rgba(0,0,0,.18), inset 0 0 0 1px var(--accent-soft); }
+    .treemap-title { font-weight:800; font-size:12px; line-height:1.25; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+    .treemap-value { font-size:22px; font-weight:800; line-height:1; }
+    .treemap-sub { color:var(--muted); font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .treemap-chips { display:flex; flex-wrap:wrap; gap:4px; }
+    .treemap-chip { border:1px solid var(--border); border-radius:999px; padding:2px 5px; background:rgba(255,255,255,.12); font-size:10px; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .insights-detail-list { display:grid; gap:6px; margin-top:8px; }
+    .insights-detail-row { border:1px solid var(--border); border-radius:var(--radius); background:var(--row); padding:7px; display:grid; gap:4px; }
+    .insights-detail-row strong { font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .insights-detail-row span { color:var(--muted); font-size:11px; }
     .backlog { border:1px solid var(--border); border-radius:var(--radius); background:var(--panel-2); padding:8px; overflow:auto; min-height:120px; }
     .backlog h3 { margin:0 0 8px 0; font-size:12px; }
     table { width:100%; border-collapse:collapse; font-size:11px; }
@@ -12966,6 +12987,7 @@ __SETTINGS_TOP_NAV__
         <div class="toolbar">
           <button id="rnd-view-hierarchical" class="tab active" type="button">Hierarchical</button>
           <button id="rnd-view-cluster" class="tab" type="button">Cluster</button>
+          <button id="rnd-view-insights" class="tab" type="button">Insights</button>
         </div>
         <div class="canvas">
           <div id="rnd-hierarchical-planner" class="hierarchical-planner">
@@ -12991,6 +13013,25 @@ __SETTINGS_TOP_NAV__
               <svg id="rnd-cluster-lines" class="cluster-lines" aria-hidden="true"></svg>
               <div id="rnd-cluster-bubbles"></div>
               <div id="rnd-cluster-legend" class="cluster-legend"></div>
+            </div>
+          </div>
+          <div id="rnd-insights-planner" class="insights-planner" hidden>
+            <div class="insights-main">
+              <div class="insights-head">
+                <h3>Mapped epic insights</h3>
+                <div class="insights-mode-tabs" aria-label="Insight view">
+                  <button class="tab active" type="button" data-insight-mode="project">Projects</button>
+                  <button class="tab" type="button" data-insight-mode="skill">Skills</button>
+                  <button class="tab" type="button" data-insight-mode="team">Teams</button>
+                  <button class="tab" type="button" data-insight-mode="epic">Epics</button>
+                </div>
+              </div>
+              <div id="rnd-insights-summary" class="insights-summary"></div>
+              <div id="rnd-insights-treemap" class="treemap"></div>
+            </div>
+            <div class="insights-detail">
+              <h3 id="rnd-insights-detail-title">Select a tile</h3>
+              <div id="rnd-insights-detail-list" class="insights-detail-list"></div>
             </div>
           </div>
         </div>
@@ -13083,6 +13124,8 @@ __SETTINGS_TOP_NAV__
   let plannerEpicDragKey = "";
   let currentView = "hierarchical";
   let selectedClusterEpicKey = "";
+  let insightMode = "project";
+  let selectedInsightKey = "";
   const PROJECT_SELECTION_KEY = "rnd-muscle-selected-projects-v1";
   let selectedProjectKeys = new Set(JSON.parse(localStorage.getItem(PROJECT_SELECTION_KEY) || "[]"));
   const THEME_MODE_KEY = "rnd-muscle-theme-mode-v1";
@@ -13824,16 +13867,200 @@ __SETTINGS_TOP_NAV__
       lineHost.appendChild(line);
     });
   }
+  function insightWeight(mapping){
+    const hours = Number(mapping && mapping.allocation_hours || 0);
+    return Number.isFinite(hours) && hours > 0 ? hours : 1;
+  }
+  function insightValueLabel(value){
+    return Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 1 }) + " units";
+  }
+  function insightColorFor(kind, key, teamByIdMap){
+    if (kind === "team" && teamByIdMap.has(key)) return teamByIdMap.get(key).color_hex || "#2563eb";
+    const palette = TEAM_COLOR_PALETTE.length ? TEAM_COLOR_PALETTE : ["#2563eb", "#16a34a", "#f97316", "#9333ea"];
+    let hash = 0;
+    String(key || "").split("").forEach((ch) => { hash = ((hash * 31) + ch.charCodeAt(0)) >>> 0; });
+    return palette[hash % palette.length];
+  }
+  function buildInsightModel(){
+    syncPlannerSelection();
+    const canvasKeySet = new Set(canvasEpicKeys);
+    const resources = (state && state.resources) || [];
+    const teams = (state && state.teams) || [];
+    const skills = (state && state.skills) || [];
+    const mappings = (((state && state.planner) || {}).mappings || []).filter((m) => canvasKeySet.has(m.epic_key));
+    const resourceById = new Map(resources.map((r) => [r.resource_id, r]));
+    const teamByIdMap = new Map(teams.map((t) => [t.team_id, t]));
+    const skillById = new Map(skills.map((s) => [s.skill_id, s]));
+    const groups = new Map();
+    const ensure = (key, label, kind) => {
+      if (!groups.has(key)) groups.set(key, { key, label, kind, value:0, epicKeys:new Set(), resourceIds:new Set(), teams:new Map(), skills:new Map(), rows:[] });
+      return groups.get(key);
+    };
+    const addToGroup = (group, mapping, resource, epic, team, skill) => {
+      const value = insightWeight(mapping);
+      group.value += value;
+      group.epicKeys.add(mapping.epic_key);
+      if (resource) group.resourceIds.add(resource.resource_id);
+      if (team) group.teams.set(team.team_id || "__none__", team.name || "No team");
+      if (skill) group.skills.set(skill.skill_id || "__unskilled__", skill.name || "Unskilled");
+      group.rows.push({
+        epicKey: mapping.epic_key,
+        epicLabel: mapping.epic_key + (epic && epic.epic_name ? " - " + epic.epic_name : ""),
+        projectLabel: (epic && (epic.project_name || epic.project_key)) || "No project",
+        resourceLabel: (resource && resource.display_name) || mapping.resource_id,
+        teamLabel: (team && team.name) || "No team",
+        skillLabel: (skill && skill.name) || "Unskilled",
+        value
+      });
+    };
+    mappings.forEach((mapping) => {
+      const epic = findEpic(mapping.epic_key);
+      const resource = resourceById.get(mapping.resource_id);
+      const team = teamByIdMap.get(resource && resource.team_id) || null;
+      const resourceSkillIds = ((resource && resource.skill_ids) || []);
+      const skillItems = resourceSkillIds.length
+        ? resourceSkillIds.map((skillId) => skillById.get(skillId)).filter(Boolean)
+        : [{ skill_id:"__unskilled__", name:"Unskilled" }];
+      if (insightMode === "project"){
+        addToGroup(ensure((epic && epic.project_key) || "__none__", (epic && (epic.project_name || epic.project_key)) || "No project", "project"), mapping, resource, epic, team, null);
+      } else if (insightMode === "team"){
+        addToGroup(ensure((team && team.team_id) || "__none__", (team && team.name) || "No team", "team"), mapping, resource, epic, team, null);
+      } else if (insightMode === "epic"){
+        addToGroup(ensure(mapping.epic_key, mapping.epic_key + (epic && epic.epic_name ? " - " + epic.epic_name : ""), "epic"), mapping, resource, epic, team, null);
+      } else {
+        skillItems.forEach((skill) => addToGroup(ensure(skill.skill_id, skill.name, "skill"), mapping, resource, epic, team, skill));
+      }
+    });
+    return {
+      groups: Array.from(groups.values()).sort((a, b) => b.value - a.value || a.label.localeCompare(b.label)),
+      mappingCount: mappings.length,
+      resourceCount: new Set(mappings.map((m) => m.resource_id)).size,
+      epicCount: new Set(mappings.map((m) => m.epic_key)).size,
+      teamByIdMap
+    };
+  }
+  function renderInsightsDetail(group){
+    const title = byId("rnd-insights-detail-title");
+    const list = byId("rnd-insights-detail-list");
+    if (!title || !list) return;
+    reset(list);
+    if (!group){
+      title.textContent = "Select a tile";
+      const empty = document.createElement("div");
+      empty.className = "muted";
+      empty.textContent = "Choose a treemap tile to inspect the mapped epics, resources, skills, and teams behind it.";
+      list.appendChild(empty);
+      return;
+    }
+    title.textContent = group.label;
+    group.rows.slice(0, 18).forEach((row) => {
+      const item = document.createElement("div");
+      item.className = "insights-detail-row";
+      const head = document.createElement("strong");
+      head.textContent = row.epicLabel;
+      const meta = document.createElement("span");
+      meta.textContent = row.resourceLabel + " | " + row.skillLabel + " | " + row.teamLabel + " | " + insightValueLabel(row.value);
+      item.appendChild(head);
+      item.appendChild(meta);
+      list.appendChild(item);
+    });
+  }
+  function renderInsightsView(){
+    const summary = byId("rnd-insights-summary");
+    const host = byId("rnd-insights-treemap");
+    if (!summary || !host) return;
+    reset(summary);
+    reset(host);
+    Array.from(document.querySelectorAll("[data-insight-mode]")).forEach((btn) => {
+      btn.classList.toggle("active", btn.dataset.insightMode === insightMode);
+    });
+    const model = buildInsightModel();
+    [
+      ["Mapped epics", model.epicCount],
+      ["Mapped resources", model.resourceCount],
+      ["Assignments", model.mappingCount]
+    ].forEach(([label, value]) => {
+      const stat = document.createElement("div");
+      stat.className = "insights-stat";
+      const strong = document.createElement("strong");
+      strong.textContent = String(value);
+      const span = document.createElement("span");
+      span.textContent = label;
+      stat.appendChild(strong);
+      stat.appendChild(span);
+      summary.appendChild(stat);
+    });
+    if (!model.groups.length){
+      selectedInsightKey = "";
+      const empty = document.createElement("div");
+      empty.className = "view-empty";
+      empty.textContent = "No mapped epic allocations yet.";
+      host.appendChild(empty);
+      renderInsightsDetail(null);
+      return;
+    }
+    if (!selectedInsightKey || !model.groups.some((group) => group.key === selectedInsightKey)) selectedInsightKey = model.groups[0].key;
+    const maxValue = Math.max.apply(null, model.groups.map((group) => group.value));
+    model.groups.forEach((group) => {
+      const color = insightColorFor(group.kind, group.key, model.teamByIdMap);
+      const tone = teamTone(color);
+      const tile = document.createElement("button");
+      tile.type = "button";
+      tile.className = "treemap-tile" + (group.key === selectedInsightKey ? " active" : "");
+      tile.style.flex = Math.max(1, Math.round((group.value / maxValue) * 12)) + " 1 " + (145 + Math.min(260, group.value * 16)) + "px";
+      tile.style.setProperty("--tile-bg", tone.soft);
+      tile.style.setProperty("--tile-border", tone.border);
+      tile.style.setProperty("--tile-text", tone.text);
+      tile.addEventListener("click", () => {
+        selectedInsightKey = group.key;
+        renderInsightsView();
+      });
+      const title = document.createElement("div");
+      title.className = "treemap-title";
+      title.textContent = group.label;
+      const value = document.createElement("div");
+      value.className = "treemap-value";
+      value.textContent = Number(group.value || 0).toLocaleString(undefined, { maximumFractionDigits: 1 });
+      const sub = document.createElement("div");
+      sub.className = "treemap-sub";
+      sub.textContent = group.epicKeys.size + " epics | " + group.resourceIds.size + " resources";
+      const chips = document.createElement("div");
+      chips.className = "treemap-chips";
+      const chipLabels = insightMode === "skill" ? Array.from(group.teams.values()) : Array.from(group.skills.values());
+      chipLabels.slice(0, 4).forEach((label) => {
+        const chip = document.createElement("span");
+        chip.className = "treemap-chip";
+        chip.textContent = label;
+        chips.appendChild(chip);
+      });
+      tile.appendChild(title);
+      tile.appendChild(value);
+      tile.appendChild(sub);
+      tile.appendChild(chips);
+      host.appendChild(tile);
+    });
+    renderInsightsDetail(model.groups.find((group) => group.key === selectedInsightKey));
+  }
   function renderViewContent(){
     const hierarchical = byId("rnd-hierarchical-planner");
     const cluster = byId("rnd-cluster-planner");
+    const insights = byId("rnd-insights-planner");
     if (currentView === "hierarchical"){
       if (hierarchical) hierarchical.hidden = false;
       if (cluster) cluster.hidden = true;
+      if (insights) insights.hidden = true;
+      return;
+    }
+    if (currentView === "insights"){
+      if (hierarchical) hierarchical.hidden = true;
+      if (cluster) cluster.hidden = true;
+      if (insights) insights.hidden = false;
+      renderInsightsView();
       return;
     }
     if (hierarchical) hierarchical.hidden = true;
     if (cluster) cluster.hidden = false;
+    if (insights) insights.hidden = true;
     renderClusterView();
     return;
     const host = byId("rnd-view-content");
@@ -14501,6 +14728,7 @@ __SETTINGS_TOP_NAV__
     currentView = "hierarchical";
     byId("rnd-view-hierarchical").classList.add("active");
     byId("rnd-view-cluster").classList.remove("active");
+    byId("rnd-view-insights").classList.remove("active");
     renderViewContent();
     setStatus("Hierarchical view: epics with their mapped resources.", "ok");
   });
@@ -14508,8 +14736,24 @@ __SETTINGS_TOP_NAV__
     currentView = "cluster";
     byId("rnd-view-cluster").classList.add("active");
     byId("rnd-view-hierarchical").classList.remove("active");
+    byId("rnd-view-insights").classList.remove("active");
     renderViewContent();
     setStatus("Cluster view: resource bubbles align to the selected epic and show team-color connections.", "ok");
+  });
+  byId("rnd-view-insights").addEventListener("click", () => {
+    currentView = "insights";
+    byId("rnd-view-insights").classList.add("active");
+    byId("rnd-view-hierarchical").classList.remove("active");
+    byId("rnd-view-cluster").classList.remove("active");
+    renderViewContent();
+    setStatus("Insights view: mapped allocations summarized by project, skill, team, and epic.", "ok");
+  });
+  Array.from(document.querySelectorAll("[data-insight-mode]")).forEach((btn) => {
+    btn.addEventListener("click", () => {
+      insightMode = btn.dataset.insightMode || "project";
+      selectedInsightKey = "";
+      renderInsightsView();
+    });
   });
   loadThemePreference();
   loadState();
