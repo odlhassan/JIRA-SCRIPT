@@ -12810,10 +12810,24 @@ def _rnd_muscle_utilization_settings_html(planner_only: bool = False) -> str:
     .resource-row.team-colored { border-color:var(--resource-team-border); background:linear-gradient(90deg,var(--resource-team-soft),var(--row)); color:var(--resource-team-text); box-shadow:inset 3px 0 0 var(--resource-team-accent); }
     .resource-row.team-colored .row-meta { color:var(--resource-team-muted); }
     .resource-row.team-colored .pill { border-color:var(--resource-team-border); background:var(--resource-team-pill); color:var(--resource-team-text); }
+    .resource-search-row { margin-bottom:8px; }
+    .resource-team-group { display:grid; gap:6px; align-content:start; }
+    .resource-team-group + .resource-team-group { margin-top:10px; padding-top:8px; border-top:1px solid var(--border); }
+    .resource-team-head { display:flex; align-items:center; justify-content:space-between; gap:8px; color:var(--muted); font-size:11px; font-weight:800; text-transform:uppercase; }
+    .resource-team-head span:first-child { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .row-title { font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .resource-title-line { display:flex; align-items:center; gap:6px; min-width:0; }
     .resource-title-line .row-title { min-width:0; }
     .resource-resigned-chip { display:inline-flex; align-items:center; min-height:16px; padding:1px 5px; border:1px solid #fed7aa; border-radius:999px; background:#ffedd5; color:#9a3412; font-size:10px; font-weight:800; line-height:1; text-transform:uppercase; flex:none; }
+    .resource-booked-wrap { position:relative; display:inline-flex; flex:none; }
+    .resource-booked-chip { display:inline-flex; align-items:center; min-height:18px; padding:2px 7px; border:1px solid var(--accent-strong); border-radius:999px; background:var(--accent-soft); color:var(--accent-strong); font-size:10px; font-weight:800; line-height:1; cursor:pointer; }
+    .resource-booked-chip:hover, .resource-booked-chip[aria-expanded="true"] { background:var(--accent); color:var(--accent-text); }
+    .resource-booked-menu { position:absolute; z-index:12; top:calc(100% + 4px); right:0; width:min(280px,calc(100vw - 32px)); max-height:220px; overflow:auto; border:1px solid var(--border); border-radius:var(--radius); background:var(--panel); box-shadow:0 12px 28px rgba(0,0,0,.24); padding:6px; display:grid; gap:5px; }
+    .resource-booked-menu[hidden] { display:none !important; }
+    .resource-booked-menu-title { color:var(--muted); font-size:10px; font-weight:800; text-transform:uppercase; padding:2px 3px; }
+    .resource-booked-menu-item { display:grid; gap:2px; padding:6px; border:1px solid var(--border); border-radius:var(--radius); background:var(--row); }
+    .resource-booked-menu-item strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:11px; }
+    .resource-booked-menu-item span { color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:10px; }
     .row-meta { display:flex; gap:6px; flex-wrap:wrap; margin-top:4px; color:var(--muted); font-size:11px; }
     .pill { border:1px solid var(--border); border-radius:999px; padding:2px 6px; background:var(--panel-2); }
     .tab { border:1px solid var(--border); background:var(--control); color:var(--text); border-radius:var(--radius); padding:5px 8px; font-size:12px; cursor:pointer; }
@@ -12909,6 +12923,13 @@ def _rnd_muscle_utilization_settings_html(planner_only: bool = False) -> str:
     .check-row span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .resource-row-actions { display:flex; gap:6px; margin-top:6px; }
     .resource-row-actions .btn { min-height:24px; padding:3px 7px; font-size:11px; }
+    .save-progress { margin:-2px 0 8px; border:1px solid var(--border); border-radius:var(--radius); background:var(--panel); padding:7px 8px; box-shadow:0 6px 18px rgba(0,0,0,.14); }
+    .save-progress[hidden] { display:none !important; }
+    .save-progress-head { display:flex; align-items:center; justify-content:space-between; gap:8px; color:var(--muted); font-size:11px; font-weight:800; text-transform:uppercase; }
+    .save-progress-track { height:7px; margin-top:6px; border:1px solid var(--border); border-radius:999px; background:var(--control); overflow:hidden; }
+    .save-progress-bar { width:0%; height:100%; border-radius:999px; background:linear-gradient(90deg,var(--accent),var(--accent-strong)); transition:width .18s ease; }
+    .save-progress.err .save-progress-bar { background:#dc2626; }
+    .save-progress.ok .save-progress-bar { background:#16a34a; }
     .team-color-grid { display:grid; grid-template-columns:repeat(5,minmax(42px,1fr)); gap:7px; border:1px solid var(--border); border-radius:var(--radius); padding:8px; background:var(--panel-2); }
     .team-color-btn { position:relative; height:34px; border:1px solid var(--border); border-radius:6px; background:var(--team-color-soft); cursor:pointer; box-shadow:inset 0 -10px 18px rgba(255,255,255,.18); }
     .team-color-btn::before { content:""; position:absolute; left:7px; right:7px; top:8px; height:6px; border-radius:999px; background:var(--team-color); }
@@ -12955,6 +12976,10 @@ __SETTINGS_TOP_NAV__
     </div>
   </div>
   <div id="rnd-status" class="status" role="status" aria-live="polite"></div>
+  <div id="rnd-save-progress" class="save-progress" role="progressbar" aria-label="Planner save progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" hidden>
+    <div class="save-progress-head"><span id="rnd-save-progress-label">Waiting to save</span><span id="rnd-save-progress-percent">0%</span></div>
+    <div class="save-progress-track"><div id="rnd-save-progress-bar" class="save-progress-bar"></div></div>
+  </div>
   <section class="stats" aria-label="Quick stats">
     <div class="stat"><strong id="rnd-stat-associated">0</strong><span>Resources associated with epics</span></div>
     <div class="stat"><strong id="rnd-stat-unassociated">0</strong><span>Resources not yet associated</span></div>
@@ -13047,6 +13072,9 @@ __SETTINGS_TOP_NAV__
     <aside class="panel catalog-panel">
       <div class="panel-head"><h2>Resources</h2><span class="muted">Team color source</span></div>
       <div class="panel-body">
+        <div class="resource-search-row">
+          <input id="rnd-resource-search" class="input" type="search" placeholder="Search resources" autocomplete="off" aria-label="Search resources">
+        </div>
         <div id="rnd-resource-list" class="resource-list">
           <div class="row">
             <div class="row-title">Loading resources...</div>
@@ -13126,6 +13154,14 @@ __SETTINGS_TOP_NAV__
   let selectedClusterEpicKey = "";
   let insightMode = "project";
   let selectedInsightKey = "";
+  let resourceSearchText = "";
+  const SAVE_IDLE_DELAY_MS = 2500;
+  let saveTimer = null;
+  let saveProgressTimer = null;
+  let saveProgressValue = 0;
+  let saveInFlight = false;
+  let localMutationVersion = 0;
+  const pendingSaves = new Map();
   const PROJECT_SELECTION_KEY = "rnd-muscle-selected-projects-v1";
   let selectedProjectKeys = new Set(JSON.parse(localStorage.getItem(PROJECT_SELECTION_KEY) || "[]"));
   const THEME_MODE_KEY = "rnd-muscle-theme-mode-v1";
@@ -13235,6 +13271,43 @@ __SETTINGS_TOP_NAV__
     el.textContent = message || "";
     el.className = "status" + (kind ? " " + kind : "");
   }
+  function setSaveProgress(value, label, kind){
+    const shell = byId("rnd-save-progress");
+    const bar = byId("rnd-save-progress-bar");
+    const labelEl = byId("rnd-save-progress-label");
+    const percentEl = byId("rnd-save-progress-percent");
+    if (!shell || !bar || !labelEl || !percentEl) return;
+    const pct = Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
+    shell.hidden = false;
+    shell.className = "save-progress" + (kind ? " " + kind : "");
+    shell.setAttribute("aria-valuenow", String(pct));
+    labelEl.textContent = label || "Saving";
+    percentEl.textContent = pct + "%";
+    bar.style.width = pct + "%";
+    saveProgressValue = pct;
+  }
+  function stopSaveProgressTimer(){
+    if (saveProgressTimer) window.clearInterval(saveProgressTimer);
+    saveProgressTimer = null;
+  }
+  function startSaveProgress(label, ceiling, step){
+    stopSaveProgressTimer();
+    setSaveProgress(saveProgressValue || 8, label, "");
+    saveProgressTimer = window.setInterval(() => {
+      if (saveProgressValue < ceiling) {
+        setSaveProgress(Math.min(ceiling, saveProgressValue + step), label, "");
+      }
+    }, 180);
+  }
+  function finishSaveProgress(label, kind){
+    stopSaveProgressTimer();
+    setSaveProgress(kind === "err" ? 100 : 100, label, kind || "ok");
+    window.setTimeout(() => {
+      const shell = byId("rnd-save-progress");
+      if (shell && !saveInFlight && pendingSaves.size === 0) shell.hidden = true;
+      saveProgressValue = 0;
+    }, kind === "err" ? 1600 : 800);
+  }
   async function apiJson(url, options){
     const resp = await fetch(url, Object.assign({ headers: { "Content-Type": "application/json" } }, options || {}));
     const body = await resp.json().catch(() => ({}));
@@ -13260,6 +13333,35 @@ __SETTINGS_TOP_NAV__
   function teamById(){
     return new Map(((state && state.teams) || []).map((team) => [team.team_id, team]));
   }
+  function epicBookedDetailsForResource(resourceId){
+    const epicByKey = new Map(((state && state.epics) || []).map((epic) => [epic.epic_key, epic]));
+    const seen = new Set();
+    return (((state && state.planner) || {}).mappings || [])
+      .filter((mapping) => mapping.resource_id === resourceId)
+      .filter((mapping) => {
+        if (seen.has(mapping.epic_key)) return false;
+        seen.add(mapping.epic_key);
+        return true;
+      })
+      .map((mapping) => {
+        const epic = epicByKey.get(mapping.epic_key) || {};
+        return {
+          epic_key: mapping.epic_key,
+          epic_name: epic.epic_name || "",
+          project_key: epic.project_key || "",
+          allocation_hours: Number(mapping.allocation_hours || 0)
+        };
+      });
+  }
+  function hideOpenBookedMenus(exceptMenu){
+    document.querySelectorAll(".resource-booked-menu").forEach((menu) => {
+      if (menu !== exceptMenu) {
+        menu.hidden = true;
+        const btn = menu.parentElement ? menu.parentElement.querySelector(".resource-booked-chip") : null;
+        if (btn) btn.setAttribute("aria-expanded", "false");
+      }
+    });
+  }
   function projectTabsForDisplay(){
     const tabs = (state && state.project_tabs) || [];
     const projectTabs = tabs.filter((tab) => !tab.is_all_tab);
@@ -13278,6 +13380,16 @@ __SETTINGS_TOP_NAV__
     byId("rnd-stat-unassociated").textContent = Number(stats.resources_not_yet_associated || 0);
     byId("rnd-stat-high-unassigned").textContent = Number(stats.high_priority_unassigned_epic_count || 0);
     byId("rnd-stat-active-epics").textContent = Number(stats.selected_project_epic_count || 0);
+  }
+  function refreshOptimisticStats(){
+    if (!state || !state.quick_stats || !state.planner) return;
+    const mappings = state.planner.mappings || [];
+    const resourceIds = new Set(((state.resources || []).map((resource) => resource.resource_id)));
+    const mappedResourceIds = new Set(mappings.map((mapping) => mapping.resource_id).filter((resourceId) => resourceIds.has(resourceId)));
+    const mappedEpicKeys = new Set(mappings.map((mapping) => mapping.epic_key));
+    state.quick_stats.resources_associated_with_epics = mappedResourceIds.size;
+    state.quick_stats.resources_not_yet_associated = Math.max(0, resourceIds.size - mappedResourceIds.size);
+    state.quick_stats.high_priority_unassigned_epic_count = ((state.epics || []).filter((epic) => Number(epic.priority || 0) === 1 && !mappedEpicKeys.has(epic.epic_key))).length;
   }
   function plannerEpicKeys(){
     return (((state && state.planner) || {}).planner_epics || []).map((item) => item.epic_key);
@@ -13413,10 +13525,75 @@ __SETTINGS_TOP_NAV__
   function findEpic(epicKey){
     return ((state && state.epics) || []).find((e) => e.epic_key === epicKey) || null;
   }
+  function plannerItemForEpic(epicKey, sortOrder){
+    const existing = (((state && state.planner) || {}).planner_epics || []).find((item) => item.epic_key === epicKey);
+    if (existing) return Object.assign({}, existing, { sort_order: sortOrder });
+    const epic = findEpic(epicKey) || {};
+    return Object.assign({}, epic, { epic_key: epicKey, sort_order: sortOrder });
+  }
+  function setPlannerEpicOrder(epicKeys){
+    if (!state || !state.planner) return;
+    state.planner.planner_epics = epicKeys.map((epicKey, idx) => plannerItemForEpic(epicKey, idx));
+    canvasEpicKeys = epicKeys.slice();
+  }
+  function setEpicResourceMappings(epicKey, resourceIds, allocation){
+    if (!state || !state.planner) return;
+    const allocationByResource = allocation || {};
+    const existingByResource = new Map(((state.planner.mappings || []).filter((mapping) => mapping.epic_key === epicKey)).map((mapping) => [mapping.resource_id, mapping]));
+    const nextForEpic = resourceIds.map((resourceId, idx) => {
+      const existing = existingByResource.get(resourceId) || {};
+      return Object.assign({}, existing, {
+        epic_key: epicKey,
+        resource_id: resourceId,
+        allocation_hours: Number(allocationByResource[resourceId] !== undefined ? allocationByResource[resourceId] : existing.allocation_hours || 0),
+        sort_order: idx
+      });
+    });
+    state.planner.mappings = (state.planner.mappings || []).filter((mapping) => mapping.epic_key !== epicKey).concat(nextForEpic);
+    refreshOptimisticStats();
+  }
+  function scheduleDeferredSave(key, request, successMessage){
+    pendingSaves.set(key, { request, successMessage });
+    setStatus("Changes applied. Saving will start after a short pause.", "");
+    startSaveProgress("Waiting for edits to pause", 68, 4);
+    if (saveTimer) window.clearTimeout(saveTimer);
+    saveTimer = window.setTimeout(flushDeferredSaves, SAVE_IDLE_DELAY_MS);
+  }
+  async function flushDeferredSaves(){
+    if (saveInFlight) return;
+    if (!pendingSaves.size) return;
+    saveInFlight = true;
+    const batchVersion = localMutationVersion;
+    const batch = Array.from(pendingSaves.values());
+    pendingSaves.clear();
+    startSaveProgress("Saving planner changes", 96, 3);
+    let latestBody = null;
+    try {
+      for (const item of batch) {
+        latestBody = await apiJson(item.request.url, item.request.options);
+      }
+      if (latestBody && latestBody.state && localMutationVersion === batchVersion && pendingSaves.size === 0) {
+        state = latestBody.state || {};
+        renderAll();
+      }
+      finishSaveProgress("Saved to database", "ok");
+      setStatus((batch[batch.length - 1] && batch[batch.length - 1].successMessage) || "Planner changes saved.", "ok");
+    } catch (err) {
+      finishSaveProgress("Save failed", "err");
+      setStatus("Auto-save failed: " + (err.message || String(err)), "err");
+      loadState();
+    } finally {
+      saveInFlight = false;
+      if (pendingSaves.size) {
+        if (saveTimer) window.clearTimeout(saveTimer);
+        saveTimer = window.setTimeout(flushDeferredSaves, SAVE_IDLE_DELAY_MS);
+      }
+    }
+  }
   function persistCanvas(){
     canvasEpicKeys = plannerEpicKeys();
   }
-  async function addToCanvas(epicKey){
+  function addToCanvas(epicKey){
     if (!epicKey) return;
     if (canvasEpicKeys.includes(epicKey)){
       selectedCanvasEpicKey = epicKey;
@@ -13424,16 +13601,15 @@ __SETTINGS_TOP_NAV__
       setStatus(epicKey + " is already in the planner.", "");
       return;
     }
-    try {
-      setStatus("Adding epic to planner...", "");
-      const body = await apiJson(API + "/planner", { method:"POST", body:JSON.stringify({ epic_key: epicKey }) });
-      state = body.state || {};
-      selectedCanvasEpicKey = epicKey;
-      renderAll();
-      setStatus("Added " + epicKey + " to mapped epics. Drop resources into mapped resources to connect them.", "ok");
-    } catch (err) {
-      setStatus(err.message || String(err), "err");
-    }
+    localMutationVersion += 1;
+    setPlannerEpicOrder(plannerEpicKeys().concat([epicKey]));
+    selectedCanvasEpicKey = epicKey;
+    renderAll();
+    scheduleDeferredSave(
+      "planner-add:" + epicKey,
+      { url:API + "/planner", options:{ method:"POST", body:JSON.stringify({ epic_key: epicKey }) } },
+      "Added " + epicKey + " to mapped epics."
+    );
   }
   async function removeFromCanvas(epicKey){
     try {
@@ -13698,16 +13874,51 @@ __SETTINGS_TOP_NAV__
   function renderResources(){
     const list = byId("rnd-resource-list");
     reset(list);
-    const resources = (state && state.resources) || [];
     const teamsById = teamById();
+    hideOpenBookedMenus();
+    const query = resourceSearchText.trim().toLowerCase();
+    const allResources = (state && state.resources) || [];
+    const resources = allResources.filter((resource) => {
+      if (resource.resigned) return false;
+      if (!query) return true;
+      const team = teamsById.get(resource.team_id) || {};
+      const haystack = [
+        resource.display_name || "",
+        resource.email || "",
+        resource.initials || "",
+        team.name || "No team"
+      ].join(" ").toLowerCase();
+      return haystack.includes(query);
+    });
     if (!resources.length){
       const empty = document.createElement("div");
       empty.className = "row muted";
-      empty.textContent = "No resources configured yet.";
+      empty.textContent = allResources.length ? "No active resources match this search." : "No resources configured yet.";
       list.appendChild(empty);
       return;
     }
+    const groups = new Map();
     resources.forEach((resource) => {
+      const team = teamsById.get(resource.team_id) || {};
+      const groupKey = team.team_id || "__no_team__";
+      if (!groups.has(groupKey)) {
+        groups.set(groupKey, { name: team.name || "No team", resources: [] });
+      }
+      groups.get(groupKey).resources.push(resource);
+    });
+    Array.from(groups.values()).forEach((group) => {
+      const groupEl = document.createElement("section");
+      groupEl.className = "resource-team-group";
+      const groupHead = document.createElement("div");
+      groupHead.className = "resource-team-head";
+      const groupName = document.createElement("span");
+      groupName.textContent = group.name;
+      const groupCount = document.createElement("span");
+      groupCount.textContent = group.resources.length + " active";
+      groupHead.appendChild(groupName);
+      groupHead.appendChild(groupCount);
+      groupEl.appendChild(groupHead);
+      group.resources.forEach((resource) => {
       const team = teamsById.get(resource.team_id) || {};
       const row = document.createElement("div");
       row.className = "row resource-row" + (team.team_id ? " team-colored" : "");
@@ -13734,12 +13945,46 @@ __SETTINGS_TOP_NAV__
       title.className = "row-title";
       title.textContent = resource.display_name || resource.resource_id;
       titleLine.appendChild(title);
-      if (resource.resigned) {
-        const resignedChip = document.createElement("span");
-        resignedChip.className = "resource-resigned-chip";
-        resignedChip.textContent = "Resigned";
-        resignedChip.title = resource.resignation_date ? "Resigned: " + resource.resignation_date : "Marked resigned";
-        titleLine.appendChild(resignedChip);
+      const bookedEpics = epicBookedDetailsForResource(resource.resource_id);
+      if (bookedEpics.length) {
+        const bookedWrap = document.createElement("span");
+        bookedWrap.className = "resource-booked-wrap";
+        const bookedChip = document.createElement("button");
+        bookedChip.type = "button";
+        bookedChip.className = "resource-booked-chip";
+        bookedChip.textContent = "booked on " + bookedEpics.length + " " + (bookedEpics.length === 1 ? "epic" : "epics");
+        bookedChip.setAttribute("aria-haspopup", "menu");
+        bookedChip.setAttribute("aria-expanded", "false");
+        const menu = document.createElement("div");
+        menu.className = "resource-booked-menu";
+        menu.hidden = true;
+        menu.setAttribute("role", "menu");
+        const menuTitle = document.createElement("div");
+        menuTitle.className = "resource-booked-menu-title";
+        menuTitle.textContent = "Booked epics";
+        menu.appendChild(menuTitle);
+        bookedEpics.forEach((epic) => {
+          const item = document.createElement("div");
+          item.className = "resource-booked-menu-item";
+          item.setAttribute("role", "menuitem");
+          const itemTitle = document.createElement("strong");
+          itemTitle.textContent = epic.epic_key + (epic.epic_name ? " - " + epic.epic_name : "");
+          const itemMeta = document.createElement("span");
+          itemMeta.textContent = (epic.project_key || "No project") + " | " + Number(epic.allocation_hours || 0).toFixed(1) + "h allocated";
+          item.appendChild(itemTitle);
+          item.appendChild(itemMeta);
+          menu.appendChild(item);
+        });
+        bookedChip.addEventListener("click", (event) => {
+          event.stopPropagation();
+          const shouldOpen = menu.hidden;
+          hideOpenBookedMenus(menu);
+          menu.hidden = !shouldOpen;
+          bookedChip.setAttribute("aria-expanded", String(shouldOpen));
+        });
+        bookedWrap.appendChild(bookedChip);
+        bookedWrap.appendChild(menu);
+        titleLine.appendChild(bookedWrap);
       }
       const meta = document.createElement("div");
       meta.className = "row-meta";
@@ -13756,7 +14001,9 @@ __SETTINGS_TOP_NAV__
       skillsBtn.addEventListener("click", () => openResourceSkills(resource));
       actions.appendChild(skillsBtn);
       row.appendChild(titleLine); row.appendChild(meta); row.appendChild(actions);
-      list.appendChild(row);
+      groupEl.appendChild(row);
+      });
+      list.appendChild(groupEl);
     });
   }
   function renderClusterView(){
@@ -14447,17 +14694,19 @@ __SETTINGS_TOP_NAV__
       setStatus(err.message || String(err), "err");
     }
   }
-  async function addBacklogToPlanner(epicKey){
-    try {
-      setStatus("Adding " + epicKey + " to planner...", "");
-      const body = await apiJson(API + "/planner", { method:"POST", body:JSON.stringify({ epic_key: epicKey }) });
-      state = body.state || {};
-      selectedCanvasEpicKey = epicKey;
-      renderAll();
-      setStatus("Added " + epicKey + " to mapped epics.", "ok");
-    } catch (err) {
-      setStatus(err.message || String(err), "err");
+  function addBacklogToPlanner(epicKey){
+    if (!epicKey) return;
+    if (!plannerEpicKeys().includes(epicKey)) {
+      localMutationVersion += 1;
+      setPlannerEpicOrder(plannerEpicKeys().concat([epicKey]));
     }
+    selectedCanvasEpicKey = epicKey;
+    renderAll();
+    scheduleDeferredSave(
+      "planner-add:" + epicKey,
+      { url:API + "/planner", options:{ method:"POST", body:JSON.stringify({ epic_key: epicKey }) } },
+      "Added " + epicKey + " to mapped epics."
+    );
   }
   function epicKeyFromDrag(event){
     return event.dataTransfer.getData("application/x-rnd-epic") || event.dataTransfer.getData("application/x-rnd-planner-epic");
@@ -14465,43 +14714,35 @@ __SETTINGS_TOP_NAV__
   function dragHasEpic(event){
     return event.dataTransfer.types.includes("application/x-rnd-epic") || event.dataTransfer.types.includes("application/x-rnd-planner-epic");
   }
-  async function unmapResourceFromEpic(epicKey, resourceId){
+  function unmapResourceFromEpic(epicKey, resourceId){
     const remaining = (((state && state.planner) || {}).mappings || [])
       .filter((m) => m.epic_key === epicKey && m.resource_id !== resourceId);
     const resourceIds = remaining.map((m) => m.resource_id);
     const allocation = {};
     remaining.forEach((m) => { allocation[m.resource_id] = Number(m.allocation_hours || 0); });
-    try {
-      setStatus("Unmapping resource...", "");
-      const body = await apiJson(API + "/mappings", {
-        method:"POST",
-        body:JSON.stringify({ epic_key:epicKey, resource_ids:resourceIds, allocation_hours_by_resource_id:allocation })
-      });
-      state = body.state || {};
-      renderAll();
-      setStatus("Resource unmapped from " + epicKey + ".", "ok");
-    } catch (err) {
-      setStatus(err.message || String(err), "err");
-    }
+    localMutationVersion += 1;
+    setEpicResourceMappings(epicKey, resourceIds, allocation);
+    renderAll();
+    scheduleDeferredSave(
+      "mapping:" + epicKey,
+      { url:API + "/mappings", options:{ method:"POST", body:JSON.stringify({ epic_key:epicKey, resource_ids:resourceIds, allocation_hours_by_resource_id:allocation }) } },
+      "Resource unmapped from " + epicKey + "."
+    );
   }
-  async function mapResourceToEpic(epicKey, resourceId){
+  function mapResourceToEpic(epicKey, resourceId){
     const existing = (((state && state.planner) || {}).mappings || []).filter((mapping) => mapping.epic_key === epicKey);
     const resourceIds = Array.from(new Set(existing.map((mapping) => mapping.resource_id).concat([resourceId])));
     const allocation = {};
     existing.forEach((mapping) => { allocation[mapping.resource_id] = Number(mapping.allocation_hours || 0); });
     if (!(resourceId in allocation)) allocation[resourceId] = 0;
-    try {
-      setStatus("Mapping resource to epic...", "");
-      const body = await apiJson(API + "/mappings", {
-        method:"POST",
-        body:JSON.stringify({ epic_key:epicKey, resource_ids:resourceIds, allocation_hours_by_resource_id:allocation })
-      });
-      state = body.state || {};
-      renderAll();
-      setStatus("Resource mapped to " + epicKey + ".", "ok");
-    } catch (err) {
-      setStatus(err.message || String(err), "err");
-    }
+    localMutationVersion += 1;
+    setEpicResourceMappings(epicKey, resourceIds, allocation);
+    renderAll();
+    scheduleDeferredSave(
+      "mapping:" + epicKey,
+      { url:API + "/mappings", options:{ method:"POST", body:JSON.stringify({ epic_key:epicKey, resource_ids:resourceIds, allocation_hours_by_resource_id:allocation }) } },
+      "Resource mapped to " + epicKey + "."
+    );
   }
   function moveItemBefore(items, draggedId, targetId){
     const next = items.filter((item) => item !== draggedId);
@@ -14526,36 +14767,34 @@ __SETTINGS_TOP_NAV__
     next.splice(insertIndex, 0, draggedId);
     return next;
   }
-  async function reorderPlannerEpic(draggedEpicKey, targetEpicKey, position){
+  function reorderPlannerEpic(draggedEpicKey, targetEpicKey, position){
     if (!draggedEpicKey) return;
     const epicKeys = movePlannerEpicToPosition(plannerEpicKeys(), draggedEpicKey, targetEpicKey, position || "before");
     if (epicKeys.join("\\u0001") === plannerEpicKeys().join("\\u0001")) return;
-    try {
-      setStatus("Saving planner epic order...", "");
-      const body = await apiJson(API + "/planner/reorder", { method:"POST", body:JSON.stringify({ epic_keys:epicKeys }) });
-      state = body.state || {};
-      selectedCanvasEpicKey = draggedEpicKey;
-      renderAll();
-      setStatus("Planner epic order saved.", "ok");
-    } catch (err) {
-      setStatus(err.message || String(err), "err");
-    }
+    localMutationVersion += 1;
+    setPlannerEpicOrder(epicKeys);
+    selectedCanvasEpicKey = draggedEpicKey;
+    renderAll();
+    scheduleDeferredSave(
+      "planner-order",
+      { url:API + "/planner/reorder", options:{ method:"POST", body:JSON.stringify({ epic_keys:epicKeys }) } },
+      "Planner epic order saved."
+    );
   }
-  async function reorderSelectedEpicResource(draggedResourceId, targetResourceId){
+  function reorderSelectedEpicResource(draggedResourceId, targetResourceId){
     if (!selectedCanvasEpicKey || !draggedResourceId || !targetResourceId || draggedResourceId === targetResourceId) return;
-    const resourceIds = moveItemBefore(mappedResourcesFor(selectedCanvasEpicKey).map((m) => m.resource_id), draggedResourceId, targetResourceId);
-    try {
-      setStatus("Saving resource order...", "");
-      const body = await apiJson(API + "/mappings/reorder", {
-        method:"POST",
-        body:JSON.stringify({ epic_key:selectedCanvasEpicKey, resource_ids:resourceIds })
-      });
-      state = body.state || {};
-      renderAll();
-      setStatus("Resource order saved for " + selectedCanvasEpicKey + ".", "ok");
-    } catch (err) {
-      setStatus(err.message || String(err), "err");
-    }
+    const existing = mappedResourcesFor(selectedCanvasEpicKey);
+    const resourceIds = moveItemBefore(existing.map((m) => m.resource_id), draggedResourceId, targetResourceId);
+    const allocation = {};
+    existing.forEach((mapping) => { allocation[mapping.resource_id] = Number(mapping.allocation_hours || 0); });
+    localMutationVersion += 1;
+    setEpicResourceMappings(selectedCanvasEpicKey, resourceIds, allocation);
+    renderAll();
+    scheduleDeferredSave(
+      "mapping:" + selectedCanvasEpicKey,
+      { url:API + "/mappings", options:{ method:"POST", body:JSON.stringify({ epic_key:selectedCanvasEpicKey, resource_ids:resourceIds, allocation_hours_by_resource_id:allocation }) } },
+      "Resource order saved for " + selectedCanvasEpicKey + "."
+    );
   }
   byId("rnd-create-team-btn").addEventListener("click", openCreateTeam);
   byId("rnd-theme-mode").addEventListener("change", saveThemePreference);
@@ -14651,6 +14890,11 @@ __SETTINGS_TOP_NAV__
     window.clearTimeout(searchTimer);
     searchTimer = window.setTimeout(loadState, 220);
   });
+  byId("rnd-resource-search").addEventListener("input", (event) => {
+    resourceSearchText = event.target.value || "";
+    renderResources();
+  });
+  document.addEventListener("click", () => hideOpenBookedMenus());
   byId("rnd-project-filter").addEventListener("change", loadState);
   byId("rnd-epic-drop-zone").addEventListener("dragover", (event) => {
     if (event.dataTransfer.types.includes("application/x-rnd-planner-epic")) {
