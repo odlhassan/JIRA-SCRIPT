@@ -66,7 +66,7 @@
       font-size: 12px;
       font-weight: 650;
     }
-    input[type="date"], button, .project-picker-toggle {
+    input[type="date"], select, button, .project-picker-toggle {
       min-height: 34px;
       border: 1px solid var(--line);
       border-radius: 6px;
@@ -74,7 +74,7 @@
       color: var(--ink);
       font: inherit;
     }
-    input[type="date"] { padding: 6px 9px; }
+    input[type="date"], select { padding: 6px 9px; }
     button {
       display: inline-flex;
       align-items: center;
@@ -480,6 +480,35 @@
       gap: 8px;
       margin-bottom: 10px;
     }
+    .drawer-alert {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 10px 12px;
+      margin: 10px 0 12px;
+      border: 1px solid #fbbf24;
+      border-left: 4px solid var(--orange);
+      border-radius: 8px;
+      background: #fffbeb;
+      color: #78350f;
+      font-size: 12px;
+      line-height: 1.35;
+    }
+    .drawer-alert .material-symbols-outlined {
+      flex: 0 0 auto;
+      font-size: 18px;
+      margin-top: 1px;
+    }
+    .drawer-alert strong {
+      display: block;
+      margin-bottom: 2px;
+      color: #713f12;
+      font-size: 13px;
+    }
+    .drawer-alert-list {
+      margin-top: 4px;
+      color: #92400e;
+    }
     .scorecard {
       border: 1px solid var(--line);
       border-radius: 8px;
@@ -628,6 +657,12 @@
       </label>
       <button id="apply-project-filters" class="primary"><span class="material-symbols-outlined">work</span>Apply projects</button>
       <button id="clear-project-filters"><span class="material-symbols-outlined">filter_alt_off</span>Clear projects</button>
+      <label>Capacity basis
+        <select id="capacity-basis">
+          <option value="assignee_capacity_after_leaves">Assignee capacity after leaves</option>
+          <option value="standard_workdays">Standard workdays</option>
+        </select>
+      </label>
     </section>
 
     <section class="exec-summary" id="exec-summary">
@@ -745,7 +780,8 @@
       execPickerMenu: document.getElementById("epic-picker-menu"),
       execTrendCards: document.getElementById("exec-trend-cards"),
       execTableWrap: document.getElementById("exec-table-wrap"),
-      execLeadershipChart: document.getElementById("exec-leadership-chart")
+      execLeadershipChart: document.getElementById("exec-leadership-chart"),
+      capacityBasis: document.getElementById("capacity-basis")
     };
     const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
     const n = (v) => Number(v || 0);
@@ -832,6 +868,9 @@
       const data = await resp.json();
       if (!resp.ok || !data.ok) throw new Error(data.error || "Failed to load Epic Explorer");
       state.payload = data;
+      if (data.ui_settings && data.ui_settings.capacity_basis && els.capacityBasis.value !== data.ui_settings.capacity_basis) {
+        els.capacityBasis.value = data.ui_settings.capacity_basis;
+      }
       renderAll();
     }
     function renderProjectMenu(){
@@ -859,7 +898,8 @@
       ];
       els.summary.innerHTML = cells.map(([label, value]) => `<div class="metric"><div class="label">${esc(label)}</div><div class="value">${esc(value)}</div></div>`).join("");
       const dateScope = state.payload?.date_filter_active ? `${dateText(state.payload.from_date)} to ${dateText(state.payload.to_date)}` : "No date filter";
-      els.meta.textContent = `${state.payload?.canonical_run_id || ""} | ${dateScope} | ${state.payload?.rows?.length || 0} epics`;
+      const basis = state.payload?.ui_settings?.capacity_basis === "standard_workdays" ? "standard workdays" : "assignee capacity after leaves";
+      els.meta.textContent = `${state.payload?.canonical_run_id || ""} | ${dateScope} | ${state.payload?.rows?.length || 0} epics | ${basis}`;
     }
     function statusPill(value){
       const text = String(value || "-");
@@ -1416,6 +1456,37 @@
           {key:"schedule_position", label:"Position", format:positionText}
         ])}</div>`;
     }
+    function unassignedPlanningStoriesAlert(rows){
+      const items = Array.isArray(rows) ? rows.filter((item) => n(item.original_estimate_hours) > 0) : [];
+      if (!items.length) return "";
+      const preview = items.slice(0, 4).map((item) => `${item.issue_key || "Story"} ${hours(item.original_estimate_hours)}`).join(", ");
+      const remainder = items.length > 4 ? `, +${items.length - 4} more` : "";
+      return `<div class="drawer-alert" role="alert">
+        <span class="material-symbols-outlined" aria-hidden="true">warning</span>
+        <div>
+          <strong>Planning alert: ${esc(items.length)} estimated ${items.length === 1 ? "story has" : "stories have"} no assignee</strong>
+          <div>Capacity-based monthly allocation cannot use assignee capacity for these stories until an assignee is set.</div>
+          <div class="drawer-alert-list">${esc(preview + remainder)}</div>
+        </div>
+      </div>`;
+    }
+    function storyPlanningAllocationTable(rows){
+      const items = Array.isArray(rows) ? rows : [];
+      if (!items.length) return '<div class="muted">No story planning allocation data</div>';
+      const mapped = items.map((item) => ({
+        ...item,
+        monthly_split: (item.monthly_hours || []).map((m) => `${m.month}: ${hours(m.hours)}`).join(", ") || "-"
+      }));
+      return simpleTable(mapped, [
+        {key:"issue_key", label:"Story"},
+        {key:"summary", label:"Name"},
+        {key:"assignee", label:"Assignee"},
+        {key:"original_estimate_hours", label:"Estimate", num:true, format:hours},
+        {key:"start_date", label:"Start"},
+        {key:"due_date", label:"Due"},
+        {key:"monthly_split", label:"Monthly Split"}
+      ]);
+    }
     function renderDrawer(row){
       if (!row) return;
       const a = row.analytics || {};
@@ -1424,9 +1495,10 @@
         <div><h2 class="drawer-title">${esc(row.epic_name || row.epic_key)}</h2><div class="meta-line">${esc(row.epic_key)} | ${esc(row.project_name || row.project_key)} | ${statusPill(row.epic_status)}</div></div>
         <button class="icon-btn" id="drawer-close" title="Close"><span class="material-symbols-outlined">close</span></button>
       </div>
+      ${unassignedPlanningStoriesAlert(a.unassigned_planning_stories || [])}
       <div class="chart-grid">
         <section class="chart-panel wide"><h3 class="chart-title">Schedule Variance KPIs</h3>${scheduleVarianceSection(row)}</section>
-        <section class="chart-panel wide"><div class="chart-head"><h3 class="chart-title">Month Plan vs Actual</h3><div class="chart-toggle"><button data-plan-mode="bar" class="${state.planActualMode === "bar" ? "active" : ""}">Bar</button><button data-plan-mode="line" class="${state.planActualMode === "line" ? "active" : ""}">Line</button></div></div>${planActualChart(a.monthly_plan_actual || [])}</section>
+        <section class="chart-panel wide"><div class="chart-head"><h3 class="chart-title">Month Plan vs Actual</h3><div class="chart-toggle"><button data-plan-mode="bar" class="${state.planActualMode === "bar" ? "active" : ""}">Bar</button><button data-plan-mode="line" class="${state.planActualMode === "line" ? "active" : ""}">Line</button></div></div>${planActualChart(a.monthly_plan_actual || [])}<div class="detail-box"><h4 class="chart-title">Story Plan Allocation</h4>${storyPlanningAllocationTable(a.story_planning_distribution || [])}</div></section>
         <section class="chart-panel wide"><h3 class="chart-title">Daily Work And Leave Gantt</h3>${ganttChart(a.gantt || {})}</section>
         <section class="chart-panel wide"><h3 class="chart-title">Task Completion</h3>${taskCompletionSection(a.completion_stats || [])}</section>
         <section class="chart-panel"><h3 class="chart-title">Resource Effort</h3>${metricBars(a.resource_effort || [], "assignee", "hours", "pct")}</section>
@@ -1531,6 +1603,17 @@
       loadReport().catch((err) => { els.tbody.innerHTML = `<tr><td colspan="18">${esc(err.message)}</td></tr>`; });
     });
     els.csv.addEventListener("click", downloadCsv);
+    els.capacityBasis.addEventListener("change", async () => {
+      const value = els.capacityBasis.value || "assignee_capacity_after_leaves";
+      const resp = await fetch("/api/epic-explorer/ui-settings", {
+        method: "POST",
+        headers: {"Content-Type": "application/json", "Accept": "application/json"},
+        body: JSON.stringify({capacity_basis: value})
+      });
+      const data = await resp.json();
+      if (!resp.ok || !data.ok) throw new Error(data.error || "Failed to save capacity basis");
+      await loadReport();
+    });
     els.overlay.addEventListener("click", (ev) => { if (ev.target === els.overlay) closeDrawer(); });
     els.drawerResizer.addEventListener("mousedown", (ev) => {
       state.resizing = true;

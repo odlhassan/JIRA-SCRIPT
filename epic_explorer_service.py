@@ -4,7 +4,7 @@ import calendar
 import json
 import sqlite3
 from collections import defaultdict
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -408,6 +408,182 @@ def _capacity_lookup(
     return lookup
 
 
+EPIC_EXPLORER_CAPACITY_BASIS_VALUES = {
+    "assignee_capacity_after_leaves",
+    "standard_workdays",
+}
+DEFAULT_EPIC_EXPLORER_CAPACITY_BASIS = "assignee_capacity_after_leaves"
+
+
+def normalize_capacity_basis(value: Any) -> str:
+    text = _to_text(value).lower()
+    if text in EPIC_EXPLORER_CAPACITY_BASIS_VALUES:
+        return text
+    return DEFAULT_EPIC_EXPLORER_CAPACITY_BASIS
+
+
+def _load_capacity_profiles_for_distribution(db_path: Path) -> list[dict[str, Any]]:
+    try:
+        with sqlite3.connect(db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                SELECT from_date, to_date, standard_hours_per_day,
+                       ramadan_start_date, ramadan_end_date, ramadan_hours_per_day,
+                       holiday_dates_json
+                FROM assignee_capacity_settings
+                ORDER BY from_date ASC, to_date ASC
+                """
+            ).fetchall()
+    except sqlite3.Error:
+        return []
+
+    profiles: list[dict[str, Any]] = []
+    for row in rows:
+        start_day = _parse_iso_date(row["from_date"])
+        end_day = _parse_iso_date(row["to_date"])
+        if not start_day or not end_day:
+            continue
+        holidays: set[date] = set()
+        try:
+            decoded = json.loads(_to_text(row["holiday_dates_json"]) or "[]")
+            if isinstance(decoded, list):
+                holidays = {day for day in (_parse_iso_date(item) for item in decoded) if day}
+        except json.JSONDecodeError:
+            holidays = set()
+        profiles.append(
+            {
+                "from_date": start_day,
+                "to_date": end_day,
+                "standard_hours_per_day": _to_float(row["standard_hours_per_day"]) or HOURS_PER_DAY,
+                "ramadan_start_date": _parse_iso_date(row["ramadan_start_date"]),
+                "ramadan_end_date": _parse_iso_date(row["ramadan_end_date"]),
+                "ramadan_hours_per_day": _to_float(row["ramadan_hours_per_day"]) or 6.5,
+                "holiday_dates": holidays,
+            }
+        )
+    return profiles
+
+
+def _profile_for_day(day: date, profiles: list[dict[str, Any]]) -> dict[str, Any] | None:
+    for profile in profiles:
+        if profile["from_date"] <= day <= profile["to_date"]:
+            return profile
+    return None
+
+
+def _base_capacity_weight_for_day(day: date, profiles: list[dict[str, Any]], basis: str) -> float:
+    if day.weekday() >= 5:
+        return 0.0
+    if basis == "standard_workdays":
+        return HOURS_PER_DAY
+    profile = _profile_for_day(day, profiles)
+    if not profile:
+        return HOURS_PER_DAY
+    if day in profile.get("holiday_dates", set()):
+        return 0.0
+    ramadan_start = profile.get("ramadan_start_date")
+    ramadan_end = profile.get("ramadan_end_date")
+    if ramadan_start and ramadan_end and ramadan_start <= day <= ramadan_end:
+        return _to_float(profile.get("ramadan_hours_per_day")) or 6.5
+    return _to_float(profile.get("standard_hours_per_day")) or HOURS_PER_DAY
+
+
+def _story_distribution_weights(
+    story: dict[str, Any],
+    profiles: list[dict[str, Any]],
+    leave_by_assignee_day: dict[str, dict[date, float]],
+    capacity_basis: str,
+) -> list[tuple[date, float]]:
+    start_day = _parse_iso_date(story.get("start_date"))
+    due_day = _parse_iso_date(story.get("due_date"))
+    if not start_day and due_day:
+        start_day = due_day
+    if start_day and not due_day:
+        due_day = start_day
+    if not start_day or not due_day:
+        return []
+    if due_day < start_day:
+        start_day, due_day = due_day, start_day
+
+    assignee_key = _to_text(story.get("assignee")).casefold()
+    rows: list[tuple[date, float]] = []
+    cursor = start_day
+    while cursor <= due_day:
+        weight = _base_capacity_weight_for_day(cursor, profiles, capacity_basis)
+        if capacity_basis == "assignee_capacity_after_leaves" and assignee_key:
+            weight = max(0.0, weight - leave_by_assignee_day.get(assignee_key, {}).get(cursor, 0.0))
+        rows.append((cursor, weight))
+        cursor += timedelta(days=1)
+
+    if any(weight > 0 for _day, weight in rows):
+        return rows
+
+    cursor = start_day
+    fallback: list[tuple[date, float]] = []
+    while cursor <= due_day:
+        fallback.append((cursor, 1.0))
+        cursor += timedelta(days=1)
+    return fallback
+
+
+def _distribute_story_estimates_by_month(
+    stories: list[dict[str, Any]],
+    profiles: list[dict[str, Any]],
+    leave_by_assignee_day: dict[str, dict[date, float]],
+    capacity_basis: str,
+) -> tuple[dict[str, float], dict[str, dict[str, float]], list[dict[str, Any]]]:
+    planned_by_month: dict[str, float] = defaultdict(float)
+    planned_by_assignee_month: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
+    distribution_details: list[dict[str, Any]] = []
+    for story in stories:
+        estimate = _to_float(story.get("original_estimate_hours"))
+        if estimate <= 0:
+            continue
+        weights = _story_distribution_weights(story, profiles, leave_by_assignee_day, capacity_basis)
+        if not weights:
+            distribution_details.append(
+                {
+                    "issue_key": _to_text(story.get("issue_key")).upper(),
+                    "summary": _to_text(story.get("summary")) or _to_text(story.get("issue_key")).upper(),
+                    "assignee": _to_text(story.get("assignee")) or "Unassigned",
+                    "original_estimate_hours": _round_hours(estimate),
+                    "start_date": _to_text(story.get("start_date")),
+                    "due_date": _to_text(story.get("due_date")),
+                    "allocation_status": "missing_dates",
+                    "monthly_hours": [],
+                }
+            )
+            continue
+        total_weight = sum(weight for _day, weight in weights)
+        if total_weight <= 0:
+            continue
+        story_months: dict[str, float] = defaultdict(float)
+        assignee = _to_text(story.get("assignee")) or "Unassigned"
+        for day, weight in weights:
+            allocated = estimate * (weight / total_weight)
+            month = _month_code(day)
+            planned_by_month[month] += allocated
+            planned_by_assignee_month[assignee][month] += allocated
+            story_months[month] += allocated
+        distribution_details.append(
+            {
+                "issue_key": _to_text(story.get("issue_key")).upper(),
+                "summary": _to_text(story.get("summary")) or _to_text(story.get("issue_key")).upper(),
+                "assignee": assignee,
+                "original_estimate_hours": _round_hours(estimate),
+                "start_date": _to_text(story.get("start_date")),
+                "due_date": _to_text(story.get("due_date")),
+                "allocation_status": "allocated",
+                "monthly_hours": [
+                    {"month": month, "hours": _round_hours(hours)}
+                    for month, hours in sorted(story_months.items())
+                ],
+            }
+        )
+    return planned_by_month, planned_by_assignee_month, distribution_details
+
+
 def build_epic_explorer_payload(
     db_path: Path,
     planner_rows: list[dict[str, Any]],
@@ -417,7 +593,9 @@ def build_epic_explorer_payload(
     to_date: str | None = None,
     selected_projects: set[str] | None = None,
     jira_base_url: str = "",
+    capacity_basis: str = DEFAULT_EPIC_EXPLORER_CAPACITY_BASIS,
 ) -> dict[str, Any]:
+    capacity_basis = normalize_capacity_basis(capacity_basis)
     run_id = resolve_canonical_run_id(db_path, canonical_run_id)
     if not run_id:
         raise ValueError("No successful canonical refresh found. Run the canonical refresh first.")
@@ -543,8 +721,15 @@ def build_epic_explorer_payload(
         leave_rows = _flatten_leaves(build_rlt_leave_snapshot(db_path, run_id, global_start.isoformat(), global_end.isoformat()), global_start, global_end)
     except Exception:
         leave_rows = []
+    leave_by_assignee_day: dict[str, dict[date, float]] = defaultdict(lambda: defaultdict(float))
+    for leaf in leave_rows:
+        leaf_day = _parse_iso_date(leaf.get("date"))
+        if not leaf_day:
+            continue
+        leave_by_assignee_day[_to_text(leaf.get("assignee")).casefold()][leaf_day] += _to_float(leaf.get("hours"))
 
     capacity_by_month = _capacity_lookup(db_path, run_id, _iter_months(global_start, global_end), jira_base_url)
+    capacity_profiles = _load_capacity_profiles_for_distribution(db_path)
 
     project_options: dict[str, str] = {}
     rows: list[dict[str, Any]] = []
@@ -664,16 +849,21 @@ def build_epic_explorer_payload(
             _parse_iso_date(epic.get("due_date")),
             _parse_iso_date(last_log_by_epic.get(epic_key, "")),
         ]
+        epic_dates.extend(
+            _parse_iso_date(item.get(field))
+            for item in stories
+            for field in ("start_date", "due_date")
+        )
         epic_dates = [d for d in epic_dates if d]
         epic_start = min(epic_dates) if epic_dates else global_start
         epic_end = max(epic_dates) if epic_dates else global_end
         month_codes = _iter_months(epic_start, epic_end)
-        planned_by_month: dict[str, float] = defaultdict(float)
-        for item in [*stories, *subtasks]:
-            for month in month_codes:
-                ms, me = _month_bounds(month)
-                if _date_range_overlaps(item.get("start_date"), item.get("due_date"), ms, me):
-                    planned_by_month[month] += _to_float(item.get("original_estimate_hours"))
+        planned_by_month, planned_by_assignee_month, story_planning_distribution = _distribute_story_estimates_by_month(
+            stories,
+            capacity_profiles,
+            leave_by_assignee_day,
+            capacity_basis,
+        )
         monthly_plan_actual = [
             {
                 "month": month,
@@ -741,6 +931,18 @@ def build_epic_explorer_payload(
 
         story_estimate_by_key = { _to_text(story.get("issue_key")).upper(): _to_float(story.get("original_estimate_hours")) for story in stories }
         story_summary_by_key = { _to_text(story.get("issue_key")).upper(): _to_text(story.get("summary")) for story in stories }
+        unassigned_planning_stories = [
+            {
+                "issue_key": _to_text(story.get("issue_key")).upper(),
+                "summary": _to_text(story.get("summary")) or _to_text(story.get("issue_key")).upper(),
+                "issue_type": _normalize_issue_type(story.get("issue_type")),
+                "start_date": _to_text(story.get("start_date")),
+                "due_date": _to_text(story.get("due_date")),
+                "original_estimate_hours": _round_hours(story.get("original_estimate_hours")),
+            }
+            for story in stories
+            if _to_float(story.get("original_estimate_hours")) > 0 and not _to_text(story.get("assignee"))
+        ]
         equal_story_estimate_count = 0
         over_original_estimate_count = 0
         estimate_quality_details: list[dict[str, Any]] = []
@@ -772,27 +974,6 @@ def build_epic_explorer_payload(
             )
 
         resource_utilization: list[dict[str, Any]] = []
-        planned_by_assignee_month: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
-        for subtask in subtasks:
-            assignee = _to_text(subtask.get("assignee")) or "Unassigned"
-            for month in month_codes:
-                ms, me = _month_bounds(month)
-                if _date_range_overlaps(subtask.get("start_date"), subtask.get("due_date"), ms, me):
-                    planned_by_assignee_month[assignee][month] += _to_float(subtask.get("original_estimate_hours"))
-        story_keys_with_subtasks = {
-            _to_text(subtask.get("story_key")).upper() or _to_text(subtask.get("parent_issue_key")).upper()
-            for subtask in subtasks
-        }
-        for story in stories:
-            story_key = _to_text(story.get("issue_key")).upper()
-            if story_key in story_keys_with_subtasks:
-                continue
-            assignee = _to_text(story.get("assignee")) or "Unassigned"
-            for month in month_codes:
-                ms, me = _month_bounds(month)
-                if _date_range_overlaps(story.get("start_date"), story.get("due_date"), ms, me):
-                    planned_by_assignee_month[assignee][month] += _to_float(story.get("original_estimate_hours"))
-
         assignee_schedule_variance: list[dict[str, Any]] = []
         assignee_names = set(planned_by_assignee_month.keys()) | set(actual_by_epic_author.get(epic_key, {}).keys())
         for assignee in sorted(assignee_names, key=lambda value: value.lower()):
@@ -876,6 +1057,13 @@ def build_epic_explorer_payload(
             "stories": nested_stories,
             "analytics": {
                 "monthly_plan_actual": monthly_plan_actual,
+                "monthly_plan_basis": {
+                    "estimate_source": "story_original_estimate",
+                    "capacity_basis": capacity_basis,
+                    "distribution": "capacity_weighted_daily_proration",
+                },
+                "story_planning_distribution": story_planning_distribution,
+                "unassigned_planning_stories": unassigned_planning_stories,
                 "schedule_variance": {
                     "planned_to_date_hours": planned_to_date_hours,
                     "actual_to_date_hours": actual_to_date_hours,

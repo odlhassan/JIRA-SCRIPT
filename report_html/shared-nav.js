@@ -61,6 +61,7 @@
         { page_key: "epics_planner", title: "Epics Planner", href: "/settings/epics-management", icon: "event_note", path: "/settings/epics-management" },
         { page_key: "epics_planner_import", title: "Epics Planner Import", href: "/settings/epics-management/import", icon: "upload_file", path: "/settings/epics-management/import" },
         { page_key: "ipp_meeting_planner", title: "IPP Meeting Planner", href: "/settings/ipp-meeting-planner", icon: "groups", path: "/settings/ipp-meeting-planner" },
+        { page_key: "rnd_muscle_utilization", title: "RnD Muscle Utilization", href: "/settings/rnd-muscle-utilization", icon: "hub", path: "/settings/rnd-muscle-utilization" },
         { page_key: "page_categories", title: "Page Categories", href: "/settings/page-categories", icon: "category", path: "/settings/page-categories" },
         { page_key: "canonical_refresh_settings", title: "Colossal Refresh", href: "/settings/canonical-refresh", icon: "sync", path: "/settings/canonical-refresh" },
         { page_key: "team_capacity_planner", title: "Team Capacity Planner", href: "/settings/team-capacity-planner", icon: "group_work", path: "/settings/team-capacity-planner" },

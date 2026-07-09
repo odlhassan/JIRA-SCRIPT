@@ -204,7 +204,7 @@ from delayed_epic_chain_gantt_service import (
     normalize_assignee_mode as delayed_epic_normalize_assignee_mode,
     save_ui_settings as delayed_epic_save_ui_settings,
 )
-from epic_explorer_service import build_epic_explorer_payload
+from epic_explorer_service import build_epic_explorer_payload, normalize_capacity_basis
 from monthly_epic_plan_progress_service import (
     build_monthly_epic_plan_payload,
     build_worklog_detail_for_range,
@@ -12819,10 +12819,10 @@ def _rnd_muscle_utilization_settings_html(planner_only: bool = False) -> str:
     .resource-title-line { display:flex; align-items:center; gap:6px; min-width:0; }
     .resource-title-line .row-title { min-width:0; }
     .resource-resigned-chip { display:inline-flex; align-items:center; min-height:16px; padding:1px 5px; border:1px solid #fed7aa; border-radius:999px; background:#ffedd5; color:#9a3412; font-size:10px; font-weight:800; line-height:1; text-transform:uppercase; flex:none; }
-    .resource-booked-wrap { position:relative; display:inline-flex; flex:none; }
+    .resource-booked-wrap { display:inline-flex; flex:none; }
     .resource-booked-chip { display:inline-flex; align-items:center; min-height:18px; padding:2px 7px; border:1px solid var(--accent-strong); border-radius:999px; background:var(--accent-soft); color:var(--accent-strong); font-size:10px; font-weight:800; line-height:1; cursor:pointer; }
     .resource-booked-chip:hover, .resource-booked-chip[aria-expanded="true"] { background:var(--accent); color:var(--accent-text); }
-    .resource-booked-menu { position:absolute; z-index:12; top:calc(100% + 4px); right:0; width:min(280px,calc(100vw - 32px)); max-height:220px; overflow:auto; border:1px solid var(--border); border-radius:var(--radius); background:var(--panel); box-shadow:0 12px 28px rgba(0,0,0,.24); padding:6px; display:grid; gap:5px; }
+    .resource-booked-menu { position:fixed; z-index:100000; width:min(280px,calc(100vw - 32px)); max-height:220px; overflow:auto; border:1px solid var(--border); border-radius:var(--radius); background:var(--panel); box-shadow:0 18px 42px rgba(0,0,0,.34); padding:6px; display:grid; gap:5px; }
     .resource-booked-menu[hidden] { display:none !important; }
     .resource-booked-menu-title { color:var(--muted); font-size:10px; font-weight:800; text-transform:uppercase; padding:2px 3px; }
     .resource-booked-menu-item { display:grid; gap:2px; padding:6px; border:1px solid var(--border); border-radius:var(--radius); background:var(--row); }
@@ -12891,8 +12891,8 @@ def _rnd_muscle_utilization_settings_html(planner_only: bool = False) -> str:
     .insights-summary { display:grid; grid-template-columns:repeat(3,minmax(90px,1fr)); gap:6px; margin-bottom:8px; }
     .insights-stat { border:1px solid var(--border); border-radius:var(--radius); background:var(--row); padding:7px; }
     .insights-stat strong { display:block; font-size:15px; margin-bottom:2px; }
-    .treemap { display:flex; align-content:stretch; align-items:stretch; flex-wrap:wrap; gap:8px; min-height:310px; }
-    .treemap-tile { border:1px solid var(--tile-border,var(--border)); border-radius:var(--radius); background:linear-gradient(145deg,var(--tile-bg,var(--row)),var(--row)); color:var(--tile-text,var(--text)); min-width:145px; min-height:112px; padding:9px; display:flex; flex-direction:column; justify-content:space-between; gap:8px; cursor:pointer; box-shadow:inset 0 0 0 1px rgba(255,255,255,.05); transition:transform .14s ease, box-shadow .14s ease, border-color .14s ease; }
+    .treemap { position:relative; min-height:330px; height:clamp(330px,48vh,560px); border:1px solid var(--border); border-radius:var(--radius); background:var(--row); overflow:hidden; }
+    .treemap-tile { position:absolute; border:1px solid var(--tile-border,var(--border)); border-radius:var(--radius); background:linear-gradient(145deg,var(--tile-bg,var(--row)),var(--row)); color:var(--tile-text,var(--text)); padding:9px; display:flex; flex-direction:column; justify-content:space-between; gap:8px; cursor:pointer; box-shadow:inset 0 0 0 1px rgba(255,255,255,.05); transition:transform .14s ease, box-shadow .14s ease, border-color .14s ease; overflow:hidden; }
     .treemap-tile:hover, .treemap-tile.active { transform:translateY(-1px); border-color:var(--accent-strong); box-shadow:0 8px 20px rgba(0,0,0,.18), inset 0 0 0 1px var(--accent-soft); }
     .treemap-title { font-weight:800; font-size:12px; line-height:1.25; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
     .treemap-value { font-size:22px; font-weight:800; line-height:1; }
@@ -13333,6 +13333,18 @@ __SETTINGS_TOP_NAV__
   function teamById(){
     return new Map(((state && state.teams) || []).map((team) => [team.team_id, team]));
   }
+  function teamByResourceId(){
+    const result = new Map();
+    ((state && state.teams) || []).forEach((team) => {
+      ((team && team.resource_ids) || []).forEach((resourceId) => {
+        if (resourceId && !result.has(resourceId)) result.set(resourceId, team);
+      });
+    });
+    return result;
+  }
+  function teamForResource(resource, teamsByIdMap, teamByResourceIdMap){
+    return (teamsByIdMap.get(resource && resource.team_id) || teamByResourceIdMap.get(resource && resource.resource_id) || {});
+  }
   function epicBookedDetailsForResource(resourceId){
     const epicByKey = new Map(((state && state.epics) || []).map((epic) => [epic.epic_key, epic]));
     const seen = new Set();
@@ -13357,10 +13369,28 @@ __SETTINGS_TOP_NAV__
     document.querySelectorAll(".resource-booked-menu").forEach((menu) => {
       if (menu !== exceptMenu) {
         menu.hidden = true;
-        const btn = menu.parentElement ? menu.parentElement.querySelector(".resource-booked-chip") : null;
+        const btn = menu.__bookedButton || null;
         if (btn) btn.setAttribute("aria-expanded", "false");
       }
     });
+  }
+  function clearBookedMenus(){
+    document.querySelectorAll(".resource-booked-menu").forEach((menu) => menu.remove());
+  }
+  function positionBookedMenu(button, menu){
+    const rect = button.getBoundingClientRect();
+    const gap = 6;
+    const menuWidth = Math.min(280, Math.max(180, window.innerWidth - 32));
+    menu.style.width = menuWidth + "px";
+    menu.hidden = false;
+    const menuHeight = Math.min(menu.scrollHeight || 220, 220);
+    let left = Math.min(window.innerWidth - menuWidth - 12, Math.max(12, rect.right - menuWidth));
+    let top = rect.bottom + gap;
+    if (top + menuHeight > window.innerHeight - 12) {
+      top = Math.max(12, rect.top - menuHeight - gap);
+    }
+    menu.style.left = left + "px";
+    menu.style.top = top + "px";
   }
   function projectTabsForDisplay(){
     const tabs = (state && state.project_tabs) || [];
@@ -13875,13 +13905,14 @@ __SETTINGS_TOP_NAV__
     const list = byId("rnd-resource-list");
     reset(list);
     const teamsById = teamById();
-    hideOpenBookedMenus();
+    const teamsByResourceId = teamByResourceId();
+    clearBookedMenus();
     const query = resourceSearchText.trim().toLowerCase();
     const allResources = (state && state.resources) || [];
     const resources = allResources.filter((resource) => {
       if (resource.resigned) return false;
       if (!query) return true;
-      const team = teamsById.get(resource.team_id) || {};
+      const team = teamForResource(resource, teamsById, teamsByResourceId);
       const haystack = [
         resource.display_name || "",
         resource.email || "",
@@ -13899,14 +13930,21 @@ __SETTINGS_TOP_NAV__
     }
     const groups = new Map();
     resources.forEach((resource) => {
-      const team = teamsById.get(resource.team_id) || {};
+      const team = teamForResource(resource, teamsById, teamsByResourceId);
       const groupKey = team.team_id || "__no_team__";
       if (!groups.has(groupKey)) {
-        groups.set(groupKey, { name: team.name || "No team", resources: [] });
+        groups.set(groupKey, { key: groupKey, name: team.name || "No team", resources: [] });
       }
       groups.get(groupKey).resources.push(resource);
     });
-    Array.from(groups.values()).forEach((group) => {
+    Array.from(groups.values())
+      .sort((a, b) => {
+        const aNoTeam = a.key === "__no_team__";
+        const bNoTeam = b.key === "__no_team__";
+        if (aNoTeam !== bNoTeam) return aNoTeam ? 1 : -1;
+        return a.name.localeCompare(b.name);
+      })
+      .forEach((group) => {
       const groupEl = document.createElement("section");
       groupEl.className = "resource-team-group";
       const groupHead = document.createElement("div");
@@ -13919,7 +13957,7 @@ __SETTINGS_TOP_NAV__
       groupHead.appendChild(groupCount);
       groupEl.appendChild(groupHead);
       group.resources.forEach((resource) => {
-      const team = teamsById.get(resource.team_id) || {};
+      const team = teamForResource(resource, teamsById, teamsByResourceId);
       const row = document.createElement("div");
       row.className = "row resource-row" + (team.team_id ? " team-colored" : "");
       row.draggable = true;
@@ -13959,6 +13997,8 @@ __SETTINGS_TOP_NAV__
         menu.className = "resource-booked-menu";
         menu.hidden = true;
         menu.setAttribute("role", "menu");
+        menu.__bookedButton = bookedChip;
+        menu.addEventListener("click", (event) => event.stopPropagation());
         const menuTitle = document.createElement("div");
         menuTitle.className = "resource-booked-menu-title";
         menuTitle.textContent = "Booked epics";
@@ -13979,11 +14019,15 @@ __SETTINGS_TOP_NAV__
           event.stopPropagation();
           const shouldOpen = menu.hidden;
           hideOpenBookedMenus(menu);
-          menu.hidden = !shouldOpen;
+          if (shouldOpen) {
+            positionBookedMenu(bookedChip, menu);
+          } else {
+            menu.hidden = true;
+          }
           bookedChip.setAttribute("aria-expanded", String(shouldOpen));
         });
         bookedWrap.appendChild(bookedChip);
-        bookedWrap.appendChild(menu);
+        document.body.appendChild(menu);
         titleLine.appendChild(bookedWrap);
       }
       const meta = document.createElement("div");
@@ -14128,6 +14172,52 @@ __SETTINGS_TOP_NAV__
     String(key || "").split("").forEach((ch) => { hash = ((hash * 31) + ch.charCodeAt(0)) >>> 0; });
     return palette[hash % palette.length];
   }
+  function compareInsightGroups(a, b){
+    const aNoTeam = a && a.kind === "team" && a.key === "__none__";
+    const bNoTeam = b && b.kind === "team" && b.key === "__none__";
+    if (aNoTeam !== bNoTeam) return aNoTeam ? 1 : -1;
+    return (Number(b.value || 0) - Number(a.value || 0)) || String(a.label || "").localeCompare(String(b.label || ""));
+  }
+  function treemapLayouts(groups){
+    const layouts = [];
+    const total = groups.reduce((sum, group) => sum + Math.max(0, Number(group.value || 0)), 0);
+    if (!groups.length || total <= 0) return layouts;
+    const split = (items, x, y, w, h) => {
+      if (!items.length) return;
+      if (items.length === 1) {
+        layouts.push({ group:items[0], x, y, w, h });
+        return;
+      }
+      const itemTotal = items.reduce((sum, group) => sum + Math.max(0, Number(group.value || 0)), 0);
+      let running = 0;
+      let splitIndex = 0;
+      for (let idx = 0; idx < items.length - 1; idx += 1) {
+        const next = running + Math.max(0, Number(items[idx].value || 0));
+        if (Math.abs((itemTotal / 2) - next) <= Math.abs((itemTotal / 2) - running)) {
+          running = next;
+          splitIndex = idx + 1;
+        } else {
+          break;
+        }
+      }
+      splitIndex = Math.max(1, Math.min(items.length - 1, splitIndex));
+      const first = items.slice(0, splitIndex);
+      const second = items.slice(splitIndex);
+      const firstTotal = first.reduce((sum, group) => sum + Math.max(0, Number(group.value || 0)), 0);
+      const ratio = itemTotal > 0 ? firstTotal / itemTotal : 0.5;
+      if (w >= h) {
+        const firstW = w * ratio;
+        split(first, x, y, firstW, h);
+        split(second, x + firstW, y, w - firstW, h);
+      } else {
+        const firstH = h * ratio;
+        split(first, x, y, w, firstH);
+        split(second, x, y + firstH, w, h - firstH);
+      }
+    };
+    split(groups, 0, 0, 100, 100);
+    return layouts;
+  }
   function buildInsightModel(){
     syncPlannerSelection();
     const canvasKeySet = new Set(canvasEpicKeys);
@@ -14179,7 +14269,7 @@ __SETTINGS_TOP_NAV__
       }
     });
     return {
-      groups: Array.from(groups.values()).sort((a, b) => b.value - a.value || a.label.localeCompare(b.label)),
+      groups: Array.from(groups.values()).sort(compareInsightGroups),
       mappingCount: mappings.length,
       resourceCount: new Set(mappings.map((m) => m.resource_id)).size,
       epicCount: new Set(mappings.map((m) => m.epic_key)).size,
@@ -14247,14 +14337,18 @@ __SETTINGS_TOP_NAV__
       return;
     }
     if (!selectedInsightKey || !model.groups.some((group) => group.key === selectedInsightKey)) selectedInsightKey = model.groups[0].key;
-    const maxValue = Math.max.apply(null, model.groups.map((group) => group.value));
-    model.groups.forEach((group) => {
+    const tileLayouts = treemapLayouts(model.groups);
+    tileLayouts.forEach((layout) => {
+      const group = layout.group;
       const color = insightColorFor(group.kind, group.key, model.teamByIdMap);
       const tone = teamTone(color);
       const tile = document.createElement("button");
       tile.type = "button";
       tile.className = "treemap-tile" + (group.key === selectedInsightKey ? " active" : "");
-      tile.style.flex = Math.max(1, Math.round((group.value / maxValue) * 12)) + " 1 " + (145 + Math.min(260, group.value * 16)) + "px";
+      tile.style.left = "calc(" + layout.x.toFixed(3) + "% + 4px)";
+      tile.style.top = "calc(" + layout.y.toFixed(3) + "% + 4px)";
+      tile.style.width = "calc(" + layout.w.toFixed(3) + "% - 8px)";
+      tile.style.height = "calc(" + layout.h.toFixed(3) + "% - 8px)";
       tile.style.setProperty("--tile-bg", tone.soft);
       tile.style.setProperty("--tile-border", tone.border);
       tile.style.setProperty("--tile-text", tone.text);
@@ -14895,6 +14989,8 @@ __SETTINGS_TOP_NAV__
     renderResources();
   });
   document.addEventListener("click", () => hideOpenBookedMenus());
+  window.addEventListener("scroll", () => hideOpenBookedMenus(), true);
+  window.addEventListener("resize", () => hideOpenBookedMenus());
   byId("rnd-project-filter").addEventListener("change", loadState);
   byId("rnd-epic-drop-zone").addEventListener("dragover", (event) => {
     if (event.dataTransfer.types.includes("application/x-rnd-planner-epic")) {
@@ -41117,6 +41213,11 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
     @app.route("/api/epic-explorer/summary", methods=["GET"])
     def epic_explorer_summary():
         try:
+            ui_settings = {
+                "capacity_basis": normalize_capacity_basis(
+                    load_report_entity_global_settings(capacity_paths["db_path"]).get("epic_explorer_capacity_basis")
+                )
+            }
             projects_raw = _to_text(request.args.get("projects"))
             selected_projects = {
                 _to_text(item).upper()
@@ -41131,14 +41232,41 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 to_date=_to_text(request.args.get("to_date")) or None,
                 selected_projects=selected_projects,
                 jira_base_url=BASE_URL,
+                capacity_basis=ui_settings["capacity_basis"],
             )
-            return jsonify({"ok": True, **payload})
+            return jsonify({"ok": True, "ui_settings": ui_settings, **payload})
         except ValueError as exc:
             message = str(exc)
             status_code = 409 if "No successful canonical refresh found" in message else 400
             return jsonify({"ok": False, "error": message}), status_code
         except Exception as exc:
             return jsonify({"ok": False, "error": f"Failed to load Epic Explorer: {exc}"}), 500
+
+    @app.route("/api/epic-explorer/ui-settings", methods=["GET"])
+    def epic_explorer_get_ui_settings():
+        settings = load_report_entity_global_settings(capacity_paths["db_path"])
+        return jsonify(
+            {
+                "ok": True,
+                "settings": {
+                    "capacity_basis": normalize_capacity_basis(settings.get("epic_explorer_capacity_basis")),
+                },
+            }
+        )
+
+    @app.route("/api/epic-explorer/ui-settings", methods=["POST"])
+    def epic_explorer_save_ui_settings():
+        payload = request.get_json(silent=True) or {}
+        try:
+            existing = load_report_entity_global_settings(capacity_paths["db_path"])
+            capacity_basis = normalize_capacity_basis((payload if isinstance(payload, dict) else {}).get("capacity_basis"))
+            save_report_entity_global_settings(
+                capacity_paths["db_path"],
+                {**existing, "epic_explorer_capacity_basis": capacity_basis},
+            )
+            return jsonify({"ok": True, "settings": {"capacity_basis": capacity_basis}})
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
 
     def _support_center_date_range():
         from_raw = _parse_iso_date(_to_text(request.args.get("from")))

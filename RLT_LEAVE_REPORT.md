@@ -3,44 +3,44 @@
 ## Project and Window
 - Project Key: `RLT`
 - Project Name: `RnD Leave Tracker`
-- Reporting Window: `2026-05-01` to `2026-07-31`
+- Reporting Window: `2026-06-01` to `2026-08-31`
 
 ## Executive Summary
-- Planned Taken (hours): `268.00`
-- Unplanned Taken (hours): `36.00`
-- Unknown Taken (hours): `184.00`
-- Planned Not Yet Taken (hours): `264.00`
+- Planned Taken (hours): `192.00`
+- Unplanned Taken (hours): `64.00`
+- Unknown Taken (hours): `252.00`
+- Planned Not Yet Taken (hours): `40.00`
 - Planned Not Yet Taken (No Entry count): `1`
-- Defective subtasks listed: `113`
-- Clubbed leave subtasks: `28`
+- Defective subtasks listed: `129`
+- Clubbed leave subtasks: `31`
 
 ## Assignee-wise Summary
 | Assignee | Planned Taken (h) | Unplanned Taken (h) | Unknown Taken (h) | Planned Not Yet Taken (h) | No Entry Count | Unknown Count |
 | --- | --- | --- | --- | --- | --- | --- |
-| Arsalan Zafar Khan | 0.00 | 16.00 | 8.00 | 0.00 | 0 | 2 |
+| Aiza Hamid | 0.00 | 0.00 | 40.00 | 0.00 | 0 | 5 |
+| Arsalan Zafar Khan | 0.00 | 0.00 | 0.00 | 16.00 | 0 | 2 |
 | awais akhter | 0.00 | 0.00 | 0.00 | 0.00 | 0 | 4 |
 | DANIYAL AHMAD | 0.00 | 0.00 | 0.00 | 0.00 | 0 | 2 |
-| Faiq Butt | 0.00 | 0.00 | 8.00 | 0.00 | 0 | 3 |
-| Faiza Nasir | 0.00 | 0.00 | 0.00 | 256.00 | 0 | 3 |
-| Hamza Ali | 40.00 | 0.00 | 0.00 | 0.00 | 0 | 2 |
-| Hassan Malik | 40.00 | 8.00 | 0.00 | 0.00 | 0 | 5 |
+| Faiq Butt | 0.00 | 0.00 | 24.00 | 0.00 | 0 | 3 |
+| Faiza Nasir | 120.00 | 0.00 | 0.00 | 0.00 | 0 | 3 |
+| Hamza Ali | 0.00 | 8.00 | 0.00 | 0.00 | 0 | 8 |
+| Hassan Malik | 8.00 | 32.00 | 16.00 | 0.00 | 0 | 7 |
 | Hassan Saeed Wattoo | 0.00 | 0.00 | 0.00 | 0.00 | 0 | 25 |
+| Hassan Wali | 0.00 | 16.00 | 0.00 | 0.00 | 0 | 0 |
 | Ibrahim Ahmed Qureshi | 0.00 | 0.00 | 0.00 | 0.00 | 0 | 6 |
 | Maria Sharafat | 0.00 | 0.00 | 0.00 | 0.00 | 1 | 2 |
-| Mariam Zulfiqar | 32.00 | 0.00 | 0.00 | 0.00 | 0 | 0 |
 | Muhammad Abbas | 16.00 | 0.00 | 0.00 | 0.00 | 0 | 4 |
-| Muhammad Abdul Wasi | 12.00 | 0.00 | 0.00 | 0.00 | 0 | 0 |
-| Muhammad Abdullah | 0.00 | 0.00 | 16.00 | 0.00 | 0 | 4 |
-| Muhammad Ahmad Saleem | 0.00 | 4.00 | 0.00 | 0.00 | 0 | 3 |
-| Muhammad Imran Aslam | 16.00 | 0.00 | 0.00 | 8.00 | 0 | 2 |
+| Muhammad Abdul Wasi | 0.00 | 0.00 | 4.00 | 0.00 | 0 | 1 |
+| Muhammad Abdullah | 0.00 | 0.00 | 16.00 | 0.00 | 0 | 6 |
+| Muhammad Ahmad Saleem | 0.00 | 0.00 | 0.00 | 0.00 | 0 | 3 |
+| Muhammad Imran Aslam | 8.00 | 0.00 | 0.00 | 24.00 | 0 | 0 |
 | Muhammad Usman Javed | 0.00 | 0.00 | 0.00 | 0.00 | 0 | 2 |
-| Muhammad Zeeshan Aslam | 96.00 | 0.00 | 136.00 | 0.00 | 0 | 1 |
-| Namra Zahid | 0.00 | 0.00 | 8.00 | 0.00 | 0 | 1 |
-| Sarmad Sabir | 0.00 | 0.00 | 8.00 | 0.00 | 0 | 9 |
+| Muhammad Zeeshan Aslam | 0.00 | 0.00 | 136.00 | 0.00 | 0 | 1 |
+| Namra Zahid | 16.00 | 0.00 | 8.00 | 0.00 | 0 | 2 |
+| Sarmad Sabir | 16.00 | 0.00 | 8.00 | 0.00 | 0 | 10 |
 | Syed Yousaf Qadri | 0.00 | 0.00 | 0.00 | 0.00 | 0 | 7 |
-| Taimur Zahid | 16.00 | 0.00 | 0.00 | 0.00 | 0 | 7 |
-| Zain Munir | 0.00 | 8.00 | 0.00 | 0.00 | 0 | 0 |
-| Zeeshan Sarwar | 0.00 | 0.00 | 0.00 | 0.00 | 0 | 18 |
+| Taimur Zahid | 8.00 | 0.00 | 0.00 | 0.00 | 0 | 7 |
+| Zeeshan Sarwar | 0.00 | 8.00 | 0.00 | 0.00 | 0 | 18 |
 
 ## Defective and No Entry
 - `No Entry` means planned leave subtask is missing planned date and/or original estimate while no hours are logged.

@@ -14,6 +14,7 @@ REPORT_ENTITY_GLOBAL_SETTING_KEYS = {
     "leave_taken_rule_apply_from_date",
     "rmi_planned_field_resolution",
     "planned_actual_equality_tolerance_hours",
+    "epic_explorer_capacity_basis",
 }
 
 DEPRECATED_ENTITY_KEYS = {
@@ -219,6 +220,7 @@ def default_global_settings() -> dict[str, object]:
         "leave_taken_rule_apply_from_date": "",
         "rmi_planned_field_resolution": "name_lookup",
         "planned_actual_equality_tolerance_hours": 0.0,
+        "epic_explorer_capacity_basis": "assignee_capacity_after_leaves",
     }
 
 
@@ -236,6 +238,9 @@ def normalize_global_settings(payload: dict) -> dict[str, object]:
     merged["leave_taken_rule_apply_from_date"] = _to_text(merged.get("leave_taken_rule_apply_from_date"))
     merged["leave_taken_identification_mode"] = _to_text(merged.get("leave_taken_identification_mode")).lower() or "hours"
     merged["rmi_planned_field_resolution"] = _to_text(merged.get("rmi_planned_field_resolution")).lower() or "name_lookup"
+    merged["epic_explorer_capacity_basis"] = _to_text(merged.get("epic_explorer_capacity_basis")).lower() or "assignee_capacity_after_leaves"
+    if merged["epic_explorer_capacity_basis"] not in {"assignee_capacity_after_leaves", "standard_workdays"}:
+        raise ValueError("epic_explorer_capacity_basis must be assignee_capacity_after_leaves or standard_workdays.")
     try:
         merged["planned_actual_equality_tolerance_hours"] = float(merged.get("planned_actual_equality_tolerance_hours", 0.0))
     except (TypeError, ValueError):
