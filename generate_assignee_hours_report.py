@@ -836,8 +836,10 @@ def _load_leave_metrics(leave_report_path: Path, from_date: str, to_date: str, s
 
 
 def _backup_capacity_db(db_path: Path) -> None:
-    """Create a dated backup of the capacity DB on startup (best-effort, never raises)."""
+    """Create a dated backup of the capacity DB only when explicitly enabled."""
     import datetime, shutil
+    if os.getenv("EPR_ENABLE_CAPACITY_DB_STARTUP_BACKUP", "").strip().lower() not in {"1", "true", "yes", "on"}:
+        return
     try:
         if not db_path.exists() or db_path.stat().st_size == 0:
             return

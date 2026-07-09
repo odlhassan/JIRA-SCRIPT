@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from openpyxl import Workbook, load_workbook
 
@@ -37,6 +38,27 @@ class AssigneeHoursReportTests(unittest.TestCase):
             db_path = Path(td) / "nested" / "capacity" / "assignee_hours_capacity.db"
             _init_capacity_db(db_path)
             self.assertTrue(db_path.exists())
+
+    def test_init_capacity_db_does_not_create_startup_backup_by_default(self):
+        with tempfile.TemporaryDirectory() as td:
+            db_path = Path(td) / "assignee_hours_capacity.db"
+            _init_capacity_db(db_path)
+
+            with patch.dict("os.environ", {"EPR_ENABLE_CAPACITY_DB_STARTUP_BACKUP": ""}, clear=False):
+                _init_capacity_db(db_path)
+
+            self.assertFalse((Path(td) / "backups").exists())
+
+    def test_init_capacity_db_startup_backup_is_explicit_opt_in(self):
+        with tempfile.TemporaryDirectory() as td:
+            db_path = Path(td) / "assignee_hours_capacity.db"
+            _init_capacity_db(db_path)
+
+            with patch.dict("os.environ", {"EPR_ENABLE_CAPACITY_DB_STARTUP_BACKUP": "1"}, clear=False):
+                _init_capacity_db(db_path)
+
+            backups = list((Path(td) / "backups").glob("assignee_hours_capacity_*.db"))
+            self.assertEqual(len(backups), 1)
 
     def test_parse_worklog_date(self):
         self.assertEqual(parse_worklog_date("2026-02-20T11:15:00.000+0500"), "2026-02-20")
