@@ -41,9 +41,9 @@ Epic Explorer is a canonical-database report for inspecting every Jira epic and 
 | Table | Story Estimates | Numeric hours | 0 | Sum of canonical parent work-item original estimates under the epic. |
 | Table | Subtask Estimates | Numeric hours | 0 | Sum of canonical `Sub-task` and `Bug Subtask` original estimates under the epic. |
 | Table | Jira Epics' Planned Dates | Date range | Blank when missing | Canonical epic `start_date` to `due_date`. |
-| Table | Total Actual Hours | Numeric hours | 0 | Lifetime sum of worklog hours on descendant subtasks and bug subtasks. |
+| Table | Total Actual Hours | Numeric hours | 0 | Lifetime descendant actual hours for subtasks and bug subtasks. The report uses the greater of stored worklog-row totals and the canonical Jira issue `total_hours_logged` value so actuals are not limited to the refresh scope year. |
 | Table | Actual Complete Date | Date | Blank when missing | Later of descendant subtask last worklog date and epic `resolved_stable_since_date`. |
-| Table | Planned vs Actual Hours | Numeric comparison | 0 / 0 | Planned value uses canonical epic `original_estimate_hours`; actual value uses descendant subtask and bug-subtask worklogs. TK Budget, story estimates, and subtask estimates are comparison/fallback values only. |
+| Table | Planned vs Actual Hours | Numeric comparison | 0 / 0 | Planned value uses canonical epic `original_estimate_hours`; actual value uses lifetime descendant subtask and bug-subtask actuals. TK Budget, story estimates, and subtask estimates are comparison/fallback values only. |
 | Table | Planned vs Actual Delivery | Date comparison | Blank when missing | Planned value uses the canonical epic `due_date`; actual value uses the calculated Actual Complete Date. |
 | Table | SV Date | Signed days | Blank when missing | Jira epic planned due date minus actual/current date. Negative means behind. |
 | Table | SV Hours | Signed hours and percent | Blank when no planned basis | Actual-to-date hours minus planned-to-date hours. Planned-to-date is prorated from the Jira epic original estimate across the epic planned dates and reaches the full original estimate after the planned due date. |
@@ -93,7 +93,7 @@ Epic Explorer is a canonical-database report for inspecting every Jira epic and 
 - Project filtering uses the canonical epic project only.
 - Nested data is never date-filtered or project-trimmed after an epic is included.
 - The top-level table uses compact rows, alternating row shading, visible row numbers, vertical scrolling, and sticky row-number/name columns so wide tables stay traceable while scrolling.
-- Actual hours roll up from descendant `Sub-task` and `Bug Subtask` worklogs only.
+- Actual hours roll up from descendant `Sub-task` and `Bug Subtask` lifetime actuals. When individual `canonical_worklogs` rows are incomplete for a subtask because the refresh scope excludes older worklog dates, Epic Explorer still uses the canonical Jira issue `total_hours_logged` value for the hour total. Worklog-row detail continues to drive author, month, and dated drilldown analytics where those rows exist.
 - Actual complete date mirrors existing completion logic: use the later of last logged date and resolved-stable-since when both exist, otherwise use whichever exists.
 - Top-level Planned vs Actual, SV Hours, and Est. Accuracy use the Jira epic's own planned dates and canonical epic `original_estimate_hours` as the primary planned basis. TK Budget, story estimates, and subtask estimates do not drive these calculations unless the epic original estimate is missing or zero.
 - Drawer month plan vs actual uses story/work-item original estimates only. It does not add subtask estimates to planned hours.
@@ -117,7 +117,8 @@ Epic Explorer is a canonical-database report for inspecting every Jira epic and 
 |---|---|
 | `canonical_refresh_state` | Resolves the active successful canonical run. |
 | `canonical_issues` | Supplies epic, work-item, subtask, bug-subtask hierarchy, status, assignee, dates, and original estimates. |
-| `canonical_worklogs` | Supplies descendant worklog authors, dates, and hours. |
+| `canonical_worklogs` | Supplies descendant worklog authors, dates, and hours for dated drilldowns and monthly/author analytics. |
+| `canonical_issues.total_hours_logged` | Supplies lifetime Jira issue actual hours used as a fallback when it is greater than the scoped stored worklog rows for a descendant subtask or bug subtask. |
 | `epics_management` | Supplies product, Jira URL, and TK budget metadata. |
 | RLT canonical snapshot via `build_rlt_leave_snapshot()` | Supplies planned and unplanned leave cells for drawer Gantt and leave summary. |
 | `performance_teams` | Maps worklog authors to team effort. |

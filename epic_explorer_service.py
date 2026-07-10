@@ -664,7 +664,6 @@ def build_epic_explorer_payload(
             subtask_rows_by_epic[epic_key].append(issue)
 
     worklogs_by_issue: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    actual_by_epic: dict[str, float] = defaultdict(float)
     headcount_by_epic: dict[str, set[str]] = defaultdict(set)
     last_log_by_epic: dict[str, str] = {}
     actual_by_epic_month: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
@@ -692,10 +691,7 @@ def build_epic_explorer_payload(
             "hours": hours,
         }
         worklogs_by_issue[issue_key].append(worklog)
-        actual_by_epic[epic_key] += hours
         actual_by_epic_author[epic_key][author] += hours
-        if story_key:
-            actual_by_epic_story[epic_key][story_key] += hours
         if started_date:
             month = started_date[:7]
             actual_by_epic_month[epic_key][month] += hours
@@ -707,6 +703,31 @@ def build_epic_explorer_payload(
         actual_by_epic_team[epic_key][team_name] += hours
         if author.casefold() in support_members:
             support_by_epic_author[epic_key][author] += hours
+
+    actual_by_subtask: dict[str, float] = {}
+    actual_by_epic: dict[str, float] = defaultdict(float)
+    actual_by_epic_story: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
+    for epic_key, subtasks in subtask_rows_by_epic.items():
+        for subtask in subtasks:
+            subtask_key = _to_text(subtask.get("issue_key")).upper()
+            if not subtask_key:
+                continue
+            worklog_total = _round_hours(sum(_to_float(log.get("hours")) for log in worklogs_by_issue.get(subtask_key, [])))
+            issue_total = _round_hours(subtask.get("total_hours_logged"))
+            actual_total = max(worklog_total, issue_total)
+            actual_by_subtask[subtask_key] = actual_total
+            actual_by_epic[epic_key] += actual_total
+            story_key = _to_text(subtask.get("story_key")).upper() or _to_text(subtask.get("parent_issue_key")).upper()
+            if story_key:
+                actual_by_epic_story[epic_key][story_key] += actual_total
+    actual_by_epic = defaultdict(float, {key: _round_hours(value) for key, value in actual_by_epic.items()})
+    actual_by_epic_story = defaultdict(
+        lambda: defaultdict(float),
+        {
+            epic_key: defaultdict(float, {story_key: _round_hours(hours) for story_key, hours in story_hours.items()})
+            for epic_key, story_hours in actual_by_epic_story.items()
+        },
+    )
 
     all_date_values = [
         _parse_iso_date(issue.get(field))
@@ -778,10 +799,8 @@ def build_epic_explorer_payload(
         )
         actual_to_date_hours = _round_hours(
             sum(
-                _to_float(log.get("hours"))
+                actual_by_subtask.get(_to_text(subtask.get("issue_key")).upper(), 0.0)
                 for subtask in subtasks
-                for log in worklogs_by_issue.get(_to_text(subtask.get("issue_key")).upper(), [])
-                if not schedule_as_of_day or not _parse_iso_date(log.get("date")) or _parse_iso_date(log.get("date")) <= schedule_as_of_day
             )
         )
         schedule_variance_hours = _round_hours(actual_to_date_hours - planned_to_date_hours)
@@ -798,6 +817,7 @@ def build_epic_explorer_payload(
             for subtask in subtasks_by_story.get(story_key, []):
                 subtask_key = _to_text(subtask.get("issue_key")).upper()
                 subtask_logs = list(worklogs_by_issue.get(subtask_key, []))
+                subtask_actual = _round_hours(actual_by_subtask.get(subtask_key, 0.0))
                 subtask_last_log = max([_to_text(log.get("date")) for log in subtask_logs if _to_text(log.get("date"))] or [""])
                 subtask_completion = _derive_actual_completion(
                     subtask.get("due_date"),
@@ -814,7 +834,7 @@ def build_epic_explorer_payload(
                         "start_date": _to_text(subtask.get("start_date")),
                         "due_date": _to_text(subtask.get("due_date")),
                         "original_estimate_hours": _round_hours(subtask.get("original_estimate_hours")),
-                        "actual_hours": _round_hours(sum(_to_float(log.get("hours")) for log in subtask_logs)),
+                        "actual_hours": subtask_actual,
                         "actual_complete_date": subtask_completion["actual_complete_date"],
                         "completion_bucket": subtask_completion["completion_bucket"],
                         "jira_url": _issue_url(jira_base_url, subtask_key),
@@ -886,10 +906,8 @@ def build_epic_explorer_payload(
         planned_to_date_hours = _planned_to_date_hours(planned_total_hours, epic.get("start_date"), epic.get("due_date"), status_day)
         actual_to_date_hours = _round_hours(
             sum(
-                _to_float(log.get("hours"))
+                actual_by_subtask.get(_to_text(subtask.get("issue_key")).upper(), 0.0)
                 for subtask in subtasks
-                for log in worklogs_by_issue.get(_to_text(subtask.get("issue_key")).upper(), [])
-                if not _parse_iso_date(log.get("date")) or _parse_iso_date(log.get("date")) <= status_day
             )
         )
         schedule_variance_hours = _round_hours(actual_to_date_hours - planned_to_date_hours)
@@ -950,7 +968,7 @@ def build_epic_explorer_payload(
             subtask_key = _to_text(subtask.get("issue_key")).upper()
             story_key = _to_text(subtask.get("story_key")).upper() or _to_text(subtask.get("parent_issue_key")).upper()
             sub_est = _to_float(subtask.get("original_estimate_hours"))
-            sub_actual = sum(_to_float(log.get("hours")) for log in worklogs_by_issue.get(subtask_key, []))
+            sub_actual = actual_by_subtask.get(subtask_key, 0.0)
             matches_story_estimate = bool(story_key and abs(sub_est - story_estimate_by_key.get(story_key, -1)) < 0.01)
             over_original_estimate = sub_actual > sub_est
             if matches_story_estimate:

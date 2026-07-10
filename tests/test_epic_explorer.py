@@ -86,6 +86,7 @@ def _insert_issue(
     due: str = "",
     resolved: str = "",
     estimate: float = 0.0,
+    actual: float = 0.0,
     parent: str = "",
     story: str = "",
     epic: str = "",
@@ -95,10 +96,10 @@ def _insert_issue(
         INSERT INTO canonical_issues(
             run_id, issue_key, project_key, issue_type, summary, status, assignee,
             start_date, due_date, resolved_stable_since_date, original_estimate_hours,
-            parent_issue_key, story_key, epic_key
-        ) VALUES ('run-1', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            total_hours_logged, parent_issue_key, story_key, epic_key
+        ) VALUES ('run-1', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (key, project, issue_type, summary or key, status, assignee, start, due, resolved, estimate, parent, story, epic),
+        (key, project, issue_type, summary or key, status, assignee, start, due, resolved, estimate, actual, parent, story, epic),
     )
 
 
@@ -123,7 +124,7 @@ def _seed_epic_explorer_db(db_path: Path) -> None:
         _insert_issue(conn, "O2-1-S1-T1", "Sub-task", summary="Build table", assignee="Alice", start="2026-05-03", due="2026-05-10", estimate=16, parent="O2-1-S1", story="O2-1-S1", epic="O2-1")
         _insert_issue(conn, "O2-1-S1-B1", "Bug Subtask", summary="Fix drilldown", assignee="Bob", start="2026-05-11", due="2026-05-18", estimate=8, parent="O2-1-S1", story="O2-1-S1", epic="O2-1")
         _insert_issue(conn, "O2-1-T1", "Task", summary="Direct Epic Task", start="2026-05-12", due="2026-05-24", estimate=12, parent="O2-1", epic="O2-1")
-        _insert_issue(conn, "O2-1-T1-SUB1", "Sub-task", summary="Task child", assignee="Dana", start="2026-05-12", due="2026-05-20", estimate=6, parent="O2-1-T1", story="O2-1-T1", epic="O2-1")
+        _insert_issue(conn, "O2-1-T1-SUB1", "Sub-task", summary="Task child", assignee="Dana", start="2026-05-12", due="2026-05-20", estimate=6, actual=12, parent="O2-1-T1", story="O2-1-T1", epic="O2-1")
         _insert_issue(
             conn,
             "CRM-2",
@@ -215,12 +216,12 @@ class EpicExplorerTests(unittest.TestCase):
             self.assertEqual(row["subtask_estimate_hours"], 30.0)
             self.assertEqual(row["planned_total_hours"], 100.0)
             self.assertEqual(row["planned_to_date_hours"], 100.0)
-            self.assertEqual(row["total_actual_hours"], 16.0)
-            self.assertEqual(row["actual_to_date_hours"], 16.0)
+            self.assertEqual(row["total_actual_hours"], 24.0)
+            self.assertEqual(row["actual_to_date_hours"], 24.0)
             self.assertEqual(row["schedule_variance_days"], -1)
-            self.assertEqual(row["schedule_variance_hours"], -84.0)
-            self.assertEqual(row["schedule_variance_pct"], -84.0)
-            self.assertEqual(row["estimation_accuracy_pct"], 625.0)
+            self.assertEqual(row["schedule_variance_hours"], -76.0)
+            self.assertEqual(row["schedule_variance_pct"], -76.0)
+            self.assertEqual(row["estimation_accuracy_pct"], 416.7)
             self.assertEqual(row["estimation_accuracy_status"], "outside_ideal")
             self.assertEqual(row["actual_complete_date"], "2026-06-01")
             self.assertEqual(row["actual_complete_source"], "max_last_logged_resolved_stable")
@@ -233,6 +234,8 @@ class EpicExplorerTests(unittest.TestCase):
             task_item = next(item for item in row["stories"] if item["issue_key"] == "O2-1-T1")
             self.assertEqual({sub["issue_key"] for sub in story_item["subtasks"]}, {"O2-1-S1-T1", "O2-1-S1-B1"})
             self.assertEqual({sub["issue_key"] for sub in task_item["subtasks"]}, {"O2-1-T1-SUB1"})
+            self.assertEqual(task_item["actual_hours"], 12.0)
+            self.assertEqual(task_item["subtasks"][0]["actual_hours"], 12.0)
             self.assertEqual(len(story_item["subtasks"][0]["worklogs"]), 1)
             self.assertTrue(any(option["project_key"] == "O2" and option["project_name"] == "Omni" for option in payload["project_options"]))
             self.assertEqual([leaf["assignee"] for leaf in row["analytics"]["gantt"]["leaves"]], ["Alice", "Dana"])
@@ -246,8 +249,8 @@ class EpicExplorerTests(unittest.TestCase):
             self.assertIn("Build table", {item["summary"] for item in row["analytics"]["estimate_quality"]["details"]})
             sv = row["analytics"]["schedule_variance"]
             self.assertEqual(sv["planned_to_date_hours"], 100.0)
-            self.assertEqual(sv["actual_to_date_hours"], 16.0)
-            self.assertEqual(sv["schedule_variance_hours"], -84.0)
+            self.assertEqual(sv["actual_to_date_hours"], 24.0)
+            self.assertEqual(sv["schedule_variance_hours"], -76.0)
             self.assertEqual(sv["trend_3_months"]["direction"], "improving")
             self.assertEqual([item["month"] for item in sv["trend_3_months"]["months"]], ["2026-05", "2026-06"])
             self.assertEqual(
