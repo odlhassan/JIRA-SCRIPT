@@ -4,6 +4,7 @@ import json
 import sqlite3
 import tempfile
 import unittest
+from datetime import date
 from pathlib import Path
 from unittest.mock import patch
 
@@ -172,6 +173,69 @@ def _seed_epic_explorer_db(db_path: Path) -> None:
 
 
 class EpicExplorerTests(unittest.TestCase):
+    def test_unresolved_or_reopened_epic_uses_today_instead_of_last_worklog(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            db_path = Path(td) / "assignee_hours_capacity.db"
+            _create_canonical_tables(db_path)
+            with sqlite3.connect(db_path) as conn:
+                _insert_issue(
+                    conn,
+                    "O2-OPEN",
+                    "Epic",
+                    status="In Progress",
+                    start="2026-07-01",
+                    due="2026-08-31",
+                    resolved="2026-07-04",
+                    estimate=62,
+                    epic="O2-OPEN",
+                )
+                _insert_issue(
+                    conn,
+                    "O2-OPEN-S1",
+                    "Story",
+                    status="In Progress",
+                    start="2026-07-01",
+                    due="2026-08-31",
+                    estimate=62,
+                    parent="O2-OPEN",
+                    story="O2-OPEN-S1",
+                    epic="O2-OPEN",
+                )
+                _insert_issue(
+                    conn,
+                    "O2-OPEN-S1-T1",
+                    "Sub-task",
+                    status="In Progress",
+                    start="2026-07-01",
+                    due="2026-08-31",
+                    parent="O2-OPEN-S1",
+                    story="O2-OPEN-S1",
+                    epic="O2-OPEN",
+                )
+                conn.execute(
+                    """
+                    INSERT INTO canonical_worklogs(
+                        run_id, worklog_id, issue_key, project_key, worklog_author,
+                        issue_assignee, started_date, hours_logged
+                    ) VALUES ('run-1', 'wl-open', 'O2-OPEN-S1-T1', 'O2', 'Alice', 'Alice', '2026-07-05', 2)
+                    """
+                )
+                conn.commit()
+
+            with patch("epic_explorer_service.date", wraps=date) as mocked_date:
+                mocked_date.today.return_value = date(2026, 7, 15)
+                payload = build_epic_explorer_payload(db_path, [], "run-1")
+
+            row = payload["rows"][0]
+            self.assertEqual(row["actual_complete_date"], "")
+            self.assertEqual(row["actual_complete_source"], "none")
+            self.assertEqual(row["schedule_variance_date_basis"], "2026-07-15")
+            self.assertEqual(row["schedule_variance_date_basis_type"], "current_date")
+            self.assertEqual(row["schedule_variance_days"], 47)
+            self.assertEqual(row["planned_to_date_hours"], 15.0)
+            self.assertEqual(row["actual_to_date_hours"], 2.0)
+            self.assertEqual(row["schedule_variance_hours"], -13.0)
+
     def test_payload_rolls_up_full_epic_data_and_filters_only_epic_scope(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             db_path = Path(td) / "assignee_hours_capacity.db"

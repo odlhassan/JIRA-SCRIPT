@@ -71,6 +71,11 @@ def _is_drilldown_parent_type(value: Any) -> bool:
     return text in {"Story", "Task", "Bug"}
 
 
+def _is_resolved_status_text(value: Any) -> bool:
+    text = _to_text(value).casefold()
+    return text in {"resolved", "resolved!", "done", "closed", "complete", "completed"}
+
+
 def _issue_url(jira_base_url: str, issue_key: str) -> str:
     base = _to_text(jira_base_url).rstrip("/")
     key = _to_text(issue_key).upper()
@@ -781,7 +786,16 @@ def build_epic_explorer_payload(
         story_estimate_hours = _round_hours(sum(_to_float(story.get("original_estimate_hours")) for story in stories))
         subtask_estimate_hours = _round_hours(sum(_to_float(subtask.get("original_estimate_hours")) for subtask in subtasks))
         total_actual_hours = _round_hours(actual_by_epic.get(epic_key))
-        completion = _derive_actual_completion(epic.get("due_date"), last_log_by_epic.get(epic_key, ""), epic.get("resolved_stable_since_date"))
+        if _is_resolved_status_text(epic.get("status")):
+            completion = _derive_actual_completion(
+                epic.get("due_date"),
+                last_log_by_epic.get(epic_key, ""),
+                epic.get("resolved_stable_since_date"),
+            )
+        else:
+            # A worklog date is evidence of activity, not completion. Open and
+            # reopened epics must keep aging against today's reporting date.
+            completion = _derive_actual_completion(epic.get("due_date"), "", "")
         tk_budget_hours = _planner_tk_budget_hours(planner)
         jira_original_estimate_hours = _round_hours(epic.get("original_estimate_hours"))
         planned_total_hours = _planned_total_hours(
@@ -1219,8 +1233,8 @@ def build_epic_explorer_payload(
         "meta": {
             "hours_per_day": HOURS_PER_DAY,
             "scope_basis": "Default scope includes every canonical Jira epic. Date and project filters only include/exclude epics; nested stories, subtasks, and worklogs remain full epic-lifetime data.",
-            "actual_complete_basis": "Later of descendant subtask last worklog date and epic resolved-stable-since date, matching existing completion logic.",
-            "schedule_variance_basis": "Date SV is Jira epic planned due date minus actual/current date; hour SV is actual-to-date minus planned-to-date using the Jira epic original estimate shown in Planned vs Actual Hours. TK budget and child estimates are fallback-only when the epic original estimate is missing.",
+            "actual_complete_basis": "Resolved-status epics use the later of descendant subtask last worklog date and epic resolved-stable-since date. Unresolved and reopened epics have no Actual Complete Date.",
+            "schedule_variance_basis": "Resolved-status epics use Actual Complete Date as the SV reporting date; unresolved and reopened epics use the current date. Date SV is Jira epic planned due date minus that reporting date; hour SV is actual-to-date minus planned-to-date using the Jira epic original estimate shown in Planned vs Actual Hours. TK budget and child estimates are fallback-only when the epic original estimate is missing.",
             "estimation_accuracy_basis": "Jira epic original estimate divided by actual hours multiplied by 100. The ideal range is 85% to 115%; below 70% is marked broken.",
         },
     }
