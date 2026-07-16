@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 
 from rnd_muscle_utilization_service import (
+    _latest_canonical_epic_statuses,
     add_epic_to_rnd_muscle_backlog,
     add_epic_to_rnd_muscle_planner,
     add_rnd_muscle_skill,
@@ -173,9 +174,17 @@ class RndMuscleUtilizationServiceTests(unittest.TestCase):
                         ("r1", "O2-100", "Epic", "Completed"),
                         ("r1", "FF-200", "Epic", "Resolved!"),
                         ("r1", "FF-300", "Epic", "Completed"),
+                        ("r2", "O2-100", "Epic", "Completed"),
+                        ("r2", "FF-200", "Epic", "Resolved!"),
                         ("r2", "FF-300", "Epic", "In Progress"),
-                        ("r2", "O2-100", "Story", "In Progress"),
+                        ("r2", "O2-CHILD", "Story", "Completed"),
                     ],
+                )
+                conn.execute(
+                    "CREATE TABLE canonical_refresh_state (id INTEGER PRIMARY KEY, last_success_run_id TEXT NOT NULL)"
+                )
+                conn.execute(
+                    "INSERT INTO canonical_refresh_state(id, last_success_run_id) VALUES(1, 'r2')"
                 )
 
             state = load_rnd_muscle_utilization_page_state(db_path)
@@ -183,6 +192,50 @@ class RndMuscleUtilizationServiceTests(unittest.TestCase):
         self.assertEqual([epic.epic_key for epic in state.epics], ["FF-300"])
         self.assertEqual(state.project_tabs[0].epic_count, 1)
         self.assertEqual(state.quick_stats.selected_project_epic_count, 1)
+
+    def test_canonical_epic_status_lookup_is_bounded_to_latest_run_and_planner_keys(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            db_path = Path(td) / "settings.db"
+            with sqlite3.connect(db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                conn.execute(
+                    """
+                    CREATE TABLE canonical_issues (
+                        run_id TEXT NOT NULL,
+                        issue_key TEXT NOT NULL,
+                        issue_type TEXT NOT NULL,
+                        status TEXT NOT NULL,
+                        PRIMARY KEY(run_id, issue_key)
+                    )
+                    """
+                )
+                conn.execute(
+                    "CREATE TABLE canonical_refresh_state (id INTEGER PRIMARY KEY, last_success_run_id TEXT NOT NULL)"
+                )
+                conn.execute(
+                    "INSERT INTO canonical_refresh_state(id, last_success_run_id) VALUES(1, 'current')"
+                )
+                conn.executemany(
+                    "INSERT INTO canonical_issues(run_id, issue_key, issue_type, status) VALUES('historical', ?, 'Story', 'Resolved!')",
+                    ((f"OLD-{idx}",) for idx in range(20000)),
+                )
+                conn.executemany(
+                    "INSERT INTO canonical_issues(run_id, issue_key, issue_type, status) VALUES('current', ?, 'Epic', ?)",
+                    [("O2-100", "Completed"), ("FF-200", "In Progress")],
+                )
+                progress_calls = 0
+
+                def stop_if_query_scans_history() -> int:
+                    nonlocal progress_calls
+                    progress_calls += 1
+                    return 1 if progress_calls > 100 else 0
+
+                conn.set_progress_handler(stop_if_query_scans_history, 100)
+                statuses = _latest_canonical_epic_statuses(conn, "main", ("O2-100", "FF-200"))
+                conn.set_progress_handler(None, 0)
+
+        self.assertEqual(statuses, {"O2-100": "Completed", "FF-200": "In Progress"})
+        self.assertLessEqual(progress_calls, 100)
 
     def test_team_update_preserves_omitted_skill_and_resource_assignments(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:

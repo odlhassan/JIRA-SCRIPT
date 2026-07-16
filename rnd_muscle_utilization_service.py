@@ -292,6 +292,69 @@ def _is_completed_or_resolved_epic_status(value: object) -> bool:
     return bool({"completed", "resolved"} & set(normalized.split()))
 
 
+def _latest_canonical_epic_statuses(
+    conn: sqlite3.Connection,
+    source_schema: str,
+    epic_keys: tuple[str, ...],
+) -> dict[str, str]:
+    """Load statuses only for planner epic keys from the latest canonical snapshot.
+
+    Production canonical_issues can contain millions of historical rows. Filtering
+    by run_id first uses its (run_id, issue_key) primary-key index and prevents the
+    RnD page request from scanning the full table.
+    """
+    if not epic_keys or not _table_exists(conn, "canonical_issues", schema=source_schema):
+        return {}
+    canonical_columns = _table_columns(conn, "canonical_issues", schema=source_schema)
+    if not {"issue_key", "status"}.issubset(canonical_columns):
+        return {}
+
+    canonical_table = _qualified_table(source_schema, "canonical_issues")
+    run_id = ""
+    if "run_id" in canonical_columns:
+        if _table_exists(conn, "canonical_refresh_state", schema=source_schema):
+            state_columns = _table_columns(conn, "canonical_refresh_state", schema=source_schema)
+            if "last_success_run_id" in state_columns:
+                state_table = _qualified_table(source_schema, "canonical_refresh_state")
+                state_row = conn.execute(
+                    f"SELECT last_success_run_id FROM {state_table} WHERE id = 1"
+                ).fetchone()
+                run_id = str(state_row[0] if state_row else "").strip()
+        if not run_id:
+            run_row = conn.execute(
+                f"SELECT run_id FROM {canonical_table} ORDER BY rowid DESC LIMIT 1"
+            ).fetchone()
+            run_id = str(run_row[0] if run_row else "").strip()
+        if not run_id:
+            return {}
+
+    statuses: dict[str, str] = {}
+    select_issue_type = ", issue_type" if "issue_type" in canonical_columns else ""
+    normalized_keys = tuple(dict.fromkeys(key.strip().upper() for key in epic_keys if key.strip()))
+    for offset in range(0, len(normalized_keys), 400):
+        key_chunk = normalized_keys[offset : offset + 400]
+        placeholders = ",".join("?" for _ in key_chunk)
+        if "run_id" in canonical_columns:
+            sql = (
+                f"SELECT issue_key, status{select_issue_type} FROM {canonical_table} "
+                f"WHERE run_id = ? AND issue_key IN ({placeholders}) ORDER BY rowid ASC"
+            )
+            params: tuple[object, ...] = (run_id, *key_chunk)
+        else:
+            sql = (
+                f"SELECT issue_key, status{select_issue_type} FROM {canonical_table} "
+                f"WHERE issue_key IN ({placeholders}) ORDER BY rowid ASC"
+            )
+            params = key_chunk
+        for row in conn.execute(sql, params).fetchall():
+            if "issue_type" in canonical_columns and str(row["issue_type"] or "").strip().casefold() != "epic":
+                continue
+            issue_key = str(row["issue_key"] or "").strip().upper()
+            if issue_key:
+                statuses[issue_key] = str(row["status"] or "")
+    return statuses
+
+
 def _source_schema(rnd_db_path: Path, source_db_path: Path | None) -> str:
     if source_db_path is None:
         return "main"
@@ -482,31 +545,6 @@ def _load_page_state_from_conn(
     )
 
     # --- Epics from Epics Planner rows ---
-    # The left catalog and all planner projections must exclude Jira epics whose
-    # latest canonical status is Completed or Resolved (including punctuation
-    # variants such as "Resolved!").
-    latest_epic_status_by_key: dict[str, str] = {}
-    if _table_exists(conn, "canonical_issues", schema=source_schema):
-        canonical_columns = _table_columns(conn, "canonical_issues", schema=source_schema)
-        if {"issue_key", "status"}.issubset(canonical_columns):
-            canonical_table = _qualified_table(source_schema, "canonical_issues")
-            issue_type_filter = (
-                "WHERE lower(trim(COALESCE(issue_type, ''))) = 'epic'"
-                if "issue_type" in canonical_columns
-                else ""
-            )
-            for status_row in conn.execute(
-                f"SELECT issue_key, status FROM {canonical_table} {issue_type_filter} ORDER BY rowid ASC"
-            ).fetchall():
-                issue_key = str(status_row["issue_key"] or "").strip().upper()
-                if issue_key:
-                    latest_epic_status_by_key[issue_key] = str(status_row["status"] or "")
-    completed_or_resolved_epic_keys = {
-        epic_key
-        for epic_key, status in latest_epic_status_by_key.items()
-        if _is_completed_or_resolved_epic_status(status)
-    }
-
     epics_table = _qualified_table(source_schema, "epics_management")
     epics_query = f"""
         SELECT em.epic_key, em.epic_name, em.project_key, em.project_name,
@@ -515,6 +553,16 @@ def _load_page_state_from_conn(
         ORDER BY em.project_key ASC, em.epic_key ASC
     """
     epic_rows = conn.execute(epics_query).fetchall() if _table_exists(conn, "epics_management", schema=source_schema) else []
+    latest_epic_status_by_key = _latest_canonical_epic_statuses(
+        conn,
+        source_schema,
+        tuple(str(row["epic_key"] or "").strip().upper() for row in epic_rows),
+    )
+    completed_or_resolved_epic_keys = {
+        epic_key
+        for epic_key, status in latest_epic_status_by_key.items()
+        if _is_completed_or_resolved_epic_status(status)
+    }
 
     # Budgeted hours from epic_plan column
     plan_values_table = _qualified_table(source_schema, "epics_management_plan_values")
