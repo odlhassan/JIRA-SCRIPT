@@ -12764,6 +12764,7 @@ def _rnd_muscle_utilization_settings_html(planner_only: bool = False) -> str:
     * { box-sizing:border-box; }
     [hidden] { display:none !important; }
     body { margin:0; font-family:Arial,sans-serif; font-size:12px; background:var(--bg); color:var(--text); overflow:hidden; }
+    body.rnd-planner-only { overflow:auto; }
     body[data-rnd-theme] * { scrollbar-color:var(--scrollbar-thumb) var(--scrollbar-track); scrollbar-width:thin; }
     body[data-rnd-theme] *::-webkit-scrollbar { width:10px; height:10px; }
     body[data-rnd-theme] *::-webkit-scrollbar-track { background:var(--scrollbar-track); }
@@ -12794,6 +12795,11 @@ def _rnd_muscle_utilization_settings_html(planner_only: bool = False) -> str:
     .stat strong { display:block; font-size:16px; margin-bottom:2px; }
     .layout { display:grid; grid-template-columns:minmax(230px,1fr) minmax(460px,2.2fr) minmax(230px,1fr); gap:10px; flex:1; min-height:0; }
     .page.planner-only .layout { grid-template-columns:minmax(0,1fr); }
+    .page.planner-only { height:auto; min-height:100vh; overflow:visible; }
+    .page.planner-only .layout { flex:none; display:block; overflow:visible; }
+    .page.planner-only .planner-panel, .page.planner-only .planner-panel > .panel-body { overflow:visible; }
+    .page.planner-only .planner { height:auto; grid-template-rows:auto 100vh auto; }
+    .page.planner-only .canvas { height:100vh; min-height:100vh; }
     .page.planner-only .catalog-panel, .page.planner-only .stats, .page.planner-only .config-band,
     .page.planner-only #rnd-create-team-btn, .page.planner-only #rnd-add-skill-btn, .page.planner-only #rnd-configure-projects-btn { display:none; }
     .panel { background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); min-width:0; display:flex; flex-direction:column; overflow:hidden; }
@@ -12807,6 +12813,12 @@ def _rnd_muscle_utilization_settings_html(planner_only: bool = False) -> str:
     .row { border:1px solid var(--border); border-radius:var(--radius); padding:7px; background:var(--row); transition:transform .14s ease, box-shadow .14s ease, border-color .14s ease, background-color .14s ease, opacity .14s ease; }
     .row[draggable="true"]:hover, .staged-card:hover, .resource-card:hover { transform:translateY(-1px); box-shadow:0 6px 16px rgba(0,0,0,.14); }
     .row.dragging, .resource-card.dragging { opacity:.56; transform:scale(.985); }
+    .epic-priority { border-color:var(--priority-border) !important; background:var(--priority-bg) !important; color:var(--priority-text) !important; box-shadow:none; }
+    .epic-priority .row-meta { color:var(--priority-muted); }
+    .epic-priority .pill { border-color:var(--priority-border); background:var(--priority-pill); color:var(--priority-text); }
+    .epic-priority-1 { --priority-bg:#4c1d95; --priority-border:#3b0764; --priority-text:#ffffff; --priority-muted:#ede9fe; --priority-pill:rgba(255,255,255,.18); }
+    .epic-priority-2 { --priority-bg:#7c3aed; --priority-border:#6d28d9; --priority-text:#ffffff; --priority-muted:#f3e8ff; --priority-pill:rgba(255,255,255,.16); }
+    .epic-priority-3 { --priority-bg:#ede9fe; --priority-border:#c4b5fd; --priority-text:#3b0764; --priority-muted:#5b217d; --priority-pill:rgba(91,33,125,.09); }
     .resource-row.team-colored { border-color:var(--resource-team-border); background:linear-gradient(90deg,var(--resource-team-soft),var(--row)); color:var(--resource-team-text); box-shadow:inset 3px 0 0 var(--resource-team-accent); }
     .resource-row.team-colored .row-meta { color:var(--resource-team-muted); }
     .resource-row.team-colored .pill { border-color:var(--resource-team-border); background:var(--resource-team-pill); color:var(--resource-team-text); }
@@ -12871,6 +12883,7 @@ def _rnd_muscle_utilization_settings_html(planner_only: bool = False) -> str:
     .cluster-epics { border:1px solid var(--border); border-radius:var(--radius); background:var(--panel-2); padding:8px; overflow:auto; }
     .cluster-epic { width:100%; text-align:left; border:1px solid var(--border); border-radius:var(--radius); background:var(--row); color:var(--text); padding:7px; margin-bottom:6px; cursor:pointer; }
     .cluster-epic.active { border-color:var(--accent-strong); background:var(--accent-soft); }
+    .cluster-epic.epic-priority.active { outline:2px solid var(--accent-strong); outline-offset:-2px; }
     .cluster-stage { position:relative; min-height:420px; border:1px solid var(--border); border-radius:var(--radius); background:var(--row); overflow:hidden; }
     .cluster-lines { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
     .cluster-bubble { position:absolute; width:42px; height:42px; border-radius:50%; display:grid; place-items:center; color:#fff; font-weight:700; border:2px solid rgba(255,255,255,.75); box-shadow:0 8px 22px rgba(0,0,0,.28); transition:left .22s ease, top .22s ease, transform .22s ease, opacity .18s ease; z-index:1; }
@@ -12908,6 +12921,7 @@ def _rnd_muscle_utilization_settings_html(planner_only: bool = False) -> str:
     table { width:100%; border-collapse:collapse; font-size:11px; }
     th, td { border-bottom:1px solid var(--border); padding:5px; text-align:left; vertical-align:top; }
     th { background:var(--panel-2); position:sticky; top:0; }
+    .backlog tr.epic-priority td { background:var(--priority-bg); color:var(--priority-text); border-bottom-color:var(--priority-border); }
     .config-band { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
     .config-chip { border:1px solid var(--border); border-radius:var(--radius); background:var(--panel); padding:5px 8px; }
     .status { min-height:18px; margin-bottom:8px; color:var(--muted); }
@@ -12950,7 +12964,7 @@ def _rnd_muscle_utilization_settings_html(planner_only: bool = False) -> str:
     }
   </style>
 </head>
-<body>
+<body class="__RND_BODY_MODE_CLASS__">
 __SETTINGS_TOP_NAV__
 <main class="page __RND_PAGE_MODE_CLASS__">
   <div class="topbar">
@@ -13315,6 +13329,10 @@ __SETTINGS_TOP_NAV__
     return body;
   }
   function fmt(value){ return value === null || value === undefined || value === "" ? "-" : String(value); }
+  function epicPriorityClass(priority){
+    const value = Number(priority || 0);
+    return value >= 1 && value <= 3 ? "epic-priority epic-priority-" + value : "";
+  }
   function dateRange(item){
     const start = item && item.start_date ? item.start_date : "";
     const due = item && item.due_date ? item.due_date : "";
@@ -13519,7 +13537,7 @@ __SETTINGS_TOP_NAV__
     const backlogKeys = new Set((((state && state.planner) || {}).backlog || []).map((item) => item.epic_key));
     epics.slice(0, 150).forEach((epic) => {
       const row = document.createElement("div");
-      row.className = "row";
+      row.className = "row " + epicPriorityClass(epic.priority);
       row.draggable = true;
       row.addEventListener("dragstart", (event) => {
         event.dataTransfer.setData("application/x-rnd-epic", epic.epic_key);
@@ -13676,7 +13694,7 @@ __SETTINGS_TOP_NAV__
     canvasEpicKeys.forEach((epicKey) => {
       const epic = findEpic(epicKey);
       const card = document.createElement("div");
-      card.className = "staged-card" + (selectedCanvasEpicKey === epicKey ? " selected" : "");
+      card.className = "staged-card " + epicPriorityClass(epic && epic.priority) + (selectedCanvasEpicKey === epicKey ? " selected" : "");
       card.draggable = true;
       card.dataset.epicKey = epicKey;
       card.addEventListener("click", () => {
@@ -13877,6 +13895,7 @@ __SETTINGS_TOP_NAV__
     const plannerKeys = new Set(plannerEpicKeys());
     backlog.forEach((item) => {
       const tr = document.createElement("tr");
+      tr.className = epicPriorityClass(item.priority);
       tr.dataset.epicKey = item.epic_key;
       [item.epic_key, "P" + fmt(item.priority), Number(item.budgeted_hours || 0).toFixed(1) + "h", dateRange(item)].forEach((value) => {
         const td = document.createElement("td");
@@ -14074,7 +14093,7 @@ __SETTINGS_TOP_NAV__
       const epic = findEpic(epicKey);
       const btn = document.createElement("button");
       btn.type = "button";
-      btn.className = "cluster-epic" + (selectedClusterEpicKey === epicKey ? " active" : "");
+      btn.className = "cluster-epic " + epicPriorityClass(epic && epic.priority) + (selectedClusterEpicKey === epicKey ? " active" : "");
       btn.textContent = epicKey + (epic && epic.epic_name ? " - " + epic.epic_name : "");
       btn.addEventListener("click", () => {
         selectedClusterEpicKey = selectedClusterEpicKey === epicKey ? "" : epicKey;
@@ -15106,6 +15125,9 @@ __SETTINGS_TOP_NAV__
     ).replace(
         "__RND_PAGE_MODE_CLASS__",
         "planner-only" if planner_only else "",
+    ).replace(
+        "__RND_BODY_MODE_CLASS__",
+        "rnd-planner-only" if planner_only else "",
     ).replace(
         "__RND_TEAM_COLOR_PALETTE__",
         team_color_palette_json,

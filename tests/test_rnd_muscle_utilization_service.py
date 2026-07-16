@@ -152,6 +152,38 @@ class RndMuscleUtilizationServiceTests(unittest.TestCase):
             filtered_state = search_rnd_muscle_epics(db_path, "", ("FF",))
             self.assertEqual(filtered_state.quick_stats.selected_project_epic_count, 2)
 
+    def test_completed_and_resolved_canonical_epics_are_excluded(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            db_path = Path(td) / "settings.db"
+            _create_epics_management_table(db_path)
+            with sqlite3.connect(db_path) as conn:
+                conn.execute(
+                    """
+                    CREATE TABLE canonical_issues (
+                        run_id TEXT NOT NULL,
+                        issue_key TEXT NOT NULL,
+                        issue_type TEXT NOT NULL,
+                        status TEXT NOT NULL
+                    )
+                    """
+                )
+                conn.executemany(
+                    "INSERT INTO canonical_issues(run_id, issue_key, issue_type, status) VALUES(?,?,?,?)",
+                    [
+                        ("r1", "O2-100", "Epic", "Completed"),
+                        ("r1", "FF-200", "Epic", "Resolved!"),
+                        ("r1", "FF-300", "Epic", "Completed"),
+                        ("r2", "FF-300", "Epic", "In Progress"),
+                        ("r2", "O2-100", "Story", "In Progress"),
+                    ],
+                )
+
+            state = load_rnd_muscle_utilization_page_state(db_path)
+
+        self.assertEqual([epic.epic_key for epic in state.epics], ["FF-300"])
+        self.assertEqual(state.project_tabs[0].epic_count, 1)
+        self.assertEqual(state.quick_stats.selected_project_epic_count, 1)
+
     def test_team_update_preserves_omitted_skill_and_resource_assignments(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             db_path = Path(td) / "settings.db"

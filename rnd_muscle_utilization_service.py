@@ -286,6 +286,12 @@ def _priority_int(val: str) -> "int | None":
     return mapping.get(text)
 
 
+def _is_completed_or_resolved_epic_status(value: object) -> bool:
+    """Return whether a canonical Jira epic status is terminal for this planner."""
+    normalized = re.sub(r"[^a-z0-9]+", " ", str(value or "").casefold()).strip()
+    return bool({"completed", "resolved"} & set(normalized.split()))
+
+
 def _source_schema(rnd_db_path: Path, source_db_path: Path | None) -> str:
     if source_db_path is None:
         return "main"
@@ -476,6 +482,31 @@ def _load_page_state_from_conn(
     )
 
     # --- Epics from Epics Planner rows ---
+    # The left catalog and all planner projections must exclude Jira epics whose
+    # latest canonical status is Completed or Resolved (including punctuation
+    # variants such as "Resolved!").
+    latest_epic_status_by_key: dict[str, str] = {}
+    if _table_exists(conn, "canonical_issues", schema=source_schema):
+        canonical_columns = _table_columns(conn, "canonical_issues", schema=source_schema)
+        if {"issue_key", "status"}.issubset(canonical_columns):
+            canonical_table = _qualified_table(source_schema, "canonical_issues")
+            issue_type_filter = (
+                "WHERE lower(trim(COALESCE(issue_type, ''))) = 'epic'"
+                if "issue_type" in canonical_columns
+                else ""
+            )
+            for status_row in conn.execute(
+                f"SELECT issue_key, status FROM {canonical_table} {issue_type_filter} ORDER BY rowid ASC"
+            ).fetchall():
+                issue_key = str(status_row["issue_key"] or "").strip().upper()
+                if issue_key:
+                    latest_epic_status_by_key[issue_key] = str(status_row["status"] or "")
+    completed_or_resolved_epic_keys = {
+        epic_key
+        for epic_key, status in latest_epic_status_by_key.items()
+        if _is_completed_or_resolved_epic_status(status)
+    }
+
     epics_table = _qualified_table(source_schema, "epics_management")
     epics_query = f"""
         SELECT em.epic_key, em.epic_name, em.project_key, em.project_name,
@@ -507,6 +538,8 @@ def _load_page_state_from_conn(
     all_epics_list: list[RndMuscleEpic] = []
     for row in epic_rows:
         epic_key = str(row["epic_key"]).upper()
+        if epic_key in completed_or_resolved_epic_keys:
+            continue
         all_epics_list.append(
             RndMuscleEpic(
                 epic_key=epic_key,
