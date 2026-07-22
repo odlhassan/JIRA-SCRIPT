@@ -235,6 +235,25 @@ class EpicExplorerTests(unittest.TestCase):
             self.assertEqual(row["planned_to_date_hours"], 15.0)
             self.assertEqual(row["actual_to_date_hours"], 2.0)
             self.assertEqual(row["schedule_variance_hours"], -13.0)
+            self.assertEqual(
+                row["schedule_variance_breakdown"],
+                {
+                    "estimate_source": "jira_original_estimate",
+                    "estimate_label": "Jira Original Estimate",
+                    "estimate_hours": 62.0,
+                    "planned_start": "2026-07-01",
+                    "planned_due": "2026-08-31",
+                    "as_of_date": "2026-07-15",
+                    "as_of_basis": "current_date",
+                    "total_calendar_days": 62,
+                    "elapsed_calendar_days": 15,
+                    "planned_to_date_hours": 15.0,
+                    "actual_to_date_hours": 2.0,
+                    "schedule_variance_hours": -13.0,
+                    "schedule_variance_pct": -86.7,
+                    "position": "behind",
+                },
+            )
 
     def test_payload_rolls_up_full_epic_data_and_filters_only_epic_scope(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
@@ -404,6 +423,12 @@ class EpicExplorerTests(unittest.TestCase):
         self.assertIn("SV Hours", html)
         self.assertIn("Est. Accuracy", html)
         self.assertIn("scheduleHoursText(row)", html)
+        self.assertIn('id="sv-breakdown-dialog"', html)
+        self.assertIn('data-sv-breakdown=', html)
+        self.assertIn("showSvBreakdown", html)
+        self.assertIn("schedule_variance_breakdown", html)
+        self.assertIn("Planned to date:", html)
+        self.assertIn("SV percentage:", html)
         self.assertIn("estimationAccuracyText(row)", html)
         self.assertIn('data-plan-mode="bar"', html)
         self.assertIn('data-plan-mode="line"', html)

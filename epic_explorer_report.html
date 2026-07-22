@@ -626,6 +626,50 @@
       padding: 0;
     }
     .exec-expand-inner { padding: 10px 14px 14px; display: grid; gap: 10px; }
+    .sv-breakdown-trigger {
+      min-height: 0;
+      padding: 2px 4px;
+      border: 0;
+      border-radius: 4px;
+      background: transparent;
+      text-align: left;
+    }
+    .sv-breakdown-trigger:hover,
+    .sv-breakdown-trigger:focus-visible {
+      background: #e8f1ff;
+      outline: 2px solid rgba(37, 99, 235, 0.35);
+      outline-offset: 1px;
+    }
+    .sv-breakdown-trigger .kpi-text strong { text-decoration: underline dotted; text-underline-offset: 3px; }
+    .sv-breakdown-dialog {
+      width: min(560px, calc(100vw - 32px));
+      padding: 0;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      color: var(--ink);
+      box-shadow: var(--shadow);
+    }
+    .sv-breakdown-dialog::backdrop { background: rgba(15, 23, 42, 0.5); }
+    .sv-breakdown-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--line);
+    }
+    .sv-breakdown-head h2 { margin: 0; font-size: 18px; }
+    .sv-breakdown-body { display: grid; gap: 9px; padding: 18px; }
+    .sv-breakdown-line { line-height: 1.45; }
+    .sv-breakdown-line strong { font-weight: 750; }
+    .sv-breakdown-formula {
+      margin-top: 4px;
+      padding: 11px 12px;
+      border-radius: 8px;
+      background: #f3f6fb;
+      font-family: Consolas, "Courier New", monospace;
+      overflow-wrap: anywhere;
+    }
     @media (max-width: 900px) {
       .page { padding: 12px; }
       .summary-strip { grid-template-columns: repeat(2, minmax(130px, 1fr)); }
@@ -723,6 +767,14 @@
     </aside>
   </div>
 
+  <dialog class="sv-breakdown-dialog" id="sv-breakdown-dialog" aria-labelledby="sv-breakdown-title">
+    <div class="sv-breakdown-head">
+      <h2 id="sv-breakdown-title">SV Hours calculation</h2>
+      <button type="button" class="icon-btn" id="sv-breakdown-close" aria-label="Close SV Hours calculation"><span class="material-symbols-outlined">close</span></button>
+    </div>
+    <div class="sv-breakdown-body" id="sv-breakdown-body"></div>
+  </dialog>
+
   <script src="/shared-nav.js"></script>
   <script>
     const state = {
@@ -781,7 +833,10 @@
       execTrendCards: document.getElementById("exec-trend-cards"),
       execTableWrap: document.getElementById("exec-table-wrap"),
       execLeadershipChart: document.getElementById("exec-leadership-chart"),
-      capacityBasis: document.getElementById("capacity-basis")
+      capacityBasis: document.getElementById("capacity-basis"),
+      svBreakdownDialog: document.getElementById("sv-breakdown-dialog"),
+      svBreakdownBody: document.getElementById("sv-breakdown-body"),
+      svBreakdownClose: document.getElementById("sv-breakdown-close")
     };
     const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
     const n = (v) => Number(v || 0);
@@ -816,6 +871,20 @@
       const yearShort = parts.year.slice(-2);
       return month ? `${month}-${parts.day}-${yearShort}` : String(value || "-");
     }
+    function formatLongDate(value){
+      const parts = parseIsoDateParts(value);
+      if (!parts) return String(value || "-");
+      const month = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"][parts.month - 1] || "";
+      return month ? `${month} ${Number(parts.day)}, ${parts.year}` : String(value || "-");
+    }
+    function formatPeriod(startValue, dueValue){
+      const start = parseIsoDateParts(startValue);
+      const due = parseIsoDateParts(dueValue);
+      if (!start || !due) return `${formatLongDate(startValue)} to ${formatLongDate(dueValue)}`;
+      const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+      if (start.year === due.year && start.month === due.month) return `${months[start.month - 1]} ${Number(start.day)}–${Number(due.day)}, ${start.year}`;
+      return `${formatLongDate(startValue)}–${formatLongDate(dueValue)}`;
+    }
     const keyPart = (v) => String(v || "").replace(/[^A-Za-z0-9_-]/g, "_");
     const pct = (v) => v == null || v === "" ? "-" : `${n(v).toFixed(1)}%`;
     function kpiClass(position, value){
@@ -848,6 +917,35 @@
     function scheduleHoursText(row){
       const secondary = row.schedule_variance_pct == null ? positionText(row.schedule_variance_hours_position) : `${pct(row.schedule_variance_pct)} ${positionText(row.schedule_variance_hours_position)}`;
       return kpiText(signedHours(row.schedule_variance_hours), secondary, kpiClass(row.schedule_variance_hours_position, row.schedule_variance_hours));
+    }
+    function compactNumber(value, digits = 2){
+      if (value == null || value === "" || !Number.isFinite(Number(value))) return "-";
+      const fixed = Number(value).toFixed(digits);
+      return fixed.includes(".") ? fixed.replace(/0+$/, "").replace(/\.$/, "") : fixed;
+    }
+    function showSvBreakdown(epicKey){
+      const row = (state.payload?.rows || []).find((item) => String(item.epic_key || "") === String(epicKey || ""));
+      if (!row) return;
+      const b = row.schedule_variance_breakdown || {};
+      const estimate = compactNumber(b.estimate_hours);
+      const planned = compactNumber(b.planned_to_date_hours);
+      const actual = compactNumber(b.actual_to_date_hours);
+      const variance = signedHours(b.schedule_variance_hours);
+      const percentage = b.schedule_variance_pct == null ? "-" : `${compactNumber(b.schedule_variance_pct, 1)}% ${positionText(b.position)}`;
+      const hasProration = Number.isFinite(Number(b.total_calendar_days)) && Number.isFinite(Number(b.elapsed_calendar_days));
+      const plannedFormula = hasProration
+        ? `${estimate} × ${b.elapsed_calendar_days}/${b.total_calendar_days} = ${planned}h`
+        : `${planned}h (full estimate used because a valid planned period is unavailable)`;
+      els.svBreakdownBody.innerHTML = `
+        <div class="sv-breakdown-line"><strong>Epic:</strong> ${esc(row.epic_key)} — ${esc(row.epic_name)}</div>
+        <div class="sv-breakdown-line"><strong>${esc(b.estimate_label || "Estimate")}:</strong> ${esc(estimate)}h</div>
+        <div class="sv-breakdown-line"><strong>Period:</strong> ${esc(formatPeriod(b.planned_start, b.planned_due))}${hasProration ? ` = ${esc(b.total_calendar_days)} calendar days` : ""}</div>
+        <div class="sv-breakdown-line"><strong>As of ${esc(formatLongDate(b.as_of_date))}:</strong> ${hasProration ? `${esc(b.elapsed_calendar_days)} days elapsed` : esc(b.as_of_basis === "actual_complete_date" ? "actual completion date" : "current reporting date")}</div>
+        <div class="sv-breakdown-line sv-breakdown-formula"><strong>Planned to date:</strong> ${esc(plannedFormula)}</div>
+        <div class="sv-breakdown-line"><strong>Actual:</strong> ${esc(actual)}h</div>
+        <div class="sv-breakdown-line"><strong>SV:</strong> ${esc(actual)} − ${esc(planned)} = ${esc(variance)}</div>
+        <div class="sv-breakdown-line"><strong>SV percentage:</strong> ${esc(variance)} / ${esc(planned)} = ${esc(percentage)}</div>`;
+      els.svBreakdownDialog.showModal();
     }
     function estimationAccuracyText(row){
       return kpiText(pct(row.estimation_accuracy_pct), positionText(row.estimation_accuracy_status), kpiClass(row.estimation_accuracy_status, row.estimation_accuracy_pct));
@@ -932,7 +1030,7 @@
         <td>${kpiText(`${hours(row.planned_total_hours)} / ${hours(row.total_actual_hours)}`, "planned / actual", "neutral")}</td>
         <td>${kpiText(`${dateText(row.planned_due)} / ${dateText(row.actual_complete_date)}`, "planned / actual", "neutral")}</td>
         <td>${scheduleDaysText(row)}</td>
-        <td>${scheduleHoursText(row)}</td>
+        <td><button type="button" class="sv-breakdown-trigger" data-sv-breakdown="${esc(key)}" aria-label="Show SV Hours calculation for ${esc(row.epic_name || key)}" title="Click to view the SV Hours calculation">${scheduleHoursText(row)}</button></td>
         <td>${estimationAccuracyText(row)}</td>
         <td>${statusPill(row.epic_status)}</td>
         <td class="num">${esc(row.headcount || 0)}</td>
@@ -1552,10 +1650,12 @@
       const story = btn.dataset.toggleStory;
       const subtask = btn.dataset.toggleSubtask;
       const openEpic = btn.dataset.openEpic;
+      const svBreakdown = btn.dataset.svBreakdown;
       if (epic) { state.expandedEpics[state.expandedEpics.has(epic) ? "delete" : "add"](epic); renderTable(); }
       if (story) { state.expandedStories[state.expandedStories.has(story) ? "delete" : "add"](story); renderTable(); }
       if (subtask) { state.expandedSubtasks[state.expandedSubtasks.has(subtask) ? "delete" : "add"](subtask); renderTable(); }
       if (openEpic) openDrawer(openEpic);
+      if (svBreakdown) showSvBreakdown(svBreakdown);
     });
     els.projectToggle.addEventListener("click", () => els.projectPicker.classList.toggle("open"));
     els.projectMenu.addEventListener("change", (ev) => {
@@ -1603,6 +1703,8 @@
       loadReport().catch((err) => { els.tbody.innerHTML = `<tr><td colspan="18">${esc(err.message)}</td></tr>`; });
     });
     els.csv.addEventListener("click", downloadCsv);
+    els.svBreakdownClose.addEventListener("click", () => els.svBreakdownDialog.close());
+    els.svBreakdownDialog.addEventListener("click", (ev) => { if (ev.target === els.svBreakdownDialog) els.svBreakdownDialog.close(); });
     els.capacityBasis.addEventListener("change", async () => {
       const value = els.capacityBasis.value || "assignee_capacity_after_leaves";
       const resp = await fetch("/api/epic-explorer/ui-settings", {

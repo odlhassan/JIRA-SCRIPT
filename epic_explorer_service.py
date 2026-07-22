@@ -170,17 +170,41 @@ def _planned_total_hours(
     story_estimate_hours: float,
     subtask_estimate_hours: float,
 ) -> float:
-    candidates = [
+    return _planned_estimate_basis(
         jira_original_estimate_hours,
-        tk_budget_hours if tk_budget_hours is not None else 0.0,
+        tk_budget_hours,
         story_estimate_hours,
         subtask_estimate_hours,
+    )["hours"]
+
+
+def _planned_estimate_basis(
+    jira_original_estimate_hours: float,
+    tk_budget_hours: float | None,
+    story_estimate_hours: float,
+    subtask_estimate_hours: float,
+) -> dict[str, Any]:
+    candidates = [
+        ("jira_original_estimate", "Jira Original Estimate", jira_original_estimate_hours),
+        ("tk_budget", "TK Budget", tk_budget_hours if tk_budget_hours is not None else 0.0),
+        ("story_estimates", "Story Estimates", story_estimate_hours),
+        ("subtask_estimates", "Subtask Estimates", subtask_estimate_hours),
     ]
-    for value in candidates:
+    for source, label, value in candidates:
         rounded = _round_hours(value)
         if rounded > 0:
-            return rounded
-    return 0.0
+            return {"source": source, "label": label, "hours": rounded}
+    return {"source": "none", "label": "No estimate available", "hours": 0.0}
+
+
+def _schedule_proration_days(planned_start: Any, planned_due: Any, as_of_day: date | None) -> dict[str, int | None]:
+    start_day = _parse_iso_date(planned_start)
+    due_day = _parse_iso_date(planned_due)
+    if not start_day or not due_day or due_day < start_day or not as_of_day:
+        return {"total_calendar_days": None, "elapsed_calendar_days": None}
+    total_days = (due_day - start_day).days + 1
+    elapsed_days = min(total_days, max(0, (as_of_day - start_day).days + 1))
+    return {"total_calendar_days": total_days, "elapsed_calendar_days": elapsed_days}
 
 
 def _planned_to_date_hours(planned_total_hours: float, planned_start: Any, planned_due: Any, as_of_day: date | None) -> float:
@@ -798,12 +822,13 @@ def build_epic_explorer_payload(
             completion = _derive_actual_completion(epic.get("due_date"), "", "")
         tk_budget_hours = _planner_tk_budget_hours(planner)
         jira_original_estimate_hours = _round_hours(epic.get("original_estimate_hours"))
-        planned_total_hours = _planned_total_hours(
+        planned_estimate_basis = _planned_estimate_basis(
             jira_original_estimate_hours,
             tk_budget_hours,
             story_estimate_hours,
             subtask_estimate_hours,
         )
+        planned_total_hours = planned_estimate_basis["hours"]
         schedule_as_of_day = _parse_iso_date(completion["actual_complete_date"]) or date.today()
         planned_to_date_hours = _planned_to_date_hours(
             planned_total_hours,
@@ -819,6 +844,11 @@ def build_epic_explorer_payload(
         )
         schedule_variance_hours = _round_hours(actual_to_date_hours - planned_to_date_hours)
         schedule_variance_pct = _round_hours((schedule_variance_hours / planned_to_date_hours) * 100) if planned_to_date_hours > 0 else None
+        schedule_proration_days = _schedule_proration_days(
+            epic.get("start_date"),
+            epic.get("due_date"),
+            schedule_as_of_day,
+        )
         planned_due_day = _parse_iso_date(epic.get("due_date"))
         schedule_variance_days = (planned_due_day - schedule_as_of_day).days if planned_due_day and schedule_as_of_day else None
         accuracy = _estimation_accuracy(planned_total_hours, total_actual_hours)
@@ -916,7 +946,7 @@ def build_epic_explorer_payload(
 
         status_day = _parse_iso_date(completion["actual_complete_date"]) or date.today()
         status_month = _month_code(status_day)
-        planned_total_hours = _planned_effort_hours(jira_original_estimate_hours, tk_budget_hours, story_estimate_hours, subtask_estimate_hours)
+        planned_total_hours = planned_estimate_basis["hours"]
         planned_to_date_hours = _planned_to_date_hours(planned_total_hours, epic.get("start_date"), epic.get("due_date"), status_day)
         actual_to_date_hours = _round_hours(
             sum(
@@ -1084,6 +1114,21 @@ def build_epic_explorer_payload(
             "schedule_variance_hours": schedule_variance_hours,
             "schedule_variance_pct": schedule_variance_pct,
             "schedule_variance_hours_position": _schedule_position(schedule_variance_hours),
+            "schedule_variance_breakdown": {
+                "estimate_source": planned_estimate_basis["source"],
+                "estimate_label": planned_estimate_basis["label"],
+                "estimate_hours": planned_total_hours,
+                "planned_start": _to_text(epic.get("start_date")),
+                "planned_due": _to_text(epic.get("due_date")),
+                "as_of_date": status_day.isoformat(),
+                "as_of_basis": "actual_complete_date" if completion["actual_complete_date"] else "current_date",
+                **schedule_proration_days,
+                "planned_to_date_hours": planned_to_date_hours,
+                "actual_to_date_hours": actual_to_date_hours,
+                "schedule_variance_hours": schedule_variance_hours,
+                "schedule_variance_pct": schedule_variance_pct,
+                "position": _schedule_position(schedule_variance_hours),
+            },
             "estimation_accuracy_pct": estimation_accuracy_pct,
             "estimation_accuracy_status": _estimate_accuracy_status(estimation_accuracy_pct),
             "stories": nested_stories,
