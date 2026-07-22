@@ -8,7 +8,7 @@ from datetime import date
 from pathlib import Path
 from unittest.mock import patch
 
-from epic_explorer_service import build_epic_explorer_payload
+from epic_explorer_service import _derive_actual_completion, build_epic_explorer_payload
 from report_server import _init_epics_management_db, create_report_server_app, sync_report_html
 
 
@@ -173,6 +173,25 @@ def _seed_epic_explorer_db(db_path: Path) -> None:
 
 
 class EpicExplorerTests(unittest.TestCase):
+    def test_resolved_epic_uses_last_log_before_resolution_and_caps_later_logs(self):
+        completed_before_resolution = _derive_actual_completion(
+            "2026-05-22", "2026-07-07", "2026-07-13"
+        )
+        logged_after_resolution = _derive_actual_completion(
+            "2026-05-22", "2026-07-20", "2026-07-13"
+        )
+
+        self.assertEqual(completed_before_resolution["actual_complete_date"], "2026-07-07")
+        self.assertEqual(
+            completed_before_resolution["actual_complete_source"],
+            "earlier_last_logged_resolved_stable",
+        )
+        self.assertEqual(logged_after_resolution["actual_complete_date"], "2026-07-13")
+        self.assertEqual(
+            logged_after_resolution["actual_complete_source"],
+            "earlier_last_logged_resolved_stable",
+        )
+
     def test_unresolved_or_reopened_epic_uses_today_instead_of_last_worklog(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             db_path = Path(td) / "assignee_hours_capacity.db"
@@ -298,18 +317,18 @@ class EpicExplorerTests(unittest.TestCase):
             self.assertEqual(row["story_estimate_hours"], 82.0)
             self.assertEqual(row["subtask_estimate_hours"], 30.0)
             self.assertEqual(row["planned_total_hours"], 100.0)
-            self.assertEqual(row["planned_to_date_hours"], 100.0)
+            self.assertEqual(row["planned_to_date_hours"], 64.52)
             self.assertEqual(row["total_actual_hours"], 24.0)
             self.assertEqual(row["actual_to_date_hours"], 24.0)
-            self.assertEqual(row["schedule_variance_days"], -1)
-            self.assertEqual(row["schedule_variance_hours"], -76.0)
-            self.assertEqual(row["schedule_variance_pct"], -76.0)
+            self.assertEqual(row["schedule_variance_days"], 11)
+            self.assertEqual(row["schedule_variance_hours"], -40.52)
+            self.assertEqual(row["schedule_variance_pct"], -62.8)
             self.assertEqual(row["estimation_accuracy_pct"], 416.7)
             self.assertEqual(row["estimation_accuracy_status"], "outside_ideal")
-            self.assertEqual(row["actual_complete_date"], "2026-06-01")
-            self.assertEqual(row["actual_complete_source"], "max_last_logged_resolved_stable")
+            self.assertEqual(row["actual_complete_date"], "2026-05-20")
+            self.assertEqual(row["actual_complete_source"], "earlier_last_logged_resolved_stable")
             self.assertEqual(row["headcount"], 3)
-            self.assertEqual(row["schedule_variance_date_position"], "behind")
+            self.assertEqual(row["schedule_variance_date_position"], "ahead")
             self.assertEqual(row["schedule_variance_hours_position"], "behind")
             self.assertEqual({item["issue_key"] for item in row["stories"]}, {"O2-1-S1", "O2-1-S2", "O2-1-T1"})
             self.assertTrue(any(item["issue_key"] == "O2-1-T1" and item["issue_type"] == "Task" for item in row["stories"]))
@@ -331,14 +350,14 @@ class EpicExplorerTests(unittest.TestCase):
             self.assertIn("equal_story_estimate_pct", row["analytics"]["estimate_quality"])
             self.assertIn("Build table", {item["summary"] for item in row["analytics"]["estimate_quality"]["details"]})
             sv = row["analytics"]["schedule_variance"]
-            self.assertEqual(sv["planned_to_date_hours"], 100.0)
+            self.assertEqual(sv["planned_to_date_hours"], 64.52)
             self.assertEqual(sv["actual_to_date_hours"], 24.0)
-            self.assertEqual(sv["schedule_variance_hours"], -76.0)
-            self.assertEqual(sv["trend_3_months"]["direction"], "improving")
-            self.assertEqual([item["month"] for item in sv["trend_3_months"]["months"]], ["2026-05", "2026-06"])
+            self.assertEqual(sv["schedule_variance_hours"], -40.52)
+            self.assertEqual(sv["trend_3_months"]["direction"], "insufficient_data")
+            self.assertEqual([item["month"] for item in sv["trend_3_months"]["months"]], ["2026-05"])
             self.assertEqual(
                 [(item["month"], item["planned_hours"]) for item in sv["trend_3_months"]["months"]],
-                [("2026-05", 62.0), ("2026-06", 20.0)],
+                [("2026-05", 62.0)],
             )
             self.assertEqual(row["analytics"]["monthly_plan_basis"]["estimate_source"], "story_original_estimate")
             self.assertEqual(row["analytics"]["monthly_plan_basis"]["capacity_basis"], "assignee_capacity_after_leaves")
@@ -428,6 +447,14 @@ class EpicExplorerTests(unittest.TestCase):
         self.assertIn("Planned vs Actual Hours", html)
         self.assertIn("Planned vs Actual Delivery", html)
         self.assertIn("SV Date", html)
+        self.assertIn("function formatDateDdMmmYyyy(value)", html)
+        self.assertIn('const timing = days < 0 ? "late" : (days > 0 ? "early" : "on time")', html)
+        self.assertIn('`${count} ${count === 1 ? "day" : "days"}`', html)
+        self.assertIn("Resolved epics use completion date, not today.", html)
+        self.assertIn("Open epics use today's reporting date.", html)
+        self.assertIn('class="sv-date-kpi"', html)
+        self.assertIn("earlier_last_logged_resolved_stable", html)
+        self.assertIn("Earlier of last logged worklog date and epic resolved-stable-since date; resolution caps later worklogs.", html)
         self.assertIn("SV Hours", html)
         self.assertIn("Est. Accuracy", html)
         self.assertIn("scheduleHoursText(row)", html)

@@ -657,6 +657,9 @@ def _load_page_state_from_conn(
                         start_date=epic.start_date,
                         due_date=epic.due_date,
                         sort_order=int(row["sort_order"]),
+                        epic_name=epic.epic_name,
+                        project_key=epic.project_key,
+                        project_name=epic.project_name,
                     )
                 )
         return tuple(items)
@@ -1161,6 +1164,113 @@ def save_rnd_muscle_epic_resource_mapping(
             )
 
         conn.commit()
+        return _load_page_state_from_conn(conn, source_schema=source_schema)
+    finally:
+        conn.close()
+
+
+def import_rnd_muscle_mapping_rows(
+    settings_db_path: Path,
+    rows: list[dict[str, object]] | tuple[dict[str, object], ...],
+    source_db_path: Path | None = None,
+) -> RndMuscleUtilizationPageState:
+    """Atomically replace mappings for every epic represented in an imported workbook."""
+    _init_rnd_muscle_utilization_db(settings_db_path)
+    if not isinstance(rows, (list, tuple)):
+        raise ValueError("mapping rows must be an array.")
+
+    grouped: dict[str, list[tuple[int, int, str, float]]] = {}
+    seen_pairs: set[tuple[str, str]] = set()
+    for row_index, raw_row in enumerate(rows):
+        if not isinstance(raw_row, dict):
+            raise ValueError(f"Mapping row {row_index + 1} must be an object.")
+        epic_key = str(raw_row.get("epic_key") or "").strip().upper()
+        if not epic_key:
+            raise ValueError(f"Mapping row {row_index + 1} requires an epic_key.")
+        grouped.setdefault(epic_key, [])
+        resource_id = str(raw_row.get("resource_id") or "").strip()
+        if not resource_id:
+            continue
+        pair = (epic_key, resource_id)
+        if pair in seen_pairs:
+            raise ValueError(f"Duplicate mapping for epic '{epic_key}' and resource '{resource_id}'.")
+        seen_pairs.add(pair)
+        try:
+            allocation_hours = float(raw_row.get("allocation_hours") or 0)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"Invalid allocation hours for epic '{epic_key}' and resource '{resource_id}'.") from exc
+        if not math.isfinite(allocation_hours) or allocation_hours < 0:
+            raise ValueError("allocation hours must be finite and non-negative.")
+        try:
+            sort_order = int(raw_row.get("sort_order") if raw_row.get("sort_order") not in (None, "") else row_index)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"Invalid sort order for epic '{epic_key}' and resource '{resource_id}'.") from exc
+        if sort_order < 0:
+            raise ValueError("sort order must be non-negative.")
+        grouped[epic_key].append((sort_order, row_index, resource_id, allocation_hours))
+
+    conn, source_schema = _connect_rnd_db(settings_db_path, source_db_path)
+    try:
+        conn.row_factory = sqlite3.Row
+        if not _table_exists(conn, "epics_management", schema=source_schema):
+            raise ValueError("Epics Planner table epics_management is not initialized.")
+        available_epic_keys = {
+            str(row["epic_key"] or "").strip().upper()
+            for row in conn.execute(
+                f"SELECT epic_key FROM {_qualified_table(source_schema, 'epics_management')}"
+            ).fetchall()
+        }
+        unknown_epic_keys = set(grouped) - available_epic_keys
+        if unknown_epic_keys:
+            raise ValueError(f"Unknown epic key(s): {sorted(unknown_epic_keys)}")
+        available_resource_ids = {
+            str(row["resource_id"])
+            for row in conn.execute("SELECT resource_id FROM rnd_muscle_resources").fetchall()
+        }
+        imported_resource_ids = {resource_id for items in grouped.values() for _, _, resource_id, _ in items}
+        unknown_resource_ids = imported_resource_ids - available_resource_ids
+        if unknown_resource_ids:
+            raise ValueError(f"Unknown resource_id(s): {sorted(unknown_resource_ids)}")
+
+        now = _now_utc()
+        next_sort_order_raw = conn.execute("SELECT MAX(sort_order) FROM rnd_muscle_planner_epics").fetchone()[0]
+        next_sort_order = (int(next_sort_order_raw) + 1) if next_sort_order_raw is not None else 0
+        try:
+            conn.execute("BEGIN")
+            existing_planner_keys = {
+                str(row["epic_key"] or "").strip().upper()
+                for row in conn.execute("SELECT epic_key FROM rnd_muscle_planner_epics").fetchall()
+            }
+            for epic_key, mapping_items in grouped.items():
+                if epic_key not in existing_planner_keys:
+                    conn.execute(
+                        """
+                        INSERT INTO rnd_muscle_planner_epics(epic_key, sort_order, created_at_utc, updated_at_utc)
+                        VALUES(?,?,?,?)
+                        """,
+                        (epic_key, next_sort_order, now, now),
+                    )
+                    existing_planner_keys.add(epic_key)
+                    next_sort_order += 1
+                conn.execute(
+                    "DELETE FROM rnd_muscle_epic_resource_mappings WHERE upper(epic_key)=?",
+                    (epic_key,),
+                )
+                for normalized_order, (_, _, resource_id, allocation_hours) in enumerate(
+                    sorted(mapping_items, key=lambda item: (item[0], item[1]))
+                ):
+                    conn.execute(
+                        """
+                        INSERT INTO rnd_muscle_epic_resource_mappings(
+                            epic_key, resource_id, allocation_hours, sort_order, created_at_utc, updated_at_utc
+                        ) VALUES(?,?,?,?,?,?)
+                        """,
+                        (epic_key, resource_id, allocation_hours, normalized_order, now, now),
+                    )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
         return _load_page_state_from_conn(conn, source_schema=source_schema)
     finally:
         conn.close()

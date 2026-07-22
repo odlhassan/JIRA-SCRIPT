@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+from io import BytesIO
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 
 from report_server import (
     RND_MUSCLE_UTILIZATION_SETTINGS_ROUTE,
@@ -206,6 +207,16 @@ class RndMuscleUtilizationApiTests(unittest.TestCase):
         self.assertIn('role="switch"', html)
         self.assertIn('class="theme-switch"', html)
         self.assertIn('id="rnd-theme-color"', html)
+        self.assertIn('id="rnd-export-mappings-btn"', html)
+        self.assertIn('id="rnd-import-mappings-btn"', html)
+        self.assertIn('id="rnd-import-mappings-file"', html)
+        self.assertIn('accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"', html)
+        self.assertIn('function exportMappingWorkbook()', html)
+        self.assertIn('function importMappingWorkbook(file)', html)
+        self.assertIn('API + "/mappings/export"', html)
+        self.assertIn('API + "/mappings/import"', html)
+        self.assertIn('formData.append("workbook", file, file.name)', html)
+        self.assertIn('settlePlannerSavesBeforeWorkbookAction', html)
         self.assertIn('id="rnd-team-color-grid"', html)
         self.assertIn('TEAM_COLOR_PALETTE', html)
         self.assertIn('rnd-muscle-theme-mode-v1', html)
@@ -225,6 +236,12 @@ class RndMuscleUtilizationApiTests(unittest.TestCase):
         self.assertIn('--priority-bg:#7c3aed', html)
         self.assertIn('epic-priority-3', html)
         self.assertIn('--priority-bg:#ede9fe', html)
+        self.assertIn('body[data-rnd-theme="dark"] .epic-priority-1', html)
+        self.assertIn('--priority-bg:#452064', html)
+        self.assertIn('body[data-rnd-theme="dark"] .epic-priority-2', html)
+        self.assertIn('--priority-bg:#352640', html)
+        self.assertIn('body[data-rnd-theme="dark"] .epic-priority-3', html)
+        self.assertIn('--priority-bg:#2b2931', html)
         self.assertIn('row.className = "row " + epicPriorityClass(epic.priority)', html)
         self.assertIn('card.className = "staged-card " + epicPriorityClass(epic && epic.priority)', html)
         self.assertIn('tr.className = epicPriorityClass(item.priority)', html)
@@ -262,6 +279,11 @@ class RndMuscleUtilizationApiTests(unittest.TestCase):
         self.assertIn('--resource-team-soft', html)
         self.assertIn('--resource-team-accent', html)
         self.assertIn('--resource-team-text', html)
+        self.assertIn('const strong = lightMode ? base : mixColor(base, "#181818", 0.38)', html)
+        self.assertIn('strongText: readableTextColor(strong)', html)
+        self.assertIn('card.style.background = tone.strong', html)
+        self.assertIn('card.style.setProperty("--resource-card-accent", tone.base)', html)
+        self.assertIn('bubble.style.background = tone.strong', html)
         self.assertIn('row.className = "row resource-row" + (team.team_id ? " team-colored" : "")', html)
         self.assertIn('renderTeamColorPalette', html)
         self.assertIn('setTeamColor', html)
@@ -285,6 +307,27 @@ class RndMuscleUtilizationApiTests(unittest.TestCase):
         self.assertIn('setEpicResourceMappings(epicKey, resourceIds, allocation);', html)
         self.assertIn('setPlannerEpicOrder(epicKeys);', html)
         self.assertIn('id="rnd-cluster-stage"', html)
+        self.assertIn('id="rnd-cluster-legend"', html)
+        self.assertIn('<strong>Team colors</strong>', html)
+        self.assertIn('visibleName.textContent = resourceName', html)
+        self.assertNotIn('bubble.textContent = (resource && resource.initials)', html)
+        self.assertIn('id="rnd-view-product"', html)
+        self.assertIn('>Product wise</button>', html)
+        self.assertIn('id="rnd-product-planner"', html)
+        self.assertIn('id="rnd-product-projects"', html)
+        self.assertIn('id="rnd-product-people"', html)
+        self.assertIn('id="rnd-product-team-legend"', html)
+        self.assertIn('class="product-layout"', html)
+        self.assertIn('grid-template-columns:minmax(0,1fr) 300px', html)
+        self.assertIn('overflow-x:auto', html)
+        self.assertIn('PRODUCT_PANEL_ORDER_KEY', html)
+        self.assertIn('application/x-rnd-product-project', html)
+        self.assertIn('function renderProductWiseView()', html)
+        self.assertIn('function renderProductPeople()', html)
+        self.assertIn('selectedProductEpicKey = selectedProductEpicKey === epic.epic_key ? "" : epic.epic_key', html)
+        self.assertIn('All active resources', html)
+        self.assertIn('No resources are mapped to this epic.', html)
+        self.assertIn('findPlannerEpic', html)
         self.assertIn('id="rnd-resource-skill-dialog"', html)
         self.assertIn('id="rnd-resource-direct-skills"', html)
         self.assertIn('openResourceSkills', html)
@@ -332,6 +375,7 @@ class RndMuscleUtilizationApiTests(unittest.TestCase):
         html = resp.get_data(as_text=True)
         self.assertIn('class="page planner-only"', html)
         self.assertIn('id="rnd-hierarchical-planner"', html)
+        self.assertIn('id="rnd-product-planner"', html)
         self.assertIn('id="rnd-theme-mode"', html)
         self.assertIn('id="rnd-theme-color"', html)
         self.assertIn('Configuration', html)
@@ -367,12 +411,163 @@ class RndMuscleUtilizationApiTests(unittest.TestCase):
         self.assertEqual(epic_resp.status_code, 200)
         self.assertEqual([item["epic_key"] for item in backlog_resp.get_json()["state"]["planner"]["backlog"]], ["FF-200", "O2-100"])
         self.assertEqual([item["epic_key"] for item in epic_resp.get_json()["state"]["planner"]["planner_epics"]], ["FF-200", "O2-100"])
+        planner_by_key = {item["epic_key"]: item for item in epic_resp.get_json()["state"]["planner"]["planner_epics"]}
+        self.assertEqual(planner_by_key["O2-100"]["epic_name"], "First Epic")
+        self.assertEqual(planner_by_key["O2-100"]["project_key"], "O2")
+        self.assertEqual(planner_by_key["O2-100"]["project_name"], "OmniConnect")
         self.assertEqual(map_resp.status_code, 200)
         self.assertEqual(resource_resp.status_code, 200)
         self.assertEqual(
             [m["resource_id"] for m in resource_resp.get_json()["state"]["planner"]["mappings"] if m["epic_key"] == "O2-100"],
             ["res-2", "res-1"],
         )
+
+    def test_mapping_workbook_export_can_be_imported_back_to_restore_mappings(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            app = _build_app(root)
+            client = app.test_client()
+            client.get("/api/rnd-muscle-utilization")
+            _seed_epics_and_resources(root)
+            client.post("/api/rnd-muscle-utilization/planner", json={"epic_key": "O2-100"})
+            client.post("/api/rnd-muscle-utilization/planner", json={"epic_key": "FF-200"})
+            client.post(
+                "/api/rnd-muscle-utilization/mappings",
+                json={
+                    "epic_key": "O2-100",
+                    "resource_ids": ["res-1", "res-2"],
+                    "allocation_hours_by_resource_id": {"res-1": 6.5, "res-2": 2},
+                },
+            )
+
+            export_resp = client.get("/api/rnd-muscle-utilization/mappings/export")
+            exported_bytes = export_resp.data
+            workbook = load_workbook(BytesIO(exported_bytes), data_only=True)
+            mapping_rows = list(workbook["Mappings"].iter_rows(values_only=True))
+            sheet_names = workbook.sheetnames
+            workbook.close()
+
+            client.post(
+                "/api/rnd-muscle-utilization/mappings",
+                json={
+                    "epic_key": "O2-100",
+                    "resource_ids": ["res-2"],
+                    "allocation_hours_by_resource_id": {"res-2": 9},
+                },
+            )
+            import_resp = client.post(
+                "/api/rnd-muscle-utilization/mappings/import",
+                data={"workbook": (BytesIO(exported_bytes), "roundtrip.xlsx")},
+                content_type="multipart/form-data",
+            )
+
+        self.assertEqual(export_resp.status_code, 200)
+        self.assertIn("rnd-muscle-mappings-", export_resp.headers["Content-Disposition"])
+        self.assertEqual(sheet_names, ["Mappings", "Resources", "Instructions"])
+        self.assertEqual(
+            mapping_rows[0],
+            (
+                "Epic Key",
+                "Epic Name",
+                "Project Key",
+                "Project Name",
+                "Resource ID",
+                "Resource Name",
+                "Resource Email",
+                "Team",
+                "Allocation Hours",
+                "Sort Order",
+            ),
+        )
+        self.assertTrue(any(row[0] == "FF-200" and not row[4] for row in mapping_rows[1:]))
+        self.assertEqual(import_resp.status_code, 200)
+        import_body = import_resp.get_json()
+        self.assertEqual(import_body["imported"], {"epic_count": 2, "mapping_count": 2})
+        restored = [
+            item
+            for item in import_body["state"]["planner"]["mappings"]
+            if item["epic_key"] == "O2-100"
+        ]
+        self.assertEqual([item["resource_id"] for item in restored], ["res-1", "res-2"])
+        self.assertEqual([item["allocation_hours"] for item in restored], [6.5, 2.0])
+        self.assertFalse(any(item["epic_key"] == "FF-200" for item in import_body["state"]["planner"]["mappings"]))
+
+    def test_mapping_workbook_import_rejects_unknown_resource_without_partial_changes(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            app = _build_app(root)
+            client = app.test_client()
+            client.get("/api/rnd-muscle-utilization")
+            _seed_epics_and_resources(root)
+            client.post("/api/rnd-muscle-utilization/planner", json={"epic_key": "O2-100"})
+            client.post(
+                "/api/rnd-muscle-utilization/mappings",
+                json={
+                    "epic_key": "O2-100",
+                    "resource_ids": ["res-1"],
+                    "allocation_hours_by_resource_id": {"res-1": 4},
+                },
+            )
+            export_resp = client.get("/api/rnd-muscle-utilization/mappings/export")
+            workbook = load_workbook(BytesIO(export_resp.data))
+            workbook["Mappings"].cell(row=2, column=5, value="missing-resource")
+            invalid_payload = BytesIO()
+            workbook.save(invalid_payload)
+            workbook.close()
+            invalid_payload.seek(0)
+
+            import_resp = client.post(
+                "/api/rnd-muscle-utilization/mappings/import",
+                data={"workbook": (invalid_payload, "invalid-mappings.xlsx")},
+                content_type="multipart/form-data",
+            )
+            state_resp = client.get("/api/rnd-muscle-utilization")
+
+        self.assertEqual(import_resp.status_code, 400)
+        self.assertIn("Unknown resource_id", import_resp.get_json()["error"])
+        current = [
+            item
+            for item in state_resp.get_json()["state"]["planner"]["mappings"]
+            if item["epic_key"] == "O2-100"
+        ]
+        self.assertEqual([(item["resource_id"], item["allocation_hours"]) for item in current], [("res-1", 4.0)])
+
+    def test_mapping_workbook_blank_resource_row_clears_that_epic_mapping(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            app = _build_app(root)
+            client = app.test_client()
+            client.get("/api/rnd-muscle-utilization")
+            _seed_epics_and_resources(root)
+            client.post("/api/rnd-muscle-utilization/planner", json={"epic_key": "O2-100"})
+            client.post(
+                "/api/rnd-muscle-utilization/mappings",
+                json={
+                    "epic_key": "O2-100",
+                    "resource_ids": ["res-1"],
+                    "allocation_hours_by_resource_id": {"res-1": 4},
+                },
+            )
+            export_resp = client.get("/api/rnd-muscle-utilization/mappings/export")
+            workbook = load_workbook(BytesIO(export_resp.data))
+            mapping_sheet = workbook["Mappings"]
+            for column in range(5, 11):
+                mapping_sheet.cell(row=2, column=column).value = None
+            clear_payload = BytesIO()
+            workbook.save(clear_payload)
+            workbook.close()
+            clear_payload.seek(0)
+
+            import_resp = client.post(
+                "/api/rnd-muscle-utilization/mappings/import",
+                data={"workbook": (clear_payload, "clear-o2.xlsx")},
+                content_type="multipart/form-data",
+            )
+
+        self.assertEqual(import_resp.status_code, 200)
+        body = import_resp.get_json()
+        self.assertEqual(body["imported"], {"epic_count": 1, "mapping_count": 0})
+        self.assertFalse(any(item["epic_key"] == "O2-100" for item in body["state"]["planner"]["mappings"]))
 
     def test_state_skill_and_team_apis_return_refreshable_state(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:

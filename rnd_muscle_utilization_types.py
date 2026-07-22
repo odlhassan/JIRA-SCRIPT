@@ -71,6 +71,9 @@ class RndMuscleBacklogItem:
     start_date: str
     due_date: str
     sort_order: int
+    epic_name: str = ""
+    project_key: str = ""
+    project_name: str = ""
 
 
 @dataclass(frozen=True, slots=True)

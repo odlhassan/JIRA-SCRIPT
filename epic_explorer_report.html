@@ -925,6 +925,12 @@
       const val = n(value);
       return `${val > 0 ? "+" : ""}${val.toFixed(0)}d`;
     }
+    function formatDateDdMmmYyyy(value){
+      const parts = parseIsoDateParts(value);
+      if (!parts) return String(value || "-");
+      const month = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][parts.month - 1] || "";
+      return month ? `${parts.day} ${month} ${parts.year}` : String(value || "-");
+    }
     function positionText(position){
       return ({ahead:"ahead", behind:"behind", on_track:"on track", ideal:"ideal", broken:"broken", outside_ideal:"outside ideal", no_actuals:"no actuals", insufficient_data:"insufficient data", improving:"improving", declining:"declining", flat:"flat"})[position] || String(position || "-").replace(/_/g, " ");
     }
@@ -932,7 +938,21 @@
       return `<span class="kpi-text ${esc(cls || "neutral")}"><strong>${esc(primary)}</strong><span>${esc(secondary || "")}</span></span>`;
     }
     function scheduleDaysText(row){
-      return kpiText(signedDays(row.schedule_variance_days), positionText(row.schedule_variance_date_position), kpiClass(row.schedule_variance_date_position, row.schedule_variance_days));
+      if (row.schedule_variance_days == null || row.schedule_variance_days === "") return kpiText("-", "", "neutral");
+      const days = Math.round(n(row.schedule_variance_days));
+      const count = Math.abs(days);
+      const timing = days < 0 ? "late" : (days > 0 ? "early" : "on time");
+      const primary = days === 0 ? "On time" : `${count} ${count === 1 ? "day" : "days"}`;
+      const secondary = days === 0 ? "" : timing;
+      const due = formatDateDdMmmYyyy(row.planned_due);
+      const basisDate = formatDateDdMmmYyyy(row.schedule_variance_date_basis);
+      const basisLabel = row.schedule_variance_date_basis_type === "actual_complete_date" ? "completed" : "as of";
+      const rule = row.schedule_variance_date_basis_type === "actual_complete_date"
+        ? "Resolved epics use completion date, not today."
+        : "Open epics use today's reporting date.";
+      const result = days === 0 ? "on time" : `${count} calendar ${count === 1 ? "day" : "days"} ${timing}`;
+      const tooltip = `Due ${due}; ${basisLabel} ${basisDate}; ${result}. ${rule}`;
+      return `<span class="sv-date-kpi" title="${esc(tooltip)}" aria-label="${esc(tooltip)}">${kpiText(primary, secondary, kpiClass(row.schedule_variance_date_position, row.schedule_variance_days))}</span>`;
     }
     function scheduleHoursText(row){
       const secondary = row.schedule_variance_pct == null ? positionText(row.schedule_variance_hours_position) : `${pct(row.schedule_variance_pct)} ${positionText(row.schedule_variance_hours_position)}`;
@@ -1206,7 +1226,8 @@
     }
     function execCompleteTooltip(row){
       return ({
-        max_last_logged_resolved_stable: "Later of last logged worklog date and epic resolved-stable-since date.",
+        earlier_last_logged_resolved_stable: "Earlier of last logged worklog date and epic resolved-stable-since date; resolution caps later worklogs.",
+        max_last_logged_resolved_stable: "Legacy data used the later of last worklog and resolved-stable-since date.",
         last_logged_date: "Derived from the last logged worklog date on descendant subtasks.",
         resolved_stable_since_date: "Derived from the epic's resolved-stable-since date (no worklogs found).",
         none: "No signal available yet to infer a completion date."

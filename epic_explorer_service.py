@@ -138,9 +138,12 @@ def _derive_actual_completion(
     actual_complete_date = ""
     actual_complete_source = "none"
     if candidates:
-        actual_complete_date = max(candidates).isoformat()
+        # The resolved-status date is a cutoff, not an extension. A last log
+        # before resolution is the completion date; a later log is capped at
+        # the resolution date to avoid moving a closed epic forward.
+        actual_complete_date = min(candidates).isoformat()
         if last_log and resolved_stable:
-            actual_complete_source = "max_last_logged_resolved_stable"
+            actual_complete_source = "earlier_last_logged_resolved_stable"
         elif last_log:
             actual_complete_source = "last_logged_date"
         else:
@@ -1278,7 +1281,7 @@ def build_epic_explorer_payload(
         "meta": {
             "hours_per_day": HOURS_PER_DAY,
             "scope_basis": "Default scope includes every canonical Jira epic. Date and project filters only include/exclude epics; nested stories, subtasks, and worklogs remain full epic-lifetime data.",
-            "actual_complete_basis": "Resolved-status epics use the later of descendant subtask last worklog date and epic resolved-stable-since date. Unresolved and reopened epics have no Actual Complete Date.",
+            "actual_complete_basis": "Resolved-status epics use the earlier of descendant subtask last worklog date and epic resolved-stable-since date. The resolved date caps worklogs recorded after closure. Unresolved and reopened epics have no Actual Complete Date.",
             "schedule_variance_basis": "Resolved-status epics use Actual Complete Date as the SV reporting date; unresolved and reopened epics use the current date. Date SV is Jira epic planned due date minus that reporting date; hour SV is actual-to-date minus planned-to-date using the Jira epic original estimate shown in Planned vs Actual Hours. TK budget and child estimates are fallback-only when the epic original estimate is missing.",
             "estimation_accuracy_basis": "Jira epic original estimate divided by actual hours multiplied by 100. The ideal range is 85% to 115%; below 70% is marked broken.",
         },

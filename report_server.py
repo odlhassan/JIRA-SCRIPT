@@ -7,6 +7,7 @@ from decimal import Decimal, ROUND_HALF_UP
 import io
 import html
 import json
+import math
 import os
 import random
 import re
@@ -218,6 +219,7 @@ from rnd_muscle_utilization_service import (
     add_epic_to_rnd_muscle_planner,
     add_rnd_muscle_skill,
     delete_rnd_muscle_team,
+    import_rnd_muscle_mapping_rows,
     list_rnd_muscle_project_tabs,
     load_rnd_muscle_utilization_page_state,
     remove_epic_from_rnd_muscle_backlog,
@@ -12739,6 +12741,216 @@ def _rnd_muscle_state_payload(state) -> dict[str, object]:
     return {"ok": True, "state": asdict(state), "source": "rnd_muscle_utilization"}
 
 
+RND_MUSCLE_MAPPING_SHEET = "Mappings"
+RND_MUSCLE_MAPPING_HEADERS: tuple[str, ...] = (
+    "Epic Key",
+    "Epic Name",
+    "Project Key",
+    "Project Name",
+    "Resource ID",
+    "Resource Name",
+    "Resource Email",
+    "Team",
+    "Allocation Hours",
+    "Sort Order",
+)
+RND_MUSCLE_MAPPING_MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+
+
+def _rnd_muscle_mapping_workbook_bytes(state) -> bytes:
+    from openpyxl.styles import Alignment, Font, PatternFill
+
+    workbook = Workbook()
+    mappings_sheet = workbook.active
+    mappings_sheet.title = RND_MUSCLE_MAPPING_SHEET
+    mappings_sheet.append(list(RND_MUSCLE_MAPPING_HEADERS))
+
+    epics_by_key = {epic.epic_key: epic for epic in state.epics}
+    planner_items_by_key = {item.epic_key: item for item in state.planner.planner_epics}
+    resources_by_id = {resource.resource_id: resource for resource in state.resources}
+    teams_by_id = {team.team_id: team for team in state.teams}
+    teams_by_resource_id = {
+        resource_id: team
+        for team in state.teams
+        for resource_id in team.resource_ids
+        if resource_id
+    }
+    mappings_by_epic: dict[str, list[object]] = defaultdict(list)
+    for mapping in state.planner.mappings:
+        mappings_by_epic[mapping.epic_key].append(mapping)
+    epic_keys = [item.epic_key for item in state.planner.planner_epics]
+    epic_keys.extend(key for key in mappings_by_epic if key not in set(epic_keys))
+
+    for epic_key in epic_keys:
+        epic = epics_by_key.get(epic_key) or planner_items_by_key.get(epic_key)
+        epic_name = _to_text(getattr(epic, "epic_name", ""))
+        project_key = _to_text(getattr(epic, "project_key", ""))
+        project_name = _to_text(getattr(epic, "project_name", ""))
+        epic_mappings = sorted(
+            mappings_by_epic.get(epic_key, []),
+            key=lambda item: (int(getattr(item, "sort_order", 0)), _to_text(getattr(item, "resource_id", ""))),
+        )
+        if not epic_mappings:
+            mappings_sheet.append([epic_key, epic_name, project_key, project_name, "", "", "", "", "", ""])
+            continue
+        for mapping in epic_mappings:
+            resource = resources_by_id.get(mapping.resource_id)
+            team = teams_by_id.get(_to_text(getattr(resource, "team_id", ""))) or teams_by_resource_id.get(mapping.resource_id)
+            mappings_sheet.append(
+                [
+                    epic_key,
+                    epic_name,
+                    project_key,
+                    project_name,
+                    mapping.resource_id,
+                    _to_text(getattr(resource, "display_name", "")),
+                    _to_text(getattr(resource, "email", "")),
+                    _to_text(getattr(team, "name", "")) or "No team",
+                    float(mapping.allocation_hours or 0),
+                    int(mapping.sort_order or 0),
+                ]
+            )
+
+    header_fill = PatternFill(fill_type="solid", fgColor="1F4E78")
+    for cell in mappings_sheet[1]:
+        cell.fill = header_fill
+        cell.font = Font(color="FFFFFF", bold=True)
+        cell.alignment = Alignment(horizontal="center")
+    mappings_sheet.freeze_panes = "A2"
+    mappings_sheet.auto_filter.ref = mappings_sheet.dimensions
+    for column, width in {"A": 16, "B": 42, "C": 14, "D": 24, "E": 38, "F": 28, "G": 34, "H": 20, "I": 18, "J": 12}.items():
+        mappings_sheet.column_dimensions[column].width = width
+    for cell in mappings_sheet["I"][1:]:
+        cell.number_format = "0.00"
+
+    resources_sheet = workbook.create_sheet("Resources")
+    resources_sheet.append(["Resource ID", "Resource Name", "Email", "Team", "Status"])
+    for resource in sorted(state.resources, key=lambda item: (item.display_name.casefold(), item.resource_id)):
+        team = teams_by_id.get(resource.team_id) or teams_by_resource_id.get(resource.resource_id)
+        resources_sheet.append(
+            [
+                resource.resource_id,
+                resource.display_name,
+                resource.email,
+                _to_text(getattr(team, "name", "")) or "No team",
+                "Resigned" if resource.resigned else "Active",
+            ]
+        )
+    for cell in resources_sheet[1]:
+        cell.fill = header_fill
+        cell.font = Font(color="FFFFFF", bold=True)
+    resources_sheet.freeze_panes = "A2"
+    resources_sheet.auto_filter.ref = resources_sheet.dimensions
+    for column, width in {"A": 38, "B": 28, "C": 34, "D": 20, "E": 12}.items():
+        resources_sheet.column_dimensions[column].width = width
+
+    instructions_sheet = workbook.create_sheet("Instructions")
+    instruction_rows = (
+        ("RnD Muscle Mapping Workbook", "Template Version 1"),
+        ("Round trip", "This downloaded .xlsx file can be imported back through Import mappings."),
+        ("Editable identifiers", "Use Epic Key and Resource ID to define a mapping. Names, project, email, and team are reference columns."),
+        ("Clear an epic", "Keep its Epic Key row and leave Resource ID blank to remove every resource mapping for that epic."),
+        ("Allocation Hours", "Optional; blank imports as 0. Must be a finite non-negative number."),
+        ("Sort Order", "Optional; blank uses worksheet row order. Values must be non-negative whole numbers."),
+        ("Scope", "Import replaces mappings only for epics represented on the Mappings sheet. Other epics are unchanged."),
+        ("Important", "Do not rename the Mappings sheet or its column headers."),
+    )
+    for row in instruction_rows:
+        instructions_sheet.append(list(row))
+    instructions_sheet["A1"].font = Font(bold=True, color="FFFFFF")
+    instructions_sheet["B1"].font = Font(bold=True, color="FFFFFF")
+    instructions_sheet["A1"].fill = header_fill
+    instructions_sheet["B1"].fill = header_fill
+    instructions_sheet.column_dimensions["A"].width = 24
+    instructions_sheet.column_dimensions["B"].width = 105
+    instructions_sheet.sheet_view.showGridLines = False
+
+    output = io.BytesIO()
+    workbook.save(output)
+    return output.getvalue()
+
+
+def _parse_rnd_muscle_mapping_workbook(uploaded_file) -> tuple[list[dict[str, object]], dict[str, int]]:
+    if uploaded_file is None:
+        raise ValueError("Mapping workbook file is required.")
+    filename = _to_text(getattr(uploaded_file, "filename", "")).strip()
+    if not filename:
+        raise ValueError("Mapping workbook filename is required.")
+    if Path(filename).suffix.lower() != ".xlsx":
+        raise ValueError("Mapping workbook must be an .xlsx file.")
+    payload = uploaded_file.read(RND_MUSCLE_MAPPING_MAX_UPLOAD_BYTES + 1)
+    if not payload:
+        raise ValueError("Mapping workbook is empty.")
+    if len(payload) > RND_MUSCLE_MAPPING_MAX_UPLOAD_BYTES:
+        raise ValueError("Mapping workbook exceeds the 10 MB upload limit.")
+    try:
+        workbook = load_workbook(io.BytesIO(payload), read_only=True, data_only=True)
+    except Exception as exc:
+        raise ValueError("Mapping workbook could not be read as a valid .xlsx file.") from exc
+    try:
+        if RND_MUSCLE_MAPPING_SHEET not in workbook.sheetnames:
+            raise ValueError("Mapping workbook must contain a 'Mappings' sheet.")
+        worksheet = workbook[RND_MUSCLE_MAPPING_SHEET]
+        headers = {
+            _to_text(cell.value).strip(): index
+            for index, cell in enumerate(next(worksheet.iter_rows(min_row=1, max_row=1)), start=1)
+            if _to_text(cell.value).strip()
+        }
+        missing_headers = [header for header in RND_MUSCLE_MAPPING_HEADERS if header not in headers]
+        if missing_headers:
+            raise ValueError(f"Mappings sheet is missing required column(s): {missing_headers}")
+        parsed_rows: list[dict[str, object]] = []
+        epic_keys: set[str] = set()
+        mapping_count = 0
+        for worksheet_row in range(2, worksheet.max_row + 1):
+            values = {
+                header: worksheet.cell(row=worksheet_row, column=headers[header]).value
+                for header in RND_MUSCLE_MAPPING_HEADERS
+            }
+            if not any(value not in (None, "") for value in values.values()):
+                continue
+            epic_key = _to_text(values["Epic Key"]).strip().upper()
+            if not epic_key:
+                raise ValueError(f"Mappings row {worksheet_row}: Epic Key is required.")
+            resource_id = _to_text(values["Resource ID"]).strip()
+            allocation_raw = values["Allocation Hours"]
+            sort_order_raw = values["Sort Order"]
+            if not resource_id and (allocation_raw not in (None, "") or sort_order_raw not in (None, "")):
+                raise ValueError(f"Mappings row {worksheet_row}: Resource ID is required when allocation or sort order is provided.")
+            allocation_hours = 0.0
+            if resource_id and allocation_raw not in (None, ""):
+                try:
+                    allocation_hours = float(allocation_raw)
+                except (TypeError, ValueError) as exc:
+                    raise ValueError(f"Mappings row {worksheet_row}: Allocation Hours must be numeric.") from exc
+                if not math.isfinite(allocation_hours) or allocation_hours < 0:
+                    raise ValueError(f"Mappings row {worksheet_row}: Allocation Hours must be finite and non-negative.")
+            sort_order: int | None = None
+            if resource_id and sort_order_raw not in (None, ""):
+                try:
+                    sort_order_number = float(sort_order_raw)
+                except (TypeError, ValueError) as exc:
+                    raise ValueError(f"Mappings row {worksheet_row}: Sort Order must be a whole number.") from exc
+                if not math.isfinite(sort_order_number) or sort_order_number < 0 or not sort_order_number.is_integer():
+                    raise ValueError(f"Mappings row {worksheet_row}: Sort Order must be a non-negative whole number.")
+                sort_order = int(sort_order_number)
+            parsed_rows.append(
+                {
+                    "epic_key": epic_key,
+                    "resource_id": resource_id,
+                    "allocation_hours": allocation_hours,
+                    "sort_order": sort_order,
+                    "worksheet_row": worksheet_row,
+                }
+            )
+            epic_keys.add(epic_key)
+            if resource_id:
+                mapping_count += 1
+        return parsed_rows, {"epic_count": len(epic_keys), "mapping_count": mapping_count}
+    finally:
+        workbook.close()
+
+
 def _rnd_muscle_project_keys_from_request() -> tuple[str, ...]:
     raw_values = request.args.getlist("project_key") + request.args.getlist("project_keys")
     keys: list[str] = []
@@ -12801,7 +13013,8 @@ def _rnd_muscle_utilization_settings_html(planner_only: bool = False) -> str:
     .page.planner-only .planner { height:auto; grid-template-rows:auto 100vh auto; }
     .page.planner-only .canvas { height:100vh; min-height:100vh; }
     .page.planner-only .catalog-panel, .page.planner-only .stats, .page.planner-only .config-band,
-    .page.planner-only #rnd-create-team-btn, .page.planner-only #rnd-add-skill-btn, .page.planner-only #rnd-configure-projects-btn { display:none; }
+    .page.planner-only #rnd-create-team-btn, .page.planner-only #rnd-add-skill-btn, .page.planner-only #rnd-configure-projects-btn,
+    .page.planner-only #rnd-export-mappings-btn, .page.planner-only #rnd-import-mappings-btn { display:none; }
     .panel { background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); min-width:0; display:flex; flex-direction:column; overflow:hidden; }
     .panel-head { padding:8px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:6px; justify-content:space-between; }
     .panel-head h2 { margin:0; font-size:13px; }
@@ -12819,6 +13032,9 @@ def _rnd_muscle_utilization_settings_html(planner_only: bool = False) -> str:
     .epic-priority-1 { --priority-bg:#4c1d95; --priority-border:#3b0764; --priority-text:#ffffff; --priority-muted:#ede9fe; --priority-pill:rgba(255,255,255,.18); }
     .epic-priority-2 { --priority-bg:#7c3aed; --priority-border:#6d28d9; --priority-text:#ffffff; --priority-muted:#f3e8ff; --priority-pill:rgba(255,255,255,.16); }
     .epic-priority-3 { --priority-bg:#ede9fe; --priority-border:#c4b5fd; --priority-text:#3b0764; --priority-muted:#5b217d; --priority-pill:rgba(91,33,125,.09); }
+    body[data-rnd-theme="dark"] .epic-priority-1 { --priority-bg:#452064; --priority-border:#a855f7; --priority-text:#faf5ff; --priority-muted:#e9d5ff; --priority-pill:#5b2a7d; }
+    body[data-rnd-theme="dark"] .epic-priority-2 { --priority-bg:#352640; --priority-border:#84609e; --priority-text:#f8f3fb; --priority-muted:#ddcee6; --priority-pill:#493354; }
+    body[data-rnd-theme="dark"] .epic-priority-3 { --priority-bg:#2b2931; --priority-border:#5f5868; --priority-text:#f1edf4; --priority-muted:#c7becd; --priority-pill:#3a3641; }
     .resource-row.team-colored { border-color:var(--resource-team-border); background:linear-gradient(90deg,var(--resource-team-soft),var(--row)); color:var(--resource-team-text); box-shadow:inset 3px 0 0 var(--resource-team-accent); }
     .resource-row.team-colored .row-meta { color:var(--resource-team-muted); }
     .resource-row.team-colored .pill { border-color:var(--resource-team-border); background:var(--resource-team-pill); color:var(--resource-team-text); }
@@ -12862,7 +13078,7 @@ def _rnd_muscle_utilization_settings_html(planner_only: bool = False) -> str:
     .staged-card.drop-active { outline:1px solid var(--accent-strong); outline-offset:-2px; background:var(--accent-soft); }
     .staged-drop-placeholder { border:1.5px dashed var(--accent-strong); border-radius:var(--radius); background:var(--accent-soft); min-height:44px; display:grid; place-items:center; color:var(--accent-strong); font-size:11px; font-weight:700; opacity:.95; animation:rndDropPulse 1.2s ease-in-out infinite; }
     .staged-resources { display:grid; gap:6px; align-content:start; margin-top:8px; }
-    .resource-card { border:1px solid rgba(255,255,255,.25); border-radius:6px; padding:6px 8px; min-height:34px; color:#fff; display:flex; align-items:center; justify-content:space-between; gap:8px; cursor:grab; transition:transform .14s ease, box-shadow .14s ease, opacity .14s ease, filter .14s ease; }
+    .resource-card { border:1px solid var(--resource-card-border,rgba(255,255,255,.25)); border-radius:6px; padding:6px 8px; min-height:34px; color:#fff; display:flex; align-items:center; justify-content:space-between; gap:8px; cursor:grab; box-shadow:inset 3px 0 0 var(--resource-card-accent,rgba(255,255,255,.4)); transition:transform .14s ease, box-shadow .14s ease, opacity .14s ease, filter .14s ease; }
     .resource-card-title { font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .resource-card-meta { opacity:.82; font-size:11px; white-space:nowrap; }
     .resource-card button { border:1px solid rgba(255,255,255,.45); background:rgba(0,0,0,.18); color:#fff; border-radius:999px; min-width:22px; min-height:22px; cursor:pointer; }
@@ -12884,17 +13100,49 @@ def _rnd_muscle_utilization_settings_html(planner_only: bool = False) -> str:
     .cluster-epic { width:100%; text-align:left; border:1px solid var(--border); border-radius:var(--radius); background:var(--row); color:var(--text); padding:7px; margin-bottom:6px; cursor:pointer; }
     .cluster-epic.active { border-color:var(--accent-strong); background:var(--accent-soft); }
     .cluster-epic.epic-priority.active { outline:2px solid var(--accent-strong); outline-offset:-2px; }
-    .cluster-stage { position:relative; min-height:420px; border:1px solid var(--border); border-radius:var(--radius); background:var(--row); overflow:hidden; }
+    .cluster-stage-shell { min-width:0; display:grid; grid-template-rows:auto minmax(420px,1fr); gap:8px; }
+    .cluster-legend-band { display:flex; align-items:center; gap:10px; min-height:38px; padding:7px 9px; border:1px solid var(--border); border-radius:var(--radius); background:var(--panel-2); }
+    .cluster-legend-band strong { flex:none; font-size:11px; }
+    .cluster-stage { position:relative; min-height:420px; border:1px solid var(--border); border-radius:var(--radius); background:var(--row); overflow:auto; }
     .cluster-lines { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
-    .cluster-bubble { position:absolute; width:42px; height:42px; border-radius:50%; display:grid; place-items:center; color:#fff; font-weight:700; border:2px solid rgba(255,255,255,.75); box-shadow:0 8px 22px rgba(0,0,0,.28); transition:left .22s ease, top .22s ease, transform .22s ease, opacity .18s ease; z-index:1; }
+    .cluster-bubble { position:absolute; width:164px; min-height:38px; border-radius:999px; display:flex; align-items:center; justify-content:center; padding:7px 12px; color:#fff; font-size:11px; font-weight:800; line-height:1.15; text-align:center; border:2px solid rgba(255,255,255,.75); box-shadow:0 8px 22px rgba(0,0,0,.28); transition:left .22s ease, top .22s ease, transform .22s ease, opacity .18s ease; z-index:1; }
+    .cluster-bubble-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:100%; }
     .cluster-bubble:hover { z-index:4; }
     .cluster-bubble-detail { position:absolute; left:50px; top:50%; transform:translateY(-50%); min-width:170px; max-width:260px; padding:7px 9px; border:1px solid var(--border); border-radius:var(--radius); background:var(--panel); color:var(--text); box-shadow:0 10px 24px rgba(0,0,0,.28); opacity:0; pointer-events:none; transition:opacity .12s ease; font-weight:400; line-height:1.25; text-align:left; }
     .cluster-bubble-detail strong { display:block; font-size:12px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .cluster-bubble-detail span { display:block; margin-top:2px; color:var(--muted); font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .cluster-bubble:hover .cluster-bubble-detail { opacity:1; }
     .cluster-bubble.dim { opacity:.35; transform:scale(.86); }
-    .cluster-legend { position:absolute; left:10px; bottom:10px; right:10px; display:flex; gap:8px; flex-wrap:wrap; background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); padding:8px; }
+    .cluster-legend { display:flex; gap:8px 12px; flex-wrap:wrap; min-width:0; }
     .cluster-legend-item { display:flex; align-items:center; gap:5px; color:var(--muted); }
+    .product-planner { height:100%; min-height:420px; }
+    .product-layout { display:grid; grid-template-columns:minmax(0,1fr) 300px; gap:8px; height:100%; min-height:420px; }
+    .product-project-scroll { display:flex; gap:8px; min-width:0; overflow-x:auto; overflow-y:hidden; padding-bottom:4px; scroll-snap-type:x proximity; }
+    .product-project-panel, .product-people-panel { border:1px solid var(--border); border-radius:var(--radius); background:var(--panel-2); min-width:0; overflow:hidden; }
+    .product-project-panel { flex:1 0 260px; display:flex; flex-direction:column; scroll-snap-align:start; transition:opacity .14s ease, border-color .14s ease, transform .14s ease; }
+    .product-project-panel.dragging { opacity:.48; transform:scale(.985); }
+    .product-project-panel.drop-before { box-shadow:-4px 0 0 var(--accent-strong); }
+    .product-project-panel.drop-after { box-shadow:4px 0 0 var(--accent-strong); }
+    .product-panel-head { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:9px; border-bottom:1px solid var(--border); background:var(--panel); cursor:grab; }
+    .product-panel-head:active { cursor:grabbing; }
+    .product-panel-title { min-width:0; }
+    .product-panel-title strong { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; }
+    .product-panel-title span { display:block; margin-top:2px; color:var(--muted); font-size:10px; }
+    .product-drag-handle { color:var(--muted); font-size:16px; letter-spacing:-3px; flex:none; }
+    .product-epic-list { display:grid; gap:6px; align-content:start; padding:8px; overflow:auto; }
+    .product-epic { width:100%; text-align:left; padding:7px; border:1px solid var(--border); border-radius:var(--radius); background:var(--row); color:var(--text); cursor:pointer; }
+    .product-epic.active { outline:2px solid var(--accent-strong); outline-offset:-2px; }
+    .product-epic strong { display:block; font-size:11px; line-height:1.25; }
+    .product-epic span { display:block; margin-top:3px; color:inherit; opacity:.78; font-size:10px; }
+    .product-people-panel { display:grid; grid-template-rows:auto auto minmax(0,1fr); }
+    .product-people-head { padding:9px; border-bottom:1px solid var(--border); background:var(--panel); }
+    .product-people-head strong { display:block; font-size:12px; }
+    .product-people-head span { display:block; margin-top:3px; color:var(--muted); font-size:10px; }
+    .product-team-legend { display:flex; gap:6px 10px; flex-wrap:wrap; padding:7px 9px; border-bottom:1px solid var(--border); }
+    .product-person-list { display:grid; gap:6px; align-content:start; padding:8px; overflow:auto; }
+    .product-person { display:grid; gap:3px; padding:7px 8px; border:1px solid var(--person-border,var(--border)); border-radius:var(--radius); background:linear-gradient(90deg,var(--person-soft,var(--row)),var(--row)); box-shadow:inset 3px 0 0 var(--person-color,#64748b); }
+    .product-person strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:11px; }
+    .product-person span { color:var(--muted); font-size:10px; }
     .insights-planner { display:grid; grid-template-columns:minmax(0,1.5fr) minmax(230px,.7fr); gap:8px; min-height:100%; }
     .insights-main, .insights-detail { border:1px solid var(--border); border-radius:var(--radius); background:var(--panel-2); padding:8px; min-height:0; overflow:auto; }
     .insights-head { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px; }
@@ -12961,6 +13209,7 @@ def _rnd_muscle_utilization_settings_html(planner_only: bool = False) -> str:
       .layout { grid-template-columns:1fr; }
       .stats { grid-template-columns:repeat(2,minmax(120px,1fr)); }
       .canvas-grid, .cluster-planner { grid-template-columns:1fr; }
+      .product-layout { grid-template-columns:minmax(0,1fr) 270px; }
     }
   </style>
 </head>
@@ -12984,6 +13233,9 @@ __SETTINGS_TOP_NAV__
         </label>
       </div>
       __RND_VIEW_MODE_BUTTON__
+      <button class="btn" id="rnd-export-mappings-btn" type="button">Export mappings</button>
+      <button class="btn" id="rnd-import-mappings-btn" type="button">Import mappings</button>
+      <input id="rnd-import-mappings-file" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden>
       <button class="btn" id="rnd-create-team-btn" type="button">Create Team</button>
       <button class="btn" id="rnd-add-skill-btn" type="button">Add Skill</button>
       <button class="btn" id="rnd-configure-projects-btn" type="button">Configure Projects</button>
@@ -13027,6 +13279,7 @@ __SETTINGS_TOP_NAV__
           <button id="rnd-view-hierarchical" class="tab active" type="button">Hierarchical</button>
           <button id="rnd-view-cluster" class="tab" type="button">Cluster</button>
           <button id="rnd-view-insights" class="tab" type="button">Insights</button>
+          <button id="rnd-view-product" class="tab" type="button">Product wise</button>
         </div>
         <div class="canvas">
           <div id="rnd-hierarchical-planner" class="hierarchical-planner">
@@ -13048,10 +13301,12 @@ __SETTINGS_TOP_NAV__
               <h3>Mapped epics</h3>
               <div id="rnd-cluster-epics"></div>
             </div>
-            <div id="rnd-cluster-stage" class="cluster-stage">
-              <svg id="rnd-cluster-lines" class="cluster-lines" aria-hidden="true"></svg>
-              <div id="rnd-cluster-bubbles"></div>
-              <div id="rnd-cluster-legend" class="cluster-legend"></div>
+            <div class="cluster-stage-shell">
+              <div class="cluster-legend-band"><strong>Team colors</strong><div id="rnd-cluster-legend" class="cluster-legend"></div></div>
+              <div id="rnd-cluster-stage" class="cluster-stage">
+                <svg id="rnd-cluster-lines" class="cluster-lines" aria-hidden="true"></svg>
+                <div id="rnd-cluster-bubbles"></div>
+              </div>
             </div>
           </div>
           <div id="rnd-insights-planner" class="insights-planner" hidden>
@@ -13071,6 +13326,16 @@ __SETTINGS_TOP_NAV__
             <div class="insights-detail">
               <h3 id="rnd-insights-detail-title">Select a tile</h3>
               <div id="rnd-insights-detail-list" class="insights-detail-list"></div>
+            </div>
+          </div>
+          <div id="rnd-product-planner" class="product-planner" hidden>
+            <div class="product-layout">
+              <div id="rnd-product-projects" class="product-project-scroll" aria-label="Selected project panels"></div>
+              <aside class="product-people-panel" aria-label="People involved">
+                <div class="product-people-head"><strong>People involved</strong><span id="rnd-product-people-caption">All active resources</span></div>
+                <div id="rnd-product-team-legend" class="product-team-legend" aria-label="Team color legend"></div>
+                <div id="rnd-product-people" class="product-person-list"></div>
+              </aside>
             </div>
           </div>
         </div>
@@ -13166,6 +13431,8 @@ __SETTINGS_TOP_NAV__
   let plannerEpicDragKey = "";
   let currentView = "hierarchical";
   let selectedClusterEpicKey = "";
+  let selectedProductEpicKey = "";
+  let draggedProductProjectKey = "";
   let insightMode = "project";
   let selectedInsightKey = "";
   let resourceSearchText = "";
@@ -13177,6 +13444,7 @@ __SETTINGS_TOP_NAV__
   let localMutationVersion = 0;
   const pendingSaves = new Map();
   const PROJECT_SELECTION_KEY = "rnd-muscle-selected-projects-v1";
+  const PRODUCT_PANEL_ORDER_KEY = "rnd-muscle-product-panel-order-v1";
   let selectedProjectKeys = new Set(JSON.parse(localStorage.getItem(PROJECT_SELECTION_KEY) || "[]"));
   const THEME_MODE_KEY = "rnd-muscle-theme-mode-v1";
   const THEME_COLOR_KEY = "rnd-muscle-theme-color-v1";
@@ -13208,14 +13476,18 @@ __SETTINGS_TOP_NAV__
   function teamTone(color){
     const base = normalizeHexColor(color, TEAM_COLOR_PALETTE[0] || "#2563eb");
     const lightMode = currentThemeMode() === "light";
-    const soft = mixColor(base, lightMode ? "#ffffff" : "#252526", lightMode ? 0.86 : 0.74);
+    const soft = mixColor(base, lightMode ? "#ffffff" : "#1f1f1f", lightMode ? 0.86 : 0.8);
+    const strong = lightMode ? base : mixColor(base, "#181818", 0.38);
     return {
       base: base,
       soft: soft,
-      border: mixColor(base, lightMode ? "#ffffff" : "#9aa0a6", lightMode ? 0.45 : 0.38),
-      pill: mixColor(base, lightMode ? "#ffffff" : "#2d2d30", lightMode ? 0.78 : 0.66),
+      strong: strong,
+      strongText: readableTextColor(strong),
+      strongBorder: mixColor(base, lightMode ? "#ffffff" : "#d4d4d4", lightMode ? 0.32 : 0.38),
+      border: mixColor(base, lightMode ? "#ffffff" : "#707078", lightMode ? 0.45 : 0.52),
+      pill: mixColor(base, lightMode ? "#ffffff" : "#252526", lightMode ? 0.78 : 0.64),
       text: readableTextColor(soft),
-      muted: mixColor(readableTextColor(soft), soft, 0.34)
+      muted: mixColor(readableTextColor(soft), soft, lightMode ? 0.34 : 0.24)
     };
   }
   function applyTheme(mode, color){
@@ -13253,6 +13525,7 @@ __SETTINGS_TOP_NAV__
     } catch (e) {}
     applyTheme(mode, color);
     renderResources();
+    renderViewContent();
     setStatus("Theme saved for configuration and view mode.", "ok");
   }
   function setTeamColor(color){
@@ -13573,6 +13846,9 @@ __SETTINGS_TOP_NAV__
   function findEpic(epicKey){
     return ((state && state.epics) || []).find((e) => e.epic_key === epicKey) || null;
   }
+  function findPlannerEpic(epicKey){
+    return findEpic(epicKey) || (((state && state.planner) || {}).planner_epics || []).find((item) => item.epic_key === epicKey) || null;
+  }
   function plannerItemForEpic(epicKey, sortOrder){
     const existing = (((state && state.planner) || {}).planner_epics || []).find((item) => item.epic_key === epicKey);
     if (existing) return Object.assign({}, existing, { sort_order: sortOrder });
@@ -13637,6 +13913,42 @@ __SETTINGS_TOP_NAV__
         saveTimer = window.setTimeout(flushDeferredSaves, SAVE_IDLE_DELAY_MS);
       }
     }
+  }
+  async function settlePlannerSavesBeforeWorkbookAction(){
+    if (saveTimer) {
+      window.clearTimeout(saveTimer);
+      saveTimer = null;
+    }
+    while (saveInFlight) await new Promise((resolve) => window.setTimeout(resolve, 60));
+    if (pendingSaves.size) await flushDeferredSaves();
+    while (saveInFlight) await new Promise((resolve) => window.setTimeout(resolve, 60));
+  }
+  async function exportMappingWorkbook(){
+    setStatus("Preparing mapping workbook...", "");
+    await settlePlannerSavesBeforeWorkbookAction();
+    window.location.assign(API + "/mappings/export");
+    setStatus("Mapping workbook download started.", "ok");
+  }
+  async function importMappingWorkbook(file){
+    if (!file) return;
+    if (!String(file.name || "").toLowerCase().endsWith(".xlsx")) {
+      throw new Error("Choose an .xlsx mapping workbook.");
+    }
+    await settlePlannerSavesBeforeWorkbookAction();
+    setStatus("Validating and importing mapping workbook...", "");
+    const formData = new FormData();
+    formData.append("workbook", file, file.name);
+    const resp = await fetch(API + "/mappings/import", { method:"POST", body:formData });
+    const body = await resp.json().catch(() => ({}));
+    if (!resp.ok || body.ok === false) throw new Error(body.error || "Mapping workbook import failed.");
+    state = body.state || {};
+    localMutationVersion += 1;
+    renderAll();
+    const imported = body.imported || {};
+    setStatus(
+      "Imported " + Number(imported.mapping_count || 0) + " mappings across " + Number(imported.epic_count || 0) + " epics.",
+      "ok"
+    );
   }
   function persistCanvas(){
     canvasEpicKeys = plannerEpicKeys();
@@ -13822,6 +14134,7 @@ __SETTINGS_TOP_NAV__
     if (label) label.textContent = selectedCanvasEpicKey + (selectedEpic && selectedEpic.epic_name ? " - " + selectedEpic.epic_name : "");
     const resourceById = new Map(((state && state.resources) || []).map((r) => [r.resource_id, r]));
     const teamById = new Map(((state && state.teams) || []).map((t) => [t.team_id, t]));
+    const teamsByResourceId = teamByResourceId();
     const mapped = mappedResourcesFor(selectedCanvasEpicKey);
     if (!mapped.length){
       const none = document.createElement("div");
@@ -13832,14 +14145,17 @@ __SETTINGS_TOP_NAV__
     }
     mapped.forEach((m) => {
       const resource = resourceById.get(m.resource_id);
-      const team = teamById.get(resource && resource.team_id);
+      const team = teamForResource(resource, teamById, teamsByResourceId);
       const color = (team && team.color_hex) || "#3b5f86";
+      const tone = teamTone(color);
       const card = document.createElement("div");
       card.className = "resource-card";
       card.draggable = true;
       card.dataset.resourceId = m.resource_id;
-      card.style.background = color;
-      card.style.color = readableTextColor(color);
+      card.style.background = tone.strong;
+      card.style.color = tone.strongText;
+      card.style.setProperty("--resource-card-border", tone.strongBorder);
+      card.style.setProperty("--resource-card-accent", tone.base);
       card.addEventListener("dragstart", (event) => {
         card.classList.add("dragging");
         event.dataTransfer.setData("application/x-rnd-planner-resource", m.resource_id);
@@ -14102,8 +14418,9 @@ __SETTINGS_TOP_NAV__
       epicHost.appendChild(btn);
     });
     const legendTeams = new Map();
+    const teamsByResourceId = teamByResourceId();
     resources.forEach((resource) => {
-      const team = teamById.get(resource.team_id);
+      const team = teamForResource(resource, teamById, teamsByResourceId);
       const key = (team && team.team_id) || "__none__";
       if (!legendTeams.has(key)) legendTeams.set(key, { name:(team && team.name) || "No team", color:(team && team.color_hex) || "#3b5f86" });
     });
@@ -14121,18 +14438,27 @@ __SETTINGS_TOP_NAV__
     });
     const activeResourceIds = Array.from(new Set(mappings.map((m) => m.resource_id)));
     const selectedResourceIds = new Set(mappings.filter((m) => m.epic_key === selectedClusterEpicKey).map((m) => m.resource_id));
+    const bubbleWidth = 164;
+    const bubbleHeight = 38;
     const stageWidth = Math.max(stage.clientWidth || 720, 520);
-    const stageHeight = Math.max(stage.clientHeight || 420, 360);
+    const columns = Math.max(1, Math.floor((stageWidth - 32) / (bubbleWidth + 12)));
+    const rows = Math.max(1, Math.ceil(activeResourceIds.length / columns));
+    const stageHeight = Math.max(stage.clientHeight || 420, 72 + rows * (bubbleHeight + 14));
+    stage.style.minHeight = stageHeight + "px";
     activeResourceIds.forEach((resourceId, idx) => {
       const resource = resourceById.get(resourceId);
-      const team = teamById.get(resource && resource.team_id);
+      const team = teamForResource(resource, teamById, teamsByResourceId);
       const color = (team && team.color_hex) || "#3b5f86";
+      const tone = teamTone(color);
       const bubble = document.createElement("div");
       bubble.className = "cluster-bubble" + (selectedClusterEpicKey && !selectedResourceIds.has(resourceId) ? " dim" : "");
-      bubble.textContent = (resource && resource.initials) || "?";
       const resourceName = (resource && resource.display_name) || resourceId;
       const teamName = (team && team.name) || "No team";
       bubble.title = resourceName + " - " + teamName;
+      const visibleName = document.createElement("span");
+      visibleName.className = "cluster-bubble-name";
+      visibleName.textContent = resourceName;
+      bubble.appendChild(visibleName);
       const detail = document.createElement("span");
       detail.className = "cluster-bubble-detail";
       const detailName = document.createElement("strong");
@@ -14142,22 +14468,21 @@ __SETTINGS_TOP_NAV__
       detail.appendChild(detailName);
       detail.appendChild(detailTeam);
       bubble.appendChild(detail);
-      bubble.style.background = color;
-      bubble.style.color = readableTextColor(color);
-      let x;
-      let y;
-      if (selectedClusterEpicKey && selectedResourceIds.has(resourceId)){
-        const selectedIndex = Array.from(selectedResourceIds).indexOf(resourceId);
-        x = 80 + (selectedIndex % 4) * 58;
-        y = 82 + Math.floor(selectedIndex / 4) * 58;
-      } else {
-        const angle = idx * 0.82;
-        const radius = 42 + (idx % 5) * 9;
-        x = stageWidth * 0.58 + Math.cos(angle) * radius;
-        y = stageHeight * 0.46 + Math.sin(angle) * radius;
-      }
-      bubble.style.left = Math.max(8, Math.min(stageWidth - 54, x)) + "px";
-      bubble.style.top = Math.max(8, Math.min(stageHeight - 54, y)) + "px";
+      bubble.style.background = tone.strong;
+      bubble.style.color = tone.strongText;
+      bubble.style.borderColor = tone.strongBorder;
+      const displayIndex = selectedClusterEpicKey
+        ? Array.from(selectedResourceIds).concat(activeResourceIds.filter((id) => !selectedResourceIds.has(id))).indexOf(resourceId)
+        : idx;
+      const rowIndex = Math.floor(displayIndex / columns);
+      const columnIndex = displayIndex % columns;
+      const rowItemCount = Math.min(columns, activeResourceIds.length - rowIndex * columns);
+      const rowWidth = rowItemCount * bubbleWidth + Math.max(0, rowItemCount - 1) * 12;
+      const rowLeft = Math.max(16, (stageWidth - rowWidth) / 2);
+      const x = rowLeft + columnIndex * (bubbleWidth + 12);
+      const y = 24 + rowIndex * (bubbleHeight + 14);
+      bubble.style.left = Math.max(8, Math.min(stageWidth - bubbleWidth - 8, x)) + "px";
+      bubble.style.top = Math.max(8, Math.min(stageHeight - bubbleHeight - 8, y)) + "px";
       bubbleHost.appendChild(bubble);
     });
     mappings.forEach((m) => {
@@ -14169,13 +14494,194 @@ __SETTINGS_TOP_NAV__
       line.setAttribute("x1", "24");
       line.setAttribute("y1", String(72 + Math.max(0, canvasEpicKeys.indexOf(m.epic_key)) * 46));
       const bubble = bubbleHost.children[resourceIndex];
-      line.setAttribute("x2", String((parseFloat(bubble.style.left) || 0) + 21));
-      line.setAttribute("y2", String((parseFloat(bubble.style.top) || 0) + 21));
+      line.setAttribute("x2", String((parseFloat(bubble.style.left) || 0) + bubbleWidth / 2));
+      line.setAttribute("y2", String((parseFloat(bubble.style.top) || 0) + bubbleHeight / 2));
       line.setAttribute("stroke", selected ? "#d5e7ff" : "#6f86a1");
       line.setAttribute("stroke-width", selected ? "3" : "1");
       line.setAttribute("opacity", selected ? "0.9" : "0.32");
       lineHost.appendChild(line);
     });
+  }
+  function productProjectOrder(projects){
+    let saved = [];
+    try { saved = JSON.parse(localStorage.getItem(PRODUCT_PANEL_ORDER_KEY) || "[]"); } catch (e) {}
+    const projectByKey = new Map(projects.map((project) => [project.project_key, project]));
+    return saved.filter((key) => projectByKey.has(key)).map((key) => projectByKey.get(key))
+      .concat(projects.filter((project) => !saved.includes(project.project_key)));
+  }
+  function saveProductProjectOrder(projectKeys){
+    try { localStorage.setItem(PRODUCT_PANEL_ORDER_KEY, JSON.stringify(projectKeys)); } catch (e) {}
+  }
+  function clearProductPanelDropState(){
+    document.querySelectorAll(".product-project-panel").forEach((panel) => {
+      panel.classList.remove("dragging", "drop-before", "drop-after");
+    });
+  }
+  function renderProductLegend(host, people, teamByIdMap, teamByResourceIdMap){
+    reset(host);
+    const seen = new Set();
+    people.forEach((resource) => {
+      const team = teamForResource(resource, teamByIdMap, teamByResourceIdMap);
+      const key = team.team_id || "__none__";
+      if (seen.has(key)) return;
+      seen.add(key);
+      const item = document.createElement("span");
+      item.className = "cluster-legend-item";
+      const dot = document.createElement("span");
+      dot.className = "team-dot";
+      dot.style.background = team.color_hex || "#64748b";
+      const label = document.createElement("span");
+      label.textContent = team.name || "No team";
+      item.appendChild(dot);
+      item.appendChild(label);
+      host.appendChild(item);
+    });
+  }
+  function renderProductPeople(){
+    const host = byId("rnd-product-people");
+    const caption = byId("rnd-product-people-caption");
+    const legend = byId("rnd-product-team-legend");
+    if (!host || !caption || !legend) return;
+    reset(host);
+    const resources = ((state && state.resources) || []).filter((resource) => !resource.resigned);
+    const resourceById = new Map(resources.map((resource) => [resource.resource_id, resource]));
+    const mappings = (((state && state.planner) || {}).mappings || []);
+    const relevantIds = selectedProductEpicKey
+      ? new Set(mappings.filter((mapping) => mapping.epic_key === selectedProductEpicKey).map((mapping) => mapping.resource_id))
+      : null;
+    const people = relevantIds ? Array.from(relevantIds).map((id) => resourceById.get(id)).filter(Boolean) : resources;
+    const teamsById = teamById();
+    const teamsByResourceId = teamByResourceId();
+    const selectedEpic = selectedProductEpicKey ? findPlannerEpic(selectedProductEpicKey) : null;
+    caption.textContent = selectedProductEpicKey
+      ? selectedProductEpicKey + (selectedEpic && selectedEpic.epic_name ? " - " + selectedEpic.epic_name : "")
+      : "All active resources";
+    renderProductLegend(legend, people, teamsById, teamsByResourceId);
+    if (!people.length){
+      const empty = document.createElement("div");
+      empty.className = "view-empty";
+      empty.textContent = selectedProductEpicKey ? "No resources are mapped to this epic." : "No active resources are available.";
+      host.appendChild(empty);
+      return;
+    }
+    people.forEach((resource) => {
+      const team = teamForResource(resource, teamsById, teamsByResourceId);
+      const color = team.color_hex || "#64748b";
+      const tone = teamTone(color);
+      const card = document.createElement("div");
+      card.className = "product-person";
+      card.style.setProperty("--person-color", color);
+      card.style.setProperty("--person-soft", tone.soft);
+      card.style.setProperty("--person-border", tone.border);
+      const name = document.createElement("strong");
+      name.textContent = resource.display_name || resource.resource_id;
+      const meta = document.createElement("span");
+      meta.textContent = team.name || "No team";
+      card.appendChild(name);
+      card.appendChild(meta);
+      host.appendChild(card);
+    });
+  }
+  function renderProductWiseView(){
+    const host = byId("rnd-product-projects");
+    if (!host) return;
+    reset(host);
+    syncPlannerSelection();
+    const projects = productProjectOrder(projectTabsForDisplay().filter((tab) => !tab.is_all_tab));
+    const visibleProjectKeys = new Set(projects.map((project) => project.project_key));
+    const plannerKeys = plannerEpicKeys();
+    const plannerEpics = plannerKeys.map((epicKey) => findPlannerEpic(epicKey)).filter(Boolean);
+    if (selectedProductEpicKey){
+      const selectedEpic = findPlannerEpic(selectedProductEpicKey);
+      if (!selectedEpic || !visibleProjectKeys.has(selectedEpic.project_key)) selectedProductEpicKey = "";
+    }
+    if (!projects.length){
+      const empty = document.createElement("div");
+      empty.className = "view-empty";
+      empty.textContent = "No projects are selected. Use Configure Projects to choose product panels.";
+      host.appendChild(empty);
+      renderProductPeople();
+      return;
+    }
+    projects.forEach((project) => {
+      const panel = document.createElement("section");
+      panel.className = "product-project-panel";
+      panel.draggable = true;
+      panel.dataset.projectKey = project.project_key || "";
+      const head = document.createElement("div");
+      head.className = "product-panel-head";
+      const title = document.createElement("div");
+      title.className = "product-panel-title";
+      const titleName = document.createElement("strong");
+      titleName.textContent = project.project_name || project.project_key || "Project";
+      const titleMeta = document.createElement("span");
+      const projectEpics = plannerEpics.filter((epic) => epic.project_key === project.project_key);
+      titleMeta.textContent = (project.project_key || "") + " | " + projectEpics.length + " mapped epics";
+      title.appendChild(titleName);
+      title.appendChild(titleMeta);
+      const handle = document.createElement("span");
+      handle.className = "product-drag-handle";
+      handle.textContent = ":::";
+      handle.title = "Drag to move project panel";
+      head.appendChild(title);
+      head.appendChild(handle);
+      const epicList = document.createElement("div");
+      epicList.className = "product-epic-list";
+      if (!projectEpics.length){
+        const empty = document.createElement("div");
+        empty.className = "view-empty";
+        empty.textContent = "No mapped epics for this project.";
+        epicList.appendChild(empty);
+      }
+      projectEpics.forEach((epic) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "product-epic " + epicPriorityClass(epic.priority) + (selectedProductEpicKey === epic.epic_key ? " active" : "");
+        const epicTitle = document.createElement("strong");
+        epicTitle.textContent = epic.epic_key + (epic.epic_name ? " - " + epic.epic_name : "");
+        const epicMappings = (((state && state.planner) || {}).mappings || []).filter((mapping) => mapping.epic_key === epic.epic_key);
+        const epicMeta = document.createElement("span");
+        epicMeta.textContent = epicMappings.length + " people involved";
+        button.appendChild(epicTitle);
+        button.appendChild(epicMeta);
+        button.addEventListener("click", () => {
+          selectedProductEpicKey = selectedProductEpicKey === epic.epic_key ? "" : epic.epic_key;
+          renderProductWiseView();
+        });
+        epicList.appendChild(button);
+      });
+      panel.appendChild(head);
+      panel.appendChild(epicList);
+      panel.addEventListener("dragstart", (event) => {
+        draggedProductProjectKey = project.project_key || "";
+        panel.classList.add("dragging");
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("application/x-rnd-product-project", draggedProductProjectKey);
+      });
+      panel.addEventListener("dragover", (event) => {
+        if (!draggedProductProjectKey || draggedProductProjectKey === project.project_key) return;
+        event.preventDefault();
+        panel.classList.remove("drop-before", "drop-after");
+        panel.classList.add(event.clientX < panel.getBoundingClientRect().left + panel.offsetWidth / 2 ? "drop-before" : "drop-after");
+      });
+      panel.addEventListener("dragleave", () => panel.classList.remove("drop-before", "drop-after"));
+      panel.addEventListener("drop", (event) => {
+        if (!draggedProductProjectKey || draggedProductProjectKey === project.project_key) return;
+        event.preventDefault();
+        const position = event.clientX < panel.getBoundingClientRect().left + panel.offsetWidth / 2 ? "before" : "after";
+        const orderedKeys = movePlannerEpicToPosition(projects.map((item) => item.project_key), draggedProductProjectKey, project.project_key, position);
+        saveProductProjectOrder(orderedKeys);
+        draggedProductProjectKey = "";
+        clearProductPanelDropState();
+        renderProductWiseView();
+      });
+      panel.addEventListener("dragend", () => {
+        draggedProductProjectKey = "";
+        clearProductPanelDropState();
+      });
+      host.appendChild(panel);
+    });
+    renderProductPeople();
   }
   function insightWeight(mapping){
     const hours = Number(mapping && mapping.allocation_hours || 0);
@@ -14405,22 +14911,34 @@ __SETTINGS_TOP_NAV__
     const hierarchical = byId("rnd-hierarchical-planner");
     const cluster = byId("rnd-cluster-planner");
     const insights = byId("rnd-insights-planner");
+    const product = byId("rnd-product-planner");
     if (currentView === "hierarchical"){
       if (hierarchical) hierarchical.hidden = false;
       if (cluster) cluster.hidden = true;
       if (insights) insights.hidden = true;
+      if (product) product.hidden = true;
       return;
     }
     if (currentView === "insights"){
       if (hierarchical) hierarchical.hidden = true;
       if (cluster) cluster.hidden = true;
       if (insights) insights.hidden = false;
+      if (product) product.hidden = true;
       renderInsightsView();
+      return;
+    }
+    if (currentView === "product"){
+      if (hierarchical) hierarchical.hidden = true;
+      if (cluster) cluster.hidden = true;
+      if (insights) insights.hidden = true;
+      if (product) product.hidden = false;
+      renderProductWiseView();
       return;
     }
     if (hierarchical) hierarchical.hidden = true;
     if (cluster) cluster.hidden = false;
     if (insights) insights.hidden = true;
+    if (product) product.hidden = true;
     renderClusterView();
     return;
     const host = byId("rnd-view-content");
@@ -14910,6 +15428,16 @@ __SETTINGS_TOP_NAV__
     );
   }
   byId("rnd-create-team-btn").addEventListener("click", openCreateTeam);
+  byId("rnd-export-mappings-btn").addEventListener("click", () => {
+    exportMappingWorkbook().catch((err) => setStatus(err.message || String(err), "err"));
+  });
+  byId("rnd-import-mappings-btn").addEventListener("click", () => byId("rnd-import-mappings-file").click());
+  byId("rnd-import-mappings-file").addEventListener("change", (event) => {
+    const file = event.target.files && event.target.files[0];
+    importMappingWorkbook(file)
+      .catch((err) => setStatus(err.message || String(err), "err"))
+      .finally(() => { event.target.value = ""; });
+  });
   byId("rnd-theme-mode").addEventListener("change", saveThemePreference);
   byId("rnd-theme-color").addEventListener("input", saveThemePreference);
   byId("rnd-add-skill-btn").addEventListener("click", () => {
@@ -14929,7 +15457,7 @@ __SETTINGS_TOP_NAV__
     saveProjectSelection();
     byId("rnd-project-dialog").close();
     byId("rnd-project-filter").value = "";
-    renderProjectControls();
+    renderAll();
     setStatus("Project tabs updated.", "ok");
   });
   byId("rnd-team-cancel-edit-btn").addEventListener("click", () => {
@@ -15088,6 +15616,7 @@ __SETTINGS_TOP_NAV__
     byId("rnd-view-hierarchical").classList.add("active");
     byId("rnd-view-cluster").classList.remove("active");
     byId("rnd-view-insights").classList.remove("active");
+    byId("rnd-view-product").classList.remove("active");
     renderViewContent();
     setStatus("Hierarchical view: epics with their mapped resources.", "ok");
   });
@@ -15096,6 +15625,7 @@ __SETTINGS_TOP_NAV__
     byId("rnd-view-cluster").classList.add("active");
     byId("rnd-view-hierarchical").classList.remove("active");
     byId("rnd-view-insights").classList.remove("active");
+    byId("rnd-view-product").classList.remove("active");
     renderViewContent();
     setStatus("Cluster view: resource bubbles align to the selected epic and show team-color connections.", "ok");
   });
@@ -15104,8 +15634,18 @@ __SETTINGS_TOP_NAV__
     byId("rnd-view-insights").classList.add("active");
     byId("rnd-view-hierarchical").classList.remove("active");
     byId("rnd-view-cluster").classList.remove("active");
+    byId("rnd-view-product").classList.remove("active");
     renderViewContent();
     setStatus("Insights view: mapped allocations summarized by project, skill, team, and epic.", "ok");
+  });
+  byId("rnd-view-product").addEventListener("click", () => {
+    currentView = "product";
+    byId("rnd-view-product").classList.add("active");
+    byId("rnd-view-hierarchical").classList.remove("active");
+    byId("rnd-view-cluster").classList.remove("active");
+    byId("rnd-view-insights").classList.remove("active");
+    renderViewContent();
+    setStatus("Product wise view: selected projects, mapped epics, and the people involved.", "ok");
   });
   Array.from(document.querySelectorAll("[data-insight-mode]")).forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -45506,6 +46046,46 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             return jsonify({"ok": False, "error": str(exc)}), 400
         except Exception as exc:
             return jsonify({"ok": False, "error": str(exc)}), 500
+
+    @app.route("/api/rnd-muscle-utilization/mappings/export", methods=["GET"])
+    def rnd_muscle_utilization_export_mappings_api():
+        try:
+            state = load_rnd_muscle_utilization_page_state(
+                capacity_paths["rnd_muscle_db_path"],
+                capacity_paths["db_path"],
+            )
+            payload = _rnd_muscle_mapping_workbook_bytes(state)
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+            return send_file(
+                io.BytesIO(payload),
+                mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                as_attachment=True,
+                download_name=f"rnd-muscle-mappings-{timestamp}.xlsx",
+            )
+        except Exception as exc:
+            return jsonify({"ok": False, "error": f"Failed to export mappings: {exc}"}), 500
+
+    @app.route("/api/rnd-muscle-utilization/mappings/import", methods=["POST"])
+    def rnd_muscle_utilization_import_mappings_api():
+        try:
+            uploaded_file = request.files.get("workbook") or request.files.get("file")
+            parsed_rows, summary = _parse_rnd_muscle_mapping_workbook(uploaded_file)
+            if parsed_rows:
+                state = import_rnd_muscle_mapping_rows(
+                    capacity_paths["rnd_muscle_db_path"],
+                    parsed_rows,
+                    capacity_paths["db_path"],
+                )
+            else:
+                state = load_rnd_muscle_utilization_page_state(
+                    capacity_paths["rnd_muscle_db_path"],
+                    capacity_paths["db_path"],
+                )
+            return jsonify({**_rnd_muscle_state_payload(state), "imported": summary})
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"ok": False, "error": f"Failed to import mappings: {exc}"}), 500
 
     @app.route("/api/rnd-muscle-utilization/mappings/reorder", methods=["POST"])
     def rnd_muscle_utilization_reorder_mapping_api():

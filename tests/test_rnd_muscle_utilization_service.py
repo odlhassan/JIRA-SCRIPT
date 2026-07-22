@@ -437,6 +437,9 @@ class RndMuscleUtilizationServiceTests(unittest.TestCase):
 
         self.assertEqual(state.planner.backlog, ())
         self.assertEqual([item.epic_key for item in state.planner.planner_epics], ["O2-100"])
+        self.assertEqual(state.planner.planner_epics[0].epic_name, "Highest priority epic")
+        self.assertEqual(state.planner.planner_epics[0].project_key, "O2")
+        self.assertEqual(state.planner.planner_epics[0].project_name, "OmniConnect")
         self.assertEqual([mapping.resource_id for mapping in state.planner.mappings], ["res-1"])
 
     def test_planner_remove_clears_planner_mapping(self):
