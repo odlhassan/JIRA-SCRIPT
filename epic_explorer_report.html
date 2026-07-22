@@ -197,6 +197,20 @@
     tr.epic-row.even td { background: #f7faff; }
     tr.epic-row:hover td { background: #eef6ff; }
     td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    #epic-table th.planned-dates-col,
+    #epic-table td.planned-dates-col {
+      min-width: 150px;
+      white-space: nowrap;
+    }
+    .planned-date-stack { display: grid; gap: 4px; }
+    .planned-date-line { display: flex; align-items: baseline; gap: 5px; }
+    .planned-date-label {
+      min-width: 14px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+    }
+    .planned-date-value { color: #344054; font-variant-numeric: tabular-nums; }
     .row-number { font-weight: 700; }
     .epic-name-cell {
       display: grid;
@@ -741,7 +755,7 @@
             <th>Jira Original Estimate</th>
             <th>Story Estimates</th>
             <th>Subtask Estimates</th>
-            <th>Jira Epics' Planned Dates</th>
+            <th class="planned-dates-col">Jira Epics' Planned Dates</th>
             <th>Total Actual Hours</th>
             <th>Actual Complete Date</th>
             <th>Planned vs Actual Hours</th>
@@ -870,6 +884,12 @@
       const month = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][parts.month - 1] || "";
       const yearShort = parts.year.slice(-2);
       return month ? `${month}-${parts.day}-${yearShort}` : String(value || "-");
+    }
+    function formatDateMmmDdYyyy(value){
+      const parts = parseIsoDateParts(value);
+      if (!parts) return String(value || "-");
+      const month = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][parts.month - 1] || "";
+      return month ? `${month}-${parts.day}-${parts.year}` : String(value || "-");
     }
     function formatLongDate(value){
       const parts = parseIsoDateParts(value);
@@ -1008,7 +1028,10 @@
     function epicRow(row, rowNumber){
       const key = String(row.epic_key || "");
       const isOpen = state.expandedEpics.has(key);
-      const planned = `${dateText(row.planned_start)} to ${dateText(row.planned_due)}`;
+      const planned = `<div class="planned-date-stack">
+        <div class="planned-date-line"><span class="planned-date-label">S:</span><span class="planned-date-value">${esc(formatDateMmmDdYyyy(row.planned_start))}</span></div>
+        <div class="planned-date-line"><span class="planned-date-label">D:</span><span class="planned-date-value">${esc(formatDateMmmDdYyyy(row.planned_due))}</span></div>
+      </div>`;
       const rowTone = rowNumber % 2 === 0 ? "even" : "odd";
       return `<tr class="epic-row ${rowTone}" data-epic-row="${esc(key)}">
         <td class="row-number-col row-number">${esc(rowNumber)}</td>
@@ -1024,7 +1047,7 @@
         <td class="num">${hours(row.jira_original_estimate_hours)}</td>
         <td class="num">${hours(row.story_estimate_hours)}</td>
         <td class="num">${hours(row.subtask_estimate_hours)}</td>
-        <td>${esc(planned)}</td>
+        <td class="planned-dates-col">${planned}</td>
         <td class="num">${hours(row.total_actual_hours)}</td>
         <td>${esc(dateText(row.actual_complete_date))}</td>
         <td>${kpiText(`${hours(row.planned_total_hours)} / ${hours(row.total_actual_hours)}`, "planned / actual", "neutral")}</td>
