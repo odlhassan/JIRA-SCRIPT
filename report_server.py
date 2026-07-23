@@ -14566,6 +14566,7 @@ __SETTINGS_TOP_NAV__
     if (!host || !caption || !count || !clearButton || !legend) return;
     reset(host);
     const resources = ((state && state.resources) || []).filter((resource) => !resource.resigned);
+    const resourceById = new Map(resources.map((resource) => [resource.resource_id, resource]));
     const mappings = (((state && state.planner) || {}).mappings || []);
     const teamsById = teamById();
     const teamsByResourceId = teamByResourceId();
@@ -14574,22 +14575,40 @@ __SETTINGS_TOP_NAV__
       if (!activeIds.has(resourceId)) selectedProductResourceIds.delete(resourceId);
     });
     const query = productPeopleSearchText.trim().toLowerCase();
-    const people = resources.filter((resource) => {
+    const epicResourceIds = selectedProductEpicKey
+      ? new Set(mappings.filter((mapping) => mapping.epic_key === selectedProductEpicKey).map((mapping) => mapping.resource_id))
+      : null;
+    const peopleForEpic = epicResourceIds
+      ? Array.from(epicResourceIds).map((resourceId) => resourceById.get(resourceId)).filter(Boolean)
+      : resources;
+    const people = peopleForEpic.filter((resource) => {
       const team = teamForResource(resource, teamsById, teamsByResourceId);
       return !query || [resource.display_name, resource.email, team.name].some((value) => String(value || "").toLowerCase().includes(query));
     });
     const selectedCount = selectedProductResourceIds.size;
+    const selectedEpic = selectedProductEpicKey ? findPlannerEpic(selectedProductEpicKey) : null;
+    const selectedEpicLabel = selectedEpic
+      ? selectedEpic.epic_key + (selectedEpic.epic_name ? " - " + selectedEpic.epic_name : "")
+      : selectedProductEpicKey;
     count.textContent = String(selectedCount);
     count.hidden = selectedCount === 0;
     clearButton.disabled = selectedCount === 0;
-    caption.textContent = selectedCount
-      ? selectedCount + " selected | Showing epics involving any selected person."
-      : "Select people to show epics involving any of them.";
+    if (selectedProductEpicKey){
+      caption.textContent = selectedCount
+        ? selectedCount + " selected | People on " + selectedEpicLabel + ". Epics match any selected person."
+        : "People involved in " + selectedEpicLabel + ". Select people to filter product epics.";
+    } else {
+      caption.textContent = selectedCount
+        ? selectedCount + " selected | Showing epics involving any selected person."
+        : "Select people to show epics involving any of them.";
+    }
     renderProductLegend(legend, people, teamsById, teamsByResourceId);
     if (!people.length){
       const empty = document.createElement("div");
       empty.className = "product-filter-empty";
-      empty.textContent = query ? "No people match your search." : "No active resources are available.";
+      empty.textContent = query
+        ? "No people match your search in this view."
+        : (selectedProductEpicKey ? "No active people are mapped to this epic." : "No active resources are available.");
       host.appendChild(empty);
       return;
     }
