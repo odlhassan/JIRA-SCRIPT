@@ -13181,6 +13181,9 @@ def _rnd_muscle_utilization_settings_html(planner_only: bool = False) -> str:
     th, td { border-bottom:1px solid var(--border); padding:5px; text-align:left; vertical-align:top; }
     th { background:var(--panel-2); position:sticky; top:0; }
     .backlog tr.epic-priority td { background:var(--priority-bg); color:var(--priority-text); border-bottom-color:var(--priority-border); }
+    .backlog-epic { display:grid; gap:2px; min-width:240px; }
+    .backlog-epic strong { font-size:11px; line-height:1.2; }
+    .backlog-epic span { font-size:10px; line-height:1.25; opacity:.82; }
     .config-band { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
     .config-chip { border:1px solid var(--border); border-radius:var(--radius); background:var(--panel); padding:5px 8px; }
     .status { min-height:18px; margin-bottom:8px; color:var(--muted); }
@@ -13287,13 +13290,13 @@ __SETTINGS_TOP_NAV__
       <div class="panel-head"><h2>Planner</h2><div id="rnd-project-tabs" class="tabs"><button class="tab active" type="button">All 0</button></div></div>
       <div class="panel-body planner">
         <div class="toolbar">
-          <button id="rnd-view-hierarchical" class="tab active" type="button">Hierarchical</button>
+          <button id="rnd-view-hierarchical" class="tab __RND_HIERARCHICAL_TAB_ACTIVE__" type="button">Hierarchical</button>
           <button id="rnd-view-cluster" class="tab" type="button">Cluster</button>
           <button id="rnd-view-insights" class="tab" type="button">Insights</button>
-          <button id="rnd-view-product" class="tab" type="button">Product wise</button>
+          <button id="rnd-view-product" class="tab __RND_PRODUCT_TAB_ACTIVE__" type="button">Product wise</button>
         </div>
         <div class="canvas">
-          <div id="rnd-hierarchical-planner" class="hierarchical-planner">
+          <div id="rnd-hierarchical-planner" class="hierarchical-planner" __RND_HIERARCHICAL_HIDDEN__>
             <div class="canvas-grid">
               <div id="rnd-epic-drop-zone" class="canvas-col">
                 <h3>Mapped epics</h3>
@@ -13339,7 +13342,7 @@ __SETTINGS_TOP_NAV__
               <div id="rnd-insights-detail-list" class="insights-detail-list"></div>
             </div>
           </div>
-          <div id="rnd-product-planner" class="product-planner" hidden>
+          <div id="rnd-product-planner" class="product-planner" __RND_PRODUCT_HIDDEN__>
             <div class="product-layout">
               <div id="rnd-product-projects" class="product-project-scroll" aria-label="Selected project panels"></div>
               <aside class="product-people-panel" aria-label="People involved">
@@ -13447,7 +13450,7 @@ __SETTINGS_TOP_NAV__
   let selectedCanvasEpicKey = "";
   let canvasEpicKeys = [];
   let plannerEpicDragKey = "";
-  let currentView = "hierarchical";
+  let currentView = "__RND_INITIAL_VIEW__";
   let selectedClusterEpicKey = "";
   let selectedProductEpicKey = "";
   const selectedProductResourceIds = new Set();
@@ -14233,7 +14236,21 @@ __SETTINGS_TOP_NAV__
       const tr = document.createElement("tr");
       tr.className = epicPriorityClass(item.priority);
       tr.dataset.epicKey = item.epic_key;
-      [item.epic_key, "P" + fmt(item.priority), Number(item.budgeted_hours || 0).toFixed(1) + "h", dateRange(item)].forEach((value) => {
+      const epicTd = document.createElement("td");
+      const epicLabel = document.createElement("div");
+      epicLabel.className = "backlog-epic";
+      epicLabel.setAttribute("aria-label", item.epic_key + (item.epic_name ? " - " + item.epic_name : ""));
+      const epicKey = document.createElement("strong");
+      epicKey.textContent = item.epic_key;
+      epicLabel.appendChild(epicKey);
+      if (item.epic_name){
+        const epicName = document.createElement("span");
+        epicName.textContent = item.epic_name;
+        epicLabel.appendChild(epicName);
+      }
+      epicTd.appendChild(epicLabel);
+      tr.appendChild(epicTd);
+      ["P" + fmt(item.priority), Number(item.budgeted_hours || 0).toFixed(1) + "h", dateRange(item)].forEach((value) => {
         const td = document.createElement("td");
         td.textContent = value;
         tr.appendChild(td);
@@ -15747,6 +15764,21 @@ __SETTINGS_TOP_NAV__
     ).replace(
         "__RND_BODY_MODE_CLASS__",
         "rnd-planner-only" if planner_only else "",
+    ).replace(
+        "__RND_INITIAL_VIEW__",
+        "product" if planner_only else "hierarchical",
+    ).replace(
+        "__RND_HIERARCHICAL_TAB_ACTIVE__",
+        "" if planner_only else "active",
+    ).replace(
+        "__RND_PRODUCT_TAB_ACTIVE__",
+        "active" if planner_only else "",
+    ).replace(
+        "__RND_HIERARCHICAL_HIDDEN__",
+        "hidden" if planner_only else "",
+    ).replace(
+        "__RND_PRODUCT_HIDDEN__",
+        "" if planner_only else "hidden",
     ).replace(
         "__RND_TEAM_COLOR_PALETTE__",
         team_color_palette_json,
