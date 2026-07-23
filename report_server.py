@@ -13499,6 +13499,16 @@ def _rnd_muscle_utilization_settings_html(planner_only: bool = False) -> str:
     .panel-body { padding:8px; overflow:auto; min-height:0; }
     .filter-row, .tabs, .toolbar { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
     .filter-row { margin-bottom:8px; }
+    .project-dropdown-btn { display:inline-flex; align-items:center; gap:6px; }
+    .project-dropdown-btn .material-symbols-rounded { font-size:18px; transition:transform .14s ease; }
+    .project-dropdown-btn[aria-expanded="true"] .material-symbols-rounded { transform:rotate(180deg); }
+    .project-dropdown-menu { position:fixed; z-index:100000; width:min(280px,calc(100vw - 32px)); max-height:260px; overflow:auto; border:1px solid var(--border); border-radius:var(--radius); background:var(--panel); box-shadow:0 18px 42px rgba(0,0,0,.34); padding:6px; display:grid; gap:4px; }
+    .project-dropdown-menu[hidden] { display:none !important; }
+    .project-dropdown-item { display:flex; align-items:center; gap:8px; width:100%; text-align:left; border:1px solid var(--border); border-radius:var(--radius); background:var(--row); color:var(--text); padding:7px 9px; cursor:pointer; font-size:12px; box-shadow:inset 3px 0 0 transparent; transition:background .12s ease, box-shadow .12s ease; }
+    .project-dropdown-item:hover { background:var(--control-hover); }
+    .project-dropdown-item.active { box-shadow:inset 3px 0 0 var(--accent-strong); background:var(--accent-soft); font-weight:700; }
+    .project-dropdown-item img { width:18px; height:18px; border-radius:4px; object-fit:cover; box-shadow:0 0 0 1px rgba(15,23,42,.18); flex:none; }
+    .project-dropdown-item .count-badge { margin-left:auto; color:var(--muted); font-size:10px; font-weight:800; }
     .input { width:100%; }
     .epic-list, .resource-list { display:grid; gap:6px; align-content:start; }
     .row { border:1px solid var(--border); border-radius:var(--radius); padding:7px; background:var(--row); transition:transform .14s ease, box-shadow .14s ease, border-color .14s ease, background-color .14s ease, opacity .14s ease; }
@@ -13594,11 +13604,6 @@ def _rnd_muscle_utilization_settings_html(planner_only: bool = False) -> str:
     .cluster-legend { display:flex; gap:8px 12px; flex-wrap:wrap; min-width:0; }
     .cluster-legend-item { display:flex; align-items:center; gap:5px; color:var(--muted); }
     .product-planner { height:100%; min-height:420px; display:flex; flex-direction:column; }
-    .product-wise-head { flex:none; display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px; }
-    .product-wise-head h3 { margin:0; font-size:12px; }
-    .product-people-btn { display:inline-flex; align-items:center; gap:6px; }
-    .product-people-btn .material-symbols-rounded { font-size:16px; }
-    .product-people-badge { min-width:16px; padding:1px 6px; border-radius:999px; background:var(--accent); color:var(--accent-text); font-size:10px; font-weight:800; text-align:center; }
     .product-layout { flex:1 1 auto; min-height:0; display:flex; gap:8px; }
     .product-project-scroll { flex:1 1 auto; display:grid; grid-template-columns:repeat(auto-fill, minmax(240px, 1fr)); align-content:start; gap:8px; min-width:0; height:100%; overflow-y:auto; overflow-x:hidden; padding-bottom:4px; }
     .product-project-panel, .product-people-panel { border:1px solid var(--border); border-radius:var(--radius); background:var(--panel-2); min-width:0; overflow:hidden; }
@@ -13620,8 +13625,6 @@ def _rnd_muscle_utilization_settings_html(planner_only: bool = False) -> str:
     .product-epic span { display:block; margin-top:3px; color:inherit; opacity:.78; font-size:10px; }
     .product-people-panel { flex:0 0 300px; display:grid; grid-template-rows:auto auto auto minmax(0,1fr); min-height:0; }
     @media (max-width:900px) { .product-people-panel { flex-basis:240px; } }
-    .product-people-close { border:none; background:transparent; color:var(--muted); cursor:pointer; width:24px; height:24px; display:inline-flex; align-items:center; justify-content:center; border-radius:6px; }
-    .product-people-close:hover { background:var(--row); color:var(--text); }
     .product-people-head { padding:9px; border-bottom:1px solid var(--border); background:var(--panel); }
     .product-people-title { display:flex; align-items:center; justify-content:space-between; gap:8px; }
     .product-people-title strong { display:block; font-size:12px; }
@@ -13673,9 +13676,10 @@ def _rnd_muscle_utilization_settings_html(planner_only: bool = False) -> str:
     .backlog-epic span { font-size:10px; line-height:1.25; opacity:.82; }
     .config-band { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
     .config-chip { border:1px solid var(--border); border-radius:var(--radius); background:var(--panel); padding:5px 8px; }
-    .status { min-height:18px; margin-bottom:8px; color:var(--muted); }
-    .status.err { color:#b91c1c; }
-    .status.ok { color:#166534; }
+    .status { position:fixed; right:16px; bottom:16px; z-index:100000; max-width:min(340px, calc(100vw - 24px)); padding:10px 14px; border-radius:var(--radius); background:var(--panel); border:1px solid var(--border); color:var(--text); box-shadow:0 12px 30px rgba(0,0,0,.32); font-size:.86rem; line-height:1.4; opacity:0; transform:translateY(8px); pointer-events:none; transition:opacity .18s ease, transform .18s ease; }
+    .status.show { opacity:1; transform:none; }
+    .status.err { border-color:var(--danger); color:var(--danger); }
+    .status.ok { border-color:var(--accent-strong); }
     dialog { border:1px solid var(--border); border-radius:var(--radius); padding:0; width:min(560px,calc(100vw - 24px)); background:var(--panel); color:var(--text); }
     dialog::backdrop { background:rgba(15,23,42,.35); }
     .dialog-body { padding:12px; display:grid; gap:8px; }
@@ -13731,7 +13735,13 @@ __SETTINGS_TOP_NAV__
         <button id="rnd-view-insights" class="tab" type="button">Insights</button>
         <button id="rnd-view-product" class="tab __RND_PRODUCT_TAB_ACTIVE__" type="button">Product wise</button>
       </div>
-      <div id="rnd-project-tabs" class="tabs"><button class="tab active" type="button">All 0</button></div>
+      <div class="project-dropdown">
+        <button id="rnd-project-dropdown-btn" class="btn alt project-dropdown-btn" type="button" aria-haspopup="listbox" aria-expanded="false">
+          <span id="rnd-project-dropdown-label">All projects (0)</span>
+          <span class="material-symbols-rounded">expand_more</span>
+        </button>
+      </div>
+      <div id="rnd-project-dropdown-menu" class="project-dropdown-menu" role="listbox" aria-label="Select project" hidden></div>
       <div class="theme-controls" aria-label="Theme controls">
         <label class="theme-switch" for="rnd-theme-mode" aria-label="Theme mode">
           <input id="rnd-theme-mode" type="checkbox" role="switch" aria-label="Theme mode">
@@ -13832,26 +13842,13 @@ __SETTINGS_TOP_NAV__
             </div>
           </div>
           <div id="rnd-product-planner" class="product-planner" __RND_PRODUCT_HIDDEN__>
-            <div class="product-wise-head">
-              <h3>Product wise</h3>
-              <button id="rnd-product-people-btn" class="btn alt product-people-btn" type="button" aria-pressed="false" aria-expanded="false" aria-controls="rnd-product-people-panel">
-                <span class="material-symbols-rounded">group</span>
-                <span>People</span>
-                <span id="rnd-product-people-btn-badge" class="product-people-badge" hidden>0</span>
-              </button>
-            </div>
             <div class="product-layout">
               <div id="rnd-product-projects" class="product-project-scroll" aria-label="Selected project panels"></div>
-              <aside id="rnd-product-people-panel" class="product-people-panel" aria-label="People involved" hidden>
+              <aside id="rnd-product-people-panel" class="product-people-panel" aria-label="People involved">
                 <div class="product-people-head">
                   <div class="product-people-title">
-                    <span style="display:flex;align-items:center;gap:6px;min-width:0;">
-                      <strong>People involved</strong>
-                      <span id="rnd-product-people-count" class="product-people-count">0</span>
-                    </span>
-                    <button id="rnd-product-people-close" class="product-people-close" type="button" aria-label="Close people panel">
-                      <span class="material-symbols-rounded">close</span>
-                    </button>
+                    <strong>People involved</strong>
+                    <span id="rnd-product-people-count" class="product-people-count">0</span>
                   </div>
                   <span id="rnd-product-people-caption">Select people to show epics involving any of them.</span>
                 </div>
@@ -13971,7 +13968,6 @@ __SETTINGS_TOP_NAV__
   let selectedProductEpicKey = "";
   const selectedProductResourceIds = new Set();
   let productPeopleSearchText = "";
-  let productPeoplePanelOpen = false;
   let draggedProductProjectKey = "";
   let insightMode = "project";
   let selectedInsightKey = "";
@@ -14101,11 +14097,20 @@ __SETTINGS_TOP_NAV__
     });
     setTeamColor(selectedColor || TEAM_COLOR_PALETTE[0]);
   }
+  let statusHideTimer = null;
   function setStatus(message, kind){
     const el = byId("rnd-status");
     if (!el) return;
-    el.textContent = message || "";
+    const text = message || "";
+    el.textContent = text;
     el.className = "status" + (kind ? " " + kind : "");
+    if (statusHideTimer) window.clearTimeout(statusHideTimer);
+    if (!text){
+      el.classList.remove("show");
+      return;
+    }
+    el.classList.add("show");
+    statusHideTimer = window.setTimeout(() => el.classList.remove("show"), 3200);
   }
   function setSaveProgress(value, label, kind){
     const shell = byId("rnd-save-progress");
@@ -14206,7 +14211,7 @@ __SETTINGS_TOP_NAV__
       });
   }
   function hideOpenBookedMenus(exceptMenu){
-    document.querySelectorAll(".resource-booked-menu").forEach((menu) => {
+    document.querySelectorAll(".resource-booked-menu, .project-dropdown-menu").forEach((menu) => {
       if (menu !== exceptMenu) {
         menu.hidden = true;
         const btn = menu.__bookedButton || null;
@@ -14330,31 +14335,62 @@ __SETTINGS_TOP_NAV__
       filter.appendChild(opt);
     });
     filter.value = Array.from(filter.options).some((opt) => opt.value === current) ? current : "";
-    const tabsEl = byId("rnd-project-tabs");
-    reset(tabsEl);
+    const menu = byId("rnd-project-dropdown-menu");
+    const dropdownBtn = byId("rnd-project-dropdown-btn");
+    const labelEl = byId("rnd-project-dropdown-label");
+    reset(menu);
+    let activeTab = null;
     tabs.forEach((tab) => {
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "tab" + ((filter.value || "ALL") === (tab.project_key || "ALL") ? " active" : "");
+      const isActive = (filter.value || "ALL") === (tab.project_key || "ALL");
+      if (isActive) activeTab = tab;
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = "project-dropdown-item" + (isActive ? " active" : "");
+      item.setAttribute("role", "option");
+      item.setAttribute("aria-selected", isActive ? "true" : "false");
       if (!tab.is_all_tab && tab.thumbnail_url && showProjectLogos){
         const img = document.createElement("img");
         img.src = tab.thumbnail_url;
         img.alt = "";
         img.loading = "lazy";
-        img.width = 18;
-        img.height = 18;
-        img.style.cssText = "width:18px;height:18px;border-radius:4px;object-fit:cover;margin-right:6px;vertical-align:middle;box-shadow:0 0 0 1px rgba(15,23,42,.18);";
-        btn.appendChild(img);
+        item.appendChild(img);
       }
       const label = document.createElement("span");
-      label.textContent = (tab.is_all_tab ? "All" : (tab.project_name || tab.project_key)) + " " + Number(tab.epic_count || 0);
-      btn.appendChild(label);
-      btn.addEventListener("click", () => {
+      label.textContent = tab.is_all_tab ? "All projects" : (tab.project_name || tab.project_key);
+      item.appendChild(label);
+      const count = document.createElement("span");
+      count.className = "count-badge";
+      count.textContent = String(Number(tab.epic_count || 0));
+      item.appendChild(count);
+      item.addEventListener("click", (event) => {
+        event.stopPropagation();
         filter.value = tab.is_all_tab ? "" : (tab.project_key || "");
+        hideOpenBookedMenus();
         loadState();
       });
-      tabsEl.appendChild(btn);
+      menu.appendChild(item);
     });
+    if (labelEl){
+      labelEl.textContent = activeTab
+        ? (activeTab.is_all_tab ? "All projects" : (activeTab.project_name || activeTab.project_key)) + " (" + Number(activeTab.epic_count || 0) + ")"
+        : "All projects (0)";
+    }
+    if (dropdownBtn && !dropdownBtn.__wired){
+      dropdownBtn.__wired = true;
+      menu.__bookedButton = dropdownBtn;
+      menu.addEventListener("click", (event) => event.stopPropagation());
+      dropdownBtn.addEventListener("click", (event) => {
+        event.stopPropagation();
+        const shouldOpen = menu.hidden;
+        hideOpenBookedMenus(menu);
+        if (shouldOpen){
+          positionBookedMenu(dropdownBtn, menu);
+        } else {
+          menu.hidden = true;
+        }
+        dropdownBtn.setAttribute("aria-expanded", String(shouldOpen));
+      });
+    }
   }
   function renderEpics(){
     const list = byId("rnd-epic-list");
@@ -15113,16 +15149,6 @@ __SETTINGS_TOP_NAV__
       host.appendChild(item);
     });
   }
-  function setProductPeopleOpen(open){
-    productPeoplePanelOpen = !!open;
-    const panel = byId("rnd-product-people-panel");
-    const btn = byId("rnd-product-people-btn");
-    if (btn){
-      btn.setAttribute("aria-expanded", productPeoplePanelOpen ? "true" : "false");
-      btn.setAttribute("aria-pressed", productPeoplePanelOpen ? "true" : "false");
-    }
-    if (panel) panel.hidden = !productPeoplePanelOpen;
-  }
   function renderProductPeople(){
     const host = byId("rnd-product-people");
     const caption = byId("rnd-product-people-caption");
@@ -15159,11 +15185,6 @@ __SETTINGS_TOP_NAV__
     count.textContent = String(selectedCount);
     count.hidden = selectedCount === 0;
     clearButton.disabled = selectedCount === 0;
-    const toolbarBadge = byId("rnd-product-people-btn-badge");
-    if (toolbarBadge){
-      toolbarBadge.textContent = String(selectedCount);
-      toolbarBadge.hidden = selectedCount === 0;
-    }
     if (selectedProductEpicKey){
       caption.textContent = selectedCount
         ? selectedCount + " selected | People on " + selectedEpicLabel + ". Epics match any selected person."
@@ -15308,9 +15329,7 @@ __SETTINGS_TOP_NAV__
         button.appendChild(epicTitle);
         button.appendChild(epicMeta);
         button.addEventListener("click", () => {
-          const wasSelected = selectedProductEpicKey === epic.epic_key;
-          selectedProductEpicKey = wasSelected ? "" : epic.epic_key;
-          if (!wasSelected) setProductPeopleOpen(true);
+          selectedProductEpicKey = selectedProductEpicKey === epic.epic_key ? "" : epic.epic_key;
           renderProductWiseView();
         });
         epicList.appendChild(button);
@@ -16222,8 +16241,6 @@ __SETTINGS_TOP_NAV__
     renderProductWiseView();
     setStatus("People filter cleared. All product-wise epics are visible.", "ok");
   });
-  byId("rnd-product-people-btn").addEventListener("click", () => setProductPeopleOpen(!productPeoplePanelOpen));
-  byId("rnd-product-people-close").addEventListener("click", () => setProductPeopleOpen(false));
   document.addEventListener("click", () => hideOpenBookedMenus());
   window.addEventListener("scroll", () => hideOpenBookedMenus(), true);
   window.addEventListener("resize", () => hideOpenBookedMenus());
