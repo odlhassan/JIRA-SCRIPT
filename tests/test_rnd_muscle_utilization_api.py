@@ -325,8 +325,9 @@ class RndMuscleUtilizationApiTests(unittest.TestCase):
         self.assertIn('overflow-y:auto', html)
         self.assertIn('PRODUCT_PANEL_ORDER_KEY', html)
         self.assertIn('application/x-rnd-product-project', html)
-        self.assertIn('id="rnd-product-people-fab"', html)
-        self.assertIn('id="rnd-product-people-floating"', html)
+        self.assertIn('id="rnd-product-people-btn"', html)
+        self.assertIn('id="rnd-product-people-popover"', html)
+        self.assertIn('class="product-wise-head"', html)
         self.assertIn('function setProductPeopleOpen(open)', html)
         self.assertIn('id="rnd-opt-show-logos"', html)
         self.assertIn('id="rnd-opt-apply-colors"', html)
@@ -533,7 +534,7 @@ class RndMuscleUtilizationApiTests(unittest.TestCase):
 
         self.assertEqual(export_resp.status_code, 200)
         self.assertIn("rnd-muscle-mappings-", export_resp.headers["Content-Disposition"])
-        self.assertEqual(sheet_names, ["Mappings", "Resources", "Instructions"])
+        self.assertEqual(sheet_names, ["Mappings", "Resources", "Skills", "Teams", "Instructions"])
         self.assertEqual(
             mapping_rows[0],
             (
@@ -561,6 +562,61 @@ class RndMuscleUtilizationApiTests(unittest.TestCase):
         self.assertEqual([item["resource_id"] for item in restored], ["res-1", "res-2"])
         self.assertEqual([item["allocation_hours"] for item in restored], [6.5, 2.0])
         self.assertFalse(any(item["epic_key"] == "FF-200" for item in import_body["state"]["planner"]["mappings"]))
+
+    def test_mapping_workbook_export_and_import_round_trips_teams_and_skills(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            app = _build_app(root)
+            client = app.test_client()
+            client.get("/api/rnd-muscle-utilization")
+            _seed_epics_and_resources(root)
+
+            skill_resp = client.post("/api/rnd-muscle-utilization/skills", json={"name": "Data Engineering"})
+            self.assertEqual(skill_resp.status_code, 201)
+            skill_id = next(
+                s["skill_id"] for s in skill_resp.get_json()["state"]["skills"] if s["name"] == "Data Engineering"
+            )
+            team_resp = client.post(
+                "/api/rnd-muscle-utilization/teams",
+                json={"name": "Platform Squad", "color_hex": "#2563eb", "skill_ids": [skill_id], "resource_ids": ["res-1"]},
+            )
+            self.assertEqual(team_resp.status_code, 200)
+
+            export_resp = client.get("/api/rnd-muscle-utilization/mappings/export")
+            exported_bytes = export_resp.data
+            workbook = load_workbook(BytesIO(exported_bytes), data_only=True)
+            skills_rows = list(workbook["Skills"].iter_rows(values_only=True))
+            teams_rows = list(workbook["Teams"].iter_rows(values_only=True))
+            workbook.close()
+
+            # Fresh app/DB: nothing exists yet.
+            root2 = Path(td) / "fresh"
+            app2 = _build_app(root2)
+            client2 = app2.test_client()
+            client2.get("/api/rnd-muscle-utilization")
+            _seed_epics_and_resources(root2)
+
+            import_resp = client2.post(
+                "/api/rnd-muscle-utilization/mappings/import",
+                data={"workbook": (BytesIO(exported_bytes), "teams-skills.xlsx")},
+                content_type="multipart/form-data",
+            )
+
+        self.assertIn(("Data Engineering",), skills_rows[1:])
+        self.assertEqual(teams_rows[0], ("Team Name", "Color Hex", "Skill Names", "Resource Names"))
+        self.assertIn(("Platform Squad", "#2563eb", "Data Engineering", "Hassan Malik"), teams_rows[1:])
+
+        self.assertEqual(import_resp.status_code, 200)
+        imported = import_resp.get_json()["imported"]
+        self.assertEqual(imported["skills_added"], 1)
+        self.assertEqual(imported["teams_created"], 1)
+        state = import_resp.get_json()["state"]
+        new_team = next(t for t in state["teams"] if t["name"] == "Platform Squad")
+        self.assertEqual(new_team["color_hex"], "#2563eb")
+        new_skill_names = {s["name"] for s in state["skills"]}
+        self.assertIn("Data Engineering", new_skill_names)
+        resources_by_name = {r["display_name"]: r["resource_id"] for r in state["resources"]}
+        self.assertEqual(new_team["resource_ids"], [resources_by_name["Hassan Malik"]])
 
     def test_mapping_workbook_import_rejects_unknown_resource_without_partial_changes(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:

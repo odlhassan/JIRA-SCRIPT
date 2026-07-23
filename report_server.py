@@ -13071,6 +13071,11 @@ RND_MUSCLE_MAPPING_HEADERS: tuple[str, ...] = (
     "Allocation Hours",
     "Sort Order",
 )
+RND_MUSCLE_SKILLS_SHEET = "Skills"
+RND_MUSCLE_SKILLS_HEADERS: tuple[str, ...] = ("Skill Name",)
+RND_MUSCLE_TEAMS_SHEET = "Teams"
+RND_MUSCLE_TEAMS_HEADERS: tuple[str, ...] = ("Team Name", "Color Hex", "Skill Names", "Resource Names")
+RND_MUSCLE_NAME_LIST_SEPARATOR = "; "
 RND_MUSCLE_MAPPING_MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 
 
@@ -13161,16 +13166,50 @@ def _rnd_muscle_mapping_workbook_bytes(state) -> bytes:
     for column, width in {"A": 38, "B": 28, "C": 34, "D": 20, "E": 12}.items():
         resources_sheet.column_dimensions[column].width = width
 
+    skills_sheet = workbook.create_sheet(RND_MUSCLE_SKILLS_SHEET)
+    skills_sheet.append(list(RND_MUSCLE_SKILLS_HEADERS))
+    custom_skills = [skill for skill in state.skills if not skill.is_default]
+    for skill in sorted(custom_skills, key=lambda item: item.name.casefold()):
+        skills_sheet.append([skill.name])
+    for cell in skills_sheet[1]:
+        cell.fill = header_fill
+        cell.font = Font(color="FFFFFF", bold=True)
+    skills_sheet.freeze_panes = "A2"
+    skills_sheet.auto_filter.ref = skills_sheet.dimensions
+    skills_sheet.column_dimensions["A"].width = 32
+
+    teams_sheet = workbook.create_sheet(RND_MUSCLE_TEAMS_SHEET)
+    teams_sheet.append(list(RND_MUSCLE_TEAMS_HEADERS))
+    skills_by_id = {skill.skill_id: skill for skill in state.skills}
+    for team in sorted(state.teams, key=lambda item: item.name.casefold()):
+        skill_names = RND_MUSCLE_NAME_LIST_SEPARATOR.join(
+            skills_by_id[sid].name for sid in team.skill_ids if sid in skills_by_id
+        )
+        resource_names = RND_MUSCLE_NAME_LIST_SEPARATOR.join(
+            resources_by_id[rid].display_name for rid in team.resource_ids if rid in resources_by_id
+        )
+        teams_sheet.append([team.name, team.color_hex, skill_names, resource_names])
+    for cell in teams_sheet[1]:
+        cell.fill = header_fill
+        cell.font = Font(color="FFFFFF", bold=True)
+    teams_sheet.freeze_panes = "A2"
+    teams_sheet.auto_filter.ref = teams_sheet.dimensions
+    for column, width in {"A": 24, "B": 12, "C": 42, "D": 42}.items():
+        teams_sheet.column_dimensions[column].width = width
+
     instructions_sheet = workbook.create_sheet("Instructions")
     instruction_rows = (
-        ("RnD Muscle Mapping Workbook", "Template Version 1"),
+        ("RnD Muscle Mapping Workbook", "Template Version 2"),
         ("Round trip", "This downloaded .xlsx file can be imported back through Import mappings."),
         ("Editable identifiers", "Use Epic Key and Resource ID to define a mapping. Names, project, email, and team are reference columns."),
         ("Clear an epic", "Keep its Epic Key row and leave Resource ID blank to remove every resource mapping for that epic."),
         ("Allocation Hours", "Optional; blank imports as 0. Must be a finite non-negative number."),
         ("Sort Order", "Optional; blank uses worksheet row order. Values must be non-negative whole numbers."),
         ("Scope", "Import replaces mappings only for epics represented on the Mappings sheet. Other epics are unchanged."),
-        ("Important", "Do not rename the Mappings sheet or its column headers."),
+        ("Skills sheet", "Optional. Each named skill not already present is added. Default skills and existing skills are left unchanged."),
+        ("Teams sheet", "Optional. Each named team is created if new, or updated (color, skills, members) if a team with that name already exists. Teams not listed are left unchanged."),
+        ("Skill Names / Resource Names", "Semicolon-separated lists on the Teams sheet. Names must match existing skills (including ones added by the Skills sheet in the same import) and existing resources."),
+        ("Important", "Do not rename any sheet or its column headers."),
     )
     for row in instruction_rows:
         instructions_sheet.append(list(row))
@@ -13187,7 +13226,127 @@ def _rnd_muscle_mapping_workbook_bytes(state) -> bytes:
     return output.getvalue()
 
 
-def _parse_rnd_muscle_mapping_workbook(uploaded_file) -> tuple[list[dict[str, object]], dict[str, int]]:
+def _parse_rnd_muscle_skills_sheet(workbook) -> list[dict[str, object]]:
+    if RND_MUSCLE_SKILLS_SHEET not in workbook.sheetnames:
+        return []
+    worksheet = workbook[RND_MUSCLE_SKILLS_SHEET]
+    headers = {
+        _to_text(cell.value).strip(): index
+        for index, cell in enumerate(next(worksheet.iter_rows(min_row=1, max_row=1)), start=1)
+        if _to_text(cell.value).strip()
+    }
+    if "Skill Name" not in headers:
+        raise ValueError("Skills sheet is missing required column: 'Skill Name'.")
+    parsed: list[dict[str, object]] = []
+    for worksheet_row in range(2, worksheet.max_row + 1):
+        name = _to_text(worksheet.cell(row=worksheet_row, column=headers["Skill Name"]).value).strip()
+        if not name:
+            continue
+        parsed.append({"name": name, "worksheet_row": worksheet_row})
+    return parsed
+
+
+def _parse_rnd_muscle_teams_sheet(workbook) -> list[dict[str, object]]:
+    if RND_MUSCLE_TEAMS_SHEET not in workbook.sheetnames:
+        return []
+    worksheet = workbook[RND_MUSCLE_TEAMS_SHEET]
+    headers = {
+        _to_text(cell.value).strip(): index
+        for index, cell in enumerate(next(worksheet.iter_rows(min_row=1, max_row=1)), start=1)
+        if _to_text(cell.value).strip()
+    }
+    missing_headers = [header for header in RND_MUSCLE_TEAMS_HEADERS if header not in headers]
+    if missing_headers:
+        raise ValueError(f"Teams sheet is missing required column(s): {missing_headers}")
+    parsed: list[dict[str, object]] = []
+    for worksheet_row in range(2, worksheet.max_row + 1):
+        name = _to_text(worksheet.cell(row=worksheet_row, column=headers["Team Name"]).value).strip()
+        if not name:
+            continue
+        color_hex = _to_text(worksheet.cell(row=worksheet_row, column=headers["Color Hex"]).value).strip()
+        skill_names_raw = _to_text(worksheet.cell(row=worksheet_row, column=headers["Skill Names"]).value)
+        resource_names_raw = _to_text(worksheet.cell(row=worksheet_row, column=headers["Resource Names"]).value)
+        skill_names = [part.strip() for part in skill_names_raw.split(";") if part.strip()]
+        resource_names = [part.strip() for part in resource_names_raw.split(";") if part.strip()]
+        parsed.append(
+            {
+                "name": name,
+                "color_hex": color_hex,
+                "skill_names": skill_names,
+                "resource_names": resource_names,
+                "worksheet_row": worksheet_row,
+            }
+        )
+    return parsed
+
+
+def _apply_rnd_muscle_skills_and_teams_import(
+    rnd_muscle_db_path: Path,
+    db_path: Path,
+    skill_rows: list[dict[str, object]],
+    team_rows: list[dict[str, object]],
+):
+    state = load_rnd_muscle_utilization_page_state(rnd_muscle_db_path, db_path)
+    skills_added = 0
+
+    skill_id_by_name = {skill.name.casefold(): skill.skill_id for skill in state.skills}
+    seen_skill_names: set[str] = set()
+    for row in skill_rows:
+        name = str(row["name"])
+        key = name.casefold()
+        if key in seen_skill_names or key in skill_id_by_name:
+            continue
+        seen_skill_names.add(key)
+        state = add_rnd_muscle_skill(rnd_muscle_db_path, name, db_path)
+        skills_added += 1
+        skill_id_by_name = {skill.name.casefold(): skill.skill_id for skill in state.skills}
+
+    resource_id_by_name = {resource.display_name.casefold(): resource.resource_id for resource in state.resources}
+    team_id_by_name = {team.name.casefold(): team.team_id for team in state.teams}
+    teams_created = 0
+    teams_updated = 0
+    for row in team_rows:
+        name = str(row["name"])
+        worksheet_row = row["worksheet_row"]
+        skill_ids: list[str] = []
+        for skill_name in row["skill_names"]:
+            skill_id = skill_id_by_name.get(str(skill_name).casefold())
+            if not skill_id:
+                raise ValueError(f"Teams row {worksheet_row}: unknown skill name '{skill_name}'.")
+            skill_ids.append(skill_id)
+        resource_ids: list[str] = []
+        for resource_name in row["resource_names"]:
+            resource_id = resource_id_by_name.get(str(resource_name).casefold())
+            if not resource_id:
+                raise ValueError(f"Teams row {worksheet_row}: unknown resource name '{resource_name}'.")
+            resource_ids.append(resource_id)
+        existing_team_id = team_id_by_name.get(name.casefold(), "")
+        try:
+            state = save_rnd_muscle_team(
+                rnd_muscle_db_path,
+                {
+                    "team_id": existing_team_id,
+                    "name": name,
+                    "color_hex": row["color_hex"],
+                    "skill_ids": skill_ids,
+                    "resource_ids": resource_ids,
+                },
+                db_path,
+            )
+        except ValueError as exc:
+            raise ValueError(f"Teams row {worksheet_row}: {exc}") from exc
+        if existing_team_id:
+            teams_updated += 1
+        else:
+            teams_created += 1
+        team_id_by_name = {team.name.casefold(): team.team_id for team in state.teams}
+
+    return state, {"skills_added": skills_added, "teams_created": teams_created, "teams_updated": teams_updated}
+
+
+def _parse_rnd_muscle_mapping_workbook(
+    uploaded_file,
+) -> tuple[list[dict[str, object]], list[dict[str, object]], list[dict[str, object]], dict[str, int]]:
     if uploaded_file is None:
         raise ValueError("Mapping workbook file is required.")
     filename = _to_text(getattr(uploaded_file, "filename", "")).strip()
@@ -13207,6 +13366,8 @@ def _parse_rnd_muscle_mapping_workbook(uploaded_file) -> tuple[list[dict[str, ob
     try:
         if RND_MUSCLE_MAPPING_SHEET not in workbook.sheetnames:
             raise ValueError("Mapping workbook must contain a 'Mappings' sheet.")
+        skill_rows = _parse_rnd_muscle_skills_sheet(workbook)
+        team_rows = _parse_rnd_muscle_teams_sheet(workbook)
         worksheet = workbook[RND_MUSCLE_MAPPING_SHEET]
         headers = {
             _to_text(cell.value).strip(): index
@@ -13263,7 +13424,7 @@ def _parse_rnd_muscle_mapping_workbook(uploaded_file) -> tuple[list[dict[str, ob
             epic_keys.add(epic_key)
             if resource_id:
                 mapping_count += 1
-        return parsed_rows, {"epic_count": len(epic_keys), "mapping_count": mapping_count}
+        return parsed_rows, skill_rows, team_rows, {"epic_count": len(epic_keys), "mapping_count": mapping_count}
     finally:
         workbook.close()
 
@@ -13432,8 +13593,13 @@ def _rnd_muscle_utilization_settings_html(planner_only: bool = False) -> str:
     .cluster-bubble.dim { opacity:.35; transform:scale(.86); }
     .cluster-legend { display:flex; gap:8px 12px; flex-wrap:wrap; min-width:0; }
     .cluster-legend-item { display:flex; align-items:center; gap:5px; color:var(--muted); }
-    .product-planner { height:100%; min-height:420px; }
-    .product-layout { position:relative; height:100%; min-height:420px; }
+    .product-planner { height:100%; min-height:420px; display:flex; flex-direction:column; }
+    .product-wise-head { flex:none; display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px; }
+    .product-wise-head h3 { margin:0; font-size:12px; }
+    .product-people-btn { display:inline-flex; align-items:center; gap:6px; }
+    .product-people-btn .material-symbols-rounded { font-size:16px; }
+    .product-people-badge { min-width:16px; padding:1px 6px; border-radius:999px; background:var(--accent); color:var(--accent-text); font-size:10px; font-weight:800; text-align:center; }
+    .product-layout { flex:1 1 auto; min-height:0; }
     .product-project-scroll { display:grid; grid-template-columns:repeat(auto-fill, minmax(240px, 1fr)); align-content:start; gap:8px; min-width:0; height:100%; overflow-y:auto; overflow-x:hidden; padding-bottom:4px; }
     .product-project-panel, .product-people-panel { border:1px solid var(--border); border-radius:var(--radius); background:var(--panel-2); min-width:0; overflow:hidden; }
     .product-project-panel { display:flex; flex-direction:column; max-height:min(64vh, 520px); transition:opacity .14s ease, border-color .14s ease, transform .14s ease, background .14s ease; }
@@ -13452,14 +13618,8 @@ def _rnd_muscle_utilization_settings_html(planner_only: bool = False) -> str:
     .product-epic.active { outline:2px solid var(--accent-strong); outline-offset:-2px; }
     .product-epic strong { display:block; font-size:11px; line-height:1.25; }
     .product-epic span { display:block; margin-top:3px; color:inherit; opacity:.78; font-size:10px; }
-    .product-people-fab { position:absolute; right:12px; bottom:12px; z-index:5; display:inline-flex; align-items:center; gap:7px; padding:9px 16px; border:none; border-radius:999px; background:var(--accent); color:var(--accent-text); font-weight:800; font-size:12px; cursor:pointer; box-shadow:0 8px 22px rgba(0,0,0,.28); transition:transform .14s ease, box-shadow .14s ease; }
-    .product-people-fab:hover { transform:translateY(-1px); box-shadow:0 10px 26px rgba(0,0,0,.34); }
-    .product-people-fab[aria-pressed="true"] { background:var(--panel); color:var(--text); border:1px solid var(--accent-strong); }
-    .product-people-fab .material-symbols-rounded { font-size:16px; }
-    .product-people-fab-badge { min-width:16px; padding:1px 5px; border-radius:999px; background:rgba(255,255,255,.28); font-size:10px; font-weight:800; }
-    .product-people-fab[aria-pressed="true"] .product-people-fab-badge { background:var(--accent); color:var(--accent-text); }
-    .product-people-floating { position:absolute; right:12px; bottom:60px; width:min(320px, calc(100% - 24px)); max-height:min(70vh, 560px); z-index:6; box-shadow:0 18px 44px rgba(0,0,0,.34); opacity:0; transform:translateY(10px) scale(.97); pointer-events:none; transition:opacity .16s ease, transform .16s ease; display:grid; grid-template-rows:auto auto auto minmax(0,1fr); }
-    .product-people-floating.open { opacity:1; transform:none; pointer-events:auto; }
+    .product-people-popover { position:fixed; z-index:100000; width:min(340px, calc(100vw - 24px)); max-height:min(70vh, 560px); box-shadow:0 18px 44px rgba(0,0,0,.34); display:grid; grid-template-rows:auto auto auto minmax(0,1fr); }
+    .product-people-popover[hidden] { display:none !important; }
     .product-people-close { border:none; background:transparent; color:var(--muted); cursor:pointer; width:24px; height:24px; display:inline-flex; align-items:center; justify-content:center; border-radius:6px; }
     .product-people-close:hover { background:var(--row); color:var(--text); }
     .product-people-head { padding:9px; border-bottom:1px solid var(--border); background:var(--panel); }
@@ -13672,35 +13832,38 @@ __SETTINGS_TOP_NAV__
             </div>
           </div>
           <div id="rnd-product-planner" class="product-planner" __RND_PRODUCT_HIDDEN__>
-            <div class="product-layout">
-              <div id="rnd-product-projects" class="product-project-scroll" aria-label="Selected project panels"></div>
-              <button id="rnd-product-people-fab" class="product-people-fab" type="button" aria-pressed="false" aria-expanded="false" aria-controls="rnd-product-people-floating">
+            <div class="product-wise-head">
+              <h3>Product wise</h3>
+              <button id="rnd-product-people-btn" class="btn alt product-people-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="rnd-product-people-popover">
                 <span class="material-symbols-rounded">group</span>
                 <span>People</span>
-                <span id="rnd-product-people-fab-badge" class="product-people-fab-badge" hidden>0</span>
+                <span id="rnd-product-people-btn-badge" class="product-people-badge" hidden>0</span>
               </button>
-              <aside id="rnd-product-people-floating" class="product-people-panel product-people-floating" aria-label="People involved" aria-hidden="true">
-                <div class="product-people-head">
-                  <div class="product-people-title">
-                    <span style="display:flex;align-items:center;gap:6px;min-width:0;">
-                      <strong>People involved</strong>
-                      <span id="rnd-product-people-count" class="product-people-count">0</span>
-                    </span>
-                    <button id="rnd-product-people-close" class="product-people-close" type="button" aria-label="Close people panel">
-                      <span class="material-symbols-rounded">close</span>
-                    </button>
-                  </div>
-                  <span id="rnd-product-people-caption">Select people to show epics involving any of them.</span>
-                </div>
-                <div class="product-people-tools">
-                  <input id="rnd-product-people-search" class="input product-people-search" type="search" placeholder="Find a person or team..." aria-label="Search people involved">
-                  <button id="rnd-product-clear-people" class="btn product-clear-people" type="button" disabled>Clear</button>
-                </div>
-                <div id="rnd-product-team-legend" class="product-team-legend" aria-label="Team color legend"></div>
-                <div id="rnd-product-people" class="product-person-list" aria-label="People filter" aria-multiselectable="true"></div>
-              </aside>
+            </div>
+            <div class="product-layout">
+              <div id="rnd-product-projects" class="product-project-scroll" aria-label="Selected project panels"></div>
             </div>
           </div>
+          <aside id="rnd-product-people-popover" class="product-people-panel product-people-popover" aria-label="People involved" hidden>
+            <div class="product-people-head">
+              <div class="product-people-title">
+                <span style="display:flex;align-items:center;gap:6px;min-width:0;">
+                  <strong>People involved</strong>
+                  <span id="rnd-product-people-count" class="product-people-count">0</span>
+                </span>
+                <button id="rnd-product-people-close" class="product-people-close" type="button" aria-label="Close people panel">
+                  <span class="material-symbols-rounded">close</span>
+                </button>
+              </div>
+              <span id="rnd-product-people-caption">Select people to show epics involving any of them.</span>
+            </div>
+            <div class="product-people-tools">
+              <input id="rnd-product-people-search" class="input product-people-search" type="search" placeholder="Find a person or team..." aria-label="Search people involved">
+              <button id="rnd-product-clear-people" class="btn product-clear-people" type="button" disabled>Clear</button>
+            </div>
+            <div id="rnd-product-team-legend" class="product-team-legend" aria-label="Team color legend"></div>
+            <div id="rnd-product-people" class="product-person-list" aria-label="People filter" aria-multiselectable="true"></div>
+          </aside>
         </div>
         <div id="rnd-backlog-drop-zone" class="backlog" aria-label="Backlog drop area">
           <h3>Backlog</h3>
@@ -14343,10 +14506,11 @@ __SETTINGS_TOP_NAV__
     localMutationVersion += 1;
     renderAll();
     const imported = body.imported || {};
-    setStatus(
-      "Imported " + Number(imported.mapping_count || 0) + " mappings across " + Number(imported.epic_count || 0) + " epics.",
-      "ok"
-    );
+    const parts = [Number(imported.mapping_count || 0) + " mappings across " + Number(imported.epic_count || 0) + " epics"];
+    if (imported.skills_added) parts.push(imported.skills_added + " new skill(s)");
+    if (imported.teams_created) parts.push(imported.teams_created + " new team(s)");
+    if (imported.teams_updated) parts.push(imported.teams_updated + " team(s) updated");
+    setStatus("Imported " + parts.join(", ") + ".", "ok");
   }
   function persistCanvas(){
     canvasEpicKeys = plannerEpicKeys();
@@ -14951,15 +15115,14 @@ __SETTINGS_TOP_NAV__
   }
   function setProductPeopleOpen(open){
     productPeoplePanelOpen = !!open;
-    const floating = byId("rnd-product-people-floating");
-    const fab = byId("rnd-product-people-fab");
-    if (floating){
-      floating.classList.toggle("open", productPeoplePanelOpen);
-      floating.setAttribute("aria-hidden", productPeoplePanelOpen ? "false" : "true");
-    }
-    if (fab){
-      fab.setAttribute("aria-pressed", productPeoplePanelOpen ? "true" : "false");
-      fab.setAttribute("aria-expanded", productPeoplePanelOpen ? "true" : "false");
+    const popover = byId("rnd-product-people-popover");
+    const btn = byId("rnd-product-people-btn");
+    if (btn) btn.setAttribute("aria-expanded", productPeoplePanelOpen ? "true" : "false");
+    if (!popover) return;
+    if (productPeoplePanelOpen && btn){
+      positionBookedMenu(btn, popover);
+    } else {
+      popover.hidden = true;
     }
   }
   function renderProductPeople(){
@@ -14998,10 +15161,10 @@ __SETTINGS_TOP_NAV__
     count.textContent = String(selectedCount);
     count.hidden = selectedCount === 0;
     clearButton.disabled = selectedCount === 0;
-    const fabBadge = byId("rnd-product-people-fab-badge");
-    if (fabBadge){
-      fabBadge.textContent = String(selectedCount);
-      fabBadge.hidden = selectedCount === 0;
+    const toolbarBadge = byId("rnd-product-people-btn-badge");
+    if (toolbarBadge){
+      toolbarBadge.textContent = String(selectedCount);
+      toolbarBadge.hidden = selectedCount === 0;
     }
     if (selectedProductEpicKey){
       caption.textContent = selectedCount
@@ -16061,15 +16224,17 @@ __SETTINGS_TOP_NAV__
     renderProductWiseView();
     setStatus("People filter cleared. All product-wise epics are visible.", "ok");
   });
-  byId("rnd-product-people-fab").addEventListener("click", () => setProductPeopleOpen(!productPeoplePanelOpen));
+  byId("rnd-product-people-btn").addEventListener("click", () => setProductPeopleOpen(!productPeoplePanelOpen));
   byId("rnd-product-people-close").addEventListener("click", () => setProductPeopleOpen(false));
   document.addEventListener("click", (event) => {
     if (!productPeoplePanelOpen) return;
-    const floating = byId("rnd-product-people-floating");
-    const fab = byId("rnd-product-people-fab");
-    if (floating && (floating.contains(event.target) || (fab && fab.contains(event.target)))) return;
+    const popover = byId("rnd-product-people-popover");
+    const btn = byId("rnd-product-people-btn");
+    if (popover && (popover.contains(event.target) || (btn && btn.contains(event.target)))) return;
     setProductPeopleOpen(false);
   });
+  window.addEventListener("scroll", () => { if (productPeoplePanelOpen) setProductPeopleOpen(false); }, true);
+  window.addEventListener("resize", () => { if (productPeoplePanelOpen) setProductPeopleOpen(false); });
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && productPeoplePanelOpen) setProductPeopleOpen(false);
   });
@@ -46676,14 +46841,22 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
     def rnd_muscle_utilization_import_mappings_api():
         try:
             uploaded_file = request.files.get("workbook") or request.files.get("file")
-            parsed_rows, summary = _parse_rnd_muscle_mapping_workbook(uploaded_file)
+            parsed_rows, skill_rows, team_rows, summary = _parse_rnd_muscle_mapping_workbook(uploaded_file)
+            if skill_rows or team_rows:
+                state, config_summary = _apply_rnd_muscle_skills_and_teams_import(
+                    capacity_paths["rnd_muscle_db_path"],
+                    capacity_paths["db_path"],
+                    skill_rows,
+                    team_rows,
+                )
+                summary = {**summary, **config_summary}
             if parsed_rows:
                 state = import_rnd_muscle_mapping_rows(
                     capacity_paths["rnd_muscle_db_path"],
                     parsed_rows,
                     capacity_paths["db_path"],
                 )
-            else:
+            elif not (skill_rows or team_rows):
                 state = load_rnd_muscle_utilization_page_state(
                     capacity_paths["rnd_muscle_db_path"],
                     capacity_paths["db_path"],
