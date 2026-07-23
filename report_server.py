@@ -93,6 +93,15 @@ from managed_projects_registry import (
     soft_delete_managed_project,
     update_managed_project,
 )
+from project_image_registry import (
+    clear_project_image,
+    get_project_image_map,
+    get_project_image_record,
+    init_project_images_db,
+    resolve_project_image_paths,
+    set_project_image,
+    MAX_UPLOAD_BYTES as PROJECT_IMAGE_MAX_UPLOAD_BYTES,
+)
 from support_booking_registry import (
     delete_booking_header as sb_delete_booking_header,
     get_month_matrix as sb_get_month_matrix,
@@ -1623,11 +1632,15 @@ def _resolve_capacity_runtime_paths(base_dir: Path) -> dict[str, Path]:
             rnd_muscle_db_path = base_dir / rnd_muscle_db_path
         rnd_muscle_db_path = _resolve_writable_rnd_muscle_db_path(rnd_muscle_db_path)
 
+    image_paths = resolve_project_image_paths(base_dir)
+
     return {
         "db_path": db_path,
         "rnd_muscle_db_path": rnd_muscle_db_path,
         "leave_report_path": leave_report_path,
         "summary_path": summary_path,
+        "project_images_db_path": image_paths["db_path"],
+        "project_images_dir": image_paths["images_dir"],
     }
 
 
@@ -4840,9 +4853,9 @@ def _canonical_derive_actual_completion(
     actual_complete_date = ""
     actual_complete_source = "none"
     if candidates:
-        actual_complete_date = max(candidates)
+        actual_complete_date = min(candidates)
         if last_worklog_date and resolved_stable:
-            actual_complete_source = "max_last_logged_resolved_stable"
+            actual_complete_source = "earlier_last_logged_resolved_stable"
         elif last_worklog_date:
             actual_complete_source = "last_worklog_date"
         else:
@@ -9838,6 +9851,44 @@ def _projects_settings_html() -> str:
     .drawer-foot { padding:12px 14px; border-top:1px solid var(--line); display:flex; gap:8px; flex-wrap:wrap; }
     .drawer-subtitle { margin:.35rem 0 0; color:var(--muted); font-size:.82rem; }
     .hidden-fields { display:none; }
+    .img-section { border-top:1px solid var(--line); margin-top:6px; padding-top:10px; }
+    .img-section-caption { font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); font-weight:800; margin-bottom:8px; }
+    .img-zones { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    @media (max-width:520px){ .img-zones { grid-template-columns:1fr; } }
+    .img-slot { display:flex; flex-direction:column; gap:6px; }
+    .img-slot > label { margin-bottom:0; }
+    .dropzone { position:relative; border:1.5px dashed var(--line); border-radius:12px; background:color-mix(in srgb, var(--brand) 6%, transparent); cursor:pointer; overflow:hidden; transition:border-color .15s ease, background .15s ease, transform .15s ease, box-shadow .15s ease; display:flex; align-items:center; justify-content:center; text-align:center; color:var(--muted); }
+    .dropzone.thumb { aspect-ratio:1 / 1; }
+    .dropzone.logo { aspect-ratio:3 / 1; }
+    .dropzone:hover, .dropzone:focus-visible { border-color:var(--brand); background:color-mix(in srgb, var(--brand) 12%, transparent); outline:none; }
+    .dropzone.dragover { border-color:var(--brand); background:color-mix(in srgb, var(--brand) 16%, transparent); transform:scale(1.01); box-shadow:0 4px 16px rgba(15,23,42,.14); }
+    .dropzone.error { border-color:var(--err); }
+    .dz-empty { display:flex; flex-direction:column; align-items:center; gap:4px; padding:10px; pointer-events:none; }
+    .dz-empty .material-symbols-rounded { font-size:30px; color:var(--brand); }
+    .dz-empty .dz-prompt { font-size:.8rem; font-weight:700; color:var(--text); }
+    .dz-empty .dz-hint { font-size:.7rem; color:var(--muted); }
+    .dz-preview { position:absolute; inset:0; width:100%; height:100%; background-image:linear-gradient(45deg,#e2e8f0 25%,transparent 25%),linear-gradient(-45deg,#e2e8f0 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#e2e8f0 75%),linear-gradient(-45deg,transparent 75%,#e2e8f0 75%); background-size:16px 16px; background-position:0 0,0 8px,8px -8px,-8px 0; }
+    .dz-preview img { width:100%; height:100%; }
+    .dropzone.thumb .dz-preview img { object-fit:cover; }
+    .dropzone.logo .dz-preview img { object-fit:contain; }
+    .dz-toolbar { position:absolute; left:0; right:0; bottom:0; display:flex; gap:6px; justify-content:flex-end; padding:6px; background:linear-gradient(transparent, rgba(15,23,42,.55)); opacity:0; transition:opacity .15s ease; }
+    .dropzone:hover .dz-toolbar, .dropzone:focus-within .dz-toolbar { opacity:1; }
+    .dz-icon-btn { border:none; background:rgba(255,255,255,.92); color:#0f172a; border-radius:8px; width:34px; height:34px; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; }
+    .dz-icon-btn:hover { background:#fff; }
+    .dz-icon-btn .material-symbols-rounded { font-size:19px; }
+    .dz-badge { position:absolute; top:6px; left:6px; background:rgba(15,23,42,.72); color:#fff; font-size:.62rem; font-weight:700; padding:2px 7px; border-radius:999px; letter-spacing:.02em; }
+    .dz-progress { position:absolute; top:0; left:0; height:3px; width:0; background:var(--brand); transition:width .2s ease; }
+    .dz-meta { font-size:.7rem; color:var(--muted); min-height:1em; }
+    .dz-error-msg { font-size:.72rem; color:var(--err); min-height:1em; }
+    .img-preview-strip { margin-top:12px; border:1px solid var(--line); border-radius:10px; padding:10px; background:#fbfdff; }
+    .img-preview-strip .caption { font-size:.7rem; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); font-weight:800; margin-bottom:8px; }
+    .preview-tab { display:inline-flex; align-items:center; gap:6px; border:1px solid var(--line); border-radius:8px; padding:5px 10px; font-size:.8rem; font-weight:700; background:#fff; }
+    .preview-tab img, .preview-tab .preview-chip { width:18px; height:18px; border-radius:4px; object-fit:cover; }
+    .preview-chip { display:inline-flex; align-items:center; justify-content:center; color:#fff; font-size:.62rem; font-weight:800; }
+    .preview-header { display:flex; align-items:center; gap:8px; margin-top:10px; padding:8px 10px; border-left:4px solid #1d4ed8; background:#fff; border-radius:6px; }
+    .preview-header img { max-height:30px; max-width:150px; object-fit:contain; }
+    .preview-header strong { font-size:.9rem; }
+    @media (prefers-reduced-motion: reduce){ .dropzone, .dz-toolbar, .dz-progress { transition:none; } .dropzone.dragover { transform:none; } }
   </style>
 </head>
 <body>
@@ -9957,6 +10008,46 @@ def _projects_settings_html() -> str:
           <input id="drawer-color-hex" class="mono" value="#1D4ED8">
         </div>
       </div>
+
+      <div class="img-section">
+        <div class="img-section-caption">Project Imagery</div>
+        <div class="img-zones">
+          <div class="img-slot">
+            <label>Thumbnail (square)</label>
+            <div id="dz-thumbnail" class="dropzone thumb" role="button" tabindex="0" aria-label="Upload thumbnail image">
+              <div class="dz-progress" data-progress></div>
+              <div class="dz-empty">
+                <span class="material-symbols-rounded">add_photo_alternate</span>
+                <span class="dz-prompt">Drop a square image</span>
+                <span class="dz-hint">PNG, JPG, WEBP · up to 2 MB · square works best</span>
+              </div>
+            </div>
+            <div class="dz-meta" data-meta></div>
+            <div class="dz-error-msg" data-error></div>
+          </div>
+          <div class="img-slot">
+            <label>Logo (horizontal)</label>
+            <div id="dz-logo" class="dropzone logo" role="button" tabindex="0" aria-label="Upload logo image">
+              <div class="dz-progress" data-progress></div>
+              <div class="dz-empty">
+                <span class="material-symbols-rounded">add_photo_alternate</span>
+                <span class="dz-prompt">Drop a wide image</span>
+                <span class="dz-hint">PNG, JPG, WEBP · up to 2 MB · wide/horizontal works best</span>
+              </div>
+            </div>
+            <div class="dz-meta" data-meta></div>
+            <div class="dz-error-msg" data-error></div>
+          </div>
+        </div>
+        <input id="img-file-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp" style="display:none;">
+        <div class="img-preview-strip">
+          <div class="caption">Where this appears</div>
+          <div id="preview-tab" class="preview-tab"></div>
+          <div id="preview-header" class="preview-header"></div>
+        </div>
+        <div id="img-live" aria-live="assertive" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);"></div>
+      </div>
+
       <div id="drawer-status" class="hint"></div>
     </div>
     <div class="drawer-foot">
@@ -10001,10 +10092,18 @@ def _projects_settings_html() -> str:
     const drawerUpdateBtn = document.getElementById("drawer-update");
     const drawerDeleteBtn = document.getElementById("drawer-delete");
     const drawerRestoreBtn = document.getElementById("drawer-restore");
+    const dzThumb = document.getElementById("dz-thumbnail");
+    const dzLogo = document.getElementById("dz-logo");
+    const imgFileInput = document.getElementById("img-file-input");
+    const previewTabEl = document.getElementById("preview-tab");
+    const previewHeaderEl = document.getElementById("preview-header");
+    const imgLiveEl = document.getElementById("img-live");
 
     let rows = [];
     let searchRows = [];
     let selectedKey = "";
+    let imgState = null;
+    let activeUploadVariant = "";
 
     function setStatus(msg, kind) {
       statusEl.textContent = String(msg || "");
@@ -10092,6 +10191,17 @@ def _projects_settings_html() -> str:
       drawerDeleteBtn.disabled = !row.is_active;
       drawerRestoreBtn.disabled = !!row.is_active;
       setDrawerStatus(row.is_active ? "Project is active." : "Project is inactive.", false);
+      imgState = {
+        project_key: selectedKey,
+        thumbnail_url: row.thumbnail_url || null,
+        thumbnail_is_auto: !!row.thumbnail_is_auto,
+        thumbnail_width: row.thumbnail_width || 0,
+        thumbnail_height: row.thumbnail_height || 0,
+        logo_url: row.logo_url || null,
+        logo_width: row.logo_width || 0,
+        logo_height: row.logo_height || 0,
+      };
+      renderImageZones();
       editDrawerEl.classList.add("open");
       editDrawerOverlayEl.classList.add("open");
       editDrawerEl.setAttribute("aria-hidden", "false");
@@ -10244,6 +10354,169 @@ def _projects_settings_html() -> str:
       setStatus("Project restored.", "ok");
     }
 
+    function initialsFor(name){
+      const parts = String(name || "").trim().split(/ +/).filter(Boolean);
+      if (!parts.length) return "?";
+      if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    }
+    function zoneEls(variant){
+      const zone = variant === "logo" ? dzLogo : dzThumb;
+      const slot = zone.closest(".img-slot");
+      return {
+        zone,
+        progress: zone.querySelector("[data-progress]"),
+        meta: slot.querySelector("[data-meta]"),
+        error: slot.querySelector("[data-error]"),
+      };
+    }
+    function renderOneZone(variant){
+      const els = zoneEls(variant);
+      const url = variant === "logo" ? (imgState && imgState.logo_url) : (imgState && imgState.thumbnail_url);
+      const w = variant === "logo" ? (imgState && imgState.logo_width) : (imgState && imgState.thumbnail_width);
+      const h = variant === "logo" ? (imgState && imgState.logo_height) : (imgState && imgState.thumbnail_height);
+      const isAuto = variant === "thumbnail" && imgState && imgState.thumbnail_is_auto;
+      els.zone.classList.remove("error");
+      els.error.textContent = "";
+      const progressHtml = '<div class="dz-progress" data-progress></div>';
+      if (url){
+        els.zone.innerHTML = progressHtml
+          + (isAuto ? '<span class="dz-badge">Auto from logo</span>' : '')
+          + '<div class="dz-preview"><img src="' + esc(url) + '" alt="' + esc((variant === "logo" ? "Logo" : "Thumbnail")) + '"></div>'
+          + '<div class="dz-toolbar">'
+          + '<button type="button" class="dz-icon-btn" data-act="replace" title="Replace"><span class="material-symbols-rounded">swap_horiz</span></button>'
+          + '<button type="button" class="dz-icon-btn" data-act="remove" title="Remove"><span class="material-symbols-rounded">delete</span></button>'
+          + '</div>';
+        els.meta.textContent = (w && h ? (w + "x" + h + "px") : "") + (isAuto ? " · auto-generated" : "");
+      } else {
+        const prompt = variant === "logo" ? "Drop a wide image" : "Drop a square image";
+        const hint = variant === "logo" ? "PNG, JPG, WEBP · up to 2 MB · wide works best" : "PNG, JPG, WEBP · up to 2 MB · square works best";
+        els.zone.innerHTML = progressHtml
+          + '<div class="dz-empty"><span class="material-symbols-rounded">add_photo_alternate</span>'
+          + '<span class="dz-prompt">' + prompt + '</span><span class="dz-hint">' + hint + '</span></div>';
+        els.meta.textContent = "";
+      }
+    }
+    function renderPreviewStrip(){
+      const name = String(drawerDisplayNameEl.value || selectedKey || "Project");
+      const color = /^#[0-9A-F]{6}$/i.test(drawerColorHexEl.value) ? drawerColorHexEl.value : "#1D4ED8";
+      const thumb = imgState && imgState.thumbnail_url;
+      const logo = imgState && imgState.logo_url;
+      previewTabEl.innerHTML = (thumb
+        ? '<img src="' + esc(thumb) + '" alt="">'
+        : '<span class="preview-chip" style="background:' + esc(color) + '">' + esc(initialsFor(name)) + '</span>')
+        + '<span>' + esc(name) + ' 0</span>';
+      previewHeaderEl.style.borderLeftColor = color;
+      previewHeaderEl.innerHTML = logo
+        ? '<img src="' + esc(logo) + '" alt="">'
+        : '<strong>' + esc(name) + '</strong>';
+    }
+    function renderImageZones(){
+      if (!imgState) return;
+      renderOneZone("thumbnail");
+      renderOneZone("logo");
+      renderPreviewStrip();
+    }
+    function showZoneError(variant, message){
+      const els = zoneEls(variant);
+      els.zone.classList.add("error");
+      els.error.textContent = String(message || "Upload failed.");
+      imgLiveEl.textContent = String(message || "Upload failed.");
+    }
+    function setZoneProgress(variant, pct){
+      const els = zoneEls(variant);
+      const bar = els.zone.querySelector("[data-progress]");
+      if (bar) bar.style.width = Math.max(0, Math.min(100, pct)) + "%";
+    }
+    function uploadImage(variant, file){
+      if (!imgState || !selectedKey){ return; }
+      if (!file){ return; }
+      if (file.size > 2 * 1024 * 1024){
+        showZoneError(variant, "Image is " + (file.size / (1024 * 1024)).toFixed(1) + " MB - the maximum is 2 MB.");
+        return;
+      }
+      const form = new FormData();
+      form.append("file", file);
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", API + "/" + encodeURIComponent(selectedKey) + "/image/" + variant);
+      xhr.upload.onprogress = (e) => { if (e.lengthComputable) setZoneProgress(variant, (e.loaded / e.total) * 90); };
+      xhr.onload = () => {
+        setZoneProgress(variant, 100);
+        let body = {};
+        try { body = JSON.parse(xhr.responseText || "{}"); } catch (e) {}
+        if (xhr.status >= 200 && xhr.status < 300){
+          imgState = Object.assign({}, imgState, {
+            thumbnail_url: body.thumbnail_url || null,
+            thumbnail_is_auto: !!body.thumbnail_is_auto,
+            thumbnail_width: body.thumbnail_width || 0,
+            thumbnail_height: body.thumbnail_height || 0,
+            logo_url: body.logo_url || null,
+            logo_width: body.logo_width || 0,
+            logo_height: body.logo_height || 0,
+          });
+          renderImageZones();
+          imgLiveEl.textContent = (variant === "logo" ? "Logo" : "Thumbnail") + " updated.";
+          loadProjects().catch(() => {});
+        } else {
+          showZoneError(variant, body.error || "Upload failed.");
+        }
+      };
+      xhr.onerror = () => showZoneError(variant, "Network error during upload.");
+      xhr.send(form);
+    }
+    async function deleteImage(variant){
+      if (!selectedKey) return;
+      const resp = await fetch(API + "/" + encodeURIComponent(selectedKey) + "/image/" + variant, { method: "DELETE" });
+      const body = await resp.json().catch(() => ({}));
+      if (!resp.ok){ showZoneError(variant, body.error || "Failed to remove image."); return; }
+      imgState = Object.assign({}, imgState, {
+        thumbnail_url: body.thumbnail_url || null,
+        thumbnail_is_auto: !!body.thumbnail_is_auto,
+        thumbnail_width: body.thumbnail_width || 0,
+        thumbnail_height: body.thumbnail_height || 0,
+        logo_url: body.logo_url || null,
+        logo_width: body.logo_width || 0,
+        logo_height: body.logo_height || 0,
+      });
+      renderImageZones();
+      imgLiveEl.textContent = (variant === "logo" ? "Logo" : "Thumbnail") + " removed.";
+      loadProjects().catch(() => {});
+    }
+    function pickFile(variant){
+      activeUploadVariant = variant;
+      imgFileInput.value = "";
+      imgFileInput.click();
+    }
+    function wireDropzone(zone, variant){
+      zone.addEventListener("click", (e) => {
+        const act = e.target.closest("[data-act]");
+        if (act){
+          e.stopPropagation();
+          if (act.getAttribute("data-act") === "replace") pickFile(variant);
+          else deleteImage(variant).catch((err) => showZoneError(variant, err.message || String(err)));
+          return;
+        }
+        pickFile(variant);
+      });
+      zone.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " "){ e.preventDefault(); pickFile(variant); }
+      });
+      zone.addEventListener("dragover", (e) => { e.preventDefault(); zone.classList.add("dragover"); });
+      zone.addEventListener("dragleave", () => zone.classList.remove("dragover"));
+      zone.addEventListener("drop", (e) => {
+        e.preventDefault();
+        zone.classList.remove("dragover");
+        const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+        if (file) uploadImage(variant, file);
+      });
+    }
+    wireDropzone(dzThumb, "thumbnail");
+    wireDropzone(dzLogo, "logo");
+    imgFileInput.addEventListener("change", () => {
+      const file = imgFileInput.files && imgFileInput.files[0];
+      if (file && activeUploadVariant) uploadImage(activeUploadVariant, file);
+    });
+
     colorPickEl.addEventListener("change", () => setColor(colorPickEl.value));
     colorHexEl.addEventListener("change", () => setColor(colorHexEl.value));
     searchResultsEl.addEventListener("change", setFormFromSearch);
@@ -10271,9 +10544,10 @@ def _projects_settings_html() -> str:
     document.getElementById("add-drawer-save").addEventListener("click", () => addProjectFromDrawer().catch((e) => setAddDrawerStatus(e.message || String(e), true)));
     document.getElementById("add-drawer-close").addEventListener("click", closeAddDrawer);
     addDrawerOverlayEl.addEventListener("click", closeAddDrawer);
-    drawerColorPickEl.addEventListener("change", () => setDrawerColor(drawerColorPickEl.value));
-    drawerColorHexEl.addEventListener("change", () => setDrawerColor(drawerColorHexEl.value));
-    drawerDisplayNameEl.addEventListener("input", () => setDrawerStatus("", false));
+    drawerColorPickEl.addEventListener("change", () => { setDrawerColor(drawerColorPickEl.value); if (imgState) renderPreviewStrip(); });
+    drawerColorHexEl.addEventListener("change", () => { setDrawerColor(drawerColorHexEl.value); if (imgState) renderPreviewStrip(); });
+    drawerColorPickEl.addEventListener("input", () => { if (imgState) { drawerColorHexEl.value = drawerColorPickEl.value.toUpperCase(); renderPreviewStrip(); } });
+    drawerDisplayNameEl.addEventListener("input", () => { setDrawerStatus("", false); if (imgState) renderPreviewStrip(); });
     drawerUpdateBtn.addEventListener("click", () => updateProjectFromDrawer().catch((e) => setDrawerStatus(e.message || String(e), true)));
     drawerDeleteBtn.addEventListener("click", () => softDeleteProjectFromDrawer().catch((e) => setDrawerStatus(e.message || String(e), true)));
     drawerRestoreBtn.addEventListener("click", () => restoreProjectFromDrawer().catch((e) => setDrawerStatus(e.message || String(e), true)));
@@ -12737,8 +13011,36 @@ def _page_categories_settings_html() -> str:
 </html>""".replace("__SETTINGS_TOP_NAV__", _settings_top_nav_html(PAGE_CATEGORIES_SETTINGS_ROUTE))
 
 
-def _rnd_muscle_state_payload(state) -> dict[str, object]:
-    return {"ok": True, "state": asdict(state), "source": "rnd_muscle_utilization"}
+def _rnd_muscle_state_payload(state, image_map: dict | None = None) -> dict[str, object]:
+    payload = {"ok": True, "state": asdict(state), "source": "rnd_muscle_utilization"}
+    if image_map:
+        for tab in payload["state"].get("project_tabs", []):
+            if tab.get("is_all_tab"):
+                continue
+            tab.update(_project_image_urls(image_map.get(str(tab.get("project_key", "")), {})))
+    return payload
+
+
+def _project_image_urls(record: dict) -> dict[str, object]:
+    """Turn a project_images DB record into client-facing URL + dimension fields.
+
+    Filenames are content-hashed, so each URL changes when the image changes and
+    can be cached immutably by the browser.
+    """
+    record = record or {}
+
+    def _url(path: str) -> str | None:
+        return ("/project-images/" + path) if path else None
+
+    return {
+        "thumbnail_url": _url(str(record.get("thumbnail_path", ""))),
+        "thumbnail_width": int(record.get("thumbnail_width", 0) or 0),
+        "thumbnail_height": int(record.get("thumbnail_height", 0) or 0),
+        "thumbnail_is_auto": bool(record.get("thumbnail_is_auto", False)),
+        "logo_url": _url(str(record.get("logo_path", ""))),
+        "logo_width": int(record.get("logo_width", 0) or 0),
+        "logo_height": int(record.get("logo_height", 0) or 0),
+    }
 
 
 RND_MUSCLE_MAPPING_SHEET = "Mappings"
@@ -13128,6 +13430,7 @@ def _rnd_muscle_utilization_settings_html(planner_only: bool = False) -> str:
     .product-panel-title { min-width:0; }
     .product-panel-title strong { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; }
     .product-panel-title span { display:block; margin-top:2px; color:var(--muted); font-size:10px; }
+    .product-panel-logo { display:block; max-height:34px; max-width:180px; object-fit:contain; margin-bottom:2px; }
     .product-drag-handle { color:var(--muted); font-size:16px; letter-spacing:-3px; flex:none; }
     .product-epic-list { display:grid; gap:6px; align-content:start; padding:8px; overflow:auto; }
     .product-epic { width:100%; text-align:left; padding:7px; border:1px solid var(--border); border-radius:var(--radius); background:var(--row); color:var(--text); cursor:pointer; }
@@ -13810,7 +14113,19 @@ __SETTINGS_TOP_NAV__
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "tab" + ((filter.value || "ALL") === (tab.project_key || "ALL") ? " active" : "");
-      btn.textContent = (tab.is_all_tab ? "All" : (tab.project_name || tab.project_key)) + " " + Number(tab.epic_count || 0);
+      if (!tab.is_all_tab && tab.thumbnail_url){
+        const img = document.createElement("img");
+        img.src = tab.thumbnail_url;
+        img.alt = "";
+        img.loading = "lazy";
+        img.width = 18;
+        img.height = 18;
+        img.style.cssText = "width:18px;height:18px;border-radius:4px;object-fit:cover;margin-right:6px;vertical-align:middle;box-shadow:0 0 0 1px rgba(15,23,42,.18);";
+        btn.appendChild(img);
+      }
+      const label = document.createElement("span");
+      label.textContent = (tab.is_all_tab ? "All" : (tab.project_name || tab.project_key)) + " " + Number(tab.epic_count || 0);
+      btn.appendChild(label);
       btn.addEventListener("click", () => {
         filter.value = tab.is_all_tab ? "" : (tab.project_key || "");
         loadState();
@@ -14698,13 +15013,22 @@ __SETTINGS_TOP_NAV__
       head.className = "product-panel-head";
       const title = document.createElement("div");
       title.className = "product-panel-title";
-      const titleName = document.createElement("strong");
-      titleName.textContent = project.project_name || project.project_key || "Project";
-      const titleMeta = document.createElement("span");
       const allProjectEpics = plannerEpics.filter((epic) => epic.project_key === project.project_key);
       const projectEpics = filteredPlannerEpics.filter((epic) => epic.project_key === project.project_key);
+      if (project.logo_url){
+        const logo = document.createElement("img");
+        logo.src = project.logo_url;
+        logo.alt = (project.project_name || project.project_key || "") + " logo";
+        logo.loading = "lazy";
+        logo.className = "product-panel-logo";
+        title.appendChild(logo);
+      } else {
+        const titleName = document.createElement("strong");
+        titleName.textContent = project.project_name || project.project_key || "Project";
+        title.appendChild(titleName);
+      }
+      const titleMeta = document.createElement("span");
       titleMeta.textContent = (project.project_key || "") + " | " + (selectedProductResourceIds.size ? projectEpics.length + " of " + allProjectEpics.length : projectEpics.length) + " mapped epics";
-      title.appendChild(titleName);
       title.appendChild(titleMeta);
       const handle = document.createElement("span");
       handle.className = "product-drag-handle";
@@ -37044,6 +37368,13 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
     init_report_entities_db(capacity_paths["db_path"])
     init_manage_fields_db(capacity_paths["db_path"])
     init_managed_projects_db(capacity_paths["db_path"])
+    init_project_images_db(capacity_paths["project_images_db_path"])
+
+    def _rnd_payload(state) -> dict[str, object]:
+        return _rnd_muscle_state_payload(
+            state, get_project_image_map(capacity_paths["project_images_db_path"])
+        )
+
     init_support_booking_db(capacity_paths["db_path"])
     _init_page_categories_db(capacity_paths["db_path"])
     pactv_init_db(capacity_paths["db_path"])
@@ -45058,8 +45389,10 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         try:
             include_inactive = _to_text(request.args.get("include_inactive")).lower() in {"1", "true", "yes", "y"}
             projects = list_managed_projects(capacity_paths["db_path"], include_inactive=include_inactive)
+            image_map = get_project_image_map(capacity_paths["project_images_db_path"])
             for proj in projects:
                 proj["is_leaves_project"] = _is_rlt_managed_project(proj)
+                proj.update(_project_image_urls(image_map.get(str(proj.get("project_key", "")), {})))
             return jsonify({"projects": projects, "include_inactive": include_inactive, "source": "db"})
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
@@ -45105,6 +45438,49 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             return jsonify({"error": str(exc)}), 404
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
+
+    @app.route("/api/projects/<path:project_key>/image/<variant>", methods=["POST"])
+    def upload_project_image_api(project_key: str, variant: str):
+        try:
+            upload = request.files.get("file")
+            if upload is None:
+                return jsonify({"error": "No file uploaded (expected form field 'file')."}), 400
+            data = upload.read()
+            if len(data) > PROJECT_IMAGE_MAX_UPLOAD_BYTES:
+                return jsonify({"error": "Image exceeds the 2 MB maximum."}), 413
+            record = set_project_image(
+                capacity_paths["project_images_db_path"],
+                capacity_paths["project_images_dir"],
+                project_key,
+                variant,
+                data,
+            )
+            return jsonify({"project_key": project_key, "variant": variant, **_project_image_urls(record)})
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+
+    @app.route("/api/projects/<path:project_key>/image/<variant>", methods=["DELETE"])
+    def delete_project_image_api(project_key: str, variant: str):
+        try:
+            record = clear_project_image(
+                capacity_paths["project_images_db_path"],
+                capacity_paths["project_images_dir"],
+                project_key,
+                variant,
+            )
+            return jsonify({"project_key": project_key, "variant": variant, **_project_image_urls(record)})
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+
+    @app.route("/project-images/<path:filename>", methods=["GET"])
+    def serve_project_image(filename: str):
+        images_dir = Path(capacity_paths["project_images_dir"]).resolve()
+        candidate = (images_dir / filename).resolve()
+        if candidate.parent != images_dir or not candidate.is_file():
+            return jsonify({"error": "Image not found."}), 404
+        response = send_file(candidate, conditional=True)
+        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        return response
 
     @app.route("/api/jira/projects/search", methods=["GET"])
     def jira_projects_search_api():
@@ -45951,7 +46327,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                     capacity_paths["rnd_muscle_db_path"],
                     capacity_paths["db_path"],
                 )
-            return jsonify(_rnd_muscle_state_payload(state))
+            return jsonify(_rnd_payload(state))
         except Exception as exc:
             return jsonify({"ok": False, "error": str(exc)}), 500
 
@@ -45963,7 +46339,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 _rnd_muscle_project_keys_from_request(),
                 capacity_paths["db_path"],
             )
-            return jsonify(_rnd_muscle_state_payload(state))
+            return jsonify(_rnd_payload(state))
         except Exception as exc:
             return jsonify({"ok": False, "error": str(exc)}), 500
 
@@ -45976,7 +46352,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 _to_text(payload.get("name")),
                 capacity_paths["db_path"],
             )
-            return jsonify(_rnd_muscle_state_payload(state)), 201
+            return jsonify(_rnd_payload(state)), 201
         except ValueError as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400
         except Exception as exc:
@@ -45991,7 +46367,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 payload,
                 capacity_paths["db_path"],
             )
-            return jsonify(_rnd_muscle_state_payload(state))
+            return jsonify(_rnd_payload(state))
         except ValueError as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400
         except Exception as exc:
@@ -46007,7 +46383,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 payload,
                 capacity_paths["db_path"],
             )
-            return jsonify(_rnd_muscle_state_payload(state))
+            return jsonify(_rnd_payload(state))
         except ValueError as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400
         except Exception as exc:
@@ -46021,7 +46397,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 _to_text(team_id),
                 capacity_paths["db_path"],
             )
-            return jsonify(_rnd_muscle_state_payload(state))
+            return jsonify(_rnd_payload(state))
         except ValueError as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400
         except Exception as exc:
@@ -46037,7 +46413,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 payload,
                 capacity_paths["db_path"],
             )
-            return jsonify(_rnd_muscle_state_payload(state))
+            return jsonify(_rnd_payload(state))
         except ValueError as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400
         except Exception as exc:
@@ -46055,7 +46431,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 sort_order=sort_order,
                 source_db_path=capacity_paths["db_path"],
             )
-            return jsonify(_rnd_muscle_state_payload(state)), 201
+            return jsonify(_rnd_payload(state)), 201
         except ValueError as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400
         except Exception as exc:
@@ -46069,7 +46445,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 epic_key,
                 capacity_paths["db_path"],
             )
-            return jsonify(_rnd_muscle_state_payload(state))
+            return jsonify(_rnd_payload(state))
         except ValueError as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400
         except Exception as exc:
@@ -46087,7 +46463,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 [_to_text(item) for item in raw_epic_keys],
                 capacity_paths["db_path"],
             )
-            return jsonify(_rnd_muscle_state_payload(state))
+            return jsonify(_rnd_payload(state))
         except ValueError as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400
         except Exception as exc:
@@ -46105,7 +46481,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 sort_order=sort_order,
                 source_db_path=capacity_paths["db_path"],
             )
-            return jsonify(_rnd_muscle_state_payload(state)), 201
+            return jsonify(_rnd_payload(state)), 201
         except ValueError as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400
         except Exception as exc:
@@ -46119,7 +46495,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 epic_key,
                 capacity_paths["db_path"],
             )
-            return jsonify(_rnd_muscle_state_payload(state))
+            return jsonify(_rnd_payload(state))
         except ValueError as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400
         except Exception as exc:
@@ -46137,7 +46513,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 [_to_text(item) for item in raw_epic_keys],
                 capacity_paths["db_path"],
             )
-            return jsonify(_rnd_muscle_state_payload(state))
+            return jsonify(_rnd_payload(state))
         except ValueError as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400
         except Exception as exc:
@@ -46152,7 +46528,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 payload,
                 capacity_paths["db_path"],
             )
-            return jsonify(_rnd_muscle_state_payload(state))
+            return jsonify(_rnd_payload(state))
         except ValueError as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400
         except Exception as exc:
@@ -46192,7 +46568,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                     capacity_paths["rnd_muscle_db_path"],
                     capacity_paths["db_path"],
                 )
-            return jsonify({**_rnd_muscle_state_payload(state), "imported": summary})
+            return jsonify({**_rnd_payload(state), "imported": summary})
         except ValueError as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400
         except Exception as exc:
@@ -46211,7 +46587,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 [_to_text(item) for item in raw_resource_ids],
                 capacity_paths["db_path"],
             )
-            return jsonify(_rnd_muscle_state_payload(state))
+            return jsonify(_rnd_payload(state))
         except ValueError as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400
         except Exception as exc:

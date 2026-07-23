@@ -34,13 +34,20 @@ assignee_hours_capacity.sqlite
 *.db-shm
 *.db-wal
 jira_sync_cache.db
+# Project imagery — standalone DB + uploaded image files live on the persistent /home share
+# (JIRA_PROJECT_IMAGE_DIR, default <base>/data/project_images). Never committed; auto-created at runtime.
+data/project_images/
+project_images.db
 # Support Center standalone DB — committed to GitHub (< 50 MB), rebuilt by support_center_sync.py
 # support_center.db  <-- now tracked
+# rnd_muscle_utilization.db  <-- now tracked while small
 support_center.db-shm
 support_center.db-wal
 
 # Local or export backups — do not push (GitHub Actions production deploy skips these too)
 /backup/
+/backups/
+/recovery/
 *.backup
 
 # Timestamped offline/export snapshots at repo root (folder + sibling .zip)
