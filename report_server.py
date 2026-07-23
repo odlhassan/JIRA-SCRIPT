@@ -13134,15 +13134,26 @@ def _rnd_muscle_utilization_settings_html(planner_only: bool = False) -> str:
     .product-epic.active { outline:2px solid var(--accent-strong); outline-offset:-2px; }
     .product-epic strong { display:block; font-size:11px; line-height:1.25; }
     .product-epic span { display:block; margin-top:3px; color:inherit; opacity:.78; font-size:10px; }
-    .product-people-panel { display:grid; grid-template-rows:auto auto minmax(0,1fr); }
+    .product-people-panel { display:grid; grid-template-rows:auto auto auto minmax(0,1fr); }
     .product-people-head { padding:9px; border-bottom:1px solid var(--border); background:var(--panel); }
-    .product-people-head strong { display:block; font-size:12px; }
-    .product-people-head span { display:block; margin-top:3px; color:var(--muted); font-size:10px; }
+    .product-people-title { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+    .product-people-title strong { display:block; font-size:12px; }
+    .product-people-count { min-width:22px; padding:2px 7px; border-radius:999px; background:var(--accent); color:var(--accent-text); font-size:10px; font-weight:800; text-align:center; }
+    .product-people-head > span { display:block; margin-top:3px; color:var(--muted); font-size:10px; line-height:1.35; }
+    .product-people-tools { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:6px; padding:8px 9px; border-bottom:1px solid var(--border); background:var(--panel-2); }
+    .product-people-search { min-width:0; min-height:28px; }
+    .product-clear-people { min-height:28px; white-space:nowrap; }
+    .product-clear-people:disabled { opacity:.45; cursor:not-allowed; }
     .product-team-legend { display:flex; gap:6px 10px; flex-wrap:wrap; padding:7px 9px; border-bottom:1px solid var(--border); }
     .product-person-list { display:grid; gap:6px; align-content:start; padding:8px; overflow:auto; }
-    .product-person { display:grid; gap:3px; padding:7px 8px; border:1px solid var(--person-border,var(--border)); border-radius:var(--radius); background:linear-gradient(90deg,var(--person-soft,var(--row)),var(--row)); box-shadow:inset 3px 0 0 var(--person-color,#64748b); }
-    .product-person strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:11px; }
-    .product-person span { color:var(--muted); font-size:10px; }
+    .product-person { position:relative; width:100%; display:grid; grid-template-columns:minmax(0,1fr) auto; gap:3px 8px; padding:8px 9px; border:1px solid var(--person-border,var(--border)); border-radius:var(--radius); background:linear-gradient(90deg,var(--person-soft,var(--row)),var(--row)); color:var(--text); text-align:left; box-shadow:inset 3px 0 0 var(--person-color,#64748b); cursor:pointer; transition:transform .14s ease, box-shadow .14s ease, border-color .14s ease; }
+    .product-person:hover { transform:translateY(-1px); box-shadow:inset 3px 0 0 var(--person-color,#64748b),0 6px 16px rgba(0,0,0,.15); }
+    .product-person[aria-pressed="true"] { border-color:var(--accent-strong); box-shadow:inset 4px 0 0 var(--person-color,#64748b),0 0 0 1px var(--accent-strong); background:linear-gradient(90deg,var(--person-soft,var(--row)),var(--accent-soft)); }
+    .product-person strong { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:11px; }
+    .product-person-meta { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted); font-size:10px; }
+    .product-person-check { grid-column:2; grid-row:1 / span 2; align-self:center; width:18px; height:18px; display:grid; place-items:center; border:1px solid var(--border); border-radius:50%; background:var(--control); color:transparent; font-size:11px; font-weight:900; }
+    .product-person[aria-pressed="true"] .product-person-check { border-color:var(--accent-strong); background:var(--accent); color:var(--accent-text); }
+    .product-filter-empty { grid-column:1 / -1; padding:16px 10px; border:1px dashed var(--border); border-radius:var(--radius); color:var(--muted); text-align:center; line-height:1.45; }
     .insights-planner { display:grid; grid-template-columns:minmax(0,1.5fr) minmax(230px,.7fr); gap:8px; min-height:100%; }
     .insights-main, .insights-detail { border:1px solid var(--border); border-radius:var(--radius); background:var(--panel-2); padding:8px; min-height:0; overflow:auto; }
     .insights-head { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px; }
@@ -13332,9 +13343,16 @@ __SETTINGS_TOP_NAV__
             <div class="product-layout">
               <div id="rnd-product-projects" class="product-project-scroll" aria-label="Selected project panels"></div>
               <aside class="product-people-panel" aria-label="People involved">
-                <div class="product-people-head"><strong>People involved</strong><span id="rnd-product-people-caption">All active resources</span></div>
+                <div class="product-people-head">
+                  <div class="product-people-title"><strong>People involved</strong><span id="rnd-product-people-count" class="product-people-count">0</span></div>
+                  <span id="rnd-product-people-caption">Select people to show epics involving any of them.</span>
+                </div>
+                <div class="product-people-tools">
+                  <input id="rnd-product-people-search" class="input product-people-search" type="search" placeholder="Find a person or team..." aria-label="Search people involved">
+                  <button id="rnd-product-clear-people" class="btn product-clear-people" type="button" disabled>Clear</button>
+                </div>
                 <div id="rnd-product-team-legend" class="product-team-legend" aria-label="Team color legend"></div>
-                <div id="rnd-product-people" class="product-person-list"></div>
+                <div id="rnd-product-people" class="product-person-list" aria-label="People filter" aria-multiselectable="true"></div>
               </aside>
             </div>
           </div>
@@ -13432,6 +13450,8 @@ __SETTINGS_TOP_NAV__
   let currentView = "hierarchical";
   let selectedClusterEpicKey = "";
   let selectedProductEpicKey = "";
+  const selectedProductResourceIds = new Set();
+  let productPeopleSearchText = "";
   let draggedProductProjectKey = "";
   let insightMode = "project";
   let selectedInsightKey = "";
@@ -14540,27 +14560,36 @@ __SETTINGS_TOP_NAV__
   function renderProductPeople(){
     const host = byId("rnd-product-people");
     const caption = byId("rnd-product-people-caption");
+    const count = byId("rnd-product-people-count");
+    const clearButton = byId("rnd-product-clear-people");
     const legend = byId("rnd-product-team-legend");
-    if (!host || !caption || !legend) return;
+    if (!host || !caption || !count || !clearButton || !legend) return;
     reset(host);
     const resources = ((state && state.resources) || []).filter((resource) => !resource.resigned);
-    const resourceById = new Map(resources.map((resource) => [resource.resource_id, resource]));
     const mappings = (((state && state.planner) || {}).mappings || []);
-    const relevantIds = selectedProductEpicKey
-      ? new Set(mappings.filter((mapping) => mapping.epic_key === selectedProductEpicKey).map((mapping) => mapping.resource_id))
-      : null;
-    const people = relevantIds ? Array.from(relevantIds).map((id) => resourceById.get(id)).filter(Boolean) : resources;
     const teamsById = teamById();
     const teamsByResourceId = teamByResourceId();
-    const selectedEpic = selectedProductEpicKey ? findPlannerEpic(selectedProductEpicKey) : null;
-    caption.textContent = selectedProductEpicKey
-      ? selectedProductEpicKey + (selectedEpic && selectedEpic.epic_name ? " - " + selectedEpic.epic_name : "")
-      : "All active resources";
+    const activeIds = new Set(resources.map((resource) => resource.resource_id));
+    Array.from(selectedProductResourceIds).forEach((resourceId) => {
+      if (!activeIds.has(resourceId)) selectedProductResourceIds.delete(resourceId);
+    });
+    const query = productPeopleSearchText.trim().toLowerCase();
+    const people = resources.filter((resource) => {
+      const team = teamForResource(resource, teamsById, teamsByResourceId);
+      return !query || [resource.display_name, resource.email, team.name].some((value) => String(value || "").toLowerCase().includes(query));
+    });
+    const selectedCount = selectedProductResourceIds.size;
+    count.textContent = String(selectedCount);
+    count.hidden = selectedCount === 0;
+    clearButton.disabled = selectedCount === 0;
+    caption.textContent = selectedCount
+      ? selectedCount + " selected | Showing epics involving any selected person."
+      : "Select people to show epics involving any of them.";
     renderProductLegend(legend, people, teamsById, teamsByResourceId);
     if (!people.length){
       const empty = document.createElement("div");
-      empty.className = "view-empty";
-      empty.textContent = selectedProductEpicKey ? "No resources are mapped to this epic." : "No active resources are available.";
+      empty.className = "product-filter-empty";
+      empty.textContent = query ? "No people match your search." : "No active resources are available.";
       host.appendChild(empty);
       return;
     }
@@ -14568,19 +14597,38 @@ __SETTINGS_TOP_NAV__
       const team = teamForResource(resource, teamsById, teamsByResourceId);
       const color = team.color_hex || "#64748b";
       const tone = teamTone(color);
-      const card = document.createElement("div");
+      const card = document.createElement("button");
+      card.type = "button";
       card.className = "product-person";
+      card.setAttribute("aria-pressed", selectedProductResourceIds.has(resource.resource_id) ? "true" : "false");
+      card.setAttribute("aria-label", (selectedProductResourceIds.has(resource.resource_id) ? "Remove " : "Add ") + (resource.display_name || resource.resource_id) + " from epic filter");
       card.style.setProperty("--person-color", color);
       card.style.setProperty("--person-soft", tone.soft);
       card.style.setProperty("--person-border", tone.border);
       const name = document.createElement("strong");
       name.textContent = resource.display_name || resource.resource_id;
       const meta = document.createElement("span");
-      meta.textContent = team.name || "No team";
+      meta.className = "product-person-meta";
+      const mappedEpicCount = new Set(mappings.filter((mapping) => mapping.resource_id === resource.resource_id).map((mapping) => mapping.epic_key)).size;
+      meta.textContent = (team.name || "No team") + " | " + mappedEpicCount + " epic" + (mappedEpicCount === 1 ? "" : "s");
+      const check = document.createElement("span");
+      check.className = "product-person-check";
+      check.setAttribute("aria-hidden", "true");
+      check.textContent = "✓";
       card.appendChild(name);
       card.appendChild(meta);
+      card.appendChild(check);
+      card.addEventListener("click", () => {
+        if (selectedProductResourceIds.has(resource.resource_id)) selectedProductResourceIds.delete(resource.resource_id);
+        else selectedProductResourceIds.add(resource.resource_id);
+        renderProductWiseView();
+      });
       host.appendChild(card);
     });
+  }
+  function productEpicMatchesPeople(epicKey, mappings){
+    if (!selectedProductResourceIds.size) return true;
+    return mappings.some((mapping) => mapping.epic_key === epicKey && selectedProductResourceIds.has(mapping.resource_id));
   }
   function renderProductWiseView(){
     const host = byId("rnd-product-projects");
@@ -14591,9 +14639,11 @@ __SETTINGS_TOP_NAV__
     const visibleProjectKeys = new Set(projects.map((project) => project.project_key));
     const plannerKeys = plannerEpicKeys();
     const plannerEpics = plannerKeys.map((epicKey) => findPlannerEpic(epicKey)).filter(Boolean);
+    const mappings = (((state && state.planner) || {}).mappings || []);
+    const filteredPlannerEpics = plannerEpics.filter((epic) => productEpicMatchesPeople(epic.epic_key, mappings));
     if (selectedProductEpicKey){
       const selectedEpic = findPlannerEpic(selectedProductEpicKey);
-      if (!selectedEpic || !visibleProjectKeys.has(selectedEpic.project_key)) selectedProductEpicKey = "";
+      if (!selectedEpic || !visibleProjectKeys.has(selectedEpic.project_key) || !productEpicMatchesPeople(selectedEpic.epic_key, mappings)) selectedProductEpicKey = "";
     }
     if (!projects.length){
       const empty = document.createElement("div");
@@ -14615,8 +14665,9 @@ __SETTINGS_TOP_NAV__
       const titleName = document.createElement("strong");
       titleName.textContent = project.project_name || project.project_key || "Project";
       const titleMeta = document.createElement("span");
-      const projectEpics = plannerEpics.filter((epic) => epic.project_key === project.project_key);
-      titleMeta.textContent = (project.project_key || "") + " | " + projectEpics.length + " mapped epics";
+      const allProjectEpics = plannerEpics.filter((epic) => epic.project_key === project.project_key);
+      const projectEpics = filteredPlannerEpics.filter((epic) => epic.project_key === project.project_key);
+      titleMeta.textContent = (project.project_key || "") + " | " + (selectedProductResourceIds.size ? projectEpics.length + " of " + allProjectEpics.length : projectEpics.length) + " mapped epics";
       title.appendChild(titleName);
       title.appendChild(titleMeta);
       const handle = document.createElement("span");
@@ -14629,8 +14680,8 @@ __SETTINGS_TOP_NAV__
       epicList.className = "product-epic-list";
       if (!projectEpics.length){
         const empty = document.createElement("div");
-        empty.className = "view-empty";
-        empty.textContent = "No mapped epics for this project.";
+        empty.className = selectedProductResourceIds.size ? "product-filter-empty" : "view-empty";
+        empty.textContent = selectedProductResourceIds.size ? "No epics involve the selected people." : "No mapped epics for this project.";
         epicList.appendChild(empty);
       }
       projectEpics.forEach((epic) => {
@@ -14639,7 +14690,7 @@ __SETTINGS_TOP_NAV__
         button.className = "product-epic " + epicPriorityClass(epic.priority) + (selectedProductEpicKey === epic.epic_key ? " active" : "");
         const epicTitle = document.createElement("strong");
         epicTitle.textContent = epic.epic_key + (epic.epic_name ? " - " + epic.epic_name : "");
-        const epicMappings = (((state && state.planner) || {}).mappings || []).filter((mapping) => mapping.epic_key === epic.epic_key);
+        const epicMappings = mappings.filter((mapping) => mapping.epic_key === epic.epic_key);
         const epicMeta = document.createElement("span");
         epicMeta.textContent = epicMappings.length + " people involved";
         button.appendChild(epicTitle);
@@ -15534,6 +15585,15 @@ __SETTINGS_TOP_NAV__
   byId("rnd-resource-search").addEventListener("input", (event) => {
     resourceSearchText = event.target.value || "";
     renderResources();
+  });
+  byId("rnd-product-people-search").addEventListener("input", (event) => {
+    productPeopleSearchText = event.target.value || "";
+    renderProductPeople();
+  });
+  byId("rnd-product-clear-people").addEventListener("click", () => {
+    selectedProductResourceIds.clear();
+    renderProductWiseView();
+    setStatus("People filter cleared. All product-wise epics are visible.", "ok");
   });
   document.addEventListener("click", () => hideOpenBookedMenus());
   window.addEventListener("scroll", () => hideOpenBookedMenus(), true);
