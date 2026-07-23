@@ -336,6 +336,8 @@ class RndMuscleUtilizationApiTests(unittest.TestCase):
         self.assertIn('function contrastTextColor(hex)', html)
         self.assertIn('function renderProductWiseView()', html)
         self.assertIn('function renderProductPeople()', html)
+        self.assertIn('function activeProductProjectKey()', html)
+        self.assertIn('const eligibleProjects = projectTabsForDisplay().filter((tab) => !tab.is_all_tab', html)
         self.assertIn('function productEpicMatchesPeople(epicKey, mappings)', html)
         self.assertIn('id="rnd-product-people-search"', html)
         self.assertIn('id="rnd-product-clear-people"', html)

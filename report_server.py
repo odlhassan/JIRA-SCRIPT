@@ -15167,9 +15167,15 @@ __SETTINGS_TOP_NAV__
       if (!activeIds.has(resourceId)) selectedProductResourceIds.delete(resourceId);
     });
     const query = productPeopleSearchText.trim().toLowerCase();
+    const activeProjectKey = activeProductProjectKey();
     const epicResourceIds = selectedProductEpicKey
       ? new Set(mappings.filter((mapping) => mapping.epic_key === selectedProductEpicKey).map((mapping) => mapping.resource_id))
-      : null;
+      : (activeProjectKey
+          ? new Set(mappings.filter((mapping) => {
+              const epic = findPlannerEpic(mapping.epic_key);
+              return epic && (epic.project_key || "").toUpperCase() === activeProjectKey;
+            }).map((mapping) => mapping.resource_id))
+          : null);
     const peopleForEpic = epicResourceIds
       ? Array.from(epicResourceIds).map((resourceId) => resourceById.get(resourceId)).filter(Boolean)
       : resources;
@@ -15189,6 +15195,10 @@ __SETTINGS_TOP_NAV__
       caption.textContent = selectedCount
         ? selectedCount + " selected | People on " + selectedEpicLabel + ". Epics match any selected person."
         : "People involved in " + selectedEpicLabel + ". Select people to filter product epics.";
+    } else if (activeProjectKey){
+      caption.textContent = selectedCount
+        ? selectedCount + " selected | Showing " + activeProjectKey + " epics involving any selected person."
+        : "People involved in " + activeProjectKey + ". Select people to filter product epics.";
     } else {
       caption.textContent = selectedCount
         ? selectedCount + " selected | Showing epics involving any selected person."
@@ -15200,7 +15210,9 @@ __SETTINGS_TOP_NAV__
       empty.className = "product-filter-empty";
       empty.textContent = query
         ? "No people match your search in this view."
-        : (selectedProductEpicKey ? "No active people are mapped to this epic." : "No active resources are available.");
+        : (selectedProductEpicKey
+            ? "No active people are mapped to this epic."
+            : (activeProjectKey ? "No active people are mapped to this project's epics." : "No active resources are available."));
       host.appendChild(empty);
       return;
     }
@@ -15241,12 +15253,18 @@ __SETTINGS_TOP_NAV__
     if (!selectedProductResourceIds.size) return true;
     return mappings.some((mapping) => mapping.epic_key === epicKey && selectedProductResourceIds.has(mapping.resource_id));
   }
+  function activeProductProjectKey(){
+    return byId("rnd-project-filter").value.trim().toUpperCase();
+  }
   function renderProductWiseView(){
     const host = byId("rnd-product-projects");
     if (!host) return;
     reset(host);
     syncPlannerSelection();
-    const projects = productProjectOrder(projectTabsForDisplay().filter((tab) => !tab.is_all_tab));
+    const activeProjectKey = activeProductProjectKey();
+    const eligibleProjects = projectTabsForDisplay().filter((tab) => !tab.is_all_tab
+      && (!activeProjectKey || (tab.project_key || "").toUpperCase() === activeProjectKey));
+    const projects = productProjectOrder(eligibleProjects);
     const visibleProjectKeys = new Set(projects.map((project) => project.project_key));
     const plannerKeys = plannerEpicKeys();
     const plannerEpics = plannerKeys.map((epicKey) => findPlannerEpic(epicKey)).filter(Boolean);
@@ -15259,7 +15277,9 @@ __SETTINGS_TOP_NAV__
     if (!projects.length){
       const empty = document.createElement("div");
       empty.className = "view-empty";
-      empty.textContent = "No projects are selected. Use Configure Projects to choose product panels.";
+      empty.textContent = activeProjectKey
+        ? "The selected project isn't in your configured product panels. Use Configure Projects to add it, or pick another project."
+        : "No projects are selected. Use Configure Projects to choose product panels.";
       host.appendChild(empty);
       renderProductPeople();
       return;
