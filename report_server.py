@@ -13011,14 +13011,29 @@ def _page_categories_settings_html() -> str:
 </html>""".replace("__SETTINGS_TOP_NAV__", _settings_top_nav_html(PAGE_CATEGORIES_SETTINGS_ROUTE))
 
 
-def _rnd_muscle_state_payload(state, image_map: dict | None = None) -> dict[str, object]:
+def _rnd_muscle_state_payload(
+    state, image_map: dict | None = None, color_map: dict[str, str] | None = None
+) -> dict[str, object]:
     payload = {"ok": True, "state": asdict(state), "source": "rnd_muscle_utilization"}
-    if image_map:
+    if image_map is not None or color_map is not None:
+        image_map = image_map or {}
+        color_map = color_map or {}
         for tab in payload["state"].get("project_tabs", []):
             if tab.get("is_all_tab"):
                 continue
-            tab.update(_project_image_urls(image_map.get(str(tab.get("project_key", "")), {})))
+            key = str(tab.get("project_key", ""))
+            tab.update(_project_image_urls(image_map.get(key, {})))
+            tab["color_hex"] = color_map.get(key, "")
     return payload
+
+
+def _rnd_project_color_map(db_path: Path) -> dict[str, str]:
+    colors: dict[str, str] = {}
+    for proj in list_managed_projects(db_path, include_inactive=True):
+        key = str(proj.get("project_key", ""))
+        if key:
+            colors[key] = str(proj.get("color_hex", "") or "")
+    return colors
 
 
 def _project_image_urls(record: dict) -> dict[str, object]:
@@ -13418,26 +13433,35 @@ def _rnd_muscle_utilization_settings_html(planner_only: bool = False) -> str:
     .cluster-legend { display:flex; gap:8px 12px; flex-wrap:wrap; min-width:0; }
     .cluster-legend-item { display:flex; align-items:center; gap:5px; color:var(--muted); }
     .product-planner { height:100%; min-height:420px; }
-    .product-layout { display:grid; grid-template-columns:minmax(0,1fr) 300px; gap:8px; height:100%; min-height:420px; }
-    .product-project-scroll { display:flex; gap:8px; min-width:0; overflow-x:auto; overflow-y:hidden; padding-bottom:4px; scroll-snap-type:x proximity; }
+    .product-layout { position:relative; height:100%; min-height:420px; }
+    .product-project-scroll { display:grid; grid-template-columns:repeat(auto-fill, minmax(240px, 1fr)); align-content:start; gap:8px; min-width:0; height:100%; overflow-y:auto; overflow-x:hidden; padding-bottom:4px; }
     .product-project-panel, .product-people-panel { border:1px solid var(--border); border-radius:var(--radius); background:var(--panel-2); min-width:0; overflow:hidden; }
-    .product-project-panel { flex:1 0 260px; display:flex; flex-direction:column; scroll-snap-align:start; transition:opacity .14s ease, border-color .14s ease, transform .14s ease; }
+    .product-project-panel { display:flex; flex-direction:column; max-height:min(64vh, 520px); transition:opacity .14s ease, border-color .14s ease, transform .14s ease, background .14s ease; }
     .product-project-panel.dragging { opacity:.48; transform:scale(.985); }
     .product-project-panel.drop-before { box-shadow:-4px 0 0 var(--accent-strong); }
     .product-project-panel.drop-after { box-shadow:4px 0 0 var(--accent-strong); }
-    .product-panel-head { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:9px; border-bottom:1px solid var(--border); background:var(--panel); cursor:grab; }
+    .product-panel-head { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:9px; border-bottom:1px solid var(--border); background:var(--panel); cursor:grab; transition:background .14s ease, border-color .14s ease; }
     .product-panel-head:active { cursor:grabbing; }
     .product-panel-title { min-width:0; }
     .product-panel-title strong { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; }
     .product-panel-title span { display:block; margin-top:2px; color:var(--muted); font-size:10px; }
     .product-panel-logo { display:block; max-height:34px; max-width:180px; object-fit:contain; margin-bottom:2px; }
     .product-drag-handle { color:var(--muted); font-size:16px; letter-spacing:-3px; flex:none; }
-    .product-epic-list { display:grid; gap:6px; align-content:start; padding:8px; overflow:auto; }
+    .product-epic-list { flex:1 1 auto; display:grid; gap:6px; align-content:start; padding:8px; overflow:auto; min-height:0; }
     .product-epic { width:100%; text-align:left; padding:7px; border:1px solid var(--border); border-radius:var(--radius); background:var(--row); color:var(--text); cursor:pointer; }
     .product-epic.active { outline:2px solid var(--accent-strong); outline-offset:-2px; }
     .product-epic strong { display:block; font-size:11px; line-height:1.25; }
     .product-epic span { display:block; margin-top:3px; color:inherit; opacity:.78; font-size:10px; }
-    .product-people-panel { display:grid; grid-template-rows:auto auto auto minmax(0,1fr); }
+    .product-people-fab { position:absolute; right:12px; bottom:12px; z-index:5; display:inline-flex; align-items:center; gap:7px; padding:9px 16px; border:none; border-radius:999px; background:var(--accent); color:var(--accent-text); font-weight:800; font-size:12px; cursor:pointer; box-shadow:0 8px 22px rgba(0,0,0,.28); transition:transform .14s ease, box-shadow .14s ease; }
+    .product-people-fab:hover { transform:translateY(-1px); box-shadow:0 10px 26px rgba(0,0,0,.34); }
+    .product-people-fab[aria-pressed="true"] { background:var(--panel); color:var(--text); border:1px solid var(--accent-strong); }
+    .product-people-fab .material-symbols-rounded { font-size:16px; }
+    .product-people-fab-badge { min-width:16px; padding:1px 5px; border-radius:999px; background:rgba(255,255,255,.28); font-size:10px; font-weight:800; }
+    .product-people-fab[aria-pressed="true"] .product-people-fab-badge { background:var(--accent); color:var(--accent-text); }
+    .product-people-floating { position:absolute; right:12px; bottom:60px; width:min(320px, calc(100% - 24px)); max-height:min(70vh, 560px); z-index:6; box-shadow:0 18px 44px rgba(0,0,0,.34); opacity:0; transform:translateY(10px) scale(.97); pointer-events:none; transition:opacity .16s ease, transform .16s ease; display:grid; grid-template-rows:auto auto auto minmax(0,1fr); }
+    .product-people-floating.open { opacity:1; transform:none; pointer-events:auto; }
+    .product-people-close { border:none; background:transparent; color:var(--muted); cursor:pointer; width:24px; height:24px; display:inline-flex; align-items:center; justify-content:center; border-radius:6px; }
+    .product-people-close:hover { background:var(--row); color:var(--text); }
     .product-people-head { padding:9px; border-bottom:1px solid var(--border); background:var(--panel); }
     .product-people-title { display:flex; align-items:center; justify-content:space-between; gap:8px; }
     .product-people-title strong { display:block; font-size:12px; }
@@ -13498,6 +13522,9 @@ def _rnd_muscle_utilization_settings_html(planner_only: bool = False) -> str:
     .dialog-head { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:10px 12px; border-bottom:1px solid var(--border); }
     .dialog-head h2 { margin:0; font-size:14px; }
     .check-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:6px; max-height:180px; overflow:auto; border:1px solid var(--border); border-radius:var(--radius); padding:8px; }
+    .display-options { display:grid; gap:6px; padding:9px 10px; border:1px solid var(--border); border-radius:var(--radius); background:var(--panel-2); margin-bottom:10px; }
+    .display-options-caption { font-size:10px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); font-weight:800; }
+    .display-option-row { display:flex; align-items:center; gap:8px; font-size:12px; cursor:pointer; }
     .check-row { display:flex; align-items:center; gap:6px; min-width:0; }
     .check-row span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .resource-row-actions { display:flex; gap:6px; margin-top:6px; }
@@ -13526,7 +13553,6 @@ def _rnd_muscle_utilization_settings_html(planner_only: bool = False) -> str:
       .layout { grid-template-columns:1fr; }
       .stats { grid-template-columns:repeat(2,minmax(120px,1fr)); }
       .canvas-grid, .cluster-planner { grid-template-columns:1fr; }
-      .product-layout { grid-template-columns:minmax(0,1fr) 270px; }
     }
   </style>
 </head>
@@ -13648,9 +13674,22 @@ __SETTINGS_TOP_NAV__
           <div id="rnd-product-planner" class="product-planner" __RND_PRODUCT_HIDDEN__>
             <div class="product-layout">
               <div id="rnd-product-projects" class="product-project-scroll" aria-label="Selected project panels"></div>
-              <aside class="product-people-panel" aria-label="People involved">
+              <button id="rnd-product-people-fab" class="product-people-fab" type="button" aria-pressed="false" aria-expanded="false" aria-controls="rnd-product-people-floating">
+                <span class="material-symbols-rounded">group</span>
+                <span>People</span>
+                <span id="rnd-product-people-fab-badge" class="product-people-fab-badge" hidden>0</span>
+              </button>
+              <aside id="rnd-product-people-floating" class="product-people-panel product-people-floating" aria-label="People involved" aria-hidden="true">
                 <div class="product-people-head">
-                  <div class="product-people-title"><strong>People involved</strong><span id="rnd-product-people-count" class="product-people-count">0</span></div>
+                  <div class="product-people-title">
+                    <span style="display:flex;align-items:center;gap:6px;min-width:0;">
+                      <strong>People involved</strong>
+                      <span id="rnd-product-people-count" class="product-people-count">0</span>
+                    </span>
+                    <button id="rnd-product-people-close" class="product-people-close" type="button" aria-label="Close people panel">
+                      <span class="material-symbols-rounded">close</span>
+                    </button>
+                  </div>
                   <span id="rnd-product-people-caption">Select people to show epics involving any of them.</span>
                 </div>
                 <div class="product-people-tools">
@@ -13741,6 +13780,17 @@ __SETTINGS_TOP_NAV__
     <div class="dialog-head"><h2>Project Tabs</h2><button class="btn" value="cancel" type="submit">Close</button></div>
   </form>
   <form id="rnd-project-form" class="dialog-body">
+    <div class="display-options">
+      <div class="display-options-caption">Display Options</div>
+      <label class="display-option-row">
+        <input id="rnd-opt-show-logos" type="checkbox">
+        <span>Show project logos (tabs and product panel headers)</span>
+      </label>
+      <label class="display-option-row">
+        <input id="rnd-opt-apply-colors" type="checkbox">
+        <span>Apply project colors to product panel headers</span>
+      </label>
+    </div>
     <div id="rnd-project-dialog-body" class="check-grid"></div>
     <button class="btn" type="submit">Apply Project Tabs</button>
   </form>
@@ -13758,6 +13808,7 @@ __SETTINGS_TOP_NAV__
   let selectedProductEpicKey = "";
   const selectedProductResourceIds = new Set();
   let productPeopleSearchText = "";
+  let productPeoplePanelOpen = false;
   let draggedProductProjectKey = "";
   let insightMode = "project";
   let selectedInsightKey = "";
@@ -13771,7 +13822,11 @@ __SETTINGS_TOP_NAV__
   const pendingSaves = new Map();
   const PROJECT_SELECTION_KEY = "rnd-muscle-selected-projects-v1";
   const PRODUCT_PANEL_ORDER_KEY = "rnd-muscle-product-panel-order-v1";
+  const SHOW_PROJECT_LOGOS_KEY = "rnd-muscle-show-project-logos-v1";
+  const APPLY_PROJECT_COLORS_KEY = "rnd-muscle-apply-project-colors-v1";
   let selectedProjectKeys = new Set(JSON.parse(localStorage.getItem(PROJECT_SELECTION_KEY) || "[]"));
+  let showProjectLogos = localStorage.getItem(SHOW_PROJECT_LOGOS_KEY) !== "0";
+  let applyProjectColors = localStorage.getItem(APPLY_PROJECT_COLORS_KEY) !== "0";
   const THEME_MODE_KEY = "rnd-muscle-theme-mode-v1";
   const THEME_COLOR_KEY = "rnd-muscle-theme-color-v1";
   const TEAM_COLOR_PALETTE = __RND_TEAM_COLOR_PALETTE__;
@@ -13788,6 +13843,11 @@ __SETTINGS_TOP_NAV__
       g: parseInt(clean.slice(2, 4), 16),
       b: parseInt(clean.slice(4, 6), 16)
     };
+  }
+  function contrastTextColor(hex){
+    const { r, g, b } = hexToRgb(hex);
+    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    return luminance > 0.6 ? "#0f172a" : "#ffffff";
   }
   function mixColor(hex, targetHex, weight){
     const a = hexToRgb(hex);
@@ -14113,7 +14173,7 @@ __SETTINGS_TOP_NAV__
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "tab" + ((filter.value || "ALL") === (tab.project_key || "ALL") ? " active" : "");
-      if (!tab.is_all_tab && tab.thumbnail_url){
+      if (!tab.is_all_tab && tab.thumbnail_url && showProjectLogos){
         const img = document.createElement("img");
         img.src = tab.thumbnail_url;
         img.alt = "";
@@ -14889,6 +14949,19 @@ __SETTINGS_TOP_NAV__
       host.appendChild(item);
     });
   }
+  function setProductPeopleOpen(open){
+    productPeoplePanelOpen = !!open;
+    const floating = byId("rnd-product-people-floating");
+    const fab = byId("rnd-product-people-fab");
+    if (floating){
+      floating.classList.toggle("open", productPeoplePanelOpen);
+      floating.setAttribute("aria-hidden", productPeoplePanelOpen ? "false" : "true");
+    }
+    if (fab){
+      fab.setAttribute("aria-pressed", productPeoplePanelOpen ? "true" : "false");
+      fab.setAttribute("aria-expanded", productPeoplePanelOpen ? "true" : "false");
+    }
+  }
   function renderProductPeople(){
     const host = byId("rnd-product-people");
     const caption = byId("rnd-product-people-caption");
@@ -14925,6 +14998,11 @@ __SETTINGS_TOP_NAV__
     count.textContent = String(selectedCount);
     count.hidden = selectedCount === 0;
     clearButton.disabled = selectedCount === 0;
+    const fabBadge = byId("rnd-product-people-fab-badge");
+    if (fabBadge){
+      fabBadge.textContent = String(selectedCount);
+      fabBadge.hidden = selectedCount === 0;
+    }
     if (selectedProductEpicKey){
       caption.textContent = selectedCount
         ? selectedCount + " selected | People on " + selectedEpicLabel + ". Epics match any selected person."
@@ -15015,7 +15093,8 @@ __SETTINGS_TOP_NAV__
       title.className = "product-panel-title";
       const allProjectEpics = plannerEpics.filter((epic) => epic.project_key === project.project_key);
       const projectEpics = filteredPlannerEpics.filter((epic) => epic.project_key === project.project_key);
-      if (project.logo_url){
+      let titleName = null;
+      if (project.logo_url && showProjectLogos){
         const logo = document.createElement("img");
         logo.src = project.logo_url;
         logo.alt = (project.project_name || project.project_key || "") + " logo";
@@ -15023,7 +15102,7 @@ __SETTINGS_TOP_NAV__
         logo.className = "product-panel-logo";
         title.appendChild(logo);
       } else {
-        const titleName = document.createElement("strong");
+        titleName = document.createElement("strong");
         titleName.textContent = project.project_name || project.project_key || "Project";
         title.appendChild(titleName);
       }
@@ -15036,6 +15115,18 @@ __SETTINGS_TOP_NAV__
       handle.title = "Drag to move project panel";
       head.appendChild(title);
       head.appendChild(handle);
+      const projectColor = normalizeHexColor(project.color_hex, "");
+      if (applyProjectColors && projectColor){
+        const fg = contrastTextColor(projectColor);
+        head.style.background = projectColor;
+        head.style.borderBottomColor = projectColor;
+        panel.style.borderColor = projectColor;
+        titleMeta.style.color = fg;
+        titleMeta.style.opacity = ".82";
+        handle.style.color = fg;
+        handle.style.opacity = ".78";
+        if (titleName) titleName.style.color = fg;
+      }
       const epicList = document.createElement("div");
       epicList.className = "product-epic-list";
       if (!projectEpics.length){
@@ -15056,7 +15147,9 @@ __SETTINGS_TOP_NAV__
         button.appendChild(epicTitle);
         button.appendChild(epicMeta);
         button.addEventListener("click", () => {
-          selectedProductEpicKey = selectedProductEpicKey === epic.epic_key ? "" : epic.epic_key;
+          const wasSelected = selectedProductEpicKey === epic.epic_key;
+          selectedProductEpicKey = wasSelected ? "" : epic.epic_key;
+          if (!wasSelected) setProductPeopleOpen(true);
           renderProductWiseView();
         });
         epicList.appendChild(button);
@@ -15667,6 +15760,8 @@ __SETTINGS_TOP_NAV__
     }
   }
   function renderProjectDialog(){
+    byId("rnd-opt-show-logos").checked = showProjectLogos;
+    byId("rnd-opt-apply-colors").checked = applyProjectColors;
     const body = byId("rnd-project-dialog-body");
     reset(body);
     ((state && state.project_tabs) || []).filter((tab) => !tab.is_all_tab).forEach((tab) => {
@@ -15860,6 +15955,17 @@ __SETTINGS_TOP_NAV__
     renderProjectDialog();
     byId("rnd-project-dialog").showModal();
   });
+  byId("rnd-opt-show-logos").addEventListener("change", (event) => {
+    showProjectLogos = !!event.target.checked;
+    localStorage.setItem(SHOW_PROJECT_LOGOS_KEY, showProjectLogos ? "1" : "0");
+    renderProjectControls();
+    renderProductWiseView();
+  });
+  byId("rnd-opt-apply-colors").addEventListener("change", (event) => {
+    applyProjectColors = !!event.target.checked;
+    localStorage.setItem(APPLY_PROJECT_COLORS_KEY, applyProjectColors ? "1" : "0");
+    renderProductWiseView();
+  });
   byId("rnd-project-form").addEventListener("submit", (event) => {
     event.preventDefault();
     selectedProjectKeys = new Set(Array.from(byId("rnd-project-dialog-body").querySelectorAll("input:checked")).map((input) => input.value));
@@ -15954,6 +16060,18 @@ __SETTINGS_TOP_NAV__
     selectedProductResourceIds.clear();
     renderProductWiseView();
     setStatus("People filter cleared. All product-wise epics are visible.", "ok");
+  });
+  byId("rnd-product-people-fab").addEventListener("click", () => setProductPeopleOpen(!productPeoplePanelOpen));
+  byId("rnd-product-people-close").addEventListener("click", () => setProductPeopleOpen(false));
+  document.addEventListener("click", (event) => {
+    if (!productPeoplePanelOpen) return;
+    const floating = byId("rnd-product-people-floating");
+    const fab = byId("rnd-product-people-fab");
+    if (floating && (floating.contains(event.target) || (fab && fab.contains(event.target)))) return;
+    setProductPeopleOpen(false);
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && productPeoplePanelOpen) setProductPeopleOpen(false);
   });
   document.addEventListener("click", () => hideOpenBookedMenus());
   window.addEventListener("scroll", () => hideOpenBookedMenus(), true);
@@ -37372,7 +37490,9 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
 
     def _rnd_payload(state) -> dict[str, object]:
         return _rnd_muscle_state_payload(
-            state, get_project_image_map(capacity_paths["project_images_db_path"])
+            state,
+            get_project_image_map(capacity_paths["project_images_db_path"]),
+            _rnd_project_color_map(capacity_paths["db_path"]),
         )
 
     init_support_booking_db(capacity_paths["db_path"])

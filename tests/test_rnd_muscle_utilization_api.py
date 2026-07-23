@@ -321,10 +321,18 @@ class RndMuscleUtilizationApiTests(unittest.TestCase):
         self.assertIn('let currentView = "hierarchical";', html)
         self.assertIn('id="rnd-view-hierarchical" class="tab active"', html)
         self.assertIn('id="rnd-view-product" class="tab "', html)
-        self.assertIn('grid-template-columns:minmax(0,1fr) 300px', html)
-        self.assertIn('overflow-x:auto', html)
+        self.assertIn('grid-template-columns:repeat(auto-fill, minmax(240px, 1fr))', html)
+        self.assertIn('overflow-y:auto', html)
         self.assertIn('PRODUCT_PANEL_ORDER_KEY', html)
         self.assertIn('application/x-rnd-product-project', html)
+        self.assertIn('id="rnd-product-people-fab"', html)
+        self.assertIn('id="rnd-product-people-floating"', html)
+        self.assertIn('function setProductPeopleOpen(open)', html)
+        self.assertIn('id="rnd-opt-show-logos"', html)
+        self.assertIn('id="rnd-opt-apply-colors"', html)
+        self.assertIn('SHOW_PROJECT_LOGOS_KEY', html)
+        self.assertIn('APPLY_PROJECT_COLORS_KEY', html)
+        self.assertIn('function contrastTextColor(hex)', html)
         self.assertIn('function renderProductWiseView()', html)
         self.assertIn('function renderProductPeople()', html)
         self.assertIn('function productEpicMatchesPeople(epicKey, mappings)', html)
@@ -345,7 +353,7 @@ class RndMuscleUtilizationApiTests(unittest.TestCase):
         self.assertIn('Showing epics involving any selected person.', html)
         self.assertIn('No epics involve the selected people.', html)
         self.assertIn('projectEpics.length + " of " + allProjectEpics.length', html)
-        self.assertIn('selectedProductEpicKey = selectedProductEpicKey === epic.epic_key ? "" : epic.epic_key', html)
+        self.assertIn('selectedProductEpicKey = wasSelected ? "" : epic.epic_key', html)
         self.assertIn('Select people to show epics involving any of them.', html)
         self.assertIn('No people match your search in this view.', html)
         self.assertIn('findPlannerEpic', html)
@@ -450,6 +458,39 @@ class RndMuscleUtilizationApiTests(unittest.TestCase):
             [m["resource_id"] for m in resource_resp.get_json()["state"]["planner"]["mappings"] if m["epic_key"] == "O2-100"],
             ["res-2", "res-1"],
         )
+
+    def test_project_tabs_carry_managed_project_color_and_images(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            app = _build_app(root)
+            client = app.test_client()
+            client.get("/api/rnd-muscle-utilization")
+            _seed_epics_and_resources(root)
+
+            existing = client.get("/api/projects").get_json()["projects"]
+            if any(item["project_key"] == "O2" for item in existing):
+                update_resp = client.put(
+                    "/api/projects/O2",
+                    json={"display_name": "OmniConnect", "color_hex": "#AB12CD"},
+                )
+                self.assertEqual(update_resp.status_code, 200)
+            else:
+                create_resp = client.post(
+                    "/api/projects",
+                    json={"project_key": "O2", "project_name": "OmniConnect", "display_name": "OmniConnect", "color_hex": "#AB12CD"},
+                )
+                self.assertEqual(create_resp.status_code, 200)
+
+            state_resp = client.get("/api/rnd-muscle-utilization")
+            tabs = state_resp.get_json()["state"]["project_tabs"]
+
+        tabs_by_key = {tab["project_key"]: tab for tab in tabs if not tab.get("is_all_tab")}
+        self.assertEqual(tabs_by_key["O2"]["color_hex"], "#AB12CD")
+        self.assertIn("thumbnail_url", tabs_by_key["O2"])
+        self.assertIn("logo_url", tabs_by_key["O2"])
+        self.assertIsNone(tabs_by_key["O2"]["thumbnail_url"])
+        all_tab = next(tab for tab in tabs if tab.get("is_all_tab"))
+        self.assertNotIn("color_hex", all_tab)
 
     def test_mapping_workbook_export_can_be_imported_back_to_restore_mappings(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
