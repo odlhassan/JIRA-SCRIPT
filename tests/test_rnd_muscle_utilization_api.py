@@ -326,7 +326,7 @@ class RndMuscleUtilizationApiTests(unittest.TestCase):
         self.assertIn('PRODUCT_PANEL_ORDER_KEY', html)
         self.assertIn('application/x-rnd-product-project', html)
         self.assertIn('id="rnd-product-people-btn"', html)
-        self.assertIn('id="rnd-product-people-popover"', html)
+        self.assertIn('id="rnd-product-people-panel"', html)
         self.assertIn('class="product-wise-head"', html)
         self.assertIn('function setProductPeopleOpen(open)', html)
         self.assertIn('id="rnd-opt-show-logos"', html)
@@ -419,7 +419,7 @@ class RndMuscleUtilizationApiTests(unittest.TestCase):
         self.assertIn('Configuration', html)
         self.assertIn('<body class="rnd-planner-only">', html)
         self.assertIn('body.rnd-planner-only { overflow:auto; }', html)
-        self.assertIn('.page.planner-only .planner { height:auto; grid-template-rows:auto 100vh auto; }', html)
+        self.assertIn('.page.planner-only .planner { height:auto; grid-template-rows:100vh auto; }', html)
         self.assertIn('.page.planner-only .canvas { height:100vh; min-height:100vh; }', html)
 
     def test_planner_order_apis_return_refreshable_state(self):

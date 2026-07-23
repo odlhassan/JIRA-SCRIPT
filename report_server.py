@@ -13488,7 +13488,7 @@ def _rnd_muscle_utilization_settings_html(planner_only: bool = False) -> str:
     .page.planner-only { height:auto; min-height:100vh; overflow:visible; }
     .page.planner-only .layout { flex:none; display:block; overflow:visible; }
     .page.planner-only .planner-panel, .page.planner-only .planner-panel > .panel-body { overflow:visible; }
-    .page.planner-only .planner { height:auto; grid-template-rows:auto 100vh auto; }
+    .page.planner-only .planner { height:auto; grid-template-rows:100vh auto; }
     .page.planner-only .canvas { height:100vh; min-height:100vh; }
     .page.planner-only .catalog-panel, .page.planner-only .stats, .page.planner-only .config-band,
     .page.planner-only #rnd-create-team-btn, .page.planner-only #rnd-add-skill-btn, .page.planner-only #rnd-configure-projects-btn,
@@ -13538,7 +13538,7 @@ def _rnd_muscle_utilization_settings_html(planner_only: bool = False) -> str:
     .pill { border:1px solid var(--border); border-radius:999px; padding:2px 6px; background:var(--panel-2); }
     .tab { border:1px solid var(--border); background:var(--control); color:var(--text); border-radius:var(--radius); padding:5px 8px; font-size:12px; cursor:pointer; }
     .tab.active { background:var(--accent); color:var(--accent-text); border-color:var(--accent-strong); }
-    .planner { display:grid; grid-template-rows:auto minmax(0,1fr) auto; gap:8px; height:100%; }
+    .planner { display:grid; grid-template-rows:minmax(0,1fr) auto; gap:8px; height:100%; }
     .canvas { border:1px solid var(--border); border-radius:var(--radius); background:var(--chrome); padding:8px; overflow:auto; min-height:0; }
     .drop-active { outline:1px solid var(--accent-strong); outline-offset:-2px; background:var(--accent-soft) !important; }
     .canvas-grid { display:grid; grid-template-columns:minmax(260px,.9fr) minmax(320px,1.1fr); gap:8px; min-height:100%; }
@@ -13599,8 +13599,8 @@ def _rnd_muscle_utilization_settings_html(planner_only: bool = False) -> str:
     .product-people-btn { display:inline-flex; align-items:center; gap:6px; }
     .product-people-btn .material-symbols-rounded { font-size:16px; }
     .product-people-badge { min-width:16px; padding:1px 6px; border-radius:999px; background:var(--accent); color:var(--accent-text); font-size:10px; font-weight:800; text-align:center; }
-    .product-layout { flex:1 1 auto; min-height:0; }
-    .product-project-scroll { display:grid; grid-template-columns:repeat(auto-fill, minmax(240px, 1fr)); align-content:start; gap:8px; min-width:0; height:100%; overflow-y:auto; overflow-x:hidden; padding-bottom:4px; }
+    .product-layout { flex:1 1 auto; min-height:0; display:flex; gap:8px; }
+    .product-project-scroll { flex:1 1 auto; display:grid; grid-template-columns:repeat(auto-fill, minmax(240px, 1fr)); align-content:start; gap:8px; min-width:0; height:100%; overflow-y:auto; overflow-x:hidden; padding-bottom:4px; }
     .product-project-panel, .product-people-panel { border:1px solid var(--border); border-radius:var(--radius); background:var(--panel-2); min-width:0; overflow:hidden; }
     .product-project-panel { display:flex; flex-direction:column; max-height:min(64vh, 520px); transition:opacity .14s ease, border-color .14s ease, transform .14s ease, background .14s ease; }
     .product-project-panel.dragging { opacity:.48; transform:scale(.985); }
@@ -13618,8 +13618,8 @@ def _rnd_muscle_utilization_settings_html(planner_only: bool = False) -> str:
     .product-epic.active { outline:2px solid var(--accent-strong); outline-offset:-2px; }
     .product-epic strong { display:block; font-size:11px; line-height:1.25; }
     .product-epic span { display:block; margin-top:3px; color:inherit; opacity:.78; font-size:10px; }
-    .product-people-popover { position:fixed; z-index:100000; width:min(340px, calc(100vw - 24px)); max-height:min(70vh, 560px); box-shadow:0 18px 44px rgba(0,0,0,.34); display:grid; grid-template-rows:auto auto auto minmax(0,1fr); }
-    .product-people-popover[hidden] { display:none !important; }
+    .product-people-panel { flex:0 0 300px; display:grid; grid-template-rows:auto auto auto minmax(0,1fr); min-height:0; }
+    @media (max-width:900px) { .product-people-panel { flex-basis:240px; } }
     .product-people-close { border:none; background:transparent; color:var(--muted); cursor:pointer; width:24px; height:24px; display:inline-flex; align-items:center; justify-content:center; border-radius:6px; }
     .product-people-close:hover { background:var(--row); color:var(--text); }
     .product-people-head { padding:9px; border-bottom:1px solid var(--border); background:var(--panel); }
@@ -13725,6 +13725,13 @@ __SETTINGS_TOP_NAV__
       <div class="muted">Admin planner scaffold for epic-to-resource utilization.</div>
     </div>
     <div class="toolbar">
+      <div id="rnd-view-mode-toggle" class="toolbar" aria-label="Planner view mode">
+        <button id="rnd-view-hierarchical" class="tab __RND_HIERARCHICAL_TAB_ACTIVE__" type="button">Hierarchical</button>
+        <button id="rnd-view-cluster" class="tab" type="button">Cluster</button>
+        <button id="rnd-view-insights" class="tab" type="button">Insights</button>
+        <button id="rnd-view-product" class="tab __RND_PRODUCT_TAB_ACTIVE__" type="button">Product wise</button>
+      </div>
+      <div id="rnd-project-tabs" class="tabs"><button class="tab active" type="button">All 0</button></div>
       <div class="theme-controls" aria-label="Theme controls">
         <label class="theme-switch" for="rnd-theme-mode" aria-label="Theme mode">
           <input id="rnd-theme-mode" type="checkbox" role="switch" aria-label="Theme mode">
@@ -13776,14 +13783,7 @@ __SETTINGS_TOP_NAV__
       </div>
     </aside>
     <section class="panel planner-panel">
-      <div class="panel-head"><h2>Planner</h2><div id="rnd-project-tabs" class="tabs"><button class="tab active" type="button">All 0</button></div></div>
       <div class="panel-body planner">
-        <div class="toolbar">
-          <button id="rnd-view-hierarchical" class="tab __RND_HIERARCHICAL_TAB_ACTIVE__" type="button">Hierarchical</button>
-          <button id="rnd-view-cluster" class="tab" type="button">Cluster</button>
-          <button id="rnd-view-insights" class="tab" type="button">Insights</button>
-          <button id="rnd-view-product" class="tab __RND_PRODUCT_TAB_ACTIVE__" type="button">Product wise</button>
-        </div>
         <div class="canvas">
           <div id="rnd-hierarchical-planner" class="hierarchical-planner" __RND_HIERARCHICAL_HIDDEN__>
             <div class="canvas-grid">
@@ -13834,7 +13834,7 @@ __SETTINGS_TOP_NAV__
           <div id="rnd-product-planner" class="product-planner" __RND_PRODUCT_HIDDEN__>
             <div class="product-wise-head">
               <h3>Product wise</h3>
-              <button id="rnd-product-people-btn" class="btn alt product-people-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="rnd-product-people-popover">
+              <button id="rnd-product-people-btn" class="btn alt product-people-btn" type="button" aria-pressed="false" aria-expanded="false" aria-controls="rnd-product-people-panel">
                 <span class="material-symbols-rounded">group</span>
                 <span>People</span>
                 <span id="rnd-product-people-btn-badge" class="product-people-badge" hidden>0</span>
@@ -13842,28 +13842,28 @@ __SETTINGS_TOP_NAV__
             </div>
             <div class="product-layout">
               <div id="rnd-product-projects" class="product-project-scroll" aria-label="Selected project panels"></div>
+              <aside id="rnd-product-people-panel" class="product-people-panel" aria-label="People involved" hidden>
+                <div class="product-people-head">
+                  <div class="product-people-title">
+                    <span style="display:flex;align-items:center;gap:6px;min-width:0;">
+                      <strong>People involved</strong>
+                      <span id="rnd-product-people-count" class="product-people-count">0</span>
+                    </span>
+                    <button id="rnd-product-people-close" class="product-people-close" type="button" aria-label="Close people panel">
+                      <span class="material-symbols-rounded">close</span>
+                    </button>
+                  </div>
+                  <span id="rnd-product-people-caption">Select people to show epics involving any of them.</span>
+                </div>
+                <div class="product-people-tools">
+                  <input id="rnd-product-people-search" class="input product-people-search" type="search" placeholder="Find a person or team..." aria-label="Search people involved">
+                  <button id="rnd-product-clear-people" class="btn product-clear-people" type="button" disabled>Clear</button>
+                </div>
+                <div id="rnd-product-team-legend" class="product-team-legend" aria-label="Team color legend"></div>
+                <div id="rnd-product-people" class="product-person-list" aria-label="People filter" aria-multiselectable="true"></div>
+              </aside>
             </div>
           </div>
-          <aside id="rnd-product-people-popover" class="product-people-panel product-people-popover" aria-label="People involved" hidden>
-            <div class="product-people-head">
-              <div class="product-people-title">
-                <span style="display:flex;align-items:center;gap:6px;min-width:0;">
-                  <strong>People involved</strong>
-                  <span id="rnd-product-people-count" class="product-people-count">0</span>
-                </span>
-                <button id="rnd-product-people-close" class="product-people-close" type="button" aria-label="Close people panel">
-                  <span class="material-symbols-rounded">close</span>
-                </button>
-              </div>
-              <span id="rnd-product-people-caption">Select people to show epics involving any of them.</span>
-            </div>
-            <div class="product-people-tools">
-              <input id="rnd-product-people-search" class="input product-people-search" type="search" placeholder="Find a person or team..." aria-label="Search people involved">
-              <button id="rnd-product-clear-people" class="btn product-clear-people" type="button" disabled>Clear</button>
-            </div>
-            <div id="rnd-product-team-legend" class="product-team-legend" aria-label="Team color legend"></div>
-            <div id="rnd-product-people" class="product-person-list" aria-label="People filter" aria-multiselectable="true"></div>
-          </aside>
         </div>
         <div id="rnd-backlog-drop-zone" class="backlog" aria-label="Backlog drop area">
           <h3>Backlog</h3>
@@ -15115,15 +15115,13 @@ __SETTINGS_TOP_NAV__
   }
   function setProductPeopleOpen(open){
     productPeoplePanelOpen = !!open;
-    const popover = byId("rnd-product-people-popover");
+    const panel = byId("rnd-product-people-panel");
     const btn = byId("rnd-product-people-btn");
-    if (btn) btn.setAttribute("aria-expanded", productPeoplePanelOpen ? "true" : "false");
-    if (!popover) return;
-    if (productPeoplePanelOpen && btn){
-      positionBookedMenu(btn, popover);
-    } else {
-      popover.hidden = true;
+    if (btn){
+      btn.setAttribute("aria-expanded", productPeoplePanelOpen ? "true" : "false");
+      btn.setAttribute("aria-pressed", productPeoplePanelOpen ? "true" : "false");
     }
+    if (panel) panel.hidden = !productPeoplePanelOpen;
   }
   function renderProductPeople(){
     const host = byId("rnd-product-people");
@@ -16226,18 +16224,6 @@ __SETTINGS_TOP_NAV__
   });
   byId("rnd-product-people-btn").addEventListener("click", () => setProductPeopleOpen(!productPeoplePanelOpen));
   byId("rnd-product-people-close").addEventListener("click", () => setProductPeopleOpen(false));
-  document.addEventListener("click", (event) => {
-    if (!productPeoplePanelOpen) return;
-    const popover = byId("rnd-product-people-popover");
-    const btn = byId("rnd-product-people-btn");
-    if (popover && (popover.contains(event.target) || (btn && btn.contains(event.target)))) return;
-    setProductPeopleOpen(false);
-  });
-  window.addEventListener("scroll", () => { if (productPeoplePanelOpen) setProductPeopleOpen(false); }, true);
-  window.addEventListener("resize", () => { if (productPeoplePanelOpen) setProductPeopleOpen(false); });
-  document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && productPeoplePanelOpen) setProductPeopleOpen(false);
-  });
   document.addEventListener("click", () => hideOpenBookedMenus());
   window.addEventListener("scroll", () => hideOpenBookedMenus(), true);
   window.addEventListener("resize", () => hideOpenBookedMenus());
