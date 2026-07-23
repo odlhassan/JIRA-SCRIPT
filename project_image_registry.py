@@ -61,10 +61,15 @@ def resolve_project_image_paths(base_dir: Path) -> dict[str, Path]:
     """
     base_dir = Path(base_dir)
     raw = os.getenv("JIRA_PROJECT_IMAGE_DIR", "").strip().strip('"').strip("'")
+    azure_home = os.getenv("HOME", "").strip()
+    on_azure = bool(os.getenv("WEBSITE_INSTANCE_ID") or os.getenv("WEBSITE_SITE_NAME"))
     if raw:
         images_dir = Path(raw)
         if not images_dir.is_absolute():
             images_dir = base_dir / images_dir
+    elif on_azure and azure_home:
+        # wwwroot is writable but wiped on redeploy; /home persists across deploys.
+        images_dir = Path(azure_home) / "data" / "project_images"
     else:
         images_dir = base_dir / "data" / "project_images"
 
