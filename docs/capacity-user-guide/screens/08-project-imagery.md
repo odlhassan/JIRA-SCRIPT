@@ -79,6 +79,11 @@ when absent.
 - **2026-07-24:** Added Pillow to the production dependency set and made the Azure workflow
   verify the vendored `PIL` package before deployment. This prevents logo and thumbnail uploads
   from reaching production without the image decoder required by `normalize_image_bytes`.
+- **2026-07-24 (follow-up):** Uploads still returned HTTP 500 after Pillow shipped, with
+  `ImportError: cannot import name '_imaging' from 'PIL'`. The deploy runner vendored wheels
+  using its own Python, so the compiled extension did not match the App Service interpreter
+  (Python 3.11). The workflow now pins the runner to 3.11 and verifies
+  `_imaging.cpython-311-*.so` rather than the presence of the `PIL` directory alone.
 
 ## Dependent & Impacted Files
 

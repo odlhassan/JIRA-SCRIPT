@@ -37,6 +37,24 @@ class AzureDeployContractTests(unittest.TestCase):
             "The deploy workflow must verify that Pillow was vendored into the production ZIP",
         )
 
+    def test_vendored_wheels_match_the_app_service_interpreter(self) -> None:
+        workflow = (
+            ROOT / ".github" / "workflows" / "azure-appservice-deploy.yml"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("actions/setup-python@v5", workflow)
+        self.assertIn("python-version: '3.11'", workflow)
+        self.assertLess(
+            workflow.index("actions/setup-python@v5"),
+            workflow.index("Vendor Python packages for zip deploy"),
+            "The interpreter must be pinned before wheels are downloaded",
+        )
+        self.assertIn(
+            "_imaging.cpython-311-*.so",
+            workflow,
+            "Verify the compiled Pillow extension matches CPython 3.11, not just that PIL exists",
+        )
+
     def test_startup_journal_helper_is_deployable_source(self) -> None:
         helper = ROOT / "db_journal_mode.py"
         self.assertTrue(helper.exists(), "db_journal_mode.py must ship with report_server.py")

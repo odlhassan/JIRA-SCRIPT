@@ -44,6 +44,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # App Service runs Python 3.11. Binary wheels are ABI-specific, so vendoring with any
+      # other runner Python ships e.g. _imaging.cpython-312-*.so, which 3.11 cannot import.
+      - name: Use the App Service Python version
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
       - name: Stage files (match local packaging exclusions)
         run: |
           set -e
@@ -75,7 +82,7 @@ jobs:
         run: |
           set -e
           python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt --target staging/.python_packages/lib/site-packages
+          python -m pip install -r requirements.txt --target staging/.python_packages/lib/site-packages --only-binary=:all:
           chmod +x staging/startup.txt
 
       - name: Verify required startup files
@@ -83,6 +90,9 @@ jobs:
           set -e
           python - <<'PY'
           from pathlib import Path
+
+          staging = Path("staging")
+          site_packages = staging / ".python_packages/lib/site-packages"
 
           required = [
               "startup.txt",
@@ -93,9 +103,19 @@ jobs:
               ".python_packages/lib/site-packages/gunicorn",
               ".python_packages/lib/site-packages/PIL",
           ]
-          missing = [path for path in required if not (Path("staging") / path).exists()]
+          missing = [path for path in required if not (staging / path).exists()]
           if missing:
               raise SystemExit("Missing required deploy files: " + ", ".join(missing))
+
+          # A PIL directory is not enough: the compiled extension must match the App Service
+          # interpreter, otherwise every upload fails with "cannot import name '_imaging'".
+          imaging = sorted((site_packages / "PIL").glob("_imaging.cpython-311-*.so"))
+          if not imaging:
+              found = sorted(p.name for p in (site_packages / "PIL").glob("_imaging*.so"))
+              raise SystemExit(
+                  "Pillow was vendored without a CPython 3.11 _imaging extension. "
+                  f"Found: {found or 'nothing'}"
+              )
           PY
 
       - name: Create ZIP
