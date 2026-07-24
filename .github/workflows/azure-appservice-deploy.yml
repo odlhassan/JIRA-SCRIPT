@@ -78,6 +78,26 @@ jobs:
           python -m pip install -r requirements.txt --target staging/.python_packages/lib/site-packages
           chmod +x staging/startup.txt
 
+      - name: Verify required startup files
+        run: |
+          set -e
+          python - <<'PY'
+          from pathlib import Path
+
+          required = [
+              "startup.txt",
+              "wsgi.py",
+              "report_server.py",
+              "db_journal_mode.py",
+              "requirements.txt",
+              ".python_packages/lib/site-packages/gunicorn",
+              ".python_packages/lib/site-packages/PIL",
+          ]
+          missing = [path for path in required if not (Path("staging") / path).exists()]
+          if missing:
+              raise SystemExit("Missing required deploy files: " + ", ".join(missing))
+          PY
+
       - name: Create ZIP
         run: |
           set -e

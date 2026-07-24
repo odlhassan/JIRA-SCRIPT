@@ -6,6 +6,9 @@ project tab strip (tight space) and the logo in each product panel header (wide 
 
 ## Business Logic
 
+- The server requires **Pillow** (installed from root `requirements.txt`) to decode, validate,
+  resize, and re-encode uploads. The Azure deployment vendors this dependency into
+  `.python_packages/lib/site-packages/PIL` and verifies that directory before creating the ZIP.
 - Each managed project may have two images: a **thumbnail** (square) and a **logo** (horizontal).
 - Uploaded files are validated (real image decode, ≤ 2 MB) and re-encoded on the server:
   - Thumbnail → center-cover cropped to a square and resized to **256×256**.
@@ -64,9 +67,18 @@ when absent.
 |---|---|
 | `project_image_registry.py` | Standalone DB init, Pillow normalization, auto-thumbnail, set/clear/get helpers, path resolution. |
 | `report_server.py` | Upload/delete/serve routes, `/api/projects` image URLs, Project Settings drop-zone UI, RnD view rendering (tabs + panel logo). |
+| `requirements.txt` | Declares Pillow as a production runtime dependency. |
+| `.github/workflows/azure-appservice-deploy.yml` | Vendors dependencies and verifies that the `PIL` package is present before ZIP deployment. |
 | `migrations/2026-07-23_project_images.py` | Idempotent creation of `project_images.db`. |
 | `tests/test_project_images_api.py` | Unit + API tests. |
+| `tests/test_azure_deploy_contract.py` | Guards the Pillow requirement and deployment-package verification. |
 | `db_schema_changelog.py` | Records the `ADD_TABLE` change and schema snapshot. |
+
+## Change Notes
+
+- **2026-07-24:** Added Pillow to the production dependency set and made the Azure workflow
+  verify the vendored `PIL` package before deployment. This prevents logo and thumbnail uploads
+  from reaching production without the image decoder required by `normalize_image_bytes`.
 
 ## Dependent & Impacted Files
 
