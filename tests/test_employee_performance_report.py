@@ -506,7 +506,8 @@ class EmployeePerformanceReportTests(unittest.TestCase):
         html = _build_html(payload)
         self.assertIn("Due Completion Rule", html)
         self.assertIn("overrun hours from items finished on time are not counted in penalty", html)
-        self.assertIn("const dueAdjustedPenaltyHours = adjOver;", html)
+        self.assertIn("const duePenaltyEst = n(it.ss_due_penalty_estimate);", html)
+        self.assertIn("const dueAdjustedPenaltyHours = adjOver + duePenaltyEst;", html)
         self.assertNotIn("Late Completion Estimate Penalty", html)
         self.assertNotIn("Late estimate penalty:", html)
 
@@ -672,11 +673,33 @@ class EmployeePerformanceReportTests(unittest.TestCase):
         self.assertEqual(meta["actual_complete_source"], "last_logged_date")
         self.assertEqual(meta["completion_bucket"], "after_due")
 
-    def test_derive_actual_completion_uses_later_of_last_log_and_resolved_stable(self):
+    def test_derive_actual_completion_uses_last_log_when_resolution_is_later(self):
         meta = _derive_actual_completion("2026-03-10", "2026-03-05", "2026-03-08")
-        self.assertEqual(meta["actual_complete_date"], "2026-03-08")
-        self.assertEqual(meta["actual_complete_source"], "max_last_logged_resolved_stable")
+        self.assertEqual(meta["actual_complete_date"], "2026-03-05")
+        self.assertEqual(meta["actual_complete_source"], "earlier_last_logged_resolved_stable")
         self.assertEqual(meta["completion_bucket"], "before_due")
+
+    def test_derive_actual_completion_caps_post_resolution_worklog_at_resolution(self):
+        meta = _derive_actual_completion("2026-03-10", "2026-03-12", "2026-03-08")
+        self.assertEqual(meta["actual_complete_date"], "2026-03-08")
+        self.assertEqual(meta["actual_complete_source"], "earlier_last_logged_resolved_stable")
+        self.assertEqual(meta["completion_bucket"], "before_due")
+
+    def test_canonical_actual_completion_uses_same_earlier_date_rule(self):
+        actual_date, source, bucket = report_server._canonical_derive_actual_completion(
+            "2026-03-10", "2026-03-12", "2026-03-08"
+        )
+        self.assertEqual(actual_date.isoformat(), "2026-03-08")
+        self.assertEqual(source, "earlier_last_logged_resolved_stable")
+        self.assertEqual(bucket, "before_due")
+
+    def test_generated_client_completion_uses_earlier_date_cutoff(self):
+        root = Path(__file__).resolve().parents[1]
+        generator = (root / "generate_employee_performance_report.py").read_text(encoding="utf-8")
+        generated_html = (root / "employee_performance_report.html").read_text(encoding="utf-8")
+        for content in (generator, generated_html):
+            self.assertIn("actualCompleteDate = cand.reduce((a, b) => (a <= b ? a : b));", content)
+            self.assertIn("earlier_last_logged_resolved_stable", content)
 
     def test_derive_actual_completion_resolved_only_when_no_logs(self):
         meta = _derive_actual_completion("2026-03-12", "", "2026-03-11")
@@ -781,9 +804,9 @@ class EmployeePerformanceReportTests(unittest.TestCase):
             self.assertEqual(rows["O2-102"]["due_completion_status"], "on_time")
 
             self.assertEqual(rows["O2-103"]["last_logged_date"], "2026-03-06")
-            self.assertEqual(rows["O2-103"]["actual_complete_date"], "2026-03-10")
-            self.assertEqual(rows["O2-103"]["actual_complete_source"], "max_last_logged_resolved_stable")
-            self.assertEqual(rows["O2-103"]["due_completion_status"], "late")
+            self.assertEqual(rows["O2-103"]["actual_complete_date"], "2026-03-06")
+            self.assertEqual(rows["O2-103"]["actual_complete_source"], "earlier_last_logged_resolved_stable")
+            self.assertEqual(rows["O2-103"]["due_completion_status"], "on_time")
 
     def test_load_leave_issue_keys_prefers_raw_subtasks_and_normalizes(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:

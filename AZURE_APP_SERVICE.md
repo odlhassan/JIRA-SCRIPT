@@ -8,6 +8,7 @@ This project can run on Azure App Service for Linux as a Python 3.11 web app.
 - Workflow: `.github/workflows/azure-appservice-deploy.yml` (runs on push to `main` or `master`, and manual `workflow_dispatch`).
 - The deploy ZIP is built from the **GitHub checkout** after staging (excludes tests, `node_modules`, `handover`, `offline_bundles`, root `backup/`, etc.). **Commit and push every file the running app depends on** — anything not in Git will not ship. Do not rely on unpushed local builds.
 - The workflow runs `pip install -r requirements.txt --target staging/.python_packages/lib/site-packages` before zipping. This makes production dependency imports independent of whether Azure creates `/home/site/wwwroot/antenv` during deployment. It also marks `startup.txt` executable before creating the ZIP so App Service can launch it from a read-only `WEBSITE_RUN_FROM_PACKAGE` mount.
+- Before uploading the ZIP, the workflow verifies that required startup files and helpers are present in `staging/`, including `startup.txt`, `wsgi.py`, `report_server.py`, `db_journal_mode.py`, `requirements.txt`, and the vendored Gunicorn package.
 - **Backups:** do not commit local backup trees or `*.backup` files (see `.gitignore`). Do not expect backup-only branches to drive production unless you change the workflow deliberately.
 
 ## Why a startup command is required
@@ -124,6 +125,48 @@ Restart after config changes:
 az webapp restart --resource-group $RESOURCE_GROUP --name $APP
 ```
 
+## Modify the persistent SQLite database through SCM/Kudu
+
+Use `azure_scm_sqlite.py` to send a local UTF-8 SQL file to the App Service SCM
+endpoint and execute it against a database under persistent `/home`. The script obtains
+short-lived publishing credentials through the authenticated Azure CLI; it does not
+store credentials in the repository. Temporary `.epr-sqlite-*` runner and SQL files
+are removed from `/home/data` after each attempt.
+
+Sign in and preview first (preview is the default and does not execute the SQL):
+
+```powershell
+az login
+python azure_scm_sqlite.py --resource-group "<resource-group>" --app-name "<app-name>" --sql-file ".\change.sql"
+```
+
+Review the database path, SQL SHA-256, statement count, schema-change flag, and
+`quick_check_before` result. Then apply the exact same file:
+
+```powershell
+python azure_scm_sqlite.py --resource-group "<resource-group>" --app-name "<app-name>" --sql-file ".\change.sql" --apply
+```
+
+The default target is `/home/data/assignee_hours_capacity.db`. Override it only with an
+absolute persistent path such as `--db-path /home/data/jira_sync_cache.db`. SQL is run
+inside `BEGIN IMMEDIATE`; the runner performs SQLite `quick_check` before and after the
+statements and rolls back on failure. SQL files cannot include their own transaction
+control, `ATTACH`, `DETACH`, `VACUUM`, or `PRAGMA`.
+
+A full database backup is optional because the production capacity database may be
+several gigabytes and Azure storage is limited:
+
+```powershell
+python azure_scm_sqlite.py --resource-group "<resource-group>" --app-name "<app-name>" --sql-file ".\change.sql" --apply --backup-path "/home/data/backups/assignee_hours_capacity.before-change.db"
+```
+
+Only use `--backup-path` after confirming enough free space. Schema-changing SQL is
+blocked unless `--allow-schema-changes` is supplied. Before using that flag, complete
+the local changelog, authoritative schema snapshot, and production migration steps in
+`DATABASE_SCHEMA_MIGRATION_PROTOCOL.md`; this SCM utility does not replace that audit
+trail. Stop or quiesce application writers for a long migration to avoid the
+60-second SQLite write-lock timeout.
+
 ## Notes
 
 - Use Azure App Service for Linux. Microsoft Learn states Python on App Service on Windows is no longer supported.
@@ -136,6 +179,8 @@ az webapp restart --resource-group $RESOURCE_GROUP --name $APP
 - If Azure's package mount is read-only during Colossal Refresh, compatibility artifacts such as `1_jira_work_items_export.xlsx`, `2_jira_subtask_worklogs.xlsx`, `3_jira_subtask_worklog_rollup.xlsx`, `nested view.xlsx`, and `jira_exports.db` are written under `$HOME/data/canonical_artifacts` unless `JIRA_CANONICAL_ARTIFACT_DIR` points somewhere else writable.
 - Report HTML promotion from root files into `report_html` is best-effort on Azure. If a runtime-promoted `report_html` copy has a newer filesystem timestamp than a freshly deployed root report source, `report_server.py` compares file content before deciding to skip promotion so report-only deploys do not keep serving stale HTML. If `WEBSITE_RUN_FROM_PACKAGE` makes `/home/site/wwwroot` read-only, the server logs a warning and serves the packaged `report_html` copy, the known tracked root report source when no `report_html` copy exists, or a generated dashboard fallback under `$HOME/data/generated_reports`, instead of returning HTTP 500/404 for known reports.
 - If you later want Azure to rebuild reports dynamically, validate the writable database path, canonical refresh bootstrap behavior, and generated-report sync path first.
+- **WAL mode is disabled everywhere (`db_journal_mode.py`).** Azure mounts `/home` over an SMB/CIFS network share, where SQLite WAL mode (`-shm`/`-wal` shared memory) is unreliable and corrupts the database — the canonical refresh then fails at the *Compare cached modification state* stage with `database disk image is malformed`, requiring a manual `sqlite3 .recover` pass to restore the DB. Rather than run two code paths, `db_journal_mode.apply_journal_mode()` now always selects a rollback journal (`PRAGMA journal_mode=DELETE`) on every host — local and Azure — so no `-wal`/`-shm` sidecar files are ever created and local behavior always matches production. All canonical/sync/exports/migration connections route journal-mode selection through this helper. Override: `EPR_FORCE_WAL=1` forces WAL anywhere (debugging only, not recommended).
+- **Recovering an already-corrupt production DB** (the code change only prevents *future* corruption): SSH/Kudu into the instance, run `sqlite3 <db> "PRAGMA integrity_check;"` on `assignee_hours_capacity.db` and `jira_sync_cache.db`. If only `jira_sync_cache.db` is malformed, delete it plus its `-wal`/`-shm` siblings and run a full refresh to rebuild the cache. If `assignee_hours_capacity.db` is malformed, recover with `sqlite3 bad.db ".recover" | sqlite3 recovered.db`, verify `integrity_check`, then swap it in (keep the corrupt copy until verified).
 
 ## Business Logic
 
@@ -157,11 +202,16 @@ Azure extracts the deployed app to a runtime directory and starts Gunicorn. Anyt
 
 No Azure-only UI fields are added. Relevant production screens are `/settings/canonical-refresh`, report pages under `report_html`, and settings pages that read/write the persistent capacity DB.
 
+- **"Create DB backup before Full Refresh" is disabled.** The `/settings/canonical-refresh` page has a checkbox that used to copy the entire (multi-GB) capacity DB into `backups/canonical_refresh/` before a Full Refresh. This full-database copy filled up disk on production (Azure App Service storage is limited and `/home/data` already holds the live multi-GB DB). The checkbox is now rendered `disabled` and `_start_canonical_refresh_async()` in `report_server.py` forces `should_create_backup = False` regardless of the request payload, so no full-DB backup is ever written by this workflow. The backup helper (`_create_canonical_refresh_db_backup`) and API fields (`db_backup_requested`, `db_backup_created`, `db_backup_path`) remain in the code for compatibility but are always inert.
+
 ## Script Files
 
 - `startup.txt` — production shell startup script, Gunicorn command, and `.python_packages` import path.
 - `wsgi.py` — Flask app entry point.
 - `report_server.py` — server routes, DB path resolution, refresh orchestration, and report serving.
+- `db_journal_mode.py` - shared SQLite journal-mode helper imported during WSGI startup.
+- `azure_scm_sqlite.py` — local Azure CLI/SCM controller that uploads SQL and invokes the remote runner.
+- `azure_scm_sqlite_runner.py` — standard-library-only transactional SQLite runner uploaded temporarily to `/home/data`.
 - `.github/workflows/azure-appservice-deploy.yml` — GitHub Actions deployment packaging, dependency vendoring, and executable startup mode preservation.
 - `AZURE_APP_SERVICE.md` — Azure operations runbook.
 

@@ -11,6 +11,8 @@ The deploy workflow vendors `requirements.txt` into `.python_packages/lib/site-p
 inside the ZIP and marks `startup.txt` executable before packaging. The script prepends
 `.python_packages` to `PYTHONPATH`, which keeps the site bootable even when Azure starts
 from read-only ZIP contents without an Oryx-created virtual environment.
+Before uploading the ZIP, the workflow also verifies the WSGI startup files and direct
+startup helpers such as `db_journal_mode.py` are present in the staged package.
 
 Local development uses:
 

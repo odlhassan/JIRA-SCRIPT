@@ -15,6 +15,7 @@ INFO_IDS: `employee.team_avg_score`, `employee.advanced_score_sum`, `employee.ca
 - Employee capacity is `base_capacity_hours - planned_leave_hours`. Unplanned leave is displayed but not deducted from capacity.
 - Capacity Profile Expanded Settings computes Business Days from the active report date filter. If the date inputs form the specific accidental pattern `1 <month> <year>` to the last day of the same month in the next year, the browser corrects `To` back to the same month/year before scoped subtask loading, employee capacity, and Business Days are calculated.
 - Simple Score is `clamp(100 * (1 - adjusted_overrun / total_estimated_hours), 0, 100)`. When due-completion is enabled, over-estimate subtasks finished on or before due date forgive their overrun hours.
+- Actual completion uses the earlier of a work item's last logged date and `resolved_stable_since_date` when both exist. The resolved date therefore caps a later worklog date; when only one date exists, that date is used. This cutoff affects completion/due scoring only and does not remove post-resolution hours from actual-hour totals.
 - Advanced Score is the weighted normalized sum of Estimate Discipline, Due-Date Delivery, Subtask Timeliness, Bug Quality, Late-Bug Severity, and Leave Reliability. Weights must total 100; factors with zero denominator are N/A and their weight is redistributed.
 
 ## Business Cases
@@ -81,7 +82,7 @@ The Teams filter is still backed by a hidden multi-select (`#teams`) so existing
 - `report_server.py` injects the shared refresh widget, busy-modal CSS, and 409-conflict handling used by this screen.
 - `monthly_epic_plan_progress_service.py` owns the `support_team_config` table and support-team roster model that the Employee Performance Teams filter reads read-only for member chips.
 - `support_center_service.py` and `SUPPORT_CENTER_REPORT.md` also depend on the same support-team roster for support availability reporting.
-- `support_booking_registry.py` (new) also reads `support_team_config` read-only, to seed the per-month Support Hour Bookings admin control under `/settings/performance`. See `docs/capacity-user-guide/screens/07-support-hour-bookings.md`.
+- `support_booking_registry.py` (new) also reads `support_team_config` read-only, and its `/settings/performance` consumer reads managed projects to render the Support Hour Bookings admin control with project names and the requested default ordering. See `docs/capacity-user-guide/screens/07-support-hour-bookings.md`.
 - `tests/test_report_date_filter_api.py` verifies the served Employee Performance HTML keeps valid busy-modal overlay CSS.
 - `docs/report-user-guide/screens/02-dashboard-report.md` tracks the same shared refresh widget behavior used by dashboard-style reports.
 

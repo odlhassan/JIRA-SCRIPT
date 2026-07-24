@@ -325,6 +325,12 @@ class RltLeaveReportTests(unittest.TestCase):
         self.assertIn("const statUnknownTakenHoursEl=document.getElementById('stat-unknown-taken-hours');", html_text)
         self.assertIn('current.unknown += Number(row.unknown_taken_hours || 0);', html_text)
         self.assertIn('const totalTaken = plannedTaken + unplannedTaken + unknownTaken;', html_text)
+        self.assertIn(
+            '["issue_key","assignee","summary","leave_type_raw","leave_classification","classification_source","created","start_date","due_date","verification_reference_date"',
+            html_text,
+        )
+        self.assertIn('"start_date": "2026-03-24"', html_text)
+        self.assertIn('"due_date": "2026-03-24"', html_text)
 
     def test_redistribute_continuous_leave_even_split_weekdays(self):
         subtasks = [self._subtask(start_date="2026-01-05", due_date="2026-01-09", estimate=40.0)]

@@ -8,6 +8,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterable
 
+from db_journal_mode import apply_journal_mode
+
 
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
@@ -34,7 +36,7 @@ def get_db_path() -> Path:
 
 
 def init_db(conn: sqlite3.Connection) -> None:
-    conn.execute("PRAGMA journal_mode=WAL")
+    apply_journal_mode(conn)
     conn.execute("PRAGMA synchronous=NORMAL")
     conn.executescript(
         """

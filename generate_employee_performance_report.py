@@ -85,9 +85,9 @@ def _derive_actual_completion(
     resolved_stable = _parse_iso_date(resolved_stable_since_date)
     candidates = [d for d in (last_log, resolved_stable) if d]
     if candidates:
-        actual_complete_date = max(candidates)
+        actual_complete_date = min(candidates)
         if last_log and resolved_stable:
-            actual_complete_source = "max_last_logged_resolved_stable"
+            actual_complete_source = "earlier_last_logged_resolved_stable"
         elif last_log:
             actual_complete_source = "last_logged_date"
         else:
@@ -2602,14 +2602,16 @@ function actualCompletionSourceText(source) {{
   const src = String(source || "");
   if (src === "last_logged_date") return "Last Logged Date";
   if (src === "resolved_stable_since_date") return "Resolved-stable-since metadata";
-  if (src === "max_last_logged_resolved_stable") return "Later of last worklog and resolved-stable-since";
+  if (src === "earlier_last_logged_resolved_stable") return "Earlier of last worklog and resolved-stable-since";
+  if (src === "max_last_logged_resolved_stable") return "Legacy: later of last worklog and resolved-stable-since";
   return "Not completed";
 }}
 function actualCompletionReason(row) {{
   const source = String(row?.actual_complete_source || "");
   if (source === "last_logged_date") return "Actual complete date came from last logged date.";
   if (source === "resolved_stable_since_date") return "Actual completion date came from resolved-stable-since metadata.";
-  if (source === "max_last_logged_resolved_stable") return "Actual completion uses the later of last worklog date and resolved-stable-since metadata.";
+  if (source === "earlier_last_logged_resolved_stable") return "Actual completion uses the earlier of last worklog date and resolved-stable-since metadata; resolution caps later worklogs.";
+  if (source === "max_last_logged_resolved_stable") return "Legacy completion data used the later of last worklog date and resolved-stable-since metadata.";
   return "No completion date is available yet.";
 }}
 function deriveActualCompletion(plannedDueDate, lastLoggedDate, resolvedStableSince) {{
@@ -2625,9 +2627,9 @@ function deriveActualCompletion(plannedDueDate, lastLoggedDate, resolvedStableSi
   let actualCompleteDate = "";
   let actualCompleteSource = "none";
   if (cand.length) {{
-    actualCompleteDate = cand.reduce((a, b) => (a >= b ? a : b));
+    actualCompleteDate = cand.reduce((a, b) => (a <= b ? a : b));
     actualCompleteSource = lastLog && resolvedStable
-      ? "max_last_logged_resolved_stable"
+      ? "earlier_last_logged_resolved_stable"
       : (lastLog ? "last_logged_date" : "resolved_stable_since_date");
   }}
   let completionBucket = "Not completed";

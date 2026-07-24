@@ -1053,6 +1053,8 @@ def _verification_rows_from_subtasks(subtasks: list[SubtaskRow]) -> list[dict[st
                 "leave_classification": subtask.leave_classification,
                 "classification_source": subtask.classification_source or "leave_type_missing",
                 "created": subtask.created,
+                "start_date": subtask.start_date,
+                "due_date": subtask.due_date,
                 "verification_reference_date": subtask.verification_reference_date,
                 "created_after_leave_date_flag": subtask.created_after_leave_date_flag,
                 "created_after_leave_days": subtask.created_after_leave_days,
@@ -1214,7 +1216,7 @@ def _write_xlsx(
     ws_verification = wb.create_sheet("Verification_Signals")
     _sheet_append_rows(ws_verification, [
         "issue_key", "assignee", "summary", "leave_type_raw", "leave_classification", "classification_source",
-        "created", "verification_reference_date", "created_after_leave_date_flag", "created_after_leave_days",
+        "created", "start_date", "due_date", "verification_reference_date", "created_after_leave_date_flag", "created_after_leave_days",
         "verification_note",
     ], _verification_rows_from_subtasks(subtasks))
 
@@ -1588,7 +1590,7 @@ def _write_html(output_path: Path, project_key: str, project_name: str, from_dat
         <div id="tab-weekly" class="tab-pane">{_html_table(list(weekly_rows[0].keys()) if weekly_rows else ["Assignee","Week","Planned Taken (h)","Unplanned Taken (h)","Unknown Taken (h)","Future Planned (h)","Total (h)"], weekly_rows, "weekly-table")}</div>
         <div id="tab-monthly" class="tab-pane">{_html_table(list(monthly_rows[0].keys()) if monthly_rows else ["Assignee","Month","Planned Taken (h)","Unplanned Taken (h)","Unknown Taken (h)","Future Planned (h)","Total (h)"], monthly_rows, "monthly-table")}</div>
       </section>
-      <section class="panel"><h2>Verification Signals</h2>{_html_table(["issue_key","assignee","summary","leave_type_raw","leave_classification","classification_source","created","verification_reference_date","created_after_leave_date_flag","created_after_leave_days","verification_note"], verification_rows, "verification-table")}</section>
+      <section class="panel"><h2>Verification Signals</h2>{_html_table(["issue_key","assignee","summary","leave_type_raw","leave_classification","classification_source","created","start_date","due_date","verification_reference_date","created_after_leave_date_flag","created_after_leave_days","verification_note"], verification_rows, "verification-table")}</section>
       <section class="panel"><h2>Defective / No Entry</h2>{_html_table(["issue_key","assignee","summary","status","leave_classification","reason","planned_dates","original_estimate_hours"], aggregates['defective'], "defective-table")}</section>
       <section class="panel"><h2>Clubbed Leave Subtasks</h2>{_html_table(["issue_key","assignee","summary","leave_classification","status","logged_hours","estimate_hours","start_date","due_date"], aggregates['clubbed'], "clubbed-table")}</section>
     </div>
@@ -1887,7 +1889,7 @@ const dailyRows = dailyFilteredRaw
 renderTable('daily-table', ["Assignee","Day","Planned Taken (h)","Unplanned Taken (h)","Unknown Taken (h)","Future Planned (h)","Total (h)","Jira Task Id","Jira Task Link"], dailyRows);
  renderTable('weekly-table', ["Assignee","Week","Planned Taken (h)","Unplanned Taken (h)","Unknown Taken (h)","Future Planned (h)","Total (h)"], weeklyRows);
  renderTable('monthly-table', ["Assignee","Month","Planned Taken (h)","Unplanned Taken (h)","Unknown Taken (h)","Future Planned (h)","Total (h)"], monthlyRows);
- renderTable('verification-table', ["issue_key","assignee","summary","leave_type_raw","leave_classification","classification_source","created","verification_reference_date","created_after_leave_date_flag","created_after_leave_days","verification_note"], verificationRows);
+ renderTable('verification-table', ["issue_key","assignee","summary","leave_type_raw","leave_classification","classification_source","created","start_date","due_date","verification_reference_date","created_after_leave_date_flag","created_after_leave_days","verification_note"], verificationRows);
  renderTable('defective-table', ["issue_key","assignee","summary","status","leave_classification","reason","planned_dates","original_estimate_hours"], defectiveRows);
  renderTable('clubbed-table', ["issue_key","assignee","summary","leave_classification","status","logged_hours","estimate_hours","start_date","due_date"], clubbedRows);
 }}

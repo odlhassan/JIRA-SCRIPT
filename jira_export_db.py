@@ -13,6 +13,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from db_journal_mode import apply_journal_mode
+
 from ipp_meeting_utils import normalize_issue_key
 DEFAULT_EXPORTS_DB = "jira_exports.db"
 
@@ -166,7 +168,7 @@ def connect() -> sqlite3.Connection:
     path = get_exports_db_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(path))
-    conn.execute("PRAGMA journal_mode=WAL")
+    apply_journal_mode(conn)
     conn.execute("PRAGMA synchronous=NORMAL")
     conn.row_factory = sqlite3.Row
     return conn

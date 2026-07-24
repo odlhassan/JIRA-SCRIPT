@@ -71,3 +71,7 @@ To force a clean bootstrap:
 - API rate-limit spikes:
   - Use `--incremental` for smart fetch runs.
   - Increase `JIRA_WORKLOG_DELAY_SECONDS` for worklog-heavy runs.
+
+- `database disk image is malformed` (especially on Azure App Service):
+  - The cache DB (`jira_sync_cache.db`) lives on `/home`, an SMB network share where SQLite WAL mode can corrupt files. `jira_incremental_cache.init_db()` now uses rollback journal mode (`DELETE`) everywhere via `db_journal_mode.apply_journal_mode()`. Set `EPR_FORCE_WAL=1` only for an intentional local override.
+  - To recover an already-corrupt cache: delete `jira_sync_cache.db` (plus its `-wal`/`-shm` files) and run a full refresh; the cache is rebuildable. See `AZURE_APP_SERVICE.md` → Notes for the full recovery runbook.

@@ -15,3 +15,8 @@ INFO_IDS: `rlt.total_taken`, `rlt.total_planned_leaves`, `rlt.future_planned`
 ## Drawer Notes
 
 - Drawer describes leave categories and how they are reused in capacity-linked reports.
+
+## Verification Signals
+
+- The report uses `canonical_issues` and `canonical_worklogs` from `assignee_hours_capacity.db` by default, scoped to the last successful canonical refresh run and the RLT project. Direct Jira loading is a legacy, explicit `--source jira` option.
+- The Verification Signals table and Excel sheet include both `start_date` and `due_date` alongside the created timestamp and derived verification reference date, so reviewers can compare the source leave window with the late-creation signal.

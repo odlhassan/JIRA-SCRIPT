@@ -37,6 +37,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+from db_journal_mode import apply_journal_mode
 from db_schema_changelog import (
     DEFAULT_CHANGELOG_DB,
     get_latest_snapshot,
@@ -246,7 +247,7 @@ def execute_migration(
     _emit(f"Migration started. {total} step(s).")
 
     with sqlite3.connect(prod_db_path) as conn:
-        conn.execute("PRAGMA journal_mode=WAL")
+        apply_journal_mode(conn)
         conn.execute("PRAGMA foreign_keys=OFF")
 
         for step in steps:
