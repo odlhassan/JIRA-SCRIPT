@@ -23,6 +23,7 @@ from generate_employee_performance_report import (
     _load_work_items,
     _load_worklogs,
     _load_work_items_from_canonical_db,
+    _load_worklogs_from_canonical_db,
     _load_performance_settings,
     _normalize_performance_settings,
     _precompute_simple_scoring,
@@ -782,6 +783,38 @@ class EmployeePerformanceReportTests(unittest.TestCase):
                 conn.commit()
             loaded = _load_work_items_from_canonical_db(db_path, run_id)
             self.assertEqual(loaded["O2-500"].get("resolved_stable_since_date"), "2026-03-18")
+
+    def test_canonical_worklogs_use_latest_worklog_run_after_partial_issue_refresh(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            db_path = Path(td) / "jira_exports.db"
+            _init_canonical_refresh_db(db_path)
+            worklog_run_id = _seed_canonical_run(db_path, "worklogs-august")
+            partial_issue_run_id = "issues-only-newer"
+            now = "2026-08-31T00:00:00+00:00"
+            with sqlite3.connect(db_path) as conn:
+                conn.execute(
+                    """
+                    INSERT INTO canonical_refresh_runs(
+                        run_id, scope_year, managed_project_keys_json, started_at_utc, ended_at_utc,
+                        status, trigger_source, error_message, stats_json,
+                        progress_step, progress_pct, cancel_requested, updated_at_utc
+                    ) VALUES (?, 2026, '[]', ?, ?, 'success', 'test', '', '{}', 'done', 100, 0, ?)
+                    """,
+                    (partial_issue_run_id, now, now, now),
+                )
+                conn.execute(
+                    """
+                    UPDATE canonical_worklogs
+                    SET started_date='2026-08-12', started_utc='2026-08-12T10:00:00+00:00'
+                    WHERE run_id=? AND worklog_id='wl-1'
+                    """,
+                    (worklog_run_id,),
+                )
+                conn.commit()
+            work_items = _load_work_items_from_canonical_db(db_path, worklog_run_id)
+            rows = _load_worklogs_from_canonical_db(db_path, partial_issue_run_id, work_items)
+            self.assertEqual(len(rows), 2)
+            self.assertIn("2026-08-12", {row["worklog_date"] for row in rows})
 
     def test_precompute_simple_scoring_persists_actual_completion_fields(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:

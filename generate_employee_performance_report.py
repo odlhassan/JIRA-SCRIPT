@@ -1100,13 +1100,22 @@ def _load_worklogs_from_canonical_db(db_path: Path, run_id: str, work_items: dic
         return []
     with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
+        # Canonical issue refreshes may be partial (for example an issue-only refresh)
+        # and therefore have no worklogs. Monthly Epic Plan Progress intentionally uses
+        # the most recently persisted canonical worklog run, so use the same source here.
+        # This keeps month totals aligned instead of reporting zero after a partial refresh.
+        latest_worklog_run = conn.execute(
+            "SELECT run_id FROM canonical_worklogs ORDER BY rowid DESC LIMIT 1"
+        ).fetchone()
+        worklog_run_id = _to_text(latest_worklog_run["run_id"]) if latest_worklog_run else run_id
+        worklog_run_id = worklog_run_id or run_id
         rows = conn.execute(
             """
             SELECT issue_key, issue_assignee, started_date, hours_logged, project_key, worklog_author
             FROM canonical_worklogs
             WHERE run_id = ?
             """,
-            (run_id,),
+            (worklog_run_id,),
         ).fetchall()
     out: list[dict] = []
     for row in rows:
