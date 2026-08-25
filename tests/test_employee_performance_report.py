@@ -375,6 +375,10 @@ class EmployeePerformanceReportTests(unittest.TestCase):
         self.assertIn('id="employee-workload-table"', html)
         self.assertIn('id="employee-workload-month"', html)
         self.assertIn('id="employee-workload-log-scope"', html)
+        self.assertIn('id="employee-workload-show-resigned"', html)
+        self.assertIn('id="employee-workload-indicate-support"', html)
+        self.assertIn("Display resigned", html)
+        self.assertIn("Indicate support", html)
         self.assertIn("Any employee worklog", html)
         self.assertIn("Only assigned subtasks", html)
         self.assertIn("Employee Name", html)
@@ -385,6 +389,11 @@ class EmployeePerformanceReportTests(unittest.TestCase):
         self.assertIn("isSubtaskPerformanceType(row.item_issue_type", html)
         self.assertIn("computePerAssigneeCapacity(from, to, activeProfile)", html)
         self.assertIn("employeeWorkloadLogScopeEl.addEventListener(\"change\", renderAll)", html)
+        self.assertIn("employeeWorkloadShowResignedEl.addEventListener(\"change\", renderAll)", html)
+        self.assertIn("employee-workload-total", html)
+        self.assertIn('name:"Grand Total"', html)
+        self.assertIn("isSupportTeamMember(record.name)", html)
+        self.assertIn("function employeeWorkloadAllowed(name, showResigned)", html)
 
     def test_html_applies_subtask_only_scope_for_performance_kpis(self):
         payload = _build_payload([], [], [], dict(DEFAULT_PERFORMANCE_SETTINGS), [], [], [], [])

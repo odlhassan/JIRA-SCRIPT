@@ -1755,6 +1755,8 @@ def _build_html(payload: dict) -> str:
     .employee-workload-cell {{ appearance:none; border:0; border-bottom:1px dashed #5e8ec8; background:transparent; color:inherit; font:inherit; font-weight:800; cursor:pointer; padding:0; }}
     .employee-workload-cell:hover, .employee-workload-cell:focus-visible {{ color:#7dd3fc; border-bottom-color:#7dd3fc; outline:none; }}
     .employee-workload-muted {{ color:var(--muted); font-size:.74rem; }}
+    .employee-workload-total td {{ background:rgba(59,130,246,.12); border-top:2px solid #4f7fb8; font-weight:900; }}
+    .employee-workload-support-chip {{ display:inline-block; margin-left:6px; padding:2px 6px; border:1px solid #0f766e; border-radius:999px; color:#99f6e4; background:rgba(13,148,136,.18); font-size:.66rem; font-weight:900; letter-spacing:.04em; vertical-align:middle; }}
     @media (max-width: 720px) {{ .score-subtask-filter-bar {{ grid-template-columns:1fr; }} }}
     body.score-drawer-open {{ overflow:hidden; }}
     .scoring-sections-stack {{ display:grid; gap:10px; margin-top:10px; }}
@@ -2383,6 +2385,8 @@ def _build_html(payload: dict) -> str:
       <div class="employee-workload-controls">
         <label for="employee-workload-month">Month<input id="employee-workload-month" type="month"></label>
         <label for="employee-workload-log-scope">Logged hours<select id="employee-workload-log-scope"><option value="any">Any employee worklog</option><option value="assigned_subtasks">Only assigned subtasks</option></select></label>
+        <label class="control-toggle" for="employee-workload-show-resigned"><input id="employee-workload-show-resigned" type="checkbox"><span>Display resigned</span></label>
+        <label class="control-toggle" for="employee-workload-indicate-support"><input id="employee-workload-indicate-support" type="checkbox" checked><span>Indicate support</span></label>
       </div>
     </div>
     <div id="employee-workload-table" class="employee-workload-table-wrap"></div>
@@ -3228,18 +3232,10 @@ function closeScoreDrawer() {{
   scoreDrawerAssignee = "";
   scoreDrawerMode = "simple";
 }}
-function employeeWorkloadAllowed(name) {{
+function employeeWorkloadAllowed(name, showResigned) {{
   const assignee = String(name || "").trim();
   if (!assignee) return false;
-  const teamSet = selectedTeams();
-  if (!teamSet.size || !Array.isArray(teams) || !teams.length) return !excludedMembers.has(assignee.toLowerCase());
-  for (const team of teams) {{
-    if (!teamSet.has(String(team.team_name || ""))) continue;
-    if ((Array.isArray(team.assignees) ? team.assignees : []).some((member) => String(member || "").trim().toLowerCase() === assignee.toLowerCase())) {{
-      return !excludedMembers.has(assignee.toLowerCase());
-    }}
-  }}
-  return false;
+  return Boolean(showResigned) || !resourceRecordFor(assignee).resigned;
 }}
 function employeeWorkloadIssueCell(issueKey) {{
   const key = String(issueKey || "").toUpperCase();
@@ -3281,11 +3277,15 @@ function renderEmployeeWorkloadTable(items) {{
   const host = document.getElementById("employee-workload-table");
   const monthInput = document.getElementById("employee-workload-month");
   const scopeInput = document.getElementById("employee-workload-log-scope");
-  if (!host || !monthInput || !scopeInput) return;
+  const showResignedInput = document.getElementById("employee-workload-show-resigned");
+  const indicateSupportInput = document.getElementById("employee-workload-indicate-support");
+  if (!host || !monthInput || !scopeInput || !showResignedInput || !indicateSupportInput) return;
   const from = String(document.getElementById("from")?.value || defaultFrom || "");
   const to = String(document.getElementById("to")?.value || defaultTo || "");
   if (/^\\d{{4}}-\\d{{2}}/.test(from)) monthInput.value = from.slice(0, 7);
   const logScope = String(scopeInput.value || "any");
+  const showResigned = Boolean(showResignedInput.checked);
+  const indicateSupport = Boolean(indicateSupportInput.checked);
   const activeProfile = resolveActiveCapacityProfile(from, to);
   const holidays = (Array.isArray(activeProfile?.holiday_dates) ? activeProfile.holiday_dates : []).map((day) => String(day || "")).filter((day) => inRange(day, from, to)).sort();
   const projectSet = selectedProjects();
@@ -3296,7 +3296,7 @@ function renderEmployeeWorkloadTable(items) {{
   for (const row of leaveRows) if (String(row.assignee || "").trim()) names.add(String(row.assignee).trim());
   const records = [];
   for (const name of Array.from(names).sort((a,b) => a.localeCompare(b))) {{
-    if (!employeeWorkloadAllowed(name)) continue;
+    if (!employeeWorkloadAllowed(name, showResigned)) continue;
     const bookedRows = workItems.filter((item) => String(item.assignee || "").trim().toLowerCase() === name.toLowerCase() && isSubtaskPerformanceType(item.jira_issue_type || item.issue_type || item.work_item_type || "") && !isLeaveIssueKey(String(item.issue_key || "")) && (!useProjects || projectSet.has(String(item.project_key || "UNKNOWN"))) && datePairOverlaps(item.start_date, item.due_date, from, to));
     const allLogRows = worklogs.filter((row) => String(row.issue_assignee || "").trim().toLowerCase() === name.toLowerCase() && inRange(String(row.worklog_date || ""), from, to) && (!useProjects || projectSet.has(String(row.project_key || "UNKNOWN"))));
     const loggedRows = logScope === "assigned_subtasks" ? allLogRows.filter((row) => String(row.item_assignee || "").trim().toLowerCase() === name.toLowerCase() && isSubtaskPerformanceType(row.item_issue_type || row.issue_type || "") && !isLeaveIssueKey(String(row.issue_id || ""))) : allLogRows;
@@ -3311,8 +3311,17 @@ function renderEmployeeWorkloadTable(items) {{
   const columns = [
     ["capacity", "Capacity (Hours)", (r) => `${{r.capacity.toFixed(2)}}h`], ["official_leaves", "Official Leaves", (r) => `${{r.officialLeaveDays}} day${{r.officialLeaveDays === 1 ? "" : "s"}}`], ["leaves_taken", "Leaves Taken", (r) => `${{r.leavesTaken.toFixed(2)}}h`], ["availability", "Availability", (r) => `${{r.availability.toFixed(2)}}h`], ["booked", "Booked Manhours", (r) => `${{r.booked.toFixed(2)}}h`], ["logged", "Logged Hours", (r) => `${{r.logged.toFixed(2)}}h`], ["utilization", "Utilization", (r) => r.utilization == null ? "N/A" : `${{r.utilization.toFixed(1)}}%`]
   ];
-  host.innerHTML = `<table class="employee-workload-table"><thead><tr><th>Employee Name</th>${{columns.map((col) => `<th>${{e(col[1])}}</th>`).join("")}}</tr></thead><tbody>${{records.length ? records.map((record, index) => `<tr><td><button class="employee-workload-cell" data-workload-row="${{index}}" data-workload-metric="name">${{e(record.name)}}</button></td>${{columns.map((col) => `<td><button class="employee-workload-cell" data-workload-row="${{index}}" data-workload-metric="${{col[0]}}">${{e(col[2](record))}}</button></td>`).join("")}}</tr>`).join("") : `<tr><td colspan="8" class="employee-workload-muted">No employees match the active filters.</td></tr>`}}</tbody></table>`;
-  host.querySelectorAll("[data-workload-row]").forEach((button) => button.addEventListener("click", () => {{ const record=records[Number(button.getAttribute("data-workload-row"))]; if (record) openEmployeeWorkloadDrawer(record, button.getAttribute("data-workload-metric") === "name" ? "availability" : button.getAttribute("data-workload-metric")); }}));
+  const total = records.reduce((acc, record) => ({{
+    ...acc, capacity:acc.capacity + record.capacity, leavesTaken:acc.leavesTaken + record.leavesTaken,
+    availability:acc.availability + record.availability, booked:acc.booked + record.booked, logged:acc.logged + record.logged,
+    bookedRows:acc.bookedRows.concat(record.bookedRows), loggedRows:acc.loggedRows.concat(record.loggedRows), leaveRows:acc.leaveRows.concat(record.leaveRows)
+  }}), {{name:"Grand Total", from, to, logScope, holidays, officialLeaveDays:holidays.length, capacity:0, leavesTaken:0, availability:0, booked:0, logged:0, bookedRows:[], loggedRows:[], leaveRows:[]}});
+  total.utilization = total.availability > 0 ? (total.logged / total.availability) * 100 : null;
+  const nameCell = (record, index) => `${{e(record.name)}}${{indicateSupport && record.name !== "Grand Total" && isSupportTeamMember(record.name) ? '<span class="employee-workload-support-chip">Support</span>' : ""}}`;
+  const rowHtml = (record, index, extraClass="") => `<tr class="${{extraClass}}"><td><button class="employee-workload-cell" data-workload-row="${{index}}" data-workload-metric="name">${{nameCell(record, index)}}</button></td>${{columns.map((col) => `<td><button class="employee-workload-cell" data-workload-row="${{index}}" data-workload-metric="${{col[0]}}">${{e(col[2](record))}}</button></td>`).join("")}}</tr>`;
+  const allRecords = records.concat([total]);
+  host.innerHTML = `<table class="employee-workload-table"><thead><tr><th>Employee Name</th>${{columns.map((col) => `<th>${{e(col[1])}}</th>`).join("")}}</tr></thead><tbody>${{records.length ? records.map((record, index) => rowHtml(record, index)).join("") + rowHtml(total, records.length, "employee-workload-total") : `<tr><td colspan="8" class="employee-workload-muted">No employees match the selected display options.</td></tr>`}}</tbody></table>`;
+  host.querySelectorAll("[data-workload-row]").forEach((button) => button.addEventListener("click", () => {{ const record=allRecords[Number(button.getAttribute("data-workload-row"))]; if (record) openEmployeeWorkloadDrawer(record, button.getAttribute("data-workload-metric") === "name" ? "availability" : button.getAttribute("data-workload-metric")); }}));
 }}
 function clamp(v, minv, maxv) {{ return Math.max(minv, Math.min(maxv, v)); }}
 function applyPerformanceSettings(nextSettings) {{
@@ -6383,6 +6392,8 @@ if (topEfficiencyModeEl) {{
 }}
 const employeeWorkloadMonthEl = document.getElementById("employee-workload-month");
 const employeeWorkloadLogScopeEl = document.getElementById("employee-workload-log-scope");
+const employeeWorkloadShowResignedEl = document.getElementById("employee-workload-show-resigned");
+const employeeWorkloadIndicateSupportEl = document.getElementById("employee-workload-indicate-support");
 if (employeeWorkloadMonthEl) {{
   employeeWorkloadMonthEl.addEventListener("change", () => {{
     const month = String(employeeWorkloadMonthEl.value || "");
@@ -6396,6 +6407,8 @@ if (employeeWorkloadMonthEl) {{
   }});
 }}
 if (employeeWorkloadLogScopeEl) employeeWorkloadLogScopeEl.addEventListener("change", renderAll);
+if (employeeWorkloadShowResignedEl) employeeWorkloadShowResignedEl.addEventListener("change", renderAll);
+if (employeeWorkloadIndicateSupportEl) employeeWorkloadIndicateSupportEl.addEventListener("change", renderAll);
 if (scoreDrawerCloseEl) {{
   scoreDrawerCloseEl.addEventListener("click", closeScoreDrawer);
 }}
