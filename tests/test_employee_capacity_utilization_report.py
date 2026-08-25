@@ -27,6 +27,13 @@ class EmployeeCapacityUtilizationReportTests(unittest.TestCase):
         self.assertIn("width:17px!important", html)
         self.assertIn("position:sticky", html)
         self.assertIn("event.key==='Escape'", html)
+        self.assertIn('id="util-a"', html)
+        self.assertIn('id="util-b"', html)
+        self.assertIn('id="util-c"', html)
+        self.assertIn('name="color-scope"', html)
+        self.assertIn("employeeCapacityUtilization.colorRules.v1", html)
+        self.assertIn("utilizationBand", html)
+        self.assertIn("Enter increasing values", html)
 
     def test_report_is_available_to_page_categorization(self):
         pages = _base_page_catalog()

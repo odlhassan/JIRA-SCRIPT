@@ -19,6 +19,7 @@ This standalone report presents employee capacity, profile holidays, personal le
 | Capacity profile | Auto | Selects the capacity calendar. |
 | Teams | All except Process Team | Includes unassigned employees and employees in selected configured teams; Process-Team-only resources are hidden by default. Changes apply immediately. |
 | Logged hours | Any employee worklog | Switches all worklogs vs assigned-subtask worklogs. |
+| Color formatting | Utilization only; A=50%, B=80%, C=100% | Colors utilization from 0–A red, above A–B orange, and above B–C green. Values above C remain unfilled. The user can apply the color to the Utilization cell only or the entire employee row. Rules apply immediately and persist in browser storage. |
 | Display resigned | Off | Includes resigned resources. |
 | Indicate support | On | Adds a Support chip for `support_team_config` members. |
 
@@ -36,3 +37,4 @@ There is no Apply or Refresh button. Every filter change redraws the table immed
 - The report now uses production runtime data instead of the canonical payload embedded when the HTML was generated.
 - Filters were reorganized into a responsive control panel with switch controls, a team-count summary, and a sticky, readable data table.
 - The Teams dropdown uses compact aligned checkboxes, single-line team labels, sticky selection actions, a bounded scroll area, and closes on outside click or Escape.
+- Utilization thresholds and row-versus-column color scope are user-configurable, validated as `0 ≤ A < B < C ≤ 500`, and saved per browser.
