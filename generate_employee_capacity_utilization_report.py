@@ -1,0 +1,53 @@
+from __future__ import annotations
+
+import json
+from datetime import datetime, timezone
+from pathlib import Path
+
+from canonical_report_data import build_rlt_leave_snapshot
+from generate_assignee_hours_report import _list_capacity_profiles
+from generate_employee_performance_report import (
+    _load_performance_resource_resignation_map,
+    _load_support_team_members,
+    _load_work_items_from_canonical_db,
+    _load_worklogs_from_canonical_db,
+    _list_performance_teams,
+    _resolve_canonical_run_id,
+)
+
+
+OUTPUT = "employee_capacity_utilization_report.html"
+
+
+def _html(payload: dict) -> str:
+    data = json.dumps(payload, ensure_ascii=True)
+    return """<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Employee Capacity & Utilization</title>
+<style>
+ :root{--bg:#08162c;--panel:#102442;--line:#294b79;--ink:#edf5ff;--muted:#9bb4d6;--accent:#60a5fa;--chip:#123e55}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px "Segoe UI",sans-serif}.wrap{max-width:1900px;margin:auto;padding:28px}.head{display:flex;justify-content:space-between;align-items:end;gap:24px;margin-bottom:18px}.head h1{font-size:24px;margin:0}.head p{margin:6px 0 0;color:var(--muted)}.toolbar{display:flex;gap:10px;align-items:end;flex-wrap:wrap;padding:14px;background:var(--panel);border:1px solid var(--line);border-radius:14px;margin-bottom:14px}.control{display:grid;gap:5px;color:var(--muted);font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase}.control select,.control input,.team-picker summary{min-height:38px;border:1px solid #3b669d;border-radius:8px;background:#0b1d38;color:var(--ink);padding:8px 10px;font:600 14px inherit}.toggle{display:flex;align-items:center;gap:8px;min-height:38px;padding:0 12px;border:1px solid #3b669d;border-radius:8px;background:#0b1d38;color:var(--ink);font-weight:700;text-transform:none;letter-spacing:0}.teams{min-width:240px;position:relative}.team-picker summary{list-style:none;cursor:pointer;text-transform:none;letter-spacing:0}.team-picker summary::-webkit-details-marker{display:none}.team-options{position:absolute;z-index:5;min-width:270px;max-height:280px;overflow:auto;margin-top:6px;padding:8px;border:1px solid #3b669d;border-radius:10px;background:#0b1d38;box-shadow:0 14px 28px #020817}.team-option{display:flex;align-items:center;gap:8px;padding:8px;border-radius:6px;color:var(--ink);font-size:13px;font-weight:600;text-transform:none;letter-spacing:0}.team-option:hover{background:#17365f}.table-wrap{border:1px solid var(--line);border-radius:14px;overflow:auto;background:var(--panel)}table{width:100%;min-width:1120px;border-collapse:collapse}th{background:#122c50;color:#cfe3ff;font-size:11px;letter-spacing:.05em;text-transform:uppercase;text-align:left}th,td{padding:13px 14px;border-bottom:1px solid #23466f}td.num{text-align:right;font-variant-numeric:tabular-nums}.support{display:inline-block;margin-left:7px;padding:2px 7px;border-radius:99px;background:var(--chip);border:1px solid #1c8a91;color:#a5f3fc;font-size:11px;font-weight:800}.total td{font-weight:900;background:rgba(96,165,250,.13);border-top:2px solid var(--accent)}.empty{padding:24px;color:var(--muted)}@media(max-width:700px){.wrap{padding:14px}.head{align-items:start;flex-direction:column}}
+</style></head><body><main class="wrap"><header class="head"><div><h1>Employee Capacity &amp; Utilization</h1><p>Canonical Jira worklogs, capacity profile, leave, booking and utilization by employee.</p></div></header><section class="toolbar"><label class="control">Month<input id="month" type="month"></label><label class="control">Capacity profile<select id="profile"></select></label><div class="control teams"><span>Teams</span><details class="team-picker"><summary>Selected teams</summary><div id="teams" class="team-options"></div></details></div><label class="control">Logged hours<select id="scope"><option value="any">Any employee worklog</option><option value="assigned">Only assigned subtasks</option></select></label><label class="control toggle"><input id="resigned" type="checkbox">Display resigned</label><label class="control toggle"><input id="support" type="checkbox" checked>Indicate support</label></section><section class="table-wrap"><div id="table"></div></section></main><script>const data=__DATA__;
+const n=x=>Number(x||0),txt=x=>String(x||""),key=x=>txt(x).trim().toLowerCase();const issues=data.issues||[],logs=data.worklogs||[],leaves=data.leaves||[],teams=data.teams||[],profiles=data.profiles||[],support=new Set((data.support||[]).map(key)),resources=data.resources||{};
+const month=document.querySelector('#month'),profile=document.querySelector('#profile'),team=document.querySelector('#teams'),scope=document.querySelector('#scope'),resigned=document.querySelector('#resigned'),supportToggle=document.querySelector('#support'),table=document.querySelector('#table');
+const now=new Date();month.value=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;profile.innerHTML='<option value="">Auto profile</option>'+profiles.map((p,i)=>`<option value="${i}">${p.from_date} – ${p.to_date}</option>`).join('');team.innerHTML=teams.map(t=>`<label class="team-option"><input type="checkbox" value="${t.team_name}" ${key(t.team_name)==='process team'?'':'checked'}>${t.team_name}</label>`).join('');
+function activeProfile(){const m=month.value+'-01',selected=profile.value;if(selected!=='')return profiles[n(selected)]||{};return profiles.find(p=>txt(p.from_date)<=m&&txt(p.to_date)>=m)||profiles[0]||{}}function days(){const [y,m]=month.value.split('-').map(Number);return {from:`${y}-${String(m).padStart(2,'0')}-01`,to:`${y}-${String(m).padStart(2,'0')}-${new Date(y,m,0).getDate()}`}}function capacity(p,range){let h=0,d=new Date(range.from+'T00:00:00'),e=new Date(range.to+'T00:00:00'),hol=new Set(p.holiday_dates||[]);for(;d<=e;d.setDate(d.getDate()+1)){let iso=d.toISOString().slice(0,10);if(d.getDay()&&d.getDay()<6&&!hol.has(iso))h+=txt(p.ramadan_start_date)<=iso&&iso<=txt(p.ramadan_end_date)&&txt(p.ramadan_start_date)?n(p.ramadan_hours_per_day):n(p.standard_hours_per_day||8)}return h}function overlap(a,b,r){return txt(a)&&txt(b)&&txt(a)<=r.to&&txt(b)>=r.from}function selectedNames(){let out=new Set;for(const t of teams)if([...team.querySelectorAll('input:checked')].some(o=>o.value===t.team_name))for(const x of(t.assignees||[]))out.add(key(x));return out}
+function render(){const r=days(),p=activeProfile(),names=new Set([...issues.map(x=>x.assignee),...logs.map(x=>x.worklog_author||x.issue_assignee),...leaves.map(x=>x.assignee)].map(key));const allowed=selectedNames(),checked=team.querySelectorAll('input:checked').length,allTeams=!teams.length||checked===teams.length;let rows=[];for(const nk of names){if(!nk||(!allTeams&&!allowed.has(nk)))continue;let label=Object.keys(resources).find(x=>key(x)===nk)||issues.find(x=>key(x.assignee)===nk)?.assignee||logs.find(x=>key(x.worklog_author||x.issue_assignee)===nk)?.worklog_author||'';if(!resigned.checked&&resources[label]?.resigned)continue;let bookedRows=issues.filter(x=>key(x.assignee)===nk&&/sub-?task/i.test(txt(x.issue_type))&&!txt(x.issue_key).startsWith('RLT-')&&overlap(x.start_date,x.due_date,r));let logRows=logs.filter(x=>key(x.worklog_author||x.issue_assignee)===nk&&txt(x.worklog_date)>=r.from&&txt(x.worklog_date)<=r.to&&(scope.value==='any'||(key(x.item_assignee)===nk&&/sub-?task/i.test(txt(x.item_issue_type)))));let leaveRows=leaves.filter(x=>key(x.assignee)===nk&&txt(x.period_day)>=r.from&&txt(x.period_day)<=r.to);let cap=capacity(p,r),taken=leaveRows.reduce((s,x)=>s+n(x.planned_taken_hours)+n(x.unplanned_taken_hours),0),booked=bookedRows.reduce((s,x)=>s+n(x.original_estimate_hours),0),logged=logRows.reduce((s,x)=>s+n(x.hours_logged),0),available=Math.max(0,cap-taken);rows.push({label,cap,taken,available,booked,logged,util:available?logged/available*100:0})}rows.sort((a,b)=>a.label.localeCompare(b.label));let total=rows.reduce((a,x)=>({cap:a.cap+x.cap,taken:a.taken+x.taken,available:a.available+x.available,booked:a.booked+x.booked,logged:a.logged+x.logged}),{cap:0,taken:0,available:0,booked:0,logged:0});total.label='Grand Total';total.util=total.available?total.logged/total.available*100:0;let official=(p.holiday_dates||[]).filter(x=>x>=r.from&&x<=r.to).length;const line=(x,c='')=>`<tr class="${c}"><td>${x.label}${supportToggle.checked&&x.label!=='Grand Total'&&support.has(key(x.label))?'<span class="support">Support</span>':''}</td><td class="num">${x.cap.toFixed(2)}h</td><td class="num">${c?official+' days':''}</td><td class="num">${x.taken.toFixed(2)}h</td><td class="num">${x.available.toFixed(2)}h</td><td class="num">${x.booked.toFixed(2)}h</td><td class="num">${x.logged.toFixed(2)}h</td><td class="num">${x.util.toFixed(1)}%</td></tr>`;table.innerHTML=rows.length?`<table><thead><tr><th>Employee Name</th><th>Capacity (Hours)</th><th>Official Leaves</th><th>Leaves Taken</th><th>Availability</th><th>Booked Manhours</th><th>Logged Hours</th><th>Utilization</th></tr></thead><tbody>${rows.map(x=>line(x)).join('')}${line(total,'total')}</tbody></table>`:'<div class="empty">No employees match the selected Teams filter.</div>'}for(const el of[month,profile,team,scope,resigned,supportToggle])el.addEventListener('change',render);render();</script><script src="/shared-nav.js"></script></body></html>""".replace("__DATA__", data)
+
+
+def main() -> None:
+    base = Path(__file__).resolve().parent
+    db = base / "assignee_hours_capacity.db"
+    run_id = _resolve_canonical_run_id(db, "")
+    if not run_id:
+        raise RuntimeError("Employee Capacity & Utilization requires a successful canonical refresh run.")
+    items = _load_work_items_from_canonical_db(db, run_id)
+    worklogs = _load_worklogs_from_canonical_db(db, run_id, items)
+    leave = list(build_rlt_leave_snapshot(db, run_id).get("daily") or [])
+    teams = _list_performance_teams(db)
+    names = {str(x.get("assignee") or "") for x in items.values()} | {str(x.get("issue_assignee") or "") for x in worklogs} | {str(x.get("assignee") or "") for x in leave}
+    resources = _load_performance_resource_resignation_map(db, sorted(x for x in names if x))
+    payload = {"issues": list(items.values()), "worklogs": worklogs, "leaves": leave, "teams": teams, "profiles": _list_capacity_profiles(db), "support": _load_support_team_members(db), "resources": resources, "canonical_run_id": run_id, "generated_at": datetime.now(timezone.utc).isoformat()}
+    (base / OUTPUT).write_text(_html(payload), encoding="utf-8")
+    print(f"Wrote canonical Employee Capacity & Utilization report: {base / OUTPUT}")
+
+
+if __name__ == "__main__": main()

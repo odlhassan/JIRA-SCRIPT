@@ -27,6 +27,7 @@
         { page_key: "missed_entries_report", title: "Missed Entries Report", href: resolveReportHref("missed_entries.html"), icon: "event_busy", file: "missed_entries.html" },
         { page_key: "assignee_hours_report", title: "Assignee Hours Report", href: resolveReportHref("assignee_hours_report.html"), icon: "schedule", file: "assignee_hours_report.html" },
         { page_key: "employee_performance_report", title: "Employee Performance", href: resolveReportHref("employee_performance_report.html"), icon: "monitoring", file: "employee_performance_report.html" },
+        { page_key: "employee_capacity_utilization", title: "Employee Capacity & Utilization", href: resolveReportHref("employee_capacity_utilization_report.html"), icon: "query_stats", file: "employee_capacity_utilization_report.html" },
         { page_key: "rlt_leave_report", title: "RLT Leave Report", href: resolveReportHref("rlt_leave_report.html"), icon: "beach_access", file: "rlt_leave_report.html" },
         { page_key: "leaves_planned_calendar", title: "Leaves Planned Calendar", href: resolveReportHref("leaves_planned_calendar.html"), icon: "calendar_month", file: "leaves_planned_calendar.html" },
         { page_key: "rnd_data_story", title: "RnD Data Story", href: resolveReportHref("rnd_data_story.html"), icon: "auto_stories", file: "rnd_data_story.html" },

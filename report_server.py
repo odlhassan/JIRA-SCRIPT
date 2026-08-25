@@ -277,6 +277,7 @@ REPORT_FILENAME_TO_ID: dict[str, str] = {
     "rlt_leave_report.html": "rlt_leave_report",
     "leaves_planned_calendar.html": "leaves_planned_calendar",
     "employee_performance_report.html": "employee_performance",
+    "employee_capacity_utilization_report.html": "employee_capacity_utilization",
     "planned_vs_dispensed_report.html": "planned_vs_dispensed",
     "approved_vs_planned_hours_report.html": "planned_vs_dispensed",
     "planned_actual_table_view.html": "planned_actual_table_view",
@@ -418,6 +419,7 @@ STATIC_REPORT_NAV_ITEMS: list[dict[str, object]] = [
     {"page_key": "missed_entries_report", "title": "Missed Entries Report", "href": "/missed_entries.html", "icon": "event_busy", "file": "missed_entries.html", "default_nav_order": 30, "page_type": "report"},
     {"page_key": "assignee_hours_report", "title": "Assignee Hours Report", "href": "/assignee_hours_report.html", "icon": "schedule", "file": "assignee_hours_report.html", "default_nav_order": 40, "page_type": "report"},
     {"page_key": "employee_performance_report", "title": "Employee Performance", "href": "/employee_performance_report.html", "icon": "monitoring", "file": "employee_performance_report.html", "default_nav_order": 50, "page_type": "report"},
+    {"page_key": "employee_capacity_utilization", "title": "Employee Capacity & Utilization", "href": "/employee_capacity_utilization_report.html", "icon": "query_stats", "file": "employee_capacity_utilization_report.html", "default_nav_order": 55, "page_type": "report"},
     {"page_key": "rlt_leave_report", "title": "RLT Leave Report", "href": "/rlt_leave_report.html", "icon": "beach_access", "file": "rlt_leave_report.html", "default_nav_order": 60, "page_type": "report"},
     {"page_key": "leaves_planned_calendar", "title": "Leaves Planned Calendar", "href": "/leaves_planned_calendar.html", "icon": "calendar_month", "file": "leaves_planned_calendar.html", "default_nav_order": 70, "page_type": "report"},
     {"page_key": "rnd_data_story", "title": "RnD Data Story", "href": "/rnd_data_story.html", "icon": "auto_stories", "file": "rnd_data_story.html", "default_nav_order": 80, "page_type": "report"},
@@ -22416,6 +22418,7 @@ def _resolve_report_html_sources(base_dir: Path) -> dict[str, Path]:
         "employee_performance_report.html": _resolve_output_html_path(
             "JIRA_EMPLOYEE_PERFORMANCE_HTML_PATH", "employee_performance_report.html", base_dir
         ),
+        "employee_capacity_utilization_report.html": base_dir / "employee_capacity_utilization_report.html",
         "planned_vs_dispensed_report.html": _resolve_output_html_path(
             "JIRA_PLANNED_VS_DISPENSED_HTML_PATH", "planned_vs_dispensed_report.html", base_dir
         ),
