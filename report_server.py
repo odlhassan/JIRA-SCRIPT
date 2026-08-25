@@ -67,6 +67,7 @@ from generate_employee_performance_report import (
     _update_performance_team,
     _upsert_performance_resignation_record,
 )
+from generate_employee_capacity_utilization_report import build_employee_capacity_utilization_payload
 from generate_missed_entries_html import (
     DEFAULT_INPUT_XLSX as MISSED_ENTRIES_DEFAULT_INPUT_XLSX,
     _build_html as missed_entries_build_html,
@@ -377,7 +378,7 @@ REPORT_REFRESH_DEFAULT_RETENTION_RUNS = 10
 REFRESH_WIDGET_MARKER = "codex-refresh-widget-v2"
 REFRESH_WIDGET_START = "<!-- codex-refresh-widget-start -->"
 REFRESH_WIDGET_END = "<!-- codex-refresh-widget-end -->"
-REPORT_IDS_WITHOUT_REFRESH_WIDGET = {"original_estimates_hierarchy", "ipp_meeting_dashboard", "team_capacity_planner"}
+REPORT_IDS_WITHOUT_REFRESH_WIDGET = {"original_estimates_hierarchy", "ipp_meeting_dashboard", "team_capacity_planner", "employee_capacity_utilization"}
 INFO_DRAWER_MARKER = "codex-info-drawer-v1"
 INFO_DRAWER_START = "<!-- codex-info-drawer-start -->"
 INFO_DRAWER_END = "<!-- codex-info-drawer-end -->"
@@ -45827,6 +45828,15 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             return jsonify({"error": str(exc)}), 400
         except Exception as exc:
             return jsonify({"error": f"Failed to load page categories: {exc}"}), 500
+
+    @app.route("/api/employee-capacity-utilization/data", methods=["GET"])
+    def employee_capacity_utilization_data_api():
+        try:
+            return jsonify(build_employee_capacity_utilization_payload(capacity_paths["db_path"]))
+        except RuntimeError as exc:
+            return jsonify({"error": str(exc)}), 409
+        except Exception as exc:
+            return jsonify({"error": f"Failed to load employee capacity and utilization: {exc}"}), 500
 
     @app.route("/api/page-categories", methods=["PUT"])
     def save_page_categories_api():
