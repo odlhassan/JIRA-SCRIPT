@@ -369,6 +369,23 @@ class EmployeePerformanceReportTests(unittest.TestCase):
         self.assertIn("Weighted normalized", html)
         self.assertIn("Daily Advanced Score trend is not shown for the weighted model yet.", html)
 
+    def test_html_contains_employee_capacity_utilization_table_and_drilldowns(self):
+        payload = _build_payload([], [], [], dict(DEFAULT_PERFORMANCE_SETTINGS), [], [], [], [])
+        html = _build_html(payload)
+        self.assertIn('id="employee-workload-table"', html)
+        self.assertIn('id="employee-workload-month"', html)
+        self.assertIn('id="employee-workload-log-scope"', html)
+        self.assertIn("Any employee worklog", html)
+        self.assertIn("Only assigned subtasks", html)
+        self.assertIn("Employee Name", html)
+        self.assertIn("Official Leaves", html)
+        self.assertIn("Booked Manhours", html)
+        self.assertIn("function renderEmployeeWorkloadTable(items)", html)
+        self.assertIn("function openEmployeeWorkloadDrawer(record, metric)", html)
+        self.assertIn("isSubtaskPerformanceType(row.item_issue_type", html)
+        self.assertIn("computePerAssigneeCapacity(from, to, activeProfile)", html)
+        self.assertIn("employeeWorkloadLogScopeEl.addEventListener(\"change\", renderAll)", html)
+
     def test_html_applies_subtask_only_scope_for_performance_kpis(self):
         payload = _build_payload([], [], [], dict(DEFAULT_PERFORMANCE_SETTINGS), [], [], [], [])
         html = _build_html(payload)

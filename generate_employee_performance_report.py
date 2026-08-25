@@ -1740,6 +1740,21 @@ def _build_html(payload: dict) -> str:
     .due-status-pill.neutral {{ border-color:#4b5563; background:#1f2937; color:#d1d5db; }}
     .ss-tbl-all td.penalty-reason-cell {{ min-width:550px; max-width:550px; font-size:.68rem; line-height:1.2; color:#93acd2; }}
     .score-drawer-empty {{ color:#9db1d8; font-size:.78rem; font-style:italic; padding:12px; }}
+    .employee-workload-section {{ margin:14px 0; border:1px solid #34507e; border-radius:12px; background:var(--panel); overflow:hidden; }}
+    .employee-workload-head {{ display:flex; align-items:end; justify-content:space-between; gap:12px; padding:12px 14px; border-bottom:1px solid var(--line); flex-wrap:wrap; }}
+    .employee-workload-title {{ margin:0; font-size:1rem; }}
+    .employee-workload-desc {{ margin:4px 0 0; color:var(--muted); font-size:.78rem; }}
+    .employee-workload-controls {{ display:flex; gap:8px; align-items:end; flex-wrap:wrap; }}
+    .employee-workload-controls label {{ display:flex; flex-direction:column; gap:4px; color:var(--muted); font-size:.7rem; font-weight:800; text-transform:uppercase; letter-spacing:.03em; }}
+    .employee-workload-controls select, .employee-workload-controls input {{ min-height:34px; border:1px solid #3a5c91; border-radius:7px; background:#0d1830; color:var(--ink); padding:6px 9px; font-weight:700; }}
+    .employee-workload-table-wrap {{ overflow:auto; }}
+    .employee-workload-table {{ width:100%; min-width:1050px; border-collapse:collapse; font-size:.8rem; }}
+    .employee-workload-table th {{ position:sticky; top:0; z-index:1; background:#10223f; color:#cfe0ff; text-align:left; white-space:nowrap; font-size:.7rem; text-transform:uppercase; letter-spacing:.04em; }}
+    .employee-workload-table th, .employee-workload-table td {{ padding:9px 11px; border-bottom:1px solid #223a61; }}
+    .employee-workload-table td:not(:first-child) {{ text-align:right; white-space:nowrap; }}
+    .employee-workload-cell {{ appearance:none; border:0; border-bottom:1px dashed #5e8ec8; background:transparent; color:inherit; font:inherit; font-weight:800; cursor:pointer; padding:0; }}
+    .employee-workload-cell:hover, .employee-workload-cell:focus-visible {{ color:#7dd3fc; border-bottom-color:#7dd3fc; outline:none; }}
+    .employee-workload-muted {{ color:var(--muted); font-size:.74rem; }}
     @media (max-width: 720px) {{ .score-subtask-filter-bar {{ grid-template-columns:1fr; }} }}
     body.score-drawer-open {{ overflow:hidden; }}
     .scoring-sections-stack {{ display:grid; gap:10px; margin-top:10px; }}
@@ -2358,6 +2373,19 @@ def _build_html(payload: dict) -> str:
         </div>
       </div>
     </div>
+  </section>
+  <section class="employee-workload-section" aria-labelledby="employee-workload-title">
+    <div class="employee-workload-head">
+      <div>
+        <h2 id="employee-workload-title" class="employee-workload-title">Employee Capacity &amp; Utilization</h2>
+        <p class="employee-workload-desc">Click any value to inspect the source records. Availability is capacity after personal leave; profile holidays are shown separately and are already excluded from capacity.</p>
+      </div>
+      <div class="employee-workload-controls">
+        <label for="employee-workload-month">Month<input id="employee-workload-month" type="month"></label>
+        <label for="employee-workload-log-scope">Logged hours<select id="employee-workload-log-scope"><option value="any">Any employee worklog</option><option value="assigned_subtasks">Only assigned subtasks</option></select></label>
+      </div>
+    </div>
+    <div id="employee-workload-table" class="employee-workload-table-wrap"></div>
   </section>
   <section class="arena">
     <article class="panel"><h2 id="leaderboard-title">Leaderboard</h2><div class="leader-controls"><div class="f toggle-f"><label>Score Display</label><select id="leader-scoring-mode" aria-hidden="true" tabindex="-1" style="position:absolute;opacity:0;pointer-events:none;width:0;height:0;"><option value="simple" selected>Simple Scoring</option><option value="advanced">Advanced Scoring</option></select><div class="hero-segmented score-mode-toggle" role="group" aria-label="Leaderboard score display mode"><button type="button" id="leader-score-simple" class="hero-segment-btn active" data-score-mode="simple"><span class="material-symbols-outlined" aria-hidden="true">speed</span><span>Simple</span></button><button type="button" id="leader-score-advanced" class="hero-segment-btn" data-score-mode="advanced"><span class="material-symbols-outlined" aria-hidden="true">insights</span><span>Advanced</span></button></div></div><div class="f"><label for="leader-sort">Sort By</label><select id="leader-sort"><option value="rmis">RMIs In Range</option><option value="score" selected>Performance Score</option><option value="missed">Missed Start Ratio</option><option value="capacity_gap">Capacity Gap (Cap - Planned)</option><option value="available_more_work">Available for more work</option></select></div><div class="f"><label for="leader-sort-direction">Sort Direction</label><select id="leader-sort-direction"><option value="desc" selected>Descending</option><option value="asc">Ascending</option></select></div><div class="f"><label for="filter-risk">At-Risk View</label><select id="filter-risk"><option value="all" selected>All Assignees</option><option value="risk">Only At-Risk (&lt;60)</option></select></div><div class="f"><label for="filter-missed">Start Discipline</label><select id="filter-missed"><option value="all" selected>All</option><option value="missed">Only Missed Starts</option></select></div><div class="f"><label for="leader-search">Leaderboard Search</label><input id="leader-search" type="text" placeholder="Search assignee"></div><div class="leader-actions-wrap"><div class="leader-actions-menu-wrap"><button id="leader-actions-toggle" class="leader-icon-btn" type="button" aria-label="Leaderboard actions" aria-expanded="false"><span class="material-symbols-outlined">settings</span></button><div id="leader-actions-menu" class="leader-actions-menu" hidden><button type="button" class="leader-actions-item" data-action="copy-gap-people"><span class="material-symbols-outlined">content_copy</span><span>Copy Gap People</span></button></div></div></div></div><div id="leaderboard-filter" class="sub" style="padding:0 10px 8px;"></div><div id="leaderboard-action-status" class="sub leader-action-status"></div><div id="leaderboard" class="leaderboard"></div></article>
@@ -3199,6 +3227,92 @@ function closeScoreDrawer() {{
   document.body.classList.remove("score-drawer-open");
   scoreDrawerAssignee = "";
   scoreDrawerMode = "simple";
+}}
+function employeeWorkloadAllowed(name) {{
+  const assignee = String(name || "").trim();
+  if (!assignee) return false;
+  const teamSet = selectedTeams();
+  if (!teamSet.size || !Array.isArray(teams) || !teams.length) return !excludedMembers.has(assignee.toLowerCase());
+  for (const team of teams) {{
+    if (!teamSet.has(String(team.team_name || ""))) continue;
+    if ((Array.isArray(team.assignees) ? team.assignees : []).some((member) => String(member || "").trim().toLowerCase() === assignee.toLowerCase())) {{
+      return !excludedMembers.has(assignee.toLowerCase());
+    }}
+  }}
+  return false;
+}}
+function employeeWorkloadIssueCell(issueKey) {{
+  const key = String(issueKey || "").toUpperCase();
+  const item = workItemsByKey.get(key) || {{}};
+  const href = jiraIssueUrl(key);
+  const issue = href ? `<a href="${{e(href)}}" target="_blank" rel="noopener">${{e(key)}}</a>` : e(key || "-");
+  return `<div>${{issue}}</div><div class="sub">${{e(String(item.summary || ""))}}</div>`;
+}}
+function openEmployeeWorkloadDrawer(record, metric) {{
+  if (!scoreDrawerEl || !scoreDrawerOverlayEl || !scoreDrawerBodyEl) return;
+  const labels = {{ capacity:"Capacity", official_leaves:"Official Leaves", leaves_taken:"Leaves Taken", availability:"Availability", booked:"Booked Manhours", logged:"Logged Hours", utilization:"Utilization" }};
+  const title = `${{labels[metric] || "Employee metric"}} — ${{record.name}}`;
+  let body = "";
+  const worklogTable = (rows) => rows.length
+    ? `<div class="tbl-wrap"><table class="ss-tbl"><thead><tr><th>Work item</th><th>Title</th><th>Assignee</th><th>Worklog date</th><th>Hours logged</th></tr></thead><tbody>${{rows.map((row) => {{ const key=String(row.issue_id || "").toUpperCase(); const href=jiraIssueUrl(key); const link=href ? `<a href="${{e(href)}}" target="_blank" rel="noopener">${{e(key)}}</a>` : e(key || "-"); return `<tr><td>${{link}}</td><td>${{e(row.item_summary || workItemsByKey.get(key)?.summary || "-")}}</td><td>${{e(row.item_assignee || row.issue_assignee || "Unassigned")}}</td><td>${{e(formatDate(row.worklog_date) || row.worklog_date || "-")}}</td><td>${{n(row.hours_logged).toFixed(2)}}h</td></tr>`; }}).join("")}}</tbody></table></div>`
+    : '<div class="score-drawer-empty">No source rows match the active filters.</div>';
+  const itemTable = (rows) => rows.length
+    ? `<div class="tbl-wrap"><table class="ss-tbl"><thead><tr><th>Work item</th><th>Title</th><th>Assignee</th><th>Original estimate</th><th>Start</th><th>Due</th></tr></thead><tbody>${{rows.map((row) => {{ const key=String(row.issue_key || "").toUpperCase(); const href=jiraIssueUrl(key); const link=href ? `<a href="${{e(href)}}" target="_blank" rel="noopener">${{e(key)}}</a>` : e(key || "-"); return `<tr><td>${{link}}</td><td>${{e(row.summary || "-")}}</td><td>${{e(row.assignee || "Unassigned")}}</td><td>${{n(row.original_estimate_hours).toFixed(2)}}h</td><td>${{e(formatDate(row.start_date) || "-")}}</td><td>${{e(formatDate(row.due_date) || "-")}}</td></tr>`; }}).join("")}}</tbody></table></div>`
+    : '<div class="score-drawer-empty">No assigned subtasks match the active filters.</div>';
+  if (metric === "booked") body = `<section class="score-drawer-section"><div class="score-drawer-section-head"><h3 class="score-drawer-section-title">Assigned subtasks</h3><div class="score-drawer-section-note">Sum of original estimates: ${{record.booked.toFixed(2)}}h</div></div>${{itemTable(record.bookedRows)}}</section>`;
+  else if (metric === "logged") body = `<section class="score-drawer-section"><div class="score-drawer-section-head"><h3 class="score-drawer-section-title">Logged work</h3><div class="score-drawer-section-note">${{record.logScope === "any" ? "Any work item logged by employee" : "Only subtasks assigned to employee"}}: ${{record.logged.toFixed(2)}}h</div></div>${{worklogTable(record.loggedRows)}}</section>`;
+  else if (metric === "leaves_taken") {{
+    const rows = record.leaveRows;
+    body = `<section class="score-drawer-section"><div class="score-drawer-section-head"><h3 class="score-drawer-section-title">Personal leave taken</h3><div class="score-drawer-section-note">Planned and unplanned leave in selected month</div></div><div class="tbl-wrap"><table class="ss-tbl"><thead><tr><th>Date</th><th>Planned</th><th>Unplanned</th><th>Total</th></tr></thead><tbody>${{rows.length ? rows.map((row) => `<tr><td>${{e(formatDate(row.period_day) || row.period_day)}}</td><td>${{n(row.planned_taken_hours).toFixed(2)}}h</td><td>${{n(row.unplanned_taken_hours).toFixed(2)}}h</td><td>${{(n(row.planned_taken_hours)+n(row.unplanned_taken_hours)).toFixed(2)}}h</td></tr>`).join("") : '<tr><td colspan="4" class="score-drawer-empty">No leave recorded.</td></tr>'}}</tbody></table></div></section>`;
+  }} else if (metric === "official_leaves") {{
+    body = `<section class="score-drawer-section"><div class="score-drawer-section-head"><h3 class="score-drawer-section-title">Capacity-profile holidays</h3><div class="score-drawer-section-note">${{record.officialLeaveDays}} day(s); these are excluded from capacity.</div></div><div class="score-drawer-calculation">${{record.holidays.length ? record.holidays.map((day) => `<div class="score-drawer-calculation-line"><span class="score-drawer-calculation-num">${{e(formatDate(day) || day)}}</span><span class="score-drawer-calculation-label">Official leave / holiday</span></div>`).join("") : '<div class="score-drawer-empty">No profile holidays in this month.</div>'}}</div></section>`;
+  }} else {{
+    const availabilityFormula = `Capacity ${{record.capacity.toFixed(2)}}h − Leaves Taken ${{record.leavesTaken.toFixed(2)}}h = ${{record.availability.toFixed(2)}}h`;
+    const detail = metric === "utilization" ? `Logged ${{record.logged.toFixed(2)}}h ÷ Availability ${{record.availability.toFixed(2)}}h = ${{record.utilization == null ? "N/A" : record.utilization.toFixed(1) + "%"}}` : availabilityFormula;
+    body = `<section class="score-drawer-section"><div class="score-drawer-section-head"><h3 class="score-drawer-section-title">Calculation</h3><div class="score-drawer-section-note">Selected capacity profile and month</div></div><div class="score-drawer-calculation"><div class="score-drawer-calculation-line"><span class="score-drawer-calculation-num final">${{e(detail)}}</span></div><div class="score-drawer-calculation-line"><span class="score-drawer-calculation-label">Official leaves: ${{record.officialLeaveDays}} profile holiday day(s), already excluded from capacity.</span></div></div></section>`;
+  }}
+  scoreDrawerTitleEl.textContent = title;
+  scoreDrawerSubtitleEl.textContent = `Selected period: ${{formatDate(record.from)}} – ${{formatDate(record.to)}}.`;
+  scoreDrawerBodyEl.innerHTML = body;
+  scoreDrawerOverlayEl.classList.add("open"); scoreDrawerEl.classList.add("open"); scoreDrawerEl.setAttribute("aria-hidden", "false"); scoreDrawerOverlayEl.setAttribute("aria-hidden", "false"); document.body.classList.add("score-drawer-open");
+  if (scoreDrawerCloseEl) scoreDrawerCloseEl.focus();
+}}
+function renderEmployeeWorkloadTable(items) {{
+  const host = document.getElementById("employee-workload-table");
+  const monthInput = document.getElementById("employee-workload-month");
+  const scopeInput = document.getElementById("employee-workload-log-scope");
+  if (!host || !monthInput || !scopeInput) return;
+  const from = String(document.getElementById("from")?.value || defaultFrom || "");
+  const to = String(document.getElementById("to")?.value || defaultTo || "");
+  if (/^\\d{{4}}-\\d{{2}}/.test(from)) monthInput.value = from.slice(0, 7);
+  const logScope = String(scopeInput.value || "any");
+  const activeProfile = resolveActiveCapacityProfile(from, to);
+  const holidays = (Array.isArray(activeProfile?.holiday_dates) ? activeProfile.holiday_dates : []).map((day) => String(day || "")).filter((day) => inRange(day, from, to)).sort();
+  const projectSet = selectedProjects();
+  const useProjects = projectSet.size > 0;
+  const names = new Set();
+  for (const item of workItems) if (String(item.assignee || "").trim()) names.add(String(item.assignee).trim());
+  for (const row of worklogs) if (String(row.issue_assignee || "").trim()) names.add(String(row.issue_assignee).trim());
+  for (const row of leaveRows) if (String(row.assignee || "").trim()) names.add(String(row.assignee).trim());
+  const records = [];
+  for (const name of Array.from(names).sort((a,b) => a.localeCompare(b))) {{
+    if (!employeeWorkloadAllowed(name)) continue;
+    const bookedRows = workItems.filter((item) => String(item.assignee || "").trim().toLowerCase() === name.toLowerCase() && isSubtaskPerformanceType(item.jira_issue_type || item.issue_type || item.work_item_type || "") && !isLeaveIssueKey(String(item.issue_key || "")) && (!useProjects || projectSet.has(String(item.project_key || "UNKNOWN"))) && datePairOverlaps(item.start_date, item.due_date, from, to));
+    const allLogRows = worklogs.filter((row) => String(row.issue_assignee || "").trim().toLowerCase() === name.toLowerCase() && inRange(String(row.worklog_date || ""), from, to) && (!useProjects || projectSet.has(String(row.project_key || "UNKNOWN"))));
+    const loggedRows = logScope === "assigned_subtasks" ? allLogRows.filter((row) => String(row.item_assignee || "").trim().toLowerCase() === name.toLowerCase() && isSubtaskPerformanceType(row.item_issue_type || row.issue_type || "") && !isLeaveIssueKey(String(row.issue_id || ""))) : allLogRows;
+    const leaveRowsForEmployee = leaveRows.filter((row) => String(row.assignee || "").trim().toLowerCase() === name.toLowerCase() && inRange(String(row.period_day || ""), from, to));
+    const capacity = computePerAssigneeCapacity(from, to, activeProfile);
+    const leavesTaken = leaveRowsForEmployee.reduce((sum, row) => sum + n(row.planned_taken_hours) + n(row.unplanned_taken_hours), 0);
+    const availability = Math.max(0, capacity - leavesTaken);
+    const booked = bookedRows.reduce((sum, row) => sum + n(row.original_estimate_hours), 0);
+    const logged = loggedRows.reduce((sum, row) => sum + n(row.hours_logged), 0);
+    records.push({{ name, from, to, logScope, holidays, officialLeaveDays:holidays.length, capacity, leaveRows:leaveRowsForEmployee, leavesTaken, availability, bookedRows, booked, loggedRows, logged, utilization:availability > 0 ? (logged / availability) * 100 : null }});
+  }}
+  const columns = [
+    ["capacity", "Capacity (Hours)", (r) => `${{r.capacity.toFixed(2)}}h`], ["official_leaves", "Official Leaves", (r) => `${{r.officialLeaveDays}} day${{r.officialLeaveDays === 1 ? "" : "s"}}`], ["leaves_taken", "Leaves Taken", (r) => `${{r.leavesTaken.toFixed(2)}}h`], ["availability", "Availability", (r) => `${{r.availability.toFixed(2)}}h`], ["booked", "Booked Manhours", (r) => `${{r.booked.toFixed(2)}}h`], ["logged", "Logged Hours", (r) => `${{r.logged.toFixed(2)}}h`], ["utilization", "Utilization", (r) => r.utilization == null ? "N/A" : `${{r.utilization.toFixed(1)}}%`]
+  ];
+  host.innerHTML = `<table class="employee-workload-table"><thead><tr><th>Employee Name</th>${{columns.map((col) => `<th>${{e(col[1])}}</th>`).join("")}}</tr></thead><tbody>${{records.length ? records.map((record, index) => `<tr><td><button class="employee-workload-cell" data-workload-row="${{index}}" data-workload-metric="name">${{e(record.name)}}</button></td>${{columns.map((col) => `<td><button class="employee-workload-cell" data-workload-row="${{index}}" data-workload-metric="${{col[0]}}">${{e(col[2](record))}}</button></td>`).join("")}}</tr>`).join("") : `<tr><td colspan="8" class="employee-workload-muted">No employees match the active filters.</td></tr>`}}</tbody></table>`;
+  host.querySelectorAll("[data-workload-row]").forEach((button) => button.addEventListener("click", () => {{ const record=records[Number(button.getAttribute("data-workload-row"))]; if (record) openEmployeeWorkloadDrawer(record, button.getAttribute("data-workload-metric") === "name" ? "availability" : button.getAttribute("data-workload-metric")); }}));
 }}
 function clamp(v, minv, maxv) {{ return Math.max(minv, Math.min(maxv, v)); }}
 function applyPerformanceSettings(nextSettings) {{
@@ -4881,6 +4995,7 @@ function render(items) {{
     renderSettingsLoadingState();
     return;
   }}
+  renderEmployeeWorkloadTable(items);
   const activeMode = String(document.getElementById("leader-scoring-mode")?.value || "simple");
   const eligibleScoredItems = items.filter((i) => Number.isFinite(scoreNumber(i, activeMode)));
   const avgActiveScore = eligibleScoredItems.length
@@ -6266,6 +6381,21 @@ if (topEfficiencyModeEl) {{
     renderAll();
   }});
 }}
+const employeeWorkloadMonthEl = document.getElementById("employee-workload-month");
+const employeeWorkloadLogScopeEl = document.getElementById("employee-workload-log-scope");
+if (employeeWorkloadMonthEl) {{
+  employeeWorkloadMonthEl.addEventListener("change", () => {{
+    const month = String(employeeWorkloadMonthEl.value || "");
+    if (!/^\\d{{4}}-\\d{{2}}$/.test(month)) return;
+    const [year, monthIndex] = month.split("-").map(Number);
+    const fromEl = document.getElementById("from");
+    const toEl = document.getElementById("to");
+    if (fromEl) fromEl.value = `${{month}}-01`;
+    if (toEl) toEl.value = lastDayOfMonthIso(year, monthIndex - 1);
+    renderAll();
+  }});
+}}
+if (employeeWorkloadLogScopeEl) employeeWorkloadLogScopeEl.addEventListener("change", renderAll);
 if (scoreDrawerCloseEl) {{
   scoreDrawerCloseEl.addEventListener("click", closeScoreDrawer);
 }}
