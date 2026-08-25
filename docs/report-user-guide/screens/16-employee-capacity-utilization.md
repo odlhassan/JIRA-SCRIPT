@@ -27,13 +27,18 @@ There is no Apply or Refresh button. Every filter change redraws the table immed
 
 ## Detail drawer
 
-Every employee and metric value, including Grand Total values, is clickable and keyboard accessible. Activating a value opens a right-side drawer containing the source records for the active month and filters. Logged Hours lists the Jira work-item link, title, worklog author, assigned resource, worklog date, and hours. Booked Manhours lists the original-estimate source subtasks. Leave, calendar capacity, availability, utilization, and employee cells each use a metric-specific table.
+Every employee and metric value, including Grand Total values, is clickable and keyboard accessible. Activating a value opens a right-side drawer containing the source records for the active month and filters. Clicking Employee Name opens that employee's hour logs. Logged Hours lists the Jira work-item link, title, Epic link, Epic name, worklog author, assigned resource, worklog date, and hours. Booked Manhours lists the original-estimate source subtasks. Leave, calendar capacity, availability, and utilization cells each use a metric-specific table.
 
 The drawer can be widened or narrowed by dragging its left resize handle. The width persists in browser storage. It closes through its close button, the backdrop, or Escape, and returns focus to the triggering table cell.
+
+## Excel export
+
+Download Excel exports the complete dataset for the active Month, Capacity Profile, Teams, Logged Hours scope, and resigned-resource setting. The workbook contains Export Info, Summary, Worklogs, Booked Subtasks, Leave Records, Capacity Calendar, and Employees worksheets. Work item and Epic URLs are active Excel hyperlinks. Each data sheet uses frozen headers, filters, table styling, readable column widths, and numeric hour/utilization columns.
 
 ## Related code
 
 - `generate_employee_capacity_utilization_report.py`
+- `employee_capacity_utilization_export.py`
 - `report_server.py`
 - `run_html_only.py`
 - `shared-nav.js`
@@ -45,3 +50,4 @@ The drawer can be widened or narrowed by dragging its left resize handle. The wi
 - The Teams dropdown uses compact aligned checkboxes, single-line team labels, sticky selection actions, a bounded scroll area, and closes on outside click or Escape.
 - Utilization thresholds and row-versus-column color scope are user-configurable, validated as `0 ≤ A < B < C ≤ 500`, and saved per browser.
 - Every summarized value opens a resizable, metric-specific raw-data drawer.
+- Employee Name opens hour logs, worklogs include Epic context, and the current filtered dataset can be downloaded as a structured multi-sheet Excel workbook.

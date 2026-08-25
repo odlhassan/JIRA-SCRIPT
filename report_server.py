@@ -68,6 +68,7 @@ from generate_employee_performance_report import (
     _upsert_performance_resignation_record,
 )
 from generate_employee_capacity_utilization_report import build_employee_capacity_utilization_payload
+from employee_capacity_utilization_export import build_employee_capacity_utilization_workbook
 from generate_missed_entries_html import (
     DEFAULT_INPUT_XLSX as MISSED_ENTRIES_DEFAULT_INPUT_XLSX,
     _build_html as missed_entries_build_html,
@@ -45837,6 +45838,25 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             return jsonify({"error": str(exc)}), 409
         except Exception as exc:
             return jsonify({"error": f"Failed to load employee capacity and utilization: {exc}"}), 500
+
+    @app.route("/api/employee-capacity-utilization/export", methods=["POST"])
+    def employee_capacity_utilization_export_api():
+        try:
+            filters = request.get_json(silent=True) or {}
+            payload = build_employee_capacity_utilization_payload(capacity_paths["db_path"])
+            workbook, filename = build_employee_capacity_utilization_workbook(payload, filters)
+            return send_file(
+                workbook,
+                as_attachment=True,
+                download_name=filename,
+                mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except RuntimeError as exc:
+            return jsonify({"error": str(exc)}), 409
+        except Exception as exc:
+            return jsonify({"error": f"Failed to export employee capacity and utilization: {exc}"}), 500
 
     @app.route("/api/page-categories", methods=["PUT"])
     def save_page_categories_api():
