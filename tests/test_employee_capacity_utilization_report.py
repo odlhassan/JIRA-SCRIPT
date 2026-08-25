@@ -23,6 +23,10 @@ class EmployeeCapacityUtilizationReportTests(unittest.TestCase):
         self.assertIn("filters apply automatically", html)
         self.assertNotIn(">Refresh<", html)
         self.assertIn("All except Process Team", html)
+        self.assertIn("#teams .team-option input[type=checkbox]", html)
+        self.assertIn("width:17px!important", html)
+        self.assertIn("position:sticky", html)
+        self.assertIn("event.key==='Escape'", html)
 
     def test_report_is_available_to_page_categorization(self):
         pages = _base_page_catalog()

@@ -35,3 +35,4 @@ There is no Apply or Refresh button. Every filter change redraws the table immed
 
 - The report now uses production runtime data instead of the canonical payload embedded when the HTML was generated.
 - Filters were reorganized into a responsive control panel with switch controls, a team-count summary, and a sticky, readable data table.
+- The Teams dropdown uses compact aligned checkboxes, single-line team labels, sticky selection actions, a bounded scroll area, and closes on outside click or Escape.
