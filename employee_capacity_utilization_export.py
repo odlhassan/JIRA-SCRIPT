@@ -162,6 +162,7 @@ def build_employee_capacity_utilization_workbook(payload: dict, filters: dict) -
     month = _text(filters.get("month"))
     start, end = _month_range(month)
     scope = _text(filters.get("scope")) or "any"
+    include_leaves = bool(filters.get("include_leaves"))
     profiles = payload.get("profiles") or []
     profile = _selected_profile(profiles, _text(filters.get("profile_index")), start)
     calendar = _calendar_rows(profile, start, end)
@@ -192,6 +193,12 @@ def build_employee_capacity_utilization_workbook(payload: dict, filters: dict) -
     for row in payload.get("worklogs") or []:
         author_key = _key(row.get("worklog_author") or row.get("issue_assignee"))
         if author_key not in name_keys or not (start <= _text(row.get("worklog_date")) <= end):
+            continue
+        is_leave_worklog = (
+            _key(row.get("project_key")) == "rlt"
+            or _text(row.get("issue_id") or row.get("issue_key")).upper().startswith("RLT-")
+        )
+        if is_leave_worklog and not include_leaves:
             continue
         if scope == "assigned" and not (
             _key(row.get("item_assignee")) == author_key
@@ -321,6 +328,7 @@ def build_employee_capacity_utilization_workbook(payload: dict, filters: dict) -
     metadata.append(["Employee Capacity & Utilization Export"])
     metadata.append(["Month", month])
     metadata.append(["Logged Hours Scope", "Only assigned subtasks" if scope == "assigned" else "Any employee worklog"])
+    metadata.append(["Include Leaves in Logged Hours", "Yes" if include_leaves else "No"])
     metadata.append(["Employees", len(names)])
     metadata.append(["Canonical Run", payload.get("canonical_run_id")])
     metadata.append(["Generated At", payload.get("generated_at")])

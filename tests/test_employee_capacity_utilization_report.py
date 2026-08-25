@@ -19,6 +19,9 @@ class EmployeeCapacityUtilizationReportTests(unittest.TestCase):
         self.assertIn('id="teams"', html)
         self.assertIn('id="resigned"', html)
         self.assertIn('id="support"', html)
+        self.assertIn('id="include-leaves-logged"', html)
+        self.assertIn("isLeaveWorklog", html)
+        self.assertIn("include_leaves:includeLeaves.checked", html)
         self.assertIn("process team", html)
         self.assertIn("Grand Total", html)
         self.assertIn("Canonical Jira worklogs", html)
@@ -88,7 +91,10 @@ class EmployeeCapacityUtilizationReportTests(unittest.TestCase):
                 {"issue_key": "STORY-1", "issue_type": "Story", "summary": "Portal", "assignee": "Alice", "parent_issue_key": "EPIC-1"},
                 {"issue_key": "SUB-1", "issue_type": "Sub-task", "summary": "Build form", "assignee": "Alice", "parent_issue_key": "STORY-1", "start_date": "2026-08-01", "due_date": "2026-08-31", "original_estimate_hours": 16},
             ],
-            "worklogs": [{"issue_id": "SUB-1", "worklog_author": "Alice", "issue_assignee": "Alice", "item_assignee": "Alice", "item_issue_type": "Sub-task", "item_summary": "Build form", "worklog_date": "2026-08-10", "hours_logged": 6, "epic_key": "EPIC-1", "epic_summary": "Customer onboarding"}],
+            "worklogs": [
+                {"issue_id": "SUB-1", "project_key": "APP", "worklog_author": "Alice", "issue_assignee": "Alice", "item_assignee": "Alice", "item_issue_type": "Sub-task", "item_summary": "Build form", "worklog_date": "2026-08-10", "hours_logged": 6, "epic_key": "EPIC-1", "epic_summary": "Customer onboarding"},
+                {"issue_id": "RLT-1", "project_key": "RLT", "worklog_author": "Alice", "issue_assignee": "Alice", "item_assignee": "Alice", "item_issue_type": "Task", "item_summary": "Annual leave", "worklog_date": "2026-08-11", "hours_logged": 8},
+            ],
             "leaves": [], "teams": [], "profiles": [], "support": [], "resources": {"Alice": {"resigned": False}},
             "canonical_run_id": "production-run", "generated_at": "2026-08-25T00:00:00Z", "jira_browse_base": "https://jira.example/browse",
         }
@@ -98,6 +104,7 @@ class EmployeeCapacityUtilizationReportTests(unittest.TestCase):
             with patch("report_server.build_employee_capacity_utilization_payload", return_value=payload):
                 client = create_report_server_app(root, "report_html").test_client()
                 response = client.post("/api/employee-capacity-utilization/export", json={"month": "2026-08", "scope": "any", "selected_teams": [], "display_resigned": False})
+                response_with_leaves = client.post("/api/employee-capacity-utilization/export", json={"month": "2026-08", "scope": "any", "selected_teams": [], "display_resigned": False, "include_leaves": True})
         self.assertEqual(response.status_code, 200)
         workbook = load_workbook(BytesIO(response.data), read_only=False, data_only=False)
         self.assertEqual(workbook.sheetnames, ["Export Info", "Summary", "Worklogs", "Booked Subtasks", "Leave Records", "Capacity Calendar", "Employees"])
@@ -106,3 +113,13 @@ class EmployeeCapacityUtilizationReportTests(unittest.TestCase):
         self.assertIn("Epic Jira Link", worklog_headers)
         self.assertEqual(workbook["Worklogs"]["F2"].value, "Customer onboarding")
         self.assertEqual(workbook["Worklogs"]["G2"].hyperlink.target, "https://jira.example/browse/EPIC-1")
+        summary_headers = {cell.value: cell.column for cell in workbook["Summary"][1]}
+        self.assertEqual(workbook["Summary"].cell(2, summary_headers["Logged Hours"]).value, 6)
+        self.assertEqual(workbook["Worklogs"].max_row, 2)
+        self.assertEqual(workbook["Export Info"]["B4"].value, "No")
+
+        workbook_with_leaves = load_workbook(BytesIO(response_with_leaves.data), read_only=False, data_only=False)
+        included_summary_headers = {cell.value: cell.column for cell in workbook_with_leaves["Summary"][1]}
+        self.assertEqual(workbook_with_leaves["Summary"].cell(2, included_summary_headers["Logged Hours"]).value, 14)
+        self.assertEqual(workbook_with_leaves["Worklogs"].max_row, 3)
+        self.assertEqual(workbook_with_leaves["Export Info"]["B4"].value, "Yes")
