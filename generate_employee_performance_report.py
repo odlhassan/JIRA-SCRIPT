@@ -1134,6 +1134,7 @@ def _load_worklogs_from_canonical_db(db_path: Path, run_id: str, work_items: dic
             {
                 "issue_id": issue_id,
                 "issue_assignee": _to_text(row["issue_assignee"]) or _to_text(item.get("assignee")) or "Unassigned",
+                "worklog_author": _to_text(row["worklog_author"]),
                 "worklog_date": worklog_date,
                 "hours_logged": hours_logged,
                 "project_key": _to_text(row["project_key"]).upper()
