@@ -25,6 +25,12 @@ This standalone report presents employee capacity, profile holidays, personal le
 
 There is no Apply or Refresh button. Every filter change redraws the table immediately. If canonical data cannot be loaded, the report shows an explicit error rather than a misleading table of zero hours.
 
+## Detail drawer
+
+Every employee and metric value, including Grand Total values, is clickable and keyboard accessible. Activating a value opens a right-side drawer containing the source records for the active month and filters. Logged Hours lists the Jira work-item link, title, worklog author, assigned resource, worklog date, and hours. Booked Manhours lists the original-estimate source subtasks. Leave, calendar capacity, availability, utilization, and employee cells each use a metric-specific table.
+
+The drawer can be widened or narrowed by dragging its left resize handle. The width persists in browser storage. It closes through its close button, the backdrop, or Escape, and returns focus to the triggering table cell.
+
 ## Related code
 
 - `generate_employee_capacity_utilization_report.py`
@@ -38,3 +44,4 @@ There is no Apply or Refresh button. Every filter change redraws the table immed
 - Filters were reorganized into a responsive control panel with switch controls, a team-count summary, and a sticky, readable data table.
 - The Teams dropdown uses compact aligned checkboxes, single-line team labels, sticky selection actions, a bounded scroll area, and closes on outside click or Escape.
 - Utilization thresholds and row-versus-column color scope are user-configurable, validated as `0 ≤ A < B < C ≤ 500`, and saved per browser.
+- Every summarized value opens a resizable, metric-specific raw-data drawer.

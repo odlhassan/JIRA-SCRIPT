@@ -34,6 +34,13 @@ class EmployeeCapacityUtilizationReportTests(unittest.TestCase):
         self.assertIn("employeeCapacityUtilization.colorRules.v1", html)
         self.assertIn("utilizationBand", html)
         self.assertIn("Enter increasing values", html)
+        self.assertIn("ecu-drawer", html)
+        self.assertIn("ecu-resize", html)
+        self.assertIn("pointermove", html)
+        self.assertIn("wireDetailCells", html)
+        self.assertIn("Work item title", html)
+        self.assertIn("Hours logged", html)
+        self.assertIn("jira_browse_base", html)
 
     def test_report_is_available_to_page_categorization(self):
         pages = _base_page_catalog()
