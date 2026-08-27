@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from openpyxl import load_workbook
 
+from employee_capacity_utilization_export import build_employee_capacity_utilization_workbook
 from generate_employee_capacity_utilization_report import _epic_for_issue, _html
 from report_server import REPORT_IDS_WITHOUT_REFRESH_WIDGET, _base_page_catalog, create_report_server_app
 
@@ -19,9 +20,16 @@ class EmployeeCapacityUtilizationReportTests(unittest.TestCase):
         self.assertIn('id="teams"', html)
         self.assertIn('id="resigned"', html)
         self.assertIn('id="support"', html)
+        self.assertIn("Count logged hours from", html)
+        self.assertIn("All work logged by employee", html)
+        self.assertIn("Work logged on their assigned subtasks", html)
+        self.assertIn("Assigned-subtask work only", html)
+        self.assertIn("Logged hours (assigned subtasks)", html)
         self.assertIn('id="include-leaves-logged"', html)
         self.assertIn("isLeaveWorklog", html)
         self.assertIn("include_leaves:includeLeaves.checked", html)
+        self.assertIn("T12:00:00", html)
+        self.assertIn("previous UTC date", html)
         self.assertIn("process team", html)
         self.assertIn("Grand Total", html)
         self.assertIn("Canonical Jira worklogs", html)
@@ -93,6 +101,7 @@ class EmployeeCapacityUtilizationReportTests(unittest.TestCase):
             ],
             "worklogs": [
                 {"issue_id": "SUB-1", "project_key": "APP", "worklog_author": "Alice", "issue_assignee": "Alice", "item_assignee": "Alice", "item_issue_type": "Sub-task", "item_summary": "Build form", "worklog_date": "2026-08-10", "hours_logged": 6, "epic_key": "EPIC-1", "epic_summary": "Customer onboarding"},
+                {"issue_id": "TASK-1", "project_key": "APP", "worklog_author": "Alice", "issue_assignee": "Alice", "item_assignee": "Alice", "item_issue_type": "Task", "item_summary": "Team coordination", "worklog_date": "2026-08-12", "hours_logged": 4},
                 {"issue_id": "RLT-1", "project_key": "RLT", "worklog_author": "Alice", "issue_assignee": "Alice", "item_assignee": "Alice", "item_issue_type": "Task", "item_summary": "Annual leave", "worklog_date": "2026-08-11", "hours_logged": 8},
             ],
             "leaves": [], "teams": [], "profiles": [], "support": [], "resources": {"Alice": {"resigned": False}},
@@ -104,6 +113,7 @@ class EmployeeCapacityUtilizationReportTests(unittest.TestCase):
             with patch("report_server.build_employee_capacity_utilization_payload", return_value=payload):
                 client = create_report_server_app(root, "report_html").test_client()
                 response = client.post("/api/employee-capacity-utilization/export", json={"month": "2026-08", "scope": "any", "selected_teams": [], "display_resigned": False})
+                assigned_response = client.post("/api/employee-capacity-utilization/export", json={"month": "2026-08", "scope": "assigned", "selected_teams": [], "display_resigned": False})
                 response_with_leaves = client.post("/api/employee-capacity-utilization/export", json={"month": "2026-08", "scope": "any", "selected_teams": [], "display_resigned": False, "include_leaves": True})
         self.assertEqual(response.status_code, 200)
         workbook = load_workbook(BytesIO(response.data), read_only=False, data_only=False)
@@ -114,12 +124,40 @@ class EmployeeCapacityUtilizationReportTests(unittest.TestCase):
         self.assertEqual(workbook["Worklogs"]["F2"].value, "Customer onboarding")
         self.assertEqual(workbook["Worklogs"]["G2"].hyperlink.target, "https://jira.example/browse/EPIC-1")
         summary_headers = {cell.value: cell.column for cell in workbook["Summary"][1]}
-        self.assertEqual(workbook["Summary"].cell(2, summary_headers["Logged Hours"]).value, 6)
-        self.assertEqual(workbook["Worklogs"].max_row, 2)
+        self.assertEqual(workbook["Summary"].cell(2, summary_headers["Logged Hours"]).value, 10)
+        self.assertEqual(workbook["Worklogs"].max_row, 3)
         self.assertEqual(workbook["Export Info"]["B4"].value, "No")
+
+        assigned_workbook = load_workbook(BytesIO(assigned_response.data), read_only=False, data_only=False)
+        assigned_headers = {cell.value: cell.column for cell in assigned_workbook["Summary"][1]}
+        self.assertEqual(assigned_workbook["Summary"].cell(2, assigned_headers["Logged Hours"]).value, 6)
+        self.assertEqual(assigned_workbook["Worklogs"].max_row, 2)
+        self.assertEqual(assigned_workbook["Export Info"]["B3"].value, "Work logged on their assigned subtasks")
 
         workbook_with_leaves = load_workbook(BytesIO(response_with_leaves.data), read_only=False, data_only=False)
         included_summary_headers = {cell.value: cell.column for cell in workbook_with_leaves["Summary"][1]}
-        self.assertEqual(workbook_with_leaves["Summary"].cell(2, included_summary_headers["Logged Hours"]).value, 14)
-        self.assertEqual(workbook_with_leaves["Worklogs"].max_row, 3)
+        self.assertEqual(workbook_with_leaves["Summary"].cell(2, included_summary_headers["Logged Hours"]).value, 18)
+        self.assertEqual(workbook_with_leaves["Worklogs"].max_row, 4)
         self.assertEqual(workbook_with_leaves["Export Info"]["B4"].value, "Yes")
+
+    def test_official_weekday_leave_reduces_availability(self):
+        payload = {
+            "issues": [], "worklogs": [], "leaves": [], "teams": [], "support": [],
+            "resources": {"Alice": {"resigned": False}},
+            "profiles": [{
+                "from_date": "2026-08-01", "to_date": "2026-08-31",
+                "standard_hours_per_day": 8, "ramadan_start_date": "",
+                "ramadan_end_date": "", "ramadan_hours_per_day": 6.5,
+                "holiday_dates": ["2026-08-14"],
+            }],
+        }
+        workbook_data, _ = build_employee_capacity_utilization_workbook(
+            payload,
+            {"month": "2026-08", "scope": "any", "selected_teams": [], "display_resigned": False},
+        )
+        workbook = load_workbook(workbook_data, read_only=False, data_only=False)
+        headers = {cell.value: cell.column for cell in workbook["Summary"][1]}
+        row = 2
+        self.assertEqual(workbook["Summary"].cell(row, headers["Capacity (Hours)"]).value, 160)
+        self.assertEqual(workbook["Summary"].cell(row, headers["Official Leaves (Days)"]).value, 1)
+        self.assertEqual(workbook["Summary"].cell(row, headers["Availability (Hours)"]).value, 160)
