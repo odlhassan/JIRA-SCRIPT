@@ -8402,7 +8402,7 @@ def _performance_settings_html() -> str:
           const results = Array.isArray(body.results) ? body.results : [];
           shbSetStatus("✓ Published " + results.length + " Jira work item(s).", "ok");
           publishPreviewEl.style.display = "block";
-          publishPreviewEl.innerHTML = '<strong>Published successfully.</strong> ' + results.map((r) => r.jira_url ? '<a target="_blank" rel="noopener" href="' + r.jira_url + '">' + r.jira_issue_key + '</a>' : r.jira_issue_key).join(", ");
+          publishPreviewEl.innerHTML = '<strong>Published successfully.</strong> ' + results.map((r) => { const key = r.issue_key || r.jira_issue_key || "Jira item"; return r.jira_url ? '<a target="_blank" rel="noopener" href="' + r.jira_url + '">' + esc(key) + '</a>' : esc(key); }).join(", ");
         } catch (err) { shbSetStatus("Jira publication error: " + (err.message || err), "err"); }
       }
 
