@@ -8376,7 +8376,7 @@ def _performance_settings_html() -> str:
           publishPreviewEl.textContent = "No positive allocations are available to publish for this month.";
           return;
         }
-        const escPreview = (v) => String(v == null ? "" : v).replace(/[&<>'\"]/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;","\"":"&quot;"}[c]));
+        const escPreview = (v) => esc(v);
         let html = '<strong>Review before publishing:</strong> ' + projects.length + ' project epic(s), ' + Number(preview.story_count || 0) + ' assigned booking stor' + (Number(preview.story_count || 0) === 1 ? 'y' : 'ies') + '.';
         html += '<ul style="margin:7px 0 0;padding-left:20px;">';
         projects.forEach((project) => {
