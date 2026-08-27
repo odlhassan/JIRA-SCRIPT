@@ -13,7 +13,7 @@ This standalone report presents employee capacity, profile holidays, personal le
 
 ## Filters
 
-The filter bar is divided into two purposeful rows. **Refine the report** contains the primary scope choices—Month, Capacity Profile, Teams, and the prominently highlighted Logged Hours source. **Display & inclusion** contains presentation and visibility preferences—color formatting, leave-worklog inclusion, resigned employees, and Support badges. All changes apply immediately; the status pill confirms this behaviour.
+The filter bar is divided into two purposeful rows. **Refine the report** contains the primary scope choices—Month, Capacity Profile, Teams, and the prominently highlighted Logged Hours source. **Display & inclusion** contains presentation and visibility preferences—color formatting, leave-worklog inclusion, resigned employees, and Support badges. All changes apply immediately; the status pill confirms this behaviour. Use **Hide controls** to collapse the panel: its persistent Active filters chips retain the selected month, profile, teams, logged-hours scope, and enabled display options. The choice persists in browser storage. Team and color menus open above the panel rather than being clipped by it.
 
 | Field | Default | Effect |
 | --- | --- | --- |
