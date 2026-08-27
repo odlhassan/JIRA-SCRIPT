@@ -29192,6 +29192,7 @@ def _publish_support_booking_to_jira(settings_db_path: Path, booking_month: str,
     epic_name_field_id = _resolve_jira_field_id_by_name(session, "Epic Name")
     epic_link_field_id = _resolve_jira_field_id_by_name(session, "Epic Link") or "customfield_10014"
     epic_extra = _support_booking_work_type_field(session, project_key, "Epic")
+    epic_extra.update(_jira_rmi_planned_fields_for_issue(session, project_key, "Epic", "No"))
     if epic_name_field_id:
       epic_extra[epic_name_field_id] = _to_text(item["epic_summary"])
     existing_epic_key = _to_text(extract_jira_key_from_url(item.get("existing_epic_url"))).upper()
@@ -29206,6 +29207,7 @@ def _publish_support_booking_to_jira(settings_db_path: Path, booking_month: str,
     for story in item["stories"]:
       member = _to_text(story["team_member"])
       story_extra = _support_booking_work_type_field(session, project_key, "Story")
+      story_extra.update(_jira_rmi_planned_fields_for_issue(session, project_key, "Story", "No"))
       story_extra[epic_link_field_id] = epic_key
       story_extra["assignee"] = {"accountId": _support_booking_assignee_account_id(session, project_key, member)}
       existing_story_key = _to_text(extract_jira_key_from_url(story.get("existing_jira_url"))).upper()
