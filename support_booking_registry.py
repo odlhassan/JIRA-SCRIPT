@@ -67,6 +67,11 @@ def _month_bounds(booking_month: str) -> tuple[date, date]:
     return first, last
 
 
+def booking_month_bounds(booking_month: str) -> tuple[date, date]:
+    """Return the first and last calendar day for a validated booking month."""
+    return _month_bounds(normalize_booking_month(booking_month))
+
+
 def normalize_team_member(value: object) -> str:
     name = _to_text(value)
     if not name:
@@ -299,6 +304,27 @@ def init_support_booking_db(db_path: Path) -> None:
         )
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_shb_alloc_month ON support_hour_booking_allocations(booking_month)"
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS support_hour_booking_jira_publications (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                booking_month TEXT NOT NULL,
+                project_key TEXT NOT NULL,
+                team_member TEXT NOT NULL DEFAULT '',
+                issue_level TEXT NOT NULL,
+                jira_issue_key TEXT NOT NULL,
+                jira_url TEXT NOT NULL DEFAULT '',
+                parent_jira_key TEXT NOT NULL DEFAULT '',
+                original_estimate_hours REAL NOT NULL DEFAULT 0,
+                published_at_utc TEXT NOT NULL,
+                updated_at_utc TEXT NOT NULL,
+                UNIQUE(booking_month, project_key, team_member, issue_level)
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_shb_jira_publish_month ON support_hour_booking_jira_publications(booking_month)"
         )
         conn.commit()
     finally:
@@ -568,6 +594,117 @@ def upsert_allocation(db_path: Path, booking_month: str, team_member: str, proje
     finally:
         conn.close()
     return {"booking_month": month, "team_member": member, "project_key": project, "percentage": pct}
+
+
+def copy_previous_month_allocations(db_path: Path, booking_month: str) -> dict:
+    """Replace the selected month's percentages with the immediately prior month's values.
+
+    Headers are deliberately not copied: leave and booking hours remain specific to
+    the selected month.  Requiring initialized target headers prevents allocations
+    from being created for resources that are not in that month's support roster.
+    """
+    init_support_booking_db(db_path)
+    month = normalize_booking_month(booking_month)
+    first, _last = _month_bounds(month)
+    previous_month = (first.replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
+    conn = sqlite3.connect(db_path)
+    try:
+        target_members = {
+            _to_text(row[0]) for row in conn.execute(
+                "SELECT team_member FROM support_hour_booking_headers WHERE booking_month = ?", (month,)
+            ).fetchall()
+        }
+        if not target_members:
+            raise ValueError("Initialize the selected month before copying allocations.")
+        source_rows = conn.execute(
+            """
+            SELECT team_member, project_key, percentage
+            FROM support_hour_booking_allocations
+            WHERE booking_month = ?
+            """,
+            (previous_month,),
+        ).fetchall()
+        conn.execute("DELETE FROM support_hour_booking_allocations WHERE booking_month = ?", (month,))
+        now = _utc_now_iso()
+        copied = 0
+        skipped_members: set[str] = set()
+        for team_member, project_key, percentage in source_rows:
+            member = _to_text(team_member)
+            if member not in target_members:
+                skipped_members.add(member)
+                continue
+            conn.execute(
+                """
+                INSERT INTO support_hour_booking_allocations
+                    (booking_month, team_member, project_key, percentage, updated_at_utc)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (month, member, normalize_project_key(project_key), _to_float(percentage), now),
+            )
+            copied += 1
+        conn.commit()
+    finally:
+        conn.close()
+    return {"booking_month": month, "source_month": previous_month, "copied_allocations": copied,
+            "skipped_members": sorted(skipped_members, key=str.casefold)}
+
+
+def list_jira_publications(db_path: Path, booking_month: str) -> list[dict]:
+    init_support_booking_db(db_path)
+    month = normalize_booking_month(booking_month)
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute(
+            """
+            SELECT booking_month, project_key, team_member, issue_level, jira_issue_key,
+                   jira_url, parent_jira_key, original_estimate_hours, published_at_utc, updated_at_utc
+            FROM support_hour_booking_jira_publications
+            WHERE booking_month = ?
+            ORDER BY project_key, issue_level, lower(team_member)
+            """,
+            (month,),
+        ).fetchall()
+    finally:
+        conn.close()
+    return [dict(row) for row in rows]
+
+
+def upsert_jira_publication(db_path: Path, booking_month: str, project_key: str, team_member: str,
+                            issue_level: str, jira_issue_key: str, jira_url: str,
+                            parent_jira_key: str = "", original_estimate_hours: float = 0.0) -> dict:
+    init_support_booking_db(db_path)
+    month = normalize_booking_month(booking_month)
+    project = normalize_project_key(project_key)
+    member = _to_text(team_member)
+    level = _to_text(issue_level).lower()
+    if level not in {"epic", "story"}:
+        raise ValueError("issue_level must be 'epic' or 'story'.")
+    key = normalize_project_key(jira_issue_key)
+    now = _utc_now_iso()
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            """
+            INSERT INTO support_hour_booking_jira_publications (
+                booking_month, project_key, team_member, issue_level, jira_issue_key, jira_url,
+                parent_jira_key, original_estimate_hours, published_at_utc, updated_at_utc
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(booking_month, project_key, team_member, issue_level) DO UPDATE SET
+                jira_issue_key=excluded.jira_issue_key, jira_url=excluded.jira_url,
+                parent_jira_key=excluded.parent_jira_key,
+                original_estimate_hours=excluded.original_estimate_hours,
+                updated_at_utc=excluded.updated_at_utc
+            """,
+            (month, project, member, level, key, _to_text(jira_url), _to_text(parent_jira_key).upper(),
+             round(max(0.0, _to_float(original_estimate_hours)), 2), now, now),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return {"booking_month": month, "project_key": project, "team_member": member, "issue_level": level,
+            "jira_issue_key": key, "jira_url": _to_text(jira_url), "parent_jira_key": _to_text(parent_jira_key).upper(),
+            "original_estimate_hours": round(max(0.0, _to_float(original_estimate_hours)), 2)}
 
 
 def get_month_matrix(db_path: Path, booking_month: str, project_keys: list[str] | None = None) -> dict:

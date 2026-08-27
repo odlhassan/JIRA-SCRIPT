@@ -105,13 +105,18 @@ from project_image_registry import (
     MAX_UPLOAD_BYTES as PROJECT_IMAGE_MAX_UPLOAD_BYTES,
 )
 from support_booking_registry import (
+    booking_month_bounds as sb_booking_month_bounds,
+    copy_previous_month_allocations as sb_copy_previous_month_allocations,
     delete_booking_header as sb_delete_booking_header,
     get_month_matrix as sb_get_month_matrix,
     init_month_bookings as sb_init_month_bookings,
     init_support_booking_db,
+    list_jira_publications as sb_list_jira_publications,
     list_capacity_profile_options as sb_list_capacity_profile_options,
+    normalize_booking_month as sb_normalize_booking_month,
     upsert_allocation as sb_upsert_allocation,
     upsert_booking_header as sb_upsert_booking_header,
+    upsert_jira_publication as sb_upsert_jira_publication,
     sort_support_booking_projects,
     support_booking_project_label,
 )
@@ -7752,8 +7757,15 @@ def _performance_settings_html() -> str:
         <div>
           <button class="btn" type="button" id="shb-load-btn">Load / Initialize month</button>
         </div>
+        <div>
+          <button class="btn alt" type="button" id="shb-copy-previous-btn">Copy allocations from previous month</button>
+        </div>
+        <div>
+          <button class="btn" type="button" id="shb-publish-preview-btn">Preview Jira publication</button>
+        </div>
       </div>
       <div id="shb-status" style="font-size:.83rem;font-weight:600;min-height:1.2em;margin-bottom:8px;"></div>
+      <div id="shb-publish-preview" style="display:none;margin:0 0 10px;padding:10px;border:1px solid var(--line);border-radius:8px;background:#f8fafc;font-size:.83rem;"></div>
       <div class="team-list" id="shb-wrap" style="max-height:520px;padding:0;overflow:auto;">
         <table id="shb-table" style="width:100%;border-collapse:collapse;font-size:.82rem;">
           <thead id="shb-thead"></thead>
@@ -8343,6 +8355,9 @@ def _performance_settings_html() -> str:
       const profileEl = document.getElementById("shb-profile");
       const defaultLeaveEl = document.getElementById("shb-default-leave");
       const loadBtn = document.getElementById("shb-load-btn");
+      const copyPreviousBtn = document.getElementById("shb-copy-previous-btn");
+      const publishPreviewBtn = document.getElementById("shb-publish-preview-btn");
+      const publishPreviewEl = document.getElementById("shb-publish-preview");
       const statusEl2 = document.getElementById("shb-status");
       const theadEl = document.getElementById("shb-thead");
       const tbodyEl = document.getElementById("shb-tbody");
@@ -8352,6 +8367,43 @@ def _performance_settings_html() -> str:
       function shbSetStatus(msg, kind) {
         statusEl2.textContent = msg || "";
         statusEl2.style.color = kind === "err" ? "var(--err)" : kind === "ok" ? "var(--ok)" : "var(--muted)";
+      }
+
+      function renderPublishPreview(preview) {
+        const projects = Array.isArray(preview.projects) ? preview.projects : [];
+        if (!projects.length) {
+          publishPreviewEl.style.display = "block";
+          publishPreviewEl.textContent = "No positive allocations are available to publish for this month.";
+          return;
+        }
+        const escPreview = (v) => String(v == null ? "" : v).replace(/[&<>'\"]/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;","\"":"&quot;"}[c]));
+        let html = '<strong>Review before publishing:</strong> ' + projects.length + ' project epic(s), ' + Number(preview.story_count || 0) + ' assigned booking stor' + (Number(preview.story_count || 0) === 1 ? 'y' : 'ies') + '.';
+        html += '<ul style="margin:7px 0 0;padding-left:20px;">';
+        projects.forEach((project) => {
+          html += '<li><strong>' + escPreview(project.project_name || project.project_key) + '</strong>: ' + escPreview(project.epic_action) + ' epic <em>' + escPreview(project.epic_summary) + '</em><ul style="margin:3px 0;padding-left:18px;">';
+          (project.stories || []).forEach((story) => {
+            html += '<li>' + escPreview(story.action) + ' — ' + escPreview(story.summary) + ', assigned to ' + escPreview(story.team_member) + ', ' + Number(story.original_estimate_hours || 0).toFixed(2) + 'h</li>';
+          });
+          html += '</ul></li>';
+        });
+        html += '</ul><button class="btn" type="button" id="shb-publish-confirm-btn" style="margin-top:8px;">Confirm and publish to Jira</button>';
+        publishPreviewEl.innerHTML = html;
+        publishPreviewEl.style.display = "block";
+        document.getElementById("shb-publish-confirm-btn").addEventListener("click", () => publishToJira(preview));
+      }
+
+      async function publishToJira(preview) {
+        if (!window.confirm("Publish the reviewed Support epics and assigned stories to Jira? Existing published items will be updated.")) return;
+        shbSetStatus("Publishing to Jira…");
+        try {
+          const resp = await fetch(SHB_API + "/publish", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ month: monthEl.value, confirm: true }) });
+          const body = await resp.json().catch(() => ({}));
+          if (!resp.ok) throw new Error(body.error || "Jira publication failed");
+          const results = Array.isArray(body.results) ? body.results : [];
+          shbSetStatus("✓ Published " + results.length + " Jira work item(s).", "ok");
+          publishPreviewEl.style.display = "block";
+          publishPreviewEl.innerHTML = '<strong>Published successfully.</strong> ' + results.map((r) => r.jira_url ? '<a target="_blank" rel="noopener" href="' + r.jira_url + '">' + r.jira_issue_key + '</a>' : r.jira_issue_key).join(", ");
+        } catch (err) { shbSetStatus("Jira publication error: " + (err.message || err), "err"); }
       }
 
       function defaultMonthValue() {
@@ -8538,6 +8590,30 @@ def _performance_settings_html() -> str:
         } catch (err) {
           shbSetStatus("Error: " + (err.message || err), "err");
         }
+      });
+
+      copyPreviousBtn.addEventListener("click", async () => {
+        if (!monthEl.value) { shbSetStatus("Pick and initialize a month first.", "err"); return; }
+        if (!window.confirm("Replace this month's percentage allocations with the previous month's allocations? Booking and leave hours will not change.")) return;
+        try {
+          const resp = await fetch(SHB_API + "/copy-previous-month", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ month: monthEl.value }) });
+          const body = await resp.json().catch(() => ({}));
+          if (!resp.ok) throw new Error(body.error || "Copy failed");
+          renderMatrix(body.matrix);
+          shbSetStatus("✓ Copied " + Number((body.result || {}).copied_allocations || 0) + " allocation(s) from " + ((body.result || {}).source_month || "the previous month") + ". You can now edit any value.", "ok");
+        } catch (err) { shbSetStatus("Copy error: " + (err.message || err), "err"); }
+      });
+
+      publishPreviewBtn.addEventListener("click", async () => {
+        if (!monthEl.value) { shbSetStatus("Pick a month first.", "err"); return; }
+        shbSetStatus("Building Jira publication preview…");
+        try {
+          const resp = await fetch(SHB_API + "/publish-preview?month=" + encodeURIComponent(monthEl.value), { cache: "no-store" });
+          const body = await resp.json().catch(() => ({}));
+          if (!resp.ok) throw new Error(body.error || "Preview failed");
+          renderPublishPreview(body);
+          shbSetStatus("Preview ready. Review the Jira changes before confirming.", "ok");
+        } catch (err) { shbSetStatus("Preview error: " + (err.message || err), "err"); }
       });
 
       loadProfiles().then(() => loadMonth(true));
@@ -29014,6 +29090,137 @@ def _jira_issue_payload_fields(
   return fields
 
 
+def _support_booking_publish_preview(settings_db_path: Path, booking_month: str, active_projects: list[dict]) -> dict[str, object]:
+  """Describe the exact project epics and assigned booking stories that would be published."""
+  month = sb_normalize_booking_month(booking_month)
+  project_names = {
+    _to_text(item.get("project_key")).upper(): support_booking_project_label(item)
+    for item in active_projects if _to_text(item.get("project_key"))
+  }
+  matrix = sb_get_month_matrix(settings_db_path, month, project_keys=list(project_names))
+  publications = sb_list_jira_publications(settings_db_path, month)
+  existing = {
+    (_to_text(row.get("project_key")).upper(), _to_text(row.get("team_member")), _to_text(row.get("issue_level")).lower()): row
+    for row in publications
+  }
+  first_day, last_day = sb_booking_month_bounds(month)
+  month_label = first_day.strftime("%B %Y")
+  projects: dict[str, list[dict[str, object]]] = {}
+  for member in matrix.get("members") or []:
+    for project_key, hours in (member.get("hours") or {}).items():
+      estimate_hours = round(float(hours or 0), 2)
+      if estimate_hours <= 0:
+        continue
+      project = _to_text(project_key).upper()
+      if not project:
+        continue
+      projects.setdefault(project, []).append({
+        "team_member": _to_text(member.get("team_member")),
+        "summary": f"Support by {_to_text(member.get('team_member'))} ({month_label})",
+        "original_estimate_hours": estimate_hours,
+        "action": "update" if existing.get((project, _to_text(member.get("team_member")), "story")) else "create",
+        "existing_jira_url": _to_text((existing.get((project, _to_text(member.get("team_member")), "story")) or {}).get("jira_url")),
+      })
+  items = []
+  for project_key in sorted(projects):
+    epic = existing.get((project_key, "", "epic")) or {}
+    items.append({
+      "project_key": project_key,
+      "project_name": project_names.get(project_key) or project_key,
+      "epic_summary": f"Technical Support ({month_label})",
+      "epic_action": "update" if epic else "create",
+      "existing_epic_url": _to_text(epic.get("jira_url")),
+      "start_date": first_day.isoformat(),
+      "due_date": last_day.isoformat(),
+      "stories": projects[project_key],
+    })
+  return {"booking_month": month, "month_label": month_label, "projects": items,
+          "story_count": sum(len(item["stories"]) for item in items), "project_count": len(items)}
+
+
+def _support_booking_assignee_account_id(session, project_key: str, display_name: str) -> str:
+  """Resolve a roster display name to an assignable Jira Cloud account ID before creation."""
+  name = _to_text(display_name)
+  response = session.get(
+    f"{BASE_URL}/rest/api/3/user/assignable/search",
+    params={"project": _to_text(project_key).upper(), "query": name, "maxResults": 100}, timeout=(10, 30),
+  )
+  _jira_raise_for_status(response, f"find assignable user '{name}'")
+  users = response.json() if response.content else []
+  for user in users if isinstance(users, list) else []:
+    if _to_text((user or {}).get("displayName")).casefold() == name.casefold():
+      account_id = _to_text((user or {}).get("accountId"))
+      if account_id:
+        return account_id
+  raise ValueError(f"No assignable Jira user exactly matching support team member '{name}' in project {_to_text(project_key).upper()}.")
+
+
+def _support_booking_work_type_field(session, project_key: str, issue_type_name: str) -> dict[str, object]:
+  field_id = _resolve_jira_field_id_by_name(session, "Work Type EPR")
+  if not field_id:
+    raise ValueError("Jira field 'Work Type EPR' was not found; Support publication cannot continue.")
+  meta = _jira_createmeta_issue_fields(session, project_key, issue_type_name)
+  field_meta = meta.get(field_id) if isinstance(meta, dict) else None
+  allowed = (field_meta or {}).get("allowedValues") if isinstance(field_meta, dict) else None
+  if isinstance(allowed, list) and allowed:
+    for option in allowed:
+      if _to_text((option or {}).get("value")).casefold() == "support":
+        selected = _jira_select_option_payload(option)
+        if selected:
+          return {field_id: selected}
+    raise ValueError(f"Work Type EPR = Support is not available when creating {issue_type_name} issues in {project_key}.")
+  return {field_id: {"value": "Support"}}
+
+
+def _publish_support_booking_to_jira(settings_db_path: Path, booking_month: str, active_projects: list[dict]) -> dict[str, object]:
+  preview = _support_booking_publish_preview(settings_db_path, booking_month, active_projects)
+  if not preview["projects"]:
+    raise ValueError("There are no positive support allocations to publish for this month.")
+  results: list[dict[str, object]] = []
+  for item in preview["projects"]:
+    project_key = _to_text(item["project_key"]).upper()
+    session, permission = _resolve_jira_session_for_permissions(
+      project_key, ("BROWSE_PROJECTS", "CREATE_ISSUES", "EDIT_ISSUES", "ASSIGN_ISSUES"),
+      no_token_message="No Jira API token is configured for Support Hour Bookings publication.",
+    )
+    if not permission.get("ok"):
+      raise PermissionError("Jira write token is missing permissions for " + project_key + ": " + ", ".join(permission.get("missing_permissions") or []))
+    start_field_id = resolve_jira_start_date_field_id(session, BASE_URL, project_keys=[project_key])
+    end_field_ids = resolve_jira_end_date_field_ids(session, BASE_URL, project_keys=[project_key]) or []
+    if "duedate" not in end_field_ids:
+      end_field_ids.append("duedate")
+    epic_name_field_id = _resolve_jira_field_id_by_name(session, "Epic Name")
+    epic_link_field_id = _resolve_jira_field_id_by_name(session, "Epic Link") or "customfield_10014"
+    epic_extra = _support_booking_work_type_field(session, project_key, "Epic")
+    if epic_name_field_id:
+      epic_extra[epic_name_field_id] = _to_text(item["epic_summary"])
+    existing_epic_key = _to_text(extract_jira_key_from_url(item.get("existing_epic_url"))).upper()
+    epic_fields = _jira_issue_payload_fields(project_key, "Epic", _to_text(item["epic_summary"]),
+      f"Support bookings for {_to_text(preview['month_label'])}.", None, _to_text(item["start_date"]),
+      _to_text(item["due_date"]), start_field_id, end_field_ids, epic_extra)
+    epic_publish = _jira_update_issue(session, existing_epic_key, epic_fields) if existing_epic_key else _jira_create_issue(session, epic_fields)
+    epic_key = _to_text(epic_publish["issue_key"]).upper()
+    sb_upsert_jira_publication(settings_db_path, preview["booking_month"], project_key, "", "epic", epic_key,
+      _to_text(epic_publish["jira_url"]), original_estimate_hours=0)
+    results.append({"level": "epic", "project_key": project_key, "action": _to_text(item["epic_action"]), **epic_publish})
+    for story in item["stories"]:
+      member = _to_text(story["team_member"])
+      story_extra = _support_booking_work_type_field(session, project_key, "Story")
+      story_extra[epic_link_field_id] = epic_key
+      story_extra["assignee"] = {"accountId": _support_booking_assignee_account_id(session, project_key, member)}
+      existing_story_key = _to_text(extract_jira_key_from_url(story.get("existing_jira_url"))).upper()
+      story_fields = _jira_issue_payload_fields(project_key, "Story", _to_text(story["summary"]),
+        f"Support booking for {member}; allocated {_to_text(story['original_estimate_hours'])} hours in {_to_text(preview['month_label'])}.",
+        int(round(float(story["original_estimate_hours"]) * 3600)), _to_text(item["start_date"]), _to_text(item["due_date"]),
+        start_field_id, end_field_ids, story_extra)
+      story_publish = _jira_update_issue(session, existing_story_key, story_fields) if existing_story_key else _jira_create_issue(session, story_fields)
+      sb_upsert_jira_publication(settings_db_path, preview["booking_month"], project_key, member, "story",
+        _to_text(story_publish["issue_key"]), _to_text(story_publish["jira_url"]), epic_key, float(story["original_estimate_hours"]))
+      results.append({"level": "story", "project_key": project_key, "team_member": member,
+                      "action": _to_text(story["action"]), "original_estimate_hours": story["original_estimate_hours"], **story_publish})
+  return {"preview": preview, "results": results}
+
+
 def _jira_extract_error_messages(response) -> str:
   """Pull human-readable error message(s) out of a Jira REST API error response."""
   try:
@@ -45537,6 +45744,59 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             return jsonify({"error": str(exc)}), 400
         except Exception as exc:
             return jsonify({"error": f"Failed to initialize support bookings month: {exc}"}), 500
+
+    @app.route("/api/performance/support-bookings/copy-previous-month", methods=["POST"])
+    def copy_support_bookings_previous_month():
+        try:
+            payload = request.get_json(silent=True) or {}
+            month = _to_text(payload.get("month"))
+            if not month:
+                return jsonify({"error": "month is required (YYYY-MM)."}), 400
+            result = sb_copy_previous_month_allocations(capacity_paths["db_path"], month)
+            active_projects = sort_support_booking_projects(
+                list_managed_projects(capacity_paths["db_path"], include_inactive=False)
+            )
+            project_keys = [_to_text(item.get("project_key")).upper() for item in active_projects if item.get("project_key")]
+            matrix = sb_get_month_matrix(capacity_paths["db_path"], month, project_keys=project_keys)
+            matrix["projects"] = active_projects
+            return jsonify({"result": result, "matrix": matrix})
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"error": f"Failed to copy previous month's allocations: {exc}"}), 500
+
+    @app.route("/api/performance/support-bookings/publish-preview", methods=["GET"])
+    def preview_support_bookings_publish():
+        try:
+            month = _to_text(request.args.get("month"))
+            if not month:
+                return jsonify({"error": "month is required (YYYY-MM)."}), 400
+            active_projects = sort_support_booking_projects(
+                list_managed_projects(capacity_paths["db_path"], include_inactive=False)
+            )
+            return jsonify(_support_booking_publish_preview(capacity_paths["db_path"], month, active_projects))
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"error": f"Failed to build Jira publication preview: {exc}"}), 500
+
+    @app.route("/api/performance/support-bookings/publish", methods=["POST"])
+    def publish_support_bookings_to_jira():
+        try:
+            payload = request.get_json(silent=True) or {}
+            month = _to_text(payload.get("month"))
+            if not month:
+                return jsonify({"error": "month is required (YYYY-MM)."}), 400
+            if payload.get("confirm") is not True:
+                return jsonify({"error": "Publication requires confirm: true after reviewing the preview."}), 400
+            active_projects = sort_support_booking_projects(
+                list_managed_projects(capacity_paths["db_path"], include_inactive=False)
+            )
+            return jsonify(_publish_support_booking_to_jira(capacity_paths["db_path"], month, active_projects))
+        except (ValueError, PermissionError) as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"error": f"Failed to publish Support Hour Bookings to Jira: {exc}"}), 500
 
     @app.route("/api/performance/support-bookings/<path:team_member>", methods=["PUT"])
     def update_support_booking_header(team_member: str):
