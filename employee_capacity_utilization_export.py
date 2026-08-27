@@ -327,7 +327,10 @@ def build_employee_capacity_utilization_workbook(payload: dict, filters: dict) -
     metadata = wb.create_sheet("Export Info", 0)
     metadata.append(["Employee Capacity & Utilization Export"])
     metadata.append(["Month", month])
-    metadata.append(["Logged Hours Scope", "Only assigned subtasks" if scope == "assigned" else "Any employee worklog"])
+    metadata.append([
+        "Logged Hours Scope",
+        "Work logged on their assigned subtasks" if scope == "assigned" else "All work logged by employee",
+    ])
     metadata.append(["Include Leaves in Logged Hours", "Yes" if include_leaves else "No"])
     metadata.append(["Employees", len(names)])
     metadata.append(["Canonical Run", payload.get("canonical_run_id")])

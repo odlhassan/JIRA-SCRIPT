@@ -13,6 +13,8 @@ This standalone report presents employee capacity, profile holidays, personal le
 
 ## Filters
 
+The filter bar is divided into two purposeful rows. **Refine the report** contains the primary scope choices—Month, Capacity Profile, Teams, and the prominently highlighted Logged Hours source. **Display & inclusion** contains presentation and visibility preferences—color formatting, leave-worklog inclusion, resigned employees, and Support badges. All changes apply immediately; the status pill confirms this behaviour.
+
 | Field | Default | Effect |
 | --- | --- | --- |
 | Month | Current month | Limits worklogs, leave, and booked-subtask date overlap. |
@@ -28,7 +30,7 @@ There is no Apply or Refresh button. Every filter change redraws the table immed
 
 ## Detail drawer
 
-Every employee and metric value, including Grand Total values, is clickable and keyboard accessible. Activating a value opens a right-side drawer containing the source records for the active month and filters. Clicking Employee Name opens that employee's hour logs. The drawer title area also shows the active Logged Hours scope. Logged Hours lists the Jira work-item link, title, Epic link, Epic name, worklog author, assigned resource, worklog date, and hours. Booked Manhours lists the original-estimate source subtasks. Leave, calendar capacity, availability, and utilization cells each use a metric-specific table.
+Every employee and metric value, including Grand Total values, is clickable and keyboard accessible. Activating a value opens a right-side drawer containing the source records for the active month and filters. Clicking Employee Name opens that employee's hour logs. The drawer title area also shows the active Logged Hours scope. In Logged Hours, the Type column uses a blue Google person icon for Stories, a purple bolt for Epics, a green plus for Subtasks, and a red bug for Bug Subtasks. A red Google warning icon marks every other work-item type, explaining that it is excluded by the assigned-subtask scope. The drawer also lists the Jira work-item link, title, Epic link, Epic name, worklog author, assigned resource, worklog date, and hours. Booked Manhours lists the original-estimate source subtasks. Leave, calendar capacity, availability, and utilization cells each use a metric-specific table.
 
 The drawer can be widened or narrowed by dragging its left resize handle. The width persists in browser storage. It closes through its close button, the backdrop, or Escape, and returns focus to the triggering table cell.
 
