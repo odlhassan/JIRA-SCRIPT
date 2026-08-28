@@ -32,7 +32,7 @@ def _write_epics_import_source(path: Path, *, total_override: float | None = Non
     headers = [
         "Sr #", "Category", "Components", "Road Map Items", "Jira ID", "Originator",
         "Value", "Priority", "Priority", "Priority", "Priority", "Plan Status", "Work Status",
-        "Prc Design", "R/URS", "R/DDS", "Dev", "SQA", "Prc Test", "Doc", "Reg SQA", "Release",
+        "Prc Design", "R/URS", "R/DDS", "Dev", "ReadAPI Sup", "SiteLayout Sup", "OmniAgent Sup", "SQA", "Prc Test", "Doc", "Reg SQA", "Release",
         "Man Days", "Optimistic (50%)", "Pessimistic (10%)", "Est Formula", "TK's TARGET",
         "Start Date", "Dev End", "SQA HO", "Prod Date",
         "Prc Design", "R/URS (5%)", "R/DDS (10%)", "Dev (40%)", "Handover", "SQA (15%)",
@@ -40,15 +40,15 @@ def _write_epics_import_source(path: Path, *, total_override: float | None = Non
     ]
     ws.merge_cells("A1:D1")
     ws["A1"] = "OmniConnect Roadmap Items"
-    ws.merge_cells("N1:W1")
+    ws.merge_cells("N1:Z1")
     ws["N1"] = "RnD Most likely"
-    ws.merge_cells("X1:AP1")
-    ws["X1"] = "TK Budgeted"
+    ws.merge_cells("AI1:AT1")
+    ws["AI1"] = "TK Budgeted"
     ws.append(headers)
-    phase_values = [1, 2, 3, 4, 5, 6, 7, 8, 9]
+    phase_values = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
     ws.append([
         1, "Input", "Streaming", "Streaming Epic", "[O2-321] Streaming Pub/Sub Architecture - Jira",
-        "RnD", None, None, None, None, None, "Plan", "Ready",
+        "RnD", None, 2, None, None, None, "Plan", "Ready",
         *phase_values, total_override if total_override is not None else sum(phase_values),
     ])
     ws["E3"].hyperlink = epic_url
@@ -499,6 +499,11 @@ class ReportUiSmokeTests(unittest.TestCase):
             self.assertIn('id="create-db-backup" type="checkbox"', html)
             self.assertNotIn('id="create-db-backup" type="checkbox" checked', html)
             self.assertIn("create_db_backup: createDbBackup", html)
+            self.assertIn('id="fetch-smart-btn"', html)
+            self.assertIn('id="compute-latest-btn"', html)
+            self.assertIn('const FETCH_API = "/api/canonical-fetch";', html)
+            self.assertIn('const COMPUTE_API = "/api/canonical-compute";', html)
+            self.assertIn('id="meta-reconciliation"', html)
             self.assertIn('id="meta-db-backup"', html)
 
     def test_manage_fields_page_and_settings_links_exist(self):
@@ -722,6 +727,9 @@ class ReportUiSmokeTests(unittest.TestCase):
             self.assertIn("production_plan", seeded)
             self.assertIn("process_design", seeded)
             self.assertIn("regression_sqa_testing", seeded)
+            self.assertIn("readapi_support_plan", seeded)
+            self.assertIn("sitelayout_support_plan", seeded)
+            self.assertIn("omniagent_support_plan", seeded)
             research_col = next(item for item in columns_body.get("columns", []) if str(item.get("key")) == "research_urs_plan")
             self.assertEqual(research_col.get("label"), "R/URS")
             self.assertTrue(research_col.get("most_likely_enabled"))
@@ -732,6 +740,10 @@ class ReportUiSmokeTests(unittest.TestCase):
             self.assertEqual(handover_col.get("phase_role"), "formula_managed")
             self.assertFalse(handover_col.get("most_likely_enabled"))
             self.assertTrue(handover_col.get("jira_link_enabled"))
+            readapi_col = next(item for item in columns_body.get("columns", []) if str(item.get("key")) == "readapi_support_plan")
+            self.assertEqual(readapi_col.get("label"), "ReadAPI Sup")
+            self.assertTrue(readapi_col.get("most_likely_enabled"))
+            self.assertEqual(readapi_col.get("formula_role"), "direct")
             bug_fixing_col = next(item for item in columns_body.get("columns", []) if str(item.get("key")) == "bug_fixing")
             self.assertTrue(bug_fixing_col.get("jira_link_enabled"))
             production_col = next(item for item in columns_body.get("columns", []) if str(item.get("key")) == "production_plan")
@@ -784,6 +796,9 @@ class ReportUiSmokeTests(unittest.TestCase):
                         "process_design",
                         "dds_plan",
                         "development_plan",
+                        "readapi_support_plan",
+                        "sitelayout_support_plan",
+                        "omniagent_support_plan",
                         "qa_handover",
                         "sqa_plan",
                         "bug_fixing",
@@ -806,6 +821,9 @@ class ReportUiSmokeTests(unittest.TestCase):
                     "process_design",
                     "dds_plan",
                     "development_plan",
+                    "readapi_support_plan",
+                    "sitelayout_support_plan",
+                    "omniagent_support_plan",
                     "qa_handover",
                     "sqa_plan",
                     "bug_fixing",
@@ -1085,15 +1103,19 @@ class ReportUiSmokeTests(unittest.TestCase):
             self.assertEqual(row["jira_url"], "https://octopusdtlsupport.atlassian.net/browse/O2-321")
             self.assertEqual(row["epic_key"], "O2-321")
             self.assertEqual(row["work_status"], "Ready")
+            self.assertEqual(row["priority"], "Medium")
             self.assertEqual(row["category"], "Input")
             self.assertEqual(row["component"], "Streaming")
             self.assertEqual(row["phases"]["process_design"], 1)
             self.assertEqual(row["phases"]["research_urs_plan"], 2)
-            self.assertEqual(row["phases"]["production_plan"], 9)
-            self.assertEqual(row["phase_sum"], 45.0)
+            self.assertEqual(row["phases"]["readapi_support_plan"], 5)
+            self.assertEqual(row["phases"]["sitelayout_support_plan"], 6)
+            self.assertEqual(row["phases"]["omniagent_support_plan"], 7)
+            self.assertEqual(row["phases"]["production_plan"], 12)
+            self.assertEqual(row["phase_sum"], 78.0)
             self.assertEqual(row["man_days_total"], 99)
             self.assertFalse(row["total_matches"])
-            self.assertIn("Phase total 45.0 differs from Man Days 99", row["warnings"][0])
+            self.assertIn("Phase total 78.0 differs from Man Days 99", row["warnings"][0])
             self.assertFalse(rows[1]["can_import"])
 
             page_resp = client.get("/settings/epics-management/import")
@@ -1252,16 +1274,20 @@ class ReportUiSmokeTests(unittest.TestCase):
                             "epic_name": "Jira Epic Summary",
                             "description": "Jira description",
                             "originator": "RnD",
+                            "priority": "Medium",
                             "phases": {
                                 "process_design": 1,
                                 "research_urs_plan": 2,
                                 "dds_plan": 3,
                                 "development_plan": 4,
-                                "sqa_plan": 5,
-                                "process_qa_testing": 6,
-                                "user_manual_plan": 7,
-                                "regression_sqa_testing": 8,
-                                "production_plan": 9,
+                                "readapi_support_plan": 5,
+                                "sitelayout_support_plan": 6,
+                                "omniagent_support_plan": 7,
+                                "sqa_plan": 8,
+                                "process_qa_testing": 9,
+                                "user_manual_plan": 10,
+                                "regression_sqa_testing": 11,
+                                "production_plan": 12,
                             },
                             "phase_reviews": {
                                 "development_plan": {
@@ -1311,14 +1337,17 @@ class ReportUiSmokeTests(unittest.TestCase):
             self.assertEqual(updated["product_category"], "Input")
             self.assertEqual(updated["component"], "Streaming")
             self.assertEqual(updated["originator"], "RnD")
-            self.assertEqual(updated["priority"], "High")
+            self.assertEqual(updated["priority"], "Medium")
             self.assertEqual(updated["plan_status"], "Planned")
             self.assertEqual(updated["is_sealed"], 0)
             self.assertEqual(updated["is_tk_epic"], 1)
             self.assertEqual(updated["plans"]["development_plan"]["most_likely_man_days"], 4.0)
             self.assertEqual(updated["plans"]["development_plan"]["jira_url"], "https://octopusdtlsupport.atlassian.net/browse/O2-401")
             self.assertEqual(updated["plans"]["development_plan"]["start_date"], "2026-05-03")
-            self.assertEqual(updated["plans"]["sqa_plan"]["most_likely_man_days"], 5.0)
+            self.assertEqual(updated["plans"]["readapi_support_plan"]["most_likely_man_days"], 5.0)
+            self.assertEqual(updated["plans"]["sitelayout_support_plan"]["most_likely_man_days"], 6.0)
+            self.assertEqual(updated["plans"]["omniagent_support_plan"]["most_likely_man_days"], 7.0)
+            self.assertEqual(updated["plans"]["sqa_plan"]["most_likely_man_days"], 8.0)
             self.assertEqual(updated["plans"]["sqa_plan"]["jira_url"], "https://octopusdtlsupport.atlassian.net/browse/O2-990")
             self.assertIn("FF-541", rows)
             self.assertEqual(rows["FF-541"]["is_tk_epic"], 1)

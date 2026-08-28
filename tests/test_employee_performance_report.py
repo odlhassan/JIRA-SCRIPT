@@ -1349,7 +1349,7 @@ class EmployeePerformanceReportTests(unittest.TestCase):
                 report_server._run_script = original_run_script
                 report_server.sync_report_html = original_sync_report_html
 
-    def test_assignee_scoped_refresh_preserves_reassigned_subtasks_and_updates_exports(self):
+    def test_assignee_scoped_refresh_preserves_global_snapshot_and_updates_employee_output(self):
         def make_issue(
             key: str,
             issue_type: str,
@@ -1518,7 +1518,7 @@ class EmployeePerformanceReportTests(unittest.TestCase):
             with sqlite3.connect(db_path) as conn:
                 state_row = conn.execute("SELECT last_success_run_id FROM canonical_refresh_state WHERE id = 1").fetchone()
                 latest_run_id = str(state_row[0] or "")
-                self.assertEqual(latest_run_id, run_id)
+                self.assertEqual(latest_run_id, previous_run_id)
                 moved_row = conn.execute(
                     "SELECT assignee FROM canonical_issues WHERE run_id = ? AND issue_key = 'O2-101'",
                     (run_id,),
@@ -1527,24 +1527,17 @@ class EmployeePerformanceReportTests(unittest.TestCase):
                     "SELECT assignee FROM canonical_issues WHERE run_id = ? AND issue_key = 'O2-102'",
                     (run_id,),
                 ).fetchone()
-                derived_row = conn.execute(
-                    "SELECT COUNT(*) FROM canonical_issue_actuals WHERE run_id = ?",
+                scoped_row = conn.execute(
+                    "SELECT fetch_status, compute_status FROM employee_performance_scoped_runs WHERE scoped_run_id = ?",
                     (run_id,),
                 ).fetchone()
             self.assertIsNotNone(moved_row)
             self.assertEqual(str(moved_row[0] or ""), "Bob")
             self.assertIsNotNone(new_row)
             self.assertEqual(str(new_row[0] or ""), "Alice")
-            self.assertGreater(int(derived_row[0] or 0), 0)
-
-            exports_db = tdp / "jira_exports.db"
-            with sqlite3.connect(exports_db) as conn:
-                exported_moved = conn.execute("SELECT assignee FROM work_items WHERE issue_key = 'O2-101'").fetchone()
-                exported_new = conn.execute("SELECT assignee FROM work_items WHERE issue_key = 'O2-102'").fetchone()
-            self.assertIsNotNone(exported_moved)
-            self.assertEqual(str(exported_moved[0] or ""), "Bob")
-            self.assertIsNotNone(exported_new)
-            self.assertEqual(str(exported_new[0] or ""), "Alice")
+            self.assertEqual(tuple(scoped_row or ()), ("success", "success"))
+            self.assertTrue((tdp / "employee_performance_report.html").exists())
+            self.assertFalse((tdp / "jira_exports.db").exists())
 
     def test_fix_type_rework_flows_from_work_items_to_worklogs(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:

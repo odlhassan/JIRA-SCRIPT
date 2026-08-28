@@ -4,6 +4,17 @@
 
 This project introduces a single canonical yearly Jira refresh that populates one shared SQLite dataset for all reports.
 
+## Two-Phase Refresh Lifecycle (2026-08-28)
+
+Colossal Refresh now separates data acquisition from precomputation. A global Fetch writes an immutable raw canonical snapshot; a global Compute rebuilds the shared derived tables, compatibility artifacts, and report output from one successful Fetch snapshot. Reports continue to use the previously promoted precomputed version until Compute succeeds.
+
+- `POST /api/canonical-refresh` remains the one-click Fetch then Compute workflow.
+- `POST /api/canonical-fetch` performs Fetch only; `POST /api/canonical-compute` computes the latest (or requested) successful Fetch.
+- Smart Fetch uses a durable checkpoint with a ten-minute overlap. A Smart request due for reconciliation upgrades to a full inventory reconciliation after seven days.
+- `canonical_fetch_runs` and `canonical_compute_runs` record independent lifecycle status. Existing `canonical_refresh_runs` and `last_success_run_id` remain the report compatibility contract.
+- Employee Performance per-assignee refresh is deliberately scoped: it records `employee_performance_scoped_runs`, regenerates only Employee Performance output, and never promotes its partial snapshot as the global canonical/report version.
+- Completed lifecycle history is pruned after 30 days without SQLite compaction; active/current and fallback snapshots are retained.
+
 The refresh is initiated from the Nested Report UI and is scoped only to active projects from the Managed Projects module.
 
 The end-state design is:

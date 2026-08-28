@@ -230,6 +230,8 @@ class CanonicalRefreshApiTests(unittest.TestCase):
                 patch.object(report_server, "_fetch_story_issues_for_epics", side_effect=_fake_fetch_stories),
                 patch.object(report_server, "_fetch_subtask_issues_for_stories", side_effect=_fake_fetch_subtasks),
                 patch.object(report_server, "export_fetch_worklogs_for_issue", side_effect=_fake_worklogs),
+                patch.object(report_server, "_run_script", return_value=(0, "ok", "")),
+                patch.object(report_server, "sync_report_html", return_value=0),
             ):
                 resp = client.post("/api/canonical-refresh", json={"year": 2026})
                 self.assertEqual(resp.status_code, 202)
@@ -466,6 +468,8 @@ class CanonicalRefreshApiTests(unittest.TestCase):
                 trigger_source="api_refresh_async",
                 create_db_backup=False,
                 db_backup_path="",
+                fetch_only=False,
+                keep_run_running=False,
             ):
                 seen["create_db_backup"] = create_db_backup
                 seen["db_backup_path"] = db_backup_path
@@ -494,7 +498,7 @@ class CanonicalRefreshApiTests(unittest.TestCase):
             self.assertFalse(bool(seen.get("create_db_backup")))
             self.assertEqual(str(seen.get("db_backup_path") or ""), "")
 
-    def test_full_refresh_creates_db_backup_when_requested(self):
+    def test_full_refresh_ignores_backup_request_when_backups_are_disabled(self):
         with patch.dict("os.environ", {"JIRA_PROJECT_KEYS": ""}, clear=False), tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             root = Path(td)
             (root / "report_html").mkdir(parents=True, exist_ok=True)
@@ -515,6 +519,8 @@ class CanonicalRefreshApiTests(unittest.TestCase):
                 trigger_source="api_refresh_async",
                 create_db_backup=False,
                 db_backup_path="",
+                fetch_only=False,
+                keep_run_running=False,
             ):
                 seen["create_db_backup"] = create_db_backup
                 seen["db_backup_path"] = db_backup_path
@@ -549,11 +555,9 @@ class CanonicalRefreshApiTests(unittest.TestCase):
 
             self.assertEqual(resp.status_code, 202)
             body = resp.get_json() or {}
-            backup_path = Path(str(body.get("db_backup_path") or ""))
-            self.assertTrue(backup_path.exists())
-            self.assertEqual(backup_path.parent, root / "backups" / "canonical_refresh")
-            self.assertTrue(bool(seen.get("create_db_backup")))
-            self.assertEqual(Path(str(seen.get("db_backup_path") or "")), backup_path)
+            self.assertEqual(str(body.get("db_backup_path") or ""), "")
+            self.assertFalse(bool(seen.get("create_db_backup")))
+            self.assertEqual(str(seen.get("db_backup_path") or ""), "")
 
     def test_start_clears_orphaned_running_canonical_run_before_starting_new_one(self):
         with patch.dict("os.environ", {"JIRA_PROJECT_KEYS": ""}, clear=False), tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
@@ -576,6 +580,8 @@ class CanonicalRefreshApiTests(unittest.TestCase):
                 trigger_source="api_refresh_async",
                 create_db_backup=False,
                 db_backup_path="",
+                fetch_only=False,
+                keep_run_running=False,
             ):
                 report_server._canonical_mark_run_status(
                     db_path,
@@ -789,6 +795,8 @@ class CanonicalRefreshApiTests(unittest.TestCase):
                 trigger_source="api_refresh_async",
                 create_db_backup=False,
                 db_backup_path="",
+                fetch_only=False,
+                keep_run_running=False,
             ):
                 started = report_server._canonical_now_utc()
                 with sqlite3.connect(db_path) as conn:

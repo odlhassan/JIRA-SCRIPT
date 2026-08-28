@@ -8,6 +8,10 @@ When the Employee Performance dashboard header `Refresh` runs, is the fetched da
 
 No.
 
+## Scoped refresh isolation (2026-08-28)
+
+The Employee Performance per-assignee refresh is a scoped Fetch followed by an Employee Performance-only Compute. It can refresh that report's output, but it never promotes its partial canonical snapshot into the global `canonical_refresh_state.last_success_run_id`; dashboard, planning, nested, and other global reports remain on their last globally computed version.
+
 ## UI behavior note (2026-06-11)
 
 - In the Employee Performance Teams filter, enabling `Include support` or `Include resigned` now performs a bulk default include without locking member checkboxes.

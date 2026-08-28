@@ -35,6 +35,9 @@ Detailed functional documentation is available at:
   `performance_resource_resignations`, and `support_team_config` **read-only** to render the
   custom Employee Performance Teams filter with nested members, resignation status, and
   `Support team` chips.
+- `rnd_muscle_utilization_service.py` now stores feature-owned configuration and planner
+  state in the standalone `rnd_muscle_utilization.db`. It reads this capacity DB only as
+  the source for Epics Planner rows and canonical assignee/worklog names.
 
 ## Run Modes
 
@@ -55,6 +58,7 @@ Detailed functional documentation is available at:
 ## Business Logic
 
 - The capacity database path is resolved by `report_server.py` from `JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH`, defaulting to `assignee_hours_capacity.db` under the app root for local development.
+- RnD Muscle Utilization has its own database path, resolved from `JIRA_RND_MUSCLE_UTILIZATION_DB_PATH`, defaulting to `rnd_muscle_utilization.db` under the app root.
 - Runtime path values are trimmed and accidental wrapping quotes are removed before `Path` resolution, so Azure app settings like `"/home/data/assignee_hours_capacity.db"` still resolve to `/home/data/assignee_hours_capacity.db`.
 - The capacity DB parent directory is created before the first SQLite connection in `_init_capacity_db`, which prevents cold-start failure when `/home/data` or a nested local test directory exists only as a configured path.
 - On Azure, an unwritable configured path falls back to `$HOME/data/assignee_hours_capacity.db` with a stderr warning so the web worker can boot instead of returning the generic App Service Application Error page.
@@ -75,7 +79,9 @@ Detailed functional documentation is available at:
 
 ## Explanations
 
-At server startup, `wsgi.py` calls `create_report_server_app()`. The server resolves the capacity DB path, verifies that the parent folder can be written, initializes capacity tables, then initializes dependent settings tables used by Employee Performance, Team Capacity Planner, managed projects, page categories, canonical refresh, and report refresh APIs. If the configured production path is unusable, the server logs the fallback path and continues with `$HOME/data/assignee_hours_capacity.db` rather than failing worker boot.
+At server startup, `wsgi.py` calls `create_report_server_app()`. The server resolves the capacity DB path, verifies that the parent folder can be written, initializes capacity tables, then initializes dependent settings tables used by Employee Performance, Team Capacity Planner, managed projects, page categories, canonical refresh, and report refresh APIs. RnD Muscle Utilization resolves a separate SQLite path for its own `rnd_muscle_*` tables and uses the capacity DB as a read source for Epics Planner/canonical data. If the configured production capacity path is unusable, the server logs the fallback path and continues with `$HOME/data/assignee_hours_capacity.db` rather than failing worker boot.
+
+Canonical refresh lifecycle state is also stored here. `canonical_fetch_runs` records raw Jira Fetch snapshots and checkpoints, while `canonical_compute_runs` records the downstream precomputation that makes a Fetch visible to shared reports. `employee_performance_scoped_runs` records the separate assignee-specific Employee Performance flow; it must not change the global promoted canonical run.
 
 ## Front-end UI Fields
 

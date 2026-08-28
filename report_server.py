@@ -3291,6 +3291,76 @@ def _init_canonical_refresh_db(db_path: Path) -> None:
             )
             """
         )
+        # Two-phase lifecycle metadata.  The legacy canonical_refresh_runs table
+        # continues to identify the immutable raw snapshot so existing report
+        # readers remain compatible during the migration.
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS canonical_fetch_runs (
+                fetch_run_id TEXT PRIMARY KEY,
+                canonical_run_id TEXT NOT NULL UNIQUE,
+                scope_year INTEGER NOT NULL DEFAULT 0,
+                managed_project_keys_json TEXT NOT NULL DEFAULT '[]',
+                requested_mode TEXT NOT NULL DEFAULT 'full',
+                effective_mode TEXT NOT NULL DEFAULT 'full',
+                baseline_fetch_run_id TEXT NOT NULL DEFAULT '',
+                checkpoint_from_utc TEXT NOT NULL DEFAULT '',
+                checkpoint_to_utc TEXT NOT NULL DEFAULT '',
+                reconciliation_due INTEGER NOT NULL DEFAULT 0,
+                status TEXT NOT NULL DEFAULT 'running',
+                stats_json TEXT NOT NULL DEFAULT '{}',
+                started_at_utc TEXT NOT NULL DEFAULT '',
+                ended_at_utc TEXT NOT NULL DEFAULT '',
+                error_message TEXT NOT NULL DEFAULT ''
+            )
+            """
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_canonical_fetch_runs_scope ON canonical_fetch_runs(scope_year, managed_project_keys_json, started_at_utc)")
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS canonical_compute_runs (
+                compute_run_id TEXT PRIMARY KEY,
+                fetch_run_id TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'running',
+                trigger_source TEXT NOT NULL DEFAULT '',
+                stats_json TEXT NOT NULL DEFAULT '{}',
+                progress_step TEXT NOT NULL DEFAULT 'queued',
+                progress_pct INTEGER NOT NULL DEFAULT 0,
+                cancel_requested INTEGER NOT NULL DEFAULT 0,
+                started_at_utc TEXT NOT NULL DEFAULT '',
+                ended_at_utc TEXT NOT NULL DEFAULT '',
+                updated_at_utc TEXT NOT NULL DEFAULT '',
+                error_message TEXT NOT NULL DEFAULT ''
+            )
+            """
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_canonical_compute_runs_fetch ON canonical_compute_runs(fetch_run_id, started_at_utc)")
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS employee_performance_scoped_runs (
+                scoped_run_id TEXT PRIMARY KEY,
+                assignee TEXT NOT NULL DEFAULT '',
+                scope_year INTEGER NOT NULL DEFAULT 0,
+                source_global_run_id TEXT NOT NULL DEFAULT '',
+                fetch_status TEXT NOT NULL DEFAULT 'running',
+                compute_status TEXT NOT NULL DEFAULT 'pending',
+                started_at_utc TEXT NOT NULL DEFAULT '',
+                ended_at_utc TEXT NOT NULL DEFAULT '',
+                stats_json TEXT NOT NULL DEFAULT '{}',
+                error_message TEXT NOT NULL DEFAULT ''
+            )
+            """
+        )
+        state_columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(canonical_refresh_state)").fetchall()}
+        for column_name, ddl in (
+            ("active_fetch_run_id", "TEXT NOT NULL DEFAULT ''"),
+            ("last_success_fetch_run_id", "TEXT NOT NULL DEFAULT ''"),
+            ("active_compute_run_id", "TEXT NOT NULL DEFAULT ''"),
+            ("last_success_compute_run_id", "TEXT NOT NULL DEFAULT ''"),
+            ("last_full_reconciliation_at_utc", "TEXT NOT NULL DEFAULT ''"),
+        ):
+            if column_name not in state_columns:
+                conn.execute(f"ALTER TABLE canonical_refresh_state ADD COLUMN {column_name} {ddl}")
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS canonical_issues (
@@ -3497,6 +3567,20 @@ def _init_canonical_refresh_db(db_path: Path) -> None:
                 """,
                 (now,),
             )
+        # Existing installations have a promoted one-phase run. Treat it as both
+        # the latest fetched and computed snapshot until the first two-phase run.
+        conn.execute(
+            """
+            UPDATE canonical_refresh_state
+            SET last_success_fetch_run_id = CASE
+                    WHEN TRIM(last_success_fetch_run_id) = '' THEN last_success_run_id
+                    ELSE last_success_fetch_run_id END,
+                last_success_compute_run_id = CASE
+                    WHEN TRIM(last_success_compute_run_id) = '' THEN last_success_run_id
+                    ELSE last_success_compute_run_id END
+            WHERE id = 1
+            """
+        )
         row = conn.execute("SELECT id FROM canonical_sync_state WHERE id = 1").fetchone()
         if not row:
             now = _canonical_now_utc()
@@ -3749,6 +3833,138 @@ def _canonical_last_success_run_id(db_path: Path) -> str:
             "SELECT last_success_run_id FROM canonical_refresh_state WHERE id = 1"
         ).fetchone()
     return _to_text(row[0] if row else "")
+
+
+def _canonical_two_phase_state(db_path: Path) -> dict[str, str]:
+    """Return lifecycle pointers while remaining compatible with old databases."""
+    try:
+        with sqlite3.connect(db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute("SELECT * FROM canonical_refresh_state WHERE id = 1").fetchone()
+        values = dict(row) if row else {}
+    except sqlite3.OperationalError:
+        values = {}
+    legacy = _to_text(values.get("last_success_run_id"))
+    return {
+        "active_fetch_run_id": _to_text(values.get("active_fetch_run_id")),
+        "last_success_fetch_run_id": _to_text(values.get("last_success_fetch_run_id")) or legacy,
+        "active_compute_run_id": _to_text(values.get("active_compute_run_id")),
+        "last_success_compute_run_id": _to_text(values.get("last_success_compute_run_id")) or legacy,
+        "last_full_reconciliation_at_utc": _to_text(values.get("last_full_reconciliation_at_utc")),
+    }
+
+
+def _canonical_reconciliation_due(db_path: Path, now_utc: str = "") -> bool:
+    value = _canonical_two_phase_state(db_path).get("last_full_reconciliation_at_utc", "")
+    if not value:
+        return True
+    try:
+        then = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        now = datetime.fromisoformat((now_utc or _canonical_now_utc()).replace("Z", "+00:00"))
+        return (now - then).total_seconds() >= 7 * 24 * 60 * 60
+    except Exception:
+        return True
+
+
+def _canonical_fetch_run_upsert(
+    db_path: Path,
+    *,
+    run_id: str,
+    scope_year: int,
+    managed_project_keys: list[str],
+    requested_mode: str,
+    effective_mode: str,
+    baseline_run_id: str = "",
+    checkpoint_from_utc: str = "",
+    reconciliation_due: bool = False,
+    status: str = "running",
+    stats: dict[str, object] | None = None,
+    error_message: str = "",
+    completed: bool = False,
+) -> None:
+    now = _canonical_now_utc()
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO canonical_fetch_runs(
+                fetch_run_id, canonical_run_id, scope_year, managed_project_keys_json,
+                requested_mode, effective_mode, baseline_fetch_run_id,
+                checkpoint_from_utc, checkpoint_to_utc, reconciliation_due,
+                status, stats_json, started_at_utc, ended_at_utc, error_message
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(fetch_run_id) DO UPDATE SET
+                effective_mode=excluded.effective_mode,
+                baseline_fetch_run_id=excluded.baseline_fetch_run_id,
+                checkpoint_from_utc=excluded.checkpoint_from_utc,
+                checkpoint_to_utc=excluded.checkpoint_to_utc,
+                reconciliation_due=excluded.reconciliation_due,
+                status=excluded.status, stats_json=excluded.stats_json,
+                ended_at_utc=excluded.ended_at_utc, error_message=excluded.error_message
+            """,
+            (
+                run_id, run_id, int(scope_year or 0),
+                json.dumps(sorted({_to_text(k).upper() for k in managed_project_keys if _to_text(k)}), ensure_ascii=True),
+                _to_text(requested_mode), _to_text(effective_mode), _to_text(baseline_run_id),
+                _to_text(checkpoint_from_utc), now if completed and _to_text(status) == "success" else "",
+                1 if reconciliation_due else 0, _to_text(status), json.dumps(stats or {}, ensure_ascii=True),
+                now, now if completed else "", _to_text(error_message),
+            ),
+        )
+        if _to_text(status) == "success":
+            conn.execute(
+                """UPDATE canonical_refresh_state
+                   SET active_fetch_run_id='', last_success_fetch_run_id=?,
+                       last_full_reconciliation_at_utc=CASE WHEN ? THEN ? ELSE last_full_reconciliation_at_utc END,
+                       updated_at_utc=? WHERE id=1""",
+                (run_id, 1 if _to_text(effective_mode) in {"full", "reconciliation"} else 0, now, now),
+            )
+        elif _to_text(status) in {"failed", "canceled"}:
+            conn.execute("UPDATE canonical_refresh_state SET active_fetch_run_id='', updated_at_utc=? WHERE id=1", (now,))
+        conn.commit()
+
+
+def _canonical_compute_get_run(db_path: Path, compute_run_id: str) -> dict[str, object] | None:
+    if not _to_text(compute_run_id):
+        return None
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT * FROM canonical_compute_runs WHERE compute_run_id=?", (_to_text(compute_run_id),)).fetchone()
+    return dict(row) if row else None
+
+
+def _canonical_fetch_checkpoint(db_path: Path, fetch_run_id: str) -> str:
+    """Return the committed cursor for a Fetch; legacy runs fall back to end time."""
+    if not _to_text(fetch_run_id):
+        return ""
+    try:
+        with sqlite3.connect(db_path) as conn:
+            row = conn.execute(
+                "SELECT checkpoint_to_utc FROM canonical_fetch_runs WHERE fetch_run_id=?",
+                (_to_text(fetch_run_id),),
+            ).fetchone()
+        if row and _to_text(row[0]):
+            return _to_text(row[0])
+    except sqlite3.OperationalError:
+        pass
+    legacy = _canonical_get_run(db_path, fetch_run_id) or {}
+    return _to_text(legacy.get("ended_at_utc")) or _to_text(legacy.get("updated_at_utc"))
+
+
+def _canonical_compute_serialize_run(row: dict[str, object] | None) -> dict[str, object]:
+    item = row or {}
+    try:
+        stats = json.loads(_to_text(item.get("stats_json")) or "{}")
+    except Exception:
+        stats = {}
+    return {
+        "run_id": _to_text(item.get("compute_run_id")), "compute_run_id": _to_text(item.get("compute_run_id")),
+        "fetch_run_id": _to_text(item.get("fetch_run_id")), "status": _to_text(item.get("status")),
+        "step": _to_text(item.get("progress_step")), "progress": int(item.get("progress_pct") or 0),
+        "cancel_requested": bool(int(item.get("cancel_requested") or 0)),
+        "started_at_utc": _to_text(item.get("started_at_utc")), "ended_at_utc": _to_text(item.get("ended_at_utc")),
+        "updated_at_utc": _to_text(item.get("updated_at_utc")), "error": _to_text(item.get("error_message")),
+        "stats": stats if isinstance(stats, dict) else {},
+    }
 
 
 def _canonical_last_success_completed_at_utc(db_path: Path) -> str:
@@ -4598,6 +4814,37 @@ def _canonical_collect_discovery_candidates(
                 continue
             issue_map[issue_key] = issue
             _canonical_reason_bucket_add(reason_map, issue_key, reason)
+    return issue_map, reason_map
+
+
+def _canonical_collect_incremental_candidates(
+    session,
+    managed_project_keys: list[str],
+    checkpoint_utc: str,
+    start_field_id: str,
+    end_field_ids: list[str],
+) -> tuple[dict[str, dict], dict[str, set[str]]]:
+    """Discover only Jira entities changed since the durable fetch cursor.
+
+    A ten-minute overlap deliberately refetches a small safe window so Jira
+    indexing delays and timestamp-boundary updates cannot be missed.
+    """
+    project_keys = sorted({_to_text(item).upper() for item in managed_project_keys if _to_text(item)})
+    try:
+        checkpoint = datetime.fromisoformat(_to_text(checkpoint_utc).replace("Z", "+00:00"))
+    except Exception:
+        checkpoint = datetime.now(timezone.utc) - timedelta(minutes=10)
+    overlap_start = checkpoint - timedelta(minutes=10)
+    jql_timestamp = overlap_start.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M")
+    jql = f'{_canonical_base_issue_jql(project_keys)} AND updated >= "{jql_timestamp}" ORDER BY updated ASC'
+    issue_map: dict[str, dict] = {}
+    reason_map: dict[str, set[str]] = {}
+    for issue in export_fetch_issues(session, jql=jql, fields=_canonical_discovery_fields(start_field_id, end_field_ids)):
+        issue_key = _to_text(issue.get("key")).upper()
+        if not issue_key or _canonical_issue_project_key(issue) not in project_keys:
+            continue
+        issue_map[issue_key] = issue
+        _canonical_reason_bucket_add(reason_map, issue_key, "updated_since_checkpoint")
     return issue_map, reason_map
 
 
@@ -6054,13 +6301,19 @@ def _run_canonical_phase1_refresh(
     trigger_source: str = "api_refresh_async",
     create_db_backup: bool = False,
     db_backup_path: str = "",
+    fetch_only: bool = False,
+    keep_run_running: bool = False,
 ) -> tuple[dict[str, object], int]:
     started = time.perf_counter()
     run_started_at = _canonical_now_utc()
     managed_keys = sorted({_to_text(item).upper() for item in (managed_project_keys or []) if _to_text(item)})
     requested_mode = _canonical_normalize_mode(mode)
     previous_run_id = _canonical_find_matching_success_run(db_path, scope_year, managed_keys) if requested_mode == "smart" else ""
-    effective_mode = requested_mode if (requested_mode != "smart" or previous_run_id) else "full"
+    reconciliation_due = requested_mode == "smart" and _canonical_reconciliation_due(db_path)
+    effective_mode = (
+        "reconciliation" if reconciliation_due else
+        (requested_mode if (requested_mode != "smart" or previous_run_id) else "full")
+    )
     sync_db_path = _canonical_sync_cache_path(db_path.parent)
     detail_limit = 250
     completed_stages: set[str] = set()
@@ -6099,6 +6352,7 @@ def _run_canonical_phase1_refresh(
             "phase": "colossal_fetch",
             "mode": requested_mode,
             "effective_mode": effective_mode,
+            "reconciliation_due": reconciliation_due,
             "previous_run_id": previous_run_id,
             "db_backup": {
                 "requested": bool(create_db_backup),
@@ -6203,15 +6457,32 @@ def _run_canonical_phase1_refresh(
         if _canonical_is_cancel_requested(db_path, run_id):
             return _cancel("discovering_issues")
         _update("discovering_issues", 20, current_item="Discover candidate issues")
-        issue_map, reason_map = _canonical_collect_discovery_candidates(
-            session=session,
-            managed_project_keys=managed_keys,
-            from_date=from_date,
-            to_date=to_date,
-            start_field_id=start_field_id,
-            end_field_ids=end_field_ids,
-        )
-        counts_by_stage["discovering_issues"] = {"candidate_count": len(issue_map)}
+        previous_run_issue_keys_for_delta: set[str] = set()
+        checkpoint_from_utc = ""
+        if effective_mode == "smart" and previous_run_id:
+            previous_run_issue_keys_for_delta = _canonical_load_run_issue_keys(db_path, previous_run_id)
+            checkpoint_from_utc = _canonical_fetch_checkpoint(db_path, previous_run_id)
+            issue_map, reason_map = _canonical_collect_incremental_candidates(
+                session=session,
+                managed_project_keys=managed_keys,
+                checkpoint_utc=checkpoint_from_utc,
+                start_field_id=start_field_id,
+                end_field_ids=end_field_ids,
+            )
+        else:
+            issue_map, reason_map = _canonical_collect_discovery_candidates(
+                session=session,
+                managed_project_keys=managed_keys,
+                from_date=from_date,
+                to_date=to_date,
+                start_field_id=start_field_id,
+                end_field_ids=end_field_ids,
+            )
+        counts_by_stage["discovering_issues"] = {
+            "candidate_count": len(issue_map),
+            "checkpoint_from_utc": checkpoint_from_utc,
+            "discovery_mode": "delta" if effective_mode == "smart" else "full_inventory",
+        }
         completed_stages.add("discovering_issues")
 
         if _canonical_is_cancel_requested(db_path, run_id):
@@ -6234,7 +6505,7 @@ def _run_canonical_phase1_refresh(
             end_field_ids=end_field_ids,
         )
 
-        final_issue_keys = sorted(issue_map.keys())
+        final_issue_keys = sorted(set(issue_map.keys()) | previous_run_issue_keys_for_delta)
         summary["total_candidates"] = len(final_issue_keys)
         summary["closure_added_items"] = sum(
             1
@@ -6261,12 +6532,15 @@ def _run_canonical_phase1_refresh(
 
         _update("comparing_cached_state", 42, current_item="Compare cached modification state")
         if effective_mode == "smart":
-            previous_run_issue_keys = _canonical_load_run_issue_keys(db_path, previous_run_id)
+            previous_run_issue_keys = previous_run_issue_keys_for_delta
             sync_cache_state = _canonical_load_sync_cache_state(sync_db_path, final_issue_keys)
             fetch_issue_keys = []
             item_rows: list[dict[str, object]] = []
             for issue_key in final_issue_keys:
                 issue = issue_map.get(issue_key) or {}
+                if issue_key not in issue_map:
+                    unchanged_issue_keys.add(issue_key)
+                    continue
                 cache_state = sync_cache_state.get(issue_key) or {}
                 cached_issue_updated = _to_text(cache_state.get("cached_issue_updated_utc"))
                 cached_worklog_updated = _to_text(cache_state.get("cached_worklog_updated_utc"))
@@ -6441,6 +6715,39 @@ def _run_canonical_phase1_refresh(
         )
         completed_stages.add("persisting_canonical_data")
 
+        # Fetch is independently durable.  Do not expose its raw snapshot to
+        # reports until a later Compute run has rebuilt the precomputed data.
+        if fetch_only:
+            duration_sec = round(time.perf_counter() - started, 2)
+            fetch_stats = {
+                **_build_stats("fetch_done", current_detail="Fetch completed; ready for Compute."),
+                "duration_sec": duration_sec,
+                "issue_count": len(issue_rows),
+                "worklog_count": len(worklog_rows),
+                "fetch_only": True,
+            }
+            fetch_stats["stages"] = _canonical_stage_payload("fetch_done", completed_stages | {"fetch_done"}, counts_by_stage=counts_by_stage)
+            if keep_run_running:
+                _canonical_update_progress_and_stats(db_path, run_id, "fetch_done", 85, fetch_stats)
+            else:
+                _canonical_mark_run_status(db_path, run_id=run_id, status="success", error_message="", stats=fetch_stats, activate=False)
+                _canonical_update_progress_and_stats(db_path, run_id, "fetch_done", 100, fetch_stats)
+            _canonical_fetch_run_upsert(
+                db_path,
+                run_id=run_id,
+                scope_year=scope_year,
+                managed_project_keys=managed_keys,
+                requested_mode=requested_mode,
+                effective_mode=effective_mode,
+                baseline_run_id=previous_run_id,
+                checkpoint_from_utc=checkpoint_from_utc,
+                reconciliation_due=reconciliation_due,
+                status="success",
+                stats=fetch_stats,
+                completed=True,
+            )
+            return {"ok": True, "run_id": run_id, "status": "success", "phase": "fetch", "duration_sec": duration_sec}, 200
+
         if _canonical_is_cancel_requested(db_path, run_id):
             return _cancel("rebuilding_derived_data")
         _update("rebuilding_derived_data", 92, current_item="Rebuild derived data")
@@ -6544,12 +6851,207 @@ def _run_canonical_phase1_refresh(
             activate=False,
         )
         _canonical_update_progress_and_stats(db_path, run_id, "failed", 100, failure_stats)
+        if fetch_only:
+            _canonical_fetch_run_upsert(
+                db_path,
+                run_id=run_id,
+                scope_year=scope_year,
+                managed_project_keys=managed_keys,
+                requested_mode=requested_mode,
+                effective_mode=effective_mode,
+                baseline_run_id=previous_run_id,
+                checkpoint_from_utc=checkpoint_from_utc,
+                reconciliation_due=reconciliation_due,
+                status="failed",
+                stats=failure_stats,
+                error_message=str(exc),
+                completed=True,
+            )
         return {
             "ok": False,
             "run_id": run_id,
             "status": "failed",
             "error": f"Canonical refresh failed: {exc}",
         }, 500
+
+
+def _run_canonical_compute(
+    db_path: Path,
+    artifact_base_dir: Path,
+    compute_run_id: str,
+    fetch_run_id: str,
+    trigger_source: str = "api_compute_async",
+    promote_legacy_run: bool = False,
+) -> tuple[dict[str, object], int]:
+    """Build all shared precomputed outputs from one completed Fetch snapshot."""
+    started = time.perf_counter()
+
+    def _update(step: str, pct: int, stats: dict[str, object] | None = None) -> None:
+        now = _canonical_now_utc()
+        with sqlite3.connect(db_path) as conn:
+            conn.execute(
+                """UPDATE canonical_compute_runs
+                   SET progress_step=?, progress_pct=?, stats_json=?, updated_at_utc=?
+                   WHERE compute_run_id=?""",
+                (step, int(pct), json.dumps(stats or {}, ensure_ascii=True), now, compute_run_id),
+            )
+            conn.commit()
+
+    def _cancel_requested() -> bool:
+        with sqlite3.connect(db_path) as conn:
+            row = conn.execute("SELECT cancel_requested FROM canonical_compute_runs WHERE compute_run_id=?", (compute_run_id,)).fetchone()
+        return bool(int(row[0] if row else 0))
+
+    def _finish(status: str, *, error: str = "", stats: dict[str, object] | None = None) -> tuple[dict[str, object], int]:
+        now = _canonical_now_utc()
+        payload = stats or {}
+        with sqlite3.connect(db_path) as conn:
+            conn.execute(
+                """UPDATE canonical_compute_runs
+                   SET status=?, error_message=?, stats_json=?, progress_step=?, progress_pct=100,
+                       cancel_requested=0, ended_at_utc=?, updated_at_utc=?
+                   WHERE compute_run_id=?""",
+                (status, error, json.dumps(payload, ensure_ascii=True), "done" if status == "success" else status, now, now, compute_run_id),
+            )
+            if status == "success":
+                # Reports retain their legacy pointer and therefore continue to
+                # read the same precomputed database contract.
+                conn.execute(
+                    """UPDATE canonical_refresh_state
+                       SET active_run_id=?, last_success_run_id=?, active_compute_run_id='',
+                           last_success_compute_run_id=?, updated_at_utc=? WHERE id=1""",
+                    (fetch_run_id, fetch_run_id, compute_run_id, now),
+                )
+            else:
+                conn.execute("UPDATE canonical_refresh_state SET active_compute_run_id='', updated_at_utc=? WHERE id=1", (now,))
+            conn.commit()
+        if status == "success" and promote_legacy_run:
+            _canonical_mark_run_status(db_path, fetch_run_id, "success", stats=payload, activate=True)
+        return {
+            "ok": status == "success", "compute_run_id": compute_run_id,
+            "fetch_run_id": fetch_run_id, "status": status, "phase": "compute",
+            **({"error": error} if error else {}),
+        }, 200 if status == "success" else 500
+
+    try:
+        fetch = _canonical_get_run(db_path, fetch_run_id)
+        if not fetch or _to_text(fetch.get("status")) not in {"success", "running"}:
+            return _finish("failed", error="Compute requires a successful Fetch snapshot.")
+        _update("validating_fetch_snapshot", 5, {"fetch_run_id": fetch_run_id, "trigger_source": trigger_source})
+        with sqlite3.connect(db_path) as conn:
+            issue_count = int(conn.execute("SELECT COUNT(*) FROM canonical_issues WHERE run_id=?", (fetch_run_id,)).fetchone()[0])
+            duplicate_worklogs = int(conn.execute("""SELECT COUNT(*) FROM (
+                SELECT worklog_id FROM canonical_worklogs WHERE run_id=? GROUP BY worklog_id HAVING COUNT(*) > 1
+            )""", (fetch_run_id,)).fetchone()[0])
+        if duplicate_worklogs:
+            return _finish("failed", error="Fetch snapshot contains duplicate worklog IDs.")
+        if _cancel_requested():
+            return _finish("canceled", error="Compute canceled before derived data rebuild.")
+
+        _update("rebuilding_derived_data", 30, {"fetch_run_id": fetch_run_id, "issue_count": issue_count})
+        derived_stats = _canonical_rebuild_derived_data(db_path=db_path, run_id=fetch_run_id)
+        if _cancel_requested():
+            return _finish("canceled", error="Compute canceled during derived data rebuild.")
+        _update("syncing_epics_management", 50, {"derived_rows": derived_stats})
+        epics_stats = _sync_epics_management_from_canonical(db_path, fetch_run_id)
+        if _cancel_requested():
+            return _finish("canceled", error="Compute canceled during Epics Planner sync.")
+        _update("rebuilding_compatibility_artifacts", 65, {"derived_rows": derived_stats, "epics": epics_stats})
+        bridge_stats = _canonical_rebuild_compatibility_artifacts(db_path, fetch_run_id, artifact_base_dir)
+        if _cancel_requested():
+            return _finish("canceled", error="Compute canceled during compatibility rebuild.")
+        _update("generating_reports", 80, {"compatibility_artifacts": bridge_stats})
+        report_env = {
+            "JIRA_CANONICAL_RUN_ID": fetch_run_id,
+            "JIRA_LEAVE_REPORT_SOURCE": "canonical_db",
+            "JIRA_EMP_PERF_INPUT_SOURCE": "canonical_db",
+            "JIRA_EMP_PERF_CANONICAL_RUN_ID": fetch_run_id,
+        }
+        report_stats: dict[str, object] = {}
+        for script_name in ("generate_rlt_leave_report.py", "generate_employee_performance_report.py", "support_center_sync.py"):
+            if _cancel_requested():
+                return _finish("canceled", error="Compute canceled while generating reports.")
+            code, _stdout, stderr = _run_script(script_name, artifact_base_dir, env_overrides=report_env if script_name != "support_center_sync.py" else None)
+            report_stats[script_name] = {"exit_code": code}
+            if code != 0:
+                report_stats[script_name]["error"] = _to_text(stderr)[-500:]
+                return _finish("failed", error=f"{script_name} failed.", stats={"reports": report_stats})
+        _update("syncing_report_html", 95, {"reports": report_stats})
+        sync_report_html(artifact_base_dir, "report_html")
+        stats = {
+            "fetch_run_id": fetch_run_id, "issue_count": issue_count,
+            "duration_sec": round(time.perf_counter() - started, 2),
+            "derived_rows": derived_stats, "epics_management": epics_stats,
+            "compatibility_artifacts": bridge_stats, "reports": report_stats,
+        }
+        stats["retention_pruned"] = _canonical_prune_two_phase_runs(db_path, 30)
+        return _finish("success", stats=stats)
+    except Exception as exc:
+        return _finish("failed", error=f"Canonical compute failed: {exc}")
+
+
+def _canonical_create_compute_run(db_path: Path, fetch_run_id: str, trigger_source: str) -> str:
+    compute_run_id = f"canonical-compute-{int(time.time())}-{uuid.uuid4().hex[:8]}"
+    now = _canonical_now_utc()
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """INSERT INTO canonical_compute_runs(
+                compute_run_id, fetch_run_id, status, trigger_source, stats_json,
+                progress_step, progress_pct, cancel_requested, started_at_utc,
+                ended_at_utc, updated_at_utc, error_message
+            ) VALUES (?, ?, 'running', ?, '{}', 'queued', 1, 0, ?, '', ?, '')""",
+            (compute_run_id, fetch_run_id, trigger_source, now, now),
+        )
+        conn.execute(
+            "UPDATE canonical_refresh_state SET active_compute_run_id=?, updated_at_utc=? WHERE id=1",
+            (compute_run_id, now),
+        )
+        conn.commit()
+    return compute_run_id
+
+
+def _canonical_prune_two_phase_runs(db_path: Path, retention_days: int = 30) -> dict[str, int]:
+    """Prune only stale, unreferenced snapshots; never compact the database."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=max(1, int(retention_days)))).isoformat()
+    state = _canonical_two_phase_state(db_path)
+    protected = {
+        _to_text(state.get("active_fetch_run_id")), _to_text(state.get("last_success_fetch_run_id")),
+        _to_text(state.get("active_compute_run_id")), _to_text(state.get("last_success_compute_run_id")),
+        _to_text(_canonical_last_success_run_id(db_path)),
+    }
+    protected.discard("")
+    deleted_compute = 0
+    deleted_fetch = 0
+    with sqlite3.connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT compute_run_id, fetch_run_id FROM canonical_compute_runs WHERE ended_at_utc != '' AND ended_at_utc < ?",
+            (cutoff,),
+        ).fetchall()
+        for compute_id, fetch_id in rows:
+            if _to_text(compute_id) in protected or _to_text(fetch_id) in protected:
+                continue
+            deleted_compute += conn.execute("DELETE FROM canonical_compute_runs WHERE compute_run_id=?", (compute_id,)).rowcount
+        fetch_rows = conn.execute(
+            "SELECT fetch_run_id FROM canonical_fetch_runs WHERE ended_at_utc != '' AND ended_at_utc < ?",
+            (cutoff,),
+        ).fetchall()
+        raw_tables = (
+            "canonical_issues", "canonical_issue_links", "canonical_worklogs", "canonical_issue_scope_reasons",
+            "canonical_issue_actuals", "canonical_assignee_period_hours", "canonical_issue_planning_flags",
+            "canonical_hierarchy_summary", "canonical_project_assignee_summary",
+        )
+        for (fetch_id,) in fetch_rows:
+            fetch_id = _to_text(fetch_id)
+            if not fetch_id or fetch_id in protected:
+                continue
+            if conn.execute("SELECT 1 FROM canonical_compute_runs WHERE fetch_run_id=? LIMIT 1", (fetch_id,)).fetchone():
+                continue
+            for table in raw_tables:
+                conn.execute(f"DELETE FROM {table} WHERE run_id=?", (fetch_id,))
+            conn.execute("DELETE FROM canonical_refresh_runs WHERE run_id=?", (fetch_id,))
+            deleted_fetch += conn.execute("DELETE FROM canonical_fetch_runs WHERE fetch_run_id=?", (fetch_id,)).rowcount
+        conn.commit()
+    return {"compute_runs": int(deleted_compute), "fetch_runs": int(deleted_fetch)}
 
 
 def _canonical_run_scope(run_row: dict[str, object] | None) -> tuple[str, str]:
@@ -11271,6 +11773,9 @@ def _canonical_refresh_settings_html() -> str:
             <span class="material-symbols-outlined">sync</span>
             Start Full Refresh
           </button>
+          <button id="fetch-smart-btn" class="btn ghost" type="button">Fetch Only (Smart)</button>
+          <button id="fetch-full-btn" class="btn ghost" type="button">Fetch Only (Full)</button>
+          <button id="compute-latest-btn" class="btn ghost" type="button">Compute Latest Fetch</button>
           <button id="cancel-btn" class="btn warn" type="button" disabled>
             <span class="material-symbols-outlined">cancel</span>
             Cancel Refresh
@@ -11326,6 +11831,9 @@ def _canonical_refresh_settings_html() -> str:
           <div class="meta-item"><strong>Last Updated</strong><span id="meta-updated">-</span></div>
           <div class="meta-item"><strong>Ended At</strong><span id="meta-ended">-</span></div>
           <div class="meta-item"><strong>DB Backup</strong><span id="meta-db-backup">-</span></div>
+          <div class="meta-item"><strong>Latest Fetch</strong><span id="meta-fetch-run">-</span></div>
+          <div class="meta-item"><strong>Current Compute</strong><span id="meta-compute-run">-</span></div>
+          <div class="meta-item"><strong>Reconciliation</strong><span id="meta-reconciliation">-</span></div>
         </div>
         <div id="summary-grid" class="summary-grid"></div>
       </div>
@@ -11442,6 +11950,8 @@ def _canonical_refresh_settings_html() -> str:
     const PROJECTS_API = "/api/projects?include_inactive=0";
     const CURRENT_API = "/api/canonical-refresh/current";
     const START_API = "/api/canonical-refresh";
+    const FETCH_API = "/api/canonical-fetch";
+    const COMPUTE_API = "/api/canonical-compute";
     const CANCEL_API = "/api/canonical-refresh/cancel";
     const ABANDON_API = "/api/canonical-refresh/abandon-stale";
     const statusEl = document.getElementById("status");
@@ -11449,6 +11959,9 @@ def _canonical_refresh_settings_html() -> str:
     const createDbBackupEl = document.getElementById("create-db-backup");
     const startSmartBtn = document.getElementById("start-smart-btn");
     const startFullBtn = document.getElementById("start-full-btn");
+    const fetchSmartBtn = document.getElementById("fetch-smart-btn");
+    const fetchFullBtn = document.getElementById("fetch-full-btn");
+    const computeLatestBtn = document.getElementById("compute-latest-btn");
     const cancelBtn = document.getElementById("cancel-btn");
     const abandonStaleBtn = document.getElementById("abandon-stale-btn");
     const reloadBtn = document.getElementById("reload-btn");
@@ -11468,6 +11981,9 @@ def _canonical_refresh_settings_html() -> str:
     const metaUpdated = document.getElementById("meta-updated");
     const metaEnded = document.getElementById("meta-ended");
     const metaDbBackup = document.getElementById("meta-db-backup");
+    const metaFetchRun = document.getElementById("meta-fetch-run");
+    const metaComputeRun = document.getElementById("meta-compute-run");
+    const metaReconciliation = document.getElementById("meta-reconciliation");
     let activeRunId = "";
     let activeRunYear = "";
     let pollTimer = 0;
@@ -11584,7 +12100,27 @@ def _canonical_refresh_settings_html() -> str:
       createDbBackupEl.disabled = !!isBusy;
       startSmartBtn.disabled = !!isBusy;
       startFullBtn.disabled = !!isBusy;
+      fetchSmartBtn.disabled = !!isBusy;
+      fetchFullBtn.disabled = !!isBusy;
+      computeLatestBtn.disabled = !!isBusy;
       cancelBtn.disabled = !isBusy || !activeRunId;
+    }}
+
+    function renderLifecycle(body) {{
+      const lifecycle = body && body.lifecycle ? body.lifecycle : {{}};
+      const fetchRun = body && body.fetch_run ? body.fetch_run : null;
+      const computeRun = body && body.compute_run ? body.compute_run : null;
+      metaFetchRun.textContent = fetchRun
+        ? String(fetchRun.run_id || "-") + " (" + labelize(fetchRun.status || "unknown") + ")"
+        : "No completed fetch.";
+      metaComputeRun.textContent = computeRun
+        ? String(computeRun.compute_run_id || computeRun.run_id || "-") + " from " + String(computeRun.fetch_run_id || "-")
+        : "No computed report version.";
+      metaReconciliation.textContent = lifecycle.reconciliation_due
+        ? "Due: next Smart Fetch will reconcile full scope."
+        : (lifecycle.last_full_reconciliation_at_utc || "Not recorded yet.");
+      const computeStatus = String((computeRun || {{}}).status || "").toLowerCase();
+      if (computeStatus === "running" || computeStatus === "cancel_requested") setBusy(true);
     }}
 
     function renderSummaryCards(summary, stats) {{
@@ -11735,14 +12271,51 @@ def _canonical_refresh_settings_html() -> str:
       const run = body.run || null;
       if (!run) {{
         renderRun(null);
-        setBusy(false);
+        renderLifecycle(body);
+        const computeRun = body.compute_run || null;
+        if (computeRun && (String(computeRun.status || "").toLowerCase() === "running" || String(computeRun.status || "").toLowerCase() === "cancel_requested")) {{
+          await pollCompute(String(computeRun.compute_run_id || ""));
+        }}
         return;
       }}
       renderRun(run);
+      renderLifecycle(body);
       const state = String(run.status || "").toLowerCase();
       if (state === "running" || state === "cancel_requested") {{
         await pollRun(String(run.run_id || ""));
+        return;
       }}
+      const computeRun = body.compute_run || null;
+      if (computeRun && (String(computeRun.status || "").toLowerCase() === "running" || String(computeRun.status || "").toLowerCase() === "cancel_requested")) {{
+        await pollCompute(String(computeRun.compute_run_id || ""));
+      }}
+    }}
+
+    async function pollCompute(computeRunId) {{
+      const id = String(computeRunId || "").trim();
+      if (!id) return;
+      setBusy(true);
+      clearPolling();
+      const tick = async function () {{
+        try {{
+          const body = await requestJson(COMPUTE_API + "/" + encodeURIComponent(id));
+          const run = body.run || {{}};
+          progressCaption.textContent = "Compute: " + runStatusText(run);
+          progressFill.style.width = `${{Math.max(0, Math.min(100, Number(run.progress || 0)))}}%`;
+          const status = String(run.status || "").toLowerCase();
+          if (status === "running" || status === "cancel_requested") {{
+            pollTimer = window.setTimeout(tick, 1000);
+            return;
+          }}
+          clearPolling();
+          await loadCurrentRun();
+        }} catch (err) {{
+          clearPolling();
+          setBusy(false);
+          setStatus(err.message || String(err), "err");
+        }}
+      }};
+      await tick();
     }}
 
     async function startRefresh(mode) {{
@@ -11776,6 +12349,33 @@ def _canonical_refresh_settings_html() -> str:
         await pollRun(runId);
       }}
       setStatus(labelize(mode) + " refresh started.", "ok");
+    }}
+
+    async function startFetch(mode) {{
+      const yearValue = Number(scopeYearEl.value || 0);
+      if (!yearValue || yearValue < 2000 || yearValue > 2100) throw new Error("Year must be between 2000 and 2100.");
+      setBusy(true);
+      setStatus("Starting " + labelize(mode) + " Fetch only...", "");
+      const resp = await fetch(FETCH_API, {{
+        method: "POST", headers: {{ "Content-Type": "application/json" }},
+        body: JSON.stringify({{ year: yearValue, mode }}),
+      }});
+      const body = await resp.json().catch(() => ({{}}));
+      if (!resp.ok) {{ setBusy(false); throw new Error(String(body.error || "Failed to start Fetch.")); }}
+      const runId = String(body.run_id || (body.run || {{}}).run_id || "");
+      if (runId) await pollRun(runId);
+      await loadCurrentRun();
+      setStatus("Fetch completed. Use Compute Latest Fetch when ready.", "ok");
+    }}
+
+    async function computeLatestFetch() {{
+      setBusy(true);
+      setStatus("Starting Compute from the latest successful Fetch...", "");
+      const resp = await fetch(COMPUTE_API, {{ method: "POST", headers: {{ "Content-Type": "application/json" }}, body: "{{}}" }});
+      const body = await resp.json().catch(() => ({{}}));
+      if (!resp.ok) {{ setBusy(false); throw new Error(String(body.error || "Failed to start Compute.")); }}
+      const runId = String(body.compute_run_id || body.run_id || "");
+      if (runId) await pollCompute(runId);
     }}
 
     async function cancelRefresh() {{
@@ -11886,6 +12486,9 @@ def _canonical_refresh_settings_html() -> str:
 
     startSmartBtn.addEventListener("click", () => startRefresh("smart").catch((err) => setStatus(err.message || String(err), "err")));
     startFullBtn.addEventListener("click", () => startRefresh("full").catch((err) => setStatus(err.message || String(err), "err")));
+    fetchSmartBtn.addEventListener("click", () => startFetch("smart").catch((err) => setStatus(err.message || String(err), "err")));
+    fetchFullBtn.addEventListener("click", () => startFetch("full").catch((err) => setStatus(err.message || String(err), "err")));
+    computeLatestBtn.addEventListener("click", () => computeLatestFetch().catch((err) => setStatus(err.message || String(err), "err")));
     cancelBtn.addEventListener("click", () => cancelRefresh().catch((err) => setStatus(err.message || String(err), "err")));
     document.getElementById("resume-btn").addEventListener("click", () => {{
       if (activeRunYear) scopeYearEl.value = activeRunYear;
@@ -41337,6 +41940,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         mode: str = "full",
         trigger_source: str = "api_refresh_async",
         create_db_backup: bool = False,
+        auto_compute: bool = True,
     ) -> tuple[dict[str, object], int]:
         managed_project_keys = _managed_project_keys_all_active()
         if not managed_project_keys:
@@ -41441,10 +42045,10 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             conn.execute(
                 """
                 UPDATE canonical_refresh_state
-                SET active_run_id = ?, updated_at_utc = ?
+                SET active_run_id = ?, active_fetch_run_id = ?, updated_at_utc = ?
                 WHERE id = 1
                 """,
-                (run_id, run_started_at),
+                (run_id, run_id, run_started_at),
             )
             conn.execute(
                 """
@@ -41455,10 +42059,19 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 (int(scope_year or 0), json.dumps(sorted(managed_project_keys), ensure_ascii=True), run_started_at),
             )
             conn.commit()
+        _canonical_fetch_run_upsert(
+            capacity_paths["db_path"],
+            run_id=run_id,
+            scope_year=scope_year,
+            managed_project_keys=managed_project_keys,
+            requested_mode=refresh_mode,
+            effective_mode=refresh_mode,
+            status="running",
+        )
 
         def _runner() -> None:
             try:
-                _run_canonical_phase1_refresh(
+                fetch_result, _fetch_status = _run_canonical_phase1_refresh(
                     db_path=capacity_paths["db_path"],
                     artifact_base_dir=base_dir,
                     run_id=run_id,
@@ -41468,7 +42081,30 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                     trigger_source=trigger_source,
                     create_db_backup=should_create_backup,
                     db_backup_path=db_backup_path,
+                    fetch_only=True,
+                    keep_run_running=auto_compute,
                 )
+                if auto_compute and bool(fetch_result.get("ok")) and _to_text(fetch_result.get("phase")) == "fetch":
+                    # Preserve the legacy endpoint's single running status until
+                    # its automatically chained Compute phase has completed.
+                    with sqlite3.connect(capacity_paths["db_path"]) as conn:
+                        now = _canonical_now_utc()
+                        conn.execute(
+                            """UPDATE canonical_refresh_runs
+                               SET status='running', progress_step='computing', progress_pct=85,
+                                   ended_at_utc=NULL, updated_at_utc=? WHERE run_id=?""",
+                            (now, run_id),
+                        )
+                        conn.execute("UPDATE canonical_refresh_state SET active_run_id=?, updated_at_utc=? WHERE id=1", (run_id, now))
+                        conn.commit()
+                    compute_run_id = _canonical_create_compute_run(
+                        capacity_paths["db_path"], run_id, "canonical_refresh_auto_compute"
+                    )
+                    _run_canonical_compute(
+                        capacity_paths["db_path"], base_dir, compute_run_id, run_id,
+                        trigger_source="canonical_refresh_auto_compute",
+                        promote_legacy_run=True,
+                    )
             finally:
                 with canonical_jobs_lock:
                     if _to_text(canonical_runtime_state.get("active_run_id")) == run_id:
@@ -41484,10 +42120,50 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             "ok": True,
             "report": "canonical_refresh",
             "mode": refresh_mode,
+            "auto_compute": bool(auto_compute),
             "run_id": run_id,
             "status": "running",
             "db_backup_path": db_backup_path,
             "run": _canonical_serialize_run(run_row),
+        }, 202
+
+    def _start_canonical_compute_async(
+        fetch_run_id: str = "",
+        trigger_source: str = "api_compute_async",
+    ) -> tuple[dict[str, object], int]:
+        state = _canonical_two_phase_state(capacity_paths["db_path"])
+        source_fetch_run_id = _to_text(fetch_run_id) or _to_text(state.get("last_success_fetch_run_id"))
+        source = _canonical_get_run(capacity_paths["db_path"], source_fetch_run_id)
+        if not source or _to_text(source.get("status")) != "success":
+            return {"ok": False, "error": "Compute requires a successful Fetch run."}, 409
+        with canonical_jobs_lock:
+            if _to_text(canonical_runtime_state.get("active_run_id")) or _to_text(state.get("active_compute_run_id")):
+                return {"ok": False, "error": "Another canonical Fetch or Compute is already running."}, 409
+            if not refresh_lock.acquire(blocking=False):
+                return {"ok": False, "error": "Another refresh is already running. Try again shortly."}, 409
+            compute_run_id = _canonical_create_compute_run(capacity_paths["db_path"], source_fetch_run_id, trigger_source)
+            canonical_runtime_state["active_run_id"] = compute_run_id
+
+        def _runner() -> None:
+            try:
+                _run_canonical_compute(
+                    capacity_paths["db_path"], base_dir, compute_run_id, source_fetch_run_id,
+                    trigger_source=trigger_source,
+                )
+            finally:
+                with canonical_jobs_lock:
+                    if _to_text(canonical_runtime_state.get("active_run_id")) == compute_run_id:
+                        canonical_runtime_state["active_run_id"] = ""
+                try:
+                    refresh_lock.release()
+                except Exception:
+                    pass
+
+        threading.Thread(target=_runner, daemon=True).start()
+        return {
+            "ok": True, "phase": "compute", "run_id": compute_run_id,
+            "compute_run_id": compute_run_id, "fetch_run_id": source_fetch_run_id,
+            "status": "running", "run": _canonical_compute_serialize_run(_canonical_compute_get_run(capacity_paths["db_path"], compute_run_id)),
         }, 202
 
     def _start_canonical_epic_refresh_async(
@@ -41869,38 +42545,10 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             completed_stages.add("persisting_canonical_data")
 
             if _canonical_is_cancel_requested(db_path, run_id):
-                return _cancel("rebuilding_derived_data")
-            _update("rebuilding_derived_data", 88, current_item="Rebuild derived canonical tables")
-            derived_stats = _canonical_rebuild_derived_data(db_path=db_path, run_id=run_id)
-            counts_by_stage["rebuilding_derived_data"] = dict(derived_stats)
-            completed_stages.add("rebuilding_derived_data")
-
-            if _canonical_is_cancel_requested(db_path, run_id):
-                return _cancel("rebuilding_compatibility_artifacts")
-            _update("rebuilding_compatibility_artifacts", 94, current_item="Rebuild compatibility artifacts")
-            bridge_stats = _canonical_rebuild_compatibility_artifacts(
-                db_path=db_path,
-                run_id=run_id,
-                base_dir=base_dir,
-            )
-            counts_by_stage["rebuilding_compatibility_artifacts"] = dict(bridge_stats)
-            completed_stages.add("rebuilding_compatibility_artifacts")
-
-            if _canonical_is_cancel_requested(db_path, run_id):
                 return _cancel("generating_reports")
-            _update("generating_reports", 97, current_item="Regenerate employee performance outputs")
+            _update("generating_reports", 92, current_item="Compute Employee Performance scoped output")
             common_env = _canonical_group2_script_env(run_id)
             cancel_check = lambda: _canonical_is_cancel_requested(db_path, run_id)
-            code, stdout, stderr = _run_script_interruptible(
-                "generate_rlt_leave_report.py",
-                base_dir,
-                env_overrides=common_env,
-                cancel_check=cancel_check,
-            )
-            if code == -1:
-                return _cancel("generating_reports")
-            if code != 0:
-                raise RuntimeError(_tail(stderr) or _tail(stdout) or "generate_rlt_leave_report.py failed")
             code, stdout, stderr = _run_script_interruptible(
                 "generate_employee_performance_report.py",
                 base_dir,
@@ -41911,7 +42559,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 return _cancel("generating_reports")
             if code != 0:
                 raise RuntimeError(_tail(stderr) or _tail(stdout) or "generate_employee_performance_report.py failed")
-            counts_by_stage["generating_reports"] = {"scripts": 2}
+            counts_by_stage["generating_reports"] = {"scripts": 1, "report": "employee_performance"}
             completed_stages.add("generating_reports")
 
             if _canonical_is_cancel_requested(db_path, run_id):
@@ -41925,8 +42573,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 **_build_stats("done", current_item="Assignee scoped refresh completed", current_detail=f"{assignee_text} refreshed."),
                 "duration_sec": duration_sec,
                 "canonical_run_id": run_id,
-                "derived_rows": derived_stats,
-                "compatibility_artifacts": bridge_stats,
+                "compute_scope": "employee_performance_only",
             }
             stats["stages"] = _canonical_stage_payload("done", completed_stages | {"done"}, counts_by_stage=counts_by_stage)
             _canonical_mark_run_status(
@@ -41935,8 +42582,16 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 status="success",
                 error_message="",
                 stats=stats,
-                activate=True,
+                activate=False,
             )
+            with sqlite3.connect(db_path) as conn:
+                conn.execute(
+                    """UPDATE employee_performance_scoped_runs
+                       SET fetch_status='success', compute_status='success', ended_at_utc=?, stats_json=?
+                       WHERE scoped_run_id=?""",
+                    (_canonical_now_utc(), json.dumps(stats, ensure_ascii=True), run_id),
+                )
+                conn.commit()
             _canonical_update_progress_and_stats(db_path, run_id, "done", 100, stats)
             return {
                 "ok": True,
@@ -41964,6 +42619,14 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 stats=failure_stats,
                 activate=False,
             )
+            with sqlite3.connect(db_path) as conn:
+                conn.execute(
+                    """UPDATE employee_performance_scoped_runs
+                       SET fetch_status='failed', compute_status='failed', ended_at_utc=?, error_message=?
+                       WHERE scoped_run_id=?""",
+                    (_canonical_now_utc(), str(exc), run_id),
+                )
+                conn.commit()
             _canonical_update_progress_and_stats(db_path, run_id, failed_stage, 100, failure_stats)
             return {"ok": False, "run_id": run_id, "status": "failed", "error": str(exc)}, 500
 
@@ -42057,6 +42720,13 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 """,
                 (run_id, run_started_at),
             )
+            conn.execute(
+                """INSERT OR REPLACE INTO employee_performance_scoped_runs(
+                    scoped_run_id, assignee, scope_year, source_global_run_id,
+                    fetch_status, compute_status, started_at_utc, ended_at_utc, stats_json, error_message
+                ) VALUES (?, ?, ?, ?, 'running', 'pending', ?, '', '{}', '')""",
+                (run_id, assignee_text, int(scope_year or 0), _canonical_last_success_run_id(capacity_paths["db_path"]), run_started_at),
+            )
             conn.commit()
 
         def _runner() -> None:
@@ -42136,8 +42806,56 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             mode=refresh_mode,
             trigger_source="api_refresh_async",
             create_db_backup=create_db_backup,
+            auto_compute=True,
         )
         return jsonify(response), status_code
+
+    @app.route("/api/canonical-fetch", methods=["POST"])
+    def canonical_fetch_start():
+        payload = request.get_json(silent=True) or {}
+        try:
+            scope_year = int(payload.get("year") or datetime.now().year)
+        except (TypeError, ValueError):
+            return jsonify({"ok": False, "error": "Invalid year. Expected integer YYYY."}), 400
+        if scope_year < 2000 or scope_year > 2100:
+            return jsonify({"ok": False, "error": "Invalid year. Expected range 2000-2100."}), 400
+        response, status_code = _start_canonical_refresh_async(
+            scope_year=scope_year,
+            mode=_canonical_normalize_mode(payload.get("mode")),
+            trigger_source="api_fetch_async",
+            create_db_backup=False,
+            auto_compute=False,
+        )
+        return jsonify(response), status_code
+
+    @app.route("/api/canonical-compute", methods=["POST"])
+    def canonical_compute_start():
+        payload = request.get_json(silent=True) or {}
+        response, status_code = _start_canonical_compute_async(
+            _to_text(payload.get("fetch_run_id")),
+            trigger_source="api_compute_async",
+        )
+        return jsonify(response), status_code
+
+    @app.route("/api/canonical-compute/<path:compute_run_id>", methods=["GET"])
+    def canonical_compute_status(compute_run_id: str):
+        row = _canonical_compute_get_run(capacity_paths["db_path"], _to_text(compute_run_id))
+        if not row:
+            return jsonify({"ok": False, "error": "Compute run not found."}), 404
+        return jsonify({"ok": True, "run": _canonical_compute_serialize_run(row)})
+
+    @app.route("/api/canonical-compute/cancel", methods=["POST"])
+    def canonical_compute_cancel():
+        payload = request.get_json(silent=True) or {}
+        compute_run_id = _to_text(payload.get("compute_run_id")) or _to_text(_canonical_two_phase_state(capacity_paths["db_path"]).get("active_compute_run_id"))
+        if not compute_run_id:
+            return jsonify({"ok": False, "error": "No running canonical Compute found."}), 404
+        with sqlite3.connect(capacity_paths["db_path"]) as conn:
+            cur = conn.execute("UPDATE canonical_compute_runs SET cancel_requested=1, updated_at_utc=? WHERE compute_run_id=? AND status='running'", (_canonical_now_utc(), compute_run_id))
+            conn.commit()
+        if not cur.rowcount:
+            return jsonify({"ok": False, "error": "Compute run is not cancelable."}), 409
+        return jsonify({"ok": True, "compute_run_id": compute_run_id, "status": "cancel_requested"})
 
     @app.route("/api/canonical-refresh/<path:run_id>", methods=["GET"])
     def canonical_refresh_status(run_id: str):
@@ -42159,8 +42877,20 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         if not row:
             row = _canonical_latest_run(capacity_paths["db_path"])
             if not row:
-                return jsonify({"ok": True, "run": None})
-        return jsonify({"ok": True, "run": _canonical_serialize_run(row)})
+                row_payload = None
+            else:
+                row_payload = _canonical_serialize_run(row)
+        else:
+            row_payload = _canonical_serialize_run(row)
+        state = _canonical_two_phase_state(capacity_paths["db_path"])
+        fetch_row = _canonical_get_run(capacity_paths["db_path"], _to_text(state.get("active_fetch_run_id")) or _to_text(state.get("last_success_fetch_run_id")))
+        compute_row = _canonical_compute_get_run(capacity_paths["db_path"], _to_text(state.get("active_compute_run_id")) or _to_text(state.get("last_success_compute_run_id")))
+        return jsonify({
+            "ok": True, "run": row_payload,
+            "fetch_run": _canonical_serialize_run(fetch_row) if fetch_row else None,
+            "compute_run": _canonical_compute_serialize_run(compute_row) if compute_row else None,
+            "lifecycle": {**state, "reconciliation_due": _canonical_reconciliation_due(capacity_paths["db_path"])},
+        })
 
     @app.route("/api/canonical-refresh/cancel", methods=["POST"])
     def canonical_refresh_cancel():
