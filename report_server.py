@@ -43161,6 +43161,8 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 run_id_text = _to_text(row.get("run_id"))
                 if _canonical_clear_orphaned_running_run(row):
                     row = _canonical_get_run(capacity_paths["db_path"], run_id_text)
+        if not row:
+            row = _canonical_latest_run(capacity_paths["db_path"])
         if (
             row
             and _to_text(row.get("status")).lower() == "failed"
@@ -43194,14 +43196,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                     capacity_paths["db_path"], run_id_text, "fetch_done", 100, recovery_stats
                 )
                 row = _canonical_get_run(capacity_paths["db_path"], run_id_text)
-        if not row:
-            row = _canonical_latest_run(capacity_paths["db_path"])
-            if not row:
-                row_payload = None
-            else:
-                row_payload = _canonical_serialize_run(row)
-        else:
-            row_payload = _canonical_serialize_run(row)
+        row_payload = _canonical_serialize_run(row) if row else None
         state = _canonical_two_phase_state(capacity_paths["db_path"])
         fetch_run_id = _to_text(state.get("active_fetch_run_id")) or _to_text(state.get("last_success_fetch_run_id"))
         fetch_record = _canonical_fetch_get_run(capacity_paths["db_path"], fetch_run_id)

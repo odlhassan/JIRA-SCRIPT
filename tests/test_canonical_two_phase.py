@@ -72,7 +72,8 @@ class CanonicalTwoPhaseTests(unittest.TestCase):
                         ended_at_utc, status, trigger_source, error_message, stats_json,
                         progress_step, progress_pct, cancel_requested, updated_at_utc
                     ) VALUES (?, 2026, '["O2"]', ?, ?, 'failed', 'test',
-                              'worker disappeared', '{"fetch_only": true}', 'failed', 100, 0, ?)""",
+                              'Canonical refresh was abandoned because the server process no longer has an active worker for this run.',
+                              '{"fetch_only": true}', 'failed', 100, 0, ?)""",
                     (fetch_run_id, now, now, now),
                 )
                 conn.execute(
@@ -95,7 +96,7 @@ class CanonicalTwoPhaseTests(unittest.TestCase):
             client = app.test_client()
             current = client.get("/api/canonical-refresh/current").get_json() or {}
             self.assertEqual((current.get("fetch_run") or {}).get("status"), "success")
-            self.assertEqual((current.get("run") or {}).get("status"), "failed")
+            self.assertEqual((current.get("run") or {}).get("status"), "fetch_ready")
 
             with (
                 patch.object(report_server, "_canonical_rebuild_derived_data", return_value={"issues": 1}),
