@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 import tempfile
+import time
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -12,6 +13,117 @@ from db_migration import plan_migration
 
 
 class CanonicalTwoPhaseTests(unittest.TestCase):
+    def test_current_clears_orphaned_compute_and_keeps_fetch_retryable(self) -> None:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            (root / "report_html").mkdir(parents=True, exist_ok=True)
+            (root / "report_html" / "dashboard.html").write_text("<html></html>", encoding="utf-8")
+            app = report_server.create_report_server_app(base_dir=root, folder_raw="report_html")
+            db_path = root / "assignee_hours_capacity.db"
+            fetch_run_id = "fetch-with-orphaned-compute"
+            now = report_server._canonical_now_utc()
+            with sqlite3.connect(db_path) as conn:
+                conn.execute(
+                    """INSERT INTO canonical_refresh_runs(
+                        run_id, scope_year, managed_project_keys_json, started_at_utc,
+                        ended_at_utc, status, stats_json, progress_step, progress_pct, updated_at_utc
+                    ) VALUES (?, 2026, '["O2"]', ?, ?, 'fetch_ready', '{}', 'fetch_done', 100, ?)""",
+                    (fetch_run_id, now, now, now),
+                )
+                conn.commit()
+            report_server._canonical_fetch_run_upsert(
+                db_path,
+                run_id=fetch_run_id,
+                scope_year=2026,
+                managed_project_keys=["O2"],
+                requested_mode="smart",
+                effective_mode="smart",
+                status="success",
+                stats={"fetch_only": True},
+                completed=True,
+            )
+            compute_run_id = report_server._canonical_create_compute_run(db_path, fetch_run_id, "test")
+
+            current = app.test_client().get("/api/canonical-refresh/current").get_json() or {}
+            compute = current.get("compute_run") or {}
+            self.assertEqual(compute.get("compute_run_id"), compute_run_id)
+            self.assertEqual(compute.get("status"), "failed")
+            self.assertIn("remains available for retry", str(compute.get("error") or ""))
+            self.assertEqual((current.get("fetch_run") or {}).get("status"), "success")
+            with sqlite3.connect(db_path) as conn:
+                active_compute = conn.execute(
+                    "SELECT active_compute_run_id FROM canonical_refresh_state WHERE id=1"
+                ).fetchone()[0]
+            self.assertEqual(str(active_compute or ""), "")
+
+    def test_completed_fetch_can_compute_after_legacy_run_is_marked_failed(self) -> None:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            (root / "report_html").mkdir(parents=True, exist_ok=True)
+            (root / "report_html" / "dashboard.html").write_text("<html></html>", encoding="utf-8")
+            app = report_server.create_report_server_app(base_dir=root, folder_raw="report_html")
+            db_path = root / "assignee_hours_capacity.db"
+            fetch_run_id = "fetch-recoverable"
+            now = report_server._canonical_now_utc()
+            with sqlite3.connect(db_path) as conn:
+                conn.execute(
+                    """INSERT INTO canonical_refresh_runs(
+                        run_id, scope_year, managed_project_keys_json, started_at_utc,
+                        ended_at_utc, status, trigger_source, error_message, stats_json,
+                        progress_step, progress_pct, cancel_requested, updated_at_utc
+                    ) VALUES (?, 2026, '["O2"]', ?, ?, 'failed', 'test',
+                              'worker disappeared', '{"fetch_only": true}', 'failed', 100, 0, ?)""",
+                    (fetch_run_id, now, now, now),
+                )
+                conn.execute(
+                    "INSERT INTO canonical_issues(run_id, issue_key, project_key) VALUES (?, 'O2-1', 'O2')",
+                    (fetch_run_id,),
+                )
+                conn.commit()
+            report_server._canonical_fetch_run_upsert(
+                db_path,
+                run_id=fetch_run_id,
+                scope_year=2026,
+                managed_project_keys=["O2"],
+                requested_mode="smart",
+                effective_mode="smart",
+                status="success",
+                stats={"fetch_only": True, "issue_count": 1},
+                completed=True,
+            )
+
+            client = app.test_client()
+            current = client.get("/api/canonical-refresh/current").get_json() or {}
+            self.assertEqual((current.get("fetch_run") or {}).get("status"), "success")
+            self.assertEqual((current.get("run") or {}).get("status"), "failed")
+
+            with (
+                patch.object(report_server, "_canonical_rebuild_derived_data", return_value={"issues": 1}),
+                patch.object(report_server, "_sync_epics_management_from_canonical", return_value={"updated": 0}),
+                patch.object(report_server, "_canonical_rebuild_compatibility_artifacts", return_value={"ok": True}),
+                patch.object(report_server, "_run_script", return_value=(0, "", "")),
+                patch.object(report_server, "sync_report_html", return_value=0),
+            ):
+                response = client.post("/api/canonical-compute", json={"fetch_run_id": fetch_run_id})
+                self.assertEqual(response.status_code, 202)
+                compute_run_id = str((response.get_json() or {}).get("compute_run_id") or "")
+                for _ in range(50):
+                    compute = report_server._canonical_compute_get_run(db_path, compute_run_id) or {}
+                    if str(compute.get("status") or "") != "running":
+                        break
+                    time.sleep(0.02)
+
+            self.assertEqual(str(compute.get("status") or ""), "success")
+            with sqlite3.connect(db_path) as conn:
+                legacy_status = conn.execute(
+                    "SELECT status FROM canonical_refresh_runs WHERE run_id=?", (fetch_run_id,)
+                ).fetchone()[0]
+                state = conn.execute(
+                    "SELECT last_success_run_id, last_success_compute_run_id FROM canonical_refresh_state WHERE id=1"
+                ).fetchone()
+            self.assertEqual(legacy_status, "success")
+            self.assertEqual(state, (fetch_run_id, compute_run_id))
+
     def test_compute_promotes_only_after_successful_compute(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             db_path = Path(td) / "capacity.db"

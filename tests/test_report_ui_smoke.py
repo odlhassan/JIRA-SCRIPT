@@ -505,6 +505,11 @@ class ReportUiSmokeTests(unittest.TestCase):
             self.assertIn('const COMPUTE_API = "/api/canonical-compute";', html)
             self.assertIn('id="meta-reconciliation"', html)
             self.assertIn('id="meta-db-backup"', html)
+            self.assertIn('id="scope-start-month"', html)
+            self.assertIn('<option value="6">June</option>', html)
+            self.assertIn('start_month: startMonthValue', html)
+            self.assertIn('Scope: ${monthName(scopeMonth)}-December ${item.scope_year}', html)
+            self.assertIn("Fetch completed successfully. Click Compute Latest Fetch", html)
 
     def test_manage_fields_page_and_settings_links_exist(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:

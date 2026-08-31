@@ -40,7 +40,7 @@ This plan is informed by:
   - updated in year, or
   - worklog in year
 - Parent/child hierarchy completion is mandatory.
-- Worklogs are stored only for the selected year.
+- Worklogs are stored only from the selected start month through December 31 of the selected year. January remains the backward-compatible default.
 - Work proceeds phase-by-phase.
 - After each completed phase, pause and request permission before starting the next phase.
 
@@ -102,7 +102,7 @@ Implement the actual yearly Jira ingestion into canonical storage.
 The canonical refresh now:
 
 1. Loads active managed projects
-2. Resolves selected year boundaries
+2. Resolves the selected start month and year-end boundaries
 3. Discovers issues by:
    - planned date in scope
    - updated in scope
@@ -325,15 +325,16 @@ If Azure has `JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH=/home/data/assignee_hours_cap
 
 ## Explanations
 
-The refresh loads active managed projects, discovers Jira issues for the selected year, expands parent/child hierarchy, fetches details and worklogs, stores the result as a canonical run, rebuilds derived tables, regenerates compatibility artifacts for legacy consumers, and syncs generated HTML into the served report folder.
+The refresh loads active managed projects, discovers Jira issues from the selected start month through December 31 of the selected year, expands parent/child hierarchy, fetches details and in-scope worklogs, stores the result as a canonical run, rebuilds derived tables, regenerates compatibility artifacts for legacy consumers, and syncs generated HTML into the served report folder.
 
 ## Front-end UI Fields
 
-The Colossal Refresh settings page exposes the selected year, refresh mode (`full` or `smart`), start/resume/cancel controls, optional full-refresh database backup, active run progress, stage status, and the latest successful run summary. Report screens then read the latest promoted run without asking users to select a run id.
+The Colossal Refresh settings page exposes the selected year and start month, refresh mode (`full` or `smart`), start/resume/cancel controls, optional full-refresh database backup, active run progress, stage status, and the latest successful run summary. Report screens then read the latest promoted run without asking users to select a run id.
 
 | Field | Type | Default | Applies To | Side Effect |
 | --- | --- | --- | --- | --- |
-| Scope Year | Number input | Current year | Smart and Full Refresh | Sets the canonical yearly Jira date window. |
+| Scope Year | Number input | Current year | Smart and Full Refresh / Fetch Only | Sets the year whose December 31 date closes the canonical Jira window. Valid range: 2000-2100. |
+| Start Month | Select (January-December) | January | Smart and Full Refresh / Fetch Only | Sets the first day included in issue discovery and worklog storage. The scope runs from day 1 of this month through December 31. Resume restores both year and month; Smart Refresh only reuses a successful baseline with the same year, month, and managed-project set. |
 | Create DB backup before Full Refresh | Checkbox | Off | Full Refresh only | When checked, `POST /api/canonical-refresh` sends `create_db_backup: true`; the server writes a timestamped copy of the configured capacity SQLite DB to `backups/canonical_refresh` before the full run starts. Smart Refresh ignores this option. |
 
 ## Script Files
@@ -356,12 +357,17 @@ Primary tables in `assignee_hours_capacity.db` include `canonical_refresh_runs` 
 ## Data Flow
 
 1. User starts Colossal Refresh from `/settings/canonical-refresh`.
-2. If the user checked `Create DB backup before Full Refresh` and started a full refresh, `report_server.py` creates a timestamped backup under `backups/canonical_refresh`.
-3. `report_server.py` writes run state and canonical rows into the configured capacity DB.
-4. The successful run updates `canonical_refresh_state.last_success_run_id`.
-5. Derived tables and compatibility artifacts are rebuilt from that run.
-6. Generated HTML is synced from the app root into `report_html`.
-7. Live report routes and APIs read the latest successful canonical run and served artifacts.
+2. The UI sends `year` and `start_month` to `POST /api/canonical-refresh` or `POST /api/canonical-fetch`; the server rejects months outside 1-12 and defaults omitted months to January for existing clients.
+3. If the user checked `Create DB backup before Full Refresh` and started a full refresh, `report_server.py` creates a timestamped backup under `backups/canonical_refresh`.
+4. `report_server.py` writes run state and canonical rows into the configured capacity DB. The start month is retained in existing run metadata, so no SQLite schema migration is required.
+5. The successful run updates `canonical_refresh_state.last_success_run_id`.
+6. Derived tables and compatibility artifacts are rebuilt from that run.
+7. Generated HTML is synced from the app root into `report_html`.
+8. Live report routes and APIs read the latest successful canonical run and served artifacts.
+
+### Worker Restart Recovery
+
+Fetch completion is authoritative in `canonical_fetch_runs`. If the Flask worker ends after Fetch has committed its canonical issues and worklogs but before Compute finishes, `/api/canonical-refresh/current` presents the combined run as `fetch_ready` at the `fetch_done` step rather than discarding the snapshot. The page directs the user to **Compute Latest Fetch**. `POST /api/canonical-compute` accepts the durable successful Fetch record even when the older combined `canonical_refresh_runs` row was marked `failed`. A successful retry promotes the legacy row back to `success` and updates the active report pointer. If a retrying Compute worker also ends, its stale running row is failed and cleared so Compute can be retried again from the same Fetch. If the worker ends before Fetch commits successfully, the Fetch and combined run are both failed and must be fetched again.
 
 Related regression coverage:
 

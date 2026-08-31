@@ -3801,11 +3801,21 @@ def _canonical_serialize_run(run_row: dict[str, object] | None) -> dict[str, obj
     if not isinstance(managed_project_keys, list):
         managed_project_keys = []
     summary = stats.get("summary") if isinstance(stats, dict) else {}
+    start_month_raw = stats.get("scope_start_month") if isinstance(stats, dict) else None
+    if start_month_raw in (None, "") and isinstance(summary, dict):
+        start_month_raw = summary.get("scope_start_month")
+    try:
+        scope_start_month = int(start_month_raw or 1)
+    except (TypeError, ValueError):
+        scope_start_month = 1
+    if scope_start_month < 1 or scope_start_month > 12:
+        scope_start_month = 1
     mins_since = _canonical_minutes_since_run_progress_utc(row)
     abandon_eligible, abandon_reason_code = _canonical_abandon_eligible(row)
     return {
         "run_id": _to_text(row.get("run_id")),
         "scope_year": int(row.get("scope_year") or 0),
+        "scope_start_month": scope_start_month,
         "scope_kind": _to_text((summary or {}).get("scope_kind")) or "full",
         "scope_key": _to_text((summary or {}).get("scope_key")).upper(),
         "managed_project_keys": [str(item).strip().upper() for item in managed_project_keys if _to_text(item)],
@@ -3921,6 +3931,44 @@ def _canonical_fetch_run_upsert(
         elif _to_text(status) in {"failed", "canceled"}:
             conn.execute("UPDATE canonical_refresh_state SET active_fetch_run_id='', updated_at_utc=? WHERE id=1", (now,))
         conn.commit()
+
+
+def _canonical_fetch_get_run(db_path: Path, fetch_run_id: str) -> dict[str, object] | None:
+    fetch_id = _to_text(fetch_run_id)
+    if not fetch_id:
+        return None
+    try:
+        with sqlite3.connect(db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT * FROM canonical_fetch_runs WHERE fetch_run_id=?",
+                (fetch_id,),
+            ).fetchone()
+    except sqlite3.OperationalError:
+        return None
+    return dict(row) if row else None
+
+
+def _canonical_fetch_serialize_run(row: dict[str, object] | None) -> dict[str, object]:
+    item = row or {}
+    status = _to_text(item.get("status")) or "unknown"
+    ended_at = _to_text(item.get("ended_at_utc"))
+    mapped = {
+        "run_id": _to_text(item.get("fetch_run_id")) or _to_text(item.get("canonical_run_id")),
+        "scope_year": int(item.get("scope_year") or 0),
+        "managed_project_keys_json": _to_text(item.get("managed_project_keys_json")) or "[]",
+        "started_at_utc": _to_text(item.get("started_at_utc")),
+        "ended_at_utc": ended_at,
+        "status": status,
+        "trigger_source": "canonical_fetch",
+        "error_message": _to_text(item.get("error_message")),
+        "stats_json": _to_text(item.get("stats_json")) or "{}",
+        "progress_step": "fetch_done" if status == "success" else status,
+        "progress_pct": 100 if status in {"success", "failed", "canceled"} else 1,
+        "cancel_requested": 0,
+        "updated_at_utc": ended_at or _to_text(item.get("started_at_utc")),
+    }
+    return _canonical_serialize_run(mapped)
 
 
 def _canonical_compute_get_run(db_path: Path, compute_run_id: str) -> dict[str, object] | None:
@@ -4087,23 +4135,39 @@ def _canonical_find_matching_success_run(
     db_path: Path,
     scope_year: int,
     managed_project_keys: list[str],
+    scope_start_month: int = 1,
 ) -> str:
     year = int(scope_year or 0)
+    start_month = int(scope_start_month or 1)
     expected = json.dumps(sorted({_to_text(item).upper() for item in (managed_project_keys or []) if _to_text(item)}), ensure_ascii=True)
     with sqlite3.connect(db_path) as conn:
-        row = conn.execute(
+        rows = conn.execute(
             """
-            SELECT run_id
+            SELECT run_id, stats_json
             FROM canonical_refresh_runs
             WHERE status = 'success'
               AND scope_year = ?
               AND managed_project_keys_json = ?
             ORDER BY started_at_utc DESC
-            LIMIT 1
             """,
             (year, expected),
-        ).fetchone()
-    return _to_text(row[0] if row else "")
+        ).fetchall()
+    for run_id, stats_json in rows:
+        try:
+            stats = json.loads(_to_text(stats_json) or "{}")
+        except Exception:
+            stats = {}
+        summary = stats.get("summary") if isinstance(stats, dict) else {}
+        candidate_raw = stats.get("scope_start_month") if isinstance(stats, dict) else None
+        if candidate_raw in (None, "") and isinstance(summary, dict):
+            candidate_raw = summary.get("scope_start_month")
+        try:
+            candidate_month = int(candidate_raw or 1)
+        except (TypeError, ValueError):
+            candidate_month = 1
+        if candidate_month == start_month:
+            return _to_text(run_id)
+    return ""
 
 
 def _canonical_load_sync_cache_state(
@@ -4671,9 +4735,12 @@ def _canonical_update_incremental_cache(
                 worklog_updated_utc=max_worklog_updated or None,
             )
 
-def _canonical_year_bounds(scope_year: int) -> tuple[date, date]:
+def _canonical_year_bounds(scope_year: int, scope_start_month: int = 1) -> tuple[date, date]:
     year = int(scope_year or 0)
-    return date(year, 1, 1), date(year, 12, 31)
+    start_month = int(scope_start_month or 1)
+    if start_month < 1 or start_month > 12:
+        raise ValueError("scope_start_month must be between 1 and 12")
+    return date(year, start_month, 1), date(year, 12, 31)
 
 
 def _canonical_issue_fields(start_field_id: str, end_field_ids: list[str], fix_type_field_id: str) -> list[str]:
@@ -6297,6 +6364,7 @@ def _run_canonical_phase1_refresh(
     run_id: str,
     scope_year: int,
     managed_project_keys: list[str],
+    scope_start_month: int = 1,
     mode: str = "full",
     trigger_source: str = "api_refresh_async",
     create_db_backup: bool = False,
@@ -6307,8 +6375,13 @@ def _run_canonical_phase1_refresh(
     started = time.perf_counter()
     run_started_at = _canonical_now_utc()
     managed_keys = sorted({_to_text(item).upper() for item in (managed_project_keys or []) if _to_text(item)})
+    start_month = int(scope_start_month or 1)
     requested_mode = _canonical_normalize_mode(mode)
-    previous_run_id = _canonical_find_matching_success_run(db_path, scope_year, managed_keys) if requested_mode == "smart" else ""
+    previous_run_id = (
+        _canonical_find_matching_success_run(db_path, scope_year, managed_keys, start_month)
+        if requested_mode == "smart"
+        else ""
+    )
     reconciliation_due = requested_mode == "smart" and _canonical_reconciliation_due(db_path)
     effective_mode = (
         "reconciliation" if reconciliation_due else
@@ -6321,6 +6394,9 @@ def _run_canonical_phase1_refresh(
     summary: dict[str, object] = {
         "mode": requested_mode,
         "effective_mode": effective_mode,
+        "scope_start_month": start_month,
+        "scope_start_date": date(int(scope_year), start_month, 1).isoformat(),
+        "scope_end_date": date(int(scope_year), 12, 31).isoformat(),
         "total_candidates": 0,
         "new_items": 0,
         "changed_issue_items": 0,
@@ -6347,6 +6423,7 @@ def _run_canonical_phase1_refresh(
     def _build_stats(current_stage: str, *, current_item: str = "", current_detail: str = "", failed_stage: str = "") -> dict[str, object]:
         return {
             "scope_year": int(scope_year or 0),
+            "scope_start_month": start_month,
             "managed_project_count": len(managed_keys),
             "managed_project_keys": managed_keys,
             "phase": "colossal_fetch",
@@ -6436,7 +6513,7 @@ def _run_canonical_phase1_refresh(
         return {"ok": True, "run_id": run_id, "status": "canceled"}, 200
 
     try:
-        from_date, to_date = _canonical_year_bounds(scope_year)
+        from_date, to_date = _canonical_year_bounds(scope_year, start_month)
         if _canonical_is_cancel_requested(db_path, run_id):
             return _cancel("loading_managed_project_scope")
         _update(
@@ -6905,6 +6982,19 @@ def _run_canonical_compute(
     def _finish(status: str, *, error: str = "", stats: dict[str, object] | None = None) -> tuple[dict[str, object], int]:
         now = _canonical_now_utc()
         payload = stats or {}
+        legacy_source = _canonical_get_run(db_path, fetch_run_id) or {}
+        should_promote_legacy = status == "success" and (
+            promote_legacy_run or _to_text(legacy_source.get("status")) != "success"
+        )
+        if should_promote_legacy:
+            try:
+                legacy_stats = json.loads(_to_text(legacy_source.get("stats_json")) or "{}")
+            except Exception:
+                legacy_stats = {}
+            if not isinstance(legacy_stats, dict):
+                legacy_stats = {}
+            legacy_stats["compute"] = payload
+            _canonical_mark_run_status(db_path, fetch_run_id, "success", stats=legacy_stats, activate=True)
         with sqlite3.connect(db_path) as conn:
             conn.execute(
                 """UPDATE canonical_compute_runs
@@ -6925,8 +7015,6 @@ def _run_canonical_compute(
             else:
                 conn.execute("UPDATE canonical_refresh_state SET active_compute_run_id='', updated_at_utc=? WHERE id=1", (now,))
             conn.commit()
-        if status == "success" and promote_legacy_run:
-            _canonical_mark_run_status(db_path, fetch_run_id, "success", stats=payload, activate=True)
         return {
             "ok": status == "success", "compute_run_id": compute_run_id,
             "fetch_run_id": fetch_run_id, "status": status, "phase": "compute",
@@ -6934,8 +7022,13 @@ def _run_canonical_compute(
         }, 200 if status == "success" else 500
 
     try:
-        fetch = _canonical_get_run(db_path, fetch_run_id)
-        if not fetch or _to_text(fetch.get("status")) not in {"success", "running"}:
+        fetch_record = _canonical_fetch_get_run(db_path, fetch_run_id)
+        legacy_fetch = _canonical_get_run(db_path, fetch_run_id)
+        if fetch_record:
+            fetch_is_ready = _to_text(fetch_record.get("status")) == "success"
+        else:
+            fetch_is_ready = bool(legacy_fetch) and _to_text(legacy_fetch.get("status")) in {"success", "running"}
+        if not fetch_is_ready:
             return _finish("failed", error="Compute requires a successful Fetch snapshot.")
         _update("validating_fetch_snapshot", 5, {"fetch_run_id": fetch_run_id, "trigger_source": trigger_source})
         with sqlite3.connect(db_path) as conn:
@@ -11259,7 +11352,7 @@ def _canonical_refresh_settings_html() -> str:
       font-weight:700;
       margin-bottom:4px;
     }}
-    input {{
+    input, select {{
       width:100%;
       border:1px solid var(--line);
       border-radius:10px;
@@ -11300,9 +11393,10 @@ def _canonical_refresh_settings_html() -> str:
     .controls {{
       display:grid;
       gap:14px;
-      grid-template-columns: minmax(220px, 280px) 1fr;
+      grid-template-columns: minmax(360px, 480px) 1fr;
       align-items:end;
     }}
+    .scope-fields {{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }}
     .summary-grid {{
       display:grid;
       gap:12px;
@@ -11737,6 +11831,7 @@ def _canonical_refresh_settings_html() -> str:
     }}
     @media (max-width: 980px) {{
       .controls {{ grid-template-columns: 1fr; }}
+      .scope-fields {{ grid-template-columns: 1fr; }}
       .prepare-offline-fields {{ grid-template-columns: 1fr; }}
     }}
   </style>
@@ -11747,15 +11842,34 @@ def _canonical_refresh_settings_html() -> str:
       <div class="top">
         <div>
           <h1 style="margin:0;font-size:1.3rem;">Colossal Refresh</h1>
-          <p class="muted" style="margin:.45rem 0 0;">Start and monitor canonical yearly Jira refresh runs for the managed-project reporting dataset.</p>
+          <p class="muted" style="margin:.45rem 0 0;">Start and monitor canonical Jira refresh runs from a selected month through the end of the year.</p>
         </div>
         <div class="row">__SETTINGS_TOP_NAV__</div>
       </div>
 
       <div class="controls" style="margin-top:14px;">
-        <div>
-          <label for="scope-year">Scope Year</label>
-          <input id="scope-year" type="number" min="2000" max="2100" value="{current_year}">
+        <div class="scope-fields">
+          <div>
+            <label for="scope-year">Scope Year</label>
+            <input id="scope-year" type="number" min="2000" max="2100" value="{current_year}">
+          </div>
+          <div>
+            <label for="scope-start-month">Start Month</label>
+            <select id="scope-start-month">
+              <option value="1">January</option>
+              <option value="2">February</option>
+              <option value="3">March</option>
+              <option value="4">April</option>
+              <option value="5">May</option>
+              <option value="6">June</option>
+              <option value="7">July</option>
+              <option value="8">August</option>
+              <option value="9">September</option>
+              <option value="10">October</option>
+              <option value="11">November</option>
+              <option value="12">December</option>
+            </select>
+          </div>
         </div>
         <div class="row">
           <div class="backup-option">
@@ -11798,7 +11912,7 @@ def _canonical_refresh_settings_html() -> str:
       <div class="row" style="margin-top:12px;">
         <span id="managed-project-pill" class="pill">Loading managed projects...</span>
         <span id="run-mode-pill" class="pill">Mode: -</span>
-        <span id="run-year-pill" class="pill">Year: -</span>
+        <span id="run-year-pill" class="pill">Scope: -</span>
       </div>
 
       <div id="resume-banner" class="resume-banner" style="display:none;" role="status" aria-live="polite">
@@ -11956,6 +12070,7 @@ def _canonical_refresh_settings_html() -> str:
     const ABANDON_API = "/api/canonical-refresh/abandon-stale";
     const statusEl = document.getElementById("status");
     const scopeYearEl = document.getElementById("scope-year");
+    const scopeStartMonthEl = document.getElementById("scope-start-month");
     const createDbBackupEl = document.getElementById("create-db-backup");
     const startSmartBtn = document.getElementById("start-smart-btn");
     const startFullBtn = document.getElementById("start-full-btn");
@@ -11986,6 +12101,7 @@ def _canonical_refresh_settings_html() -> str:
     const metaReconciliation = document.getElementById("meta-reconciliation");
     let activeRunId = "";
     let activeRunYear = "";
+    let activeRunStartMonth = "1";
     let pollTimer = 0;
     let busyModalPollTimer = 0;
 
@@ -12106,6 +12222,12 @@ def _canonical_refresh_settings_html() -> str:
       cancelBtn.disabled = !isBusy || !activeRunId;
     }}
 
+    function monthName(value) {{
+      const month = Number(value || 1);
+      const names = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+      return names[month - 1] || "January";
+    }}
+
     function renderLifecycle(body) {{
       const lifecycle = body && body.lifecycle ? body.lifecycle : {{}};
       const fetchRun = body && body.fetch_run ? body.fetch_run : null;
@@ -12119,7 +12241,19 @@ def _canonical_refresh_settings_html() -> str:
       metaReconciliation.textContent = lifecycle.reconciliation_due
         ? "Due: next Smart Fetch will reconcile full scope."
         : (lifecycle.last_full_reconciliation_at_utc || "Not recorded yet.");
+      const fetchStatus = String((fetchRun || {{}}).status || "").toLowerCase();
       const computeStatus = String((computeRun || {{}}).status || "").toLowerCase();
+      const fetchNeedsCompute = fetchStatus === "success" && (
+        !computeRun
+        || String(computeRun.fetch_run_id || "") !== String(fetchRun.run_id || "")
+        || computeStatus === "failed"
+        || computeStatus === "canceled"
+      );
+      if (fetchNeedsCompute) {{
+        metaComputeRun.textContent = "Compute pending for " + String(fetchRun.run_id || "latest Fetch") + ".";
+        document.getElementById("resume-banner").style.display = "none";
+        setStatus("Fetch completed successfully. Click Compute Latest Fetch to finish without fetching Jira again.", "ok");
+      }}
       if (computeStatus === "running" || computeStatus === "cancel_requested") setBusy(true);
     }}
 
@@ -12188,7 +12322,10 @@ def _canonical_refresh_settings_html() -> str:
       const projectKeys = Array.isArray(item.managed_project_keys) ? item.managed_project_keys : [];
       activeRunId = String(item.run_id || "");
       runModePill.textContent = "Mode: " + (mode ? labelize(mode) : "-");
-      runYearPill.textContent = "Year: " + (item.scope_year || "-");
+      const scopeMonth = Number(item.scope_start_month || stats.scope_start_month || 1);
+      runYearPill.textContent = item.scope_year
+        ? `Scope: ${{monthName(scopeMonth)}}-December ${{item.scope_year}}`
+        : "Scope: -";
       runStatusPill.textContent = labelize(item.status || "idle");
       progressCaption.textContent = runStatusText(item) + (stats.current_detail ? " " + String(stats.current_detail) : "");
       progressFill.style.width = `${{Math.max(0, Math.min(100, Number(item.progress || 0)))}}%`;
@@ -12210,6 +12347,7 @@ def _canonical_refresh_settings_html() -> str:
       renderItems(stats.items || []);
       const statusValue = String(item.status || "").toLowerCase();
       activeRunYear = String(item.scope_year || "");
+      activeRunStartMonth = String(scopeMonth || 1);
       abandonStaleBtn.disabled = !item.abandon_eligible;
       abandonStaleBtn.title = abandonStaleTitle(item);
       setBusy(statusValue === "running" || statusValue === "cancel_requested");
@@ -12217,8 +12355,8 @@ def _canonical_refresh_settings_html() -> str:
       const resumeBannerText = document.getElementById("resume-banner-text");
       const isResumable = (statusValue === "canceled" || statusValue === "failed") && activeRunYear;
       if (isResumable) {{
-        const yearLabel = activeRunYear ? ` for ${{activeRunYear}}` : "";
-        resumeBannerText.textContent = `Last run${{yearLabel}} was ${{labelize(statusValue)}}. Resume with Smart Refresh to skip already-fetched issues and pick up where it left off.`;
+        const scopeLabel = activeRunYear ? ` for ${{monthName(activeRunStartMonth)}}-December ${{activeRunYear}}` : "";
+        resumeBannerText.textContent = `Last run${{scopeLabel}} was ${{labelize(statusValue)}}. Resume with Smart Refresh to skip already-fetched issues and pick up where it left off.`;
         resumeBanner.style.display = "";
       }} else {{
         resumeBanner.style.display = "none";
@@ -12320,8 +12458,12 @@ def _canonical_refresh_settings_html() -> str:
 
     async function startRefresh(mode) {{
       const yearValue = Number(scopeYearEl.value || 0);
+      const startMonthValue = Number(scopeStartMonthEl.value || 0);
       if (!yearValue || yearValue < 2000 || yearValue > 2100) {{
         throw new Error("Year must be between 2000 and 2100.");
+      }}
+      if (!startMonthValue || startMonthValue < 1 || startMonthValue > 12) {{
+        throw new Error("Start month must be between January and December.");
       }}
       setBusy(true);
       const createDbBackup = mode === "full" && !!createDbBackupEl.checked;
@@ -12329,7 +12471,7 @@ def _canonical_refresh_settings_html() -> str:
       const resp = await fetch(START_API, {{
         method: "POST",
         headers: {{ "Content-Type": "application/json" }},
-        body: JSON.stringify({{ year: yearValue, mode, create_db_backup: createDbBackup }}),
+        body: JSON.stringify({{ year: yearValue, start_month: startMonthValue, mode, create_db_backup: createDbBackup }}),
       }});
       const body = await resp.json().catch(function () {{ return {{}}; }});
       if (resp.status === 409 && body.run) {{
@@ -12353,12 +12495,14 @@ def _canonical_refresh_settings_html() -> str:
 
     async function startFetch(mode) {{
       const yearValue = Number(scopeYearEl.value || 0);
+      const startMonthValue = Number(scopeStartMonthEl.value || 0);
       if (!yearValue || yearValue < 2000 || yearValue > 2100) throw new Error("Year must be between 2000 and 2100.");
+      if (!startMonthValue || startMonthValue < 1 || startMonthValue > 12) throw new Error("Start month must be between January and December.");
       setBusy(true);
       setStatus("Starting " + labelize(mode) + " Fetch only...", "");
       const resp = await fetch(FETCH_API, {{
         method: "POST", headers: {{ "Content-Type": "application/json" }},
-        body: JSON.stringify({{ year: yearValue, mode }}),
+        body: JSON.stringify({{ year: yearValue, start_month: startMonthValue, mode }}),
       }});
       const body = await resp.json().catch(() => ({{}}));
       if (!resp.ok) {{ setBusy(false); throw new Error(String(body.error || "Failed to start Fetch.")); }}
@@ -12492,6 +12636,7 @@ def _canonical_refresh_settings_html() -> str:
     cancelBtn.addEventListener("click", () => cancelRefresh().catch((err) => setStatus(err.message || String(err), "err")));
     document.getElementById("resume-btn").addEventListener("click", () => {{
       if (activeRunYear) scopeYearEl.value = activeRunYear;
+      scopeStartMonthEl.value = activeRunStartMonth || "1";
       startRefresh("smart").catch((err) => setStatus(err.message || String(err), "err"));
     }});
     abandonStaleBtn.addEventListener("click", () => {{
@@ -41902,6 +42047,41 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         active = _to_text(canonical_runtime_state.get("active_run_id"))
         return active == run_id_text and refresh_lock.locked()
 
+    def _canonical_compute_runtime_worker_alive(compute_row: dict[str, object] | None) -> bool:
+        row = compute_row or {}
+        compute_run_id = _to_text(row.get("compute_run_id"))
+        fetch_run_id = _to_text(row.get("fetch_run_id"))
+        active = _to_text(canonical_runtime_state.get("active_run_id"))
+        return bool(active and active in {compute_run_id, fetch_run_id} and refresh_lock.locked())
+
+    def _canonical_clear_orphaned_compute_run(compute_row: dict[str, object] | None) -> bool:
+        row = compute_row or {}
+        compute_run_id = _to_text(row.get("compute_run_id"))
+        if not compute_run_id or _to_text(row.get("status")) != "running":
+            return False
+        if _canonical_compute_runtime_worker_alive(row):
+            return False
+        now = _canonical_now_utc()
+        error_message = "Compute worker ended before completion. The successful Fetch snapshot remains available for retry."
+        with sqlite3.connect(capacity_paths["db_path"]) as conn:
+            conn.execute(
+                """UPDATE canonical_compute_runs
+                   SET status='failed', error_message=?, progress_step='failed', progress_pct=100,
+                       cancel_requested=0, ended_at_utc=?, updated_at_utc=?
+                   WHERE compute_run_id=? AND status='running'""",
+                (error_message, now, now, compute_run_id),
+            )
+            conn.execute(
+                """UPDATE canonical_refresh_state
+                   SET active_compute_run_id='', updated_at_utc=?
+                   WHERE id=1 AND active_compute_run_id=?""",
+                (now, compute_run_id),
+            )
+            conn.commit()
+        if _to_text(canonical_runtime_state.get("active_run_id")) == compute_run_id:
+            canonical_runtime_state["active_run_id"] = ""
+        return True
+
     def _canonical_clear_orphaned_running_run(run_row: dict[str, object] | None) -> bool:
         row = run_row or {}
         run_id_text = _to_text(row.get("run_id"))
@@ -41909,6 +42089,58 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             return False
         if _canonical_runtime_worker_alive(run_id_text):
             return False
+        fetch_record = _canonical_fetch_get_run(capacity_paths["db_path"], run_id_text)
+        if fetch_record and _to_text(fetch_record.get("status")) == "success":
+            try:
+                fetch_stats = json.loads(_to_text(fetch_record.get("stats_json")) or "{}")
+            except Exception:
+                fetch_stats = {}
+            if not isinstance(fetch_stats, dict):
+                fetch_stats = {}
+            fetch_stats["orphaned_run_recovery"] = {
+                "cleared_at_utc": _canonical_now_utc(),
+                "previous_step": _to_text(row.get("progress_step")),
+                "previous_progress_pct": int(row.get("progress_pct") or 0),
+                "recovery_action": "fetch_preserved_compute_pending",
+                "reason": "The Flask worker ended after durable Fetch completion. Compute can be retried without Jira acquisition.",
+            }
+            now = _canonical_now_utc()
+            with sqlite3.connect(capacity_paths["db_path"]) as conn:
+                conn.execute(
+                    """UPDATE canonical_compute_runs
+                       SET status='failed', error_message=?, progress_step='failed', progress_pct=100,
+                           cancel_requested=0, ended_at_utc=?, updated_at_utc=?
+                       WHERE fetch_run_id=? AND status='running'""",
+                    (
+                        "Compute worker ended before completion. The successful Fetch snapshot remains available for retry.",
+                        now,
+                        now,
+                        run_id_text,
+                    ),
+                )
+                conn.execute(
+                    """UPDATE canonical_refresh_state
+                       SET active_compute_run_id='', updated_at_utc=?
+                       WHERE id=1 AND active_compute_run_id IN (
+                           SELECT compute_run_id FROM canonical_compute_runs WHERE fetch_run_id=?
+                       )""",
+                    (now, run_id_text),
+                )
+                conn.commit()
+            _canonical_mark_run_status(
+                capacity_paths["db_path"],
+                run_id=run_id_text,
+                status="fetch_ready",
+                error_message="",
+                stats=fetch_stats,
+                activate=False,
+            )
+            _canonical_update_progress_and_stats(
+                capacity_paths["db_path"], run_id_text, "fetch_done", 100, fetch_stats
+            )
+            if _to_text(canonical_runtime_state.get("active_run_id")) == run_id_text:
+                canonical_runtime_state["active_run_id"] = ""
+            return True
         stats: dict[str, object] = {}
         try:
             parsed = json.loads(_to_text(row.get("stats_json")) or "{}")
@@ -41922,6 +42154,27 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             "previous_progress_pct": int(row.get("progress_pct") or 0),
             "reason": "No active Flask worker owns this running canonical refresh.",
         }
+        if fetch_record and _to_text(fetch_record.get("status")) == "running":
+            now = _canonical_now_utc()
+            with sqlite3.connect(capacity_paths["db_path"]) as conn:
+                conn.execute(
+                    """UPDATE canonical_fetch_runs
+                       SET status='failed', error_message=?, stats_json=?, ended_at_utc=?
+                       WHERE fetch_run_id=? AND status='running'""",
+                    (
+                        "Fetch worker ended before the durable snapshot completed.",
+                        json.dumps(stats, ensure_ascii=True),
+                        now,
+                        run_id_text,
+                    ),
+                )
+                conn.execute(
+                    """UPDATE canonical_refresh_state
+                       SET active_fetch_run_id='', updated_at_utc=?
+                       WHERE id=1 AND active_fetch_run_id=?""",
+                    (now, run_id_text),
+                )
+                conn.commit()
         _canonical_mark_run_status(
             capacity_paths["db_path"],
             run_id=run_id_text,
@@ -41937,6 +42190,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
 
     def _start_canonical_refresh_async(
         scope_year: int,
+        scope_start_month: int = 1,
         mode: str = "full",
         trigger_source: str = "api_refresh_async",
         create_db_backup: bool = False,
@@ -41949,6 +42203,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 "error": "No active managed projects found. Configure Managed Projects first.",
             }, 400
         refresh_mode = _canonical_normalize_mode(mode)
+        start_month = int(scope_start_month or 1)
 
         with canonical_jobs_lock:
             active_runtime_run = _to_text(canonical_runtime_state.get("active_run_id"))
@@ -42008,6 +42263,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             initial_stats = {
                 "mode": refresh_mode,
                 "effective_mode": refresh_mode,
+                "scope_start_month": start_month,
                 "db_backup": {
                     "requested": should_create_backup,
                     "created": bool(db_backup_path),
@@ -42015,6 +42271,9 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 },
                 "summary": {
                     "mode": refresh_mode,
+                    "scope_start_month": start_month,
+                    "scope_start_date": date(int(scope_year), start_month, 1).isoformat(),
+                    "scope_end_date": date(int(scope_year), 12, 31).isoformat(),
                     "db_backup_requested": should_create_backup,
                     "db_backup_created": bool(db_backup_path),
                     "db_backup_path": db_backup_path,
@@ -42076,6 +42335,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                     artifact_base_dir=base_dir,
                     run_id=run_id,
                     scope_year=scope_year,
+                    scope_start_month=start_month,
                     managed_project_keys=managed_project_keys,
                     mode=refresh_mode,
                     trigger_source=trigger_source,
@@ -42133,10 +42393,21 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
     ) -> tuple[dict[str, object], int]:
         state = _canonical_two_phase_state(capacity_paths["db_path"])
         source_fetch_run_id = _to_text(fetch_run_id) or _to_text(state.get("last_success_fetch_run_id"))
-        source = _canonical_get_run(capacity_paths["db_path"], source_fetch_run_id)
-        if not source or _to_text(source.get("status")) != "success":
+        source_fetch = _canonical_fetch_get_run(capacity_paths["db_path"], source_fetch_run_id)
+        source_legacy = _canonical_get_run(capacity_paths["db_path"], source_fetch_run_id)
+        source_is_ready = (
+            _to_text(source_fetch.get("status")) == "success"
+            if source_fetch
+            else bool(source_legacy) and _to_text(source_legacy.get("status")) == "success"
+        )
+        if not source_is_ready:
             return {"ok": False, "error": "Compute requires a successful Fetch run."}, 409
         with canonical_jobs_lock:
+            active_compute_run_id = _to_text(state.get("active_compute_run_id"))
+            if active_compute_run_id:
+                active_compute = _canonical_compute_get_run(capacity_paths["db_path"], active_compute_run_id)
+                if _canonical_clear_orphaned_compute_run(active_compute):
+                    state = _canonical_two_phase_state(capacity_paths["db_path"])
             if _to_text(canonical_runtime_state.get("active_run_id")) or _to_text(state.get("active_compute_run_id")):
                 return {"ok": False, "error": "Another canonical Fetch or Compute is already running."}, 409
             if not refresh_lock.acquire(blocking=False):
@@ -42790,6 +43061,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
     def canonical_refresh_start():
         payload = request.get_json(silent=True) or {}
         year_raw = _to_text(payload.get("year"))
+        month_raw = payload.get("start_month", 1)
         refresh_mode = _canonical_normalize_mode(payload.get("mode"))
         create_db_backup = _parse_truthy_flag(payload.get("create_db_backup"))
         if year_raw:
@@ -42801,8 +43073,15 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             scope_year = datetime.now().year
         if scope_year < 2000 or scope_year > 2100:
             return jsonify({"ok": False, "error": "Invalid year. Expected range 2000-2100."}), 400
+        try:
+            scope_start_month = int(month_raw)
+        except (TypeError, ValueError):
+            return jsonify({"ok": False, "error": "Invalid start_month. Expected integer 1-12."}), 400
+        if scope_start_month < 1 or scope_start_month > 12:
+            return jsonify({"ok": False, "error": "Invalid start_month. Expected range 1-12."}), 400
         response, status_code = _start_canonical_refresh_async(
             scope_year=scope_year,
+            scope_start_month=scope_start_month,
             mode=refresh_mode,
             trigger_source="api_refresh_async",
             create_db_backup=create_db_backup,
@@ -42813,14 +43092,22 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
     @app.route("/api/canonical-fetch", methods=["POST"])
     def canonical_fetch_start():
         payload = request.get_json(silent=True) or {}
+        month_raw = payload.get("start_month", 1)
         try:
             scope_year = int(payload.get("year") or datetime.now().year)
         except (TypeError, ValueError):
             return jsonify({"ok": False, "error": "Invalid year. Expected integer YYYY."}), 400
         if scope_year < 2000 or scope_year > 2100:
             return jsonify({"ok": False, "error": "Invalid year. Expected range 2000-2100."}), 400
+        try:
+            scope_start_month = int(month_raw)
+        except (TypeError, ValueError):
+            return jsonify({"ok": False, "error": "Invalid start_month. Expected integer 1-12."}), 400
+        if scope_start_month < 1 or scope_start_month > 12:
+            return jsonify({"ok": False, "error": "Invalid start_month. Expected range 1-12."}), 400
         response, status_code = _start_canonical_refresh_async(
             scope_year=scope_year,
+            scope_start_month=scope_start_month,
             mode=_canonical_normalize_mode(payload.get("mode")),
             trigger_source="api_fetch_async",
             create_db_backup=False,
@@ -42874,6 +43161,39 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 run_id_text = _to_text(row.get("run_id"))
                 if _canonical_clear_orphaned_running_run(row):
                     row = _canonical_get_run(capacity_paths["db_path"], run_id_text)
+        if (
+            row
+            and _to_text(row.get("status")).lower() == "failed"
+            and "no longer has an active worker" in _to_text(row.get("error_message")).lower()
+        ):
+            run_id_text = _to_text(row.get("run_id"))
+            completed_fetch = _canonical_fetch_get_run(capacity_paths["db_path"], run_id_text)
+            if completed_fetch and _to_text(completed_fetch.get("status")) == "success":
+                try:
+                    recovery_stats = json.loads(_to_text(completed_fetch.get("stats_json")) or "{}")
+                except Exception:
+                    recovery_stats = {}
+                if not isinstance(recovery_stats, dict):
+                    recovery_stats = {}
+                recovery_stats["orphaned_run_recovery"] = {
+                    "cleared_at_utc": _canonical_now_utc(),
+                    "previous_step": _to_text(row.get("progress_step")),
+                    "previous_progress_pct": int(row.get("progress_pct") or 0),
+                    "recovery_action": "fetch_preserved_compute_pending",
+                    "reason": "A previously failed combined run has a durable successful Fetch and can resume at Compute.",
+                }
+                _canonical_mark_run_status(
+                    capacity_paths["db_path"],
+                    run_id=run_id_text,
+                    status="fetch_ready",
+                    error_message="",
+                    stats=recovery_stats,
+                    activate=False,
+                )
+                _canonical_update_progress_and_stats(
+                    capacity_paths["db_path"], run_id_text, "fetch_done", 100, recovery_stats
+                )
+                row = _canonical_get_run(capacity_paths["db_path"], run_id_text)
         if not row:
             row = _canonical_latest_run(capacity_paths["db_path"])
             if not row:
@@ -42883,11 +43203,19 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         else:
             row_payload = _canonical_serialize_run(row)
         state = _canonical_two_phase_state(capacity_paths["db_path"])
-        fetch_row = _canonical_get_run(capacity_paths["db_path"], _to_text(state.get("active_fetch_run_id")) or _to_text(state.get("last_success_fetch_run_id")))
+        fetch_run_id = _to_text(state.get("active_fetch_run_id")) or _to_text(state.get("last_success_fetch_run_id"))
+        fetch_record = _canonical_fetch_get_run(capacity_paths["db_path"], fetch_run_id)
+        fetch_row = _canonical_get_run(capacity_paths["db_path"], fetch_run_id) if not fetch_record else None
         compute_row = _canonical_compute_get_run(capacity_paths["db_path"], _to_text(state.get("active_compute_run_id")) or _to_text(state.get("last_success_compute_run_id")))
+        if compute_row and _to_text(compute_row.get("status")) == "running":
+            with canonical_jobs_lock:
+                if _canonical_clear_orphaned_compute_run(compute_row):
+                    compute_row = _canonical_compute_get_run(
+                        capacity_paths["db_path"], _to_text(compute_row.get("compute_run_id"))
+                    )
         return jsonify({
             "ok": True, "run": row_payload,
-            "fetch_run": _canonical_serialize_run(fetch_row) if fetch_row else None,
+            "fetch_run": _canonical_fetch_serialize_run(fetch_record) if fetch_record else (_canonical_serialize_run(fetch_row) if fetch_row else None),
             "compute_run": _canonical_compute_serialize_run(compute_row) if compute_row else None,
             "lifecycle": {**state, "reconciliation_due": _canonical_reconciliation_due(capacity_paths["db_path"])},
         })

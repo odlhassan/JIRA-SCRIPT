@@ -64,6 +64,82 @@ def _seed_running_canonical_run(db_path: Path, run_id: str = "orphaned-run") -> 
 
 
 class CanonicalRefreshApiTests(unittest.TestCase):
+    def test_start_month_bounds_and_api_scope_are_preserved(self):
+        self.assertEqual(
+            report_server._canonical_year_bounds(2026, 6),
+            (report_server.date(2026, 6, 1), report_server.date(2026, 12, 31)),
+        )
+
+        with patch.dict("os.environ", {"JIRA_PROJECT_KEYS": ""}, clear=False), tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            (root / "report_html").mkdir(parents=True, exist_ok=True)
+            (root / "report_html" / "dashboard.html").write_text("<html><body>ok</body></html>", encoding="utf-8")
+            app = create_report_server_app(base_dir=root, folder_raw="report_html")
+            db_path = root / "assignee_hours_capacity.db"
+            _seed_managed_projects(db_path)
+            client = app.test_client()
+            seen: dict[str, object] = {}
+
+            def _fake_runner(
+                db_path,
+                artifact_base_dir,
+                run_id,
+                scope_year,
+                managed_project_keys,
+                scope_start_month=1,
+                **_kwargs,
+            ):
+                seen["scope_start_month"] = scope_start_month
+                report_server._canonical_mark_run_status(
+                    db_path,
+                    run_id=run_id,
+                    status="success",
+                    stats={
+                        "scope_start_month": scope_start_month,
+                        "summary": {"scope_start_month": scope_start_month},
+                    },
+                    activate=True,
+                )
+                return {"ok": True, "run_id": run_id, "status": "success"}, 200
+
+            with patch.object(report_server, "_run_canonical_phase1_refresh", side_effect=_fake_runner):
+                resp = client.post("/api/canonical-refresh", json={"year": 2026, "start_month": 6, "mode": "full"})
+                self.assertEqual(resp.status_code, 202)
+                run_id = str((resp.get_json() or {}).get("run_id") or "")
+                for _ in range(30):
+                    run = (client.get(f"/api/canonical-refresh/{run_id}").get_json() or {}).get("run") or {}
+                    if str(run.get("status") or "") == "success":
+                        break
+                    time.sleep(0.05)
+
+            self.assertEqual(seen.get("scope_start_month"), 6)
+            self.assertEqual(run.get("scope_start_month"), 6)
+
+            invalid = client.post("/api/canonical-refresh", json={"year": 2026, "start_month": 13})
+            self.assertEqual(invalid.status_code, 400)
+            self.assertIn("range 1-12", str((invalid.get_json() or {}).get("error") or ""))
+
+    def test_smart_refresh_baseline_must_match_start_month(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            db_path = Path(td) / "capacity.db"
+            report_server._init_canonical_refresh_db(db_path)
+            now = report_server._canonical_now_utc()
+            projects_json = '["O2"]'
+            with sqlite3.connect(db_path) as conn:
+                for run_id, start_month in (("jan-run", 1), ("jun-run", 6)):
+                    stats_json = '{"scope_start_month": %d}' % start_month
+                    conn.execute(
+                        """INSERT INTO canonical_refresh_runs(
+                               run_id, scope_year, managed_project_keys_json, started_at_utc,
+                               status, stats_json, updated_at_utc
+                           ) VALUES (?, 2026, ?, ?, 'success', ?, ?)""",
+                        (run_id, projects_json, now, stats_json, now),
+                    )
+                conn.commit()
+
+            self.assertEqual(report_server._canonical_find_matching_success_run(db_path, 2026, ["O2"], 6), "jun-run")
+            self.assertEqual(report_server._canonical_find_matching_success_run(db_path, 2026, ["O2"], 1), "jan-run")
+
     def test_schema_and_refresh_run_use_only_active_managed_projects(self):
         with patch.dict("os.environ", {"JIRA_PROJECT_KEYS": ""}, clear=False), tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             root = Path(td)
@@ -464,6 +540,7 @@ class CanonicalRefreshApiTests(unittest.TestCase):
                 run_id,
                 scope_year,
                 managed_project_keys,
+                scope_start_month=1,
                 mode="full",
                 trigger_source="api_refresh_async",
                 create_db_backup=False,
@@ -515,6 +592,7 @@ class CanonicalRefreshApiTests(unittest.TestCase):
                 run_id,
                 scope_year,
                 managed_project_keys,
+                scope_start_month=1,
                 mode="full",
                 trigger_source="api_refresh_async",
                 create_db_backup=False,
@@ -576,6 +654,7 @@ class CanonicalRefreshApiTests(unittest.TestCase):
                 run_id,
                 scope_year,
                 managed_project_keys,
+                scope_start_month=1,
                 mode="full",
                 trigger_source="api_refresh_async",
                 create_db_backup=False,
@@ -641,6 +720,38 @@ class CanonicalRefreshApiTests(unittest.TestCase):
                 ).fetchone()
             self.assertEqual(str(state[0] or ""), "")
             self.assertEqual(str(state[1] or ""), "")
+
+    def test_current_preserves_completed_fetch_when_combined_worker_is_orphaned(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            (root / "report_html").mkdir(parents=True, exist_ok=True)
+            (root / "report_html" / "dashboard.html").write_text("<html><body>ok</body></html>", encoding="utf-8")
+            app = create_report_server_app(base_dir=root, folder_raw="report_html")
+            db_path = root / "assignee_hours_capacity.db"
+            run_id = _seed_running_canonical_run(db_path, "fetch-complete-worker-gone")
+            report_server._canonical_fetch_run_upsert(
+                db_path,
+                run_id=run_id,
+                scope_year=2026,
+                managed_project_keys=["O2"],
+                requested_mode="smart",
+                effective_mode="smart",
+                status="success",
+                stats={"fetch_only": True, "issue_count": 12, "worklog_count": 34},
+                completed=True,
+            )
+
+            response = app.test_client().get("/api/canonical-refresh/current")
+            self.assertEqual(response.status_code, 200)
+            body = response.get_json() or {}
+            run = body.get("run") or {}
+            fetch_run = body.get("fetch_run") or {}
+            self.assertEqual(run.get("status"), "fetch_ready")
+            self.assertEqual(run.get("step"), "fetch_done")
+            self.assertEqual(fetch_run.get("status"), "success")
+            recovery = (run.get("stats") or {}).get("orphaned_run_recovery") or {}
+            self.assertEqual(recovery.get("recovery_action"), "fetch_preserved_compute_pending")
+            self.assertEqual(str(run.get("error") or ""), "")
 
     def test_refresh_writes_generated_artifacts_to_app_root_when_db_is_external(self):
         with (
@@ -791,6 +902,7 @@ class CanonicalRefreshApiTests(unittest.TestCase):
                 run_id,
                 scope_year,
                 managed_project_keys,
+                scope_start_month=1,
                 mode="full",
                 trigger_source="api_refresh_async",
                 create_db_backup=False,
