@@ -32,6 +32,16 @@ Employee Performance has one exception: its per-assignee refresh remains a separ
   - Rebuild all global derived tables, compatibility artifacts, Epics Planner Jira-owned fields, generated reports, and served output.
   - Promote the global precomputed version only after complete validation and successful output synchronization.
   - A failed Compute leaves reports on the prior precomputed version.
+  - Generator subprocesses (`generate_rlt_leave_report.py`, `generate_employee_performance_report.py`,
+    `support_center_sync.py`) run with their working directory resolved by
+    `report_server._resolve_script_cwd()`. Locally that is the repo root; on Azure, where
+    `WEBSITE_RUN_FROM_PACKAGE` mounts `/home/site/wwwroot` read-only, it is the same writable
+    artifact directory the compatibility bridge uses (`$HOME/data/canonical_artifacts`, or
+    `JIRA_CANONICAL_ARTIFACT_DIR`). Without this, Compute failed at
+    `generate_rlt_leave_report.py` with `OSError: [Errno 30] Read-only file system`.
+  - Promotion into `report_html` at the end of Compute is best-effort. A read-only publish target
+    is recorded as `reports.sync_report_html_error` in the run stats and does not fail a Compute
+    whose derived data and canonical pointers were already rebuilt.
 - Employee Performance:
   - Global Compute regenerates Employee Performance from the global Fetch snapshot.
   - Per-assignee refresh performs an assignee-scoped Fetch followed by Employee Performance-only Compute.

@@ -1223,7 +1223,13 @@ def _write_xlsx(
     # Write to a temp file in the same directory first, then replace the target.
     # This avoids OSError 22 / WinError 32 when the file is open in Excel.
     target = Path(output_path)
-    tmp_fd, tmp_path = tempfile.mkstemp(suffix=".xlsx", dir=target.parent)
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        tmp_fd, tmp_path = tempfile.mkstemp(suffix=".xlsx", dir=target.parent)
+    except OSError:
+        # Read-only target directory (e.g. the Azure WEBSITE_RUN_FROM_PACKAGE
+        # mount). Stage in the system temp dir so the workbook is still produced.
+        tmp_fd, tmp_path = tempfile.mkstemp(suffix=".xlsx")
     try:
         os.close(tmp_fd)
         wb.save(tmp_path)

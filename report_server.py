@@ -7104,13 +7104,22 @@ def _run_canonical_compute(
         for script_name in ("generate_rlt_leave_report.py", "generate_employee_performance_report.py", "support_center_sync.py"):
             if _cancel_requested():
                 return _finish("canceled", error="Compute canceled while generating reports.")
-            code, _stdout, stderr = _run_script(script_name, artifact_base_dir, env_overrides=report_env if script_name != "support_center_sync.py" else None)
+            code, _stdout, stderr = _run_script(
+                script_name,
+                artifact_base_dir,
+                env_overrides=report_env if script_name != "support_center_sync.py" else None,
+            )
             report_stats[script_name] = {"exit_code": code}
             if code != 0:
                 report_stats[script_name]["error"] = _to_text(stderr)[-500:]
                 return _finish("failed", error=f"{script_name} failed.", stats={"reports": report_stats})
         _update("syncing_report_html", 95, {"reports": report_stats})
-        sync_report_html(artifact_base_dir, "report_html")
+        # Publishing into report_html is best-effort: the Azure package mount is
+        # read-only, and a failed promotion must not discard a completed Compute.
+        try:
+            sync_report_html(artifact_base_dir, "report_html")
+        except Exception as sync_exc:
+            report_stats["sync_report_html_error"] = str(sync_exc)[-500:]
         stats = {
             "fetch_run_id": fetch_run_id, "issue_count": issue_count,
             "duration_sec": round(time.perf_counter() - started, 2),
@@ -25739,11 +25748,27 @@ def _materialize_refresh_widgets(report_dir: Path) -> None:
             )
 
 
+def _resolve_script_cwd(base_dir: Path, cwd: Path | None = None) -> Path:
+    """Working directory for generator subprocesses.
+
+    Generators write their outputs (xlsx/html/db) relative to the process cwd. On
+    Azure, ``WEBSITE_RUN_FROM_PACKAGE`` mounts the app root read-only, so running
+    them there fails with ``OSError: [Errno 30] Read-only file system``. Fall back
+    to the same writable artifact directory the canonical bridge already uses, so
+    generators read and write the one consistent set of artifacts. On a writable
+    root (local dev) this returns ``base_dir`` unchanged.
+    """
+    if cwd is not None:
+        return Path(cwd)
+    return _canonical_bridge_artifact_base_dir(Path(base_dir))
+
+
 def _run_script(
     script_name: str,
     base_dir: Path,
     extra_args: list[str] | None = None,
     env_overrides: dict[str, str] | None = None,
+    cwd: Path | None = None,
 ) -> tuple[int, str, str]:
     script_path = base_dir / script_name
     if not script_path.exists():
@@ -25757,7 +25782,7 @@ def _run_script(
             env[str(key)] = str(value)
     result = subprocess.run(
         command,
-        cwd=str(base_dir),
+        cwd=str(_resolve_script_cwd(base_dir, cwd)),
         capture_output=True,
         text=True,
         env=env,
@@ -25775,6 +25800,7 @@ def _run_script_interruptible(
     on_stdout_line=None,
     heartbeat=None,
     heartbeat_interval_sec: float = 5.0,
+    cwd: Path | None = None,
 ) -> tuple[int, str, str]:
     script_path = base_dir / script_name
     if not script_path.exists():
@@ -25788,7 +25814,7 @@ def _run_script_interruptible(
             env[str(key)] = str(value)
     proc = subprocess.Popen(
         command,
-        cwd=str(base_dir),
+        cwd=str(_resolve_script_cwd(base_dir, cwd)),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
