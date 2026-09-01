@@ -5473,16 +5473,27 @@ def _canonical_rebuild_derived_data(db_path: Path, run_id: str) -> dict[str, int
     }
 
 
+_writable_directory_cache: dict[str, bool] = {}
+
+
 def _is_writable_directory(path: Path) -> bool:
+    # Probed on every report-source resolution and script launch; a mount does not
+    # change writability within a process lifetime, so cache the result.
+    key = str(path)
+    cached = _writable_directory_cache.get(key)
+    if cached is not None:
+        return cached
     try:
         path.mkdir(parents=True, exist_ok=True)
         probe = path / ".write-probe"
         with open(probe, "a", encoding="utf-8"):
             pass
         probe.unlink(missing_ok=True)
-        return True
+        result = True
     except OSError:
-        return False
+        result = False
+    _writable_directory_cache[key] = result
+    return result
 
 
 def _canonical_bridge_artifact_base_dir(base_dir: Path) -> Path:
@@ -23505,7 +23516,22 @@ def _resolve_output_html_path(env_var: str, default_name: str, base_dir: Path) -
     path = Path(raw_value)
     if path.is_absolute():
         return path
-    return base_dir / path
+    rooted = base_dir / path
+    # When the app root is read-only, generators write into the writable artifact
+    # directory instead. Prefer that copy so promotion picks up a fresh rebuild
+    # rather than the stale HTML baked into the deploy package.
+    artifact_dir = _canonical_bridge_artifact_base_dir(base_dir)
+    if artifact_dir != base_dir:
+        artifact_copy = artifact_dir / path
+        if artifact_copy.exists() and artifact_copy.is_file():
+            if not rooted.exists():
+                return artifact_copy
+            try:
+                if artifact_copy.stat().st_mtime_ns >= rooted.stat().st_mtime_ns:
+                    return artifact_copy
+            except OSError:
+                return artifact_copy
+    return rooted
 
 
 def _resolve_report_html_sources(base_dir: Path) -> dict[str, Path]:

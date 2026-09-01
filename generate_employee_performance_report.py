@@ -14,6 +14,7 @@ from canonical_report_data import build_rlt_leave_snapshot
 from generate_assignee_hours_report import _list_capacity_profiles
 from manage_fields_registry import load_manage_fields
 from report_entity_registry import load_report_entities
+from report_output_paths import resolve_output_base
 
 DEFAULT_WORKLOG_INPUT_XLSX = "2_jira_subtask_worklogs.xlsx"
 DEFAULT_WORK_ITEMS_INPUT_XLSX = "1_jira_work_items_export.xlsx"
@@ -6602,7 +6603,7 @@ if (typeof window !== "undefined" && window.location && window.location.protocol
 </html>"""
 
 
-def _resolve_runtime_paths(base_dir: Path) -> dict[str, Path]:
+def _resolve_runtime_paths(base_dir: Path, output_base: Path | None = None) -> dict[str, Path]:
     worklog_name = os.getenv("JIRA_WORKLOG_XLSX_PATH", DEFAULT_WORKLOG_INPUT_XLSX).strip() or DEFAULT_WORKLOG_INPUT_XLSX
     work_items_name = os.getenv("JIRA_EXPORT_XLSX_PATH", DEFAULT_WORK_ITEMS_INPUT_XLSX).strip() or DEFAULT_WORK_ITEMS_INPUT_XLSX
     leave_name = os.getenv("JIRA_LEAVE_REPORT_XLSX_PATH", DEFAULT_LEAVE_REPORT_INPUT_XLSX).strip() or DEFAULT_LEAVE_REPORT_INPUT_XLSX
@@ -6611,11 +6612,15 @@ def _resolve_runtime_paths(base_dir: Path) -> dict[str, Path]:
     source_mode = _to_text(os.getenv("JIRA_EMP_PERF_INPUT_SOURCE", "auto")).lower() or "auto"
     run_id = _to_text(os.getenv("JIRA_EMP_PERF_RUN_ID"))
     canonical_run_id = _to_text(os.getenv("JIRA_EMP_PERF_CANONICAL_RUN_ID") or os.getenv("JIRA_CANONICAL_RUN_ID"))
+    # Artifacts (xlsx inputs produced by the canonical bridge, and the generated
+    # HTML) live in the writable artifact directory; the DB keeps its own
+    # resolution because its env var is absolute in production.
+    artifact_base = Path(output_base) if output_base is not None else base_dir
     return {
-        "worklog_path": _resolve_path(worklog_name, base_dir),
-        "work_items_path": _resolve_path(work_items_name, base_dir),
-        "leave_report_path": _resolve_path(leave_name, base_dir),
-        "html_path": _resolve_path(html_name, base_dir),
+        "worklog_path": _resolve_path(worklog_name, artifact_base),
+        "work_items_path": _resolve_path(work_items_name, artifact_base),
+        "leave_report_path": _resolve_path(leave_name, artifact_base),
+        "html_path": _resolve_path(html_name, artifact_base),
         "db_path": _resolve_path(db_name, base_dir),
         "source_mode": source_mode,
         "run_id": run_id,
@@ -6654,7 +6659,7 @@ def _resolve_employee_performance_source_mode(paths: dict[str, Path | str]) -> t
 
 def main() -> None:
     base_dir = Path(__file__).resolve().parent
-    paths = _resolve_runtime_paths(base_dir)
+    paths = _resolve_runtime_paths(base_dir, resolve_output_base(base_dir))
     _init_performance_settings_db(paths["db_path"])
     managed_project_display_names = _load_managed_project_display_names(paths["db_path"])
     settings = _load_performance_settings(paths["db_path"])

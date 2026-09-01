@@ -19,6 +19,8 @@ from typing import Any
 
 from openpyxl import Workbook
 
+from report_output_paths import resolve_output_base
+
 from jira_incremental_cache import (
     apply_overlap,
     bootstrap_default_checkpoint,
@@ -2428,15 +2430,16 @@ def main() -> None:
     from_date, to_date = resolve_window_range(args.window, _to_text(args.from_date), _to_text(args.to_date))
 
     base = Path(__file__).resolve().parent
+    out_base = resolve_output_base(base)
     xlsx_out = Path(args.xlsx_out)
     html_out = Path(args.html_out)
     md_out = Path(args.md_out)
     if not xlsx_out.is_absolute():
-        xlsx_out = base / xlsx_out
+        xlsx_out = out_base / xlsx_out
     if not html_out.is_absolute():
-        html_out = base / html_out
+        html_out = out_base / html_out
     if not md_out.is_absolute():
-        md_out = base / md_out
+        md_out = out_base / md_out
 
     print(f"Generating leave report for {args.project_key} ({args.project_name})")
     print(f"Window: {from_date} -> {to_date}")

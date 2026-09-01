@@ -11,11 +11,14 @@ from __future__ import annotations
 
 import argparse
 import os
+import shutil
 import sqlite3
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
 from jira_client import BASE_URL, get_session
+from report_output_paths import is_writable_directory
 
 DEFAULT_DB_NAME = "support_center.db"
 DEFAULT_WORK_TYPE_FIELD_ID = "customfield_10683"
@@ -26,10 +29,36 @@ def _base_dir() -> Path:
     return Path(__file__).resolve().parent
 
 
+def _writable_db_path(candidate: Path) -> Path:
+    """Keep the DB writable when the app root is a read-only Azure package mount.
+
+    Falls back to ``$HOME/data/<name>``, seeding it once from the deployed copy so
+    the packaged support data is not lost. Set ``SUPPORT_CENTER_DB_PATH`` to an
+    absolute path under ``/home/data`` to control this explicitly.
+    """
+    if is_writable_directory(candidate.parent):
+        return candidate
+    fallback_dir = Path(os.getenv("HOME") or tempfile.gettempdir()) / "data"
+    try:
+        fallback_dir.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return candidate
+    fallback = fallback_dir / candidate.name
+    if not fallback.exists() and candidate.exists():
+        try:
+            shutil.copy2(candidate, fallback)
+        except OSError:
+            pass
+    print(f"[support-center] {candidate.parent} is not writable; using {fallback}")
+    return fallback
+
+
 def resolve_db_path(value: str | None = None) -> Path:
     raw = (value or os.getenv("SUPPORT_CENTER_DB_PATH", DEFAULT_DB_NAME) or DEFAULT_DB_NAME).strip()
     path = Path(raw or DEFAULT_DB_NAME)
-    return path if path.is_absolute() else _base_dir() / path
+    if not path.is_absolute():
+        path = _base_dir() / path
+    return _writable_db_path(path)
 
 
 def resolve_work_type_field_id() -> str:

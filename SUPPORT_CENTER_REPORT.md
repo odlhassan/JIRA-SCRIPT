@@ -134,7 +134,14 @@ tables, all support-tagged issues, counts by project, counts by type.
 - `report_server.py` (`_run_canonical_phase1_refresh`, `generating_reports` stage) —
   **`support_center_sync.py` is now called here** so that every colossal refresh automatically
   repopulates `support_issues`. Previously missing, which caused the Support Center report to
-  show empty data after a colossal refresh.
+  show empty data after a colossal refresh. In `_run_canonical_compute()` a non-zero exit from
+  this script fails the whole Compute run, so its DB path must be writable.
+- `report_output_paths.py` — `is_writable_directory()` backs
+  `support_center_sync._writable_db_path()`. When the directory holding `support_center.db` is
+  read-only (Azure `WEBSITE_RUN_FROM_PACKAGE`), the sync uses `$HOME/data/support_center.db`
+  instead, seeding it once from the deployed copy so packaged support data is preserved.
+  Set `SUPPORT_CENTER_DB_PATH=/home/data/support_center.db` to control this explicitly.
+  See `AZURE_APP_SERVICE.md`.
 
 ## Table Schema
 

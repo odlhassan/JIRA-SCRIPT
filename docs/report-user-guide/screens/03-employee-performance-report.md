@@ -87,6 +87,7 @@ The Teams filter is still backed by a hidden multi-select (`#teams`) so existing
 | `report_server.py` | Injects shared refresh widget and serves APIs used by the report (`/api/performance/settings`, `/api/scoped-subtasks`). |
 | `tests/test_employee_performance_report.py` | Focused generator, payload, scoring, and HTML contract tests. |
 | `docs/report-user-guide/screens/03-employee-performance-report.md` | Module behavior and UI documentation. |
+| `report_output_paths.py` | Resolves the writable directory the generator writes `employee_performance_report.html` into. |
 
 ## Dependent & Impacted Files
 
@@ -96,6 +97,8 @@ The Teams filter is still backed by a hidden multi-select (`#teams`) so existing
 - `support_booking_registry.py` (new) also reads `support_team_config` read-only, and its `/settings/performance` consumer reads managed projects to render the Support Hour Bookings admin control with project names and the requested default ordering. See `docs/capacity-user-guide/screens/07-support-hour-bookings.md`.
 - `tests/test_report_date_filter_api.py` verifies the served Employee Performance HTML keeps valid busy-modal overlay CSS.
 - `docs/report-user-guide/screens/02-dashboard-report.md` tracks the same shared refresh widget behavior used by dashboard-style reports.
+- `report_output_paths.resolve_output_base()` decides where `_resolve_runtime_paths(base_dir, output_base)` puts the xlsx inputs and the generated HTML. On a writable app root this is the repo root; on Azure's read-only package mount it is `$HOME/data/canonical_artifacts` (or `JIRA_CANONICAL_ARTIFACT_DIR`). The `db_path` entry deliberately keeps script-directory resolution because `JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH` is absolute in production. See `AZURE_APP_SERVICE.md`.
+- `generate_rlt_leave_report.py` runs immediately before this generator in the Colossal Refresh Compute chain and must write `rlt_leave_report.xlsx` into the same resolved directory for the leave inputs to be found. See `docs/report-user-guide/screens/10-rlt-leave-report.md`.
 
 ## Table Schema
 

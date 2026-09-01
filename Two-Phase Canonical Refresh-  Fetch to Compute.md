@@ -32,13 +32,15 @@ Employee Performance has one exception: its per-assignee refresh remains a separ
   - Rebuild all global derived tables, compatibility artifacts, Epics Planner Jira-owned fields, generated reports, and served output.
   - Promote the global precomputed version only after complete validation and successful output synchronization.
   - A failed Compute leaves reports on the prior precomputed version.
-  - Generator subprocesses (`generate_rlt_leave_report.py`, `generate_employee_performance_report.py`,
-    `support_center_sync.py`) run with their working directory resolved by
-    `report_server._resolve_script_cwd()`. Locally that is the repo root; on Azure, where
-    `WEBSITE_RUN_FROM_PACKAGE` mounts `/home/site/wwwroot` read-only, it is the same writable
+  - The generators Compute runs (`generate_rlt_leave_report.py`, `generate_employee_performance_report.py`,
+    `support_center_sync.py`) resolve their output directory through
+    `report_output_paths.resolve_output_base()`, which mirrors
+    `report_server._canonical_bridge_artifact_base_dir()`. Locally that is the repo root; on Azure,
+    where `WEBSITE_RUN_FROM_PACKAGE` mounts `/home/site/wwwroot` read-only, it is the writable
     artifact directory the compatibility bridge uses (`$HOME/data/canonical_artifacts`, or
-    `JIRA_CANONICAL_ARTIFACT_DIR`). Without this, Compute failed at
-    `generate_rlt_leave_report.py` with `OSError: [Errno 30] Read-only file system`.
+    `JIRA_CANONICAL_ARTIFACT_DIR`). Without this, Compute failed at `generate_rlt_leave_report.py`
+    with `OSError: [Errno 30] Read-only file system`. Note that generators anchor paths to their own
+    source directory, so setting the subprocess cwd alone does not fix this.
   - Promotion into `report_html` at the end of Compute is best-effort. A read-only publish target
     is recorded as `reports.sync_report_html_error` in the run stats and does not fail a Compute
     whose derived data and canonical pointers were already rebuilt.

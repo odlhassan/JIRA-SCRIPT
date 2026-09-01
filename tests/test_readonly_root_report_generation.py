@@ -5,8 +5,77 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import report_output_paths
 import report_server
 from generate_rlt_leave_report import _write_xlsx
+
+
+class ResolveOutputBaseTests(unittest.TestCase):
+    def test_writable_script_dir_is_used_unchanged(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            self.assertEqual(report_output_paths.resolve_output_base(root), root)
+
+    def test_env_override_wins_and_is_created(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            override = root / "artifacts"
+            os.environ["JIRA_CANONICAL_ARTIFACT_DIR"] = str(override)
+            self.addCleanup(os.environ.pop, "JIRA_CANONICAL_ARTIFACT_DIR", None)
+            resolved = report_output_paths.resolve_output_base(root)
+            self.assertEqual(resolved, override)
+            self.assertTrue(override.is_dir())
+
+    def test_read_only_script_dir_falls_back_to_home_data(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            home = root / "home"
+            original = report_output_paths.is_writable_directory
+            report_output_paths.is_writable_directory = lambda path: False
+            os.environ["HOME"] = str(home)
+            self.addCleanup(setattr, report_output_paths, "is_writable_directory", original)
+            resolved = report_output_paths.resolve_output_base(root / "wwwroot")
+            self.assertEqual(resolved, home / "data" / "canonical_artifacts")
+            self.assertTrue(resolved.is_dir())
+
+    def test_matches_server_bridge_resolution_on_writable_root(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            self.assertEqual(
+                report_output_paths.resolve_output_base(root),
+                report_server._canonical_bridge_artifact_base_dir(root),
+            )
+
+
+class ResolveOutputHtmlPathTests(unittest.TestCase):
+    def test_prefers_fresher_artifact_copy_when_root_is_read_only(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td) / "wwwroot"
+            root.mkdir()
+            artifacts = Path(td) / "artifacts"
+            artifacts.mkdir()
+            (root / "rlt_leave_report.html").write_text("stale", encoding="utf-8")
+            (artifacts / "rlt_leave_report.html").write_text("fresh", encoding="utf-8")
+            os.environ["JIRA_CANONICAL_ARTIFACT_DIR"] = str(artifacts)
+            self.addCleanup(os.environ.pop, "JIRA_CANONICAL_ARTIFACT_DIR", None)
+            resolved = report_server._resolve_output_html_path(
+                "RLT_LEAVE_REPORT_HTML_PATH", "rlt_leave_report.html", root
+            )
+            self.assertEqual(resolved.read_text(encoding="utf-8"), "fresh")
+
+    def test_uses_root_copy_when_no_artifact_copy_exists(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td) / "wwwroot"
+            root.mkdir()
+            artifacts = Path(td) / "artifacts"
+            artifacts.mkdir()
+            (root / "rlt_leave_report.html").write_text("packaged", encoding="utf-8")
+            os.environ["JIRA_CANONICAL_ARTIFACT_DIR"] = str(artifacts)
+            self.addCleanup(os.environ.pop, "JIRA_CANONICAL_ARTIFACT_DIR", None)
+            resolved = report_server._resolve_output_html_path(
+                "RLT_LEAVE_REPORT_HTML_PATH", "rlt_leave_report.html", root
+            )
+            self.assertEqual(resolved, root / "rlt_leave_report.html")
 
 
 class ResolveScriptCwdTests(unittest.TestCase):
