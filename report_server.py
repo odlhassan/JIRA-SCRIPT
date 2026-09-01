@@ -3980,6 +3980,26 @@ def _canonical_compute_get_run(db_path: Path, compute_run_id: str) -> dict[str, 
     return dict(row) if row else None
 
 
+def _canonical_compute_latest_for_fetch(db_path: Path, fetch_run_id: str) -> dict[str, object] | None:
+    """Return the newest Compute attempt for a Fetch, including failed retries."""
+    fetch_id = _to_text(fetch_run_id)
+    if not fetch_id:
+        return None
+    try:
+        with sqlite3.connect(db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                """SELECT * FROM canonical_compute_runs
+                   WHERE fetch_run_id=?
+                   ORDER BY started_at_utc DESC
+                   LIMIT 1""",
+                (fetch_id,),
+            ).fetchone()
+    except sqlite3.OperationalError:
+        return None
+    return dict(row) if row else None
+
+
 def _canonical_fetch_checkpoint(db_path: Path, fetch_run_id: str) -> str:
     """Return the committed cursor for a Fetch; legacy runs fall back to end time."""
     if not _to_text(fetch_run_id):
@@ -6983,9 +7003,10 @@ def _run_canonical_compute(
         now = _canonical_now_utc()
         payload = stats or {}
         legacy_source = _canonical_get_run(db_path, fetch_run_id) or {}
-        should_promote_legacy = status == "success" and (
-            promote_legacy_run or _to_text(legacy_source.get("status")) != "success"
-        )
+        # A successful Compute completes the combined refresh regardless of
+        # whether it was auto-chained or manually started after Fetch Only.
+        # Keep the legacy row authoritative for older clients and status polls.
+        should_promote_legacy = status == "success"
         if should_promote_legacy:
             try:
                 legacy_stats = json.loads(_to_text(legacy_source.get("stats_json")) or "{}")
@@ -6993,8 +7014,27 @@ def _run_canonical_compute(
                 legacy_stats = {}
             if not isinstance(legacy_stats, dict):
                 legacy_stats = {}
+            counts_by_stage: dict[str, dict[str, object]] = {}
+            for stage in legacy_stats.get("stages") or []:
+                if isinstance(stage, dict) and _to_text(stage.get("key")):
+                    stage_counts = stage.get("counts")
+                    counts_by_stage[_to_text(stage.get("key"))] = (
+                        dict(stage_counts) if isinstance(stage_counts, dict) else {}
+                    )
+            counts_by_stage["rebuilding_derived_data"] = dict(payload.get("derived_rows") or {})
+            counts_by_stage["syncing_epics_management"] = dict(payload.get("epics_management") or {})
+            counts_by_stage["rebuilding_compatibility_artifacts"] = dict(payload.get("compatibility_artifacts") or {})
+            counts_by_stage["generating_reports"] = dict(payload.get("reports") or {})
+            counts_by_stage["syncing_report_html"] = {"synced": True}
             legacy_stats["compute"] = payload
+            legacy_stats["current_item"] = ""
+            legacy_stats["current_detail"] = "Canonical refresh completed successfully."
+            all_stage_keys = {key for key, _label in _canonical_stage_catalog()}
+            legacy_stats["stages"] = _canonical_stage_payload(
+                "done", all_stage_keys, counts_by_stage=counts_by_stage
+            )
             _canonical_mark_run_status(db_path, fetch_run_id, "success", stats=legacy_stats, activate=True)
+            _canonical_update_progress_and_stats(db_path, fetch_run_id, "done", 100, legacy_stats)
         with sqlite3.connect(db_path) as conn:
             conn.execute(
                 """UPDATE canonical_compute_runs
@@ -11393,10 +11433,95 @@ def _canonical_refresh_settings_html() -> str:
     .controls {{
       display:grid;
       gap:14px;
-      grid-template-columns: minmax(360px, 480px) 1fr;
-      align-items:end;
+      grid-template-columns: minmax(320px, 430px) 1fr;
+      align-items:stretch;
     }}
     .scope-fields {{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }}
+    .control-group {{
+      border:1px solid var(--line);
+      border-radius:14px;
+      padding:13px 14px;
+      background:#f8fbff;
+    }}
+    .control-group.primary-actions {{
+      border-color:#99f6e4;
+      background:linear-gradient(135deg, #f0fdfa, #eff6ff);
+    }}
+    .control-group-head {{
+      display:flex;
+      align-items:flex-start;
+      gap:9px;
+      margin-bottom:11px;
+    }}
+    .control-group-head > .material-symbols-outlined {{ color:var(--brand); font-size:1.25rem; }}
+    .control-group-head strong {{ display:block; font-size:.9rem; }}
+    .control-group-head span:not(.material-symbols-outlined) {{
+      display:block;
+      margin-top:3px;
+      color:var(--muted);
+      font-size:.78rem;
+      font-weight:400;
+    }}
+    .advanced-actions {{
+      margin-top:12px;
+      border:1px solid var(--line);
+      border-radius:12px;
+      background:#f8fbff;
+    }}
+    .advanced-actions summary {{
+      cursor:pointer;
+      padding:10px 13px;
+      color:#334155;
+      font-size:.84rem;
+      font-weight:700;
+    }}
+    .advanced-actions-body {{ padding:0 13px 12px; }}
+    .advanced-flow {{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }}
+    .action-subgroup {{
+      border:1px solid var(--line);
+      border-radius:11px;
+      padding:11px;
+      background:#fff;
+    }}
+    .action-subgroup strong {{ display:block; font-size:.84rem; }}
+    .action-subgroup p {{ margin:4px 0 10px; color:var(--muted); font-size:.78rem; line-height:1.35; }}
+    .utility-groups {{ display:flex; gap:12px; margin-top:12px; flex-wrap:wrap; align-items:stretch; }}
+    .utility-group {{
+      border:1px solid var(--line);
+      border-radius:12px;
+      padding:10px 11px;
+      background:#fff;
+    }}
+    .utility-group.run-controls {{ flex:1 1 580px; }}
+    .utility-group.export-tools {{ flex:0 1 auto; }}
+    .utility-label {{
+      display:block;
+      margin-bottom:8px;
+      color:#64748b;
+      font-size:.7rem;
+      font-weight:800;
+      letter-spacing:.06em;
+      text-transform:uppercase;
+    }}
+    .phase-banner {{
+      display:flex;
+      align-items:center;
+      gap:12px;
+      margin-top:12px;
+      padding:13px 15px;
+      border:1px solid #fbbf24;
+      border-radius:13px;
+      background:#fffbeb;
+      color:#78350f;
+      flex-wrap:wrap;
+    }}
+    .phase-banner[hidden] {{ display:none; }}
+    .phase-banner[data-state="running"] {{ border-color:#7dd3fc; background:#f0f9ff; color:#0c4a6e; }}
+    .phase-banner[data-state="failed"] {{ border-color:#fca5a5; background:#fef2f2; color:#7f1d1d; }}
+    .phase-banner-icon {{ font-size:1.45rem; flex:0 0 auto; }}
+    .phase-banner-copy {{ flex:1; min-width:260px; }}
+    .phase-banner-copy strong {{ display:block; font-size:.92rem; }}
+    .phase-banner-copy span {{ display:block; margin-top:3px; font-size:.82rem; line-height:1.4; }}
     .summary-grid {{
       display:grid;
       gap:12px;
@@ -11540,6 +11665,10 @@ def _canonical_refresh_settings_html() -> str:
     .stage-card[data-state="running"] {{ border-color:#7dd3fc; background:#f0f9ff; }}
     .stage-card[data-state="done"] {{ border-color:#86efac; background:#f0fdf4; }}
     .stage-card[data-state="failed"] {{ border-color:#fca5a5; background:#fef2f2; }}
+    .stage-card[data-state="waiting"] {{ border-color:#fcd34d; background:#fffbeb; }}
+    .stage-phase + .stage-phase {{ margin-top:16px; padding-top:16px; border-top:1px solid var(--line); }}
+    .stage-phase-heading {{ margin:0 0 9px; font-size:.86rem; color:#334155; }}
+    .stage-phase-heading span {{ color:#64748b; font-weight:500; }}
     .stage-card-header {{
       display:flex;
       justify-content:space-between;
@@ -11602,6 +11731,7 @@ def _canonical_refresh_settings_html() -> str:
       font-size:.9rem;
     }}
     #status.ok {{ color:var(--ok); }}
+    #status.warn {{ color:var(--warn); font-weight:600; }}
     #status.err {{ color:var(--danger); }}
     .muted {{ color:var(--muted); }}
     .timestamp-display {{
@@ -11832,6 +11962,7 @@ def _canonical_refresh_settings_html() -> str:
     @media (max-width: 980px) {{
       .controls {{ grid-template-columns: 1fr; }}
       .scope-fields {{ grid-template-columns: 1fr; }}
+      .advanced-flow {{ grid-template-columns: 1fr; }}
       .prepare-offline-fields {{ grid-template-columns: 1fr; }}
     }}
   </style>
@@ -11848,65 +11979,105 @@ def _canonical_refresh_settings_html() -> str:
       </div>
 
       <div class="controls" style="margin-top:14px;">
-        <div class="scope-fields">
-          <div>
-            <label for="scope-year">Scope Year</label>
-            <input id="scope-year" type="number" min="2000" max="2100" value="{current_year}">
+        <section class="control-group scope-group" aria-labelledby="scope-group-title">
+          <div class="control-group-head">
+            <span class="material-symbols-outlined">date_range</span>
+            <div>
+              <strong id="scope-group-title">Refresh scope</strong>
+              <span>Applied to every refresh or Fetch Only action.</span>
+            </div>
           </div>
-          <div>
-            <label for="scope-start-month">Start Month</label>
-            <select id="scope-start-month">
-              <option value="1">January</option>
-              <option value="2">February</option>
-              <option value="3">March</option>
-              <option value="4">April</option>
-              <option value="5">May</option>
-              <option value="6">June</option>
-              <option value="7">July</option>
-              <option value="8">August</option>
-              <option value="9">September</option>
-              <option value="10">October</option>
-              <option value="11">November</option>
-              <option value="12">December</option>
-            </select>
+          <div class="scope-fields">
+            <div>
+              <label for="scope-year">Scope Year</label>
+              <input id="scope-year" type="number" min="2000" max="2100" value="{current_year}">
+            </div>
+            <div>
+              <label for="scope-start-month">Start Month</label>
+              <select id="scope-start-month">
+                <option value="1">January</option>
+                <option value="2">February</option>
+                <option value="3">March</option>
+                <option value="4">April</option>
+                <option value="5">May</option>
+                <option value="6">June</option>
+                <option value="7">July</option>
+                <option value="8">August</option>
+                <option value="9">September</option>
+                <option value="10">October</option>
+                <option value="11">November</option>
+                <option value="12">December</option>
+              </select>
+            </div>
+          </div>
+        </section>
+        <section class="control-group primary-actions" aria-labelledby="complete-refresh-title">
+          <div class="control-group-head">
+            <span class="material-symbols-outlined">published_with_changes</span>
+            <div>
+              <strong id="complete-refresh-title">Complete refresh</strong>
+              <span>Fetch Jira, rebuild derived data, and publish updated reports in one run.</span>
+            </div>
+          </div>
+          <div class="row">
+            <button id="start-smart-btn" class="btn" type="button">
+              <span class="material-symbols-outlined">bolt</span>
+              Smart Refresh (recommended)
+            </button>
+            <button id="start-full-btn" class="btn alt" type="button">
+              <span class="material-symbols-outlined">sync</span>
+              Full Refresh
+            </button>
+          </div>
+        </section>
+      </div>
+
+      <details class="advanced-actions">
+        <summary>Advanced workflow: run Fetch and report build separately</summary>
+        <div class="advanced-actions-body">
+          <div class="advanced-flow">
+            <section class="action-subgroup" aria-labelledby="fetch-only-title">
+              <strong id="fetch-only-title">1. Fetch Jira data only</strong>
+              <p>Save a reusable snapshot without changing the currently published reports.</p>
+              <div class="row">
+                <button id="fetch-smart-btn" class="btn ghost" type="button">Smart Fetch</button>
+                <button id="fetch-full-btn" class="btn ghost" type="button">Full Fetch</button>
+              </div>
+            </section>
+            <section class="action-subgroup" aria-labelledby="build-reports-title">
+              <strong id="build-reports-title">2. Build and publish reports</strong>
+              <p>Use the latest successful Fetch snapshot; Jira is not fetched again.</p>
+              <button id="compute-latest-btn" class="btn ghost" type="button" disabled>Build Reports from Latest Fetch</button>
+            </section>
           </div>
         </div>
-        <div class="row">
-          <div class="backup-option">
-            <input id="create-db-backup" type="checkbox" value="1" disabled>
-            <label for="create-db-backup">
-              Create DB backup before Full Refresh (disabled)
-              <span class="backup-note">Disabled: this full-DB copy filled up production disk. The backend now ignores this flag regardless of checkbox state.</span>
-            </label>
+      </details>
+
+      <div class="utility-groups">
+        <section class="utility-group run-controls" aria-labelledby="run-controls-title">
+          <span id="run-controls-title" class="utility-label">Run controls</span>
+          <div class="row">
+            <button id="cancel-btn" class="btn warn" type="button" disabled>
+              <span class="material-symbols-outlined">cancel</span>
+              <span id="cancel-btn-label">Cancel Refresh</span>
+            </button>
+            <button id="abandon-stale-btn" class="btn ghost danger-outline" type="button" disabled>
+              <span class="material-symbols-outlined">delete_forever</span>
+              Clear Stuck Run
+            </button>
+            <button id="reload-btn" class="btn ghost" type="button">
+              <span class="material-symbols-outlined">refresh</span>
+              Reload Status
+            </button>
           </div>
-          <button id="start-smart-btn" class="btn" type="button">
-            <span class="material-symbols-outlined">bolt</span>
-            Start Smart Refresh
-          </button>
-          <button id="start-full-btn" class="btn alt" type="button">
-            <span class="material-symbols-outlined">sync</span>
-            Start Full Refresh
-          </button>
-          <button id="fetch-smart-btn" class="btn ghost" type="button">Fetch Only (Smart)</button>
-          <button id="fetch-full-btn" class="btn ghost" type="button">Fetch Only (Full)</button>
-          <button id="compute-latest-btn" class="btn ghost" type="button">Compute Latest Fetch</button>
-          <button id="cancel-btn" class="btn warn" type="button" disabled>
-            <span class="material-symbols-outlined">cancel</span>
-            Cancel Refresh
-          </button>
-          <button id="abandon-stale-btn" class="btn ghost danger-outline" type="button" disabled>
-            <span class="material-symbols-outlined">delete_forever</span>
-            Clear Stuck Run
-          </button>
-          <button id="reload-btn" class="btn ghost" type="button">
-            <span class="material-symbols-outlined">refresh</span>
-            Reload Status
-          </button>
+        </section>
+        <section class="utility-group export-tools" aria-labelledby="export-tools-title">
+          <span id="export-tools-title" class="utility-label">Export tools</span>
           <button id="prepare-offline-btn" class="btn ghost" type="button">
             <span class="material-symbols-outlined">folder_off</span>
             Prepare Offline HTML
           </button>
-        </div>
+        </section>
       </div>
 
       <div class="row" style="margin-top:12px;">
@@ -11921,6 +12092,18 @@ def _canonical_refresh_settings_html() -> str:
         <button id="resume-btn" class="btn resume" type="button">
           <span class="material-symbols-outlined">play_arrow</span>
           Resume (Smart Refresh)
+        </button>
+      </div>
+
+      <div id="phase-banner" class="phase-banner" data-state="waiting" role="status" aria-live="polite" hidden>
+        <span id="phase-banner-icon" class="material-symbols-outlined phase-banner-icon">pending_actions</span>
+        <span class="phase-banner-copy">
+          <strong id="phase-banner-title">Jira fetch is complete; reports are not updated yet.</strong>
+          <span id="phase-banner-text">Finish the refresh to rebuild and publish reports without fetching Jira again.</span>
+        </span>
+        <button id="finish-refresh-btn" class="btn" type="button">
+          <span class="material-symbols-outlined">play_arrow</span>
+          Finish Refresh — Build Reports
         </button>
       </div>
 
@@ -11946,7 +12129,7 @@ def _canonical_refresh_settings_html() -> str:
           <div class="meta-item"><strong>Ended At</strong><span id="meta-ended">-</span></div>
           <div class="meta-item"><strong>DB Backup</strong><span id="meta-db-backup">-</span></div>
           <div class="meta-item"><strong>Latest Fetch</strong><span id="meta-fetch-run">-</span></div>
-          <div class="meta-item"><strong>Current Compute</strong><span id="meta-compute-run">-</span></div>
+          <div class="meta-item"><strong>Report Build</strong><span id="meta-compute-run">-</span></div>
           <div class="meta-item"><strong>Reconciliation</strong><span id="meta-reconciliation">-</span></div>
         </div>
         <div id="summary-grid" class="summary-grid"></div>
@@ -11956,8 +12139,8 @@ def _canonical_refresh_settings_html() -> str:
     <section class="card">
       <div class="section-head">
         <div>
-          <h2>Detailed Breakdown of Progress Report</h2>
-          <p>Stage-by-stage execution plus the affected-item table used to explain what the refresh is doing.</p>
+          <h2>Refresh stages</h2>
+          <p>Fetch stores Jira data first. Report rebuild then updates derived data and publishes the visible reports.</p>
         </div>
       </div>
       <div id="stage-grid" class="stage-grid"></div>
@@ -12066,18 +12249,20 @@ def _canonical_refresh_settings_html() -> str:
     const START_API = "/api/canonical-refresh";
     const FETCH_API = "/api/canonical-fetch";
     const COMPUTE_API = "/api/canonical-compute";
+    const COMPUTE_CANCEL_API = "/api/canonical-compute/cancel";
     const CANCEL_API = "/api/canonical-refresh/cancel";
     const ABANDON_API = "/api/canonical-refresh/abandon-stale";
     const statusEl = document.getElementById("status");
     const scopeYearEl = document.getElementById("scope-year");
     const scopeStartMonthEl = document.getElementById("scope-start-month");
-    const createDbBackupEl = document.getElementById("create-db-backup");
     const startSmartBtn = document.getElementById("start-smart-btn");
     const startFullBtn = document.getElementById("start-full-btn");
     const fetchSmartBtn = document.getElementById("fetch-smart-btn");
     const fetchFullBtn = document.getElementById("fetch-full-btn");
     const computeLatestBtn = document.getElementById("compute-latest-btn");
+    const finishRefreshBtn = document.getElementById("finish-refresh-btn");
     const cancelBtn = document.getElementById("cancel-btn");
+    const cancelBtnLabel = document.getElementById("cancel-btn-label");
     const abandonStaleBtn = document.getElementById("abandon-stale-btn");
     const reloadBtn = document.getElementById("reload-btn");
     const managedProjectPill = document.getElementById("managed-project-pill");
@@ -12099,11 +12284,19 @@ def _canonical_refresh_settings_html() -> str:
     const metaFetchRun = document.getElementById("meta-fetch-run");
     const metaComputeRun = document.getElementById("meta-compute-run");
     const metaReconciliation = document.getElementById("meta-reconciliation");
+    const phaseBanner = document.getElementById("phase-banner");
+    const phaseBannerIcon = document.getElementById("phase-banner-icon");
+    const phaseBannerTitle = document.getElementById("phase-banner-title");
+    const phaseBannerText = document.getElementById("phase-banner-text");
     let activeRunId = "";
+    let activeComputeRunId = "";
     let activeRunYear = "";
     let activeRunStartMonth = "1";
     let pollTimer = 0;
     let busyModalPollTimer = 0;
+    let pageBusy = false;
+    let computeAvailable = false;
+    let lastRenderedStages = [];
 
     function esc(v) {{
       return String(v == null ? "" : v)
@@ -12213,13 +12406,14 @@ def _canonical_refresh_settings_html() -> str:
     }}
 
     function setBusy(isBusy) {{
-      createDbBackupEl.disabled = !!isBusy;
+      pageBusy = !!isBusy;
       startSmartBtn.disabled = !!isBusy;
       startFullBtn.disabled = !!isBusy;
       fetchSmartBtn.disabled = !!isBusy;
       fetchFullBtn.disabled = !!isBusy;
-      computeLatestBtn.disabled = !!isBusy;
-      cancelBtn.disabled = !isBusy || !activeRunId;
+      computeLatestBtn.disabled = !!isBusy || !computeAvailable;
+      finishRefreshBtn.disabled = !!isBusy || !computeAvailable;
+      cancelBtn.disabled = !isBusy || (!activeRunId && !activeComputeRunId);
     }}
 
     function monthName(value) {{
@@ -12232,6 +12426,7 @@ def _canonical_refresh_settings_html() -> str:
       const lifecycle = body && body.lifecycle ? body.lifecycle : {{}};
       const fetchRun = body && body.fetch_run ? body.fetch_run : null;
       const computeRun = body && body.compute_run ? body.compute_run : null;
+      const currentRun = body && body.run ? body.run : null;
       metaFetchRun.textContent = fetchRun
         ? String(fetchRun.run_id || "-") + " (" + labelize(fetchRun.status || "unknown") + ")"
         : "No completed fetch.";
@@ -12243,18 +12438,64 @@ def _canonical_refresh_settings_html() -> str:
         : (lifecycle.last_full_reconciliation_at_utc || "Not recorded yet.");
       const fetchStatus = String((fetchRun || {{}}).status || "").toLowerCase();
       const computeStatus = String((computeRun || {{}}).status || "").toLowerCase();
-      const fetchNeedsCompute = fetchStatus === "success" && (
-        !computeRun
-        || String(computeRun.fetch_run_id || "") !== String(fetchRun.run_id || "")
-        || computeStatus === "failed"
-        || computeStatus === "canceled"
-      );
-      if (fetchNeedsCompute) {{
-        metaComputeRun.textContent = "Compute pending for " + String(fetchRun.run_id || "latest Fetch") + ".";
+      const computeMatchesFetch = !!fetchRun && !!computeRun
+        && String(computeRun.fetch_run_id || "") === String(fetchRun.run_id || "");
+      let viewState = "fetch";
+      if (fetchStatus === "success" && computeMatchesFetch && computeStatus === "success") viewState = "complete";
+      else if (fetchStatus === "success" && computeMatchesFetch && (computeStatus === "running" || computeStatus === "cancel_requested")) viewState = "computing";
+      else if (fetchStatus === "success" && computeMatchesFetch && (computeStatus === "failed" || computeStatus === "canceled")) viewState = "compute_failed";
+      else if (fetchStatus === "success") viewState = "compute_pending";
+
+      computeAvailable = viewState === "compute_pending" || viewState === "compute_failed";
+      const computeBusy = viewState === "computing";
+      activeComputeRunId = computeBusy ? String(computeRun.compute_run_id || computeRun.run_id || "") : "";
+      cancelBtnLabel.textContent = computeBusy ? "Cancel Report Build" : "Cancel Refresh";
+      setBusy(pageBusy || computeBusy);
+      renderStages(lastRenderedStages, viewState, computeRun);
+
+      phaseBanner.hidden = !computeAvailable && !computeBusy;
+      if (viewState === "compute_pending") {{
+        const wasAutomatic = String((currentRun || {{}}).trigger_source || "") === "api_refresh_async";
+        phaseBanner.dataset.state = "waiting";
+        phaseBannerIcon.textContent = "pending_actions";
+        phaseBannerTitle.textContent = "Jira fetch is complete; reports are not updated yet.";
+        phaseBannerText.textContent = wasAutomatic
+          ? "The automatic report-build phase was interrupted. Finish the refresh to continue from the saved Jira data; Jira will not be fetched again."
+          : "This Fetch Only run saved Jira data. Finish the refresh to rebuild derived data and publish the reports.";
+        runStatusPill.textContent = "Action required";
+        progressCaption.textContent = "Jira data is safely stored. Report rebuild and publishing have not run yet.";
+        progressFill.style.width = "85%";
+        metaStep.textContent = "Waiting: Build reports";
+        metaComputeRun.textContent = "Not started for " + String(fetchRun.run_id || "latest Fetch") + ".";
         document.getElementById("resume-banner").style.display = "none";
-        setStatus("Fetch completed successfully. Click Compute Latest Fetch to finish without fetching Jira again.", "ok");
+        setStatus("Reports still show the previous published version. Finish Refresh to update them.", "warn");
+      }} else if (viewState === "compute_failed") {{
+        phaseBanner.dataset.state = "failed";
+        phaseBannerIcon.textContent = "error";
+        phaseBannerTitle.textContent = "Report rebuild did not finish; the Jira fetch is still reusable.";
+        phaseBannerText.textContent = String(computeRun.error || "Retry the report rebuild without fetching Jira again.");
+        runStatusPill.textContent = "Action required";
+        progressCaption.textContent = "Jira data is safely stored, but report rebuild failed. The previous reports remain published.";
+        progressFill.style.width = "85%";
+        metaStep.textContent = "Report rebuild failed";
+        setStatus("Build Reports can be retried from the saved Fetch.", "err");
+      }} else if (viewState === "computing") {{
+        phaseBanner.dataset.state = "running";
+        phaseBannerIcon.textContent = "sync";
+        phaseBannerTitle.textContent = "Building and publishing reports now.";
+        phaseBannerText.textContent = "Jira fetch is complete. Derived data, dependent reports, and served HTML are being updated.";
+        runStatusPill.textContent = "Building reports";
+        const overallProgress = 85 + (Math.max(0, Math.min(100, Number(computeRun.progress || 0))) * 0.15);
+        progressFill.style.width = `${{overallProgress}}%`;
+        metaStep.textContent = labelize(computeRun.step || "computing");
+        setStatus("Report rebuild is running; no Jira fetch is being repeated.", "");
+      }} else if (viewState === "complete") {{
+        runStatusPill.textContent = "Complete";
+        progressCaption.textContent = "Refresh complete. Jira data and published reports are up to date for this run.";
+        progressFill.style.width = "100%";
+        metaStep.textContent = "Completed";
+        setStatus("Refresh complete — reports were rebuilt and published successfully.", "ok");
       }}
-      if (computeStatus === "running" || computeStatus === "cancel_requested") setBusy(true);
     }}
 
     function renderSummaryCards(summary, stats) {{
@@ -12274,13 +12515,46 @@ def _canonical_refresh_settings_html() -> str:
       ).join("");
     }}
 
-    function renderStages(stages) {{
+    function formatStageCountValue(value) {{
+      if (value == null) return "-";
+      if (typeof value !== "object") return String(value);
+      if (Object.prototype.hasOwnProperty.call(value, "exit_code")) {{
+        const exitCode = Number(value.exit_code);
+        return exitCode === 0 ? "Completed" : `Failed (exit code ${{exitCode}})`;
+      }}
+      return Object.entries(value)
+        .map(([key, nestedValue]) => `${{labelize(key)}}: ${{typeof nestedValue === "object" ? JSON.stringify(nestedValue) : nestedValue}}`)
+        .join("; ");
+    }}
+
+    function renderStages(stages, viewState, computeRun) {{
       const rows = Array.isArray(stages) ? stages : [];
-      stageGrid.innerHTML = rows.map((stage) => {{
+      const computeKeys = [
+        "rebuilding_derived_data", "syncing_epics_management", "rebuilding_compatibility_artifacts",
+        "generating_reports", "syncing_report_html", "done"
+      ];
+      const computeStep = String((computeRun || {{}}).step || "");
+      let activeComputeIndex = computeKeys.indexOf(computeStep);
+      if (viewState === "computing" && activeComputeIndex < 0) activeComputeIndex = 0;
+      const decorated = rows.map((stage) => {{
+        const item = Object.assign({{}}, stage || {{}});
+        const computeIndex = computeKeys.indexOf(String(item.key || ""));
+        if (computeIndex >= 0) {{
+          if (viewState === "complete") item.status = "done";
+          else if (viewState === "compute_pending" || viewState === "compute_failed") item.status = "waiting";
+          else if (viewState === "computing") {{
+            item.status = computeIndex < activeComputeIndex ? "done" : (computeIndex === activeComputeIndex ? "running" : "waiting");
+          }}
+        }}
+        return item;
+      }});
+      const renderCards = (phaseRows) => phaseRows.map((stage) => {{
         const counts = stage && stage.counts && typeof stage.counts === "object" ? Object.entries(stage.counts) : [];
         const countHtml = counts.length
-          ? counts.map(([key, value]) => `<div><strong>${{esc(labelize(key))}}:</strong> ${{esc(value)}}</div>`).join("")
-          : `<div class="muted">No counts reported yet.</div>`;
+          ? counts.map(([key, value]) => `<div><strong>${{esc(labelize(key))}}:</strong> ${{esc(formatStageCountValue(value))}}</div>`).join("")
+          : stage.status === "waiting"
+            ? `<div class="muted">Starts when reports are built; Jira will not be fetched again.</div>`
+            : `<div class="muted">No counts reported for this stage.</div>`;
         return `
           <article class="stage-card" data-state="${{esc(stage.status || "pending")}}">
             <div class="stage-card-header">
@@ -12291,6 +12565,18 @@ def _canonical_refresh_settings_html() -> str:
           </article>
         `;
       }}).join("");
+      const fetchRows = decorated.filter((stage) => computeKeys.indexOf(String(stage.key || "")) < 0);
+      const computeRows = decorated.filter((stage) => computeKeys.indexOf(String(stage.key || "")) >= 0);
+      stageGrid.innerHTML = `
+        <section class="stage-phase">
+          <h3 class="stage-phase-heading">1. Fetch Jira data <span>— discover, retrieve, and safely store the snapshot</span></h3>
+          <div class="stage-grid">${{renderCards(fetchRows)}}</div>
+        </section>
+        <section class="stage-phase">
+          <h3 class="stage-phase-heading">2. Build and publish reports <span>— no additional Jira fetch</span></h3>
+          <div class="stage-grid">${{renderCards(computeRows)}}</div>
+        </section>
+      `;
     }}
 
     function renderItems(items) {{
@@ -12343,7 +12629,8 @@ def _canonical_refresh_settings_html() -> str:
         ? `Managed Projects: ${{projectKeys.join(", ")}}`
         : "Managed Projects: none";
       renderSummaryCards(summary, stats);
-      renderStages(stats.stages || []);
+      lastRenderedStages = Array.isArray(stats.stages) ? stats.stages : [];
+      renderStages(lastRenderedStages, "fetch", null);
       renderItems(stats.items || []);
       const statusValue = String(item.status || "").toLowerCase();
       activeRunYear = String(item.scope_year || "");
@@ -12466,12 +12753,11 @@ def _canonical_refresh_settings_html() -> str:
         throw new Error("Start month must be between January and December.");
       }}
       setBusy(true);
-      const createDbBackup = mode === "full" && !!createDbBackupEl.checked;
-      setStatus("Starting " + labelize(mode) + " refresh" + (createDbBackup ? " with DB backup" : "") + "...", "");
+      setStatus("Starting the complete " + labelize(mode) + " refresh...", "");
       const resp = await fetch(START_API, {{
         method: "POST",
         headers: {{ "Content-Type": "application/json" }},
-        body: JSON.stringify({{ year: yearValue, start_month: startMonthValue, mode, create_db_backup: createDbBackup }}),
+        body: JSON.stringify({{ year: yearValue, start_month: startMonthValue, mode, create_db_backup: false }}),
       }});
       const body = await resp.json().catch(function () {{ return {{}}; }});
       if (resp.status === 409 && body.run) {{
@@ -12490,7 +12776,7 @@ def _canonical_refresh_settings_html() -> str:
       if (runId) {{
         await pollRun(runId);
       }}
-      setStatus(labelize(mode) + " refresh started.", "ok");
+      await loadCurrentRun();
     }}
 
     async function startFetch(mode) {{
@@ -12509,7 +12795,6 @@ def _canonical_refresh_settings_html() -> str:
       const runId = String(body.run_id || (body.run || {{}}).run_id || "");
       if (runId) await pollRun(runId);
       await loadCurrentRun();
-      setStatus("Fetch completed. Use Compute Latest Fetch when ready.", "ok");
     }}
 
     async function computeLatestFetch() {{
@@ -12520,9 +12805,21 @@ def _canonical_refresh_settings_html() -> str:
       if (!resp.ok) {{ setBusy(false); throw new Error(String(body.error || "Failed to start Compute.")); }}
       const runId = String(body.compute_run_id || body.run_id || "");
       if (runId) await pollCompute(runId);
+      await loadCurrentRun();
     }}
 
     async function cancelRefresh() {{
+      if (activeComputeRunId) {{
+        const computeRunId = activeComputeRunId;
+        const body = await requestJson(COMPUTE_CANCEL_API, {{
+          method: "POST",
+          headers: {{ "Content-Type": "application/json" }},
+          body: JSON.stringify({{ compute_run_id: computeRunId }}),
+        }});
+        setStatus(String(body.message || "Report-build cancel requested."), "ok");
+        await pollCompute(computeRunId);
+        return;
+      }}
       if (!activeRunId) return;
       const body = await requestJson(CANCEL_API, {{
         method: "POST",
@@ -12633,6 +12930,7 @@ def _canonical_refresh_settings_html() -> str:
     fetchSmartBtn.addEventListener("click", () => startFetch("smart").catch((err) => setStatus(err.message || String(err), "err")));
     fetchFullBtn.addEventListener("click", () => startFetch("full").catch((err) => setStatus(err.message || String(err), "err")));
     computeLatestBtn.addEventListener("click", () => computeLatestFetch().catch((err) => setStatus(err.message || String(err), "err")));
+    finishRefreshBtn.addEventListener("click", () => computeLatestFetch().catch((err) => setStatus(err.message || String(err), "err")));
     cancelBtn.addEventListener("click", () => cancelRefresh().catch((err) => setStatus(err.message || String(err), "err")));
     document.getElementById("resume-btn").addEventListener("click", () => {{
       if (activeRunYear) scopeYearEl.value = activeRunYear;
@@ -43201,17 +43499,59 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         fetch_run_id = _to_text(state.get("active_fetch_run_id")) or _to_text(state.get("last_success_fetch_run_id"))
         fetch_record = _canonical_fetch_get_run(capacity_paths["db_path"], fetch_run_id)
         fetch_row = _canonical_get_run(capacity_paths["db_path"], fetch_run_id) if not fetch_record else None
-        compute_row = _canonical_compute_get_run(capacity_paths["db_path"], _to_text(state.get("active_compute_run_id")) or _to_text(state.get("last_success_compute_run_id")))
+        compute_row = _canonical_compute_get_run(
+            capacity_paths["db_path"],
+            _to_text(state.get("active_compute_run_id")) or _to_text(state.get("last_success_compute_run_id")),
+        )
+        # The state pointer intentionally retains the last successful Compute.
+        # For this screen, prefer the latest attempt tied to the latest Fetch so
+        # a failed/retryable report build is visible instead of looking merely
+        # pending with no explanation.
+        latest_fetch_compute = _canonical_compute_latest_for_fetch(
+            capacity_paths["db_path"], fetch_run_id
+        )
+        if latest_fetch_compute and (
+            not compute_row
+            or _to_text(compute_row.get("fetch_run_id")) != fetch_run_id
+            or _to_text(latest_fetch_compute.get("started_at_utc"))
+            >= _to_text(compute_row.get("started_at_utc"))
+        ):
+            compute_row = latest_fetch_compute
         if compute_row and _to_text(compute_row.get("status")) == "running":
             with canonical_jobs_lock:
                 if _canonical_clear_orphaned_compute_run(compute_row):
                     compute_row = _canonical_compute_get_run(
                         capacity_paths["db_path"], _to_text(compute_row.get("compute_run_id"))
                     )
+        compute_payload = _canonical_compute_serialize_run(compute_row) if compute_row else None
+        if (
+            not compute_payload
+            and fetch_run_id
+            and _to_text(state.get("last_success_compute_run_id")) == fetch_run_id
+        ):
+            # Databases promoted before the two-phase tables existed use the
+            # canonical run id as both pointers. Present that as a completed
+            # Compute instead of incorrectly requesting another report build.
+            legacy_computed = _canonical_get_run(capacity_paths["db_path"], fetch_run_id) or {}
+            if _to_text(legacy_computed.get("status")) == "success":
+                compute_payload = {
+                    "run_id": fetch_run_id,
+                    "compute_run_id": fetch_run_id,
+                    "fetch_run_id": fetch_run_id,
+                    "status": "success",
+                    "step": "done",
+                    "progress": 100,
+                    "cancel_requested": False,
+                    "started_at_utc": _to_text(legacy_computed.get("started_at_utc")),
+                    "ended_at_utc": _to_text(legacy_computed.get("ended_at_utc")),
+                    "updated_at_utc": _to_text(legacy_computed.get("updated_at_utc")),
+                    "error": "",
+                    "stats": {"legacy_promoted_run": True},
+                }
         return jsonify({
             "ok": True, "run": row_payload,
             "fetch_run": _canonical_fetch_serialize_run(fetch_record) if fetch_record else (_canonical_serialize_run(fetch_row) if fetch_row else None),
-            "compute_run": _canonical_compute_serialize_run(compute_row) if compute_row else None,
+            "compute_run": compute_payload,
             "lifecycle": {**state, "reconciliation_due": _canonical_reconciliation_due(capacity_paths["db_path"])},
         })
 

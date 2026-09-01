@@ -335,7 +335,7 @@ The Colossal Refresh settings page exposes the selected year and start month, re
 | --- | --- | --- | --- | --- |
 | Scope Year | Number input | Current year | Smart and Full Refresh / Fetch Only | Sets the year whose December 31 date closes the canonical Jira window. Valid range: 2000-2100. |
 | Start Month | Select (January-December) | January | Smart and Full Refresh / Fetch Only | Sets the first day included in issue discovery and worklog storage. The scope runs from day 1 of this month through December 31. Resume restores both year and month; Smart Refresh only reuses a successful baseline with the same year, month, and managed-project set. |
-| Create DB backup before Full Refresh | Checkbox | Off | Full Refresh only | When checked, `POST /api/canonical-refresh` sends `create_db_backup: true`; the server writes a timestamped copy of the configured capacity SQLite DB to `backups/canonical_refresh` before the full run starts. Smart Refresh ignores this option. |
+| Full database backup | Not shown | Disabled | All refresh modes | Multi-gigabyte full-DB copies exhausted production disk, so the UI no longer presents this option. The backend accepts but ignores the legacy `create_db_backup` request flag. |
 
 ## Script Files
 
@@ -367,7 +367,9 @@ Primary tables in `assignee_hours_capacity.db` include `canonical_refresh_runs` 
 
 ### Worker Restart Recovery
 
-Fetch completion is authoritative in `canonical_fetch_runs`. If the Flask worker ends after Fetch has committed its canonical issues and worklogs but before Compute finishes, `/api/canonical-refresh/current` presents the combined run as `fetch_ready` at the `fetch_done` step rather than discarding the snapshot. The page directs the user to **Compute Latest Fetch**. `POST /api/canonical-compute` accepts the durable successful Fetch record even when the older combined `canonical_refresh_runs` row was marked `failed`. A successful retry promotes the legacy row back to `success` and updates the active report pointer. If a retrying Compute worker also ends, its stale running row is failed and cleared so Compute can be retried again from the same Fetch. If the worker ends before Fetch commits successfully, the Fetch and combined run are both failed and must be fetched again.
+Fetch completion is authoritative in `canonical_fetch_runs`. If the Flask worker ends after Fetch has committed its canonical issues and worklogs but before Compute finishes, `/api/canonical-refresh/current` presents the combined run as `fetch_ready` at the `fetch_done` step rather than discarding the snapshot. The page directs the user to **Finish Refresh — Build Reports**. `POST /api/canonical-compute` accepts the durable successful Fetch record even when the older combined `canonical_refresh_runs` row was marked `failed`. A successful retry promotes the legacy row back to `success` and updates the active report pointer. If a retrying Compute worker also ends, its stale running row is failed and cleared so Compute can be retried again from the same Fetch. If the worker ends before Fetch commits successfully, the Fetch and combined run are both failed and must be fetched again.
+
+The current UI labels this recovery action **Finish Refresh — Build Reports**, explicitly says that Jira will not be fetched again, and shows later stages as **Waiting** rather than generic **Pending**.
 
 Related regression coverage:
 

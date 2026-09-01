@@ -70,3 +70,20 @@ Employee Performance has one exception: its per-assignee refresh remains a separ
 - Smart Fetch uses a 10-minute overlap window.
 - Weekly reconciliation is due-based: it runs on the first Fetch started at least seven days after the last successful reconciliation, not as an unreliable in-process timer.
 - Retention is 30 days for completed Fetch and Compute history.
+
+## Colossal Refresh UI behavior
+
+The page groups related controls by purpose. **Refresh scope** contains the year and start month shared by all refresh actions. **Complete refresh** contains **Smart Refresh (recommended)** and **Full Refresh**; both fetch Jira, rebuild derived data, generate dependent reports, and publish served HTML. **Advanced workflow: run Fetch and report build separately** nests the phase-specific actions as two child groups: **1. Fetch Jira data only** and **2. Build and publish reports**. Operational buttons are grouped under **Run controls**, while offline preparation is separate under **Export tools**.
+
+The stage display is split into two named groups:
+
+1. **Fetch Jira data** — scope discovery, hierarchy expansion, issue/worklog retrieval, and durable canonical persistence.
+2. **Build and publish reports** — derived data, Epics Planner synchronization, compatibility artifacts, dependent reports, and served HTML.
+
+When Fetch is durable but Compute has not succeeded, the second group uses **Waiting** instead of the ambiguous **Pending** label. The page shows **Action required**, keeps overall progress at 85%, explains that currently published reports still use the prior successful version, and offers **Finish Refresh — Build Reports**. This action reuses the saved Fetch and does not call Jira again.
+
+If a Compute retry failed, `GET /api/canonical-refresh/current` returns the newest Compute attempt for the latest Fetch, including its error. This lets the page explain the failure and offer a retry. Older one-phase databases whose successful run id is stored in both Fetch and Compute state pointers are treated as complete and are not incorrectly shown as requiring Compute.
+
+After any successful Compute—automatic or manually started—the combined `canonical_refresh_runs` row is finalized as `success`, `done`, and `100%`. Its stage payload is also merged with the Compute results so API clients, persisted state, and the page all report the same completed lifecycle.
+
+The full-database backup checkbox is no longer shown. Production full-DB copies were disabled because multi-gigabyte copies exhausted disk space, and the backend continues to ignore the backward-compatible `create_db_backup` request flag.
