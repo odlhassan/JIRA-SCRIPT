@@ -244,6 +244,12 @@ function toast(message) {
   toast.timer = setTimeout(function(){ element.classList.remove("show"); },2000);
 }
 function productLabel(key) { return projectNames[key] || key; }
+function combineRecognizedReleases(liveReleases) {
+  const recognizedProjectKeys = new Set(Object.keys(projectNames));
+  liveReleases.forEach(function(release){ if (release.project_key) recognizedProjectKeys.add(release.project_key); });
+  const recognizedDemos = DEMO_RELEASES.filter(function(release){ return recognizedProjectKeys.has(release.project_key); });
+  return recognizedDemos.concat(liveReleases);
+}
 function productKeys() {
   const keys = [];
   releases.forEach(function(release){ if (!keys.includes(release.project_key)) keys.push(release.project_key); });
@@ -677,7 +683,7 @@ async function fetchEpicPool() {
 async function refreshLiveData(preserveReleaseId) {
   const live = await fetchLiveReleases();
   epicPool = await fetchEpicPool();
-  releases = DEMO_RELEASES.concat(live);
+  releases = combineRecognizedReleases(live);
   selectedReleaseId = preserveReleaseId && findRelease(preserveReleaseId) ? preserveReleaseId : selectedReleaseId;
   renderAll();
 }
@@ -687,9 +693,9 @@ async function loadAll() {
     fetchEpicPool(),
     fetch("/api/projects?include_inactive=0").then(function(response){ return response.ok ? response.json() : {projects:[]}; }).catch(function(){ return {projects:[]}; })
   ]);
-  releases = DEMO_RELEASES.concat(results[0]);
   epicPool = results[1];
   (results[2].projects || []).forEach(function(project){ projectNames[project.project_key] = project.project_name || project.display_name || project.project_key; });
+  releases = combineRecognizedReleases(results[0]);
   selectedProductKey = releases[0] ? releases[0].project_key : "";
   const first = activeReleasesForProduct(selectedProductKey)[0];
   selectedReleaseId = first ? first.id : "";

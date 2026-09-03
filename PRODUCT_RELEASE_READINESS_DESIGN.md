@@ -13,6 +13,9 @@ until a persistent checklist model is approved.
 ## Business Logic
 
 - Products are vertical tabs at the left of the page.
+- Product identity is authoritative to active managed projects and live release records.
+  A demonstration release is included only when its project key is recognized by one of
+  those sources, so sample data cannot create a product the user did not configure.
 - Selecting a product shows its active releases; selecting a release opens its details.
 - Release number and release date are editable in place. Live records use the same
   Product Releases update endpoint and validation as `/settings/product-releases`.
@@ -46,6 +49,8 @@ until a persistent checklist model is approved.
 ## Business Cases
 
 - A release manager switches products on the left and sees only that product's releases.
+- OmniConnect appears under its configured `O2` / `OmniConnect-2025` project identity;
+  the legacy demonstration key `OMNICONNECT` does not create a second product tab.
 - During a release meeting, the release number or date is corrected without leaving the board.
 - A team searches the database epic pool and assigns several epics in one action.
 - Documentation applies to the whole release while individual feature-video rows target
@@ -132,19 +137,23 @@ design is approved.
 
 1. The readiness route serves the HTML and JavaScript.
 2. JavaScript loads releases, the epic pool, and project display names.
-3. Selecting a product filters releases; selecting a release renders its board.
-4. Saving live release number/date sends `PUT /api/product-releases/<release_id>`.
-5. Adding epics sends `POST /api/product-releases/<release_id>/epics`; removing sends
+3. Live release keys and active managed-project keys form the recognized product set.
+   Demonstration releases outside that set are discarded before rendering tabs.
+4. Selecting a product filters releases; selecting a release renders its board.
+5. Saving live release number/date sends `PUT /api/product-releases/<release_id>`.
+6. Adding epics sends `POST /api/product-releases/<release_id>/epics`; removing sends
    `DELETE /api/product-releases/<release_id>/epics/<epic_row_id>`.
-6. Completing a live release sends `POST /api/product-releases/<release_id>/actions` with
+7. Completing a live release sends `POST /api/product-releases/<release_id>/actions` with
    action `released`, actual date, actor, and optional notes. The returned lifecycle and
    action history become the visible Done state.
-7. Loading a live release reconciles an externally changed Released lifecycle into Done.
-8. Readiness, checklist structure, notes, and archive state update the browser-local model.
-9. All affected visible controls rerender from that shared model.
+8. Loading a live release reconciles an externally changed Released lifecycle into Done.
+9. Readiness, checklist structure, notes, and archive state update the browser-local model.
+10. All affected visible controls rerender from that shared model.
 
 ## Change Notes
 
+- 2026-09-03: Made managed/live project keys authoritative for product tabs so the
+  unconfigured `OMNICONNECT` demo key cannot duplicate `O2` / `OmniConnect-2025`.
 - 2026-09-03: Aligned release details, epics, checklist headers, and checklist content on
   consistent responsive grids. Connected Done and reopen behavior to the same release
   action/history API used by Product Releases.

@@ -31,5 +31,7 @@ detail board. Release number, release date, epic assignments, and release comple
 the existing Product Releases APIs and remain synchronized with that module. Release,
 epic, checklist, and content readiness can be changed inline; checklist dates are
 intentionally excluded and Planned can instead be manually marked delayed. Checklist
-readiness and the prototype archive remain in browser local storage. See
+readiness and the prototype archive remain in browser local storage. Product tabs come
+only from managed projects or live release records; demonstration releases cannot create
+an unconfigured product. See
 PRODUCT_RELEASE_READINESS_DESIGN.md for field behavior and implementation notes.
