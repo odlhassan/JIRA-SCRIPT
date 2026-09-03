@@ -1,4 +1,4 @@
-const PEOPLE = ["Hassan","Maya","Areeba","Tom","Customer Success","Product Team","Process Team","Implementation Team","PGL / APL / Aramco","Unassigned"];
+const PERSON_ADD_VALUE = "__add_release_person__";
 const STATUSES = [
   {key:"done",label:"Done",icon:"check_circle"},
   {key:"planned",label:"Planned",icon:"pending"},
@@ -20,6 +20,7 @@ const DEMO_RELEASES = [
 ];
 let releases = [];
 let epicPool = [];
+let databasePeople = [];
 let projectNames = {};
 let selectedProductKey = "";
 let selectedReleaseId = "";
@@ -43,8 +44,26 @@ function formatDate(value) {
   const date = new Date(value + "T00:00:00");
   return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString(undefined,{day:"numeric",month:"short",year:"numeric"});
 }
-function optionsHtml(selected) {
-  return PEOPLE.map(function(name){ return '<option value="' + esc(name) + '"' + (name === selected ? " selected" : "") + ">" + esc(name) + "</option>"; }).join("");
+function uniqueNames(names) {
+  const seen = new Set();
+  return names.map(function(name){ return String(name || "").trim(); }).filter(function(name){
+    const key = name.toLocaleLowerCase();
+    if (!name || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+function releasePeople(releaseId,selected) {
+  const release = findRelease(releaseId);
+  const board = release ? getBoard(release) : null;
+  const custom = board ? board.custom_people : [];
+  const names = uniqueNames(databasePeople.concat(custom,selected || "")).filter(function(name){ return name.toLocaleLowerCase() !== "unassigned"; });
+  names.sort(function(a,b){ return a.localeCompare(b,undefined,{sensitivity:"base"}); });
+  names.push("Unassigned");
+  return names;
+}
+function optionsHtml(selected,releaseId) {
+  return releasePeople(releaseId,selected).map(function(name){ return '<option value="' + esc(name) + '"' + (name === selected ? " selected" : "") + ">" + esc(name) + "</option>"; }).join("") + '<option value="' + PERSON_ADD_VALUE + '">＋ Add person for this release…</option>';
 }
 function normalizeEntity(entity) {
   entity.status = entity.status || "planned";
@@ -107,6 +126,7 @@ function normalizeBoard(board) {
   normalizeEntity(board);
   board.archived = Boolean(board.archived);
   board.lifecycle_status = String(board.lifecycle_status || "");
+  board.custom_people = uniqueNames(Array.isArray(board.custom_people) ? board.custom_people : []);
   board.epics = (board.epics || []).map(normalizeEntity);
   board.checklists = (board.checklists || []).map(function(check){
     normalizeEntity(check);
@@ -190,10 +210,14 @@ function statusPickerHtml(ref,target,releaseId) {
 }
 function confirmationHtml(ref,target,releaseId) {
   if (target.status !== "need_confirmation") return "";
-  return '<div class="confirmation-line"><span class="material-symbols-rounded">contact_support</span><strong>Confirmation taken by</strong><select class="confirm-select" data-confirm-field="confirm_by" data-target-ref="' + esc(ref) + '" data-release-id="' + esc(releaseId) + '">' + optionsHtml(target.confirm_by) + '</select><strong>from</strong><select class="confirm-select" data-confirm-field="confirm_from" data-target-ref="' + esc(ref) + '" data-release-id="' + esc(releaseId) + '">' + optionsHtml(target.confirm_from) + "</select></div>";
+  return '<div class="confirmation-line"><span class="material-symbols-rounded">contact_support</span><strong>Confirmation taken by</strong>' + personSelectHtml(ref,target,"confirm_by",releaseId,"confirm-select") + '<strong>from</strong>' + personSelectHtml(ref,target,"confirm_from",releaseId,"confirm-select") + "</div>";
+}
+function personSelectHtml(ref,target,field,releaseId,className) {
+  const selected = target[field] || "Unassigned";
+  return '<div class="person-picker"><select class="' + esc(className) + '" data-person-field="' + esc(field) + '" data-person-ref="' + esc(ref) + '" data-release-id="' + esc(releaseId) + '" data-current-person="' + esc(selected) + '">' + optionsHtml(selected,releaseId) + '</select><div class="person-inline-add" data-person-add-form="true"><input type="text" maxlength="100" placeholder="Person name" aria-label="Person name"><span>Release only</span><button class="icon-btn" type="button" data-confirm-person-add="true" title="Add and select person"><span class="material-symbols-rounded">check</span></button><button class="icon-btn" type="button" data-cancel-person-add="true" title="Cancel"><span class="material-symbols-rounded">close</span></button></div></div>';
 }
 function ownerSelectHtml(ref,target,releaseId,label) {
-  return '<label class="control-field owner-control"><span class="control-label">' + esc(label || "Responsible") + '</span><select class="owner-select" data-owner-ref="' + esc(ref) + '" data-release-id="' + esc(releaseId) + '">' + optionsHtml(target.owner) + "</select></label>";
+  return '<div class="control-field owner-control"><span class="control-label">' + esc(label || "Responsible") + '</span>' + personSelectHtml(ref,target,"owner",releaseId,"owner-select") + "</div>";
 }
 function scopeSummary(target,board) {
   if (target.scopes.includes("release")) return "Whole release";
@@ -345,12 +369,27 @@ function bindDynamicControls() {
       toast(target.delayed ? "Planned marked delayed." : "Delayed flag cleared.");
     });
   });
-  document.querySelectorAll("[data-owner-ref]").forEach(function(select){
-    select.addEventListener("change",function(){ const target = resolveTarget(select.dataset.ownerRef,select.dataset.releaseId); if (target) { target.owner = select.value; saveBoard(select.dataset.releaseId); } });
+  document.querySelectorAll("[data-person-field]").forEach(function(select){
+    select.addEventListener("change",function(){
+      const picker = select.closest(".person-picker");
+      const target = resolveTarget(select.dataset.personRef,select.dataset.releaseId);
+      if (!target) return;
+      if (select.value === PERSON_ADD_VALUE) {
+        select.value = select.dataset.currentPerson;
+        picker.classList.add("adding");
+        picker.querySelector(".person-inline-add input").focus();
+        return;
+      }
+      target[select.dataset.personField] = select.value;
+      select.dataset.currentPerson = select.value;
+      saveBoard(select.dataset.releaseId);
+    });
   });
-  document.querySelectorAll("[data-confirm-field]").forEach(function(select){
-    select.addEventListener("change",function(){ const target = resolveTarget(select.dataset.targetRef,select.dataset.releaseId); if (target) { target[select.dataset.confirmField] = select.value; saveBoard(select.dataset.releaseId); } });
+  document.querySelectorAll("[data-cancel-person-add]").forEach(function(button){
+    button.addEventListener("click",function(){ const picker = button.closest(".person-picker"); picker.classList.remove("adding"); picker.querySelector("input").value = ""; });
   });
+  document.querySelectorAll("[data-confirm-person-add]").forEach(function(button){ button.addEventListener("click",function(){ addReleasePersonFromPicker(button); }); });
+  document.querySelectorAll(".person-inline-add input").forEach(function(input){ input.addEventListener("keydown",function(event){ if (event.key === "Enter") { event.preventDefault(); addReleasePersonFromPicker(input); } if (event.key === "Escape") input.closest(".person-picker").classList.remove("adding"); }); });
   document.querySelectorAll("[data-title-ref]").forEach(function(editable){
     editable.addEventListener("keydown",function(event){ if (event.key === "Enter") { event.preventDefault(); editable.blur(); } });
     editable.addEventListener("blur",function(){ const target = resolveTarget(editable.dataset.titleRef,editable.dataset.releaseId); const value = editable.textContent.trim(); if (!target) return; if (value) { target.title = value; saveBoard(editable.dataset.releaseId); } else { renderAll(); } });
@@ -379,6 +418,25 @@ function bindDynamicControls() {
   if (cancelChecklist) cancelChecklist.addEventListener("click",function(){ document.getElementById("add-checklist-form").classList.remove("open"); });
   const confirmChecklist = document.getElementById("confirm-add-checklist");
   if (confirmChecklist) confirmChecklist.addEventListener("click",addChecklist);
+}
+function addReleasePersonFromPicker(source) {
+  const picker = source.closest(".person-picker");
+  const select = picker.querySelector("[data-person-field]");
+  const input = picker.querySelector(".person-inline-add input");
+  const name = input.value.trim();
+  const release = findRelease(select.dataset.releaseId);
+  const target = resolveTarget(select.dataset.personRef,select.dataset.releaseId);
+  if (!release || !target) return;
+  if (!name) { toast("Enter a person name."); input.focus(); return; }
+  const existing = releasePeople(release.id,name).find(function(person){ return person.toLocaleLowerCase() === name.toLocaleLowerCase(); });
+  const selectedName = existing || name;
+  const board = getBoard(release);
+  const isDatabasePerson = databasePeople.some(function(person){ return person.toLocaleLowerCase() === selectedName.toLocaleLowerCase(); });
+  if (!isDatabasePerson && !board.custom_people.some(function(person){ return person.toLocaleLowerCase() === selectedName.toLocaleLowerCase(); })) board.custom_people.push(selectedName);
+  target[select.dataset.personField] = selectedName;
+  saveBoard(release.id);
+  renderAll();
+  toast(selectedName + " added for this release only.");
 }
 async function applyStatusSelection(ref,releaseId,newStatus) {
   const release = findRelease(releaseId);
@@ -680,10 +738,22 @@ async function fetchEpicPool() {
     return data.epics || [];
   } catch (error) { return []; }
 }
+async function fetchDatabasePeople() {
+  try {
+    const response = await fetch("/api/performance/assignees");
+    if (!response.ok) throw new Error("People API unavailable");
+    const data = await response.json();
+    const records = data.resource_records || {};
+    return uniqueNames(data.assignees || []).filter(function(name){
+      return name.toLocaleLowerCase() !== "unassigned" && !(records[name] && records[name].resigned);
+    });
+  } catch (error) { return []; }
+}
 async function refreshLiveData(preserveReleaseId) {
-  const live = await fetchLiveReleases();
-  epicPool = await fetchEpicPool();
-  releases = combineRecognizedReleases(live);
+  const results = await Promise.all([fetchLiveReleases(),fetchEpicPool(),fetchDatabasePeople()]);
+  epicPool = results[1];
+  databasePeople = results[2];
+  releases = combineRecognizedReleases(results[0]);
   selectedReleaseId = preserveReleaseId && findRelease(preserveReleaseId) ? preserveReleaseId : selectedReleaseId;
   renderAll();
 }
@@ -691,10 +761,12 @@ async function loadAll() {
   const results = await Promise.all([
     fetchLiveReleases(),
     fetchEpicPool(),
+    fetchDatabasePeople(),
     fetch("/api/projects?include_inactive=0").then(function(response){ return response.ok ? response.json() : {projects:[]}; }).catch(function(){ return {projects:[]}; })
   ]);
   epicPool = results[1];
-  (results[2].projects || []).forEach(function(project){ projectNames[project.project_key] = project.project_name || project.display_name || project.project_key; });
+  databasePeople = results[2];
+  (results[3].projects || []).forEach(function(project){ projectNames[project.project_key] = project.project_name || project.display_name || project.project_key; });
   releases = combineRecognizedReleases(results[0]);
   selectedProductKey = releases[0] ? releases[0].project_key : "";
   const first = activeReleasesForProduct(selectedProductKey)[0];

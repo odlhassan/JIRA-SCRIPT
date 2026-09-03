@@ -33,5 +33,7 @@ epic, checklist, and content readiness can be changed inline; checklist dates ar
 intentionally excluded and Planned can instead be manually marked delayed. Checklist
 readiness and the prototype archive remain in browser local storage. Product tabs come
 only from managed projects or live release records; demonstration releases cannot create
-an unconfigured product. See
+an unconfigured product. Responsible/owner selectors load active people through the
+existing Performance assignee API; the final dropdown option can add a name that is saved
+only inside the selected release's browser-local board. See
 PRODUCT_RELEASE_READINESS_DESIGN.md for field behavior and implementation notes.

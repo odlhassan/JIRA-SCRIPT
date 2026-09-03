@@ -30,6 +30,13 @@ until a persistent checklist model is approved.
   the existing epic pool. Removing an epic also uses the existing release assignment API.
 - Release responsible is intentionally absent. Responsible remains available for epics,
   checklists, and checklist content.
+- Responsible, Owner, and confirmation-person options load from
+  `GET /api/performance/assignees`. Resigned resource records and the database's
+  `Unassigned` placeholder are removed; the UI adds one consistent Unassigned fallback.
+- Every people dropdown ends with **Add person for this release…**. Selecting it reveals
+  an inline name field with Add and Cancel controls. A new name is stored in that release's
+  `custom_people` array and becomes immediately selectable across the same release only.
+  No global employee, performance resource, or user record is created.
 - The same four-state control applies to releases, epics, checklists, and content:
   Done, Planned, Skipped, and Need confirmation.
 - The current status is yellow. Planned can additionally carry a manual Delayed flag,
@@ -53,6 +60,8 @@ until a persistent checklist model is approved.
   the legacy demonstration key `OMNICONNECT` does not create a second product tab.
 - During a release meeting, the release number or date is corrected without leaving the board.
 - A team searches the database epic pool and assigns several epics in one action.
+- A release coordinator selects a current employee from the database-backed owner list,
+  or adds an external participant inline for one release without polluting global people data.
 - Documentation applies to the whole release while individual feature-video rows target
   several named epics.
 - Customer Success owns Stakeholder buy-in while Hassan is recorded as the person taking
@@ -94,6 +103,11 @@ mutually exclusive option.
 - **Add epics from database:** opens a searchable, multi-select epic pool dialog.
 - **Remove epic:** removes an existing release-to-epic assignment.
 - **Responsible:** selects the person or team for an epic, checklist, or content row.
+- **People dropdown:** lists active database people, the selected release's local additions,
+  and Unassigned. Existing legacy selections remain visible on their current item.
+- **Add person for this release…:** final people-dropdown option; opens an inline required
+  name field. Confirming selects the name and stores it only for that release.
+- **Release only:** helper label on the inline form clarifying that the name is not global.
 - **Done / Planned / Skipped / Need confirmation:** shared status choices at all levels.
 - **Mark delayed:** manual flag available only for Planned.
 - **Confirmation taken by / from:** required pair shown for Need confirmation.
@@ -109,7 +123,8 @@ mutually exclusive option.
   and details drawer.
 - `product-release-readiness-design.js` loads live release and epic data, updates live
   release fields, assignments, and lifecycle actions; synchronizes Released with Done;
-  manages the shared readiness model; and persists checklist and archive state locally.
+  loads active people, manages release-scoped people and the shared readiness model, and
+  persists checklist, local people, and archive state locally.
 - `report_server.py` registers the route, serves its JavaScript asset, and links the
   design from Product Releases.
 - `tests/test_product_releases_api.py` verifies the route, asset, entry link, navigator,
@@ -133,10 +148,14 @@ for release, epic, checklist, and content status, with optional scope, ownership
 confirmation, evidence, and notes. Persistence remains deferred until the interaction
 design is approved.
 
+People are read through `/api/performance/assignees`, whose resource metadata uses
+`performance_resource_resignations` to identify inactive/resigned people. Release-only
+people do not write any table; they are kept in the release-specific local board record.
+
 ## Data Flow
 
 1. The readiness route serves the HTML and JavaScript.
-2. JavaScript loads releases, the epic pool, and project display names.
+2. JavaScript loads releases, the epic pool, active people, and project display names.
 3. Live release keys and active managed-project keys form the recognized product set.
    Demonstration releases outside that set are discarded before rendering tabs.
 4. Selecting a product filters releases; selecting a release renders its board.
@@ -147,11 +166,16 @@ design is approved.
    action `released`, actual date, actor, and optional notes. The returned lifecycle and
    action history become the visible Done state.
 8. Loading a live release reconciles an externally changed Released lifecycle into Done.
-9. Readiness, checklist structure, notes, and archive state update the browser-local model.
-10. All affected visible controls rerender from that shared model.
+9. Selecting Add person captures a name inline, appends it to only that release's
+   `custom_people`, assigns it to the current field, and saves the release-specific board.
+10. Readiness, checklist structure, notes, local people, and archive state update the
+    browser-local model.
+11. All affected visible controls rerender from that shared model.
 
 ## Change Notes
 
+- 2026-09-03: Replaced hardcoded owner/responsible options with active database people and
+  added an inline release-only person flow inside every people dropdown.
 - 2026-09-03: Made managed/live project keys authoritative for product tabs so the
   unconfigured `OMNICONNECT` demo key cannot duplicate `O2` / `OmniConnect-2025`.
 - 2026-09-03: Aligned release details, epics, checklist headers, and checklist content on

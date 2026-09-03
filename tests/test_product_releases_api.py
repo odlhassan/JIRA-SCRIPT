@@ -199,6 +199,10 @@ class ProductReleasesApiTests(unittest.TestCase):
             self.assertEqual(releases_page.status_code, 200)
             self.assertIn('id="readiness-design-btn"', releases_page.get_data(as_text=True))
 
+            people_response = client.get("/api/performance/assignees")
+            self.assertEqual(people_response.status_code, 200)
+            self.assertIn("assignees", people_response.get_json())
+
     def test_release_readiness_design_contains_product_release_navigator(self):
         root = Path(__file__).resolve().parents[1]
         html = (root / "product_release_readiness_design.html").read_text(encoding="utf-8")
@@ -219,8 +223,17 @@ class ProductReleasesApiTests(unittest.TestCase):
         self.assertIn("localStorage.setItem", script)
         self.assertIn('key:"need_confirmation"', script)
         self.assertIn("data-toggle-delay", script)
-        self.assertIn('data-confirm-field="confirm_by"', script)
-        self.assertIn('data-confirm-field="confirm_from"', script)
+        self.assertIn('personSelectHtml(ref,target,"confirm_by"', script)
+        self.assertIn('personSelectHtml(ref,target,"confirm_from"', script)
+        self.assertIn('fetch("/api/performance/assignees")', script)
+        self.assertIn("function fetchDatabasePeople", script)
+        self.assertIn("resource_records", script)
+        self.assertIn("records[name].resigned", script)
+        self.assertIn("custom_people", script)
+        self.assertIn("PERSON_ADD_VALUE", script)
+        self.assertIn("data-confirm-person-add", script)
+        self.assertIn("function addReleasePersonFromPicker", script)
+        self.assertIn("added for this release only", script)
         self.assertIn("data-scope-picker", script)
         self.assertIn("scope-search", script)
         self.assertIn("data-title-ref", script)
