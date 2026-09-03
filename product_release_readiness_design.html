@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Quick Release Board Design</title>
+  <link rel="stylesheet" href="/shared-nav.css">
+  <link rel="stylesheet" href="/material-symbols.css">
+  <style>
+    :root {
+      --page:#f4f7fb; --card:#fff; --soft:#f8fafc; --line:#dbe2ea; --ink:#172033; --muted:#64748b;
+      --brand:#1d4ed8; --brand-soft:#eaf1ff; --navy:#0f3443; --yellow:#fff200; --yellow-soft:#fffbd1;
+      --red:#ff4b55; --red-soft:#fff0f1; --orange:#f47b2a; --orange-soft:#fff2e1; --green:#16845b;
+    }
+    * { box-sizing:border-box; }
+    body { margin:0; min-height:100vh; background:linear-gradient(180deg,#f8faff,#f1f4f9); color:var(--ink); font-family:"Segoe UI",Tahoma,sans-serif; }
+    button,input,select,textarea { font:inherit; }
+    button { cursor:pointer; }
+    .material-symbols-rounded { font-family:"Material Symbols Rounded"; font-weight:normal; font-style:normal; font-size:18px; line-height:1; letter-spacing:normal; text-transform:none; white-space:nowrap; font-feature-settings:"liga"; }
+    .page { min-height:100vh; padding:18px 22px 34px; }
+    .topline { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; margin-bottom:12px; }
+    .crumb { display:inline-flex; align-items:center; gap:5px; color:var(--brand); text-decoration:none; font-size:.75rem; font-weight:750; margin-bottom:6px; }
+    h1 { margin:0; font-size:1.4rem; letter-spacing:-.025em; }
+    .subtitle { margin:4px 0 0; color:var(--muted); font-size:.78rem; }
+    .prototype-pill { display:inline-flex; align-items:center; gap:7px; background:#fff7ed; border:1px solid #fed7aa; color:#9a4d12; border-radius:999px; padding:6px 10px; font-size:.67rem; font-weight:800; white-space:nowrap; }
+    .prototype-pill:before { content:""; width:7px; height:7px; background:#f97316; border-radius:50%; }
+    .notice { display:flex; align-items:center; gap:7px; margin-bottom:10px; border:1px solid #bfdbfe; border-radius:9px; padding:7px 10px; background:#eff6ff; color:#1e3a8a; font-size:.66rem; }
+    .workspace { display:grid; grid-template-columns:145px 225px minmax(520px,1fr); gap:10px; align-items:start; }
+    .rail,.release-list-panel,.detail-panel,.archive-panel { background:#fff; border:1px solid var(--line); border-radius:12px; box-shadow:0 3px 12px rgba(38,51,77,.05); overflow:hidden; }
+    .detail-panel { overflow:visible; }
+    .rail { position:sticky; top:12px; }
+    .rail-head,.list-head { padding:10px 11px; border-bottom:1px solid var(--line); }
+    .rail-head strong,.list-head strong { display:block; font-size:.71rem; }
+    .rail-head small,.list-head small { display:block; margin-top:3px; color:var(--muted); font-size:.59rem; }
+    .product-tabs { display:grid; gap:3px; padding:6px; }
+    .product-tab { display:flex; align-items:center; gap:7px; width:100%; border:0; border-radius:8px; background:transparent; color:#475569; padding:8px; text-align:left; font-size:.66rem; font-weight:750; }
+    .product-tab:hover { background:#f1f5f9; }
+    .product-tab.active { color:#fff; background:var(--navy); }
+    .product-dot { width:8px; height:8px; border-radius:50%; background:#60a5fa; flex:none; }
+    .product-tab.active .product-dot { background:#fbbf24; }
+    .product-count { margin-left:auto; border-radius:999px; padding:1px 5px; background:#e8edf3; color:#475569; font-size:.54rem; }
+    .product-tab.active .product-count { background:rgba(255,255,255,.17); color:#fff; }
+    .release-list-panel { position:sticky; top:12px; max-height:calc(100vh - 24px); display:flex; flex-direction:column; }
+    .release-list { padding:6px; display:grid; gap:5px; overflow:auto; }
+    .release-item { width:100%; border:1px solid #e2e8f0; border-radius:9px; background:#fff; padding:8px 9px; text-align:left; }
+    .release-item:hover { border-color:#aab9cc; background:#fbfcfe; }
+    .release-item.active { border-color:#7da4f8; background:#eff5ff; box-shadow:inset 3px 0 var(--brand); }
+    .release-item-top { display:flex; align-items:center; justify-content:space-between; gap:6px; }
+    .release-item strong { font-size:.7rem; }
+    .release-item-date { margin-top:3px; color:var(--muted); font-size:.58rem; }
+    .release-item-meta { display:flex; align-items:center; gap:5px; margin-top:6px; color:#526174; font-size:.55rem; }
+    .detail-column { min-width:0; display:grid; gap:12px; }
+    .detail-panel { container:release-detail / inline-size; }
+    .detail-header { padding:16px; border-bottom:1px solid var(--line); background:linear-gradient(180deg,#fff,#fbfcfe); }
+    .detail-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+    .detail-heading h2 { margin:0; font-size:1rem; }
+    .detail-heading p { margin:4px 0 0; color:var(--muted); font-size:.65rem; }
+    .release-fields { display:grid; grid-template-columns:minmax(170px,1fr) minmax(170px,1fr) auto; gap:12px; align-items:end; margin-top:14px; }
+    .field label,.field > span { display:block; margin-bottom:5px; color:#526174; font-size:.58rem; font-weight:800; }
+    .field input { width:100%; min-height:34px; border:1px solid #cbd5e1; border-radius:7px; padding:7px 8px; background:#fff; color:var(--ink); font-size:.68rem; }
+    .field input:focus { outline:0; border-color:#7da4f8; box-shadow:0 0 0 2px #dbe8ff; }
+    .btn { display:inline-flex; align-items:center; justify-content:center; gap:5px; border:1px solid #cbd5e1; background:#fff; color:#334155; border-radius:7px; padding:7px 9px; font-size:.65rem; font-weight:750; }
+    .btn:hover { background:#f8fafc; }
+    .btn.primary { color:#fff; background:var(--brand); border-color:var(--brand); }
+    .btn.danger { color:#b4232d; border-color:#fecdd3; background:#fff7f7; }
+    .btn:disabled { cursor:not-allowed; opacity:.55; }
+    .tag { display:inline-flex; align-items:center; border-radius:999px; padding:2px 6px; background:var(--brand-soft); color:var(--brand); font-size:.55rem; font-weight:800; }
+    .demo-tag { background:#fff7ed; color:#9a4d12; }
+    .section-head { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:11px 14px; color:#fff; background:var(--orange); }
+    .section-head h3 { margin:0; font-size:.76rem; }
+    .section-head .btn { padding:5px 7px; border-color:rgba(255,255,255,.55); color:#fff; background:rgba(255,255,255,.14); }
+    .release-status-row { display:grid; grid-template-columns:145px minmax(145px,180px) 1fr auto; align-items:center; gap:12px; padding:12px 16px; background:var(--orange-soft); border-bottom:1px solid #f2d7b9; }
+    .release-status-row > div:first-child { display:grid; gap:2px; }
+    .release-status-row small { color:#8a6541; font-size:.55rem; }
+    .release-status-actions { display:flex; justify-content:flex-end; }
+    .row-label { color:#744b21; font-size:.58rem; font-weight:850; letter-spacing:.04em; text-transform:uppercase; }
+    .epic-list { display:grid; gap:8px; padding:10px; background:#fffaf4; }
+    .epic-row { display:grid; grid-template-columns:minmax(230px,1.5fr) minmax(145px,.55fr) minmax(175px,.7fr) 30px; gap:12px; align-items:end; border:1px solid #ead6bd; border-radius:9px; padding:11px 12px; background:#fff; }
+    .epic-copy { align-self:center; min-width:0; }
+    .epic-key { color:var(--brand); font-family:ui-monospace,SFMono-Regular,monospace; font-size:.58rem; font-weight:850; }
+    .epic-name { margin-top:2px; font-size:.66rem; font-weight:700; line-height:1.25; }
+    .owner-select { width:100%; min-width:0; min-height:31px; border:1px solid #cbd5e1; border-radius:6px; background:#fff; padding:5px 7px; color:#334155; font-size:.59rem; font-weight:700; }
+    .icon-btn { width:25px; height:25px; display:grid; place-items:center; border:1px solid #cbd5e1; border-radius:6px; background:#fff; color:#64748b; padding:0; }
+    .icon-btn:hover { background:#f8fafc; }
+    .icon-btn.danger { color:#b4232d; border-color:#fecdd3; }
+    .icon-btn .material-symbols-rounded { font-size:14px; }
+    .status-picker { position:relative; display:block; min-width:0; }
+    .status-trigger { display:flex; align-items:center; justify-content:space-between; gap:4px; width:100%; min-height:31px; border:1px solid #e2d500; border-radius:6px; padding:5px 7px; background:var(--yellow); color:#172033; font-size:.59rem; font-weight:850; }
+    .status-trigger.delayed { border-color:#dc3542; background:var(--red); }
+    .status-trigger .material-symbols-rounded { font-size:13px; }
+    .status-menu,.scope-menu { display:none; position:absolute; z-index:50; top:calc(100% + 4px); left:0; width:max(100%,170px); border:1px solid #cbd5e1; border-radius:9px; padding:5px; background:#fff; box-shadow:0 10px 28px rgba(15,23,42,.17); }
+    .status-picker.open .status-menu,.scope-picker.open .scope-menu { display:block; }
+    .status-option { display:flex; align-items:center; justify-content:space-between; width:100%; border:0; border-radius:6px; padding:6px 7px; background:#fff; color:#334155; text-align:left; font-size:.61rem; }
+    .status-option:hover { background:#f1f5f9; }
+    .status-option.selected { background:var(--yellow-soft); font-weight:850; }
+    .status-delay { margin-top:4px; border-top:1px solid #e2e8f0; padding-top:4px; color:#b4232d; }
+    .confirmation-line { grid-column:1/-1; display:flex; align-items:center; gap:7px; flex-wrap:wrap; margin-top:2px; padding:8px 10px; border:1px solid #f2df55; border-radius:7px; background:var(--yellow-soft); color:#665d00; font-size:.58rem; }
+    .confirm-select { border:1px solid #d8c93d; border-radius:6px; background:#fff; padding:4px 5px; color:#3f3a00; font-size:.58rem; font-weight:700; }
+    .checklist-list { display:grid; gap:10px; padding:10px; background:#fffaf4; }
+    .check-card { border:1px solid #ead6bd; border-radius:9px; background:#fff; overflow:visible; }
+    .check-head { display:grid; grid-template-columns:minmax(230px,1.5fr) minmax(145px,.55fr) minmax(175px,.7fr) 62px; gap:12px; align-items:end; padding:11px 12px; border-bottom:1px solid #f0e1cf; background:#fff6eb; border-radius:9px 9px 0 0; }
+    .check-copy { display:grid; gap:5px; align-self:center; min-width:0; }
+    .check-title { min-width:50px; font-size:.69rem; font-weight:900; text-transform:uppercase; outline:0; }
+    .check-title:focus,.item-title:focus { background:#fff; box-shadow:0 0 0 2px #bfdbfe; border-radius:4px; }
+    .control-field { display:grid; gap:5px; min-width:0; }
+    .control-label { color:var(--muted); font-size:.54rem; font-weight:800; letter-spacing:.025em; text-transform:uppercase; }
+    .row-actions { display:flex; align-items:flex-end; justify-content:flex-end; gap:6px; min-width:0; }
+    .check-items { display:grid; padding:0 12px; }
+    .item-row { display:grid; grid-template-columns:minmax(230px,1.35fr) minmax(145px,.55fr) minmax(175px,.7fr) minmax(195px,.85fr) 62px; gap:12px; align-items:end; border-bottom:1px solid #e8edf3; padding:12px 0; }
+    .item-row:last-child { border-bottom:0; }
+    .item-copy { display:grid; gap:5px; align-self:center; min-width:0; }
+    .item-title-line { display:flex; align-items:flex-start; gap:6px; min-width:0; }
+    .bullet { color:#64748b; font-size:.66rem; }
+    .item-title { flex:1; min-width:40px; font-size:.64rem; font-weight:700; line-height:1.3; outline:0; }
+    .item-link { color:var(--brand); font-size:.56rem; }
+    .empty-link { color:#94a3b8; }
+    .scope-picker { position:relative; display:block; min-width:0; }
+    .scope-trigger { display:flex; align-items:center; justify-content:space-between; gap:4px; width:100%; min-height:31px; border:1px solid #cbd5e1; border-radius:6px; padding:5px 7px; background:#fff; color:#334155; font-size:.58rem; font-weight:700; overflow:hidden; }
+    .scope-trigger span:first-child { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+    .scope-menu { width:300px; padding:7px; }
+    .scope-search { width:100%; border:1px solid #cbd5e1; border-radius:6px; padding:6px 7px; font-size:.6rem; margin-bottom:5px; }
+    .scope-options { display:grid; gap:2px; max-height:180px; overflow:auto; }
+    .scope-option { display:flex; align-items:flex-start; gap:6px; border-radius:6px; padding:5px; cursor:pointer; font-size:.59rem; }
+    .scope-option:hover { background:#f1f5f9; }
+    .scope-option input { margin:1px 0 0; }
+    .scope-option strong { display:block; }
+    .scope-option small { display:block; margin-top:2px; color:var(--muted); }
+    .inline-add { display:none; grid-template-columns:minmax(130px,1fr) auto auto; gap:5px; padding:7px; border-top:1px dashed #d9b98f; background:#fff8ef; }
+    .inline-add.open { display:grid; }
+    .inline-add input { min-width:0; border:1px solid #cbd5e1; border-radius:6px; padding:6px 7px; font-size:.61rem; }
+    .check-foot { display:flex; align-items:center; gap:7px; padding:0 8px 7px; }
+    .link-button { border:0; background:transparent; color:var(--brand); padding:2px; font-size:.58rem; font-weight:750; }
+    .empty { padding:18px; color:var(--muted); text-align:center; font-size:.65rem; }
+    .sync-note { display:inline-flex; align-items:center; gap:6px; color:#75552f; font-size:.59rem; }
+    .sync-note.synced { color:#11613f; }
+    .sync-note strong { font-weight:850; }
+    .sync-note .material-symbols-rounded { font-size:15px; }
+    .completion-panel { display:grid; gap:11px; padding:13px 16px; border-bottom:1px solid #b7e4cd; background:#f0fdf4; }
+    .completion-copy { display:flex; align-items:center; gap:9px; color:#14532d; }
+    .completion-copy > .material-symbols-rounded { font-size:22px; }
+    .completion-copy strong { display:block; font-size:.69rem; }
+    .completion-copy small { display:block; margin-top:2px; color:#3f7055; font-size:.57rem; }
+    .completion-fields { display:grid; grid-template-columns:minmax(150px,.7fr) minmax(170px,.8fr) minmax(220px,1.2fr) auto; gap:10px; align-items:end; }
+    .completion-actions { display:flex; gap:6px; }
+    .archive-panel { margin-top:4px; opacity:.92; }
+    .archive-head { display:flex; align-items:center; gap:7px; padding:9px 11px; border-bottom:1px solid var(--line); background:#f1f5f9; }
+    .archive-head h3 { margin:0; font-size:.7rem; }
+    .archive-head span:last-child { margin-left:auto; color:var(--muted); font-size:.57rem; }
+    .archive-list { display:flex; gap:6px; flex-wrap:wrap; padding:8px; min-height:48px; }
+    .archive-item { display:flex; align-items:center; gap:7px; border:1px solid #cbd5e1; border-radius:8px; padding:6px 7px; background:#f8fafc; font-size:.59rem; }
+    .archive-item strong { font-size:.62rem; }
+    .modal-backdrop { display:none; position:fixed; inset:0; z-index:1300; align-items:center; justify-content:center; padding:18px; background:rgba(15,23,42,.36); }
+    .modal-backdrop.open { display:flex; }
+    .modal { width:min(620px,96vw); max-height:88vh; display:flex; flex-direction:column; overflow:hidden; border-radius:13px; background:#fff; box-shadow:0 20px 55px rgba(15,23,42,.24); }
+    .modal-head { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; padding:14px 15px; border-bottom:1px solid var(--line); }
+    .modal-head h3 { margin:0; font-size:.86rem; }
+    .modal-head p { margin:3px 0 0; color:var(--muted); font-size:.61rem; }
+    .modal-search { padding:9px 12px; border-bottom:1px solid var(--line); }
+    .modal-search input { width:100%; border:1px solid #cbd5e1; border-radius:7px; padding:7px 9px; font-size:.66rem; }
+    .epic-picker-list { padding:7px 11px; overflow:auto; display:grid; gap:4px; }
+    .epic-picker-option { display:flex; align-items:flex-start; gap:8px; border:1px solid #e2e8f0; border-radius:8px; padding:7px 8px; cursor:pointer; }
+    .epic-picker-option:hover { background:#f8fafc; }
+    .epic-picker-option input { margin-top:2px; }
+    .epic-picker-option strong { display:block; font-size:.64rem; }
+    .epic-picker-option small { display:block; margin-top:2px; color:var(--muted); font-size:.58rem; }
+    .modal-foot { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:10px 12px; border-top:1px solid var(--line); }
+    .details-drawer { position:absolute; right:0; top:0; bottom:0; width:min(390px,94vw); display:flex; flex-direction:column; background:#fff; box-shadow:-18px 0 50px rgba(15,23,42,.16); }
+    .drawer-body { padding:14px 16px; overflow:auto; display:grid; gap:12px; }
+    .form-field label { display:block; margin-bottom:5px; color:#475569; font-size:.62rem; font-weight:800; }
+    .form-field input,.form-field textarea { width:100%; border:1px solid #cbd5e1; border-radius:8px; padding:8px; font-size:.69rem; }
+    .form-field textarea { min-height:105px; resize:vertical; }
+    .toast { position:fixed; right:22px; bottom:20px; max-width:350px; z-index:1500; border-radius:9px; padding:9px 12px; color:#fff; background:#172033; box-shadow:0 10px 28px rgba(15,23,42,.2); font-size:.66rem; opacity:0; transform:translateY(8px); pointer-events:none; transition:.18s; }
+    .toast.show { opacity:1; transform:translateY(0); }
+    @container release-detail (max-width:900px) {
+      .epic-row { grid-template-columns:minmax(210px,1fr) minmax(135px,.7fr) minmax(160px,.8fr) 30px; }
+      .check-head { grid-template-columns:minmax(210px,1fr) minmax(135px,.7fr) minmax(160px,.8fr) 62px; }
+      .item-row { grid-template-columns:repeat(3,minmax(0,1fr)) 62px; }
+      .item-copy { grid-column:1/-1; padding-bottom:2px; }
+      .scope-control { grid-column:3; }
+      .item-row > .row-actions { grid-column:4; }
+      .completion-fields { grid-template-columns:1fr 1fr; }
+      .completion-notes { grid-column:1/-1; }
+      .completion-actions { grid-column:1/-1; justify-content:flex-end; }
+    }
+    @container release-detail (max-width:700px) {
+      .release-status-row { grid-template-columns:1fr 1fr; }
+      .release-status-row .sync-note { grid-column:1/-1; }
+      .epic-row,.check-head { grid-template-columns:1fr 1fr; }
+      .epic-copy,.check-copy { grid-column:1/-1; }
+      .epic-row > .row-actions,.check-head > .row-actions { grid-column:2; justify-self:end; }
+      .item-row { grid-template-columns:1fr 1fr; }
+      .item-copy,.scope-control,.item-row > .row-actions { grid-column:1/-1; }
+      .item-row > .row-actions { justify-content:flex-end; }
+      .scope-menu { right:0; left:auto; width:min(300px,80vw); }
+    }
+    @media(max-width:1050px) { .workspace{grid-template-columns:125px 200px minmax(430px,1fr)} .release-fields{grid-template-columns:1fr 1fr}.release-fields .btn{grid-column:1/-1} }
+    @media(max-width:800px) { .page{padding:12px 10px 28px}.topline{flex-direction:column}.workspace{grid-template-columns:105px minmax(0,1fr)}.rail{grid-row:1 / span 2}.release-list-panel{position:static;max-height:none}.detail-column{grid-column:2}.release-fields{grid-template-columns:1fr}.release-fields .btn{grid-column:auto} }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="topline">
+      <div><a class="crumb" href="/settings/product-releases"><span class="material-symbols-rounded">arrow_back</span> Product Releases</a><h1>Quick release board</h1><p class="subtitle">Choose a product, choose a release, then update the board directly.</p></div>
+      <span class="prototype-pill">Checklist prototype · live release data</span>
+    </header>
+    <div class="notice"><span class="material-symbols-rounded">info</span><span>Live release number, date, epic assignment, and completion stay synchronized with Product Releases. Checklist edits and archive placement remain browser-local in this design.</span></div>
+    <div class="workspace">
+      <aside class="rail"><div class="rail-head"><strong>Products</strong><small>Choose product</small></div><nav class="product-tabs" id="product-tabs" aria-label="Products"></nav></aside>
+      <aside class="release-list-panel"><div class="list-head"><strong id="release-list-title">Releases</strong><small>Choose release</small></div><div class="release-list" id="release-list"></div></aside>
+      <div class="detail-column">
+        <section class="detail-panel" id="release-detail"></section>
+        <section class="archive-panel"><div class="archive-head"><span class="material-symbols-rounded">archive</span><h3>Archived releases</h3><span>Completed items moved out of the main list</span></div><div class="archive-list" id="archive-list"></div></section>
+      </div>
+    </div>
+  </main>
+  <div class="modal-backdrop" id="epic-picker" aria-hidden="true">
+    <section class="modal" role="dialog" aria-modal="true" aria-labelledby="epic-picker-title">
+      <div class="modal-head"><div><h3 id="epic-picker-title">Add epics from database</h3><p id="epic-picker-context"></p></div><button class="icon-btn" type="button" data-close-modal="epic-picker" aria-label="Close"><span class="material-symbols-rounded">close</span></button></div>
+      <div class="modal-search"><input id="epic-picker-search" type="search" placeholder="Search epic key or name"></div>
+      <div class="epic-picker-list" id="epic-picker-list"></div>
+      <div class="modal-foot"><span class="tag" id="epic-picker-count">0 selected</span><div><button class="btn" type="button" data-close-modal="epic-picker">Cancel</button> <button class="btn primary" type="button" id="add-selected-epics">Add selected epics</button></div></div>
+    </section>
+  </div>
+  <div class="modal-backdrop" id="details-drawer" aria-hidden="true">
+    <aside class="details-drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
+      <div class="modal-head"><div><h3 id="drawer-title">Optional details</h3><p id="drawer-context"></p></div><button class="icon-btn" type="button" data-close-modal="details-drawer" aria-label="Close"><span class="material-symbols-rounded">close</span></button></div>
+      <div class="drawer-body"><div class="form-field"><label for="detail-link">Link or evidence</label><input id="detail-link" type="text" placeholder="Paste a link or describe the evidence"></div><div class="form-field"><label for="detail-notes">Notes</label><textarea id="detail-notes" placeholder="Optional context, instructions, or exceptions"></textarea></div></div>
+      <div class="modal-foot"><span></span><div><button class="btn" type="button" data-close-modal="details-drawer">Cancel</button> <button class="btn primary" type="button" id="drawer-save">Save details</button></div></div>
+    </aside>
+  </div>
+  <div class="toast" id="toast" role="status"></div>
+  <script src="/product-release-readiness-design.js"></script>
+  <script src="/shared-nav.js"></script>
+</body>
+</html>

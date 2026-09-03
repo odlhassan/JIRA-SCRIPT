@@ -172,6 +172,75 @@ class ProductReleasesApiTests(unittest.TestCase):
             self.assertEqual(row[1], "2026-06-25")
             self.assertEqual(row[2], "2026-06-18")
 
+    def test_release_readiness_design_route_and_asset_are_served(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            app = self._build_app(root)
+            (root / "product_release_readiness_design.html").write_text(
+                '<html><body id="release-readiness-design">prototype</body></html>',
+                encoding="utf-8",
+            )
+            (root / "product-release-readiness-design.js").write_text(
+                'window.releaseReadinessDesign = true;',
+                encoding="utf-8",
+            )
+            client = app.test_client()
+
+            page_response = client.get("/settings/product-releases/readiness-design")
+            self.assertEqual(page_response.status_code, 200)
+            self.assertIn('id="release-readiness-design"', page_response.get_data(as_text=True))
+
+            asset_response = client.get("/product-release-readiness-design.js")
+            self.assertEqual(asset_response.status_code, 200)
+            self.assertIn("releaseReadinessDesign", asset_response.get_data(as_text=True))
+            asset_response.close()
+
+            releases_page = client.get("/settings/product-releases")
+            self.assertEqual(releases_page.status_code, 200)
+            self.assertIn('id="readiness-design-btn"', releases_page.get_data(as_text=True))
+
+    def test_release_readiness_design_contains_product_release_navigator(self):
+        root = Path(__file__).resolve().parents[1]
+        html = (root / "product_release_readiness_design.html").read_text(encoding="utf-8")
+        script = (root / "product-release-readiness-design.js").read_text(encoding="utf-8")
+
+        self.assertIn('id="product-tabs"', html)
+        self.assertIn('id="release-list"', html)
+        self.assertIn('id="release-detail"', html)
+        self.assertIn('id="archive-list"', html)
+        self.assertIn('id="epic-picker"', html)
+        self.assertIn('id="epic-picker-search"', html)
+        self.assertIn('id="details-drawer"', html)
+        self.assertIn("Checklist prototype · live release data", html)
+        self.assertIn('fetch("/api/product-releases")', script)
+        self.assertIn('fetch("/api/product-releases/epics/pool")', script)
+        self.assertIn('method:"PUT"', script)
+        self.assertIn('method:"DELETE"', script)
+        self.assertIn("localStorage.setItem", script)
+        self.assertIn('key:"need_confirmation"', script)
+        self.assertIn("data-toggle-delay", script)
+        self.assertIn('data-confirm-field="confirm_by"', script)
+        self.assertIn('data-confirm-field="confirm_from"', script)
+        self.assertIn("data-scope-picker", script)
+        self.assertIn("scope-search", script)
+        self.assertIn("data-title-ref", script)
+        self.assertIn("function saveReleaseFields", script)
+        self.assertIn("function addSelectedEpics", script)
+        self.assertIn("function syncBoardReleaseLifecycle", script)
+        self.assertIn("function completeLiveRelease", script)
+        self.assertIn('action:"released"', script)
+        self.assertIn("completion-actual-date", script)
+        self.assertIn("completion-actor", script)
+        self.assertIn("function archiveSelectedRelease", script)
+        self.assertIn("data-restore-release", script)
+        self.assertIn(".item-row { display:grid", html)
+        self.assertIn(".control-field { display:grid", html)
+        self.assertIn("@container release-detail", html)
+        self.assertNotIn("due_date", script)
+        self.assertNotIn('id="item-due"', html)
+        self.assertNotIn("Release responsible", html)
+        self.assertIn("function saveDrawer", script)
+
 
 if __name__ == "__main__":
     unittest.main()

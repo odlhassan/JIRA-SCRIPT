@@ -22,3 +22,11 @@ Some assets are **expected by the report server but may be missing** after a fre
   2. Download the [Material Symbols Outlined variable font](https://fonts.google.com/icons?selected=Material+Symbols+Outlined) (e.g. from [Google Fonts](https://fonts.google.com/icons) or [Fontsource](https://fontsource.org/fonts/material-symbols-outlined)) and save as `material-symbols-outlined.woff2` in that folder.
 
 After adding or fixing these, restart the report server and refresh the browser.
+
+## 3. Release readiness design prototype
+
+- **Expected:** product_release_readiness_design.html and
+  product-release-readiness-design.js in the project root.
+- **If missing:** /settings/product-releases/readiness-design returns 404 or the
+  page loads without interactive checklist behavior.
+- **Fix:** Restore both files from the repository and restart python run_server.py.

@@ -397,6 +397,7 @@ EPICS_MANAGEMENT_SETTINGS_ROUTE = "/settings/epics-management"
 EPICS_MANAGEMENT_IMPORT_ROUTE = "/settings/epics-management/import"
 PRODUCT_RELEASES_SETTINGS_ROUTE = "/settings/product-releases"
 PRODUCT_RELEASES_CALENDAR_ROUTE = "/settings/product-releases/calendar"
+PRODUCT_RELEASES_READINESS_DESIGN_ROUTE = "/settings/product-releases/readiness-design"
 EPICS_IMPORT_UPLOADS_SUBDIR = "jira_script_epics_import_uploads"
 IPP_MEETING_PLANNER_SETTINGS_ROUTE = "/settings/ipp-meeting-planner"
 EPICS_DROPDOWN_OPTIONS_SETTINGS_ROUTE = "/settings/epics-dropdown-options"
@@ -33899,6 +33900,7 @@ def _product_releases_settings_html() -> str:
     </div>
     <button class="btn" id="add-release-btn" type="button">+ New Release</button>
     <button class="btn alt" id="calendar-view-btn" type="button">&#128197; Calendar View</button>
+    <a class="btn alt" id="readiness-design-btn" href="/settings/product-releases/readiness-design" style="text-decoration:none;">&#9745; Readiness Design</a>
     <span style="margin-left:auto;color:var(--muted);font-size:.8rem;" id="pool-count"></span>
   </div>
 
@@ -48692,6 +48694,13 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
     def product_releases_calendar():
         return _product_releases_calendar_html()
 
+    @app.route(PRODUCT_RELEASES_READINESS_DESIGN_ROUTE, methods=["GET"])
+    def product_releases_readiness_design():
+        design_path = base_dir / "product_release_readiness_design.html"
+        if not design_path.exists():
+            return "<h2>Release readiness design HTML not found.</h2>", 404
+        return design_path.read_text(encoding="utf-8"), 200, {"Content-Type": "text/html; charset=utf-8"}
+
     # --- Seating Planner ---
 
     @app.route(SEATING_PLANNER_SETTINGS_ROUTE, methods=["GET"])
@@ -49192,7 +49201,13 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
     @app.route("/<path:requested_path>", methods=["GET"])
     def serve_report_asset(requested_path: str):
         requested_name = _to_text(requested_path)
-        if requested_name in {"shared-nav.js", "shared-nav.css", "shared-date-filter.js", "material-symbols.css"}:
+        if requested_name in {
+            "shared-nav.js",
+            "shared-nav.css",
+            "shared-date-filter.js",
+            "material-symbols.css",
+            "product-release-readiness-design.js",
+        }:
             try:
                 _sync_report_html_assets(base_dir, report_dir)
             except OSError as exc:
