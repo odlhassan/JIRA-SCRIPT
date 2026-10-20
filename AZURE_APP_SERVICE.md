@@ -250,6 +250,8 @@ in the Actions secret and are redacted from diagnostic output. These checks do n
 remove databases, backups or deployment packages.
 SCM disk checks run as separate commands without shell quoting or separators because
 its command API parses arguments itself. Log requests first resolve the latest deployment ID.
+The data-directory probe reports each immediate file and folder, so a full persistent
+volume can be diagnosed without conflating the main DB, backups, sync cache and packages.
 
 Colossal Refresh offers **Replace previous fetched Jira data and reclaim disk space**
 (checked in the settings UI, complete Full Refresh only). After successful Compute,

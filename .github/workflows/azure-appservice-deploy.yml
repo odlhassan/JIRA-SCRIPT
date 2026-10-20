@@ -182,7 +182,7 @@ jobs:
               'dir': '/home',
           })
           inspect('/api/command', {
-              'command': 'du -sh /home/data /home/data/backups /home/data/SitePackages /home/site/wwwroot /tmp/zipdeploy',
+              'command': 'du -ah --max-depth=1 /home/data',
               'dir': '/home',
           })
           PY
