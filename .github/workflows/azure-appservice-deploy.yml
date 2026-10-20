@@ -167,10 +167,18 @@ jobs:
                   if secret:
                       text = text.replace(secret, '***')
               print(path, text[:16000])
+              try:
+                  return json.loads(text)
+              except ValueError:
+                  return None
 
-          inspect('/api/deployments/latest/log')
+          latest = inspect('/api/deployments/latest')
+          if isinstance(latest, dict) and latest.get('id'):
+              inspect('/api/deployments/' + str(latest['id']) + '/log')
+          else:
+              inspect('/api/deployments')
           inspect('/api/command', {
-              'command': 'df -h /home /tmp; du -sh /home/data /home/data/backups /home/data/SitePackages /home/site/wwwroot /tmp/zipdeploy 2>/dev/null',
+              'command': "bash -c 'df -h /home /tmp; du -sh /home/data /home/data/backups /home/data/SitePackages /home/site/wwwroot /tmp/zipdeploy 2>/dev/null'",
               'dir': '/home',
           })
           PY
