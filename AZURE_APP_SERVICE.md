@@ -248,8 +248,8 @@ It reads the latest SCM deployment log and runs read-only `df`/`du` checks for p
 storage, package storage and temporary deployment space. Publishing credentials stay
 in the Actions secret and are redacted from diagnostic output. These checks do not
 remove databases, backups or deployment packages.
-SCM command sequences run through `bash -c`; its command API does not interpret shell
-separators itself. Deployment log requests first resolve the latest deployment ID.
+SCM disk checks run as separate commands without shell quoting or separators because
+its command API parses arguments itself. Log requests first resolve the latest deployment ID.
 
 Colossal Refresh offers **Replace previous fetched Jira data and reclaim disk space**
 (checked in the settings UI, complete Full Refresh only). After successful Compute,

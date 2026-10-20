@@ -178,7 +178,11 @@ jobs:
           else:
               inspect('/api/deployments')
           inspect('/api/command', {
-              'command': "bash -c 'df -h /home /tmp; du -sh /home/data /home/data/backups /home/data/SitePackages /home/site/wwwroot /tmp/zipdeploy 2>/dev/null'",
+              'command': 'df -h /home /tmp',
+              'dir': '/home',
+          })
+          inspect('/api/command', {
+              'command': 'du -sh /home/data /home/data/backups /home/data/SitePackages /home/site/wwwroot /tmp/zipdeploy',
               'dir': '/home',
           })
           PY
