@@ -26,6 +26,11 @@ name: Azure App Service deploy
 
 on:
   workflow_dispatch:
+    inputs:
+      clean_inactive_packages:
+        description: 'Delete inactive deployment ZIPs to free storage; keep the active package and all databases'
+        type: boolean
+        default: false
   push:
     branches:
       - main
@@ -33,6 +38,10 @@ on:
 
 env:
   AZURE_WEBAPP_NAME: epreporting
+
+concurrency:
+  group: azure-app-service-production
+  cancel-in-progress: false
 
 jobs:
   build-and-deploy:
@@ -123,6 +132,12 @@ jobs:
         run: |
           set -e
           (cd staging && zip -rq ../deploy.zip .)
+
+      - name: Remove inactive deployment ZIPs (manual opt-in)
+        if: github.event_name == 'workflow_dispatch' && inputs.clean_inactive_packages
+        env:
+          AZURE_PUBLISH_PROFILE: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+        run: python azure_deploy_storage.py
 
       - name: Deploy to Azure Web App
         id: azure_deploy

@@ -33,6 +33,9 @@ After adding or fixing these, restart the report server and refresh the browser.
 
 ## Canonical refresh storage maintenance
 
+`azure_deploy_storage.py` supports manual opt-in cleanup of inactive Azure deployment
+ZIPs before deployment. It is exercised by `tests/test_azure_deploy_storage.py`.
+
 `canonical_storage.py` must ship beside `report_server.py`. It handles optional Full
 Refresh snapshot replacement and VACUUM without deleting user-maintained tables.
 Verification: `tests/test_canonical_storage.py`. See

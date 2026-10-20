@@ -243,6 +243,15 @@ Azure does not define new tables directly. It hosts SQLite tables from `assignee
 
 ## Full Refresh disk reclamation
 
+For a full drive, an explicitly authorized manual Actions run may enable
+`clean_inactive_packages`. Before uploading the new ZIP, `azure_deploy_storage.py`
+reads `/home/data/SitePackages/packagename.txt`, validates that its active ZIP exists,
+then deletes only sibling inactive `*.zip` files. It rejects unsafe paths and never
+traverses database or backup directories. This removes stored rollback ZIPs; past code
+remains recoverable from Git. The option defaults off and never runs on normal pushes.
+Production workflow runs are serialized to avoid overlapping cleanup and deployment.
+Tests: `python -m unittest tests.test_azure_deploy_storage tests.test_azure_deploy_contract`.
+
 When Azure rejects the deployment, the workflow runs a failure-only diagnostic step.
 It reads the latest SCM deployment log and runs read-only `df`/`du` checks for persistent
 storage, package storage and temporary deployment space. Publishing credentials stay
