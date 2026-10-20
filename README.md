@@ -37,3 +37,13 @@ an unconfigured product. Responsible/owner selectors load active people through 
 existing Performance assignee API; the final dropdown option can add a name that is saved
 only inside the selected release's browser-local board. See
 PRODUCT_RELEASE_READINESS_DESIGN.md for field behavior and implementation notes.
+
+## Reduce Colossal Refresh storage
+
+On `/settings/canonical-refresh`, choose a smaller year/start-month scope and run
+**Full Refresh** with **Replace previous fetched Jira data and reclaim disk space**
+checked. After reports succeed, older canonical Jira snapshots are removed and the
+database is compacted, preserving settings and manual plans. The result shows reclaimed
+space or a pending-maintenance warning if disk headroom/locks prevent compaction.
+Uncheck to retain snapshots. Smart Refresh and standalone Fetch keep their existing behavior.
+See [storage maintenance details](CANONICAL_COLOSSAL_FETCH_IMPLEMENTATION_PLAN.md#full-refresh-snapshot-replacement-and-disk-reclamation).

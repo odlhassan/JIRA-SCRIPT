@@ -30,3 +30,10 @@ After adding or fixing these, restart the report server and refresh the browser.
 - **If missing:** /settings/product-releases/readiness-design returns 404 or the
   page loads without interactive checklist behavior.
 - **Fix:** Restore both files from the repository and restart python run_server.py.
+
+## Canonical refresh storage maintenance
+
+`canonical_storage.py` must ship beside `report_server.py`. It handles optional Full
+Refresh snapshot replacement and VACUUM without deleting user-maintained tables.
+Verification: `tests/test_canonical_storage.py`. See
+[canonical refresh operations](CANONICAL_COLOSSAL_FETCH_IMPLEMENTATION_PLAN.md#full-refresh-snapshot-replacement-and-disk-reclamation).

@@ -97,3 +97,17 @@ Rules:
 
 - Azure ZIP deploys vendor `requirements.txt` into `.python_packages/lib/site-packages` and marks `startup.txt` executable before packaging so the read-only Run From Package mount does not need a runtime chmod. The script adds `.python_packages` to `PYTHONPATH` before Gunicorn imports `report_server.py`.
 - Capacity startup now creates the SQLite parent directory before opening the DB, which keeps Capacity Settings, Team Capacity Planner, and Employee Performance from failing cold start when the persistent DB folder has not been created yet.
+
+## Colossal Refresh storage replacement
+
+The admin Colossal Refresh page offers **Replace previous fetched Jira data and reclaim
+disk space** for complete Full Refresh (checked by default). After a successful build,
+older canonical Jira snapshots and their derived data are removed, then SQLite compaction
+is attempted. Capacity settings and manually maintained plans remain. Reports use the
+newly promoted snapshot; a failed or canceled build retains the previous snapshot.
+Unchecked runs retain history. Smart Refresh and standalone Fetch ignore this option.
+The result shows reclaimed space or a maintenance warning if compaction cannot finish.
+
+Dependent implementation: `report_server.py`, `canonical_storage.py`, and canonical
+report readers. See [canonical refresh maintenance](../../CANONICAL_COLOSSAL_FETCH_IMPLEMENTATION_PLAN.md#full-refresh-snapshot-replacement-and-disk-reclamation)
+for data flow, preserved tables, temporary disk-space requirements, and testing.

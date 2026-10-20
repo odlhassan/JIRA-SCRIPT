@@ -335,6 +335,7 @@ The Colossal Refresh settings page exposes the selected year and start month, re
 | --- | --- | --- | --- | --- |
 | Scope Year | Number input | Current year | Smart and Full Refresh / Fetch Only | Sets the year whose December 31 date closes the canonical Jira window. Valid range: 2000-2100. |
 | Start Month | Select (January-December) | January | Smart and Full Refresh / Fetch Only | Sets the first day included in issue discovery and worklog storage. The scope runs from day 1 of this month through December 31. Resume restores both year and month; Smart Refresh only reuses a successful baseline with the same year, month, and managed-project set. |
+| Replace previous fetched Jira data and reclaim disk space | Checkbox | Checked | Complete Full Refresh only | After successful report generation and snapshot promotion, deletes all other canonical snapshots (including other date windows) and attempts SQLite VACUUM. Uncheck to retain history. Smart Refresh and standalone Fetch ignore this option. Settings and manual plans remain. |
 | Full database backup | Not shown | Disabled | All refresh modes | Multi-gigabyte full-DB copies exhausted production disk, so the UI no longer presents this option. The backend accepts but ignores the legacy `create_db_backup` request flag. |
 
 ## Script Files
@@ -389,3 +390,56 @@ python -m pytest tests/test_missed_entries_refresh_api.py -q
 Next phase to start after approval:
 
 - Phase 3 — Derived Shared Read Models
+
+### Full Refresh snapshot replacement and disk reclamation
+
+**Business logic and cases.** Administrators can replace a large historical Jira pull
+with a smaller month/year scope without resetting the mixed settings/planning database.
+The checkbox is checked on the settings page; API clients must explicitly send the
+boolean `replace_previous_data: true` to `POST /api/canonical-refresh` with `mode: full`.
+Omitting it preserves existing API behavior. Smart Refresh, including a smart run that
+falls back to a full fetch, and standalone Fetch never request replacement.
+
+**Example and explanation.** Select 2026 / October and leave the checkbox checked.
+Fetch writes a new snapshot alongside the old one. Compute builds derived outputs,
+synchronizes Epic metadata and generates reports. Only after success does it promote
+the new snapshot, delete older canonical issue/link/worklog/reason/derived rows and
+obsolete refresh/fetch/compute metadata, and run VACUUM under the existing refresh lock.
+Old employee-scoped run metadata referencing discarded snapshots is removed too.
+Failed or canceled builds keep the previously published snapshot. A manually retried
+Compute retains the choice saved with its original Fetch. Cancellation is checked again
+before promotion; once cleanup starts it is not cancelable from the page.
+
+**Files, table schema and dependencies.** `canonical_storage.py` owns an explicit
+allowlist of the nine canonical snapshot tables (all keyed by `run_id`) and cleanup
+of lifecycle metadata described above. It never scans arbitrary tables for deletion.
+`report_server.py` stores the choice and cleanup result in existing `stats_json` TEXT
+columns; there are no table, column, index or constraint changes. No schema migration
+is required. `tests/test_canonical_storage.py` covers cleanup, API scope, failure,
+cancellation, low disk space, integrity and real file shrinkage. All canonical readers
+in `canonical_report_data.py` and the report generators continue using the promoted
+run pointer. Settings, capacity, teams, manual Epic plans, product releases, seating,
+other report snapshot families, and the separate `jira_sync_cache.db` are preserved.
+This action does not promise to clear every cache or make the DB equal the Jira pull size.
+
+**Data flow and diagnostics.** The checkbox travels from the settings page to queued
+run JSON, Fetch progress JSON, then successful Compute. Cleanup repairs successful Fetch
+and Compute pointers in the same transaction as deletion. It refuses an unpublished
+snapshot or another active Fetch/Compute. Compaction uses SQLite VACUUM in place, never
+unlinks a live DB or journal. The result exposes `storage_cleanup.status`, per-table
+`deleted_rows`, `bytes_before`, `bytes_after`, and `bytes_reclaimed` in legacy run and
+Compute stats; the page shows reclaimed MiB or a visible maintenance warning.
+
+**Operational limits.** Replacement temporarily stores old and new snapshots together.
+Deletion also needs journal space. Before VACUUM, the server conservatively requires up
+to twice the then-current database file size free on its drive. With insufficient space
+or a SQLite lock/error, valid reports stay successful and the page states that cleanup
+or compaction is pending. Freed pages remain reusable. A later checked Full Refresh
+retries cleanup and compaction; this is not a background automatic retry. If the worker
+is interrupted, normal Compute recovery can be used to finish again. Backups in other
+folders and unrelated cache databases are not deleted.
+
+**Local verification.** Restart with `.\.venv\Scripts\python.exe run_server.py --no-sync --keep-cache`
+and open `http://127.0.0.1:3000/settings/canonical-refresh`. This settings page is generated
+by the server, so no HTML rebuild is needed. Run focused tests with
+`.\.venv\Scripts\python.exe -m unittest tests.test_canonical_storage tests.test_canonical_two_phase tests.test_canonical_refresh_api tests.test_report_ui_smoke.ReportUiSmokeTests.test_canonical_refresh_settings_formats_timestamps_for_display`.

@@ -240,3 +240,18 @@ Azure does not define new tables directly. It hosts SQLite tables from `assignee
 5. Runtime settings and canonical refresh data are read/written in `/home/data/assignee_hours_capacity.db`.
 6. Canonical sync-cache state is read/written in `/home/data/jira_sync_cache.db` when the app root is read-only or that path is configured explicitly.
 7. Generated reports are synced into the app-served `report_html` path during local builds and deployment packaging; runtime promotion is skipped with a warning when Azure's package mount is read-only, known root report sources remain servable as a fallback, and Dashboard can be regenerated into `$HOME/data/generated_reports/dashboard.html`.
+
+## Full Refresh disk reclamation
+
+Colossal Refresh offers **Replace previous fetched Jira data and reclaim disk space**
+(checked in the settings UI, complete Full Refresh only). After successful Compute,
+`canonical_storage.py` removes old canonical snapshots and attempts in-place VACUUM;
+manual settings/plans and separate cache databases remain. Deploy this module alongside
+`report_server.py`. API callers retain history unless they explicitly send
+`replace_previous_data: true`. There is no SQLite schema change.
+
+The new snapshot, deletion journal, and compaction require spare disk capacity. A
+conservative VACUUM preflight requires twice the current DB file size free. If it
+fails or the DB is locked, reports remain successful and the settings page/API result
+shows maintenance pending. An already-full drive needs temporary headroom first.
+See [canonical refresh storage maintenance](CANONICAL_COLOSSAL_FETCH_IMPLEMENTATION_PLAN.md#full-refresh-snapshot-replacement-and-disk-reclamation).

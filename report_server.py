@@ -24,6 +24,7 @@ from typing import Any
 from urllib.parse import unquote
 
 import requests
+from canonical_storage import replace_previous_snapshots
 
 from flask import Flask, jsonify, redirect, request, send_file
 from openpyxl import Workbook, load_workbook
@@ -6409,6 +6410,8 @@ def _run_canonical_phase1_refresh(
     managed_keys = sorted({_to_text(item).upper() for item in (managed_project_keys or []) if _to_text(item)})
     start_month = int(scope_start_month or 1)
     requested_mode = _canonical_normalize_mode(mode)
+    queued_stats = json.loads(_to_text((_canonical_get_run(db_path, run_id) or {}).get("stats_json")) or "{}")
+    replace_previous_data = requested_mode == "full" and bool(queued_stats.get("replace_previous_data"))
     previous_run_id = (
         _canonical_find_matching_success_run(db_path, scope_year, managed_keys, start_month)
         if requested_mode == "smart"
@@ -6420,6 +6423,7 @@ def _run_canonical_phase1_refresh(
         (requested_mode if (requested_mode != "smart" or previous_run_id) else "full")
     )
     sync_db_path = _canonical_sync_cache_path(db_path.parent)
+    checkpoint_from_utc = ""
     detail_limit = 250
     completed_stages: set[str] = set()
     counts_by_stage: dict[str, dict[str, object]] = {}
@@ -6459,6 +6463,7 @@ def _run_canonical_phase1_refresh(
             "managed_project_count": len(managed_keys),
             "managed_project_keys": managed_keys,
             "phase": "colossal_fetch",
+            "replace_previous_data": replace_previous_data,
             "mode": requested_mode,
             "effective_mode": effective_mode,
             "reconciliation_due": reconciliation_due,
@@ -6567,7 +6572,6 @@ def _run_canonical_phase1_refresh(
             return _cancel("discovering_issues")
         _update("discovering_issues", 20, current_item="Discover candidate issues")
         previous_run_issue_keys_for_delta: set[str] = set()
-        checkpoint_from_utc = ""
         if effective_mode == "smart" and previous_run_id:
             previous_run_issue_keys_for_delta = _canonical_load_run_issue_keys(db_path, previous_run_id)
             checkpoint_from_utc = _canonical_fetch_checkpoint(db_path, previous_run_id)
@@ -7046,6 +7050,21 @@ def _run_canonical_compute(
                 "done", all_stage_keys, counts_by_stage=counts_by_stage
             )
             _canonical_mark_run_status(db_path, fetch_run_id, "success", stats=legacy_stats, activate=True)
+            if legacy_stats.get("replace_previous_data") and legacy_stats.get("mode") == "full":
+                _update("reclaiming_database_space", 98, payload)
+                _canonical_update_progress_and_stats(db_path, fetch_run_id, "reclaiming_database_space", 98, {
+                    **legacy_stats, "current_detail": "Replacing old Jira snapshots and reclaiming disk space.",
+                })
+                try:
+                    storage = replace_previous_snapshots(db_path, fetch_run_id, compute_run_id)
+                except Exception as exc:
+                    storage = {"status": "warning", "warning": f"Snapshot replacement pending: {exc}"}
+                payload["storage_cleanup"] = storage
+                legacy_stats["storage_cleanup"] = storage
+                legacy_stats["current_detail"] = str(storage.get("warning") or (
+                    "Refresh completed. Previous Jira snapshots replaced; "
+                    f"{int(storage.get('bytes_reclaimed', 0)) / (1024 ** 2):.1f} MiB disk space reclaimed."
+                ))
             _canonical_update_progress_and_stats(db_path, fetch_run_id, "done", 100, legacy_stats)
         with sqlite3.connect(db_path) as conn:
             conn.execute(
@@ -7138,6 +7157,8 @@ def _run_canonical_compute(
             "derived_rows": derived_stats, "epics_management": epics_stats,
             "compatibility_artifacts": bridge_stats, "reports": report_stats,
         }
+        if _cancel_requested():
+            return _finish("canceled", error="Compute canceled before publishing the new snapshot.")
         stats["retention_pruned"] = _canonical_prune_two_phase_runs(db_path, 30)
         return _finish("success", stats=stats)
     except Exception as exc:
@@ -12050,6 +12071,12 @@ def _canonical_refresh_settings_html() -> str:
               Full Refresh
             </button>
           </div>
+          <label style="display:flex;gap:8px;align-items:flex-start;margin-top:12px;">
+            <input id="replace-previous-data" type="checkbox" checked style="width:auto;margin-top:3px;">
+            <span>Replace previous fetched Jira data and reclaim disk space
+              <small class="muted" style="display:block;">Full Refresh only. After reports succeed, removes all older Jira snapshots, including other date windows. Keeps settings and manual plans. Needs temporary free disk space; any pending cleanup is shown in the run result.</small>
+            </span>
+          </label>
         </section>
       </div>
 
@@ -12428,6 +12455,7 @@ def _canonical_refresh_settings_html() -> str:
 
     function setBusy(isBusy) {{
       pageBusy = !!isBusy;
+      document.getElementById("replace-previous-data").disabled = !!isBusy;
       startSmartBtn.disabled = !!isBusy;
       startFullBtn.disabled = !!isBusy;
       fetchSmartBtn.disabled = !!isBusy;
@@ -12472,6 +12500,7 @@ def _canonical_refresh_settings_html() -> str:
       activeComputeRunId = computeBusy ? String(computeRun.compute_run_id || computeRun.run_id || "") : "";
       cancelBtnLabel.textContent = computeBusy ? "Cancel Report Build" : "Cancel Refresh";
       setBusy(pageBusy || computeBusy);
+      if ((computeRun || {{}}).step === "reclaiming_database_space") cancelBtn.disabled = true;
       renderStages(lastRenderedStages, viewState, computeRun);
 
       phaseBanner.hidden = !computeAvailable && !computeBusy;
@@ -12512,10 +12541,13 @@ def _canonical_refresh_settings_html() -> str:
         setStatus("Report rebuild is running; no Jira fetch is being repeated.", "");
       }} else if (viewState === "complete") {{
         runStatusPill.textContent = "Complete";
-        progressCaption.textContent = "Refresh complete. Jira data and published reports are up to date for this run.";
+        const completedStats = (currentRun || {{}}).stats || {{}};
+        const storage = completedStats.storage_cleanup || (computeRun.stats || {{}}).storage_cleanup || {{}};
+        progressCaption.textContent = completedStats.current_detail || "Refresh complete. Jira data and published reports are up to date for this run.";
         progressFill.style.width = "100%";
         metaStep.textContent = "Completed";
-        setStatus("Refresh complete — reports were rebuilt and published successfully.", "ok");
+        setStatus(storage.warning ? "Reports succeeded. " + String(storage.warning)
+          : "Refresh complete — reports were rebuilt and published successfully.", storage.warning ? "warn" : "ok");
       }}
     }}
 
@@ -12635,6 +12667,8 @@ def _canonical_refresh_settings_html() -> str:
         : "Scope: -";
       runStatusPill.textContent = labelize(item.status || "idle");
       progressCaption.textContent = runStatusText(item) + (stats.current_detail ? " " + String(stats.current_detail) : "");
+      const cleanupWarning = (stats.storage_cleanup || {{}}).warning;
+      if (cleanupWarning) setStatus("Reports succeeded. " + String(cleanupWarning), "warn");
       progressFill.style.width = `${{Math.max(0, Math.min(100, Number(item.progress || 0)))}}%`;
       metaRunId.textContent = String(item.run_id || "-");
       metaStep.textContent = labelize(item.step || "-");
@@ -12658,7 +12692,8 @@ def _canonical_refresh_settings_html() -> str:
       activeRunStartMonth = String(scopeMonth || 1);
       abandonStaleBtn.disabled = !item.abandon_eligible;
       abandonStaleBtn.title = abandonStaleTitle(item);
-      setBusy(statusValue === "running" || statusValue === "cancel_requested");
+      setBusy(statusValue === "running" || statusValue === "cancel_requested" || item.step === "reclaiming_database_space");
+      if (item.step === "reclaiming_database_space") cancelBtn.disabled = true;
       const resumeBanner = document.getElementById("resume-banner");
       const resumeBannerText = document.getElementById("resume-banner-text");
       const isResumable = (statusValue === "canceled" || statusValue === "failed") && activeRunYear;
@@ -12690,7 +12725,7 @@ def _canonical_refresh_settings_html() -> str:
           const run = body.run || null;
           if (run) renderRun(run);
           const state = String((run || {{}}).status || "").toLowerCase();
-          if (state === "running" || state === "cancel_requested") {{
+          if (state === "running" || state === "cancel_requested" || (run || {{}}).step === "reclaiming_database_space") {{
             pollTimer = window.setTimeout(tick, 1000);
             return;
           }}
@@ -12778,7 +12813,8 @@ def _canonical_refresh_settings_html() -> str:
       const resp = await fetch(START_API, {{
         method: "POST",
         headers: {{ "Content-Type": "application/json" }},
-        body: JSON.stringify({{ year: yearValue, start_month: startMonthValue, mode, create_db_backup: false }}),
+        body: JSON.stringify({{ year: yearValue, start_month: startMonthValue, mode, create_db_backup: false,
+          replace_previous_data: mode === "full" && document.getElementById("replace-previous-data").checked }}),
       }});
       const body = await resp.json().catch(function () {{ return {{}}; }});
       if (resp.status === 409 && body.run) {{
@@ -42547,6 +42583,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         trigger_source: str = "api_refresh_async",
         create_db_backup: bool = False,
         auto_compute: bool = True,
+        replace_previous_data: bool = False,
     ) -> tuple[dict[str, object], int]:
         managed_project_keys = _managed_project_keys_all_active()
         if not managed_project_keys:
@@ -42613,6 +42650,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         run_started_at = _canonical_now_utc()
         with sqlite3.connect(capacity_paths["db_path"]) as conn:
             initial_stats = {
+                "replace_previous_data": bool(replace_previous_data and refresh_mode == "full" and auto_compute),
                 "mode": refresh_mode,
                 "effective_mode": refresh_mode,
                 "scope_start_month": start_month,
@@ -43438,6 +43476,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             trigger_source="api_refresh_async",
             create_db_backup=create_db_backup,
             auto_compute=True,
+            replace_previous_data=_parse_truthy_flag(payload.get("replace_previous_data")),
         )
         return jsonify(response), status_code
 

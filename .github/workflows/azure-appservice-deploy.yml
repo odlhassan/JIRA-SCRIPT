@@ -98,6 +98,7 @@ jobs:
               "startup.txt",
               "wsgi.py",
               "report_server.py",
+              "canonical_storage.py",
               "db_journal_mode.py",
               "requirements.txt",
               ".python_packages/lib/site-packages/gunicorn",
