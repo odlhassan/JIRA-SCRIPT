@@ -243,6 +243,12 @@ Azure does not define new tables directly. It hosts SQLite tables from `assignee
 
 ## Full Refresh disk reclamation
 
+When Azure rejects the deployment, the workflow runs a failure-only diagnostic step.
+It reads the latest SCM deployment log and runs read-only `df`/`du` checks for persistent
+storage, package storage and temporary deployment space. Publishing credentials stay
+in the Actions secret and are redacted from diagnostic output. These checks do not
+remove databases, backups or deployment packages.
+
 Colossal Refresh offers **Replace previous fetched Jira data and reclaim disk space**
 (checked in the settings UI, complete Full Refresh only). After successful Compute,
 `canonical_storage.py` removes old canonical snapshots and attempts in-place VACUUM;

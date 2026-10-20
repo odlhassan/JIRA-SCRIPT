@@ -125,8 +125,52 @@ jobs:
           (cd staging && zip -rq ../deploy.zip .)
 
       - name: Deploy to Azure Web App
+        id: azure_deploy
         uses: Azure/webapps-deploy@v3
         with:
           app-name: ${{ env.AZURE_WEBAPP_NAME }}
           publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
           package: deploy.zip
+
+      - name: Diagnose Azure deployment failure
+        if: failure() && steps.azure_deploy.outcome == 'failure'
+        env:
+          AZURE_PUBLISH_PROFILE: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+        run: |
+          python - <<'PY'
+          import base64
+          import json
+          import os
+          import urllib.error
+          import urllib.request
+          import xml.etree.ElementTree as ET
+
+          profiles = ET.fromstring(os.environ['AZURE_PUBLISH_PROFILE']).findall('publishProfile')
+          profile = next((p for p in profiles if p.get('publishMethod') == 'ZipDeploy'), profiles[0])
+          username, password = profile.get('userName', ''), profile.get('userPWD', '')
+          token = base64.b64encode(f'{username}:{password}'.encode()).decode()
+          base = 'https://' + os.environ['AZURE_WEBAPP_NAME'] + '.scm.azurewebsites.net'
+
+          def inspect(path, payload=None):
+              data = json.dumps(payload).encode() if payload is not None else None
+              req = urllib.request.Request(base + path, data=data, headers={
+                  'Authorization': 'Basic ' + token, 'Content-Type': 'application/json',
+              })
+              try:
+                  with urllib.request.urlopen(req, timeout=40) as response:
+                      text = response.read().decode(errors='replace')
+              except urllib.error.HTTPError as exc:
+                  text = f'HTTP {exc.code}: ' + exc.read().decode(errors='replace')
+              except Exception as exc:
+                  text = str(exc)
+              for secret in (username, password, token):
+                  if secret:
+                      text = text.replace(secret, '***')
+              print(path, text[:16000])
+
+          inspect('/api/deployments/latest/log')
+          inspect('/api/command', {
+              'command': 'df -h /home /tmp; du -sh /home/data /home/data/backups /home/data/SitePackages /home/site/wwwroot /tmp/zipdeploy 2>/dev/null',
+              'dir': '/home',
+          })
+          PY
