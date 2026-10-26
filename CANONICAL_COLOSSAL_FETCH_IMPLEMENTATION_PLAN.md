@@ -485,3 +485,21 @@ full-disk errors, and active-job validation failures are not automatically retri
 and open `http://127.0.0.1:3000/settings/canonical-refresh`. This settings page is generated
 by the server, so no HTML rebuild is needed. Run focused tests with
 `.\.venv\Scripts\python.exe -m unittest tests.test_canonical_storage tests.test_canonical_two_phase tests.test_canonical_refresh_api tests.test_report_ui_smoke.ReportUiSmokeTests.test_canonical_refresh_settings_formats_timestamps_for_display`.
+
+**Production verification — October 26, 2026.** Full Refresh was started with
+`year=2026`, `start_month=10`, `mode=full`, and `replace_previous_data=true`.
+The initial report build failed with `database or disk is full`; its successful
+Fetch was reused after deployment rather than acquired again. The completed
+Compute reported `success`, `done`, and `storage_cleanup.status=compacted`:
+
+- Fetch: `canonical-1792992881-01eb0fbb`; 1,514 issues and 235 worklogs retained.
+- Compaction: 9,708,490,752 bytes before, 61,825,024 after, 9,646,665,728 reclaimed.
+- Exactly one canonical issue snapshot remains, using DELETE journal mode.
+- Full SQLite `integrity_check` returned `ok`; `foreign_key_check` found zero violations.
+- Before/after counts matched in all ten sampled settings/planning tables, including
+  3,211 Epic plan values, 20 approved-date rows, nine releases, and 24 booking headers.
+- Executed focused checks: 53 tests passed with
+  `.\.venv\Scripts\python.exe -m unittest tests.test_canonical_storage tests.test_canonical_two_phase tests.test_canonical_refresh_api tests.test_db_journal_mode tests.test_azure_deploy_contract -q`.
+- The latest local server was started with
+  `.\.venv\Scripts\python.exe run_server.py --port 3118 --no-sync --keep-cache`;
+  inspect `http://127.0.0.1:3118/settings/canonical-refresh`.
