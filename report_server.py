@@ -23758,7 +23758,7 @@ def _promote_report_html_if_newer(base_dir: Path, report_dir: Path, report_name:
         os.close(fd)
     except OSError as exc:
         print(f"[report-html-sync] Warning: could not prepare promotion for {report_name}: {exc}")
-        return target_path if target_path.exists() else source_path
+        return source_path
     temp_path = Path(temp_name)
     try:
         shutil.copyfile(str(source_path), str(temp_path))
@@ -23766,6 +23766,7 @@ def _promote_report_html_if_newer(base_dir: Path, report_dir: Path, report_name:
         print(f"[report-html-sync] Promoted newer HTML: {source_path.name} -> {target_path}")
     except OSError as exc:
         print(f"[report-html-sync] Warning: could not promote {report_name}: {exc}")
+        return source_path
     finally:
         try:
             temp_path.unlink(missing_ok=True)
@@ -49323,8 +49324,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
         if requested_name.lower().endswith(".html") and Path(requested_name).name == requested_name:
             known_source_path = _resolve_report_html_sources(base_dir).get(Path(requested_name).name)
             if (
-                (not target.exists() or not target.is_file())
-                and promoted_html_path is not None
+                promoted_html_path is not None
                 and promoted_html_path.exists()
                 and promoted_html_path.is_file()
             ):

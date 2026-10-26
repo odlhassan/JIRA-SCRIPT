@@ -28,7 +28,7 @@ class ReportHtmlPromotionTests(unittest.TestCase):
             self.assertEqual(resp.status_code, 302)
             self.assertEqual(resp.headers["Location"], "/introduction.html")
 
-    def test_monthly_html_serves_existing_copy_when_live_promotion_is_read_only(self):
+    def test_monthly_html_serves_fresh_source_when_existing_copy_is_read_only(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             root = Path(td)
             report_dir = root / "report_html"
@@ -50,7 +50,26 @@ class ReportHtmlPromotionTests(unittest.TestCase):
                 html_resp = client.get("/monthly_epic_plan_progress_report.html")
 
             self.assertEqual(html_resp.status_code, 200)
-            self.assertIn("served monthly", html_resp.get_data(as_text=True))
+            self.assertIn("source monthly", html_resp.get_data(as_text=True))
+            self.assertNotIn("served monthly", html_resp.get_data(as_text=True))
+
+    def test_serves_rebuilt_artifact_when_atomic_promotion_fails(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            report_dir = root / "report_html"
+            artifact_dir = root / "generated"
+            report_dir.mkdir()
+            artifact_dir.mkdir()
+            (report_dir / "employee_performance_report.html").write_text("stale packaged report", encoding="utf-8")
+            (artifact_dir / "employee_performance_report.html").write_text("fresh rebuilt report", encoding="utf-8")
+            app = create_report_server_app(base_dir=root, folder_raw="report_html")
+            with patch.dict(os.environ, {"JIRA_CANONICAL_ARTIFACT_DIR": str(artifact_dir)}), patch(
+                "report_server.os.replace", side_effect=OSError("read-only file system")
+            ):
+                response = app.test_client().get("/employee_performance_report.html")
+            self.assertEqual(response.status_code, 200)
+            self.assertIn("fresh rebuilt report", response.get_data(as_text=True))
+            self.assertEqual((report_dir / "employee_performance_report.html").read_text(), "stale packaged report")
 
     def test_monthly_html_serves_root_source_when_report_html_copy_is_missing_and_read_only(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:

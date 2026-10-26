@@ -524,3 +524,9 @@ compact backup was retained before maintenance. Both Linux helper safety tests
 passed on Azure (including failed hole-punch restoring EOF and releasing locks),
 and a throwaway SQLite DB exercised actual Azure physical allocation release.
 The focused application suite passed 56 tests locally.
+
+When report HTML promotion cannot write to Azure's read-only package, GET report
+routes now serve the selected rebuilt source directly, even if an older packaged
+`report_html` copy exists. Tests in `tests/test_report_html_promotion.py` cover both
+read-only temp-file creation and failed atomic promotion. This prevents a successful
+Compute from leaving the browser on stale packaged report content.

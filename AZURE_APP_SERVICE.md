@@ -308,3 +308,9 @@ allocation again. It never renames the live database. Other filesystems skip thi
 CIFS-only step. Failure is a visible maintenance warning; reports stay published.
 The subprocess avoids releasing SQLite locks held by other server connections
 when a raw descriptor closes. Do not kill this maintenance helper mid-operation.
+
+When report HTML promotion cannot write to Azure's read-only package, GET report
+routes now serve the selected rebuilt source directly, even if an older packaged
+`report_html` copy exists. Tests in `tests/test_report_html_promotion.py` cover both
+read-only temp-file creation and failed atomic promotion. This prevents a successful
+Compute from leaving the browser on stale packaged report content.
