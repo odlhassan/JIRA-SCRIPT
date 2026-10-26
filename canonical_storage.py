@@ -49,6 +49,9 @@ def replace_previous_snapshots(db_path: Path, run_id: str, compute_run_id: str) 
         # for this bounded maintenance transaction so readers can still run.
         conn.execute("PRAGMA cache_size=-65536")
         conn.execute("PRAGMA cache_spill=OFF")
+        # The Azure build defaults to secure_delete=ON. FAST avoids rewriting
+        # every discarded overflow page before VACUUM removes those pages.
+        conn.execute("PRAGMA secure_delete=FAST")
         conn.execute("BEGIN IMMEDIATE")
         state = conn.execute(
             """SELECT last_success_run_id, active_run_id, active_fetch_run_id,

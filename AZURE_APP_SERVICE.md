@@ -33,6 +33,8 @@ their connections explicitly, preventing a completed report build from losing it
 terminal status solely because a reader lasted longer than five seconds.
 The cleanup connection uses a 64 MiB cache target with dirty-page spilling disabled
 to reduce network-share I/O and avoid exclusive locks before a batch commits.
+It uses `secure_delete=FAST` for this connection only, avoiding extra writes to
+discarded overflow pages that the subsequent VACUUM removes.
 
 Azure App Service auto-detects Flask only when the app entrypoint is `app.py` or `application.py` with an `app` callable.
 

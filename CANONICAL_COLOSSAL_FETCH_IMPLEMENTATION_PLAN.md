@@ -470,6 +470,11 @@ for its bounded transactions, avoiding repeated network reads and early exclusiv
 locks; other connections retain their normal settings. The cache size is a target,
 and one batch's dirty pages may exceed it until commit. This follows
 [SQLite's cache-spill guidance](https://www.sqlite.org/pragma.html#pragma_cache_spill).
+Azure's SQLite build was also observed with `secure_delete=ON`. Cleanup uses `FAST`
+on its own connection to avoid zeroing discarded overflow pages before VACUUM;
+normal connections keep their original policy. Until compaction succeeds, freed
+pages can still contain old bytes, as with other SQLite logical deletions. See
+[SQLite secure-delete modes](https://www.sqlite.org/pragma.html#pragma_secure_delete).
 
 **Local verification.** Restart with `.\.venv\Scripts\python.exe run_server.py --no-sync --keep-cache`
 and open `http://127.0.0.1:3000/settings/canonical-refresh`. This settings page is generated

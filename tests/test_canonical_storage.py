@@ -209,6 +209,15 @@ class CanonicalStorageTests(unittest.TestCase):
         self.assertEqual(stats["storage_cleanup"]["status"], "compacted")
         self.assertLess(self.db.stat().st_size, before / 2)
 
+    def test_cleanup_keeps_other_connections_secure_delete_policy(self):
+        with closing(sqlite3.connect(self.db)) as conn:
+            original = conn.execute("PRAGMA secure_delete").fetchone()[0]
+        _, status = self.run_compute()
+        self.assertEqual(status, 200)
+        with closing(sqlite3.connect(self.db)) as conn:
+            self.assertEqual(conn.execute("PRAGMA secure_delete").fetchone()[0], original)
+            self.assertEqual(conn.execute("PRAGMA integrity_check").fetchone()[0], "ok")
+
     def test_failed_later_batch_preserves_published_snapshot_and_can_resume(self):
         with closing(sqlite3.connect(self.db)) as conn, conn:
             conn.executemany("INSERT INTO canonical_issues(run_id, issue_key) VALUES ('old', ?)",
