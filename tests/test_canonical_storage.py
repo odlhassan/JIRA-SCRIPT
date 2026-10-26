@@ -1,6 +1,8 @@
 import json
 import sqlite3
 import tempfile
+import threading
+import time
 import unittest
 from contextlib import closing
 from pathlib import Path
@@ -34,13 +36,13 @@ class CanonicalStorageTests(unittest.TestCase):
                 status="success", completed=True)
         self.compute_id = report_server._canonical_create_compute_run(self.db, "new", "test")
 
-    def run_compute(self, *, script_code=0):
+    def run_compute(self, *, script_code=0, sync_callback=None):
         with (
             patch.object(report_server, "_canonical_rebuild_derived_data", return_value={}),
             patch.object(report_server, "_sync_epics_management_from_canonical", return_value={}),
             patch.object(report_server, "_canonical_rebuild_compatibility_artifacts", return_value={}),
             patch.object(report_server, "_run_script", return_value=(script_code, "", "test failure")),
-            patch.object(report_server, "sync_report_html"),
+            patch.object(report_server, "sync_report_html", side_effect=sync_callback),
         ):
             return report_server._run_canonical_compute(self.db, self.root, self.compute_id, "new")
 
@@ -131,6 +133,98 @@ class CanonicalStorageTests(unittest.TestCase):
         self.assertEqual(stats["storage_cleanup"]["status"], "pruned")
         self.assertIn("compaction pending", stats["current_detail"])
 
+    def test_replacement_does_not_run_general_retention_before_publishing(self):
+        with patch.object(report_server, "_canonical_prune_two_phase_runs",
+                          side_effect=sqlite3.DatabaseError("database disk image is malformed")) as prune:
+            result, status = self.run_compute()
+        self.assertEqual(status, 200)
+        self.assertTrue(result["ok"])
+        prune.assert_not_called()
+        self.assertEqual(self.runs(), {"new"})
+
+    def test_startup_switches_existing_wal_before_settings_initialization(self):
+        db = self.root / "assignee_hours_capacity.db"
+        with closing(sqlite3.connect(db)) as conn:
+            conn.execute("PRAGMA journal_mode=WAL")
+        class StopAfterJournal(Exception):
+            pass
+        def check_mode(path):
+            with closing(sqlite3.connect(path)) as conn:
+                self.assertEqual(conn.execute("PRAGMA journal_mode").fetchone()[0], "delete")
+            raise StopAfterJournal()
+        with patch.object(report_server, "_init_capacity_db", side_effect=check_mode):
+            with self.assertRaises(StopAfterJournal):
+                report_server.create_report_server_app(self.root, "report_html")
+
+    def test_retention_error_does_not_fail_completed_reports(self):
+        with closing(sqlite3.connect(self.db)) as conn, conn:
+            conn.execute("UPDATE canonical_refresh_runs SET stats_json=? WHERE run_id='new'",
+                         (json.dumps({"mode": "full", "replace_previous_data": False}),))
+        with patch.object(report_server, "_canonical_prune_two_phase_runs",
+                          side_effect=sqlite3.OperationalError("database or disk is full")):
+            result, status = self.run_compute()
+        self.assertEqual(status, 200)
+        self.assertTrue(result["ok"])
+        self.assertEqual(report_server._canonical_last_success_run_id(self.db), "new")
+        with closing(sqlite3.connect(self.db)) as conn:
+            stats = json.loads(conn.execute("SELECT stats_json FROM canonical_compute_runs").fetchone()[0])
+        self.assertIn("disk is full", stats["retention_pruned"]["warning"])
+        legacy_stats = json.loads(report_server._canonical_get_run(self.db, "new")["stats_json"])
+        self.assertIn("History cleanup pending", legacy_stats["current_detail"])
+
+    def test_completed_reports_wait_for_reader_longer_than_default_sqlite_timeout(self):
+        locked = threading.Event()
+        readers = []
+        def hold_reader():
+            with closing(sqlite3.connect(self.db)) as conn:
+                conn.execute("BEGIN")
+                conn.execute("SELECT value FROM manual_plans").fetchall()
+                locked.set()
+                time.sleep(6)
+                conn.rollback()
+        def after_reports(*args):
+            reader = threading.Thread(target=hold_reader)
+            readers.append(reader)
+            reader.start()
+            self.assertTrue(locked.wait(3))
+        try:
+            result, status = self.run_compute(sync_callback=after_reports)
+        finally:
+            for reader in readers:
+                reader.join(10)
+        self.assertEqual(status, 200)
+        self.assertTrue(result["ok"])
+        self.assertEqual(report_server._canonical_last_success_run_id(self.db), "new")
+        compute = report_server._canonical_compute_get_run(self.db, self.compute_id)
+        self.assertEqual(compute["status"], "success")
+
+    def test_compaction_uses_live_pages_after_deleting_large_history(self):
+        before = self.db.stat().st_size
+        # Enough room for the retained data, less than twice the bloated file.
+        with patch.object(canonical_storage.shutil, "disk_usage", return_value=SimpleNamespace(free=before)):
+            result, status = self.run_compute()
+        self.assertEqual(status, 200)
+        with closing(sqlite3.connect(self.db)) as conn:
+            stats = json.loads(conn.execute("SELECT stats_json FROM canonical_refresh_runs WHERE run_id='new'").fetchone()[0])
+        self.assertEqual(stats["storage_cleanup"]["status"], "compacted")
+        self.assertLess(self.db.stat().st_size, before / 2)
+
+    def test_failed_later_batch_preserves_published_snapshot_and_can_resume(self):
+        with closing(sqlite3.connect(self.db)) as conn, conn:
+            conn.executemany("INSERT INTO canonical_issues(run_id, issue_key) VALUES ('old', ?)",
+                             [(f"O2-{i}",) for i in range(2, 6002)])
+            conn.execute("""CREATE TRIGGER fail_later_delete BEFORE DELETE ON canonical_issues
+                WHEN old.issue_key='O2-5500' BEGIN SELECT RAISE(ABORT, 'simulated disk failure'); END""")
+        report_server._canonical_mark_run_status(self.db, "new", "success", activate=True)
+        with self.assertRaises(sqlite3.IntegrityError):
+            canonical_storage.replace_previous_snapshots(self.db, "new", self.compute_id)
+        with closing(sqlite3.connect(self.db)) as conn, conn:
+            self.assertEqual(conn.execute("SELECT count(*) FROM canonical_issues WHERE run_id='old'").fetchone()[0], 1001)
+            self.assertEqual(conn.execute("SELECT count(*) FROM canonical_issues WHERE run_id='new'").fetchone()[0], 1)
+            conn.execute("DROP TRIGGER fail_later_delete")
+        canonical_storage.replace_previous_snapshots(self.db, "new", self.compute_id)
+        self.assertEqual(self.runs(), {"new"})
+
     def test_unpublished_snapshot_cannot_delete_anything(self):
         with self.assertRaises(ValueError):
             canonical_storage.replace_previous_snapshots(self.db, "new", self.compute_id)
@@ -148,6 +242,23 @@ class CanonicalStorageTests(unittest.TestCase):
         report_server._canonical_mark_run_status(self.db, "new", "success", activate=True)
         with closing(sqlite3.connect(self.db)) as conn, conn:
             conn.execute("UPDATE canonical_fetch_runs SET status='running' WHERE fetch_run_id='old'")
+            conn.execute("UPDATE canonical_refresh_state SET active_fetch_run_id='old' WHERE id=1")
+        with self.assertRaises(ValueError):
+            canonical_storage.replace_previous_snapshots(self.db, "new", self.compute_id)
+        self.assertEqual(self.runs(), {"old", "new"})
+
+    def test_abandoned_fetch_without_active_pointer_does_not_block_replacement(self):
+        with closing(sqlite3.connect(self.db)) as conn, conn:
+            conn.execute("UPDATE canonical_fetch_runs SET status='running' WHERE fetch_run_id='old'")
+            conn.execute("UPDATE canonical_refresh_state SET active_fetch_run_id='' WHERE id=1")
+        result, status = self.run_compute()
+        self.assertEqual(status, 200)
+        self.assertTrue(result["ok"])
+        self.assertEqual(self.runs(), {"new"})
+
+    def test_another_active_compute_prevents_deletion(self):
+        other = report_server._canonical_create_compute_run(self.db, "old", "test")
+        report_server._canonical_mark_run_status(self.db, "new", "success", activate=True)
         with self.assertRaises(ValueError):
             canonical_storage.replace_previous_snapshots(self.db, "new", self.compute_id)
         self.assertEqual(self.runs(), {"old", "new"})

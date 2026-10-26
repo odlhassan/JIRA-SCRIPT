@@ -14,6 +14,26 @@ This project can run on Azure App Service for Linux as a Python 3.11 web app.
 
 ## Why a startup command is required
 
+Colossal Refresh replacement now removes historical Jira snapshots in transactions
+of at most 5,000 rows, yields briefly between batches for readers, and estimates
+compaction space from live SQLite pages. It skips
+the separate 30-day retention pass before publication; retention failures on other
+refreshes appear as maintenance warnings. See
+[replacement diagnostics](CANONICAL_COLOSSAL_FETCH_IMPLEMENTATION_PLAN.md#full-refresh-snapshot-replacement-and-disk-reclamation).
+These safeguards do not repair an existing malformed SQLite database. Preserve
+settings and manual plans during recovery, and inspect the actual persisted journal
+mode: a locked startup pragma can leave an older WAL database in WAL mode. The
+application now applies its journal policy before settings initializers open any
+connections, and closes that connection immediately. This lets an inherited WAL
+database switch to DELETE before startup connections can block the change.
+Replacement checks active lifecycle pointers before treating a historical `running`
+row as another live job, so an abandoned Fetch cannot indefinitely defer cleanup.
+Canonical status writes wait up to 60 seconds for transient reader locks and close
+their connections explicitly, preventing a completed report build from losing its
+terminal status solely because a reader lasted longer than five seconds.
+The cleanup connection uses a 64 MiB cache target with dirty-page spilling disabled
+to reduce network-share I/O and avoid exclusive locks before a batch commits.
+
 Azure App Service auto-detects Flask only when the app entrypoint is `app.py` or `application.py` with an `app` callable.
 
 This repo exposes the Flask app from `wsgi.py`, so configure Azure to use the included executable `startup.txt` script.

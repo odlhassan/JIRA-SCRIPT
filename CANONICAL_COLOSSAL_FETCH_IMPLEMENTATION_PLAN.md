@@ -423,21 +423,53 @@ other report snapshot families, and the separate `jira_sync_cache.db` are preser
 This action does not promise to clear every cache or make the DB equal the Jira pull size.
 
 **Data flow and diagnostics.** The checkbox travels from the settings page to queued
-run JSON, Fetch progress JSON, then successful Compute. Cleanup repairs successful Fetch
-and Compute pointers in the same transaction as deletion. It refuses an unpublished
-snapshot or another active Fetch/Compute. Compaction uses SQLite VACUUM in place, never
+run JSON, Fetch progress JSON, then successful Compute. Replacement skips the general
+30-day history cleanup before promotion; replacement itself owns history removal.
+Cleanup validates the published snapshot and other active jobs before deleting in
+batches of at most 5,000 rows per transaction. A brief pause between full batches
+allows status/report readers to acquire a lock on Azure's shared drive. Successful batches remain committed if
+a later batch fails, and a later replacement can resume removing old data. Cleanup
+repairs successful Fetch and Compute pointers after deletion. It refuses an unpublished
+snapshot or another running job identified by its lifecycle's active pointer. Historical
+rows still labeled `running` without an active pointer are abandoned history, and do
+not block replacement under the refresh lock. The October 26 live retry exposed an
+October 20 abandoned Fetch row with no active pointer. Compaction uses SQLite VACUUM in place, never
 unlinks a live DB or journal. The result exposes `storage_cleanup.status`, per-table
 `deleted_rows`, `bytes_before`, `bytes_after`, and `bytes_reclaimed` in legacy run and
 Compute stats; the page shows reclaimed MiB or a visible maintenance warning.
 
 **Operational limits.** Replacement temporarily stores old and new snapshots together.
-Deletion also needs journal space. Before VACUUM, the server conservatively requires up
-to twice the then-current database file size free on its drive. With insufficient space
+Deletion also needs journal space; bounded transactions allow freed pages to be reused
+without accumulating one journal for all history. Before VACUUM, the server estimates
+temporary space as twice the live page count (`page_count - freelist_count`) times
+`page_size`, reported as `compaction_estimated_bytes`. The still-bloated file size is
+not the estimate: for example, 9 GiB with 100 MiB of live pages estimates 200 MiB.
+This is an estimate, and SQLite can still reject compaction. With insufficient space
 or a SQLite lock/error, valid reports stay successful and the page states that cleanup
 or compaction is pending. Freed pages remain reusable. A later checked Full Refresh
 retries cleanup and compaction; this is not a background automatic retry. If the worker
 is interrupted, normal Compute recovery can be used to finish again. Backups in other
 folders and unrelated cache databases are not deleted.
+
+For refreshes retaining history, a SQLite error in general 30-day retention is a
+maintenance warning in Compute stats and the page's completion detail; it no longer
+discards completed reports. This does not repair an already corrupt database. The
+October 20 production logs showed malformed-image and disk-I/O errors in this cleanup
+path, while the October 26 check found a 9.1 GiB database on a 97%-full persistent share.
+Any database recovery must preserve settings/manual plans and independently validate
+integrity; never delete live WAL/SHM files or substitute a local development database.
+Application startup applies the journal policy before all settings initializers and
+explicitly closes that connection, allowing an inherited WAL database to switch to
+DELETE before other startup connections can lock the pragma. This changes no schema.
+Canonical progress, promotion and terminal Compute status writes allow up to 60 seconds
+for a read lock and explicitly close their connections. A brief report reader must not
+turn a completed build into an orphaned worker merely by exceeding SQLite's default
+five-second write timeout. A real six-second shared-reader regression test covers this.
+The cleanup connection requests a 64 MiB page cache and disables dirty-page spilling
+for its bounded transactions, avoiding repeated network reads and early exclusive
+locks; other connections retain their normal settings. The cache size is a target,
+and one batch's dirty pages may exceed it until commit. This follows
+[SQLite's cache-spill guidance](https://www.sqlite.org/pragma.html#pragma_cache_spill).
 
 **Local verification.** Restart with `.\.venv\Scripts\python.exe run_server.py --no-sync --keep-cache`
 and open `http://127.0.0.1:3000/settings/canonical-refresh`. This settings page is generated

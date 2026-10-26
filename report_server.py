@@ -25,6 +25,7 @@ from urllib.parse import unquote
 
 import requests
 from canonical_storage import replace_previous_snapshots
+from contextlib import closing
 
 from flask import Flask, jsonify, redirect, request, send_file
 from openpyxl import Workbook, load_workbook
@@ -3683,7 +3684,8 @@ def _canonical_update_progress_and_stats(
         return
     now = _canonical_now_utc()
     progress = max(0, min(100, int(progress_pct)))
-    with sqlite3.connect(db_path) as conn:
+    # Report readers can briefly delay a DELETE-journal commit on Azure.
+    with closing(sqlite3.connect(db_path, timeout=60)) as conn, conn:
         if stats is None:
             conn.execute(
                 """
@@ -3748,7 +3750,7 @@ def _canonical_mark_run_status(
         return
     now = _canonical_now_utc()
     stats_json = json.dumps(stats or {}, ensure_ascii=True)
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path, timeout=60)) as conn, conn:
         conn.execute(
             """
             UPDATE canonical_refresh_runs
@@ -7001,7 +7003,7 @@ def _run_canonical_compute(
 
     def _update(step: str, pct: int, stats: dict[str, object] | None = None) -> None:
         now = _canonical_now_utc()
-        with sqlite3.connect(db_path) as conn:
+        with closing(sqlite3.connect(db_path, timeout=60)) as conn, conn:
             conn.execute(
                 """UPDATE canonical_compute_runs
                    SET progress_step=?, progress_pct=?, stats_json=?, updated_at_utc=?
@@ -7045,6 +7047,9 @@ def _run_canonical_compute(
             legacy_stats["compute"] = payload
             legacy_stats["current_item"] = ""
             legacy_stats["current_detail"] = "Canonical refresh completed successfully."
+            retention = payload.get("retention_pruned") or {}
+            if retention.get("status") == "warning":
+                legacy_stats["current_detail"] += f" History cleanup pending: {retention.get('warning', '')}"
             all_stage_keys = {key for key, _label in _canonical_stage_catalog()}
             legacy_stats["stages"] = _canonical_stage_payload(
                 "done", all_stage_keys, counts_by_stage=counts_by_stage
@@ -7066,7 +7071,7 @@ def _run_canonical_compute(
                     f"{int(storage.get('bytes_reclaimed', 0)) / (1024 ** 2):.1f} MiB disk space reclaimed."
                 ))
             _canonical_update_progress_and_stats(db_path, fetch_run_id, "done", 100, legacy_stats)
-        with sqlite3.connect(db_path) as conn:
+        with closing(sqlite3.connect(db_path, timeout=60)) as conn, conn:
             conn.execute(
                 """UPDATE canonical_compute_runs
                    SET status=?, error_message=?, stats_json=?, progress_step=?, progress_pct=100,
@@ -7159,7 +7164,22 @@ def _run_canonical_compute(
         }
         if _cancel_requested():
             return _finish("canceled", error="Compute canceled before publishing the new snapshot.")
-        stats["retention_pruned"] = _canonical_prune_two_phase_runs(db_path, 30)
+        # Replacement owns snapshot maintenance after promotion. Do not first
+        # delete the same history in a separate, potentially huge transaction.
+        try:
+            source_stats = json.loads(_to_text(legacy_fetch.get("stats_json")) or "{}")
+        except (ValueError, TypeError):
+            source_stats = {}
+        if not isinstance(source_stats, dict):
+            source_stats = {}
+        replacing = source_stats.get("mode") == "full" and source_stats.get("replace_previous_data")
+        if not replacing:
+            try:
+                stats["retention_pruned"] = _canonical_prune_two_phase_runs(db_path, 30)
+            except sqlite3.Error as exc:
+                # Reports have already been built. Retention is maintenance;
+                # its failure must not discard the reusable Fetch or reports.
+                stats["retention_pruned"] = {"status": "warning", "warning": str(exc)}
         return _finish("success", stats=stats)
     except Exception as exc:
         return _finish("failed", error=f"Canonical compute failed: {exc}")
@@ -39016,6 +39036,11 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
     report_dir = resolve_report_html_dir(base_dir, folder_raw)
     report_dir.mkdir(parents=True, exist_ok=True)
     capacity_paths = _resolve_capacity_runtime_paths(base_dir)
+    # Switch an inherited WAL database before the settings initializers open
+    # connections. A later switch can be locked by those startup connections,
+    # leaving Azure's SMB share using WAL despite the configured DELETE mode.
+    with closing(sqlite3.connect(capacity_paths["db_path"])) as journal_conn:
+        apply_journal_mode(journal_conn)
     _init_capacity_db(capacity_paths["db_path"])
     _init_performance_settings_db(capacity_paths["db_path"])
     _init_epf_refresh_db(capacity_paths["db_path"])
