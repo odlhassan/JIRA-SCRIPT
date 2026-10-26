@@ -247,6 +247,35 @@ class CanonicalStorageTests(unittest.TestCase):
         stats = json.loads(report_server._canonical_get_run(self.db, "new")["stats_json"])
         self.assertIn("replacement pending", stats["current_detail"])
 
+    def test_transient_cleanup_io_error_reopens_and_retries_without_refetch(self):
+        calls = []
+        def cleanup(*args):
+            calls.append(args)
+            if len(calls) == 1:
+                raise sqlite3.OperationalError("disk I/O error")
+            return canonical_storage.replace_previous_snapshots(*args)
+        with patch.object(report_server, "replace_previous_snapshots", side_effect=cleanup):
+            result, status = self.run_compute()
+        self.assertEqual(status, 200)
+        self.assertTrue(result["ok"])
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(self.runs(), {"new"})
+        stats = json.loads(report_server._canonical_get_run(self.db, "new")["stats_json"])
+        self.assertEqual(stats["storage_cleanup"]["attempts"], 2)
+        self.assertEqual(stats["storage_cleanup"]["status"], "compacted")
+
+    def test_persistent_cleanup_io_error_stops_after_three_attempts(self):
+        with patch.object(report_server, "replace_previous_snapshots",
+                          side_effect=sqlite3.OperationalError("disk I/O error")) as cleanup:
+            result, status = self.run_compute()
+        self.assertEqual(status, 200)
+        self.assertTrue(result["ok"])
+        self.assertEqual(cleanup.call_count, 3)
+        self.assertEqual(self.runs(), {"old", "new"})
+        stats = json.loads(report_server._canonical_get_run(self.db, "new")["stats_json"])
+        self.assertEqual(stats["storage_cleanup"]["attempts"], 3)
+        self.assertIn("disk I/O error", stats["current_detail"])
+
     def test_another_active_fetch_prevents_deletion(self):
         report_server._canonical_mark_run_status(self.db, "new", "success", activate=True)
         with closing(sqlite3.connect(self.db)) as conn, conn:

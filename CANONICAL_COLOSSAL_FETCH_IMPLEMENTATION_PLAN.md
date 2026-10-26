@@ -475,6 +475,11 @@ on its own connection to avoid zeroing discarded overflow pages before VACUUM;
 normal connections keep their original policy. Until compaction succeeds, freed
 pages can still contain old bytes, as with other SQLite logical deletions. See
 [SQLite secure-delete modes](https://www.sqlite.org/pragma.html#pragma_secure_delete).
+If pruning raises an operational lock or disk-I/O error, Compute retries cleanup up
+to three times with a fresh connection and short backoff, without fetching Jira or
+rebuilding reports again. Earlier committed batches are retained. The result records
+`storage_cleanup.attempts`; persistent failures remain visible warnings. Corruption,
+full-disk errors, and active-job validation failures are not automatically retried.
 
 **Local verification.** Restart with `.\.venv\Scripts\python.exe run_server.py --no-sync --keep-cache`
 and open `http://127.0.0.1:3000/settings/canonical-refresh`. This settings page is generated

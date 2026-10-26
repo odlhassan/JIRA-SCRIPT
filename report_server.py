@@ -7060,10 +7060,23 @@ def _run_canonical_compute(
                 _canonical_update_progress_and_stats(db_path, fetch_run_id, "reclaiming_database_space", 98, {
                     **legacy_stats, "current_detail": "Replacing old Jira snapshots and reclaiming disk space.",
                 })
-                try:
-                    storage = replace_previous_snapshots(db_path, fetch_run_id, compute_run_id)
-                except Exception as exc:
-                    storage = {"status": "warning", "warning": f"Snapshot replacement pending: {exc}"}
+                for cleanup_attempt in range(1, 4):
+                    try:
+                        storage = replace_previous_snapshots(db_path, fetch_run_id, compute_run_id)
+                        break
+                    except Exception as exc:
+                        transient = isinstance(exc, sqlite3.OperationalError) and any(
+                            message in str(exc).lower()
+                            for message in ("database is locked", "database table is locked", "disk i/o error")
+                        )
+                        if transient and cleanup_attempt < 3:
+                            # The previous call closed its connection. Reopen
+                            # and resume committed, idempotent deletion batches.
+                            time.sleep(cleanup_attempt)
+                            continue
+                        storage = {"status": "warning", "warning": f"Snapshot replacement pending: {exc}"}
+                        break
+                storage["attempts"] = cleanup_attempt
                 payload["storage_cleanup"] = storage
                 legacy_stats["storage_cleanup"] = storage
                 legacy_stats["current_detail"] = str(storage.get("warning") or (
