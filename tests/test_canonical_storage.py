@@ -76,6 +76,30 @@ class CanonicalStorageTests(unittest.TestCase):
         self.assertEqual(self.runs(), {"old", "new"})
         self.assertEqual(report_server._canonical_last_success_run_id(self.db), "old")
 
+    def test_cifs_allocation_failure_is_visible_maintenance_warning(self):
+        with patch.object(canonical_storage, "_trim_cifs_allocation", side_effect=OSError("SMB allocation retained")):
+            _, status = self.run_compute()
+        self.assertEqual(status, 200)
+        self.assertEqual(self.runs(), {"new"})
+        stats = json.loads(report_server._canonical_get_run(self.db, "new")["stats_json"])
+        self.assertEqual(stats["storage_cleanup"]["status"], "pruned")
+        self.assertIn("SMB allocation retained", stats["storage_cleanup"]["warning"])
+
+    def test_reclaimed_bytes_use_server_allocation_instead_of_logical_length(self):
+        with patch.object(canonical_storage, "_trim_cifs_allocation", return_value={
+            "allocated_bytes_before": 10_000_000, "allocated_bytes_after": 1_000_000,
+        }):
+            self.run_compute()
+        stats = json.loads(report_server._canonical_get_run(self.db, "new")["stats_json"])
+        self.assertEqual(stats["storage_cleanup"]["bytes_reclaimed"], 9_000_000)
+
+    def test_cifs_helper_uses_separate_process(self):
+        with patch.object(canonical_storage.sys, "platform", "linux"), patch.object(
+            canonical_storage.subprocess, "run", return_value=SimpleNamespace(stdout='{"allocated_bytes_after": 123}')
+        ) as run:
+            self.assertEqual(canonical_storage._trim_cifs_allocation(self.db), {"allocated_bytes_after": 123})
+        self.assertEqual(run.call_args.args[0][-2:], ["--trim-cifs", str(self.db.resolve())])
+
     def test_canceled_compute_keeps_previous_snapshot(self):
         with closing(sqlite3.connect(self.db)) as conn, conn:
             conn.execute("UPDATE canonical_compute_runs SET cancel_requested=1")

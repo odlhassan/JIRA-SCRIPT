@@ -294,7 +294,17 @@ manual settings/plans and separate cache databases remain. Deploy this module al
 `replace_previous_data: true`. There is no SQLite schema change.
 
 The new snapshot, deletion journal, and compaction require spare disk capacity. A
-conservative VACUUM preflight requires twice the current DB file size free. If it
+conservative VACUUM preflight requires twice the estimated live-page size free. If it
 fails or the DB is locked, reports remain successful and the settings page/API result
 shows maintenance pending. An already-full drive needs temporary headroom first.
 See [canonical refresh storage maintenance](CANONICAL_COLOSSAL_FETCH_IMPLEMENTATION_PLAN.md#full-refresh-snapshot-replacement-and-disk-reclamation).
+
+On Azure SMB, truncating a SQLite file can retain the old server allocation even
+when its logical length shrinks. After VACUUM, an isolated `canonical_storage.py
+--trim-cifs DATABASE` process holds `BEGIN EXCLUSIVE`, queries the server allocation,
+temporarily extends EOF over the unused tail, punches only that tail, and restores
+EOF in `finally`. It verifies the original byte prefix with SHA-256 and queries
+allocation again. It never renames the live database. Other filesystems skip this
+CIFS-only step. Failure is a visible maintenance warning; reports stay published.
+The subprocess avoids releasing SQLite locks held by other server connections
+when a raw descriptor closes. Do not kill this maintenance helper mid-operation.

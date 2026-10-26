@@ -493,7 +493,7 @@ Fetch was reused after deployment rather than acquired again. The completed
 Compute reported `success`, `done`, and `storage_cleanup.status=compacted`:
 
 - Fetch: `canonical-1792992881-01eb0fbb`; 1,514 issues and 235 worklogs retained.
-- Compaction: 9,708,490,752 bytes before, 61,825,024 after, 9,646,665,728 reclaimed.
+- Compaction: 9,708,490,752 bytes before, 61,825,024 after, 9,646,665,728 logical bytes removed (physical SMB allocation verified separately below).
 - Exactly one canonical issue snapshot remains, using DELETE journal mode.
 - Full SQLite `integrity_check` returned `ok`; `foreign_key_check` found zero violations.
 - Before/after counts matched in all ten sampled settings/planning tables, including
@@ -503,3 +503,24 @@ Compute reported `success`, `done`, and `storage_cleanup.status=compacted`:
 - The latest local server was started with
   `.\.venv\Scripts\python.exe run_server.py --port 3118 --no-sync --keep-cache`;
   inspect `http://127.0.0.1:3118/settings/canonical-refresh`.
+
+### Azure physical allocation verification
+
+VACUUM alone left the original Azure SMB allocation attached to the compact file.
+`canonical_storage.py` now uses an isolated, exclusively locked maintenance process
+to punch the unused tail inside a temporary EOF extension, restoring the original
+EOF and verifying SHA-256 of every original byte. Authoritative CIFS server
+allocation is recorded as `allocated_bytes_before/after`; `bytes_reclaimed` uses
+those values when available. Unsupported filesystems use ordinary VACUUM. Failure
+leaves an explicit maintenance warning, rather than falsely claiming compaction.
+Focused tests cover the helper boundary, physical-byte accounting, and warning path.
+No schema changes or database inode replacement are involved.
+
+Production verification on 2026-10-26: authoritative server allocation fell from
+9,708,503,040 to 61,931,520 bytes. `/home` usage fell to 7%, with 9.4 GiB free.
+Every original database byte matched its SHA-256 after trimming; full integrity
+check returned `ok` and foreign-key check returned zero violations. A verified
+compact backup was retained before maintenance. Both Linux helper safety tests
+passed on Azure (including failed hole-punch restoring EOF and releasing locks),
+and a throwaway SQLite DB exercised actual Azure physical allocation release.
+The focused application suite passed 56 tests locally.

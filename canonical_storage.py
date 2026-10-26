@@ -4,6 +4,94 @@ from pathlib import Path
 import shutil
 import sqlite3
 import time
+import json
+import os
+import subprocess
+import sys
+
+
+def _trim_cifs_allocation(db_path: Path) -> dict:
+    """Release Azure SMB's retained allocation without replacing the database inode.
+
+    Run in a child process: closing a raw descriptor in the server process can
+    release POSIX SQLite locks belonging to its other connections.
+    """
+    if sys.platform != "linux":
+        return {}
+    completed = subprocess.run(
+        [sys.executable, str(Path(__file__).resolve()), "--trim-cifs", str(db_path.resolve())],
+        capture_output=True, text=True, check=True,
+    )
+    return json.loads(completed.stdout)
+
+
+def _trim_cifs_in_process(db_path: Path) -> dict:
+    import ctypes
+    import errno
+    import fcntl
+    import hashlib
+    import struct
+
+    # Open before acquiring SQLite's lock; close only after releasing it.
+    fd = os.open(db_path, os.O_RDWR)
+    try:
+        def allocation():
+            buf = bytearray(struct.pack("<6I", 1, 5, 0, 0, 24, 0) + bytes(24))
+            try:
+                fcntl.ioctl(fd, 0xC018CF07, buf, True)  # CIFS_QUERY_INFO/FileStandardInformation
+            except OSError as exc:
+                if exc.errno in (errno.ENOTTY, errno.EOPNOTSUPP, errno.EINVAL):
+                    return None
+                raise
+            return struct.unpack("<QQ", buf[24:40])
+
+        with closing(sqlite3.connect(db_path, timeout=60)) as conn:
+            conn.execute("BEGIN EXCLUSIVE")
+            try:
+                initial = allocation()
+                if initial is None:
+                    return {}
+                allocated, size = initial
+                result = {"allocated_bytes_before": allocated, "allocated_bytes_after": allocated}
+                start = ((size + 1048575) // 1048576) * 1048576
+                if allocated <= start:
+                    return result
+
+                def digest():
+                    value = hashlib.sha256()
+                    offset = 0
+                    while offset < size:
+                        block = os.pread(fd, min(1048576, size - offset), offset)
+                        if not block:
+                            raise OSError("Unexpected end of database during allocation verification")
+                        value.update(block)
+                        offset += len(block)
+                    return value.digest()
+
+                before = digest()
+                libc = ctypes.CDLL(None, use_errno=True)
+                libc.fallocate.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_longlong, ctypes.c_longlong]
+                # Azure retains allocation after truncate, and ignores a hole
+                # beyond EOF. Expose only the unused tail, punch it, restore EOF.
+                # The valid prefix stays untouched and the inode stays in place.
+                try:
+                    os.ftruncate(fd, allocated)
+                    if libc.fallocate(fd, 3, start, allocated - start) != 0:
+                        code = ctypes.get_errno()
+                        raise OSError(code, os.strerror(code))
+                finally:
+                    os.ftruncate(fd, size)
+                    os.fsync(fd)
+                if digest() != before:
+                    raise OSError("Database bytes changed during allocation trimming")
+                result["allocated_bytes_after"] = allocation()[0]
+                if result["allocated_bytes_after"] > start:
+                    raise OSError("Azure SMB still retains unused database allocation")
+                return result
+            finally:
+                conn.rollback()
+    finally:
+        os.close(fd)
 
 
 SNAPSHOT_TABLES = (
@@ -104,9 +192,18 @@ def replace_previous_snapshots(db_path: Path, run_id: str, compute_run_id: str) 
         with closing(sqlite3.connect(db_path, timeout=5)) as conn:
             conn.execute("PRAGMA temp_store=FILE")
             conn.execute("VACUUM")
+        result.update(_trim_cifs_allocation(db_path))
         result["status"] = "compacted"
-    except (OSError, sqlite3.Error) as exc:
+    except (OSError, sqlite3.Error, subprocess.SubprocessError, ValueError) as exc:
         result["warning"] = f"Old snapshots removed; disk compaction pending: {exc}"
     result["bytes_after"] = db_path.stat().st_size
-    result["bytes_reclaimed"] = max(0, result["bytes_before"] - result["bytes_after"])
+    result["bytes_reclaimed"] = max(0,
+        result.get("allocated_bytes_before", result["bytes_before"]) -
+        result.get("allocated_bytes_after", result["bytes_after"]))
     return result
+
+
+if __name__ == "__main__":
+    if len(sys.argv) != 3 or sys.argv[1] != "--trim-cifs":
+        raise SystemExit("Usage: canonical_storage.py --trim-cifs DATABASE")
+    print(json.dumps(_trim_cifs_in_process(Path(sys.argv[2]))))
