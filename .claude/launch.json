@@ -3,7 +3,7 @@
   "configurations": [
     {
       "name": "report-server",
-      "runtimeExecutable": "python",
+      "runtimeExecutable": ".venv/Scripts/python.exe",
       "runtimeArgs": ["run_server.py", "--port", "3030", "--no-sync"],
       "port": 3030
     }

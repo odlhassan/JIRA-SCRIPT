@@ -156,19 +156,54 @@
   }
 
   async function initUnifiedNav() {
-    const NAV_SECTIONS = await resolveNavSections();
+    let NAV_SECTIONS = await resolveNavSections();
+    let eprIdentity = null;
+    if (window.location.protocol !== 'file:') {
+      try {
+        const authResponse = await fetch('/api/auth/me', {cache:'no-store'});
+        const auth = await authResponse.json();
+        if (auth.enabled && !auth.authenticated) { window.location.replace('/login?next='+encodeURIComponent(location.pathname+location.search)); return; }
+        if (auth.enabled) {
+          eprIdentity = auth.user;
+          if (!eprIdentity.active || !eprIdentity.approved) {location.replace('/access-pending');return;}
+          if (eprIdentity.role !== 'admin') NAV_SECTIONS = NAV_SECTIONS.filter(section=>section.id!=='admin-settings');
+          else {
+            let admin = NAV_SECTIONS.find(section=>section.id==='admin-settings');
+            if (!admin) {admin={id:'admin-settings',mainLabel:'Admin Settings',mainIcon:'admin_panel_settings',title:'Admin Settings',items:[],categories:[]};NAV_SECTIONS.push(admin);}
+            admin.items.push({page_key:'users_access',title:'Users & access',href:'/settings/users',path:'/settings/users',icon:'manage_accounts'});
+          }
+        }
+      } catch (_error) { /* File previews and older local servers retain their navigation. Server authorization remains authoritative. */ }
+    }
     const storageKey = "unified-report-nav-collapsed";
-    const isMobile = window.matchMedia("(max-width: 959px)").matches;
+    const groupsStorageKey = "unified-report-nav-groups";
+    const mobileQuery = window.matchMedia("(max-width: 959px)");
+    const isMobile = function () { return mobileQuery.matches; };
     const currentPath = String(window.location.pathname || "").replace(/\\/g, "/").toLowerCase();
     const currentFile = (window.location.pathname.split("/").pop() || "").toLowerCase();
     ensureMaterialSymbolsLoaded();
 
+    function readStore(key) {
+      try { return localStorage.getItem(key); } catch (_err) { return null; }
+    }
+    function writeStore(key, value) {
+      try { localStorage.setItem(key, value); } catch (_err) { /* storage can be blocked; nav still works */ }
+    }
+
+    function symbol(name, className) {
+      const el = document.createElement("span");
+      el.className = (className ? className + " " : "") + "material-symbols-outlined";
+      el.setAttribute("aria-hidden", "true");
+      el.textContent = name;
+      return el;
+    }
+
     const nav = document.createElement("aside");
     nav.className = "unified-nav";
+    nav.id = "unified-nav";
     nav.setAttribute("aria-label", "Reports navigation");
 
-    const savedCollapsed = localStorage.getItem(storageKey) === "1";
-    if (!isMobile && savedCollapsed) {
+    if (!isMobile() && readStore(storageKey) === "1") {
       nav.classList.add("is-collapsed");
       document.body.classList.add("unified-nav-collapsed");
     }
@@ -183,12 +218,24 @@
     const toggle = document.createElement("button");
     toggle.type = "button";
     toggle.className = "unified-nav-toggle";
-    toggle.textContent = "\u2261";
-    toggle.setAttribute("aria-label", "Toggle navigation");
+    toggle.setAttribute("aria-controls", "unified-nav");
+    const toggleIcon = symbol("left_panel_close");
+    toggle.appendChild(toggleIcon);
 
     head.appendChild(brand);
     head.appendChild(toggle);
     nav.appendChild(head);
+
+    const searchWrap = document.createElement("label");
+    searchWrap.className = "unified-nav-search";
+    searchWrap.appendChild(symbol("search", "unified-nav-search-icon"));
+    const searchInput = document.createElement("input");
+    searchInput.type = "search";
+    searchInput.placeholder = "Find a page";
+    searchInput.setAttribute("aria-label", "Find a page in navigation");
+    searchInput.autocomplete = "off";
+    searchWrap.appendChild(searchInput);
+    nav.appendChild(searchWrap);
 
     const body = document.createElement("div");
     body.className = "unified-nav-body";
@@ -197,16 +244,22 @@
     mainNav.className = "unified-nav-main";
     mainNav.setAttribute("aria-label", "Main navigation");
 
-    const list = document.createElement("nav");
-    list.className = "unified-nav-list";
-    list.setAttribute("aria-label", "Secondary navigation");
+    const emptyState = document.createElement("p");
+    emptyState.className = "unified-nav-empty";
+    emptyState.textContent = "No pages match.";
+    emptyState.hidden = true;
 
     const reportsSection = NAV_SECTIONS.find((section) => section.id === "reports") || NAV_SECTIONS[0];
     const adminSection = NAV_SECTIONS.find((section) => section.id === "admin-settings");
-    let isAdminExpanded = false;
-    const mainButtonsBySectionId = {};
-    const expandedReportCategoryKeys = new Set();
-    const expandedAdminCategoryKeys = new Set();
+
+    let savedGroups = null;
+    try { savedGroups = JSON.parse(readStore(groupsStorageKey) || "null"); } catch (_err) { savedGroups = null; }
+    const expandedGroups = new Set(Array.isArray(savedGroups) ? savedGroups : []);
+    const groupEls = [];
+
+    function persistGroups() {
+      writeStore(groupsStorageKey, JSON.stringify(Array.from(expandedGroups)));
+    }
 
     function isItemActive(item) {
       const isActiveFile = item.file && currentFile === String(item.file || "").toLowerCase();
@@ -214,48 +267,22 @@
       return !!(isActiveFile || isActivePath);
     }
 
-    function syncSecondaryNavState() {
-      const isSecondaryOpen = Boolean(adminSection && isAdminExpanded);
-      nav.classList.toggle("has-secondary", isSecondaryOpen);
-      document.body.classList.toggle("unified-nav-secondary-open", isSecondaryOpen);
-    }
-
-    function createMainLink(item) {
+    function createLink(item) {
       const link = document.createElement("a");
       link.className = "unified-nav-main-link";
       link.href = item.href;
+      link.title = item.title;
+      link.dataset.navTitle = String(item.title || "").toLowerCase();
       if (isItemActive(item)) {
         link.classList.add("is-active");
         link.setAttribute("aria-current", "page");
       }
-      link.addEventListener("click", function () {
-        isAdminExpanded = false;
-        renderSecondaryNav();
-      });
-
-      const icon = document.createElement("span");
-      icon.className = "unified-nav-main-icon material-symbols-outlined";
-      icon.setAttribute("aria-hidden", "true");
-      icon.textContent = item.icon;
-
       const label = document.createElement("span");
       label.className = "unified-nav-main-label";
       label.textContent = item.title;
-
-      link.appendChild(icon);
+      link.appendChild(symbol(item.icon || "description", "unified-nav-main-icon"));
       link.appendChild(label);
       return link;
-    }
-
-    function createMainGroupTitle(text) {
-      const el = document.createElement("div");
-      el.className = "unified-nav-section-title";
-      el.style.margin = "10px 8px 6px";
-      el.style.fontSize = "0.75rem";
-      el.style.textTransform = "uppercase";
-      el.style.letterSpacing = ".04em";
-      el.textContent = text;
-      return el;
     }
 
     function categoryKey(prefix, group, index) {
@@ -264,233 +291,291 @@
       return prefix + ":" + String(group && group.name ? group.name : index);
     }
 
-    function ensureDefaultExpanded(groups, expandedSet, prefix) {
-      if (!Array.isArray(groups) || groups.length === 0 || expandedSet.size > 0) return;
-      expandedSet.add(categoryKey(prefix, groups[0], 0));
-    }
+    let groupSeq = 0;
+    // A group is a disclosure: header button + animated item panel. Groups nest (admin categories sit inside Admin Settings).
+    function createGroup(key, labelText, iconName, items, children, options) {
+      const opts = options || {};
+      const groupEl = document.createElement("div");
+      groupEl.className = "unified-nav-group" + (opts.nested ? " is-nested" : "") + (opts.prominent ? " is-prominent" : "");
+      groupEl.dataset.groupKey = key;
 
-    function createCategoryToggleButton(labelText, iconName, expanded, onToggle) {
+      const panelId = "unified-nav-group-" + String(++groupSeq);
       const button = document.createElement("button");
       button.type = "button";
-      button.className = "unified-nav-main-link";
-      button.style.margin = "10px 0 6px";
-      button.style.justifyContent = "space-between";
-      button.style.gap = "8px";
-
-      const labelWrap = document.createElement("span");
-      labelWrap.style.display = "inline-flex";
-      labelWrap.style.alignItems = "center";
-      labelWrap.style.gap = "8px";
-
-      const icon = document.createElement("span");
-      icon.className = "material-symbols-outlined";
-      icon.textContent = String(iconName || "folder");
-      icon.style.fontSize = "1rem";
-      icon.style.color = "inherit";
-      icon.style.opacity = "0.95";
+      button.className = "unified-nav-group-toggle";
+      button.title = labelText;
+      button.setAttribute("aria-controls", panelId);
 
       const label = document.createElement("span");
-      label.className = "unified-nav-main-label";
+      label.className = "unified-nav-group-label";
       label.textContent = labelText;
-      label.style.fontSize = "0.78rem";
-      label.style.textTransform = "uppercase";
-      label.style.letterSpacing = ".04em";
 
-      const chevron = document.createElement("span");
-      chevron.className = "material-symbols-outlined";
-      chevron.textContent = expanded ? "expand_more" : "chevron_right";
-      chevron.style.fontSize = "1rem";
-      chevron.style.color = "inherit";
-      chevron.style.opacity = "0.8";
+      const total = items.length + children.reduce((sum, child) => sum + child.count, 0);
+      const count = document.createElement("span");
+      count.className = "unified-nav-group-count";
+      count.textContent = String(total);
 
-      labelWrap.appendChild(icon);
-      labelWrap.appendChild(label);
-      button.appendChild(labelWrap);
-      button.appendChild(chevron);
-      button.addEventListener("click", onToggle);
-      return button;
+      button.appendChild(symbol(iconName || "folder", "unified-nav-group-icon"));
+      button.appendChild(label);
+      button.appendChild(count);
+      button.appendChild(symbol("expand_more", "unified-nav-group-chevron"));
+
+      const panel = document.createElement("div");
+      panel.className = "unified-nav-group-panel";
+      panel.id = panelId;
+      const inner = document.createElement("div");
+      inner.className = "unified-nav-group-items";
+      items.forEach((item) => inner.appendChild(createLink(item)));
+      children.forEach((child) => inner.appendChild(child.el));
+      panel.appendChild(inner);
+
+      groupEl.appendChild(button);
+      groupEl.appendChild(panel);
+
+      if (inner.querySelector(".is-active")) {
+        groupEl.classList.add("has-active");
+        expandedGroups.add(key);
+      }
+
+      const record = { key: key, el: groupEl, button: button, count: total };
+      groupEls.push(record);
+
+      button.addEventListener("click", function () {
+        if (nav.classList.contains("is-collapsed")) {
+          setCollapsed(false);
+          expandedGroups.add(key);
+        } else if (expandedGroups.has(key)) {
+          expandedGroups.delete(key);
+        } else {
+          expandedGroups.add(key);
+        }
+        persistGroups();
+        syncGroups();
+        if (expandedGroups.has(key)) revealAfterExpand(groupEl);
+      });
+      return record;
+    }
+
+    // Groups near the bottom (Admin Settings) would otherwise open below the fold with no visible change.
+    function revealAfterExpand(groupEl) {
+      window.setTimeout(function () {
+        const box = mainNav.getBoundingClientRect();
+        const rect = groupEl.getBoundingClientRect();
+        const overflow = rect.bottom - box.bottom;
+        if (overflow > 0) mainNav.scrollBy({ top: Math.min(overflow + 8, rect.top - box.top), behavior: "smooth" });
+      }, 240);
+    }
+
+    function syncGroups() {
+      const filtering = !!searchInput.value.trim();
+      groupEls.forEach((group) => {
+        const open = filtering ? !group.el.classList.contains("is-filtered-out") : expandedGroups.has(group.key);
+        group.el.classList.toggle("is-open", open);
+        group.button.setAttribute("aria-expanded", open ? "true" : "false");
+      });
+    }
+
+    function buildCategoryGroups(prefix, categories, nested) {
+      return (Array.isArray(categories) ? categories : [])
+        .map((group, idx) => {
+          const name = String(group.name || "").trim();
+          const items = Array.isArray(group.items) ? group.items : [];
+          if (!name || !items.length) return null;
+          return createGroup(categoryKey(prefix, group, idx), name, String(group.icon_name || "folder"), items, [], { nested: nested });
+        })
+        .filter(Boolean);
     }
 
     function renderMainNav() {
       mainNav.innerHTML = "";
-      (reportsSection.items || []).forEach((item) => {
-        mainNav.appendChild(createMainLink(item));
-      });
-      const reportCategories = Array.isArray(reportsSection.categories) ? reportsSection.categories : [];
-      ensureDefaultExpanded(reportCategories, expandedReportCategoryKeys, "reports");
-      reportCategories.forEach((group, idx) => {
-        const title = String(group.name || "").trim();
-        if (!title) return;
-        const key = categoryKey("reports", group, idx);
-        const isExpanded = expandedReportCategoryKeys.has(key);
-        const toggleBtn = createCategoryToggleButton(title, String(group.icon_name || "folder"), isExpanded, function () {
-          if (expandedReportCategoryKeys.has(key)) expandedReportCategoryKeys.delete(key);
-          else expandedReportCategoryKeys.add(key);
-          renderMainNav();
-        });
-        mainNav.appendChild(toggleBtn);
-
-        const categoryItemsWrap = document.createElement("div");
-        categoryItemsWrap.style.display = isExpanded ? "block" : "none";
-        (group.items || []).forEach((item) => {
-          categoryItemsWrap.appendChild(createMainLink(item));
-        });
-        mainNav.appendChild(categoryItemsWrap);
-      });
+      groupEls.length = 0;
+      (reportsSection.items || []).forEach((item) => mainNav.appendChild(createLink(item)));
+      const reportGroups = buildCategoryGroups("reports", reportsSection.categories, false);
+      if (!savedGroups && reportGroups.length && !reportGroups.some((g) => expandedGroups.has(g.key))) {
+        expandedGroups.add(reportGroups[0].key);
+      }
+      reportGroups.forEach((group) => mainNav.appendChild(group.el));
 
       if (adminSection) {
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = "unified-nav-main-link";
-        button.dataset.sectionId = adminSection.id;
-
-        const icon = document.createElement("span");
-        icon.className = "unified-nav-main-icon material-symbols-outlined";
-        icon.setAttribute("aria-hidden", "true");
-        icon.textContent = adminSection.mainIcon;
-
-        const label = document.createElement("span");
-        label.className = "unified-nav-main-label";
-        label.textContent = adminSection.mainLabel;
-
-        button.appendChild(icon);
-        button.appendChild(label);
-        button.addEventListener("click", function () {
-          isAdminExpanded = true;
-          renderSecondaryNav();
-        });
-        mainButtonsBySectionId[adminSection.id] = button;
-        mainNav.appendChild(button);
+        const divider = document.createElement("div");
+        divider.className = "unified-nav-divider";
+        mainNav.appendChild(divider);
+        const adminChildren = buildCategoryGroups("admin", adminSection.categories, true);
+        const adminGroup = createGroup("admin-settings", adminSection.mainLabel, adminSection.mainIcon,
+          adminSection.items || [], adminChildren, { prominent: true });
+        mainNav.appendChild(adminGroup.el);
       }
+      mainNav.appendChild(emptyState);
+      syncGroups();
     }
 
-    function createSecondaryLink(item) {
-      const link = document.createElement("a");
-      link.className = "unified-nav-link";
-      link.href = item.href;
-      if (isItemActive(item)) {
-        link.classList.add("is-active");
-        link.setAttribute("aria-current", "page");
-      }
-
-      const icon = document.createElement("span");
-      icon.className = "unified-nav-icon material-symbols-outlined";
-      icon.setAttribute("aria-hidden", "true");
-      icon.textContent = item.icon;
-
-      const label = document.createElement("span");
-      label.className = "unified-nav-label";
-      label.textContent = item.title;
-
-      link.appendChild(icon);
-      link.appendChild(label);
-      return link;
-    }
-
-    function createSecondaryCategorySection(name, iconName, items, isExpanded, onToggle) {
-      const sectionEl = document.createElement("section");
-      sectionEl.className = "unified-nav-section";
-      const sectionTitleBtn = createCategoryToggleButton(name, iconName, isExpanded, onToggle);
-      sectionTitleBtn.style.margin = "0 0 6px";
-      sectionEl.appendChild(sectionTitleBtn);
-      const itemsWrap = document.createElement("div");
-      itemsWrap.style.display = isExpanded ? "block" : "none";
-      items.forEach((item) => itemsWrap.appendChild(createSecondaryLink(item)));
-      sectionEl.appendChild(itemsWrap);
-      return sectionEl;
-    }
-
-    function renderSecondaryNav() {
-      list.innerHTML = "";
-      const adminBtn = adminSection ? mainButtonsBySectionId[adminSection.id] : null;
-      if (adminBtn) adminBtn.classList.toggle("is-active", isAdminExpanded);
-      if (!adminSection || !isAdminExpanded) {
-        list.classList.add("is-hidden");
-        syncSecondaryNavState();
-        return;
-      }
-      list.classList.remove("is-hidden");
-
-      const defaultSection = document.createElement("section");
-      defaultSection.className = "unified-nav-section";
-
-      const defaultTitle = document.createElement("h3");
-      defaultTitle.className = "unified-nav-section-title";
-      defaultTitle.textContent = adminSection.title;
-      defaultSection.appendChild(defaultTitle);
-
-      (adminSection.items || []).forEach((item) => defaultSection.appendChild(createSecondaryLink(item)));
-      list.appendChild(defaultSection);
-
-      const adminCategories = Array.isArray(adminSection.categories) ? adminSection.categories : [];
-      ensureDefaultExpanded(adminCategories, expandedAdminCategoryKeys, "admin");
-      adminCategories.forEach((group, idx) => {
-        const name = String(group.name || "").trim();
-        if (!name) return;
-        const items = Array.isArray(group.items) ? group.items : [];
-        if (!items.length) return;
-        const key = categoryKey("admin", group, idx);
-        const isExpanded = expandedAdminCategoryKeys.has(key);
-        list.appendChild(
-          createSecondaryCategorySection(
-            name,
-            String(group.icon_name || "folder"),
-            items,
-            isExpanded,
-            function () {
-              if (expandedAdminCategoryKeys.has(key)) expandedAdminCategoryKeys.delete(key);
-              else expandedAdminCategoryKeys.add(key);
-              renderSecondaryNav();
-            }
-          )
-        );
+    function applyFilter() {
+      const query = searchInput.value.trim().toLowerCase();
+      let visible = 0;
+      mainNav.querySelectorAll(".unified-nav-main-link").forEach((link) => {
+        const match = !query || link.dataset.navTitle.indexOf(query) !== -1;
+        link.hidden = !match;
+        if (match) visible += 1;
       });
-
-      syncSecondaryNavState();
+      groupEls.forEach((group) => {
+        const hasMatch = !query || !!group.el.querySelector(".unified-nav-main-link:not([hidden])");
+        group.el.classList.toggle("is-filtered-out", !hasMatch);
+      });
+      emptyState.hidden = visible > 0;
+      nav.classList.toggle("is-filtering", !!query);
+      syncGroups();
     }
+
+    searchInput.addEventListener("input", applyFilter);
+    searchInput.addEventListener("keydown", function (event) {
+      if (event.key === "Escape" && searchInput.value) {
+        event.stopPropagation();
+        searchInput.value = "";
+        applyFilter();
+      } else if (event.key === "Enter") {
+        const first = mainNav.querySelector(".unified-nav-main-link:not([hidden])");
+        if (first) window.location.href = first.href;
+      }
+    });
 
     renderMainNav();
-    renderSecondaryNav();
     body.appendChild(mainNav);
-    body.appendChild(list);
     nav.appendChild(body);
+
+    if (eprIdentity) {
+      const account = document.createElement("div");
+      account.className = "epr-nav-account";
+      const avatar = document.createElement("span");
+      avatar.className = "epr-nav-avatar";
+      avatar.textContent = (eprIdentity.display_name || "E")[0].toUpperCase();
+      if (/^https:\/\//i.test(eprIdentity.avatar_url || "")) {
+        const image = document.createElement("img");
+        image.src = eprIdentity.avatar_url;
+        image.alt = "";
+        avatar.textContent = "";
+        avatar.appendChild(image);
+      }
+      const name = document.createElement("strong");
+      name.textContent = eprIdentity.display_name || "Atlassian user";
+      const role = document.createElement("small");
+      role.textContent = eprIdentity.role === "admin" ? "Administrator" : "Member";
+      const identity = document.createElement("div");
+      identity.className = "epr-nav-identity";
+      identity.title = name.textContent;
+      identity.append(name, role);
+
+      const actions = document.createElement("div");
+      actions.className = "epr-nav-actions";
+      const mine = document.createElement("a");
+      mine.className = "epr-nav-action";
+      mine.href = "/my-availability";
+      mine.title = "My availability";
+      const mineLabel = document.createElement("span");
+      mineLabel.textContent = "My availability";
+      mine.append(symbol("event_available"), mineLabel);
+
+      const logout = document.createElement("button");
+      logout.type = "button";
+      logout.className = "epr-nav-action epr-nav-signout";
+      logout.title = "Sign out";
+      const logoutLabel = document.createElement("span");
+      logoutLabel.textContent = "Sign out";
+      logout.append(symbol("logout"), logoutLabel);
+      logout.addEventListener("click", async function () {
+        logout.disabled = true;
+        logoutLabel.textContent = "Signing out…";
+        try {
+          const response = await fetch("/api/auth/logout", { method: "POST", headers: { "Content-Type": "application/json", "X-EPR-CSRF": eprIdentity.csrf_token }, body: "{}" });
+          if (response.ok) { location.replace("/login"); return; }
+        } catch (_err) { /* falls through to the retry state below */ }
+        logout.disabled = false;
+        logoutLabel.textContent = "Sign out failed — retry";
+      });
+
+      actions.append(mine, logout);
+      account.append(avatar, identity, actions);
+      nav.appendChild(account);
+    }
 
     const mobileBtn = document.createElement("button");
     mobileBtn.type = "button";
     mobileBtn.className = "unified-nav-mobile-btn";
-    mobileBtn.textContent = "\u2630";
-    mobileBtn.setAttribute("aria-label", "Open reports navigation");
+    mobileBtn.setAttribute("aria-label", "Open navigation");
+    mobileBtn.setAttribute("aria-controls", "unified-nav");
+    mobileBtn.setAttribute("aria-expanded", "false");
+    mobileBtn.appendChild(symbol("menu"));
 
     const scrim = document.createElement("div");
     scrim.className = "unified-nav-scrim";
 
-    const closeMobile = function () {
-      nav.classList.remove("is-open");
-      scrim.classList.remove("is-open");
-    };
-
-    toggle.addEventListener("click", function () {
-      if (isMobile) {
-        closeMobile();
+    function syncToggleLabel() {
+      if (isMobile()) {
+        toggleIcon.textContent = "close";
+        toggle.setAttribute("aria-label", "Close navigation");
+        toggle.removeAttribute("aria-expanded");
         return;
       }
-      const collapsed = nav.classList.toggle("is-collapsed");
-      document.body.classList.toggle("unified-nav-collapsed", collapsed);
-      localStorage.setItem(storageKey, collapsed ? "1" : "0");
-    });
+      const collapsed = nav.classList.contains("is-collapsed");
+      toggleIcon.textContent = collapsed ? "left_panel_open" : "left_panel_close";
+      toggle.setAttribute("aria-label", collapsed ? "Expand navigation" : "Collapse navigation");
+      toggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
+    }
 
-    mobileBtn.addEventListener("click", function () {
+    function setCollapsed(collapsed) {
+      nav.classList.toggle("is-collapsed", collapsed);
+      document.body.classList.toggle("unified-nav-collapsed", collapsed);
+      writeStore(storageKey, collapsed ? "1" : "0");
+      syncToggleLabel();
+    }
+
+    function openMobile() {
       nav.classList.add("is-open");
       scrim.classList.add("is-open");
-    });
+      mobileBtn.setAttribute("aria-expanded", "true");
+      const active = mainNav.querySelector(".is-active");
+      if (active) active.scrollIntoView({ block: "center" });
+      toggle.focus();
+    }
 
+    function closeMobile() {
+      if (!nav.classList.contains("is-open")) return;
+      nav.classList.remove("is-open");
+      scrim.classList.remove("is-open");
+      mobileBtn.setAttribute("aria-expanded", "false");
+      mobileBtn.focus();
+    }
+
+    toggle.addEventListener("click", function () {
+      if (isMobile()) closeMobile();
+      else setCollapsed(!nav.classList.contains("is-collapsed"));
+    });
+    mobileBtn.addEventListener("click", openMobile);
     scrim.addEventListener("click", closeMobile);
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape" && isMobile()) closeMobile();
+    });
+    mobileQuery.addEventListener("change", function () {
+      if (isMobile()) {
+        nav.classList.remove("is-collapsed");
+        document.body.classList.remove("unified-nav-collapsed");
+      } else {
+        closeMobile();
+        if (readStore(storageKey) === "1") {
+          nav.classList.add("is-collapsed");
+          document.body.classList.add("unified-nav-collapsed");
+        }
+      }
+      syncToggleLabel();
+    });
+    syncToggleLabel();
 
     document.body.classList.add("unified-nav-enabled");
-    syncSecondaryNavState();
     document.body.appendChild(nav);
     document.body.appendChild(scrim);
     document.body.appendChild(mobileBtn);
+
+    const activeLink = mainNav.querySelector(".is-active");
+    if (activeLink && !isMobile()) activeLink.scrollIntoView({ block: "nearest" });
   }
 
   initUnifiedNav();

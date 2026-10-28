@@ -104,6 +104,64 @@ class EprAuthTests(unittest.TestCase):
         for value in ['https://evil.test','//evil.test','/%2fevil.test','/\\evil.test','/%0d%0a']:
             self.assertEqual(safe_next(value),'/')
         self.assertEqual(safe_next('/report.html?month=2026-10'),'/report.html?month=2026-10')
+        for value in ['/favicon.ico','/shared-nav.js','/epr-login.css','/fonts/x.woff2','/api/report-data','/healthz','/login?next=/x']:
+            self.assertEqual(safe_next(value),'/',value)
+        for value in ['/','/settings/capacity','/my-availability','/report_html/','/report.html#top']:
+            self.assertEqual(safe_next(value),value)
+
+    def callback(self, **next_cookie):
+        class Reply:
+            def __init__(self, body): self.body=body
+            def raise_for_status(self): pass
+            def json(self): return self.body
+        token=Reply({'access_token':'t','refresh_token':'r','expires_in':3600})
+        resources=Reply([{'id':'cloud','url':'https://octopusdtlsupport.atlassian.net','scopes':['read:jira-user','read:jira-work','write:jira-work']}])
+        myself=Reply({'accountId':OWNER_ACCOUNT_ID})
+        self.client.set_cookie('epr_jira_state','s'*64)
+        env={'JIRA_OAUTH_CLIENT_ID':'id','JIRA_OAUTH_CLIENT_SECRET':'secret','JIRA_OAUTH_REDIRECT_URI':'http://localhost/api/jira-auth/callback'}
+        with patch.dict(os.environ, env), patch('jira_oauth.requests.post',return_value=token), \
+                patch('jira_oauth.requests.get',side_effect=[resources,myself]):
+            return self.client.get('/api/jira-auth/callback?state='+'s'*64+'&code=c')
+
+    def test_background_favicon_cannot_replace_deep_link(self):
+        with self.client.get('/favicon.ico') as response:
+            self.assertEqual(response.status_code,204)
+        deep='/report.html?month=2026-10'
+        self.assertEqual(self.client.get(deep,headers={'Sec-Fetch-Dest':'document'}).location,'/login?next=%2Freport.html%3Fmonth%3D2026-10')
+        with self.client.get('/login?next=%2Freport.html%3Fmonth%3D2026-10',headers={'Sec-Fetch-Dest':'document'}):
+            pass
+        # Browsers without Sec-Fetch headers and image fetches that land on /login must both leave the deep link alone.
+        with self.client.get('/login?next=%2Ffavicon.ico'):
+            pass
+        with self.client.get('/login?next=%2Fother.html',headers={'Sec-Fetch-Dest':'image'}):
+            pass
+        self.assertEqual(self.client.get_cookie('epr_next').value,deep)
+        response=self.callback()
+        self.assertEqual(response.status_code,302)
+        self.assertEqual(response.location,deep)
+        self.assertRegex(self.client.get_cookie('epr_jira_session').value,'^[a-f0-9]{64}$')
+        self.assertIsNone(self.client.get_cookie('epr_next'))
+
+    def test_stale_asset_cookie_and_direct_login_return_home(self):
+        self.client.set_cookie('epr_next','/favicon.ico')
+        self.assertEqual(self.callback().location,'/')
+        with self.client.get('/login'):
+            pass
+        self.assertEqual(self.client.get_cookie('epr_next').value,'/')
+        self.login()
+        self.assertEqual(self.client.get('/login?next=%2Ffavicon.ico').location,'/')
+        self.assertEqual(self.client.get('/login?next=https://evil.test').location,'/')
+        self.assertEqual(self.client.get('/login?next=%2Fsettings%2Fcapacity').location,'/settings/capacity')
+
+    def test_pending_user_callback_lands_on_pending_screen(self):
+        self.client.set_cookie('epr_next','/report.html')
+        response=self.callback()
+        self.assertEqual(response.location,'/report.html')
+        session_file=self.directory/(self.client.get_cookie('epr_jira_session').value+'.json')
+        saved=json.loads(session_file.read_text(encoding='utf-8'))
+        saved['epr_identity']={'account_id':'pending-user','display_name':'Pending','avatar_url':''}
+        session_file.write_text(json.dumps(saved),encoding='utf-8')
+        self.assertEqual(self.client.get('/report.html').location,'/access-pending')
 
     def test_real_server_registration_protects_existing_routes(self):
         from report_server import create_report_server_app

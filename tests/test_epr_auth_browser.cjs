@@ -13,7 +13,7 @@ async function fixture(page,role='member',approved=true){
     if(path.startsWith('/api/'))return route.fulfill({json:{}});
     const files={'/login':'epr_login.html','/epr-login.css':'epr-login.css','/epr-login.js':'epr-login.js','/access-pending':'epr_pending.html','/settings/users':'epr_users.html','/shared-nav.js':'shared-nav.js','/shared-nav.css':'shared-nav.css'};
     const file=files[path];
-    return route.fulfill({body:file?fs.readFileSync(file,'utf8'):'<!doctype html><title>Report</title><script src="/shared-nav.js"></script>',contentType:path.endsWith('.js')?'text/javascript':path.endsWith('.css')?'text/css':'text/html'});
+    return route.fulfill({body:file?fs.readFileSync(file,'utf8'):'<!doctype html><title>Report</title><link rel="stylesheet" href="/shared-nav.css"><script src="/shared-nav.js"></script>',contentType:path.endsWith('.js')?'text/javascript':path.endsWith('.css')?'text/css':'text/html'});
   });
   return ()=>saved;
 }
@@ -55,12 +55,52 @@ test('member identity shows personal links and hides administration; logout retu
 test('admin can approve a member and access the user management menu',async({page})=>{
   const saved=await fixture(page,'admin');await page.goto('http://epr.test/settings/users');
   await expect(page.getByRole('heading',{name:'Users & access'})).toBeVisible();
-  await page.getByRole('button',{name:/Admin Settings/}).click();
+  const adminToggle=page.getByRole('button',{name:/Admin Settings/});
+  await expect(adminToggle).toHaveAttribute('aria-expanded','true');
+  await expect(page.getByRole('link',{name:/Users & access/})).toHaveAttribute('aria-current','page');
+  await adminToggle.click();
+  await expect(adminToggle).toHaveAttribute('aria-expanded','false');
+  await expect(page.getByRole('link',{name:/Users & access/})).toBeHidden();
+  await adminToggle.click();
   await expect(page.getByRole('link',{name:/Users & access/})).toBeVisible();
   await page.getByRole('checkbox',{name:'Approved for New Employee'}).check();
   await page.getByRole('button',{name:'Save access'}).click();
   await expect(page.getByRole('status')).toHaveText('Access updated.');
   expect(saved()).toEqual({role:'member',approved:true,active:true});
+});
+test('single-column nav keeps account actions on one line, filters, nests, and collapses',async({page})=>{
+  const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await fixture(page,'admin');await page.goto('http://epr.test/report.html');
+  const nav=page.locator('.unified-nav');
+  const signOut=page.getByRole('button',{name:'Sign out',exact:true});
+  const mine=page.getByRole('link',{name:'My availability'});
+  await expect(signOut).toBeVisible();
+  const [a,b]=[await mine.boundingBox(),await signOut.boundingBox()];
+  expect(Math.abs(a.y-b.y)).toBeLessThan(2);
+  expect(b.height).toBeLessThan(40);
+  const navBox=await nav.boundingBox();
+  expect(navBox.width).toBeLessThan(280);
+  await page.getByRole('button',{name:/Admin Settings/}).click();
+  expect((await nav.boundingBox()).width).toBe(navBox.width);
+  await page.getByRole('searchbox',{name:'Find a page in navigation'}).fill('sql');
+  await expect(page.getByRole('link',{name:'SQL Console'})).toBeVisible();
+  await expect(page.getByRole('link',{name:'Introduction'})).toBeHidden();
+  await page.getByRole('searchbox',{name:'Find a page in navigation'}).fill('zzzz');
+  await expect(page.getByText('No pages match.')).toBeVisible();
+  await page.getByRole('searchbox',{name:'Find a page in navigation'}).press('Escape');
+  await expect(page.getByRole('link',{name:'Introduction'})).toBeVisible();
+  await page.getByRole('button',{name:'Collapse navigation'}).click();
+  await expect(nav).toHaveClass(/is-collapsed/);
+  await expect(signOut).toBeVisible();
+  await page.getByRole('button',{name:/Admin Settings/}).click();
+  await expect(nav).not.toHaveClass(/is-collapsed/);
+  await page.setViewportSize({width:390,height:844});
+  await page.getByRole('button',{name:'Open navigation'}).click();
+  await expect(nav).toHaveClass(/is-open/);
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await page.keyboard.press('Escape');
+  await expect(nav).not.toHaveClass(/is-open/);
+  expect(errors).toEqual([]);
 });
 test('pending account reaches the approval screen',async({page})=>{
   await fixture(page,'member',false);await page.goto('http://epr.test/report.html');

@@ -22,6 +22,7 @@ MEMBER_POSTS = {
     '/api/employee-capacity-utilization/export', '/api/planned-actual-table-view/export', '/api/capacity/calculate',
 }
 MEMBER_SETTINGS = {'/settings/product-releases/calendar', '/settings/rnd-muscle-utilization/view'}
+NON_DESTINATIONS = {'/login', '/access-pending', '/healthz', '/favicon.ico'}
 ADMIN_PARTS = ('/admin/', '/sql-console', '/db-migration', '/canonical-', '/report-refresh', '/prepare-offline-html',
                '/populate-jira', '/import', '/diagnostics', '/debug-', '/publish', '/refresh', '/cancel', '/resource-records')
 
@@ -31,9 +32,19 @@ def safe_next(value):
     decoded = unquote(value)
     if not value.startswith('/') or decoded.startswith('//') or '\\' in decoded or any(ord(c)<32 for c in decoded):
         return '/'
-    if decoded.split('?')[0] in ('/login', '/access-pending'):
+    path = decoded.split('?')[0].split('#')[0]
+    if path in NON_DESTINATIONS or path.startswith(('/api/', '/fonts/', '/project-images/')):
+        return '/'
+    # Only pages are valid return targets; assets (favicon.ico, .css, .js, images) would land the user on raw bytes or 404 JSON.
+    last = path.rsplit('/', 1)[-1]
+    if '.' in last and not last.lower().endswith('.html'):
         return '/'
     return value
+
+
+def is_page_navigation():
+    """True for top-level document loads; background fetches (favicon, images, XHR) send other Sec-Fetch-Dest values."""
+    return request.headers.get('Sec-Fetch-Dest', 'document') in ('document', '')
 
 
 def member_allowed(path, method, report_files):
@@ -135,7 +146,7 @@ def register_epr_auth(app, oauth_directory: Path, report_files):
             return redirect('/login?next='+quote(safe_next(request.full_path.rstrip('?')), safe=''))
         return '<!doctype html><title>Access restricted</title><h1>Access restricted</h1><p>Your account does not have access to this page.</p><a href="/">Return to EPR</a>', code
 
-    public = {'/login', '/epr-login.css', '/epr-login.js', '/access-pending', '/healthz', '/api/auth/me', '/api/auth/logout',
+    public = {'/login', '/epr-login.css', '/epr-login.js', '/access-pending', '/healthz', '/favicon.ico', '/api/auth/me', '/api/auth/logout',
               '/api/jira-auth/login', '/api/jira-auth/callback', '/api/jira-auth/status', '/api/jira-auth/logout'}
 
     @app.before_request
@@ -173,6 +184,11 @@ def register_epr_auth(app, oauth_directory: Path, report_files):
     def epr_health():
         return jsonify(ok=True)
 
+    @app.get('/favicon.ico')
+    def epr_favicon():
+        # Browsers request this in the background on every page, including /login; it must never trigger sign-in.
+        return '', 204
+
     @app.get('/epr-login.css')
     @app.get('/epr-login.js')
     def epr_login_asset():
@@ -184,8 +200,12 @@ def register_epr_auth(app, oauth_directory: Path, report_files):
         if user and user['approved'] and user['active']:
             return redirect(safe_next(request.args.get('next')))
         response = send_file(assets / 'epr_login.html')
-        response.set_cookie('epr_next', safe_next(request.args.get('next')), httponly=True,
-                            secure=config()['REDIRECT_URI'].startswith('https://'), samesite='Lax', max_age=600)
+        requested = request.args.get('next')
+        destination = safe_next(requested)
+        # Keep an earlier deep link when this hit is background traffic or carries an asset/API target.
+        if is_page_navigation() and (requested is None or destination != '/' or requested == '/'):
+            response.set_cookie('epr_next', destination, httponly=True,
+                                secure=config()['REDIRECT_URI'].startswith('https://'), samesite='Lax', max_age=600)
         return response
 
     @app.get('/access-pending')

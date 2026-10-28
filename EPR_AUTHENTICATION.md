@@ -10,7 +10,19 @@ An Admin approves the user in **Admin Settings → Users & access**. Members rea
 
 Hassan Malik's verified Atlassian ID is the bootstrap Admin. `EPR_ADMIN_ACCOUNT_IDS` can explicitly replace that comma-separated bootstrap list; it only applies when creating a missing access record. Users must sign in once before approval. Role, Approved, and Active changes apply on the next request, including existing sessions. The server prevents disabling your own account and removing the last approved, active Admin.
 
-Navigation displays name, role, **My availability**, and **Sign out**. My availability opens that employee's calendar in the report's current month. Jira remains the author of record; another employee's calendar cannot be used to submit on their behalf.
+### Return destination after sign-in
+
+`/login?next=` stores the requested page in the short-lived `epr_next` cookie, and the OAuth callback redirects there. `safe_next()` accepts only navigable EPR pages, such as `/`, `*.html`, `/settings/...`, `/my-availability` and `/report_html/`. It rejects the following, and each falls back to `/`:
+
+- external or protocol-relative URLs, backslashes and control characters
+- `/api/...` paths
+- `/login`, `/access-pending`, `/healthz` and `/favicon.ico`
+- `/fonts/...` and `/project-images/...` paths
+- any file with an extension other than `.html`
+
+`/login` writes the cookie only on a top-level document load (`Sec-Fetch-Dest: document`, or the header missing). It also skips the write when the request carries a rejected `next`. Background requests, such as the browser's automatic favicon fetch, therefore cannot overwrite a deep link. `/favicon.ico` is public and returns 204, so it never reaches sign-in. This fixed production sign-ins that ended on `/favicon.ico` with `{"error":"Not found"}`. A stale asset value still in a cookie resolves to `/`.
+
+Navigation displays name, role, **My availability**, and **Sign out** in the sidebar footer (see `SHARED_NAVIGATION.md`). My availability opens that employee's calendar in the report's current month. Jira remains the author of record; another employee's calendar cannot be used to submit on their behalf.
 
 The light login experience uses a glass surface, liquid-gradient orb, drifting pastel nebulae, sparse stars, and an illustrative network of task/milestone/chart cards. Graphics are decorative, with no real project metrics or private data before login. Pointer movement creates subtle parallax and nearby star repulsion; clicks create soft ripples. The motion control and system reduced-motion preference pause the ambience. Canvas is capped at 30fps, 65 stars (30 on mobile), and pixel ratio 1.5; it stops when the tab is hidden. No external graphics packages, fonts, video, or image services are loaded. `epr-login.css` and `epr-login.js` are public exact-match assets served by `epr_auth.py`; other protected files stay behind the gate.
 
@@ -32,7 +44,7 @@ JSON files are atomically replaced with private permissions where supported. Kee
 
 ## Configuration and operation
 
-Authentication defaults on in Azure (`WEBSITE_SITE_NAME`) or when all three existing `JIRA_OAUTH_*` settings exist. `EPR_AUTH_ENABLED=1` enables local gate verification without secrets. An unconfigured local server otherwise retains its previous behavior; Azure has no such bypass. Public `/healthz` returns minimal liveness JSON and should be used for health probes.
+Authentication defaults on in Azure (`WEBSITE_SITE_NAME`) or when all three existing `JIRA_OAUTH_*` settings exist. `EPR_AUTH_ENABLED=1` enables local gate verification without secrets. An unconfigured local server otherwise retains its previous behavior; Azure has no such bypass. Public `/healthz` returns minimal liveness JSON and should be used for health probes. Public `/favicon.ico` returns 204.
 
 The existing production OAuth callback, client configuration, scopes, and internal distribution remain valid. Real localhost OAuth needs a separately registered matching local callback; the production HTTPS callback cannot authenticate localhost. No database migration is pending.
 
