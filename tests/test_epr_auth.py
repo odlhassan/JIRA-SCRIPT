@@ -46,6 +46,11 @@ class EprAuthTests(unittest.TestCase):
         self.assertEqual(self.client.post('/api/capacity',json={}).status_code,401)
         with self.client.get('/login') as response:
             self.assertEqual(response.status_code,200)
+        for path, content in [('/epr-login.css','text/css'),('/epr-login.js','javascript')]:
+            with self.client.get(path) as response:
+                self.assertEqual(response.status_code,200)
+                self.assertIn(content,response.content_type)
+        self.assertEqual(self.client.get('/epr-login.secret').status_code,302)
         self.assertEqual(self.client.get('/healthz').json,{'ok':True})
         self.client.set_cookie('epr_jira_session','f'*64)
         self.assertEqual(self.client.get('/api/report-data').status_code,401)

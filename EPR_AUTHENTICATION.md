@@ -12,6 +12,8 @@ Hassan Malik's verified Atlassian ID is the bootstrap Admin. `EPR_ADMIN_ACCOUNT_
 
 Navigation displays name, role, **My availability**, and **Sign out**. My availability opens that employee's calendar in the report's current month. Jira remains the author of record; another employee's calendar cannot be used to submit on their behalf.
 
+The light login experience uses a glass surface, liquid-gradient orb, drifting pastel nebulae, sparse stars, and an illustrative network of task/milestone/chart cards. Graphics are decorative, with no real project metrics or private data before login. Pointer movement creates subtle parallax and nearby star repulsion; clicks create soft ripples. The motion control and system reduced-motion preference pause the ambience. Canvas is capped at 30fps, 65 stars (30 on mobile), and pixel ratio 1.5; it stops when the tab is hidden. No external graphics packages, fonts, video, or image services are loaded. `epr-login.css` and `epr-login.js` are public exact-match assets served by `epr_auth.py`; other protected files stay behind the gate.
+
 ## Server policy
 
 `epr_auth.py` protects direct URLs and APIs, independently of menu visibility. Members have report GET/HEAD access except administrative routes. Mutations default to denied, with explicit exceptions for personal worklog review/submit, the two report exports, and capacity calculation. Settings pages and access/audit APIs require Admin. New mutations need an intentional policy update. Some existing report controls may remain visible; unauthorized requests receive 403.
@@ -43,6 +45,7 @@ Implementation spans `epr_auth.py`, `jira_oauth.py`, `jira_privacy.py`, `report_
 node node_modules/@playwright/test/cli.js test --config tests/epr-auth.playwright.config.cjs --workers=1 --reporter=line
 node node_modules/@playwright/test/cli.js test --config tests/employee-availability.playwright.config.cjs --workers=1 --reporter=line
 node --check shared-nav.js
+node --check epr-login.js
 .venv/Scripts/python.exe generate_employee_capacity_utilization_report.py
 Copy-Item -LiteralPath employee_capacity_utilization_report.html -Destination report_html/employee_capacity_utilization_report.html
 $env:EPR_AUTH_ENABLED='1'

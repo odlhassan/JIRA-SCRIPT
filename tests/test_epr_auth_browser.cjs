@@ -11,7 +11,7 @@ async function fixture(page,role='member',approved=true){
     if(path==='/api/auth/audit')return route.fulfill({json:{events:[]}});
     if(path==='/api/auth/logout')return route.fulfill({json:{ok:true}});
     if(path.startsWith('/api/'))return route.fulfill({json:{}});
-    const files={'/login':'epr_login.html','/access-pending':'epr_pending.html','/settings/users':'epr_users.html','/shared-nav.js':'shared-nav.js','/shared-nav.css':'shared-nav.css'};
+    const files={'/login':'epr_login.html','/epr-login.css':'epr-login.css','/epr-login.js':'epr-login.js','/access-pending':'epr_pending.html','/settings/users':'epr_users.html','/shared-nav.js':'shared-nav.js','/shared-nav.css':'shared-nav.css'};
     const file=files[path];
     return route.fulfill({body:file?fs.readFileSync(file,'utf8'):'<!doctype html><title>Report</title><script src="/shared-nav.js"></script>',contentType:path.endsWith('.js')?'text/javascript':path.endsWith('.css')?'text/css':'text/html'});
   });
@@ -19,12 +19,30 @@ async function fixture(page,role='member',approved=true){
 }
 test('login is clear on desktop and mobile',async({page})=>{
   await fixture(page);await page.goto('http://epr.test/login');
-  await expect(page.getByRole('heading',{name:'Sign in to continue'})).toBeVisible();
+  await expect(page.getByRole('heading',{name:'Make room for your next big thing.'})).toBeVisible();
   await expect(page.getByRole('link',{name:'Continue with Atlassian'})).toHaveAttribute('href','/api/jira-auth/login');
   await page.screenshot({path:'tmp/epr-login-desktop.png'});
   await page.setViewportSize({width:390,height:844});
   expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await expect(page.getByRole('link',{name:'Continue with Atlassian'})).toBeVisible();
+  await page.screenshot({path:'tmp/epr-login-mobile.png',fullPage:true});
+});
+test('ambience responds to pointer, pauses, and respects reduced motion',async({page})=>{
+  const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await fixture(page);await page.goto('http://epr.test/login');
+  await page.mouse.move(1300,200);
+  await expect.poll(()=>page.evaluate(()=>Number(document.documentElement.style.getPropertyValue('--mx')))).toBeGreaterThan(.1);
+  await page.getByRole('button',{name:'Pause background motion'}).click();
+  await expect(page.locator('body')).toHaveClass('motion-paused');
+  expect(await page.locator('.liquid-orb').evaluate(el=>getComputedStyle(el).animationPlayState)).toBe('paused');
+  await page.getByRole('button',{name:'Resume background motion'}).click();
+  await expect(page.locator('body')).not.toHaveClass('motion-paused');
+  await page.emulateMedia({reducedMotion:'reduce'});
+  await expect(page.getByRole('button',{name:'Resume background motion'})).toHaveAttribute('aria-pressed','true');
+  expect(await page.locator('.liquid-orb').evaluate(el=>getComputedStyle(el).animationName)).toBe('none');
+  await page.setViewportSize({width:320,height:740});
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
+  expect(errors).toEqual([]);
 });
 test('member identity shows personal links and hides administration; logout returns to login',async({page})=>{
   await fixture(page);await page.goto('http://epr.test/report.html');

@@ -135,7 +135,7 @@ def register_epr_auth(app, oauth_directory: Path, report_files):
             return redirect('/login?next='+quote(safe_next(request.full_path.rstrip('?')), safe=''))
         return '<!doctype html><title>Access restricted</title><h1>Access restricted</h1><p>Your account does not have access to this page.</p><a href="/">Return to EPR</a>', code
 
-    public = {'/login', '/access-pending', '/healthz', '/api/auth/me', '/api/auth/logout',
+    public = {'/login', '/epr-login.css', '/epr-login.js', '/access-pending', '/healthz', '/api/auth/me', '/api/auth/logout',
               '/api/jira-auth/login', '/api/jira-auth/callback', '/api/jira-auth/status', '/api/jira-auth/logout'}
 
     @app.before_request
@@ -172,6 +172,11 @@ def register_epr_auth(app, oauth_directory: Path, report_files):
     @app.get('/healthz')
     def epr_health():
         return jsonify(ok=True)
+
+    @app.get('/epr-login.css')
+    @app.get('/epr-login.js')
+    def epr_login_asset():
+        return send_file(assets / request.path.lstrip('/'))
 
     @app.get('/login')
     def epr_login():
