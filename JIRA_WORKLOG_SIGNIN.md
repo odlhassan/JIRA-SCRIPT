@@ -8,17 +8,21 @@ Employees log time from their Availability calendar and personal Atlassian sign-
 
 - A plus button appears on each in-month day on hover or keyboard focus; touch devices always show it. Empty leading/trailing cells have no plus.
 - Search matches canonical non-RLT subtask keys and titles, showing up to 100 matches and sorting the employee's assigned items first. Work on someone else's subtask is allowed if Jira grants access.
-- The selected calendar date and browser-local start time, 1–1440 whole minutes, a required description of up to 2000 characters, selected subtask, and employee are checked at review time. Future dates are rejected.
+- Time spent accepts `1d`, `8h`, `8m`, mixed units such as `1h 30m`, fractional units resolving to whole minutes such as `0.5h`, or a bare minute count such as `90`. This calendar form deliberately defines **1d = 24h**, rather than a Jira-configured working day, so `2d`, `25h`, and `1d 1m` are invalid. Units are case-insensitive and may appear once each. Zero, negative, malformed, duplicate-unit, and fractional-minute durations are rejected. API clients may still send integer `minutes`; when `duration` is supplied the server parses that string authoritatively.
+- The selected date, timezone-aware start time, positive duration no longer than 24h, required description of up to 2000 characters, subtask, and employee are checked at review time. Future dates are rejected.
 - Review makes no Jira write. Jira supplies the author identity, which must match the calendar employee. Jira must confirm a non-leave subtask and grant Browse Projects and Work on Issues.
 - Signed review tokens bind the author account ID, issue, timestamp, duration and comment, and expire after 10 minutes. The user checks a confirmation checkbox before the final button activates.
-- Submit repeats author and permissions checks. An exclusive persistent receipt claims the request before the single Jira POST. Completed request retries return the stored worklog ID; uncertain requests are blocked rather than resent. Check Jira before starting a fresh request after a timeout.
+- Review reads all pages of the selected subtask's live Jira worklogs and totals the signed-in author's entries on the selected date in the browser's supplied timezone offset. Existing seconds plus the new duration must not exceed 86,400 seconds. Other authors and other local dates do not consume this person's subtask/day allowance. The review shows existing hours and the total after the proposed entry. An unreadable Jira history blocks submission.
+- Submit repeats author, permissions, and live daily-total checks. A process-wide submit lock serializes the report's writes in the production single-worker configuration so two independently reviewed entries cannot race past the cap. Entries created directly by other Jira clients cannot participate in that lock; the app checks the latest available Jira history immediately before its POST. An exclusive persistent receipt claims the request before the single Jira POST. Completed request retries return the stored worklog ID; uncertain requests are blocked rather than resent. Check Jira before starting a fresh request after a timeout.
 - Jira receives seconds, an ADF comment, a timestamp with timezone, and a request-ID property. `adjustEstimate=leave` preserves estimates and `notifyUsers=false` avoids notification noise.
 - The returned Jira ID is stored before a separate GET verifies author and duration. The current calendar updates in browser memory. Other sessions/reloads use the canonical snapshot until the next refresh. No canonical rows are fabricated and no schema changes are needed.
 - Public review/submit requires a personal OAuth session. `EPR_WORKLOG_ALLOW_SHARED_ACCOUNT=1` is a local-only, explicitly authorized integration-test override; leave it unset in Azure. The calendar employee must still match the connected account.
 
 ## Explanations and Front-end UI Fields
 
-Hover a day, choose **+**, search/select a subtask, enter Start time (09:00 default), Time spent in minutes (30 default), and Work description. **Review worklog** checks Jira and displays author, issue link/title, start, duration, comment, and unchanged-estimate behavior. **Back** returns to the form. Check **I checked the author, subtask, date, and duration** and press **Confirm & log**. Submission disables controls and never automatically retries. Success displays the Jira worklog ID and verification result.
+Hover a day and choose **+**. A date header and account strip identify the day and Jira author. The responsive composer separates **Choose a subtask** from **Add your time**. Search/select a subtask; its full title and assignee appear below the list. Enter Time spent (`30m` default), Start time (09:00 default), and Work description. Quick buttons offer `30m`, `1h`, `4h`, and `8h`; a live preview shows normalized hours/minutes and the total minute count. Invalid durations show inline errors and cannot advance.
+
+**Review worklog** checks live Jira and displays author, issue link/title, start, normalized duration, comment, existing daily hours, proposed day total out of 24h, and unchanged-estimate behavior. **Back** preserves the selected subtask, search, duration, time, and description. Check **I checked the author, subtask, date, and duration** and press **Confirm & log**. Submission disables controls and never automatically retries. Success displays the Jira worklog ID and verification result.
 
 The account area shows **Sign in with Jira** when configured. Without an OAuth app it explains administrator setup is pending, and review stays disabled. **Sign out** removes the server session and cookie.
 
@@ -50,6 +54,8 @@ No table or column changes. Existing canonical issues feed search; review checks
 ## Examples
 
 An employee submits 30 minutes on APP-123 for October 28 at 09:00 +05:00. Jira receives 1800 seconds and the signed-in author. Replaying that reviewed request produces one worklog. A Bob calendar with Alice signed in is blocked.
+
+With 23h already logged by Alice on APP-123 on October 28, `1h` is allowed and `1h 1m` is blocked. If another entry fills the allowance after review, final submission is blocked on its fresh Jira check. `1d` is 1440 minutes and is allowed only when no time is already logged by that author on that subtask/day. `8h` is 480 minutes; `8m` is eight minutes; `1h 30m` is 90 minutes.
 
 ## Script Files
 

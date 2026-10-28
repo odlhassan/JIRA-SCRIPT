@@ -153,3 +153,41 @@ test('hover add opens searchable worklog form; review and explicit confirmation 
   await expect(page.locator('#availability-day-details')).toContainText('Worklog test-1 created');
   expect(writes).toBe(1);
 });
+test('duration input accepts units, rejects over 24h, and preserves edits when returning from review', async ({page}) => {
+  let reviews=0;
+  await page.route('**/api/jira-auth/status',route=>route.fulfill({json:{configured:true}}));
+  await page.route('**/worklog/identity',route=>route.fulfill({json:{author:'Alice',write_enabled:true,signed_in:true}}));
+  await page.route('**/worklog/review',route=>{
+    reviews++;
+    const body=route.request().postDataJSON();
+    expect(body.duration).toBe('1h 30m');expect(body.minutes).toBe(90);
+    return route.fulfill({json:{token:'token',review:{...body,author:'Alice',summary:'Build calendar',duration_label:'1h 30m',logged_minutes:60,total_minutes:150}}});
+  });
+  await page.locator('#table tbody tr').first().locator('td').nth(4).click();
+  await page.locator('[data-add-date="2026-10-05"]').click();
+  await page.locator('#worklog-search').fill('APP-1');
+  await page.locator('#worklog-issue').selectOption('APP-1');
+  await page.locator('#worklog-comment').fill('Useful work description');
+  const duration=page.locator('#worklog-duration');
+  for(const [input,preview] of [['1d','24h · 1440 minutes'],['8h','8h · 480 minutes'],['8m','8m · 8 minutes'],['0.5h','30m · 30 minutes']]) {
+    await duration.fill(input);await expect(page.locator('#worklog-duration-preview')).toHaveText(preview);
+  }
+  for(const input of ['2d','25h','1d 1m','1h 2h','garbage']) {
+    await duration.fill(input);
+    await expect(duration).toHaveAttribute('aria-invalid','true');
+    await page.getByRole('button',{name:'Review worklog',exact:true}).click();
+    expect(reviews).toBe(0);
+  }
+  await page.getByRole('button',{name:'4h',exact:true}).click();
+  await expect(duration).toHaveValue('4h');
+  await duration.fill('1h 30m');
+  await page.getByRole('button',{name:'Review worklog',exact:true}).click();
+  await expect(page.locator('.worklog-day-total')).toContainText('2.5h / 24h');
+  await expect(page.locator('.worklog-review')).toContainText('1h 30m (90 minutes)');
+  await page.getByRole('button',{name:'Back',exact:true}).click();
+  await expect(page.locator('#worklog-duration')).toHaveValue('1h 30m');
+  await expect(page.locator('#worklog-comment')).toHaveValue('Useful work description');
+  await expect(page.locator('#worklog-issue')).toHaveValue('APP-1');
+  await page.setViewportSize({width:390,height:844});
+  expect(await page.locator('#calendar-worklog-form').evaluate(el=>el.scrollWidth-el.clientWidth)).toBeLessThanOrEqual(1);
+});

@@ -41,6 +41,35 @@ body .filter-preferences:has(.color-picker[open]){position:relative;z-index:70}
 .worklog-primary:disabled{opacity:.5;cursor:default}.worklog-error{color:#ae2740}.worklog-account{color:#4e6680}.worklog-review{padding:10px 16px;background:#edf5ff;border-radius:12px}.worklog-review p{margin:8px 0;white-space:pre-wrap;overflow-wrap:anywhere}
 .worklog-confirm{display:flex;gap:8px;align-items:center;margin:16px 0}.worklog-actions{display:flex;gap:12px}.worklog-actions>button{padding:9px 14px;border-radius:8px;border:1px solid #bfd0e5;cursor:pointer}
 @media(max-width:720px){.worklog-inputs{grid-template-columns:1fr}}
+.worklog-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
+.worklog-heading-title{display:flex;align-items:center;gap:10px}.worklog-heading-title>.material-symbols-outlined{font-size:26px;background:#dcf7ed;color:#147858;padding:9px;border-radius:12px}
+.worklog-heading-title h3{margin:0 0 3px}.worklog-heading-title p{margin:0;color:#6b7d96;font-size:12px}
+.worklog-date-chip{display:flex;align-items:center;gap:6px;padding:7px 10px;border:1px solid #d8d4f4;background:#f3f0ff;color:#64519a;border-radius:9px;font-weight:700;font-size:12px;white-space:nowrap}
+.worklog-date-chip .material-symbols-outlined{font-size:17px}
+.worklog-account{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:9px 12px;margin-bottom:14px;border:1px solid #d7e9df;background:#f2fbf6;border-radius:10px;font-size:12px}
+.worklog-account>.material-symbols-outlined{font-size:18px;color:#20845d}.worklog-account a{margin-left:auto;color:#315f9c}.worklog-account button{border:0;background:transparent;color:#65788e;cursor:pointer;font:inherit;text-decoration:underline}
+.worklog-compose{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px}
+.worklog-panel{min-width:0;padding:14px;border:1px solid #dce5f1;background:#fafcff;border-radius:13px}
+.worklog-panel h4{display:flex;align-items:center;gap:8px;margin:0 0 12px;font-size:13px;color:#344e70}
+.worklog-panel h4>span{display:inline-grid;place-items:center;width:23px;height:23px;border-radius:8px;background:#e8e4fc;color:#6550b8;font-size:11px}
+.worklog-panel label{font-size:12px;font-weight:650;color:#415a79}
+.calendar-worklog-form input,.calendar-worklog-form select,.calendar-worklog-form textarea{min-width:0;outline:none;transition:border-color .12s,box-shadow .12s}
+.calendar-worklog-form input:focus,.calendar-worklog-form select:focus,.calendar-worklog-form textarea:focus{border-color:#6d91d7;box-shadow:0 0 0 3px #dbe8ff}
+.worklog-search input{background:#fff;padding:10px 11px}.worklog-search select{margin-top:5px;min-height:142px;font-size:12px;line-height:1.45;padding:5px}.worklog-search option{padding:7px 6px;border-radius:5px}
+.worklog-selection{display:grid;gap:5px;min-height:72px;padding:10px;margin-top:10px;border:1px dashed #c7d8ed;border-radius:9px;color:#56708f;font-size:12px;overflow-wrap:anywhere}
+.worklog-selection strong{color:#1769c2}.worklog-selection small{color:#7b89a0;font-size:11px}
+.worklog-inputs{grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:12px}
+#worklog-duration{font-size:18px;font-weight:750;color:#34498d;background:#fff;min-height:42px;padding:8px 10px}
+.worklog-help{margin:8px 0 0;color:#6b7e96;font-size:11px;line-height:1.5}
+.worklog-presets{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}.worklog-presets button{padding:5px 10px;border:1px solid #c8d8ef;border-radius:7px;background:#fff;color:#486b9a;cursor:pointer;font:700 11px 'Segoe UI',sans-serif}.worklog-presets button:hover{background:#e8efff;border-color:#839ed1}
+.worklog-duration-preview{margin:9px 0 12px;padding:7px 9px;border-radius:7px;background:#e9f7ef;color:#1a744f;font-size:12px;font-weight:700;min-height:29px}
+.worklog-duration-preview.worklog-error{background:#ffedf1;color:#a72744}#worklog-duration[aria-invalid=true]{border-color:#d26b82;background:#fff8fa}
+.worklog-description textarea{resize:vertical;min-height:76px;line-height:1.4;font-weight:400}
+.worklog-compose-footer{display:flex;align-items:center;justify-content:space-between;gap:14px;padding-top:3px}.worklog-compose-footer p{display:flex;align-items:center;gap:6px;margin:0;color:#68809a;font-size:11px;line-height:1.5}.worklog-compose-footer .material-symbols-outlined{font-size:18px;flex:none;color:#6c83ae}
+.worklog-compose-footer .worklog-primary{white-space:nowrap;padding:11px 17px;background:#345dc2;box-shadow:0 3px 9px #345dc21c}
+.worklog-day-total{display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding:10px;border:1px solid #c4dfd4;background:#eaf8f1;color:#1d6c4d;border-radius:9px;font-size:12px}
+#worklog-form-status:empty{display:none}
+@media(max-width:900px){.worklog-compose{grid-template-columns:1fr}.worklog-date-chip{display:none}.worklog-compose-footer{align-items:stretch;flex-direction:column}.worklog-compose-footer button{align-self:flex-end}.worklog-panel{padding:12px}}
 .availability-date{display:flex;justify-content:space-between;align-items:center;font-weight:800;color:#334c6c;font-size:14px}
 .availability-date small{font-size:9px;color:#7b6ba4;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .availability-hours{display:flex;align-items:center;gap:6px;border:0;border-radius:8px;padding:4px 7px;background:#eef1f5;color:#778397;font:700 12px 'Segoe UI',sans-serif;min-height:26px;width:100%;text-align:left}

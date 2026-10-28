@@ -1,11 +1,14 @@
 """Reviewed Jira writes with durable one-attempt receipts; no database schema changes."""
-from datetime import date, datetime
+from datetime import datetime
+from decimal import Decimal
+from functools import wraps
 import json
 import os
 from pathlib import Path
 import re
 import secrets
 import time
+import threading
 import uuid
 
 from flask import jsonify, request, has_request_context, current_app
@@ -13,6 +16,90 @@ from jira_oauth import oauth_session, register_jira_oauth, same_origin
 from itsdangerous import URLSafeTimedSerializer, BadData
 import requests
 from jira_client import BASE_URL, get_session, get_write_session
+
+_submit_lock = threading.Lock()
+
+
+def serialize_submit(function):
+    @wraps(function)
+    def serialized(*args, **kwargs):
+        with _submit_lock:
+            return function(*args, **kwargs)
+    return serialized
+
+
+def parse_duration(value):
+    """Calendar durations: one day is 24 hours, with whole-minute precision."""
+    if not isinstance(value, str) or len(value) > 100:
+        raise ValueError('Enter time such as 30m, 8h, 1d, or 1h 30m.')
+    text = value.strip().lower()
+    number = r'\d+(?:\.\d+)?'
+    if re.fullmatch(number, text):
+        minutes = Decimal(text)
+    elif re.fullmatch(r'(?:' + number + r'\s*[dhm]\s*)+', text):
+        minutes, seen = Decimal(0), set()
+        for amount, unit in re.findall(r'(' + number + r')\s*([dhm])', text):
+            if unit in seen:
+                raise ValueError('Use each unit once, for example 1h 30m.')
+            seen.add(unit)
+            minutes += Decimal(amount) * {'d': 1440, 'h': 60, 'm': 1}[unit]
+    else:
+        raise ValueError('Enter time such as 30m, 8h, 1d, or 1h 30m.')
+    if minutes <= 0 or minutes > 1440:
+        raise ValueError('Time must be greater than zero and no more than 24h (1d).')
+    if minutes != minutes.to_integral_value():
+        raise ValueError('Time must resolve to whole minutes, for example 0.5h or 30m.')
+    return int(minutes)
+
+
+def duration_label(minutes):
+    hours, remainder = divmod(minutes, 60)
+    return ' '.join(part for part in (f'{hours}h' if hours else '', f'{remainder}m' if remainder else '') if part) or '0m'
+
+
+def daily_logged_seconds(session, issue_key, account_id, started):
+    """Read all Jira pages; compare dates in the selected calendar's UTC offset."""
+    offset, seconds, seen = 0, 0, set()
+    while True:
+        response = session.get(jira_base(session) + '/rest/api/3/issue/' + issue_key + '/worklog',
+                               params={'startAt': offset, 'maxResults': 100}, timeout=(10, 25))
+        response.raise_for_status()
+        payload = response.json()
+        if not isinstance(payload, dict):
+            raise ValueError('Could not verify the day’s existing Jira hours. No worklog was created.')
+        rows, total = payload.get('worklogs'), payload.get('total')
+        if not isinstance(rows, list) or not isinstance(total, int) or total < 0:
+            raise ValueError('Could not verify the day’s existing Jira hours. No worklog was created.')
+        for row in rows:
+            if (row.get('author') or {}).get('accountId') != account_id:
+                continue
+            identifier = row.get('id')
+            if identifier and identifier in seen:
+                continue
+            if identifier:
+                seen.add(identifier)
+            logged_at = datetime.fromisoformat(str(row.get('started', '')))
+            if not logged_at.tzinfo:
+                raise ValueError('Jira returned a worklog without a timezone; daily hours could not be verified.')
+            if logged_at.astimezone(started.tzinfo).date() == started.date():
+                amount = row.get('timeSpentSeconds')
+                if isinstance(amount, bool) or not isinstance(amount, int) or amount < 0:
+                    raise ValueError('Jira returned invalid worklog hours; daily hours could not be verified.')
+                seconds += amount
+        offset += len(rows)
+        if offset >= total:
+            return seconds
+        if not rows:
+            raise ValueError('Could not read every Jira worklog page. No worklog was created.')
+
+
+def check_daily_limit(session, issue_key, account_id, started, minutes):
+    existing = daily_logged_seconds(session, issue_key, account_id, started)
+    if existing + minutes * 60 > 86400:
+        remaining = max(0, (86400-existing)//60)
+        raise ValueError(f'This would exceed 24h for you on {issue_key} on {started.date()}. '
+                         f'Already logged: {existing/3600:g}h. You can add at most {remaining} minutes.')
+    return existing
 
 
 def jira_base(session):
@@ -111,7 +198,7 @@ def register_employee_worklog_routes(app, receipt_dir: Path):
             session, identity = jira_identity()
             if str(body.get('employee', '')).strip().casefold() != identity['displayName'].strip().casefold():
                 raise ValueError('Jira logs work as ' + identity['displayName'] + '. Open that employee’s calendar to continue.')
-            minutes = body.get('minutes')
+            minutes = parse_duration(body['duration']) if 'duration' in body else body.get('minutes')
             if isinstance(minutes, bool) or not isinstance(minutes, int) or not 1 <= minutes <= 1440:
                 raise ValueError('Enter whole minutes between 1 and 1440.')
             started = datetime.fromisoformat(str(body.get('started', '')))
@@ -124,14 +211,18 @@ def register_employee_worklog_routes(app, receipt_dir: Path):
                 raise ValueError('Enter a work description of 1–2000 characters.')
             issue_key = str(body.get('issue_key', '')).strip().upper()
             fields = checked_issue(session, issue_key)
+            existing_seconds = check_daily_limit(session, issue_key, identity['accountId'], started, minutes)
             review = dict(request_id=uuid.uuid4().hex, issue_key=issue_key, summary=fields.get('summary', ''),
                           account_id=identity['accountId'], author=identity['displayName'], minutes=minutes,
+                          duration_label=duration_label(minutes), logged_minutes=existing_seconds/60,
+                          total_minutes=(existing_seconds/60)+minutes,
                           started=started.strftime('%Y-%m-%dT%H:%M:%S.000%z'), comment=comment, personal_data_retrieved_at=time.time())
             return jsonify(review=review, token=signer().dumps(review))
         except (ValueError, TypeError, requests.RequestException) as exc:
             return failure(exc)
 
     @app.post(prefix + '/submit')
+    @serialize_submit
     def worklog_submit():
         try:
             guard()
@@ -150,6 +241,7 @@ def register_employee_worklog_routes(app, receipt_dir: Path):
             if identity['accountId'] != review['account_id']:
                 raise ValueError('The connected Jira author changed. Review again.')
             fields = checked_issue(session, review['issue_key'])
+            check_daily_limit(session, review['issue_key'], identity['accountId'], datetime.fromisoformat(review['started']), review['minutes'])
             # An exclusive file is the durable claim: a timed-out/parallel request never writes twice.
             try:
                 fd = os.open(receipt, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
