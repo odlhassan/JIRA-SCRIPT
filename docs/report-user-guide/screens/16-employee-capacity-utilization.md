@@ -78,6 +78,10 @@ The server builds the canonical payload on page load. The generator inlines the 
 
 ## Local verification
 
+The calendar now uses compact 102px equal-height cells, 6px grid gaps, and reduced panel/card padding (about 20% less vertical space). Today uses the viewer's local calendar date, a blue date badge and border, a visible Today label, and `aria-current="date"`. It remains highlighted when another day is selected, and no Today marker appears when viewing another month.
+
+Red leave badges are buttons: clicking or pressing Enter opens the selected day's leave source table below the calendar. Rows show employee, date, all associated Jira leave links, planned taken hours, unplanned taken hours, and total taken hours. The existing daily leave snapshot aggregates by employee/day, so multiple associated Jira links share that daily total; hours are not duplicated per link. Selecting work or leave replaces the same detail section and updates the selected badge. These rows use the same taken-hour data as the red badge, independent of the Logged Hours scope and Include leaves toggle. No API or database schema changes are needed.
+
 Run `.venv/Scripts/python.exe generate_employee_capacity_utilization_report.py`, then `.venv/Scripts/python.exe run_server.py --no-sync --keep-cache --port 3118`. Open `http://127.0.0.1:3118/employee_capacity_utilization_report.html`. Startup promotes the root shell. Tests: `.venv/Scripts/python.exe -m unittest tests.test_employee_capacity_utilization_report` and `node node_modules/@playwright/test/cli.js test --config tests/employee-availability.playwright.config.cjs --workers=1 --reporter=line`.
 
 ## Change notes

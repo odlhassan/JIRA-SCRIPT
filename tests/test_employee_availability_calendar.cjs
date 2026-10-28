@@ -13,7 +13,7 @@ const payload = {
     { issue_id: 'APP-1', item_issue_type: 'Sub-task', worklog_author: 'Bob', worklog_date: '2026-10-05', hours_logged: 8 },
     { issue_id: 'APP-1', item_issue_type: 'Sub-task', worklog_author: 'Alice', worklog_date: '2026-09-05', hours_logged: 8 },
   ],
-  leaves: [ { assignee: 'Alice', period_day: '2026-10-05', planned_taken_hours: 2, unplanned_taken_hours: 1 }, { assignee: 'Alice', period_day: '2026-10-07', planned_taken_hours: 8 } ],
+  leaves: [ { assignee: 'Alice', period_day: '2026-10-05', planned_taken_hours: 2, unplanned_taken_hours: 1, jira_task_ids:'RLT-1, RLT-2', jira_task_links:'https://jira.example/browse/RLT-1, https://jira.example/browse/RLT-2' }, { assignee: 'Alice', period_day: '2026-10-07', planned_taken_hours: 8 } ],
 };
 test.beforeEach(async ({page}) => {
   await page.route('http://calendar.test/**', route => {
@@ -42,7 +42,7 @@ test('daily calendar keeps work, leave, grouping, and employee boundaries correc
   expect(Math.max(...sizes.map(x=>x[0]))-Math.min(...sizes.map(x=>x[0]))).toBeLessThanOrEqual(1);
   const width = await page.locator('#ecu-drawer').evaluate(el=>el.getBoundingClientRect().width);
   expect(width).toBeCloseTo(page.viewportSize().width*.8,0);
-  await mixed.getByRole('button').click();
+  await mixed.locator('[data-work-date]').click();
   await expect(page.locator('#availability-day-details tbody tr')).toHaveCount(1);
   await expect(page.locator('#availability-day-details')).toContainText('Build calendar');
   await expect(page.locator('#availability-day-details')).toContainText('16h');
@@ -78,4 +78,44 @@ test('month boundaries support leap day and six-week months', async ({page}) => 
     await expect(page.locator('.availability-day')).toHaveCount(slots);
     await page.keyboard.press('Escape');
   }
+});
+test('today follows local calendar date, stays distinct after selection, and spacing is compact', async ({page}) => {
+  // UTC is still October 27; Karachi has crossed midnight into October 28.
+  await page.clock.install({time:new Date('2026-10-27T19:30:00Z')});
+  await page.locator('#table tbody tr').first().locator('td').nth(4).click();
+  const today=page.locator('[data-calendar-date="2026-10-28"]');
+  await expect(today).toHaveAttribute('aria-current','date');
+  await expect(today).toContainText('Today');
+  await expect(page.locator('.availability-day.today')).toHaveCount(1);
+  await page.locator('[data-work-date]').first().click();
+  await expect(today).toHaveClass(/today/);
+  const dimensions=await page.locator('.availability-day').evaluateAll(nodes=>nodes.map(el=>el.getBoundingClientRect().height));
+  expect(new Set(dimensions).size).toBe(1);
+  expect(dimensions[0]).toBeLessThanOrEqual(103);
+  await page.keyboard.press('Escape');
+  await page.locator('#month').fill('2026-09');
+  await page.locator('#table tbody tr').first().locator('td').nth(4).click();
+  await expect(page.locator('[aria-current="date"]')).toHaveCount(0);
+});
+test('leave badges open daily source rows and every Jira link; work and leave switch independently', async ({page}) => {
+  await page.locator('#scope').selectOption('assigned');
+  await page.locator('#table tbody tr').first().locator('td').nth(4).click();
+  const leave=page.locator('[data-leave-date="2026-10-05"]');
+  await leave.focus();
+  await page.keyboard.press('Enter');
+  const details=page.locator('#availability-day-details');
+  await expect(details).toContainText('3h leave taken');
+  await expect(details.locator('tbody tr')).toHaveCount(1);
+  await expect(details.locator('a')).toHaveCount(2);
+  await expect(details.locator('a').nth(1)).toHaveAttribute('href','https://jira.example/browse/RLT-2');
+  await expect(details).toContainText('Planned taken');
+  await expect(details).toContainText('2h');
+  await expect(details).toContainText('1h');
+  await expect(leave).toHaveAttribute('aria-pressed','true');
+  await page.locator('[data-work-date="2026-10-05"]').click();
+  await expect(details).toContainText('Build calendar');
+  await expect(leave).toHaveAttribute('aria-pressed','false');
+  await page.locator('[data-leave-date="2026-10-07"]').click();
+  await expect(details).toContainText('8h leave taken');
+  await expect(details).not.toContainText('Build calendar');
 });

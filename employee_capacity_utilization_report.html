@@ -18,39 +18,43 @@ body .filter-preferences:has(.color-picker[open]){position:relative;z-index:70}
 .ecu-drawer.availability-modal{width:80vw!important;max-width:96vw;min-width:0;right:10vw;top:3vh;height:94vh;border:1px solid #cbdced;border-radius:24px;overflow:hidden;box-shadow:0 24px 90px #102a4660}
 .availability-modal .ecu-resize{display:none}
 .availability-modal .ecu-drawer-head{background:linear-gradient(110deg,#edf5ff,#f4efff,#eafbf4)}
-.availability-modal .ecu-drawer-body{background:#f8faff;padding:22px}
-.availability-intro{display:flex;justify-content:space-between;gap:16px;align-items:center;margin-bottom:16px}
+.availability-modal .ecu-drawer-body{background:#f8faff;padding:16px}
+.availability-intro{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px}
 .availability-intro h3{margin:0 0 5px;font-size:24px;color:#193e68}
 .availability-intro p{margin:0;color:#60738d;font-size:12px}
-.availability-stats{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 18px}
-.availability-stat{flex:1;min-width:120px;padding:12px 16px;background:#edf0ff;border:1px solid #d9dcfa;border-radius:14px;color:#494089}
+.availability-stats{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 12px}
+.availability-stat{flex:1;min-width:120px;padding:9px 12px;background:#edf0ff;border:1px solid #d9dcfa;border-radius:14px;color:#494089}
 .availability-stat strong{display:block;font-size:22px;margin-top:4px}
 .availability-stat.work{background:#e4f8ee;color:#126342;border-color:#b8e6ce}
 .availability-stat.leave{background:#fff0f2;color:#a52c46;border-color:#f3c9d1}
 .availability-calendar-scroll{overflow-x:auto;padding:3px}
-.availability-weekdays,.availability-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:10px;min-width:660px}
-.availability-weekdays{margin-bottom:9px;text-align:center;font-size:11px;font-weight:800;color:#6a7890;text-transform:uppercase;letter-spacing:.08em}
-.availability-day{height:126px;min-width:0;padding:11px;border:1px solid #dbe3ef;border-radius:15px;background:#fff;display:flex;flex-direction:column;gap:7px;box-shadow:0 3px 8px #253e6005}
+.availability-weekdays,.availability-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;min-width:660px}
+.availability-weekdays{margin-bottom:6px;text-align:center;font-size:11px;font-weight:800;color:#6a7890;text-transform:uppercase;letter-spacing:.08em}
+.availability-day{height:102px;min-width:0;padding:8px;border:1px solid #dbe3ef;border-radius:11px;background:#fff;display:flex;flex-direction:column;gap:4px;box-shadow:0 3px 8px #253e6005}
 .availability-day.outside{background:#f0f3f9;box-shadow:none}
 .availability-day.weekend{background:#f3f5fb}
+.availability-day.today{border:2px solid #3876d3;padding:7px;background:#edf5ff;box-shadow:0 0 0 1px #3876d314}
+.availability-day.today .availability-date>span{background:#2766c1;color:#fff;border-radius:6px;padding:0 5px}
+.availability-day.today .availability-date small{color:#215da9;font-weight:800}
 .availability-day.selected{outline:3px solid #6476e8;outline-offset:0}
 .availability-date{display:flex;justify-content:space-between;align-items:center;font-weight:800;color:#334c6c;font-size:14px}
 .availability-date small{font-size:9px;color:#7b6ba4;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.availability-hours{display:flex;align-items:center;gap:6px;border:0;border-radius:8px;padding:6px 8px;background:#eef1f5;color:#778397;font:700 12px 'Segoe UI',sans-serif;min-height:29px;width:100%;text-align:left}
+.availability-hours{display:flex;align-items:center;gap:6px;border:0;border-radius:8px;padding:4px 7px;background:#eef1f5;color:#778397;font:700 12px 'Segoe UI',sans-serif;min-height:26px;width:100%;text-align:left}
 button.availability-hours{cursor:pointer;background:#d9f6e6;color:#126342}
 button.availability-hours:hover{background:#bdecd4;box-shadow:0 0 0 2px #36a76d}
 button.availability-hours:focus-visible{outline:3px solid #5068db}
+button.availability-hours.leave:hover{background:#ffcbd5;box-shadow:0 0 0 2px #d95b78}
 .availability-hours.leave{background:#ffe1e6;color:#a52c46}
 .availability-hours .material-symbols-outlined{font-size:16px}
-.availability-legend{display:flex;flex-wrap:wrap;gap:14px;margin:16px 0;color:#60738d;font-size:12px}
+.availability-legend{display:flex;flex-wrap:wrap;gap:14px;margin:12px 0;color:#60738d;font-size:12px}
 .availability-legend span{display:flex;align-items:center;gap:6px}
 .availability-legend i{width:10px;height:10px;background:#a6b0bf;border-radius:50%}
 .availability-legend .work{background:#29a86d}.availability-legend .leave{background:#e2607b}
-.availability-details{margin-top:18px;padding:18px;background:#fff;border:1px solid #dce4f2;border-radius:16px;scroll-margin-top:16px}
+.availability-details{margin-top:12px;padding:14px;background:#fff;border:1px solid #dce4f2;border-radius:16px;scroll-margin-top:16px}
 .availability-details h3{margin:0 0 12px;color:#334c6c;font-size:16px}
 .availability-details .ecu-detail-table{min-width:760px}
 .availability-details .ecu-detail-table thead{z-index:1}
-@media(max-width:900px){.ecu-drawer.availability-modal{width:96vw!important;right:2vw}.availability-modal .ecu-drawer-body{padding:12px}.availability-day{height:116px}.availability-grid,.availability-weekdays{gap:7px}.availability-intro h3{font-size:21px}}
+@media(max-width:900px){.ecu-drawer.availability-modal{width:96vw!important;right:2vw}.availability-modal .ecu-drawer-body{padding:12px}.availability-day{height:102px}.availability-grid,.availability-weekdays{gap:6px}.availability-intro h3{font-size:21px}}
 </style></head><body><main class="wrap"><header class="head"><h1>Employee Capacity &amp; Utilization</h1><p>Canonical Jira worklogs, capacity, leave, and assigned estimates for every employee.</p></header><section id="report-filters" class="filters" aria-label="Report filters"><div class="filter-topline"><div><span class="filter-kicker">Report controls</span><h2>Refine the report</h2><p>Choose the reporting period, workforce scope, and how logged hours are counted.</p></div><div class="filter-topline-actions"><span class="filter-state"><span class="material-symbols-outlined" aria-hidden="true">auto_awesome</span>Updates instantly</span><button id="filter-toggle" class="filter-toggle" type="button" aria-expanded="true" aria-controls="filter-content"><span id="filter-toggle-label">Hide controls</span><span id="filter-toggle-icon" class="material-symbols-outlined" aria-hidden="true">keyboard_arrow_up</span></button></div></div><div id="filter-content" class="filter-content"><div class="filter-main"><label class="field"><span>Month</span><input id="month" type="month"></label><label class="field"><span>Capacity profile</span><select id="profile"></select></label><div class="field teams"><span>Teams</span><details class="team-picker"><summary id="team-summary">All teams except Process Team</summary><div id="teams" class="team-options"></div></details></div><label class="field scope-field"><span>Count logged hours from</span><select id="scope" aria-describedby="scope-help"><option value="any">All work logged by employee</option><option value="assigned">Work logged on their assigned subtasks</option></select><small id="scope-help"></small></label></div><div class="filter-preferences"><span class="filter-preferences-title">Display &amp; inclusion</span><div class="field"><span>Color formatting</span><details class="color-picker"><summary id="color-summary">Utilization column · 50 / 80 / 100%</summary><div class="color-menu"><h3>Utilization color rules</h3><p class="color-help">Rules apply immediately. Values above the green maximum remain unfilled.</p><label class="color-rule red"><i class="color-dot"></i><span>Red: 0 to</span><input id="util-a" type="number" min="0" max="500" step="1" value="50"><b>%</b></label><label class="color-rule orange"><i class="color-dot"></i><span>Orange: A to</span><input id="util-b" type="number" min="0" max="500" step="1" value="80"><b>%</b></label><label class="color-rule green"><i class="color-dot"></i><span>Green: B to</span><input id="util-c" type="number" min="0" max="500" step="1" value="100"><b>%</b></label><fieldset class="color-scope"><legend>Apply color to</legend><label class="scope-choice"><input type="radio" name="color-scope" value="column" checked><span>Utilization only</span></label><label class="scope-choice"><input type="radio" name="color-scope" value="row"><span>Entire row</span></label></fieldset><p id="color-error" class="color-error"></p><button id="color-reset" class="color-reset" type="button">Reset to defaults</button></div></details></div><label class="switch"><input id="resigned" type="checkbox"><span class="track"></span><span>Display resigned</span></label><label class="switch"><input id="support" type="checkbox" checked><span class="track"></span><span>Indicate support</span></label></div></div><div id="filter-summary" class="filter-summary" aria-live="polite"><span class="filter-summary-label">Active filters</span><span id="summary-month" class="filter-summary-chip"></span><span id="summary-profile" class="filter-summary-chip"></span><span id="summary-teams" class="filter-summary-chip"></span><span id="summary-scope" class="filter-summary-chip primary"></span><span id="summary-preferences" class="filter-summary-chip"></span></div></section><div id="scope-note" class="scope-note" role="status"></div><div class="meta"><span id="status" class="status">Loading canonical data…</span><span id="snapshot"></span></div><section class="table-wrap"><div id="table"><div class="empty"><span class="loading">Loading employees</span></div></div></section></main><script>
 let data={},issues=[],logs=[],leaves=[],teams=[],profiles=[],support=new Set(),resources={};
 const n=x=>Number(x||0),txt=x=>String(x||""),key=x=>txt(x).trim().toLowerCase(),esc=x=>txt(x).replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';');
@@ -81,7 +85,7 @@ exportButton.addEventListener('click',downloadExcel);
 // independent of the summary's logged-hours scope and leave inclusion switch.
 function availabilityDays(label){
  const range=days(),keys=detailNameKeys(label),itemMap=new Map(issues.map(x=>[txt(x.issue_key).toUpperCase(),x]));
- const calendar=capacityCalendar(activeProfile(),range).map(day=>({...day,work:0,leave:0,subtasks:new Map()}));
+ const calendar=capacityCalendar(activeProfile(),range).map(day=>({...day,work:0,leave:0,leaveEntries:[],subtasks:new Map()}));
  const byDate=new Map(calendar.map(day=>[day.date,day]));
  for(const row of allWorklogs){
   const day=byDate.get(txt(row.worklog_date).slice(0,10)),issueKey=txt(row.issue_id||row.issue_key).toUpperCase(),item=itemMap.get(issueKey)||{};
@@ -91,27 +95,35 @@ function availabilityDays(label){
   if(!day.subtasks.has(groupKey))day.subtasks.set(groupKey,{issueKey,title:row.item_summary||item.summary||'',author:row.worklog_author||row.issue_assignee,start:row.item_start_date||item.start_date||'—',due:row.item_due_date||item.due_date||'—',estimate:n(row.original_estimate_hours??item.original_estimate_hours),hours:0});
   day.subtasks.get(groupKey).hours+=hours;
  }
- for(const row of leaves){const day=byDate.get(txt(row.period_day).slice(0,10));if(day&&keys.has(key(row.assignee)))day.leave+=n(row.planned_taken_hours)+n(row.unplanned_taken_hours)}
+ for(const row of leaves){const day=byDate.get(txt(row.period_day).slice(0,10));if(day&&keys.has(key(row.assignee))){day.leave+=n(row.planned_taken_hours)+n(row.unplanned_taken_hours);if(n(row.planned_taken_hours)+n(row.unplanned_taken_hours)>0)day.leaveEntries.push(row)}}
  return calendar;
 }
 function availabilityHours(value){return `${Number(value.toFixed(2))}h`}
 function availabilityIcon(name){return `<span class="material-symbols-outlined" aria-hidden="true">${name}</span>`}
 function availabilityDetails(label){
+ const current=new Date(),today=[current.getFullYear(),String(current.getMonth()+1).padStart(2,'0'),String(current.getDate()).padStart(2,'0')].join('-');
  const calendar=availabilityDays(label),first=new Date(calendar[0].date+'T12:00:00'),offset=(first.getDay()+6)%7,slots=Math.ceil((offset+calendar.length)/7)*7;
  const totals=calendar.reduce((sum,day)=>({work:sum.work+day.work,leave:sum.leave+day.leave,capacity:sum.capacity+day.hours*detailNames(label).length}),{work:0,leave:0,capacity:0});
  const cards=Array.from({length:slots},(_,index)=>{
   const day=calendar[index-offset];if(!day)return '<div class="availability-day outside" aria-hidden="true"></div>';
-  return `<div class="availability-day ${day.type==='Weekend'?'weekend':''}" data-calendar-date="${day.date}"><div class="availability-date"><span>${Number(day.date.slice(-2))}</span><small>${day.type==='Workday'?'':esc(day.type)}</small></div>${day.work>0?`<button type="button" class="availability-hours" data-work-date="${day.date}" aria-label="${day.date}: ${availabilityHours(day.work)} logged; show subtasks">${availabilityIcon('task_alt')}${availabilityHours(day.work)} logged</button>`:`<span class="availability-hours">${availabilityIcon('schedule')}0h logged</span>`}${day.leave>0?`<span class="availability-hours leave">${availabilityIcon('beach_access')}${availabilityHours(day.leave)} leave</span>`:''}</div>`;
+  const isToday=day.date===today,dayLabel=[isToday?'Today':'',day.type==='Workday'?'':day.type].filter(Boolean).join(' · ');
+  return `<div class="availability-day ${day.type==='Weekend'?'weekend':''} ${isToday?'today':''}" ${isToday?'aria-current="date"':''} data-calendar-date="${day.date}"><div class="availability-date"><span>${Number(day.date.slice(-2))}</span><small>${esc(dayLabel)}</small></div>${day.work>0?`<button type="button" class="availability-hours" data-work-date="${day.date}" aria-label="${day.date}: ${availabilityHours(day.work)} logged; show subtasks">${availabilityIcon('task_alt')}${availabilityHours(day.work)} logged</button>`:`<span class="availability-hours">${availabilityIcon('schedule')}0h logged</span>`}${day.leave>0?`<button type="button" class="availability-hours leave" data-leave-date="${day.date}" aria-label="${day.date}: ${availabilityHours(day.leave)} leave; show leave entries">${availabilityIcon('beach_access')}${availabilityHours(day.leave)} leave</button>`:''}</div>`;
  }).join('');
- return {title:'Availability Details',subtitle:`${label} · ${month.value} · Daily subtask work & leave`,html:`<div class="availability-intro"><div><h3>${esc(first.toLocaleDateString(undefined,{month:'long',year:'numeric'}))}</h3><p>${esc(label)} · A little clarity for every day</p></div>${availabilityIcon('calendar_month')}</div><div class="availability-stats"><div class="availability-stat">Available capacity<strong>${availabilityHours(Math.max(0,totals.capacity-totals.leave))}</strong></div><div class="availability-stat work">Subtask hours logged<strong>${availabilityHours(totals.work)}</strong></div><div class="availability-stat leave">Leave taken<strong>${availabilityHours(totals.leave)}</strong></div></div><div class="availability-calendar-scroll"><div class="availability-weekdays">${['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(name=>`<span>${name}</span>`).join('')}</div><div class="availability-grid" role="group" aria-label="Monthly work and leave calendar">${cards}</div></div><div class="availability-legend"><span><i></i>No subtask time logged</span><span><i class="work"></i>Subtask work · click hours for details</span><span><i class="leave"></i>Leave taken</span></div><p class="color-help">All subtask time authored by this employee is shown, including work on subtasks assigned to someone else. Leave stays separate, even when work and leave occur on the same day.</p><section id="availability-day-details" class="availability-details" aria-live="polite"><h3>${availabilityIcon('touch_app')} Explore a day</h3><p class="color-help">Choose a green hours badge to see the subtasks behind it.</p></section>`};
+ return {title:'Availability Details',subtitle:`${label} · ${month.value} · Daily subtask work & leave`,html:`<div class="availability-intro"><div><h3>${esc(first.toLocaleDateString(undefined,{month:'long',year:'numeric'}))}</h3><p>${esc(label)} · A little clarity for every day</p></div>${availabilityIcon('calendar_month')}</div><div class="availability-stats"><div class="availability-stat">Available capacity<strong>${availabilityHours(Math.max(0,totals.capacity-totals.leave))}</strong></div><div class="availability-stat work">Subtask hours logged<strong>${availabilityHours(totals.work)}</strong></div><div class="availability-stat leave">Leave taken<strong>${availabilityHours(totals.leave)}</strong></div></div><div class="availability-calendar-scroll"><div class="availability-weekdays">${['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(name=>`<span>${name}</span>`).join('')}</div><div class="availability-grid" role="group" aria-label="Monthly work and leave calendar">${cards}</div></div><div class="availability-legend"><span><i></i>No subtask time logged</span><span><i class="work"></i>Subtask work · click hours for details</span><span><i class="leave"></i>Leave taken · click hours for details</span></div><p class="color-help">All subtask time authored by this employee is shown, including work on subtasks assigned to someone else. Leave stays separate, even when work and leave occur on the same day.</p><section id="availability-day-details" class="availability-details" aria-live="polite"><h3>${availabilityIcon('touch_app')} Explore a day</h3><p class="color-help">Choose green hours for subtask details or red hours for leave entries.</p></section>`};
 }
 function wireAvailabilityCalendar(label){
  const body=document.querySelector('#ecu-drawer-body'),calendar=availabilityDays(label);
- for(const button of body.querySelectorAll('[data-work-date]'))button.addEventListener('click',()=>{
-  const day=calendar.find(x=>x.date===button.dataset.workDate),target=body.querySelector('#availability-day-details');
+ for(const button of body.querySelectorAll('[data-work-date],[data-leave-date]'))button.addEventListener('click',()=>{
+  const isLeave=Boolean(button.dataset.leaveDate),day=calendar.find(x=>x.date===(button.dataset.leaveDate||button.dataset.workDate)),target=body.querySelector('#availability-day-details');
   for(const cell of body.querySelectorAll('.availability-day'))cell.classList.toggle('selected',cell.dataset.calendarDate===day.date);
-  for(const badge of body.querySelectorAll('[data-work-date]'))badge.setAttribute('aria-pressed',String(badge===button));
-  target.innerHTML=`<h3>${availabilityIcon('assignment')} ${esc(new Date(day.date+'T12:00:00').toLocaleDateString(undefined,{weekday:'long',day:'numeric',month:'long'}))} · ${availabilityHours(day.work)} logged</h3>`+detailTable(['Subtask / Jira','Title','Worklog author','Start','Due','Original estimate','Hours logged'],[...day.subtasks.values()].map(row=>[issueLink(row.issueKey),row.title,row.author,row.start,row.due,availabilityHours(row.estimate),availabilityHours(row.hours)]));
+  for(const badge of body.querySelectorAll('[data-work-date],[data-leave-date]'))badge.setAttribute('aria-pressed',String(badge===button));
+  if(isLeave){
+   const linkedItems=row=>{
+    const ids=txt(row.jira_task_ids).split(',').map(x=>x.trim()).filter(Boolean),urls=txt(row.jira_task_links).split(',').map(x=>x.trim()).filter(Boolean);
+    return htmlValue((ids.length?ids:urls).map((id,index)=>detailCell(urls[index]?externalLink(urls[index],ids[index]||'Open leave'):issueLink(id))).join('<br>'));
+   };
+   target.innerHTML=`<h3>${availabilityIcon('beach_access')} ${esc(day.date)} · ${availabilityHours(day.leave)} leave taken</h3>`+detailTable(['Employee','Date','Leave items / Jira','Planned taken','Unplanned taken','Total taken'],day.leaveEntries.map(row=>[row.assignee,row.period_day,linkedItems(row),availabilityHours(n(row.planned_taken_hours)),availabilityHours(n(row.unplanned_taken_hours)),availabilityHours(n(row.planned_taken_hours)+n(row.unplanned_taken_hours))]));
+  }else target.innerHTML=`<h3>${availabilityIcon('assignment')} ${esc(new Date(day.date+'T12:00:00').toLocaleDateString(undefined,{weekday:'long',day:'numeric',month:'long'}))} · ${availabilityHours(day.work)} logged</h3>`+detailTable(['Subtask / Jira','Title','Worklog author','Start','Due','Original estimate','Hours logged'],[...day.subtasks.values()].map(row=>[issueLink(row.issueKey),row.title,row.author,row.start,row.due,availabilityHours(row.estimate),availabilityHours(row.hours)]));
   target.scrollIntoView({behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'nearest'});
  });
 }
