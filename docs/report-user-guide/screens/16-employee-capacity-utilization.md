@@ -32,7 +32,11 @@ There is no Apply or Refresh button. Every filter change redraws the table immed
 
 Every employee and metric value, including Grand Total values, is clickable and keyboard accessible. Activating a value opens a right-side drawer containing the source records for the active month and filters. Clicking Employee Name opens that employee's hour logs. The drawer title area also shows the active Logged Hours scope. In Logged Hours, the Type column uses a blue Google person icon for Stories, a purple bolt for Epics, a green plus for Subtasks, and a red bug for Bug Subtasks. A red Google warning icon marks every other work-item type, explaining that it is excluded by the assigned-subtask scope. The drawer also lists the Jira work-item link, title, Epic link, Epic name, worklog author, assigned resource, worklog date, and hours. Booked Manhours lists the original-estimate source subtasks. Leave, calendar capacity, availability, and utilization cells each use a metric-specific table.
 
-The drawer can be widened or narrowed by dragging its left resize handle. The width persists in browser storage. It closes through its close button, the backdrop, or Escape, and returns focus to the triggering table cell.
+Availability opens **Availability Details**, a centered modal occupying 80% of desktop viewport width (96% on narrow screens), above the navigation and report. Its full-month Monday-first calendar uses equal-size cells, including empty leading/trailing cells. Grey `0h logged` means no subtask work; green hours are clickable subtask time; red hours are planned plus unplanned leave taken. Both badges appear on mixed work/leave days. Weekend and official-leave labels provide context without hiding logged work.
+
+The calendar always counts non-RLT subtask worklogs authored by the selected employee, including subtasks assigned to someone else. It is independent of the summary Logged Hours scope and Include leaves switch; it therefore need not match the summary Logged Hours value. Grand Total Availability aggregates the displayed employees. Summary cards show available capacity, subtask hours, and leave taken. Select green hours to display the day's subtasks below, grouped by issue and author, with Jira links, titles, author, Start/Due, original estimates, and summed hours. Start/Due show the date precision available in canonical data; missing dates show a dash. Original estimates appear once per grouped subtask, rather than being multiplied by worklog count.
+
+Other metric drawers can be widened or narrowed by dragging their left resize handle; that width persists in browser storage. Availability retains its calendar width. Dialogs close through their close button, backdrop, or Escape, trap keyboard focus, and return focus to the triggering table cell. Team and color dropdowns render above the sticky table header.
 
 ## Excel export
 
@@ -45,6 +49,36 @@ Download Excel exports the complete dataset for the active Month, Capacity Profi
 - `report_server.py`
 - `run_html_only.py`
 - `shared-nav.js`
+- `employee_availability_calendar.js` and `.css` — calendar model, daily drilldown, modal styling, and dropdown layering; inlined by the generator into the report so packaged reports need no additional asset requests.
+- `tests/test_employee_availability_calendar.cjs` and `tests/employee-availability.playwright.config.cjs` — focused browser regression coverage.
+
+## Business Cases
+
+Managers can inspect a person's full month before scheduling work, distinguish missing subtask logs from personal leave, and trace a day's hours back to Jira.
+
+## Examples
+
+Two Alice worklogs of 2h and 3.5h on APP-1 on October 5 show one green 5.5h badge and one detail row with 5.5h. If Alice also took 3h leave, a red 3h badge appears in the same cell. Bob's logs, stories, RLT worklogs, and September logs do not contribute to Alice's October subtask hours.
+
+## Explanations
+
+Choose a month, click an employee's Availability value, scan the colored daily badges, and click green hours to see the underlying subtasks. Leave stays visible even when no work was logged.
+
+## Table Schema
+
+This change adds no tables or columns. The read-only payload derives from `canonical_issues` (run, issue key/type, assignee, summary, hierarchy, start/due dates, original estimate), `canonical_worklogs` (run, issue, author, started date, hours), and the existing RLT daily leave snapshot (`assignee`, `period_day`, `planned_taken_hours`, `unplanned_taken_hours`). Capacity profiles, configured teams, support members, and resource resignation settings retain their existing readers and constraints.
+
+## Dependent & Impacted Files
+
+`report_server.py` continues to serve the existing live-data API and promote root report HTML. `run_html_only.py` and `run_server.py` invoke the generator. `employee_capacity_utilization_export.py` retains the existing summary/export scope semantics; the calendar does not change exported calculations. The report overview links this screen's behavior.
+
+## Data Flow
+
+The server builds the canonical payload on page load. The generator inlines the calendar JavaScript and CSS into the root report shell, which is copied/promoted to `report_html`. Availability joins authored worklogs to issue metadata, filters non-RLT subtasks by employee and month, groups them by day/issue/author, and joins daily leave taken. Selecting a green badge renders grouped source rows locally without another API call.
+
+## Local verification
+
+Run `.venv/Scripts/python.exe generate_employee_capacity_utilization_report.py`, then `.venv/Scripts/python.exe run_server.py --no-sync --keep-cache --port 3118`. Open `http://127.0.0.1:3118/employee_capacity_utilization_report.html`. Startup promotes the root shell. Tests: `.venv/Scripts/python.exe -m unittest tests.test_employee_capacity_utilization_report` and `node node_modules/@playwright/test/cli.js test --config tests/employee-availability.playwright.config.cjs --workers=1 --reporter=line`.
 
 ## Change notes
 

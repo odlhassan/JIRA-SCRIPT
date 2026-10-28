@@ -1,0 +1,41 @@
+/* Controls form a layer above the report's sticky header. */
+body .filters{z-index:20}
+.ecu-drawer-overlay{z-index:20000}
+.ecu-drawer{z-index:20001}
+body .filter-preferences:has(.color-picker[open]){position:relative;z-index:70}
+.ecu-drawer.availability-modal{width:80vw!important;max-width:96vw;min-width:0;right:10vw;top:3vh;height:94vh;border:1px solid #cbdced;border-radius:24px;overflow:hidden;box-shadow:0 24px 90px #102a4660}
+.availability-modal .ecu-resize{display:none}
+.availability-modal .ecu-drawer-head{background:linear-gradient(110deg,#edf5ff,#f4efff,#eafbf4)}
+.availability-modal .ecu-drawer-body{background:#f8faff;padding:22px}
+.availability-intro{display:flex;justify-content:space-between;gap:16px;align-items:center;margin-bottom:16px}
+.availability-intro h3{margin:0 0 5px;font-size:24px;color:#193e68}
+.availability-intro p{margin:0;color:#60738d;font-size:12px}
+.availability-stats{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 18px}
+.availability-stat{flex:1;min-width:120px;padding:12px 16px;background:#edf0ff;border:1px solid #d9dcfa;border-radius:14px;color:#494089}
+.availability-stat strong{display:block;font-size:22px;margin-top:4px}
+.availability-stat.work{background:#e4f8ee;color:#126342;border-color:#b8e6ce}
+.availability-stat.leave{background:#fff0f2;color:#a52c46;border-color:#f3c9d1}
+.availability-calendar-scroll{overflow-x:auto;padding:3px}
+.availability-weekdays,.availability-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:10px;min-width:660px}
+.availability-weekdays{margin-bottom:9px;text-align:center;font-size:11px;font-weight:800;color:#6a7890;text-transform:uppercase;letter-spacing:.08em}
+.availability-day{height:126px;min-width:0;padding:11px;border:1px solid #dbe3ef;border-radius:15px;background:#fff;display:flex;flex-direction:column;gap:7px;box-shadow:0 3px 8px #253e6005}
+.availability-day.outside{background:#f0f3f9;box-shadow:none}
+.availability-day.weekend{background:#f3f5fb}
+.availability-day.selected{outline:3px solid #6476e8;outline-offset:0}
+.availability-date{display:flex;justify-content:space-between;align-items:center;font-weight:800;color:#334c6c;font-size:14px}
+.availability-date small{font-size:9px;color:#7b6ba4;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.availability-hours{display:flex;align-items:center;gap:6px;border:0;border-radius:8px;padding:6px 8px;background:#eef1f5;color:#778397;font:700 12px 'Segoe UI',sans-serif;min-height:29px;width:100%;text-align:left}
+button.availability-hours{cursor:pointer;background:#d9f6e6;color:#126342}
+button.availability-hours:hover{background:#bdecd4;box-shadow:0 0 0 2px #36a76d}
+button.availability-hours:focus-visible{outline:3px solid #5068db}
+.availability-hours.leave{background:#ffe1e6;color:#a52c46}
+.availability-hours .material-symbols-outlined{font-size:16px}
+.availability-legend{display:flex;flex-wrap:wrap;gap:14px;margin:16px 0;color:#60738d;font-size:12px}
+.availability-legend span{display:flex;align-items:center;gap:6px}
+.availability-legend i{width:10px;height:10px;background:#a6b0bf;border-radius:50%}
+.availability-legend .work{background:#29a86d}.availability-legend .leave{background:#e2607b}
+.availability-details{margin-top:18px;padding:18px;background:#fff;border:1px solid #dce4f2;border-radius:16px;scroll-margin-top:16px}
+.availability-details h3{margin:0 0 12px;color:#334c6c;font-size:16px}
+.availability-details .ecu-detail-table{min-width:760px}
+.availability-details .ecu-detail-table thead{z-index:1}
+@media(max-width:900px){.ecu-drawer.availability-modal{width:96vw!important;right:2vw}.availability-modal .ecu-drawer-body{padding:12px}.availability-day{height:116px}.availability-grid,.availability-weekdays{gap:7px}.availability-intro h3{font-size:21px}}
