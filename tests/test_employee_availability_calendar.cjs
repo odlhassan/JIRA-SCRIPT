@@ -50,7 +50,10 @@ test('daily calendar keeps work, leave, grouping, and employee boundaries correc
   await expect(page.locator('#availability-day-details a')).toHaveAttribute('href','https://jira.example/browse/APP-1');
   await page.keyboard.press('Escape');
   await expect(page.locator('#ecu-drawer')).toHaveAttribute('aria-hidden','true');
+  await expect(page.locator('#ecu-drawer')).toHaveCSS('visibility','hidden');
+  await expect(page.locator('#ecu-drawer')).toHaveCSS('pointer-events','none');
   await expect(page.locator('#table tbody tr').first().locator('td').nth(4)).toBeFocused();
+  await expect(page.locator('#table tbody tr').first().locator('td').nth(4)).toHaveCSS('color','rgb(102, 66, 191)');
 });
 test('menus paint above sticky report header and mobile calendar retains uniform cells', async ({page}) => {
   await page.setViewportSize({width:1280,height:900});
@@ -118,4 +121,35 @@ test('leave badges open daily source rows and every Jira link; work and leave sw
   await page.locator('[data-leave-date="2026-10-07"]').click();
   await expect(details).toContainText('8h leave taken');
   await expect(details).not.toContainText('Build calendar');
+});
+test('hover add opens searchable worklog form; review and explicit confirmation precede a single write', async ({page}) => {
+  let writes=0;
+  await page.route('**/api/jira-auth/status',route=>route.fulfill({json:{configured:true}}));
+  await page.route('**/worklog/identity',route=>route.fulfill({json:{author:'Alice',write_enabled:true,signed_in:true}}));
+  await page.route('**/worklog/review',async route=>{
+    const body=route.request().postDataJSON();
+    expect(body.issue_key).toBe('APP-1');expect(body.minutes).toBe(30);
+    return route.fulfill({json:{token:'review-token',review:{...body,author:'Alice',summary:'Build calendar'}}});
+  });
+  await page.route('**/worklog/submit',route=>{
+    writes++;expect(route.request().postDataJSON()).toEqual({token:'review-token',confirmed:true});
+    return route.fulfill({json:{worklog_id:'test-1',verified:true}});
+  });
+  await page.locator('#table tbody tr').first().locator('td').nth(4).click();
+  const add=page.locator('[data-add-date="2026-10-05"]');
+  await expect(add).toHaveCSS('opacity','0');
+  await page.locator('[data-calendar-date="2026-10-05"]').hover();
+  await expect(add).toHaveCSS('opacity','1');
+  await add.click();
+  await page.locator('#worklog-search').fill('calendar');
+  await expect(page.locator('#worklog-issue option')).toHaveCount(1);
+  await page.locator('#worklog-issue').selectOption('APP-1');
+  await page.locator('#worklog-comment').fill('Calendar implementation');
+  await page.getByRole('button',{name:'Review worklog',exact:true}).click();
+  await expect(page.locator('.worklog-review')).toContainText('Alice');
+  await expect(page.locator('#worklog-submit')).toBeDisabled();expect(writes).toBe(0);
+  await page.locator('#worklog-confirm').check();
+  await page.locator('#worklog-submit').click();
+  await expect(page.locator('#availability-day-details')).toContainText('Worklog test-1 created');
+  expect(writes).toBe(1);
 });

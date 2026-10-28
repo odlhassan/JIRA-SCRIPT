@@ -1,5 +1,7 @@
 # Azure App Service Deployment
 
+Calendar worklog writes use personal Atlassian OAuth sessions. Configure `JIRA_OAUTH_CLIENT_ID`, `JIRA_OAUTH_CLIENT_SECRET`, and `JIRA_OAUTH_REDIRECT_URI=https://epreporting.azurewebsites.net/api/jira-auth/callback`; register that callback in the Atlassian app first. Session tokens and one-attempt worklog receipts live under the capacity DB parent's `worklog_requests` directory, normally `/home/data/worklog_requests`. Do not set the local test override `EPR_WORKLOG_ALLOW_SHARED_ACCOUNT` in production. See [Jira worklog sign-in setup](JIRA_WORKLOG_SIGNIN.md). No database schema migration is required.
+
 This project can run on Azure App Service for Linux as a Python 3.11 web app.
 
 ## GitHub Actions → production

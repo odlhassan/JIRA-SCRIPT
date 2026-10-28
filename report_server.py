@@ -71,6 +71,7 @@ from generate_employee_performance_report import (
 )
 from generate_employee_capacity_utilization_report import build_employee_capacity_utilization_payload
 from employee_capacity_utilization_export import build_employee_capacity_utilization_workbook
+from employee_worklog import register_employee_worklog_routes
 from generate_missed_entries_html import (
     DEFAULT_INPUT_XLSX as MISSED_ENTRIES_DEFAULT_INPUT_XLSX,
     _build_html as missed_entries_build_html,
@@ -47616,6 +47617,8 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             return jsonify({"error": str(exc)}), 400
         except Exception as exc:
             return jsonify({"error": f"Failed to load page categories: {exc}"}), 500
+
+    register_employee_worklog_routes(app, capacity_paths["db_path"].parent / "worklog_requests")
 
     @app.route("/api/employee-capacity-utilization/data", methods=["GET"])
     def employee_capacity_utilization_data_api():

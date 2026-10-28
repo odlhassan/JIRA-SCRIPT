@@ -16,6 +16,10 @@ body .filters{z-index:20}
 .ecu-drawer{z-index:20001}
 body .filter-preferences:has(.color-picker[open]){position:relative;z-index:70}
 .ecu-drawer.availability-modal{width:80vw!important;max-width:96vw;min-width:0;right:10vw;top:3vh;height:94vh;border:1px solid #cbdced;border-radius:24px;overflow:hidden;box-shadow:0 24px 90px #102a4660}
+.ecu-drawer.availability-modal{transform:none;visibility:hidden;opacity:0;pointer-events:none;transition:opacity .15s}
+.ecu-drawer.availability-modal.open{visibility:visible;opacity:1;pointer-events:auto}
+#table tbody tr>td:nth-child(5).detail-cell{color:#6642bf!important;font-weight:800;text-decoration-color:#a896dd;text-decoration-style:solid}
+#table tbody tr>td:nth-child(5).detail-cell:hover{color:#402086!important;background:#f0eaff!important}
 .availability-modal .ecu-resize{display:none}
 .availability-modal .ecu-drawer-head{background:linear-gradient(110deg,#edf5ff,#f4efff,#eafbf4)}
 .availability-modal .ecu-drawer-body{background:#f8faff;padding:16px}
@@ -37,6 +41,18 @@ body .filter-preferences:has(.color-picker[open]){position:relative;z-index:70}
 .availability-day.today .availability-date>span{background:#2766c1;color:#fff;border-radius:6px;padding:0 5px}
 .availability-day.today .availability-date small{color:#215da9;font-weight:800}
 .availability-day.selected{outline:3px solid #6476e8;outline-offset:0}
+.availability-add{opacity:0;flex:none;border:1px solid #9ebce6;background:#fff;color:#215da9;border-radius:5px;font-size:17px;line-height:18px;width:22px;height:22px;cursor:pointer;padding:0}
+.availability-day:hover .availability-add,.availability-day:focus-within .availability-add{opacity:1}
+.availability-date small{margin-left:auto;margin-right:5px}
+.availability-date{min-height:22px}
+@media(hover:none){.availability-add{opacity:1}}
+.calendar-worklog-form label,.worklog-inputs{display:grid;gap:6px}.calendar-worklog-form{display:grid;gap:12px}
+.calendar-worklog-form input,.calendar-worklog-form select,.calendar-worklog-form textarea{padding:8px;border:1px solid #b8cce5;border-radius:7px;font:inherit;width:100%;background:#fff}
+.worklog-inputs{grid-template-columns:1fr 1fr 2fr;gap:12px;align-items:start}
+.worklog-primary{padding:9px 14px;background:#1769c2;color:white;border:0;border-radius:8px;cursor:pointer;justify-self:start;font-weight:700}
+.worklog-primary:disabled{opacity:.5;cursor:default}.worklog-error{color:#ae2740}.worklog-account{color:#4e6680}.worklog-review{padding:10px 16px;background:#edf5ff;border-radius:12px}.worklog-review p{margin:8px 0;white-space:pre-wrap;overflow-wrap:anywhere}
+.worklog-confirm{display:flex;gap:8px;align-items:center;margin:16px 0}.worklog-actions{display:flex;gap:12px}.worklog-actions>button{padding:9px 14px;border-radius:8px;border:1px solid #bfd0e5;cursor:pointer}
+@media(max-width:720px){.worklog-inputs{grid-template-columns:1fr}}
 .availability-date{display:flex;justify-content:space-between;align-items:center;font-weight:800;color:#334c6c;font-size:14px}
 .availability-date small{font-size:9px;color:#7b6ba4;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .availability-hours{display:flex;align-items:center;gap:6px;border:0;border-radius:8px;padding:4px 7px;background:#eef1f5;color:#778397;font:700 12px 'Segoe UI',sans-serif;min-height:26px;width:100%;text-align:left}
@@ -107,12 +123,13 @@ function availabilityDetails(label){
  const cards=Array.from({length:slots},(_,index)=>{
   const day=calendar[index-offset];if(!day)return '<div class="availability-day outside" aria-hidden="true"></div>';
   const isToday=day.date===today,dayLabel=[isToday?'Today':'',day.type==='Workday'?'':day.type].filter(Boolean).join(' · ');
-  return `<div class="availability-day ${day.type==='Weekend'?'weekend':''} ${isToday?'today':''}" ${isToday?'aria-current="date"':''} data-calendar-date="${day.date}"><div class="availability-date"><span>${Number(day.date.slice(-2))}</span><small>${esc(dayLabel)}</small></div>${day.work>0?`<button type="button" class="availability-hours" data-work-date="${day.date}" aria-label="${day.date}: ${availabilityHours(day.work)} logged; show subtasks">${availabilityIcon('task_alt')}${availabilityHours(day.work)} logged</button>`:`<span class="availability-hours">${availabilityIcon('schedule')}0h logged</span>`}${day.leave>0?`<button type="button" class="availability-hours leave" data-leave-date="${day.date}" aria-label="${day.date}: ${availabilityHours(day.leave)} leave; show leave entries">${availabilityIcon('beach_access')}${availabilityHours(day.leave)} leave</button>`:''}</div>`;
+  return `<div class="availability-day ${day.type==='Weekend'?'weekend':''} ${isToday?'today':''}" ${isToday?'aria-current="date"':''} data-calendar-date="${day.date}"><div class="availability-date"><span>${Number(day.date.slice(-2))}</span><small>${esc(dayLabel)}</small><button type="button" class="availability-add" data-add-date="${day.date}" aria-label="Log work on ${day.date}">+</button></div>${day.work>0?`<button type="button" class="availability-hours" data-work-date="${day.date}" aria-label="${day.date}: ${availabilityHours(day.work)} logged; show subtasks">${availabilityIcon('task_alt')}${availabilityHours(day.work)} logged</button>`:`<span class="availability-hours">${availabilityIcon('schedule')}0h logged</span>`}${day.leave>0?`<button type="button" class="availability-hours leave" data-leave-date="${day.date}" aria-label="${day.date}: ${availabilityHours(day.leave)} leave; show leave entries">${availabilityIcon('beach_access')}${availabilityHours(day.leave)} leave</button>`:''}</div>`;
  }).join('');
  return {title:'Availability Details',subtitle:`${label} · ${month.value} · Daily subtask work & leave`,html:`<div class="availability-intro"><div><h3>${esc(first.toLocaleDateString(undefined,{month:'long',year:'numeric'}))}</h3><p>${esc(label)} · A little clarity for every day</p></div>${availabilityIcon('calendar_month')}</div><div class="availability-stats"><div class="availability-stat">Available capacity<strong>${availabilityHours(Math.max(0,totals.capacity-totals.leave))}</strong></div><div class="availability-stat work">Subtask hours logged<strong>${availabilityHours(totals.work)}</strong></div><div class="availability-stat leave">Leave taken<strong>${availabilityHours(totals.leave)}</strong></div></div><div class="availability-calendar-scroll"><div class="availability-weekdays">${['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(name=>`<span>${name}</span>`).join('')}</div><div class="availability-grid" role="group" aria-label="Monthly work and leave calendar">${cards}</div></div><div class="availability-legend"><span><i></i>No subtask time logged</span><span><i class="work"></i>Subtask work · click hours for details</span><span><i class="leave"></i>Leave taken · click hours for details</span></div><p class="color-help">All subtask time authored by this employee is shown, including work on subtasks assigned to someone else. Leave stays separate, even when work and leave occur on the same day.</p><section id="availability-day-details" class="availability-details" aria-live="polite"><h3>${availabilityIcon('touch_app')} Explore a day</h3><p class="color-help">Choose green hours for subtask details or red hours for leave entries.</p></section>`};
 }
 function wireAvailabilityCalendar(label){
  const body=document.querySelector('#ecu-drawer-body'),calendar=availabilityDays(label);
+ for(const button of body.querySelectorAll('[data-add-date]'))button.addEventListener('click',()=>openCalendarWorklog(label,button.dataset.addDate));
  for(const button of body.querySelectorAll('[data-work-date],[data-leave-date]'))button.addEventListener('click',()=>{
   const isLeave=Boolean(button.dataset.leaveDate),day=calendar.find(x=>x.date===(button.dataset.leaveDate||button.dataset.workDate)),target=body.querySelector('#availability-day-details');
   for(const cell of body.querySelectorAll('.availability-day'))cell.classList.toggle('selected',cell.dataset.calendarDate===day.date);
@@ -126,6 +143,50 @@ function wireAvailabilityCalendar(label){
   }else target.innerHTML=`<h3>${availabilityIcon('assignment')} ${esc(new Date(day.date+'T12:00:00').toLocaleDateString(undefined,{weekday:'long',day:'numeric',month:'long'}))} · ${availabilityHours(day.work)} logged</h3>`+detailTable(['Subtask / Jira','Title','Worklog author','Start','Due','Original estimate','Hours logged'],[...day.subtasks.values()].map(row=>[issueLink(row.issueKey),row.title,row.author,row.start,row.due,availabilityHours(row.estimate),availabilityHours(row.hours)]));
   target.scrollIntoView({behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'nearest'});
  });
+}
+
+const WORKLOG_API='/api/employee-capacity-utilization/worklog';
+async function worklogRequest(path,body){
+ const response=await fetch(WORKLOG_API+path,{method:body?'POST':'GET',headers:body?{'Content-Type':'application/json','X-EPR-Worklog':'1'}:{},body:body?JSON.stringify(body):undefined});
+ const result=await response.json();if(!response.ok||result.error)throw new Error(result.error||'Jira request failed');return result;
+}
+async function openCalendarWorklog(label,date){
+ const target=document.querySelector('#availability-day-details');
+ target.innerHTML=`<h3>＋ Log work · ${esc(date)}</h3><p>Checking Jira account…</p>`;
+ target.scrollIntoView({behavior:'smooth',block:'nearest'});
+ try{
+  const [identity,status]=await Promise.all([worklogRequest('/identity'),fetch('/api/jira-auth/status').then(r=>r.json())]);
+  const canWrite=identity.write_enabled&&key(label)===key(identity.author),subtasks=issues.filter(x=>/sub[ -]?task/i.test(txt(x.issue_type))&&!txt(x.issue_key).startsWith('RLT-'));
+  const authText=identity.signed_in?'Signed in to Jira':'Configured Jira account';
+  target.innerHTML=`<h3>＋ Log work · ${esc(date)}</h3><p class="worklog-account">${authText}: <strong>${esc(identity.author)}</strong>. ${status.configured?'<a href="/api/jira-auth/login">Sign in with Jira</a>':'<span>Personal Jira sign-in awaits administrator setup.</span>'}${identity.signed_in?' <button type="button" id="worklog-signout">Sign out</button>':''}</p>${canWrite?'':`<p class="worklog-error">Sign in with your personal Jira account. The configured account is ${esc(identity.author)}. Sign in as ${esc(label)} before logging from this calendar.</p>`}<form id="calendar-worklog-form" class="calendar-worklog-form"><label class="worklog-search">Find a subtask<input id="worklog-search" type="search" placeholder="Search Jira key or title" autocomplete="off" ${canWrite?'':'disabled'}><select id="worklog-issue" size="5" required aria-label="Choose a subtask" ${canWrite?'':'disabled'}></select></label><div class="worklog-inputs"><label>Start time<input id="worklog-start" type="time" value="09:00" required></label><label>Time spent (minutes)<input id="worklog-minutes" type="number" min="1" max="1440" step="1" value="30" required></label><label>Work description<textarea id="worklog-comment" maxlength="2000" rows="2" required placeholder="Describe the work completed"></textarea></label></div><p class="color-help">The date is ${esc(date)} in your browser’s timezone. Jira estimates stay unchanged. Nothing is written until you review and confirm.</p><button type="submit" class="worklog-primary" ${canWrite?'':'disabled'}>Review worklog</button><p id="worklog-form-status" role="status"></p></form>`;
+  const form=target.querySelector('form'),select=target.querySelector('#worklog-issue'),search=target.querySelector('#worklog-search'),message=target.querySelector('#worklog-form-status');
+  function options(){const q=key(search.value);select.innerHTML=subtasks.filter(x=>key(x.issue_key+' '+x.summary).includes(q)).sort((a,b)=>(key(b.assignee)===key(label))-(key(a.assignee)===key(label))||txt(a.issue_key).localeCompare(txt(b.issue_key))).slice(0,100).map(x=>`<option value="${esc(x.issue_key)}">${esc(x.issue_key)} · ${esc(x.summary)} (${esc(x.assignee||'Unassigned')})</option>`).join('')}
+  options();search.addEventListener('input',options);if(canWrite)search.focus();
+  target.querySelector('#worklog-signout')?.addEventListener('click',async()=>{await fetch('/api/jira-auth/logout',{method:'POST'});openCalendarWorklog(label,date)});
+  form.addEventListener('submit',async event=>{
+   event.preventDefault();const button=form.querySelector('[type=submit]');button.disabled=true;message.textContent='Checking subtask and Jira permissions…';
+   try{
+    const started=new Date(date+'T'+target.querySelector('#worklog-start').value+':00');
+    const offset=-started.getTimezoneOffset(),sign=offset>=0?'+':'-',zone=sign+String(Math.floor(Math.abs(offset)/60)).padStart(2,'0')+':'+String(Math.abs(offset)%60).padStart(2,'0');
+    const result=await worklogRequest('/review',{employee:label,issue_key:select.value,minutes:Number(target.querySelector('#worklog-minutes').value),started:date+'T'+target.querySelector('#worklog-start').value+':00'+zone,comment:target.querySelector('#worklog-comment').value}),r=result.review;
+    target.innerHTML=`<h3>Review before logging to Jira</h3><div class="worklog-review"><p><strong>Author:</strong> ${esc(r.author)}</p><p><strong>Subtask:</strong> ${detailCell(issueLink(r.issue_key))} · ${esc(r.summary)}</p><p><strong>Start:</strong> ${esc(r.started)}</p><p><strong>Duration:</strong> ${r.minutes} minutes</p><p><strong>Description:</strong> ${esc(r.comment)}</p><p>Original and remaining estimates will stay unchanged.</p></div><label class="worklog-confirm"><input id="worklog-confirm" type="checkbox"> I checked the author, subtask, date, and duration. Create this Jira worklog.</label><div class="worklog-actions"><button id="worklog-back" type="button">Back</button><button id="worklog-submit" class="worklog-primary" type="button" disabled>Confirm & log ${r.minutes} minutes</button></div><p id="worklog-save-status" role="status"></p>`;
+    const confirm=target.querySelector('#worklog-confirm'),submit=target.querySelector('#worklog-submit'),saveStatus=target.querySelector('#worklog-save-status');
+    confirm.addEventListener('change',()=>submit.disabled=!confirm.checked);
+    target.querySelector('#worklog-back').addEventListener('click',()=>openCalendarWorklog(label,date));
+    let sending=false;
+    submit.addEventListener('click',async()=>{
+     if(sending||!confirm.checked)return;sending=true;submit.disabled=true;confirm.disabled=true;target.querySelector('#worklog-back').disabled=true;saveStatus.textContent='Saving once to Jira…';
+     try{
+      const saved=await worklogRequest('/submit',{token:result.token,confirmed:true});
+      if(saved.worklog&&!allWorklogs.some(x=>x.worklog_id===saved.worklog_id))allWorklogs.push({...saved.worklog,worklog_id:saved.worklog_id});
+      logs=includeLeaves.checked?allWorklogs:allWorklogs.filter(x=>!isLeaveWorklog(x));data.worklogs=logs;render();
+      window.openEcuDrawer(label,'availability',drawerPreviousFocus);
+      const detail=document.querySelector('#availability-day-details');detail.innerHTML=`<h3>✓ Worklog ${esc(saved.worklog_id)} created</h3><p>${r.minutes} minutes logged by ${esc(r.author)} on ${detailCell(issueLink(r.issue_key))}. ${saved.verified?'Verified in Jira.':'Created; verify the entry in Jira before doing anything else.'}</p><p class="color-help">This calendar is updated. Other report sessions receive the entry after the next canonical refresh.</p>`;
+     }catch(error){saveStatus.textContent=error.message+' Do not create a fresh request until you have checked the subtask’s Jira worklog.';saveStatus.className='worklog-error'}
+    });
+   }catch(error){message.textContent=error.message;message.className='worklog-error';button.disabled=false}
+  });
+ }catch(error){target.innerHTML=`<h3>Log work</h3><p class="worklog-error">${esc(error.message)}</p><a href="/api/jira-auth/login">Sign in with Jira</a>`}
 }
 
 initDetailDrawer();new MutationObserver(wireDetailCells).observe(table,{childList:true,subtree:true});wireDetailCells();

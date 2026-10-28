@@ -68,3 +68,6 @@ report_server.py.*.bak
 report_server.py.rowid-backup
 __check_*.py
 __check_*.js
+
+# Jira worklog receipts and OAuth credentials stay server-side.
+/worklog_requests/

@@ -4,6 +4,10 @@ body .filters{z-index:20}
 .ecu-drawer{z-index:20001}
 body .filter-preferences:has(.color-picker[open]){position:relative;z-index:70}
 .ecu-drawer.availability-modal{width:80vw!important;max-width:96vw;min-width:0;right:10vw;top:3vh;height:94vh;border:1px solid #cbdced;border-radius:24px;overflow:hidden;box-shadow:0 24px 90px #102a4660}
+.ecu-drawer.availability-modal{transform:none;visibility:hidden;opacity:0;pointer-events:none;transition:opacity .15s}
+.ecu-drawer.availability-modal.open{visibility:visible;opacity:1;pointer-events:auto}
+#table tbody tr>td:nth-child(5).detail-cell{color:#6642bf!important;font-weight:800;text-decoration-color:#a896dd;text-decoration-style:solid}
+#table tbody tr>td:nth-child(5).detail-cell:hover{color:#402086!important;background:#f0eaff!important}
 .availability-modal .ecu-resize{display:none}
 .availability-modal .ecu-drawer-head{background:linear-gradient(110deg,#edf5ff,#f4efff,#eafbf4)}
 .availability-modal .ecu-drawer-body{background:#f8faff;padding:16px}
@@ -25,6 +29,18 @@ body .filter-preferences:has(.color-picker[open]){position:relative;z-index:70}
 .availability-day.today .availability-date>span{background:#2766c1;color:#fff;border-radius:6px;padding:0 5px}
 .availability-day.today .availability-date small{color:#215da9;font-weight:800}
 .availability-day.selected{outline:3px solid #6476e8;outline-offset:0}
+.availability-add{opacity:0;flex:none;border:1px solid #9ebce6;background:#fff;color:#215da9;border-radius:5px;font-size:17px;line-height:18px;width:22px;height:22px;cursor:pointer;padding:0}
+.availability-day:hover .availability-add,.availability-day:focus-within .availability-add{opacity:1}
+.availability-date small{margin-left:auto;margin-right:5px}
+.availability-date{min-height:22px}
+@media(hover:none){.availability-add{opacity:1}}
+.calendar-worklog-form label,.worklog-inputs{display:grid;gap:6px}.calendar-worklog-form{display:grid;gap:12px}
+.calendar-worklog-form input,.calendar-worklog-form select,.calendar-worklog-form textarea{padding:8px;border:1px solid #b8cce5;border-radius:7px;font:inherit;width:100%;background:#fff}
+.worklog-inputs{grid-template-columns:1fr 1fr 2fr;gap:12px;align-items:start}
+.worklog-primary{padding:9px 14px;background:#1769c2;color:white;border:0;border-radius:8px;cursor:pointer;justify-self:start;font-weight:700}
+.worklog-primary:disabled{opacity:.5;cursor:default}.worklog-error{color:#ae2740}.worklog-account{color:#4e6680}.worklog-review{padding:10px 16px;background:#edf5ff;border-radius:12px}.worklog-review p{margin:8px 0;white-space:pre-wrap;overflow-wrap:anywhere}
+.worklog-confirm{display:flex;gap:8px;align-items:center;margin:16px 0}.worklog-actions{display:flex;gap:12px}.worklog-actions>button{padding:9px 14px;border-radius:8px;border:1px solid #bfd0e5;cursor:pointer}
+@media(max-width:720px){.worklog-inputs{grid-template-columns:1fr}}
 .availability-date{display:flex;justify-content:space-between;align-items:center;font-weight:800;color:#334c6c;font-size:14px}
 .availability-date small{font-size:9px;color:#7b6ba4;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .availability-hours{display:flex;align-items:center;gap:6px;border:0;border-radius:8px;padding:4px 7px;background:#eef1f5;color:#778397;font:700 12px 'Segoe UI',sans-serif;min-height:26px;width:100%;text-align:left}

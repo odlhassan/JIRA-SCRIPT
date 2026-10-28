@@ -68,7 +68,7 @@ def build_employee_capacity_utilization_payload(db: Path) -> dict:
 def _html(payload: dict | None = None) -> str:
     data = json.dumps(payload or {}, ensure_ascii=True)
     calendar_css = Path(__file__).with_name("employee_availability_calendar.css").read_text(encoding="utf-8")
-    calendar_js = Path(__file__).with_name("employee_availability_calendar.js").read_text(encoding="utf-8")
+    calendar_js = Path(__file__).with_name("employee_availability_calendar.js").read_text(encoding="utf-8") + "\n" + Path(__file__).with_name("employee_worklog_form.js").read_text(encoding="utf-8")
     return """<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Employee Capacity &amp; Utilization</title><link rel="stylesheet" href="/shared-nav.css">
 <style>
