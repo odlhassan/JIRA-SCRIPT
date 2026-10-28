@@ -33,7 +33,15 @@ Availability values use bold purple underlined text. Closing the centered calend
 5. In Azure App Service application settings, securely set `JIRA_OAUTH_CLIENT_ID`, `JIRA_OAUTH_CLIENT_SECRET`, and `JIRA_OAUTH_REDIRECT_URI` (the callback above), then restart. Keep secrets out of source control and chat. Leave `EPR_WORKLOG_ALLOW_SHARED_ACCOUNT` unset.
 6. Open an Availability calendar, click **+**, choose **Sign in with Jira**, and grant access to the report's Jira site. The callback checks browser-bound state and site/scopes. It returns to the report; reopen the desired calendar/date.
 
-No OAuth app was registered when this feature was requested. The live consent flow is pending this configuration. References: [Atlassian 3LO](https://developer.atlassian.com/cloud/jira/platform/oauth-2-3lo-apps/) and [worklog API](https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issue-worklogs/).
+The **EPR Reporting** resource-level OAuth app was registered on 2026-10-28 (app ID `ba97f4c8-594a-42f7-b8b8-14351f427eae`). Its callback and Jira scopes are configured, and the three OAuth settings have been saved in Azure without committing credentials. Organization-only distribution requires the personal-data declaration below. References: [Atlassian 3LO](https://developer.atlassian.com/cloud/jira/platform/oauth-2-3lo-apps/) and [worklog API](https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issue-worklogs/).
+
+## Personal-data reporting
+
+Atlassian requires apps retaining account-related data to implement its reporting API before enabling sharing with a Yes personal-data declaration. The app requests `report:personal-data` alongside Jira scopes and offline access. `jira_privacy.py` starts one daemon reporter per application directory when OAuth is configured. It wakes hourly, reports app-owned OAuth-session and worklog-receipt account IDs in batches of at most 90, and resumes from a private state file after restart. Reports use the oldest retained retrieval timestamp and respect each account's `Cycle-Period` (default seven days) and HTTP 429 `Retry-After`.
+
+On `closed` or `updated`, the integration erases matching OAuth sessions and removes personal profile/comment fields from its request receipts. Worklog IDs and non-personal idempotency state remain, preventing duplicate writes. Sign-out erases the account's integration sessions and receipt profile fields; other sessions for the same account will need to sign in again. Server sessions expire after 30 days, and rejected refresh credentials trigger cleanup. This cleanup does not delete Jira worklogs or change the organization's canonical reporting database.
+
+The reporter uses an existing authorized OAuth token, refreshes it server-side when needed, and sends no credentials to logs. Persistent files remain under `/home/data/worklog_requests/oauth`. Documentation: [Atlassian user privacy guide](https://developer.atlassian.com/cloud/jira/platform/user-privacy-developer-guide/).
 
 ## Table Schema and Data Flow
 
@@ -47,10 +55,12 @@ An employee submits 30 minutes on APP-123 for October 28 at 09:00 +05:00. Jira r
 
 - `employee_worklog.py`: validation, review, confirmed write, receipts and verification.
 - `jira_oauth.py`: authorize/callback/status/logout and per-user token storage/refresh.
+- `jira_privacy.py`: periodic privacy-account reporting, cycle state, and integration data erasure.
 - `employee_worklog_form.js`: searchable form, review and final confirmation.
 - `employee_availability_calendar.js` / `.css`: plus buttons and modal styling.
 - `generate_employee_capacity_utilization_report.py`: inlines sources into the report shell.
 - `tests/test_employee_worklog.py`: backend/OAuth tests with mocked writes.
+- `tests/test_jira_privacy.py`: reporting cadence, timestamps, erasure, rate limits, and expiry.
 - `tests/test_employee_availability_calendar.cjs`: browser confirmation and single-submit checks.
 
 ## Dependent & Impacted Files

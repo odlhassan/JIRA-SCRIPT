@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import re
 import secrets
+import time
 import uuid
 
 from flask import jsonify, request, has_request_context, current_app
@@ -125,7 +126,7 @@ def register_employee_worklog_routes(app, receipt_dir: Path):
             fields = checked_issue(session, issue_key)
             review = dict(request_id=uuid.uuid4().hex, issue_key=issue_key, summary=fields.get('summary', ''),
                           account_id=identity['accountId'], author=identity['displayName'], minutes=minutes,
-                          started=started.strftime('%Y-%m-%dT%H:%M:%S.000%z'), comment=comment)
+                          started=started.strftime('%Y-%m-%dT%H:%M:%S.000%z'), comment=comment, personal_data_retrieved_at=time.time())
             return jsonify(review=review, token=signer().dumps(review))
         except (ValueError, TypeError, requests.RequestException) as exc:
             return failure(exc)

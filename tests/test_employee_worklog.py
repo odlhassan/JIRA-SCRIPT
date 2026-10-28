@@ -96,7 +96,9 @@ class EmployeeWorklogTests(unittest.TestCase):
             tokens, resources = Mock(), Mock()
             tokens.json.return_value = {'access_token': 'access-secret', 'refresh_token': 'refresh-secret', 'expires_in': 3600}
             resources.json.return_value = [{'url': BASE_URL, 'id': 'cloud123', 'scopes': ['read:jira-user', 'read:jira-work', 'write:jira-work']}]
-            with patch('jira_oauth.requests.post', return_value=tokens), patch('jira_oauth.requests.get', return_value=resources):
+            identity_response = Mock()
+            identity_response.json.return_value = self.identity
+            with patch('jira_oauth.requests.post', return_value=tokens), patch('jira_oauth.requests.get', side_effect=[resources, identity_response]):
                 response = self.client.get('/api/jira-auth/callback?code=code&state=' + state)
             self.assertEqual(response.status_code, 302)
             self.assertNotIn('access-secret', response.headers.get('Set-Cookie', ''))

@@ -44,24 +44,39 @@ def oauth_session(directory):
     path = directory / (sid + '.json')
     if not path.exists():
         raise ValueError('Your Jira sign-in expired. Sign in again.')
-    saved = json.loads(path.read_text(encoding='utf-8'))
-    if saved.get('expires_at', 0) <= time.time() + 60:
-        cfg = config()
-        response = requests.post('https://auth.atlassian.com/oauth/token', json={
-            'grant_type': 'refresh_token', 'client_id': cfg['CLIENT_ID'], 'client_secret': cfg['CLIENT_SECRET'],
-            'refresh_token': saved.get('refresh_token', '')}, timeout=(10, 25))
-        response.raise_for_status()
-        tokens = response.json()
-        saved.update(tokens)
-        saved['expires_at'] = time.time() + tokens['expires_in']
-        save_private(path, saved)
+    saved = refresh_oauth_file(path)
     session = requests.Session()
     session.headers.update({'Authorization': 'Bearer ' + saved['access_token'], 'Accept': 'application/json', 'Content-Type': 'application/json'})
     session.epr_base_url = 'https://api.atlassian.com/ex/jira/' + saved['cloud_id']
     return session
 
 
+def refresh_oauth_file(path):
+    saved = json.loads(path.read_text(encoding='utf-8'))
+    if saved.get('session_expires_at', float('inf')) <= time.time():
+        from jira_privacy import erase_oauth_account
+        erase_oauth_account(path.parent, saved.get('account_id'))
+        raise ValueError('Your Jira sign-in expired. Sign in again.')
+    if saved.get('expires_at', 0) <= time.time() + 60:
+        cfg = config()
+        response = requests.post('https://auth.atlassian.com/oauth/token', json={
+            'grant_type': 'refresh_token', 'client_id': cfg['CLIENT_ID'], 'client_secret': cfg['CLIENT_SECRET'],
+            'refresh_token': saved.get('refresh_token', '')}, timeout=(10, 25))
+        if response.status_code in (400, 401):
+            from jira_privacy import erase_oauth_account
+            erase_oauth_account(path.parent, saved.get('account_id'))
+        response.raise_for_status()
+        tokens = response.json()
+        saved.update(tokens)
+        saved['expires_at'] = time.time() + tokens['expires_in']
+        save_private(path, saved)
+    return saved
+
+
 def register_jira_oauth(app, directory: Path):
+    if all(config().values()) and not app.testing:
+        from jira_privacy import start_privacy_worker
+        start_privacy_worker(directory)
     @app.get('/api/jira-auth/status')
     def jira_auth_status():
         return jsonify(configured=all(config().values()), signed_in=bool(request.cookies.get(COOKIE)), login_url='/api/jira-auth/login')
@@ -74,7 +89,7 @@ def register_jira_oauth(app, directory: Path):
         state = secrets.token_hex(32)
         url = 'https://auth.atlassian.com/authorize?' + urlencode({
             'audience': 'api.atlassian.com', 'client_id': cfg['CLIENT_ID'],
-            'scope': 'read:jira-user read:jira-work write:jira-work offline_access',
+            'scope': 'read:jira-user read:jira-work write:jira-work report:personal-data offline_access',
             'redirect_uri': cfg['REDIRECT_URI'], 'state': state, 'response_type': 'code', 'prompt': 'consent'})
         response = redirect(url)
         response.set_cookie('epr_jira_state', state, max_age=600, httponly=True, secure=cfg['REDIRECT_URI'].startswith('https://'), samesite='Lax')
@@ -102,7 +117,11 @@ def register_jira_oauth(app, directory: Path):
                 return 'Grant access to the report’s Jira site with read and worklog permissions, then try again.', 403
             sid = secrets.token_hex(32)
             directory.mkdir(parents=True, exist_ok=True)
-            tokens.update(cloud_id=resource['id'], expires_at=time.time() + tokens['expires_in'])
+            identity_response = requests.get('https://api.atlassian.com/ex/jira/' + resource['id'] + '/rest/api/3/myself',
+                headers={'Authorization': 'Bearer ' + tokens['access_token']}, timeout=(10, 25))
+            identity_response.raise_for_status()
+            tokens.update(cloud_id=resource['id'], expires_at=time.time() + tokens['expires_in'],
+                          account_id=identity_response.json()['accountId'], personal_data_retrieved_at=time.time(), session_expires_at=time.time()+30*86400)
             save_private(directory / (sid + '.json'), tokens)
             response = redirect('/employee_capacity_utilization_report.html')
             response.set_cookie(COOKIE, sid, httponly=True, secure=cfg['REDIRECT_URI'].startswith('https://'), samesite='Lax', max_age=30*86400)
@@ -117,7 +136,13 @@ def register_jira_oauth(app, directory: Path):
             return jsonify(error='Sign out from this site.'), 403
         sid = request.cookies.get(COOKIE, '')
         if re.fullmatch('[a-f0-9]{64}', sid):
-            (directory / (sid + '.json')).unlink(missing_ok=True)
+            path = directory / (sid + '.json')
+            if path.exists():
+                from jira_privacy import erase_oauth_account
+                saved = json.loads(path.read_text(encoding='utf-8'))
+                if saved.get('account_id'):
+                    erase_oauth_account(directory, saved['account_id'])
+                path.unlink(missing_ok=True)
         response = jsonify(ok=True)
         response.delete_cookie(COOKIE)
         return response

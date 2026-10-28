@@ -2,6 +2,8 @@
 
 Calendar worklog writes use personal Atlassian OAuth sessions. Configure `JIRA_OAUTH_CLIENT_ID`, `JIRA_OAUTH_CLIENT_SECRET`, and `JIRA_OAUTH_REDIRECT_URI=https://epreporting.azurewebsites.net/api/jira-auth/callback`; register that callback in the Atlassian app first. Session tokens and one-attempt worklog receipts live under the capacity DB parent's `worklog_requests` directory, normally `/home/data/worklog_requests`. Do not set the local test override `EPR_WORKLOG_ALLOW_SHARED_ACCOUNT` in production. See [Jira worklog sign-in setup](JIRA_WORKLOG_SIGNIN.md). No database schema migration is required.
 
+The EPR Reporting OAuth app and Azure credentials were configured on 2026-10-28. With OAuth configured, `jira_privacy.py` starts an hourly background reporting pass in the existing single Gunicorn worker. It follows Atlassian's account reporting cycle and rate limits, persists reporting state under `/home/data/worklog_requests/oauth`, and erases integration-owned profile references when instructed. Keep that directory private and persistent; no additional scheduler, schema migration, or package dependency is needed.
+
 This project can run on Azure App Service for Linux as a Python 3.11 web app.
 
 ## GitHub Actions → production
