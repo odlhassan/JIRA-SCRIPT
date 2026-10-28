@@ -70,7 +70,7 @@ This change adds no tables or columns. The read-only payload derives from `canon
 
 ## Dependent & Impacted Files
 
-`report_server.py` continues to serve the existing live-data API and promote root report HTML. `run_html_only.py` and `run_server.py` invoke the generator. `employee_capacity_utilization_export.py` retains the existing summary/export scope semantics; the calendar does not change exported calculations. The report overview links this screen's behavior.
+`report_server.py` continues to serve the existing live-data API and promote root report HTML. `run_html_only.py` and `run_server.py` invoke the generator. `employee_capacity_utilization_export.py` retains the existing summary/export scope semantics; the calendar does not change exported calculations. The report overview links this screen's behavior. [My Day](17-my-day.md) reuses the same worklog review/submit endpoints for its Quick log and the same capacity-profile rules for expected hours. `usage_analytics.py` records successful worklog submits from this report's calendar.
 
 ## Data Flow
 

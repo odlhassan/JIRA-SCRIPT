@@ -15,6 +15,8 @@
 - **Collapse rail (desktop ≥960px).** The toggle switches between 264px and a 68px icon rail. The choice is stored in `localStorage["unified-report-nav-collapsed"]`. In the rail, clicking a group icon expands the sidebar and opens that group. Labels appear as native tooltips.
 - **Mobile (<960px).** The sidebar is a drawer (`min(300px, 86vw)`) opened by the floating menu button. It closes with the × button, a click on the scrim, or Escape. Focus returns to the menu button.
 - **Account footer.** When EPR auth is enabled, the bottom of the sidebar shows the avatar, name and role, plus two buttons on one row: **My availability** and **Sign out**. Sign out posts `/api/auth/logout` with `X-EPR-CSRF`. While the request runs, the button reads "Signing out…" and is disabled. On failure it reads "Sign out failed — retry". The footer stays visible in the rail as icon buttons.
+- **My Day pin.** A **My Day** link (`page_key: my_day`, icon `wb_sunny`, class `is-pinned`) is always rendered first, above the report items, whatever the Page Categories layout says. Duplicate catalog entries with the same key are skipped. When active it uses the warm yellow `#ffc23d` highlight instead of the usual accent.
+- **Usage Analytics.** If an Admin Settings section exists, a **Usage Analytics** item (`/settings/usage-analytics`, icon `insights`) is appended once.
 - **Role filtering.** Members do not get the Admin Settings group. Admins also get **Users & access**. The server still enforces access, so the menu is only a convenience.
 - If `localStorage` is blocked, the menu still works without saved state.
 - Icons have a fixed 1em box, so labels do not wrap while the icon font loads.
@@ -44,6 +46,7 @@ The sidebar reads like a file tree. Top-level reports come first, then categorie
 | Page link (`.unified-nav-main-link`) | link | — | Navigates to the page. The active page has `aria-current="page"`. |
 | Group header (`.unified-nav-group-toggle`) | button with `aria-expanded` | see Business Logic | Opens or closes the group. The badge shows its page count. |
 | Nested group (`.unified-nav-group.is-nested`) | group | closed | An admin category inside Admin Settings. |
+| My Day (`.unified-nav-main-link.is-pinned`) | link | always first | Opens `/my_day.html`, the personal home page. |
 | My availability (`.epr-nav-action`) | link | — | Opens `/my-availability`. |
 | Sign out (`.epr-nav-signout`) | button | — | Ends the EPR session and goes to `/login`. |
 | Mobile menu (`.unified-nav-mobile-btn`) | button | hidden on desktop | Opens the drawer. |
@@ -60,6 +63,7 @@ The sidebar reads like a file tree. Top-level reports come first, then categorie
 
 - Every report and settings HTML page that loads `/shared-nav.js` and `/shared-nav.css`. These include the root report sources, the generator templates and the inline settings pages in `report_server.py`.
 - The Page Categories API and settings screen (`/api/page-categories`, `/settings/page-categories`) supply the categories and titles.
+- `my_day.html` (`docs/report-user-guide/screens/17-my-day.md`) and `usage_analytics.html` (`docs/capacity-user-guide/screens/09-usage-analytics.md`) are the targets of the pinned My Day link and the Usage Analytics admin item.
 - `epr_auth.py` (`/api/auth/me`, `/api/auth/logout`) supplies the identity, role and CSRF token. See `EPR_AUTHENTICATION.md`.
 - Pages that depended on the removed `unified-nav-secondary-open` body class or `--unified-nav-secondary-width` must use `--unified-nav-width-main` instead. No current page does.
 
@@ -72,5 +76,6 @@ The sidebar reads no SQLite tables directly. It reads the Page Categories tables
 1. The page loads `shared-nav.js`.
 2. `resolveNavSections()` builds the static sections, then fetches `/api/page-categories` and applies the catalog titles and the category layout.
 3. `/api/auth/me` returns the identity. Anonymous users go to `/login?next=<page>` and pending users to `/access-pending`. Members lose the admin section.
-4. `initUnifiedNav()` renders the header, search, groups and account footer, then restores the state saved in localStorage.
+4. The Usage Analytics admin item is ensured and the pinned My Day item is prepared.
+5. `initUnifiedNav()` renders the header, search, groups and account footer, then restores the state saved in localStorage.
 5. When a user clicks a link, the browser navigates. When a user clicks Sign out, the script posts `/api/auth/logout` and then goes to `/login`.

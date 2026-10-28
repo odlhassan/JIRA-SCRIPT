@@ -89,6 +89,7 @@ This workflow can be operated from CLI today, and the repo also exposes a DB Mig
 | Any generator or service file that issues `CREATE TABLE`, `ALTER TABLE`, or reads changed columns | Must be listed in `files_reading_json` and kept aligned with the migration log. |
 | Tests covering schema setup or migrations | Must validate the changed structure and any production migration behavior that was modified. |
 | `support_center.db` (table `support_issues`) | Standalone, local-only DB for the Support Center report. Recorded in the changelog (ADD_TABLE) and snapshotted, but it is a brand-new DB — no production rename→recreate→copy flow applies. Rebuilt by `support_center_sync.py`; gitignored. The main canonical DBs are untouched/read-only. See `SUPPORT_CENTER_REPORT.md`. |
+| `usage_analytics.db` (table `usage_events`, 2 indexes) | Standalone DB for EPR Usage Analytics, added 2026-10-28. Recorded as ADD_TABLE and ADD_INDEX and snapshotted. It is a brand-new DB that `usage_analytics.init_usage_db()` creates on server start (`CREATE ... IF NOT EXISTS`) beside the capacity DB (`/home/data` on Azure), so no production rename→recreate→copy flow applies and no human-downloaded production DB is needed. It is gitignored because it holds personal usage data. Canonical DBs are untouched. See `docs/capacity-user-guide/screens/09-usage-analytics.md`. |
 
 ## Table Schema
 

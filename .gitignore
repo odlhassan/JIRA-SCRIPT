@@ -38,6 +38,8 @@ jira_sync_cache.db
 # (JIRA_PROJECT_IMAGE_DIR, default <base>/data/project_images). Never committed; auto-created at runtime.
 data/project_images/
 project_images.db
+# Usage analytics (per-user page views) — personal data, auto-created beside the capacity DB at runtime. Never committed.
+usage_analytics.db
 # Support Center standalone DB — committed to GitHub (< 50 MB), rebuilt by support_center_sync.py
 # support_center.db  <-- now tracked
 # rnd_muscle_utilization.db  <-- now tracked while small

@@ -104,14 +104,14 @@ class AdminNavigationTests(unittest.TestCase):
             self.assertIn('href="/dashboard.html"', html)
             self.assertIn('href="/introduction.html"', html)
 
-    def test_index_redirects_to_introduction_when_available(self):
+    def test_index_redirects_to_my_day_home(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             root = Path(td)
             app = self._build_app(root)
             client = app.test_client()
             resp = client.get("/", follow_redirects=False)
             self.assertEqual(resp.status_code, 302)
-            self.assertEqual(resp.headers.get("Location"), "/introduction.html")
+            self.assertEqual(resp.headers.get("Location"), "/my_day.html")
 
     def test_report_html_uses_effective_report_display_names(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:

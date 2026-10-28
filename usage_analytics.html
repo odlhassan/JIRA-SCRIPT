@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Usage Analytics · EPR</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;700;800&family=Nunito+Sans:wght@400;600;700;800&display=swap">
+<link rel="stylesheet" href="/shared-nav.css">
+<style>
+:root{--ua-ground:#F5F3FF;--ua-line:#E7E4F5;--ua-ink:#1E1B3A;--ua-muted:#5B5876;--ua-grape:#7C3AED;--ua-display:'Bricolage Grotesque','Segoe UI',system-ui,sans-serif;--ua-body:'Nunito Sans','Segoe UI',system-ui,sans-serif}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ua-ground);color:var(--ua-ink);font:15px/1.45 var(--ua-body)}
+.ua-wrap{max-width:1240px;margin:0 auto;padding:32px clamp(16px,3vw,40px) 64px;display:flex;flex-direction:column;gap:22px}
+.ua-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px}
+.ua-kicker{display:flex;align-items:center;gap:8px;color:var(--ua-muted);font-weight:700;font-size:14px}.ua-kicker .material-symbols-outlined{color:var(--ua-grape);font-size:20px}
+.ua-head h1{margin:4px 0 0;font:800 clamp(28px,3.4vw,40px)/1.1 var(--ua-display);letter-spacing:-.02em}
+.ua-actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.ua-range{display:flex;gap:4px;background:#fff;padding:4px;border-radius:14px;border:2px solid var(--ua-line)}
+.ua-range button{min-height:40px;padding:0 16px;border-radius:10px;border:0;background:transparent;color:var(--ua-muted);font:800 14px var(--ua-body);cursor:pointer}
+.ua-range button[aria-pressed=true]{background:var(--ua-ink);color:#fff}
+.ua-btn{display:inline-flex;align-items:center;gap:8px;min-height:48px;padding:0 20px;border-radius:16px;border:0;background:#6D28D9;color:#fff;font:800 15px var(--ua-body);cursor:pointer}
+.ua-btn:focus-visible,.ua-range button:focus-visible{outline:3px solid var(--ua-grape);outline-offset:2px}
+.ua-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:16px}
+.ua-kpi{border-radius:22px;padding:20px;display:flex;flex-direction:column;gap:8px}
+.ua-kpi-top{display:flex;align-items:center;justify-content:space-between}
+.ua-tile{width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center}
+.ua-delta{font-size:12px;font-weight:800;padding:4px 10px;border-radius:99px;background:#fff}
+.ua-delta.up{color:#0B6B53}.ua-delta.down{color:#B42318}.ua-delta.flat{color:var(--ua-muted)}
+.ua-value{font:800 34px/1.1 var(--ua-display);letter-spacing:-.02em}
+.ua-kpi strong{font-size:14px}.ua-kpi small{font-size:13px;color:#4A4766}
+.ua-card{background:#fff;border:2px solid var(--ua-line);border-radius:24px;padding:24px;min-width:0}
+.ua-card h2{margin:0;font:800 22px var(--ua-display)}
+.ua-card-head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:16px}
+.ua-legend{display:flex;flex-wrap:wrap;gap:14px;font-size:12px;font-weight:700;color:var(--ua-muted)}.ua-legend span{display:flex;align-items:center;gap:6px}.ua-legend i{width:10px;height:10px;border-radius:3px;display:inline-block}
+.ua-chart-box{overflow-x:auto}
+.ua-chart{min-width:560px;height:200px;display:flex;align-items:flex-end;gap:4px;border-bottom:2px solid var(--ua-line);padding-bottom:2px}
+.ua-chart i{flex:1;min-height:3px;border-radius:6px 6px 2px 2px;background:var(--ua-grape)}
+.ua-chart i.weekend{background:#D9C8FF}.ua-chart i.launch{background:#FF6B5B}
+.ua-axis{display:flex;justify-content:space-between;font-size:12px;font-weight:700;color:var(--ua-muted);margin-top:6px}
+.ua-split{display:flex;flex-wrap:wrap;gap:18px;align-items:stretch}.ua-split>.ua-card{flex:1 1 360px}
+.ua-list{display:flex;flex-direction:column;gap:14px}
+.ua-bar-row{display:flex;flex-direction:column;gap:6px}
+.ua-bar-label{display:flex;justify-content:space-between;gap:10px;font-size:14px;font-weight:700}.ua-bar-label span:last-child{color:var(--ua-muted);white-space:nowrap}
+.ua-bar{height:12px;border-radius:99px;background:var(--ua-ground);overflow:hidden}.ua-bar i{display:block;height:100%;border-radius:99px}
+.ua-team{display:flex;align-items:center;gap:14px}
+.ua-initial{width:44px;height:44px;flex:none;border-radius:14px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px}
+.ua-grow{flex:1;min-width:0}
+.ua-quiet{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+.ua-person{display:flex;align-items:center;gap:12px;padding:14px;border-radius:18px;background:#FAF9FF}
+.ua-avatar{width:44px;height:44px;flex:none;border-radius:99px;display:flex;align-items:center;justify-content:center;font-weight:800}
+.ua-note{margin:-8px 0 16px;font-size:13px;color:var(--ua-muted)}
+.ua-empty{padding:24px;border:2px dashed var(--ua-line);border-radius:18px;text-align:center;color:var(--ua-muted);font-weight:600}
+.ua-error{padding:20px;border-radius:18px;background:#FFE9E6;color:#B42318;font-weight:700}
+@media (max-width:959px){.ua-wrap{padding-top:72px}}
+</style>
+</head>
+<body>
+<main class="ua-wrap" aria-busy="true" id="ua">
+  <header class="ua-head">
+    <div>
+      <div class="ua-kicker"><span class="material-symbols-outlined" aria-hidden="true">insights</span>Admin · how EPR is being used</div>
+      <h1>Usage analytics</h1>
+    </div>
+    <div class="ua-actions">
+      <div class="ua-range" role="group" aria-label="Date range">
+        <button type="button" data-days="7" aria-pressed="false">7d</button>
+        <button type="button" data-days="30" aria-pressed="true">30d</button>
+        <button type="button" data-days="90" aria-pressed="false">90d</button>
+      </div>
+      <button type="button" class="ua-btn" id="ua-export"><span class="material-symbols-outlined" aria-hidden="true">download</span>Export CSV</button>
+    </div>
+  </header>
+
+  <section class="ua-kpis" id="ua-kpis" aria-label="Key numbers"></section>
+
+  <section class="ua-card" aria-labelledby="ua-dau-h">
+    <div class="ua-card-head">
+      <h2 id="ua-dau-h">Daily active users</h2>
+      <div class="ua-legend"><span><i style="background:#7C3AED"></i>Workday</span><span><i style="background:#D9C8FF"></i>Weekend</span><span><i style="background:#FF6B5B"></i>My Day launched</span></div>
+    </div>
+    <div class="ua-chart-box"><div class="ua-chart" id="ua-chart" role="img" aria-label="Daily active users"></div></div>
+    <div class="ua-axis" id="ua-axis"></div>
+  </section>
+
+  <div class="ua-split">
+    <section class="ua-card" aria-labelledby="ua-pages-h"><div class="ua-card-head"><h2 id="ua-pages-h">Most visited pages</h2></div><div class="ua-list" id="ua-pages"></div></section>
+    <section class="ua-card" aria-labelledby="ua-teams-h"><div class="ua-card-head"><h2 id="ua-teams-h">Adoption by team</h2></div><p class="ua-note">Members who opened EPR on at least 3 of the last 7 days</p><div class="ua-list" id="ua-teams"></div></section>
+  </div>
+
+  <section class="ua-card" aria-labelledby="ua-quiet-h">
+    <div class="ua-card-head"><h2 id="ua-quiet-h">Needs a nudge</h2><span class="ua-note" style="margin:0" id="ua-quiet-count"></span></div>
+    <p class="ua-note">Approved users not seen for 5+ workdays · visible to admins only</p>
+    <div class="ua-quiet" id="ua-quiet"></div>
+  </section>
+</main>
+<script src="/shared-nav.js"></script>
+<script>
+(function () {
+  const $ = (sel) => document.querySelector(sel);
+  const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => '&#' + c.charCodeAt(0) + ';');
+  const icon = (name) => `<span class="material-symbols-outlined" aria-hidden="true">${name}</span>`;
+  const TONES = [['#EFE7FF', '#5B21B6', '#7C3AED'], ['#E6EDFF', '#2848C7', '#3B5BDB'], ['#E3F8F1', '#0B6B53', '#2EC4A0'], ['#FFF4D6', '#7A4B00', '#FFC23D'], ['#FFE9E6', '#B42318', '#FF6B5B']];
+  let days = 30, data = null, titles = {};
+
+  function delta(value, previous, unit) {
+    const diff = Math.round((value - previous) * 10) / 10;
+    if (!previous && !value) return '<span class="ua-delta flat">No data yet</span>';
+    if (!diff) return '<span class="ua-delta flat">No change</span>';
+    return `<span class="ua-delta ${diff > 0 ? 'up' : 'down'}">${diff > 0 ? '+' : '−'}${Math.abs(diff)}${unit} vs before</span>`;
+  }
+  function title(path) {
+    return titles[path] || titles[path.replace(/^\//, '')] || ({ '/my_day.html': 'My Day', '/settings/usage-analytics': 'Usage Analytics' })[path] || path;
+  }
+  function shortDate(iso) { return new Date(iso + 'T12:00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short' }); }
+
+  async function loadTitles() {
+    try {
+      const body = await (await fetch('/api/page-categories', { cache: 'no-store' })).json();
+      for (const item of body.page_catalog || []) {
+        const route = String(item.route_or_file || '');
+        if (route && item.title) titles[route.startsWith('/') ? route : '/' + route] = item.title;
+      }
+    } catch (_error) { /* page paths are shown instead of titles */ }
+  }
+
+  async function load() {
+    $('#ua').setAttribute('aria-busy', 'true');
+    try {
+      const response = await fetch('/api/admin/usage-analytics?days=' + days, { cache: 'no-store' });
+      const body = await response.json();
+      if (!response.ok || body.error) throw new Error(body.error || 'Could not load usage analytics.');
+      data = body;
+      render();
+    } catch (error) {
+      $('#ua-kpis').innerHTML = `<div class="ua-error">${esc(error.message)}</div>`;
+    } finally {
+      $('#ua').setAttribute('aria-busy', 'false');
+    }
+  }
+
+  function render() {
+    const k = data.kpis;
+    const cards = [
+      { label: 'Daily active', value: k.daily_active.value, d: delta(k.daily_active.avg, k.daily_active.previous, ''), hint: `People who opened EPR today · ${k.daily_active.avg} avg per workday`, icon: 'group', bg: '#EFE7FF', tile: '#7C3AED', fg: '#fff' },
+      { label: 'Weekly active', value: k.weekly_active.value, d: delta(k.weekly_active.value, k.weekly_active.previous, ''), hint: 'Opened EPR in the last 7 days', icon: 'calendar_month', bg: '#E6EDFF', tile: '#3B5BDB', fg: '#fff' },
+      { label: 'Stickiness', value: k.stickiness.value + '%', d: delta(k.stickiness.value, k.stickiness.previous, ' pts'), hint: 'Average daily ÷ weekly active', icon: 'repeat', bg: '#FFE9E6', tile: '#FF6B5B', fg: '#1E1B3A' },
+      { label: 'My Day reach', value: k.my_day_reach.value + '%', d: delta(k.my_day_reach.value, k.my_day_reach.previous, ' pts'), hint: `${k.my_day_reach.users} of ${data.period_users} active people opened My Day`, icon: 'wb_sunny', bg: '#E3F8F1', tile: '#2EC4A0', fg: '#0B2E26' },
+      { label: 'Worklogs via EPR', value: k.worklogs.value, d: delta(k.worklogs.value, k.worklogs.previous, ''), hint: `${k.worklogs.via_my_day} from My Day Quick log`, icon: 'more_time', bg: '#FFF4D6', tile: '#FFC23D', fg: '#1E1B3A' }
+    ];
+    $('#ua-kpis').innerHTML = cards.map((c) => `<div class="ua-kpi" style="background:${c.bg}">
+      <div class="ua-kpi-top"><div class="ua-tile" style="background:${c.tile};color:${c.fg}">${icon(c.icon)}</div>${c.d}</div>
+      <div class="ua-value">${esc(c.value)}</div><strong>${esc(c.label)}</strong><small>${esc(c.hint)}</small></div>`).join('');
+
+    const max = Math.max(1, ...data.series.map((s) => s.users));
+    $('#ua-chart').innerHTML = data.series.map((s) => `<i class="${s.launch ? 'launch' : s.weekend ? 'weekend' : ''}" style="height:${Math.round((s.users / max) * 196)}px" title="${esc(shortDate(s.date))}: ${s.users} active"></i>`).join('');
+    $('#ua-chart').setAttribute('aria-label', `Daily active users from ${data.from} to ${data.to}, peak ${max}`);
+    const mid = data.series[Math.floor(data.series.length / 2)];
+    $('#ua-axis').innerHTML = `<span>${esc(shortDate(data.from))}</span><span>${esc(shortDate(mid.date))}</span><span>${esc(shortDate(data.to))}</span>`;
+
+    const top = Math.max(1, ...data.pages.map((p) => p.views));
+    $('#ua-pages').innerHTML = data.pages.length ? data.pages.map((p, i) => `<div class="ua-bar-row"><div class="ua-bar-label"><span>${esc(title(p.path))}</span><span>${p.views.toLocaleString()} view${p.views === 1 ? '' : 's'} · ${p.users} ${p.users === 1 ? 'person' : 'people'}</span></div>
+      <div class="ua-bar"><i style="width:${Math.round((p.views / top) * 100)}%;background:${TONES[i % TONES.length][2]}"></i></div></div>`).join('')
+      : '<div class="ua-empty">No page views recorded in this range yet.</div>';
+
+    $('#ua-teams').innerHTML = data.teams.length ? data.teams.map((t, i) => {
+      const c = TONES[i % TONES.length], color = t.pct >= 75 ? '#0B6B53' : t.pct >= 50 ? '#7A4B00' : '#B42318';
+      return `<div class="ua-team"><div class="ua-initial" style="background:${c[0]};color:${c[1]}">${esc(String(t.team || '?')[0].toUpperCase())}</div>
+        <div class="ua-grow"><div class="ua-bar-label"><span>${esc(t.team)}</span><span style="color:${color}">${t.pct}% · ${t.engaged}/${t.members}</span></div>
+        <div class="ua-bar"><i style="width:${t.pct}%;background:${c[2]}"></i></div></div></div>`;
+    }).join('') : '<div class="ua-empty">No performance teams are configured.</div>';
+
+    $('#ua-quiet-count').textContent = data.quiet_total ? `${data.quiet_total} people` : '';
+    $('#ua-quiet').innerHTML = data.quiet.length ? data.quiet.map((q, i) => {
+      const c = TONES[(i + 4) % TONES.length], initials = String(q.display_name || '?').split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
+      const seen = q.last_seen ? `Last seen ${q.idle_workdays} workdays ago` : 'Never opened EPR';
+      return `<div class="ua-person"><div class="ua-avatar" style="background:${c[0]};color:${c[1]}">${esc(initials)}</div><div class="ua-grow"><div style="font-weight:800">${esc(q.display_name)}</div><div class="ua-note" style="margin:0">${esc(seen)}</div></div></div>`;
+    }).join('') : '<div class="ua-empty">Everyone with access has been active recently.</div>';
+  }
+
+  function exportCsv() {
+    if (!data) return;
+    const rows = [['date', 'active_users']].concat(data.series.map((s) => [s.date, s.users]));
+    rows.push([], ['page', 'views', 'people']);
+    data.pages.forEach((p) => rows.push([title(p.path), p.views, p.users]));
+    const csv = rows.map((r) => r.map((v) => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',')).join('\r\n');
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+    link.download = `epr_usage_${data.from}_${data.to}.csv`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  }
+
+  for (const button of document.querySelectorAll('.ua-range button')) {
+    button.addEventListener('click', () => {
+      days = Number(button.dataset.days);
+      for (const other of document.querySelectorAll('.ua-range button')) other.setAttribute('aria-pressed', String(other === button));
+      load();
+    });
+  }
+  $('#ua-export').addEventListener('click', exportCsv);
+  loadTitles().then(load);
+})();
+</script>
+</body>
+</html>

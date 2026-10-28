@@ -39,6 +39,9 @@ It covers:
   - `/settings/seating-planner`
 - Team Capacity Planner:
   - `/settings/team-capacity-planner`
+- Usage Analytics (Admin): adoption metrics, `performance_teams` adoption, quiet users
+  - `/settings/usage-analytics` (see `screens/09-usage-analytics.md`)
+- My Day reuses the capacity profile (`standard_hours_per_day`, Ramadan hours, `holiday_dates`) to compute each employee's expected hours per day (see `docs/report-user-guide/screens/17-my-day.md`).
 
 ## Data Model (Profile)
 

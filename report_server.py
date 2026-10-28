@@ -27,7 +27,7 @@ import requests
 from canonical_storage import replace_previous_snapshots
 from contextlib import closing
 
-from flask import Flask, jsonify, redirect, request, send_file
+from flask import Flask, g, jsonify, redirect, request, send_file
 from openpyxl import Workbook, load_workbook
 from generate_assignee_hours_report import (
     DEFAULT_CAPACITY_DB,
@@ -71,8 +71,10 @@ from generate_employee_performance_report import (
 )
 from generate_employee_capacity_utilization_report import build_employee_capacity_utilization_payload
 from employee_capacity_utilization_export import build_employee_capacity_utilization_workbook
-from employee_worklog import register_employee_worklog_routes
+from employee_worklog import jira_identity, register_employee_worklog_routes
 from epr_auth import register_epr_auth
+from my_day_service import build_my_day, fetch_live_week_worklogs, list_people
+from usage_analytics import USAGE_DB_FILE, register_usage_analytics
 from generate_missed_entries_html import (
     DEFAULT_INPUT_XLSX as MISSED_ENTRIES_DEFAULT_INPUT_XLSX,
     _build_html as missed_entries_build_html,
@@ -23609,6 +23611,7 @@ def _resolve_output_html_path(env_var: str, default_name: str, base_dir: Path) -
 def _resolve_report_html_sources(base_dir: Path) -> dict[str, Path]:
     return {
         "introduction.html": base_dir / "introduction.html",
+        "my_day.html": base_dir / "my_day.html",
         "dashboard.html": base_dir / "dashboard.html",
         "executive_dashboard.html": _resolve_output_html_path(
             "JIRA_EXECUTIVE_DASHBOARD_HTML_PATH", "executive_dashboard.html", base_dir
@@ -40866,7 +40869,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
 
     @app.route("/")
     def index():
-        return redirect("/introduction.html", code=302)
+        return redirect("/my_day.html", code=302)
 
     @app.route("/report_html/")
     def list_reports():
@@ -47622,6 +47625,37 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
 
     register_employee_worklog_routes(app, capacity_paths["db_path"].parent / "worklog_requests")
     register_epr_auth(app, capacity_paths["db_path"].parent / "worklog_requests" / "oauth", set(_resolve_report_html_sources(base_dir)))
+    register_usage_analytics(app, capacity_paths["db_path"].parent / USAGE_DB_FILE, base_dir,
+                             lambda: _list_performance_teams(capacity_paths["db_path"]))
+
+    @app.route("/api/my-day", methods=["GET"])
+    def my_day_api():
+        user = getattr(g, "epr_user", None)
+        can_switch = not user or user.get("role") == "admin"
+        employee = _to_text(request.args.get("employee")) if can_switch else ""
+        employee = employee or _to_text((user or {}).get("display_name"))
+        people = list_people(capacity_paths["db_path"]) if can_switch else []
+        if not employee:
+            return jsonify({"needs_employee": True, "people": people, "can_switch": can_switch})
+        requested_date = _to_text(request.args.get("date"))
+        try:
+            today = date.fromisoformat(requested_date) if requested_date else date.today()
+        except ValueError:
+            return jsonify({"error": "Use date=YYYY-MM-DD."}), 400
+        live = None
+        if today == date.today() and request.cookies.get("epr_jira_session"):
+            try:
+                session, identity = jira_identity()
+                if _to_text(identity.get("displayName")).casefold() == employee.casefold():
+                    live = fetch_live_week_worklogs(session, getattr(session, "epr_base_url", BASE_URL), identity["accountId"], today)
+            except (ValueError, KeyError, requests.RequestException):
+                live = None
+        try:
+            payload = build_my_day(capacity_paths["db_path"], employee, today, live)
+        except RuntimeError as exc:
+            return jsonify({"error": str(exc)}), 409
+        payload.update(can_switch=can_switch, people=people, jira_browse_base=BASE_URL.rstrip("/") + "/browse")
+        return jsonify(payload)
 
     @app.route("/api/employee-capacity-utilization/data", methods=["GET"])
     def employee_capacity_utilization_data_api():

@@ -1,0 +1,547 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>My Day · EPR</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;700;800&family=Nunito+Sans:wght@400;600;700;800&display=swap">
+<link rel="stylesheet" href="/shared-nav.css">
+<style>
+:root{--md-ground:#F5F3FF;--md-card:#FFFFFF;--md-line:#E7E4F5;--md-ink:#1E1B3A;--md-muted:#5B5876;--md-grape:#7C3AED;--md-grape-deep:#5B21B6;--md-grape-soft:#EFE7FF;--md-button:#6D28D9;--md-sun:#FFC23D;--md-sun-soft:#FFF4D6;--md-sun-ink:#7A4B00;--md-mint:#2EC4A0;--md-mint-soft:#E3F8F1;--md-mint-ink:#0B6B53;--md-sky:#3B5BDB;--md-sky-soft:#E6EDFF;--md-sky-ink:#2848C7;--md-coral:#FF6B5B;--md-coral-soft:#FFE9E6;--md-coral-ink:#B42318;--md-display:'Bricolage Grotesque','Segoe UI',system-ui,sans-serif;--md-body:'Nunito Sans','Segoe UI',system-ui,sans-serif}
+*{box-sizing:border-box}
+body{margin:0;background:var(--md-ground);color:var(--md-ink);font:15px/1.45 var(--md-body)}
+.md-wrap{max-width:1240px;margin:0 auto;padding:32px clamp(16px,3vw,40px) 64px;display:flex;flex-direction:column;gap:22px}
+.md-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px}
+.md-kicker{display:flex;align-items:center;gap:8px;color:var(--md-muted);font-weight:700;font-size:14px}
+.md-kicker .material-symbols-outlined{color:#E8590C;font-size:20px}
+.md-head h1{margin:4px 0;font:800 clamp(28px,3.4vw,40px)/1.1 var(--md-display);letter-spacing:-.02em}
+.md-sub{margin:0;color:var(--md-muted);font-size:16px}.md-sub strong{color:var(--md-ink)}
+.md-actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.md-picker{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:var(--md-muted)}
+.md-picker select{min-height:44px;border:2px solid var(--md-line);border-radius:14px;background:#fff;color:var(--md-ink);padding:0 12px;font:700 14px var(--md-body);max-width:240px}
+.md-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 18px;border-radius:14px;border:0;font:800 15px var(--md-body);cursor:pointer;text-decoration:none}
+.md-btn:focus-visible,.md-chip:focus-visible,.md-mini:focus-visible,.md-tab:focus-visible{outline:3px solid var(--md-grape);outline-offset:2px}
+.md-btn-primary{background:var(--md-button);color:#fff}.md-btn-primary:hover{background:#5B21B6}
+.md-btn-dark{background:var(--md-ink);color:#fff}.md-btn-sun{background:var(--md-sun);color:var(--md-ink)}
+.md-btn:disabled{opacity:.6;cursor:wait}
+.md-fresh{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:99px;background:#fff;border:2px solid var(--md-line);font-size:12px;font-weight:700;color:var(--md-muted)}
+.md-fresh .material-symbols-outlined{font-size:16px}
+.md-glance{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:18px}
+.md-card{background:var(--md-card);border:2px solid var(--md-line);border-radius:24px;padding:22px;min-width:0}
+.md-card h2{margin:0;font:800 21px var(--md-display)}
+.md-label{font-weight:800;font-size:12px;text-transform:uppercase;letter-spacing:.06em}
+.md-big{font:700 20px/1.25 var(--md-display)}
+.md-note{color:var(--md-muted);font-size:14px}
+.md-icon-tile{width:40px;height:40px;flex:none;border-radius:12px;display:flex;align-items:center;justify-content:center}
+.md-icon-tile .material-symbols-outlined{font-size:22px}
+.md-ring-card{display:flex;align-items:center;gap:20px}
+.md-ring-card .md-label{color:var(--md-grape-deep)}
+.md-stack{display:flex;flex-direction:column;gap:10px}
+.md-row{display:flex;align-items:center;gap:10px}
+.md-missed{background:var(--md-sun-soft);border-color:#FFE08A}.md-missed .md-label{color:var(--md-sun-ink)}.md-missed .md-icon-tile{background:var(--md-sun);color:var(--md-ink)}
+.md-clear{background:var(--md-mint-soft);border-color:#B5ECD9}.md-clear .md-label{color:var(--md-mint-ink)}.md-clear .md-icon-tile{background:var(--md-mint);color:#0B2E26}
+.md-streak{background:var(--md-grape-soft);border-color:#D9C8FF}.md-streak .md-label{color:var(--md-grape-deep)}.md-streak .md-icon-tile{background:var(--md-coral);color:#fff}
+.md-dots{display:flex;gap:8px}.md-dots span{flex:1;height:10px;border-radius:99px;background:#D9C8FF}.md-dots span.on{background:var(--md-grape)}.md-dots span.na{background:#fff;border:2px dashed #D9C8FF}
+.md-split{display:flex;flex-wrap:wrap;gap:18px;align-items:flex-start}
+.md-main-col{flex:2 1 480px;min-width:0}.md-side-col{flex:1 1 300px;min-width:0;display:flex;flex-direction:column;gap:18px}
+.md-card-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}
+.md-tabs{display:flex;gap:4px;background:var(--md-ground);padding:4px;border-radius:14px}
+.md-tab{min-height:36px;padding:0 14px;border-radius:10px;border:0;background:transparent;color:var(--md-muted);font:700 14px var(--md-body);cursor:pointer}
+.md-tab[aria-selected=true]{background:#fff;color:var(--md-ink);font-weight:800;box-shadow:0 1px 3px rgba(30,27,58,.12)}
+.md-tasks{display:flex;flex-direction:column;gap:10px}
+.md-task{display:flex;flex-wrap:wrap;align-items:center;gap:14px;padding:14px;border-radius:18px;background:#FAF9FF}
+.md-task.done{background:#F3FBF8}
+.md-task-tile{width:46px;height:46px;flex:none;border-radius:14px;display:flex;align-items:center;justify-content:center}
+.md-task-body{flex:1 1 220px;min-width:0;display:flex;flex-direction:column;gap:5px}
+.md-task-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px;font-weight:800;color:var(--md-muted)}
+.md-task-meta a{color:var(--md-muted)}.md-task-meta a:hover{color:var(--md-grape-deep)}
+.md-task-title{font-weight:700;font-size:16px;overflow-wrap:anywhere}
+.md-pill{font-size:12px;font-weight:800;padding:3px 10px;border-radius:99px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.md-bar{flex:1;max-width:220px;height:8px;border-radius:99px;background:#EDE9FE;overflow:hidden}.md-bar i{display:block;height:100%;border-radius:99px}
+.md-task-hours{font-size:13px;color:var(--md-muted);font-weight:700}
+.md-task-actions{display:flex;gap:8px}
+.md-mini{min-height:44px;min-width:56px;padding:0 12px;border-radius:14px;border:2px solid var(--md-line);background:#fff;color:var(--md-ink);font:800 14px var(--md-body);cursor:pointer}
+.md-mini:hover{border-color:var(--md-grape)}
+.md-mini.icon{min-width:44px;width:44px;padding:0;border:0;background:var(--md-grape-soft);color:var(--md-grape-deep);display:flex;align-items:center;justify-content:center}
+.md-empty{padding:28px;border:2px dashed var(--md-line);border-radius:18px;text-align:center;color:var(--md-muted);font-weight:600}
+.md-quick{background:var(--md-ink);color:#fff;border-color:var(--md-ink)}
+.md-quick .md-icon-tile{background:var(--md-mint);color:#0B2E26}
+.md-quick label,.md-quick .md-qlabel{display:block;font-size:13px;font-weight:700;color:#C9C5EA;margin:12px 0 6px}
+.md-quick select,.md-quick input,.md-quick textarea{width:100%;min-height:46px;border-radius:14px;border:2px solid #3A3566;background:#2A2650;color:#fff;padding:0 14px;font:15px var(--md-body)}
+.md-quick textarea{min-height:70px;padding:10px 14px;resize:vertical}
+.md-quick select:focus,.md-quick input:focus,.md-quick textarea:focus{outline:none;border-color:var(--md-mint)}
+.md-quick-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.md-chips{display:flex;flex-wrap:wrap;gap:8px}
+.md-chip{min-height:40px;padding:0 14px;border-radius:12px;border:0;background:#2A2650;color:#fff;font:800 14px var(--md-body);cursor:pointer}
+.md-chip[aria-pressed=true]{background:var(--md-mint);color:#0B2E26}
+.md-quick .md-btn-sun{width:100%;margin-top:16px;font-size:16px}
+.md-quick-note{margin:8px 0 0;font-size:12px;color:#C9C5EA}
+.md-quick-status{margin:10px 0 0;font-size:13px;font-weight:700;min-height:18px}
+.md-quick-status.error{color:#FFB4A9}.md-quick-status.ok{color:#8CF0D2}
+.md-quick a{color:var(--md-sun)}
+.md-review{margin-top:14px;padding:14px;border-radius:16px;background:#2A2650;display:flex;flex-direction:column;gap:6px;font-size:14px}
+.md-review strong{color:#fff}.md-review span{color:#C9C5EA}
+.md-confirm{display:flex !important;gap:10px;align-items:flex-start;color:#fff !important;font-weight:600 !important}
+.md-confirm input{width:20px;min-height:20px;margin-top:2px;accent-color:var(--md-mint)}
+.md-review-actions{display:flex;gap:8px;margin-top:10px}.md-review-actions .md-btn{flex:1}
+.md-btn-ghost{background:transparent;border:2px solid #3A3566;color:#fff}
+.md-week{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;align-items:end;height:160px;margin:6px 0 14px}
+.md-day{display:flex;flex-direction:column;align-items:center;gap:6px;height:100%;justify-content:flex-end}
+.md-day small{font-size:12px;font-weight:800;color:var(--md-muted)}
+.md-day b{font-size:13px;font-weight:800;color:var(--md-muted)}.md-day.is-today b{color:var(--md-grape-deep)}
+.md-day i{display:block;width:100%;max-width:40px;border-radius:12px;min-height:6px}
+.st-complete{background:var(--md-mint)}.st-missing{background:var(--md-sun)}.st-today{background:var(--md-grape)}.st-leave{background:#C7D7FE}.st-off{background:#ECEAF5}.st-future,.st-unsynced{background:transparent;border:2px dashed #D9D5EE}
+.md-legend{display:flex;flex-wrap:wrap;gap:12px;font-size:12px;font-weight:700;color:var(--md-muted)}
+.md-legend span{display:flex;align-items:center;gap:6px}.md-legend i{width:10px;height:10px;border-radius:3px;display:inline-block}
+.md-epics{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-top:14px}
+.md-epic{border-radius:18px;padding:18px;display:flex;flex-direction:column;gap:8px}
+.md-epic strong{font-size:16px;overflow-wrap:anywhere}
+.md-epic .md-bar{max-width:none;height:10px;background:#fff}
+.md-epic small{font-size:13px;color:#33415C;font-weight:700}
+.ep-on_track{background:var(--md-mint-soft)}.ep-on_track .md-epic-state{color:var(--md-mint-ink)}.ep-on_track .md-bar i{background:#12A27F}
+.ep-over{background:var(--md-coral-soft)}.ep-over .md-epic-state{color:var(--md-coral-ink)}.ep-over .md-bar i{background:#F04438}
+.ep-started{background:var(--md-sky-soft)}.ep-started .md-epic-state{color:var(--md-sky-ink)}.ep-started .md-bar i{background:var(--md-sky)}
+.md-epic-state{font-size:13px;font-weight:800}
+.md-upcoming{display:flex;flex-direction:column;gap:14px;margin-top:14px}
+.md-date{width:52px;flex:none;border-radius:14px;text-align:center;padding:6px 0}
+.md-date small{display:block;font-size:11px;font-weight:800}.md-date b{display:block;font:800 20px var(--md-display)}
+.up-leave{background:var(--md-sky-soft);color:var(--md-sky-ink)}.up-holiday{background:var(--md-sun-soft);color:var(--md-sun-ink)}
+.md-toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(30px);opacity:0;pointer-events:none;background:var(--md-ink);color:#fff;padding:14px 20px;border-radius:16px;font-weight:700;box-shadow:0 12px 32px rgba(30,27,58,.3);transition:.25s;z-index:120;display:flex;gap:10px;align-items:center}
+.md-toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.md-toast .material-symbols-outlined{color:var(--md-mint)}
+.md-error{padding:20px;border-radius:18px;background:var(--md-coral-soft);color:var(--md-coral-ink);font-weight:700}
+.md-skeleton{height:120px;border-radius:24px;background:linear-gradient(90deg,#EEEAFB,#F7F5FF,#EEEAFB);background-size:200% 100%;animation:md-shimmer 1.2s infinite}
+@keyframes md-shimmer{to{background-position:-200% 0}}
+@media (prefers-reduced-motion:reduce){.md-skeleton{animation:none}.md-toast{transition:none}}
+@media (max-width:560px){.md-quick-grid{grid-template-columns:1fr}.md-task-actions{width:100%}.md-task-actions .md-mini{flex:1}}
+@media (max-width:959px){.md-wrap{padding-top:72px}}
+</style>
+</head>
+<body>
+<main class="md-wrap" id="my-day" aria-busy="true">
+  <header class="md-head">
+    <div>
+      <div class="md-kicker"><span class="material-symbols-outlined" aria-hidden="true">wb_sunny</span><span id="md-date-label">Today</span></div>
+      <h1 id="md-greeting">My Day</h1>
+      <p class="md-sub" id="md-summary">Loading your day…</p>
+    </div>
+    <div class="md-actions">
+      <label class="md-picker" id="md-picker" hidden>Viewing<select id="md-employee" aria-label="Employee"></select></label>
+      <span class="md-fresh" id="md-fresh" hidden></span>
+      <button type="button" class="md-btn md-btn-primary" id="md-log-top"><span class="material-symbols-outlined" aria-hidden="true">add</span>Log time</button>
+    </div>
+  </header>
+
+  <section class="md-glance" id="md-glance" aria-label="Today at a glance">
+    <div class="md-skeleton"></div><div class="md-skeleton"></div><div class="md-skeleton"></div>
+  </section>
+
+  <div class="md-split">
+    <section class="md-card md-main-col" aria-labelledby="md-tasks-h">
+      <div class="md-card-head">
+        <h2 id="md-tasks-h">Today's tasks</h2>
+        <div class="md-tabs" role="tablist" aria-label="Task list">
+          <button type="button" class="md-tab" role="tab" aria-selected="true" data-tab="assigned">Assigned to me</button>
+          <button type="button" class="md-tab" role="tab" aria-selected="false" data-tab="recent">Recent</button>
+        </div>
+      </div>
+      <div class="md-tasks" id="md-tasks"><div class="md-skeleton"></div></div>
+    </section>
+
+    <div class="md-side-col">
+      <section class="md-card md-quick" aria-labelledby="md-quick-h" id="md-quick">
+        <div class="md-row"><div class="md-icon-tile"><span class="material-symbols-outlined" aria-hidden="true">bolt</span></div><h2 id="md-quick-h">Quick log</h2></div>
+        <form id="md-quick-form" novalidate>
+          <label for="md-q-issue">Subtask</label>
+          <select id="md-q-issue" required></select>
+          <span class="md-qlabel" id="md-q-duration-label">Duration</span>
+          <div class="md-chips" role="group" aria-labelledby="md-q-duration-label">
+            <button type="button" class="md-chip" data-duration="15m" aria-pressed="false">15m</button>
+            <button type="button" class="md-chip" data-duration="30m" aria-pressed="false">30m</button>
+            <button type="button" class="md-chip" data-duration="1h" aria-pressed="true">1h</button>
+            <button type="button" class="md-chip" data-duration="2h" aria-pressed="false">2h</button>
+            <button type="button" class="md-chip" data-duration="4h" aria-pressed="false">4h</button>
+          </div>
+          <div class="md-quick-grid">
+            <div><label for="md-q-duration">Or type</label><input id="md-q-duration" value="1h" autocomplete="off" placeholder="1h 30m"></div>
+            <div><label for="md-q-start">Start time</label><input id="md-q-start" type="time" value="09:00"></div>
+          </div>
+          <label for="md-q-date">Date</label>
+          <input id="md-q-date" type="date">
+          <label for="md-q-comment">What did you do?</label>
+          <textarea id="md-q-comment" maxlength="2000" placeholder="Short description for the Jira worklog"></textarea>
+          <button type="submit" class="md-btn md-btn-sun" id="md-q-review">Review entry</button>
+          <p class="md-quick-note">Daily limit 24h per subtask · nothing is sent to Jira until you confirm.</p>
+          <p class="md-quick-status" id="md-q-status" role="status" aria-live="polite"></p>
+        </form>
+        <div id="md-q-review-box" hidden></div>
+      </section>
+
+      <section class="md-card" aria-labelledby="md-week-h">
+        <div class="md-card-head" style="margin-bottom:4px"><h2 id="md-week-h">This week</h2><b id="md-week-total" class="md-note"></b></div>
+        <div class="md-week" id="md-week" role="img" aria-label="Hours logged per day this week"></div>
+        <div class="md-legend">
+          <span><i class="st-complete"></i>Complete</span><span><i class="st-missing"></i>Missing</span><span><i class="st-today"></i>Today</span><span><i class="st-leave"></i>Leave</span>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <div class="md-split">
+    <section class="md-card md-main-col" aria-labelledby="md-epics-h">
+      <h2 id="md-epics-h">My epics this month</h2>
+      <div class="md-epics" id="md-epics"></div>
+    </section>
+    <section class="md-card md-side-col" aria-labelledby="md-up-h" style="gap:0">
+      <h2 id="md-up-h">Coming up</h2>
+      <div class="md-upcoming" id="md-upcoming"></div>
+    </section>
+  </div>
+</main>
+<div class="md-toast" id="md-toast" role="status" aria-live="polite"><span class="material-symbols-outlined" aria-hidden="true">check_circle</span><span id="md-toast-text"></span></div>
+<script src="/shared-nav.js"></script>
+<script>
+(function () {
+  const WORKLOG_API = '/api/employee-capacity-utilization/worklog';
+  const params = new URLSearchParams(location.search);
+  const $ = (sel) => document.querySelector(sel);
+  const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => '&#' + c.charCodeAt(0) + ';');
+  const icon = (name) => `<span class="material-symbols-outlined" aria-hidden="true">${name}</span>`;
+  const hrs = (v) => `${Number((+v || 0).toFixed(2))}h`;
+  const TONES = [
+    { tile: '#EFE7FF', fg: '#5B21B6', bar: '#7C3AED' },
+    { tile: '#E6EDFF', fg: '#2848C7', bar: '#3B5BDB' },
+    { tile: '#FFE9E6', fg: '#B42318', bar: '#F04438' },
+    { tile: '#FFF4D6', fg: '#7A4B00', bar: '#E8A100' },
+    { tile: '#E3F8F1', fg: '#0B6B53', bar: '#12A27F' }
+  ];
+  let data = null, tab = 'assigned', identity = null, review = null;
+
+  function tone(key) {
+    let h = 0;
+    for (const ch of String(key || '')) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    return TONES[h % TONES.length];
+  }
+  function niceDate(iso, opts) {
+    return new Date(iso + 'T12:00:00').toLocaleDateString(undefined, opts || { weekday: 'long', day: 'numeric', month: 'long' });
+  }
+  function toast(text) {
+    $('#md-toast-text').textContent = text;
+    $('#md-toast').classList.add('show');
+    clearTimeout(toast.timer);
+    toast.timer = setTimeout(() => $('#md-toast').classList.remove('show'), 3500);
+  }
+  function issueLink(key) {
+    const base = data && data.jira_browse_base;
+    return base ? `<a href="${esc(base + '/' + encodeURIComponent(key))}" target="_blank" rel="noopener noreferrer">${esc(key)}</a>` : esc(key);
+  }
+
+  async function load() {
+    const query = new URLSearchParams();
+    if (params.get('employee')) query.set('employee', params.get('employee'));
+    if (params.get('date')) query.set('date', params.get('date'));
+    try {
+      const response = await fetch('/api/my-day?' + query.toString(), { cache: 'no-store' });
+      const body = await response.json();
+      if (!response.ok || body.error) throw new Error(body.error || 'Could not load My Day.');
+      data = body;
+      renderPicker();
+      if (body.needs_employee) return renderChooseEmployee();
+      render();
+      checkJira();
+    } catch (error) {
+      $('#md-glance').innerHTML = `<div class="md-error">${esc(error.message)}</div>`;
+      $('#md-summary').textContent = 'My Day could not load.';
+    } finally {
+      $('#my-day').setAttribute('aria-busy', 'false');
+    }
+  }
+
+  function renderPicker() {
+    if (!data.can_switch || !(data.people || []).length) return;
+    const select = $('#md-employee');
+    select.innerHTML = '<option value="">Choose an employee…</option>' + data.people.map((p) => `<option${p === data.employee ? ' selected' : ''}>${esc(p)}</option>`).join('');
+    $('#md-picker').hidden = false;
+    select.onchange = () => {
+      if (select.value) params.set('employee', select.value); else params.delete('employee');
+      location.search = params.toString();
+    };
+  }
+
+  function renderChooseEmployee() {
+    $('#md-greeting').textContent = 'My Day';
+    $('#md-summary').textContent = 'Sign-in is off on this server. Choose whose day to open.';
+    $('#md-glance').innerHTML = '<div class="md-empty">Pick an employee from <strong>Viewing</strong> above.</div>';
+    $('#md-tasks').innerHTML = '';
+  }
+
+  function render() {
+    const first = String(data.employee || '').split(' ')[0];
+    const hour = new Date().getHours();
+    const isToday = !params.get('date');
+    $('#md-date-label').textContent = niceDate(data.date);
+    $('#md-greeting').textContent = isToday ? `${hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'}, ${first}` : `${first}'s day`;
+    const t = data.today, left = Math.max(0, t.expected - t.logged - t.leave);
+    const active = data.tasks.filter((x) => !x.done).length;
+    $('#md-summary').innerHTML = t.status === 'leave' ? 'You are on leave today. Enjoy it.'
+      : t.expected <= 0 ? 'No hours are expected today.'
+      : `You have <strong>${active} task${active === 1 ? '' : 's'}</strong> open and <strong>${hrs(left)}</strong> left to log.`;
+    const fresh = $('#md-fresh');
+    fresh.hidden = false;
+    fresh.innerHTML = data.live ? `${icon('bolt')}Live from Jira` : `${icon('sync')}Synced through ${esc(niceDate(data.data_through, { day: 'numeric', month: 'short' }))}`;
+    fresh.title = data.live ? 'This week\'s hours are read live from Jira.' : 'Hours come from the last Jira refresh; newer entries appear after the next refresh.';
+    renderGlance();
+    renderTasks();
+    renderWeek();
+    renderEpics();
+    renderUpcoming();
+    fillQuickLog();
+  }
+
+  function renderGlance() {
+    const t = data.today, target = Math.max(t.expected, 0.01), done = Math.min(1, (t.logged + t.leave) / target);
+    const circumference = 314.16, left = Math.max(0, t.expected - t.logged - t.leave);
+    const ringNote = t.status === 'leave' ? 'On leave today.' : t.expected <= 0 ? 'Day off. Nothing to log.' : left <= 0.5 ? 'Day complete. Nice work!' : `${hrs(t.logged)} logged so far.`;
+    const ring = `<div class="md-card md-ring-card">
+      <svg role="img" aria-label="${esc(hrs(t.logged))} of ${esc(hrs(t.expected))} logged today" width="112" height="112" viewBox="0 0 120 120">
+        <circle cx="60" cy="60" r="50" fill="none" stroke="#EDE9FE" stroke-width="14"></circle>
+        <circle cx="60" cy="60" r="50" fill="none" stroke="${t.status === 'leave' ? '#9DB4FB' : '#7C3AED'}" stroke-width="14" stroke-linecap="round" stroke-dasharray="${(done * circumference).toFixed(1)} ${circumference}" transform="rotate(-90 60 60)"></circle>
+        <text x="60" y="58" text-anchor="middle" font-family="Bricolage Grotesque, sans-serif" font-weight="800" font-size="26" fill="#1E1B3A">${esc(hrs(t.logged))}</text>
+        <text x="60" y="79" text-anchor="middle" font-family="Nunito Sans, sans-serif" font-weight="700" font-size="13" fill="#5B5876">of ${esc(hrs(t.expected))}</text>
+      </svg>
+      <div class="md-stack" style="gap:6px"><div class="md-label">Today's hours</div><div class="md-big">${t.expected > 0 && left > 0.5 ? esc(hrs(left)) + ' to go' : 'All set'}</div><div class="md-note">${esc(ringNote)}</div></div>
+    </div>`;
+    const m = data.missed;
+    const missed = m ? `<div class="md-card md-missed md-stack">
+        <div class="md-row"><div class="md-icon-tile">${icon('warning')}</div><div class="md-label">Missed ${esc(niceDate(m.date, { weekday: 'long' }))}</div></div>
+        <div class="md-big">${esc(hrs(m.missing))} missing on ${esc(niceDate(m.date, { weekday: 'short', day: 'numeric', month: 'short' }))}</div>
+        <button type="button" class="md-btn md-btn-dark" id="md-fix" style="align-self:flex-start">Fix it now</button>
+      </div>` : `<div class="md-card md-clear md-stack">
+        <div class="md-row"><div class="md-icon-tile">${icon('task_alt')}</div><div class="md-label">All caught up</div></div>
+        <div class="md-big">No gaps on your last workday</div><div class="md-note">Keep it that way and your streak grows.</div>
+      </div>`;
+    const s = data.streak, dots = (s.recent || []).map((w) => `<span class="${w === null ? 'na' : w ? 'on' : ''}"></span>`).join('');
+    const streak = `<div class="md-card md-streak md-stack">
+        <div class="md-row"><div class="md-icon-tile">${icon('local_fire_department')}</div><div class="md-label">Timesheet streak</div></div>
+        <div class="md-big">${s.weeks ? `${s.weeks} full week${s.weeks === 1 ? '' : 's'} in a row` : 'Start a streak this week'}</div>
+        <div class="md-dots" role="img" aria-label="Last ${(s.recent || []).length} weeks: ${(s.recent || []).filter(Boolean).length} complete">${dots}</div>
+      </div>`;
+    $('#md-glance').innerHTML = ring + missed + streak;
+    const fix = $('#md-fix');
+    if (fix) fix.addEventListener('click', () => focusQuickLog({ date: m.date, duration: m.missing >= 1 ? `${Math.floor(m.missing)}h${m.missing % 1 ? ' ' + Math.round((m.missing % 1) * 60) + 'm' : ''}` : `${Math.round(m.missing * 60)}m` }));
+  }
+
+  function taskRow(task, recent) {
+    const c = tone(task.epic_key || task.issue_key);
+    const estimate = task.estimate_hours || 0, logged = task.logged_hours || 0;
+    const pct = estimate ? Math.min(100, Math.round((logged / estimate) * 100)) : (logged ? 100 : 0);
+    const tile = task.done ? `<div class="md-task-tile" style="background:#2EC4A0;color:#0B2E26">${icon('check')}</div>`
+      : `<div class="md-task-tile" style="background:${c.tile};color:${c.fg}">${icon(/bug/i.test(task.issue_type || '') ? 'bug_report' : 'add_task')}</div>`;
+    const epic = task.epic_name ? `<span class="md-pill" style="background:${c.tile};color:${c.fg}" title="${esc(task.epic_name)}">${esc(task.epic_name)}</span>` : '';
+    const flag = task.overdue ? '<span class="md-pill" style="background:#FFE9E6;color:#B42318">Overdue</span>' : '';
+    const hours = recent ? `Last logged ${esc(niceDate(task.last_logged, { day: 'numeric', month: 'short' }))}`
+      : `${hrs(logged)}${estimate ? ' / ' + hrs(estimate) : ''}${task.logged_today ? ' · ' + hrs(task.logged_today) + ' today' : ''}`;
+    return `<div class="md-task${task.done ? ' done' : ''}">${tile}
+      <div class="md-task-body">
+        <div class="md-task-meta">${issueLink(task.issue_key)}${epic}${flag}</div>
+        <div class="md-task-title">${esc(task.summary)}</div>
+        <div class="md-row">${recent ? '' : `<div class="md-bar"><i style="width:${pct}%;background:${c.bar}"></i></div>`}<span class="md-task-hours">${hours}</span></div>
+      </div>
+      <div class="md-task-actions">
+        <button type="button" class="md-mini" data-log="${esc(task.issue_key)}" data-duration="30m" aria-label="Log 30 minutes on ${esc(task.issue_key)}">+30m</button>
+        <button type="button" class="md-mini" data-log="${esc(task.issue_key)}" data-duration="1h" aria-label="Log 1 hour on ${esc(task.issue_key)}">+1h</button>
+        <button type="button" class="md-mini icon" data-log="${esc(task.issue_key)}" aria-label="Log custom time on ${esc(task.issue_key)}">${icon('schedule')}</button>
+      </div>
+    </div>`;
+  }
+
+  function renderTasks() {
+    const list = tab === 'assigned' ? data.tasks : data.recent;
+    $('#md-tasks').innerHTML = list.length ? list.map((x) => taskRow(x, tab === 'recent')).join('')
+      : `<div class="md-empty">${tab === 'assigned' ? 'No open subtasks are scheduled for you today.' : 'No other recent subtasks.'}</div>`;
+    for (const button of document.querySelectorAll('[data-log]')) {
+      button.addEventListener('click', () => focusQuickLog({ issue: button.dataset.log, duration: button.dataset.duration }));
+    }
+  }
+
+  function renderWeek() {
+    const max = Math.max(8, ...data.week.map((d) => Math.max(d.expected, d.logged + d.leave)));
+    $('#md-week').innerHTML = data.week.map((d) => {
+      const amount = d.status === 'leave' ? Math.max(d.leave, d.expected) : d.logged;
+      const height = d.status === 'future' || d.status === 'unsynced' ? 96 : Math.max(6, Math.round((amount / max) * 120));
+      const label = d.status === 'leave' ? 'Leave' : d.status === 'off' ? 'Off' : d.status === 'missing' ? hrs(d.logged) : d.logged ? hrs(d.logged) : '';
+      const title = `${d.weekday} ${d.date}: ${hrs(d.logged)} logged${d.leave ? ', ' + hrs(d.leave) + ' leave' : ''}${d.missing ? ', ' + hrs(d.missing) + ' missing' : ''}`;
+      return `<div class="md-day${d.date === data.date ? ' is-today' : ''}" title="${esc(title)}"><small>${esc(label)}</small><i class="st-${esc(d.status)}" style="height:${height}px"></i><b>${esc(d.weekday)}</b></div>`;
+    }).join('');
+    $('#md-week').setAttribute('aria-label', data.week.map((d) => `${d.weekday} ${d.status} ${hrs(d.logged)}`).join(', '));
+    $('#md-week-total').textContent = `${hrs(data.week_total)} / ${hrs(data.week_expected)}`;
+  }
+
+  function renderEpics() {
+    const labels = { on_track: 'On track', over: 'Over plan', started: 'Just started' };
+    $('#md-epics').innerHTML = data.epics.length ? data.epics.map((e) => {
+      const pct = e.planned_hours ? Math.min(100, Math.round((e.logged_hours / e.planned_hours) * 100)) : 15;
+      return `<div class="md-epic ep-${esc(e.state)}"><strong>${esc(e.epic_name)}</strong><span class="md-epic-state">${labels[e.state] || ''} · ${esc(hrs(e.month_hours))} this month</span>
+        <div class="md-bar"><i style="width:${pct}%"></i></div>
+        <small>${esc(hrs(e.logged_hours))} of ${e.planned_hours ? esc(hrs(e.planned_hours)) + ' planned' : 'no estimate'} on your subtasks</small></div>`;
+    }).join('') : '<div class="md-empty">No epic hours logged this month yet.</div>';
+  }
+
+  function renderUpcoming() {
+    $('#md-upcoming').innerHTML = data.upcoming.length ? data.upcoming.map((u) => `<div class="md-row" style="gap:12px">
+        <div class="md-date up-${esc(u.kind)}"><small>${esc(niceDate(u.date, { weekday: 'short' }).toUpperCase())}</small><b>${esc(Number(u.date.slice(8)))}</b></div>
+        <div><div style="font-weight:800">${esc(u.title)}</div><div class="md-note">${esc(u.detail)}</div></div></div>`).join('')
+      : '<div class="md-empty">Nothing planned in the next two weeks.</div>';
+  }
+
+  function fillQuickLog() {
+    const select = $('#md-q-issue'), previous = select.value;
+    const group = (label, rows) => rows.length ? `<optgroup label="${esc(label)}">${rows.map((x) => `<option value="${esc(x.issue_key)}">${esc(x.issue_key)} · ${esc(x.summary)}</option>`).join('')}</optgroup>` : '';
+    select.innerHTML = group('Assigned to me', data.tasks.filter((x) => !x.done)) + group('Recent', data.recent) + group('Done', data.tasks.filter((x) => x.done));
+    if (previous) select.value = previous;
+    const dateInput = $('#md-q-date');
+    dateInput.max = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+    if (!dateInput.value) dateInput.value = data.date > dateInput.max ? dateInput.max : data.date;
+  }
+
+  function setDuration(value) {
+    $('#md-q-duration').value = value;
+    for (const chip of document.querySelectorAll('.md-chip')) chip.setAttribute('aria-pressed', String(chip.dataset.duration === value));
+  }
+
+  function focusQuickLog(draft) {
+    if (draft.issue && ![...$('#md-q-issue').options].some((o) => o.value === draft.issue)) {
+      $('#md-q-issue').insertAdjacentHTML('afterbegin', `<option value="${esc(draft.issue)}">${esc(draft.issue)}</option>`);
+    }
+    if (draft.issue) $('#md-q-issue').value = draft.issue;
+    if (draft.duration) setDuration(draft.duration);
+    if (draft.date) $('#md-q-date').value = draft.date;
+    closeReview();
+    $('#md-quick').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    $('#md-q-comment').focus({ preventScroll: true });
+  }
+
+  async function worklogRequest(path, body) {
+    const response = await fetch(WORKLOG_API + path, {
+      method: body ? 'POST' : 'GET',
+      headers: body ? { 'Content-Type': 'application/json', 'X-EPR-Worklog': '1' } : {},
+      body: body ? JSON.stringify(body) : undefined
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || result.error) throw new Error(result.error || 'Jira request failed.');
+    return result;
+  }
+
+  async function checkJira() {
+    const status = $('#md-q-status');
+    try {
+      identity = await worklogRequest('/identity');
+      const same = String(identity.author || '').trim().toLowerCase() === String(data.employee || '').trim().toLowerCase();
+      if (!identity.write_enabled) {
+        status.className = 'md-quick-status error';
+        status.innerHTML = 'Sign in with Jira to log time. <a href="/api/jira-auth/login">Sign in</a>';
+      } else if (!same) {
+        status.className = 'md-quick-status error';
+        status.textContent = `Jira logs work as ${identity.author}. Quick log is only for your own day.`;
+        $('#md-q-review').disabled = true;
+      }
+    } catch (error) {
+      status.className = 'md-quick-status error';
+      status.innerHTML = 'Jira is not connected. <a href="/api/jira-auth/login">Sign in with Jira</a>';
+    }
+  }
+
+  function startedIso(day, time) {
+    const local = new Date(`${day}T${time || '09:00'}:00`);
+    const offset = -local.getTimezoneOffset(), sign = offset >= 0 ? '+' : '-';
+    const zone = sign + String(Math.floor(Math.abs(offset) / 60)).padStart(2, '0') + ':' + String(Math.abs(offset) % 60).padStart(2, '0');
+    return `${day}T${time || '09:00'}:00${zone}`;
+  }
+
+  function closeReview() {
+    review = null;
+    $('#md-q-review-box').hidden = true;
+    $('#md-quick-form').hidden = false;
+  }
+
+  async function submitReview(event) {
+    event.preventDefault();
+    const status = $('#md-q-status'), button = $('#md-q-review');
+    const issue = $('#md-q-issue').value, comment = $('#md-q-comment').value.trim(), day = $('#md-q-date').value;
+    status.className = 'md-quick-status';
+    if (!issue) { status.className = 'md-quick-status error'; status.textContent = 'Choose a subtask.'; return; }
+    if (!comment) { status.className = 'md-quick-status error'; status.textContent = 'Add a short description for Jira.'; $('#md-q-comment').focus(); return; }
+    if (!day) { status.className = 'md-quick-status error'; status.textContent = 'Choose a date.'; return; }
+    button.disabled = true;
+    status.textContent = 'Checking the subtask and your 24h limit…';
+    try {
+      const result = await worklogRequest('/review', { employee: data.employee, issue_key: issue, duration: $('#md-q-duration').value, started: startedIso(day, $('#md-q-start').value), comment });
+      review = result;
+      const r = result.review;
+      $('#md-q-review-box').innerHTML = `<div class="md-review">
+          <span>Subtask</span><strong>${esc(r.issue_key)} · ${esc(r.summary)}</strong>
+          <span>When</span><strong>${esc(niceDate(r.started.slice(0, 10)))} · ${esc(r.duration_label)}</strong>
+          <span>Description</span><strong>${esc(r.comment)}</strong>
+          <span>Day total on this subtask after logging: ${esc(hrs(r.total_minutes / 60))} / 24h</span>
+        </div>
+        <label class="md-confirm"><input type="checkbox" id="md-q-confirm"> I checked the subtask, date and duration. Create this Jira worklog.</label>
+        <div class="md-review-actions"><button type="button" class="md-btn md-btn-ghost" id="md-q-back">Back</button><button type="button" class="md-btn md-btn-sun" id="md-q-submit" disabled style="margin:0">Log ${esc(r.duration_label)}</button></div>
+        <p class="md-quick-status" id="md-q-submit-status" role="status" aria-live="polite"></p>`;
+      $('#md-quick-form').hidden = true;
+      $('#md-q-review-box').hidden = false;
+      $('#md-q-confirm').addEventListener('change', (e) => { $('#md-q-submit').disabled = !e.target.checked; });
+      $('#md-q-back').addEventListener('click', closeReview);
+      $('#md-q-submit').addEventListener('click', confirmSubmit);
+      $('#md-q-confirm').focus();
+      status.textContent = '';
+    } catch (error) {
+      status.className = 'md-quick-status error';
+      status.textContent = error.message;
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  async function confirmSubmit() {
+    const button = $('#md-q-submit'), status = $('#md-q-submit-status');
+    button.disabled = true;
+    status.className = 'md-quick-status';
+    status.textContent = 'Creating the Jira worklog…';
+    try {
+      const result = await worklogRequest('/submit', { token: review.token, confirmed: true });
+      const r = review.review, hours = r.minutes / 60, day = r.started.slice(0, 10);
+      if (day === data.date) data.today.logged = +(data.today.logged + hours).toFixed(2);
+      const weekDay = data.week.find((d) => d.date === day);
+      if (weekDay) { weekDay.logged = +(weekDay.logged + hours).toFixed(2); data.week_total = +(data.week_total + hours).toFixed(2); if (weekDay.logged + weekDay.leave >= weekDay.expected - 0.5 && weekDay.expected > 0) { weekDay.status = 'complete'; weekDay.missing = 0; } }
+      if (data.missed && data.missed.date === day) { data.missed.missing = +(data.missed.missing - hours).toFixed(2); if (data.missed.missing <= 0.5) data.missed = null; }
+      const task = data.tasks.find((x) => x.issue_key === r.issue_key);
+      if (task) { task.logged_hours = +(task.logged_hours + hours).toFixed(2); if (day === data.date) task.logged_today = +(task.logged_today + hours).toFixed(2); }
+      $('#md-q-comment').value = '';
+      closeReview();
+      renderGlance(); renderTasks(); renderWeek();
+      $('#md-q-status').className = 'md-quick-status ok';
+      $('#md-q-status').textContent = result.verified ? 'Logged and verified in Jira.' : 'Logged in Jira.';
+      toast(`Logged ${r.duration_label} to ${r.issue_key}`);
+    } catch (error) {
+      status.className = 'md-quick-status error';
+      status.textContent = error.message;
+    }
+  }
+
+  for (const chip of document.querySelectorAll('.md-chip')) chip.addEventListener('click', () => setDuration(chip.dataset.duration));
+  $('#md-q-duration').addEventListener('input', (e) => setDuration(e.target.value.trim()));
+  $('#md-quick-form').addEventListener('submit', submitReview);
+  $('#md-log-top').addEventListener('click', () => focusQuickLog({}));
+  for (const button of document.querySelectorAll('.md-tab')) {
+    button.addEventListener('click', () => {
+      tab = button.dataset.tab;
+      for (const other of document.querySelectorAll('.md-tab')) other.setAttribute('aria-selected', String(other === button));
+      if (data && !data.needs_employee) renderTasks();
+    });
+  }
+  load();
+})();
+</script>
+</body>
+</html>

@@ -70,10 +70,11 @@ With 23h already logged by Alice on APP-123 on October 28, `1h` is allowed and `
 - `tests/test_employee_worklog.py`: backend/OAuth tests with mocked writes.
 - `tests/test_jira_privacy.py`: reporting cadence, timestamps, erasure, rate limits, and expiry.
 - `tests/test_employee_availability_calendar.cjs`: browser confirmation and single-submit checks.
+- `my_day.html`: the My Day **Quick log** card is a second client of the same `/identity`, `/review` and `/submit` endpoints. It follows the same review → confirm checkbox → submit flow (see `docs/report-user-guide/screens/17-my-day.md`).
 
 ## Dependent & Impacted Files
 
-`report_server.py` registers worklog/OAuth routes using the capacity DB's persistent parent. `jira_client.py` supplies existing local-test credential factories and Jira site configuration. The generated root report and promoted `report_html` copy contain the UI. The report screen guide links this workflow. Azure needs the three OAuth settings above; no package dependencies were added.
+`report_server.py` registers worklog/OAuth routes using the capacity DB's persistent parent. `jira_client.py` supplies existing local-test credential factories and Jira site configuration. The generated root report and promoted `report_html` copy contain the UI. The report screen guide links this workflow. My Day (`my_day.html`) also submits through these endpoints, and `usage_analytics.py` counts successful `/submit` responses by Referer page. `report_server.my_day_api` reuses `jira_identity()` to read this week's worklogs live. Azure needs the three OAuth settings above; no package dependencies were added.
 
 ## Local verification
 

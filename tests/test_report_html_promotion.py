@@ -26,7 +26,7 @@ class ReportHtmlPromotionTests(unittest.TestCase):
                 resp = client.get("/")
 
             self.assertEqual(resp.status_code, 302)
-            self.assertEqual(resp.headers["Location"], "/introduction.html")
+            self.assertEqual(resp.headers["Location"], "/my_day.html")
 
     def test_monthly_html_serves_fresh_source_when_existing_copy_is_read_only(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:

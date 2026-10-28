@@ -45,6 +45,7 @@ Each info item contains:
 - `docs/report-user-guide/screens/13-rmi-jira-gantt-report.md`
 - `docs/report-user-guide/screens/14-monthly-epic-plan-progress-report.md`
 - `docs/report-user-guide/screens/15-epic-explorer-report.md`
+- `docs/report-user-guide/screens/17-my-day.md` — personal home page (`/my_day.html`, the `/` redirect target): today's hours, gaps, streak, tasks with Quick log, week, epics, upcoming leave.
 
 ## Colossal Refresh storage replacement
 

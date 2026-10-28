@@ -175,6 +175,11 @@
         }
       } catch (_error) { /* File previews and older local servers retain their navigation. Server authorization remains authoritative. */ }
     }
+    const adminNav = NAV_SECTIONS.find((section) => section.id === "admin-settings");
+    if (adminNav && !(adminNav.items || []).some((item) => item.page_key === "usage_analytics")) {
+      adminNav.items.push({ page_key: "usage_analytics", title: "Usage Analytics", href: "/settings/usage-analytics", path: "/settings/usage-analytics", icon: "insights" });
+    }
+    const MY_DAY_ITEM = { page_key: "my_day", title: "My Day", href: resolveReportHref("my_day.html"), icon: "wb_sunny", file: "my_day.html" };
     const storageKey = "unified-report-nav-collapsed";
     const groupsStorageKey = "unified-report-nav-groups";
     const mobileQuery = window.matchMedia("(max-width: 959px)");
@@ -389,7 +394,10 @@
     function renderMainNav() {
       mainNav.innerHTML = "";
       groupEls.length = 0;
-      (reportsSection.items || []).forEach((item) => mainNav.appendChild(createLink(item)));
+      const myDayLink = createLink(MY_DAY_ITEM);
+      myDayLink.classList.add("is-pinned");
+      mainNav.appendChild(myDayLink);
+      (reportsSection.items || []).filter((item) => item.page_key !== "my_day").forEach((item) => mainNav.appendChild(createLink(item)));
       const reportGroups = buildCategoryGroups("reports", reportsSection.categories, false);
       if (!savedGroups && reportGroups.length && !reportGroups.some((g) => expandedGroups.has(g.key))) {
         expandedGroups.add(reportGroups[0].key);

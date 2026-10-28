@@ -255,6 +255,29 @@ body.unified-nav-enabled {
   font-variation-settings: "FILL" 1, "wght" 500, "GRAD" 0, "opsz" 24;
 }
 
+/* My Day is the personal home page, so it stays pinned above the report list with a warm accent. */
+.unified-nav-main-link.is-pinned {
+  margin-bottom: 6px;
+  font-weight: 700;
+}
+
+.unified-nav-main-link.is-pinned .unified-nav-main-icon {
+  color: #ffc23d;
+}
+
+.unified-nav-main-link.is-pinned.is-active {
+  background: #ffc23d;
+  color: #1e1b3a;
+}
+
+.unified-nav-main-link.is-pinned.is-active::before {
+  background: #1e1b3a;
+}
+
+.unified-nav-main-link.is-pinned.is-active .unified-nav-main-icon {
+  color: #1e1b3a;
+}
+
 .unified-nav-main-label,
 .unified-nav-group-label {
   flex: 1;

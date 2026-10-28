@@ -12,7 +12,7 @@ Hassan Malik's verified Atlassian ID is the bootstrap Admin. `EPR_ADMIN_ACCOUNT_
 
 ### Return destination after sign-in
 
-`/login?next=` stores the requested page in the short-lived `epr_next` cookie, and the OAuth callback redirects there. `safe_next()` accepts only navigable EPR pages, such as `/`, `*.html`, `/settings/...`, `/my-availability` and `/report_html/`. It rejects the following, and each falls back to `/`:
+Without a `next`, sign-in returns to `/`, which redirects to **My Day** (`/my_day.html`, a report file Members may open; see `docs/report-user-guide/screens/17-my-day.md`). `/login?next=` stores the requested page in the short-lived `epr_next` cookie, and the OAuth callback redirects there. `safe_next()` accepts only navigable EPR pages, such as `/`, `*.html`, `/settings/...`, `/my-availability` and `/report_html/`. It rejects the following, and each falls back to `/`:
 
 - external or protocol-relative URLs, backslashes and control characters
 - `/api/...` paths
@@ -28,7 +28,7 @@ The light login experience uses a glass surface, liquid-gradient orb, drifting p
 
 ## Server policy
 
-`epr_auth.py` protects direct URLs and APIs, independently of menu visibility. Members have report GET/HEAD access except administrative routes. Mutations default to denied, with explicit exceptions for personal worklog review/submit, the two report exports, and capacity calculation. Settings pages and access/audit APIs require Admin. New mutations need an intentional policy update. Some existing report controls may remain visible; unauthorized requests receive 403.
+`epr_auth.py` protects direct URLs and APIs, independently of menu visibility. Members have report GET/HEAD access except administrative routes. Mutations default to denied, with explicit exceptions for personal worklog review/submit, the two report exports, and capacity calculation. Settings pages and access/audit APIs require Admin, including **Usage Analytics** (`/settings/usage-analytics` and `/api/admin/usage-analytics`, via the `/admin/` rule). `GET /api/my-day` is a normal Member API; a Member always gets their own day and the `employee` parameter is honored only for Admins. New mutations need an intentional policy update. Some existing report controls may remain visible; unauthorized requests receive 403.
 
 The existing opaque HttpOnly, SameSite=Lax cookie is Secure on HTTPS. EPR sessions expire eight hours after identity validation. Role/approval are read from private storage on each request. Reauthentication creates a new EPR session. Mutations require a same-origin Origin header or the server-issued `X-EPR-CSRF` token as well as authentication. Authenticated responses are private/no-store with nosniff and same-origin framing; wildcard CORS is disabled.
 
@@ -38,6 +38,7 @@ State is beside the capacity DB under `worklog_requests`, normally `/home/data/w
 
 - `oauth/<random-session>.json`: OAuth tokens, verified cached Jira identity, EPR sign-in time and CSRF token.
 - `epr_access/users.json`: account ID/name, role, approved/active state and retrieval timestamp.
+- `../usage_analytics.db` (beside the capacity DB): page views and EPR worklog submits per signed-in user (account ID, name, role, date, path), pruned after 400 days. It is used only by the Admin Usage Analytics screen. See `docs/capacity-user-guide/screens/09-usage-analytics.md`.
 - `epr_access/audit.jsonl`: login/logout, access requests/denials, access changes and authenticated mutations. Bodies, query strings, tokens and secrets are excluded. The screen shows 200 recent events; the persisted file currently has no rotation.
 
 JSON files are atomically replaced with private permissions where supported. Keep the existing single Gunicorn worker. Back up this directory securely; never serve or commit it. Logout removes integration sessions but preserves access approvals. Privacy `closed`/`updated` instructions remove profile/access records and anonymize matching audit IDs, requiring fresh approval. Reporting uses an existing valid OAuth grant; when none exists it waits for an authorized session. Jira worklogs and canonical reporting data are unchanged by integration cleanup.
