@@ -123,9 +123,17 @@ def register_jira_oauth(app, directory: Path):
             tokens.update(cloud_id=resource['id'], expires_at=time.time() + tokens['expires_in'],
                           account_id=identity_response.json()['accountId'], personal_data_retrieved_at=time.time(), session_expires_at=time.time()+30*86400)
             save_private(directory / (sid + '.json'), tokens)
-            response = redirect('/employee_capacity_utilization_report.html')
+            if app.config.get('EPR_AUTH_ENABLED'):
+                from epr_auth import safe_next
+                destination = safe_next(request.cookies.get('epr_next'))
+            else:
+                destination = '/employee_capacity_utilization_report.html'
+            response = redirect(destination)
             response.set_cookie(COOKIE, sid, httponly=True, secure=cfg['REDIRECT_URI'].startswith('https://'), samesite='Lax', max_age=30*86400)
             response.delete_cookie('epr_jira_state')
+            response.delete_cookie('epr_next')
+            if app.extensions.get('epr_audit'):
+                app.extensions['epr_audit']('login', tokens['account_id'])
             return response
         except (KeyError, ValueError, requests.RequestException):
             return 'Could not connect Jira. Sign in again; no worklog was created.', 502

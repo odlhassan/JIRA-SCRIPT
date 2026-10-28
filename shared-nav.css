@@ -326,3 +326,5 @@ body.unified-nav-enabled {
     display: block;
   }
 }
+
+.epr-nav-account{display:grid;grid-template-columns:34px minmax(0,1fr);gap:7px 9px;padding:13px;border-bottom:1px solid #ffffff24;color:#d9edf1}.epr-nav-avatar{width:32px;height:32px;display:grid;place-items:center;background:#1b6576;border-radius:50%;overflow:hidden;font-weight:800}.epr-nav-avatar img{width:100%;height:100%;object-fit:cover}.epr-nav-identity{min-width:0}.epr-nav-identity strong{display:block;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.epr-nav-identity small{display:block;color:#99c4d1;font-size:10px;margin-top:3px}.epr-nav-account a,.epr-nav-account button{border:0;background:transparent;color:#b5e0eb;font:11px 'Segoe UI',sans-serif;text-decoration:underline;cursor:pointer;padding:2px 0;text-align:left}.epr-nav-account a{grid-column:1/-1}.unified-nav.is-collapsed .epr-nav-identity,.unified-nav.is-collapsed .epr-nav-account a,.unified-nav.is-collapsed .epr-nav-account button{display:none}.unified-nav.is-collapsed .epr-nav-account{padding:10px;grid-template-columns:1fr}

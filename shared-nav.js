@@ -156,7 +156,25 @@
   }
 
   async function initUnifiedNav() {
-    const NAV_SECTIONS = await resolveNavSections();
+    let NAV_SECTIONS = await resolveNavSections();
+    let eprIdentity = null;
+    if (window.location.protocol !== 'file:') {
+      try {
+        const authResponse = await fetch('/api/auth/me', {cache:'no-store'});
+        const auth = await authResponse.json();
+        if (auth.enabled && !auth.authenticated) { window.location.replace('/login?next='+encodeURIComponent(location.pathname+location.search)); return; }
+        if (auth.enabled) {
+          eprIdentity = auth.user;
+          if (!eprIdentity.active || !eprIdentity.approved) {location.replace('/access-pending');return;}
+          if (eprIdentity.role !== 'admin') NAV_SECTIONS = NAV_SECTIONS.filter(section=>section.id!=='admin-settings');
+          else {
+            let admin = NAV_SECTIONS.find(section=>section.id==='admin-settings');
+            if (!admin) {admin={id:'admin-settings',mainLabel:'Admin Settings',mainIcon:'admin_panel_settings',title:'Admin Settings',items:[],categories:[]};NAV_SECTIONS.push(admin);}
+            admin.items.push({page_key:'users_access',title:'Users & access',href:'/settings/users',path:'/settings/users',icon:'manage_accounts'});
+          }
+        }
+      } catch (_error) { /* File previews and older local servers retain their navigation. Server authorization remains authoritative. */ }
+    }
     const storageKey = "unified-report-nav-collapsed";
     const isMobile = window.matchMedia("(max-width: 959px)").matches;
     const currentPath = String(window.location.pathname || "").replace(/\\/g, "/").toLowerCase();
@@ -189,6 +207,17 @@
     head.appendChild(brand);
     head.appendChild(toggle);
     nav.appendChild(head);
+    if(eprIdentity){
+      const account=document.createElement('div');account.className='epr-nav-account';
+      const name=document.createElement('strong');name.textContent=eprIdentity.display_name||'Atlassian user';
+      const role=document.createElement('small');role.textContent=eprIdentity.role==='admin'?'Administrator':'Member';
+      const identity=document.createElement('div');identity.className='epr-nav-identity';identity.append(name,role);
+      const avatar=document.createElement('span');avatar.className='epr-nav-avatar';avatar.textContent=(eprIdentity.display_name||'E')[0].toUpperCase();
+      if(/^https:\/\//i.test(eprIdentity.avatar_url||'')){const image=document.createElement('img');image.src=eprIdentity.avatar_url;image.alt='';avatar.textContent='';avatar.appendChild(image);}
+      const mine=document.createElement('a');mine.href='/my-availability';mine.textContent='My availability';
+      const logout=document.createElement('button');logout.type='button';logout.textContent='Sign out';logout.onclick=async()=>{const response=await fetch('/api/auth/logout',{method:'POST',headers:{'Content-Type':'application/json','X-EPR-CSRF':eprIdentity.csrf_token},body:'{}'});if(response.ok)location.replace('/login');};
+      account.append(avatar,identity,mine,logout);nav.appendChild(account);
+    }
 
     const body = document.createElement("div");
     body.className = "unified-nav-body";

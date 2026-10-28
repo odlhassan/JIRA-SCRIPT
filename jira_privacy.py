@@ -12,6 +12,7 @@ import requests
 LOGGER = logging.getLogger(__name__)
 _workers = set()
 _lock = threading.Lock()
+ACCESS_LOCK = threading.RLock()
 
 
 def iso_time(timestamp):
@@ -22,9 +23,12 @@ def session_files(directory):
     return [path for path in directory.glob('*.json') if re.fullmatch(r'[a-f0-9]{64}\.json', path.name)]
 
 
-def erase_oauth_account(directory, account_id):
+def erase_oauth_account(directory, account_id, erase_access=False):
     """Erase app-owned profile references while keeping non-personal deduplication receipts."""
     from jira_oauth import save_private
+    if erase_access:
+        with ACCESS_LOCK:
+            _erase_access_account(directory, account_id)
     state_path = directory / 'privacy-report-state.json'
     if state_path.exists():
         state = json.loads(state_path.read_text(encoding='utf-8'))
@@ -40,6 +44,26 @@ def erase_oauth_account(directory, account_id):
         saved = json.loads(path.read_text(encoding='utf-8'))
         if (saved.get('review') or {}).get('account_id') == account_id:
             save_private(path, {key: saved[key] for key in ('worklog_id', 'issue_key', 'verified', 'request_id', 'error') if key in saved})
+
+
+def _erase_access_account(directory, account_id):
+    from jira_oauth import save_private
+    access_file = directory.parent / 'epr_access' / 'users.json'
+    if access_file.exists():
+        access = json.loads(access_file.read_text(encoding='utf-8'))
+        access.pop(account_id, None)
+        save_private(access_file, access)
+        audit_file = access_file.parent / 'audit.jsonl'
+        if audit_file.exists():
+            rows = [json.loads(line) for line in audit_file.read_text(encoding='utf-8').splitlines() if line]
+            for row in rows:
+                for key in ('actor', 'target'):
+                    if row.get(key) == account_id:
+                        row[key] = None
+            temp = audit_file.with_suffix('.tmp')
+            temp.write_text(''.join(json.dumps(row)+'\n' for row in rows), encoding='utf-8')
+            temp.chmod(0o600)
+            temp.replace(audit_file)
 
 
 def cycle_seconds(header):
@@ -89,6 +113,10 @@ def report_accounts(directory: Path, now=None):
         if account and account != 'unknown':
             retrieved = review.get('personal_data_retrieved_at', path.stat().st_mtime)
             accounts[account] = min(accounts.get(account, now), retrieved)
+    access_file = directory.parent / 'epr_access' / 'users.json'
+    if access_file.exists():
+        for account, user in json.loads(access_file.read_text(encoding='utf-8')).items():
+            accounts[account] = min(accounts.get(account, now), user.get('personal_data_retrieved_at', now))
     state['accounts'] = {account: value for account, value in state['accounts'].items() if account in accounts}
     pending = [account for account in accounts if now >= state['accounts'].get(account, {}).get('next_report_at', 0)]
     if not token or not pending:
@@ -108,7 +136,7 @@ def report_accounts(directory: Path, now=None):
         erase = {item['accountId'] for item in instructions if item.get('status') in ('closed', 'updated')}
         for account in batch:
             if account in erase:
-                erase_oauth_account(directory, account)
+                erase_oauth_account(directory, account, erase_access=True)
                 state['accounts'].pop(account, None)
             else:
                 state['accounts'][account] = {'next_report_at': now + cycle_seconds(response.headers.get('Cycle-Period'))}

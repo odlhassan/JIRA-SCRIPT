@@ -72,6 +72,7 @@ from generate_employee_performance_report import (
 from generate_employee_capacity_utilization_report import build_employee_capacity_utilization_payload
 from employee_capacity_utilization_export import build_employee_capacity_utilization_workbook
 from employee_worklog import register_employee_worklog_routes
+from epr_auth import register_epr_auth
 from generate_missed_entries_html import (
     DEFAULT_INPUT_XLSX as MISSED_ENTRIES_DEFAULT_INPUT_XLSX,
     _build_html as missed_entries_build_html,
@@ -40841,9 +40842,10 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
 
     @app.after_request
     def add_cors_headers(response):
-        response.headers["Access-Control-Allow-Origin"] = "*"
-        response.headers["Access-Control-Allow-Headers"] = "Content-Type"
-        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+        if not app.config.get("EPR_AUTH_ENABLED"):
+            response.headers["Access-Control-Allow-Origin"] = "*"
+            response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+            response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
         req_path = _to_text(getattr(request, "path", ""))
         if (
             req_path.startswith(f"{LEGACY_PVD_API_PREFIX}/")
@@ -47619,6 +47621,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             return jsonify({"error": f"Failed to load page categories: {exc}"}), 500
 
     register_employee_worklog_routes(app, capacity_paths["db_path"].parent / "worklog_requests")
+    register_epr_auth(app, capacity_paths["db_path"].parent / "worklog_requests" / "oauth", set(_resolve_report_html_sources(base_dir)))
 
     @app.route("/api/employee-capacity-utilization/data", methods=["GET"])
     def employee_capacity_utilization_data_api():

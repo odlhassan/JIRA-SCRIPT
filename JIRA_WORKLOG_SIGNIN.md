@@ -1,5 +1,7 @@
 # Calendar worklogs and Jira sign-in
 
+Atlassian sign-in now also gates the whole EPR application. New users need Admin approval; Member/Admin roles, eight-hour EPR sessions, access administration, and private audit records are described in [EPR authentication](EPR_AUTHENTICATION.md). The existing OAuth app and scopes are reused. Logout preserves approvals; Atlassian privacy erasure removes access/profile records and anonymizes audit IDs. Access records are included in periodic privacy reporting.
+
 ## Business Cases
 
 Employees log time from their Availability calendar and personal Atlassian sign-in ensures Jira credits the actual user. Shared server credentials cannot impersonate another employee.

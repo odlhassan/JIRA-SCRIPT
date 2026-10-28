@@ -57,3 +57,14 @@ class JiraPrivacyTests(unittest.TestCase):
         self.assertEqual(cycle_seconds('3600'), 3600)
         self.assertEqual(cycle_seconds(None), 604800)
 
+    def test_approval_survives_logout_but_privacy_erasure_removes_it(self):
+        access = self.directory.parent / 'epr_access'
+        access.mkdir()
+        (access/'users.json').write_text(json.dumps({'person': {'account_id':'person','display_name':'Name'}}), encoding='utf-8')
+        (access/'audit.jsonl').write_text(json.dumps({'actor':'person','target':'person','event':'user_access_changed'})+'\n', encoding='utf-8')
+        erase_oauth_account(self.directory, 'person')
+        self.assertIn('person', json.loads((access/'users.json').read_text()))
+        erase_oauth_account(self.directory, 'person', erase_access=True)
+        self.assertEqual(json.loads((access/'users.json').read_text()), {})
+        self.assertNotIn('person', (access/'audit.jsonl').read_text())
+
