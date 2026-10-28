@@ -33,7 +33,7 @@ Availability values use bold purple underlined text. Closing the centered calend
 5. In Azure App Service application settings, securely set `JIRA_OAUTH_CLIENT_ID`, `JIRA_OAUTH_CLIENT_SECRET`, and `JIRA_OAUTH_REDIRECT_URI` (the callback above), then restart. Keep secrets out of source control and chat. Leave `EPR_WORKLOG_ALLOW_SHARED_ACCOUNT` unset.
 6. Open an Availability calendar, click **+**, choose **Sign in with Jira**, and grant access to the report's Jira site. The callback checks browser-bound state and site/scopes. It returns to the report; reopen the desired calendar/date.
 
-The **EPR Reporting** resource-level OAuth app was registered on 2026-10-28 (app ID `ba97f4c8-594a-42f7-b8b8-14351f427eae`). Its callback and Jira scopes are configured, and the three OAuth settings have been saved in Azure without committing credentials. Organization-only distribution requires the personal-data declaration below. References: [Atlassian 3LO](https://developer.atlassian.com/cloud/jira/platform/oauth-2-3lo-apps/) and [worklog API](https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issue-worklogs/).
+The **EPR Reporting** resource-level OAuth app was registered on 2026-10-28 (app ID `ba97f4c8-594a-42f7-b8b8-14351f427eae`). Its callback and Jira scopes are configured, and the three OAuth settings have been saved in Azure without committing credentials. Organization-only distribution is enabled with Octopus Digital as vendor, the work support email, and personal-data storage declared as Yes. References: [Atlassian 3LO](https://developer.atlassian.com/cloud/jira/platform/oauth-2-3lo-apps/) and [worklog API](https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issue-worklogs/).
 
 ## Personal-data reporting
 
@@ -78,4 +78,18 @@ Tests: `.venv/Scripts/python.exe -m unittest tests.test_employee_worklog tests.t
 
 ## Authorized live verification — 2026-10-28
 
-One 30-minute entry was created for Hassan Malik on `DIGITALLOG-1162` at 09:00 +05:00, worklog ID `69101`, with an explicit EPR integration verification description. Independent Jira reads confirmed exactly one matching entry and 1800 seconds. Jira rejected earlier attempts before creating any record because the request property needed a JSON object rather than a scalar string; that payload was corrected and regression coverage added. No further live writes are part of verification. Personal OAuth consent remains untested live until the app is registered and configured.
+One 30-minute entry was created for Hassan Malik on `DIGITALLOG-1162` at 09:00 +05:00, worklog ID `69101`, with an explicit EPR integration verification description. Independent Jira reads confirmed exactly one matching entry and 1800 seconds. Jira rejected earlier attempts before creating any record because the request property needed a JSON object rather than a scalar string; that payload was corrected and regression coverage added. No further live writes are part of verification. Personal OAuth consent was subsequently completed successfully for Hassan Malik. The production callback returned to the report, the form showed Signed in to Jira: Hassan Malik, and live subtask search and review succeeded for DIGITALLOG-1162. Final confirmation stayed unchecked and disabled, so this sign-in verification created no additional worklog. Azure now holds the actual client secret transferred directly by the owner; no credentials were committed or printed.
+
+## Activation verification — 2026-10-28
+
+Organization-only sharing is enabled. After the owner pasted the actual client secret directly into Azure, settings were saved and the app restarted. Hassan Malik authorized the resource-restricted app on octopusdtlsupport.atlassian.net. Production sign-in, subtask search, and live review were verified; no extra time entry was created. The signed-in report was left open in the user's in-app browser.
+
+A live privacy reporting pass succeeded with `{'reported': 1}`. This exact command ran in the application runtime's Azure WebSSH console:
+
+```sh
+python -c "import sys;sys.path.insert(0,'/home/site/wwwroot/.python_packages/lib/site-packages');sys.path.insert(0,'/home/site/wwwroot');from pathlib import Path;from jira_privacy import report_accounts;print(report_accounts(Path('/home/data/worklog_requests/oauth')))"
+```
+
+Kudu's separate command environment lacked the application module/runtime paths, so the diagnostic invocation could not run there; WebSSH was used successfully instead. The hourly app worker will honor the persisted reporting cycle.
+
+Focused automated verification: `.venv/Scripts/python.exe -m unittest tests.test_jira_privacy tests.test_employee_worklog tests.test_employee_capacity_utilization_report` — 17 passed. Client secrets, refresh tokens, and session cookies were not printed or committed.
