@@ -63,10 +63,19 @@ test('admin can approve a member and access the user management menu',async({pag
   await expect(page.getByRole('link',{name:/Users & access/})).toBeHidden();
   await adminToggle.click();
   await expect(page.getByRole('link',{name:/Users & access/})).toBeVisible();
+  page.once('dialog', dialog => dialog.accept());
   await page.getByRole('checkbox',{name:'Approved for New Employee'}).check();
-  await page.getByRole('button',{name:'Save access'}).click();
-  await expect(page.getByRole('status')).toHaveText('Access updated.');
+  await expect(page.locator('.save-status')).toHaveText('Saved');
   expect(saved()).toEqual({role:'member',approved:true,active:true});
+});
+test('autosave restores the previous role when the server rejects the change',async({page})=>{
+  await fixture(page,'admin');
+  await page.route('http://epr.test/api/auth/users/member',route=>route.fulfill({status:400,json:{error:'Role change rejected'}}));
+  await page.goto('http://epr.test/settings/users');
+  const role=page.getByRole('combobox',{name:'Role for New Employee'});
+  await role.selectOption('admin');
+  await expect(page.locator('.save-status')).toHaveText('Could not save: Role change rejected');
+  await expect(role).toHaveValue('member');
 });
 test('single-column nav keeps account actions on one line, filters, nests, and collapses',async({page})=>{
   const errors=[];page.on('pageerror',e=>errors.push(e.message));

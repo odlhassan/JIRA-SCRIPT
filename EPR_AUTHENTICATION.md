@@ -8,7 +8,7 @@ Signed-out report requests redirect to `/login`; APIs return 401 without report 
 
 An Admin approves the user in **Admin Settings → Users & access**. Members read reports and submit personal worklogs through the existing review and confirmation flow. Admins manage settings, refreshes, plans, SQL, and access. Approved Members see organization-wide report data; this core release does not add team/row-level confidentiality.
 
-Hassan Malik's verified Atlassian ID is the bootstrap Admin. `EPR_ADMIN_ACCOUNT_IDS` can explicitly replace that comma-separated bootstrap list; it only applies when creating a missing access record. Users must sign in once before approval. Role, Approved, and Active changes apply on the next request, including existing sessions. The server prevents disabling your own account and removing the last approved, active Admin.
+Hassan Malik's verified Atlassian ID is the bootstrap Admin. `EPR_ADMIN_ACCOUNT_IDS` can explicitly replace that comma-separated bootstrap list; it only applies when creating a missing access record. Users must sign in once before approval. Role, Approved, and Active changes save automatically when changed and apply on the next request, including existing sessions. Approval and active-state changes require confirmation. The row shows saving, saved, or an error; failed changes revert to their previously saved values. The server prevents disabling your own account and removing the last approved, active Admin.
 
 ### Return destination after sign-in
 
