@@ -63,8 +63,9 @@ test('admin can approve a member and access the user management menu',async({pag
   await expect(page.getByRole('link',{name:/Users & access/})).toBeHidden();
   await adminToggle.click();
   await expect(page.getByRole('link',{name:/Users & access/})).toBeVisible();
+  await page.getByRole('button',{name:'Review access'}).click();
   page.once('dialog', dialog => dialog.accept());
-  await page.getByRole('checkbox',{name:'Approved for New Employee'}).check();
+  await page.getByRole('checkbox',{name:'Approved',exact:true}).check();
   await expect(page.locator('.save-status')).toHaveText('Saved');
   expect(saved()).toEqual({role:'member',approved:true,active:true});
 });
@@ -72,10 +73,26 @@ test('autosave restores the previous role when the server rejects the change',as
   await fixture(page,'admin');
   await page.route('http://epr.test/api/auth/users/member',route=>route.fulfill({status:400,json:{error:'Role change rejected'}}));
   await page.goto('http://epr.test/settings/users');
-  const role=page.getByRole('combobox',{name:'Role for New Employee'});
+  await page.getByRole('button',{name:'Review access'}).click();
+  const role=page.getByRole('combobox',{name:'Role',exact:true});
   await role.selectOption('admin');
   await expect(page.locator('.save-status')).toHaveText('Could not save: Role change rejected');
   await expect(role).toHaveValue('member');
+});
+test('directory search, status filters and activity work on mobile',async({page})=>{
+  await fixture(page,'admin');await page.goto('http://epr.test/settings/users');
+  await expect(page.getByText('Pending approval',{exact:true}).first()).toBeVisible();
+  await page.getByRole('searchbox',{name:'Search people'}).fill('missing');
+  await expect(page.getByText('No people match these filters.')).toBeVisible();
+  await page.getByRole('searchbox',{name:'Search people'}).fill('');
+  await page.getByRole('combobox',{name:'Filter by access status'}).selectOption('active');
+  await expect(page.getByText('No people match these filters.')).toBeVisible();
+  await page.getByRole('combobox',{name:'Filter by access status'}).selectOption('pending');
+  await expect(page.getByText('New Employee')).toBeVisible();
+  await page.getByRole('tab',{name:'Activity'}).click();
+  await expect(page.getByText('No recent activity yet.')).toBeVisible();
+  await page.setViewportSize({width:390,height:844});
+  await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
 test('single-column nav keeps account actions on one line, filters, nests, and collapses',async({page})=>{
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
