@@ -71,6 +71,7 @@ from generate_employee_performance_report import (
 )
 from generate_employee_capacity_utilization_report import build_employee_capacity_utilization_payload
 from employee_capacity_utilization_export import build_employee_capacity_utilization_workbook
+from worklog_tally import build_worklog_tally, tally_pdf
 from employee_worklog import jira_identity, register_employee_worklog_routes
 from epr_auth import register_epr_auth
 from my_day_service import build_my_day, fetch_live_week_worklogs, list_people
@@ -47684,6 +47685,27 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             return jsonify({"error": str(exc)}), 409
         except Exception as exc:
             return jsonify({"error": f"Failed to export employee capacity and utilization: {exc}"}), 500
+
+    @app.get("/api/employee-capacity-utilization/tally")
+    @app.get("/api/employee-capacity-utilization/tally.pdf")
+    def employee_worklog_tally_api():
+        try:
+            result = build_worklog_tally(capacity_paths["db_path"], request.args.get("employee"), request.args.get("month"))
+            if request.path.endswith(".pdf"):
+                filename = "worklog-tally-" + re.sub(r"[^A-Za-z0-9_-]+", "-", result["employee"]).strip("-") + "-" + result["month"] + ".pdf"
+                response = send_file(tally_pdf(result), as_attachment=True, download_name=filename, mimetype="application/pdf")
+            else:
+                response = jsonify(result)
+            response.headers["Cache-Control"] = "no-store, private"
+            return response
+        except ValueError as exc:
+            return jsonify(error=str(exc)), 400
+        except RuntimeError as exc:
+            return jsonify(error=str(exc)), 409
+        except requests.RequestException:
+            return jsonify(error="Jira could not be read completely. No tally was generated. Check Jira access and try again."), 502
+        except sqlite3.Error:
+            return jsonify(error="The EPR snapshot could not be read. No tally was generated. Try again after the refresh finishes."), 503
 
     @app.route("/api/page-categories", methods=["PUT"])
     def save_page_categories_api():

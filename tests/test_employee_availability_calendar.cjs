@@ -15,6 +15,28 @@ const payload = {
   ],
   leaves: [ { assignee: 'Alice', period_day: '2026-10-05', planned_taken_hours: 2, unplanned_taken_hours: 1, jira_task_ids:'RLT-1, RLT-2', jira_task_links:'https://jira.example/browse/RLT-1, https://jira.example/browse/RLT-2' }, { assignee: 'Alice', period_day: '2026-10-07', planned_taken_hours: 8 } ],
 };
+
+test('tally downloads a PDF for the displayed employee/month and reports failures honestly',async({page})=>{
+  let requests=0;
+  await page.route('**/api/employee-capacity-utilization/tally.pdf?*',route=>{
+    const params=new URL(route.request().url()).searchParams;
+    expect(params.get('employee')).toBe('Alice');expect(params.get('month')).toBe('2026-10');requests++;
+    return route.fulfill({body:Buffer.from('%PDF-1.4\nmock tally'),contentType:'application/pdf'});
+  });
+  await page.locator('#table tbody tr').first().locator('td').nth(4).click();
+  const downloadPromise=page.waitForEvent('download');
+  await page.getByRole('button',{name:'Download Jira tally PDF',exact:true}).click();
+  const download=await downloadPromise;
+  expect(download.suggestedFilename()).toBe('worklog-tally-Alice-2026-10.pdf');
+  await expect(page.locator('.availability-tally-status')).toContainText('Tally downloaded for Alice · 2026-10');
+  expect(requests).toBe(1);
+  await page.route('**/api/employee-capacity-utilization/tally.pdf?*',route=>route.fulfill({status:502,json:{error:'Jira could not be read completely. No tally was generated.'}}));
+  await page.getByRole('button',{name:'Download Jira tally PDF',exact:true}).click();
+  await expect(page.locator('.availability-tally-status')).toContainText('No tally was generated.');
+  await expect(page.getByRole('button',{name:'Download Jira tally PDF',exact:true})).toBeEnabled();
+  await page.setViewportSize({width:390,height:844});
+  expect(await page.locator('.availability-toolbar').evaluate(el=>el.scrollWidth-el.clientWidth)).toBeLessThanOrEqual(1);
+});
 test('personal history auto-loads the month, searches titles, paginates, exports and fits mobile',async({page})=>{
   await page.route('**/worklog/history?*',route=>{
     const more=new URL(route.request().url()).searchParams.has('cursor');

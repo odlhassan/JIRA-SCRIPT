@@ -4,6 +4,15 @@ Atlassian sign-in now also gates the whole EPR application. New users need Admin
 
 ## Business Cases
 
+For a saved-data audit, open an employee's Availability calendar and choose
+**Download Jira tally PDF**. This read-only export compares live Jira with the
+current EPR snapshot by worklog ID, task, date and duration, includes every day
+of the displayed month, and explains exclusions from calendar work. It uses the
+reporting account's Jira visibility; absent records do not prove user error or
+failure to save. It does not change personal review/submit/delete. Routes,
+pagination, data flow, schema reads and verification are documented in
+[Monthly worklog tally](WORKLOG_TALLY.md).
+
 Employees log time from their Availability calendar and personal Atlassian sign-in ensures Jira credits the actual user. Shared server credentials cannot impersonate another employee.
 
 Employees can also correct mistakes by deleting their own individual entries on any Jira issue, including tasks assigned to someone else and issue types outside the calendar's subtask logging scope.

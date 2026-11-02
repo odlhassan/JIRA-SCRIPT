@@ -80,6 +80,22 @@ The server builds the canonical payload on page load. The generator inlines the 
 
 ## Availability modal month controls
 
+For one named employee, the toolbar also offers **Download Jira tally PDF**.
+It reads live Jira and the current saved EPR snapshot for the displayed month,
+then downloads an overview, every day's totals (including zero-entry days), and
+individual worklog IDs/dates/hours with match or discrepancy status. The PDF
+separately explains which EPR records count as calendar subtask work. It does not
+change hours or run Colossal Refresh. A read/pagination failure shows an error
+instead of producing a partial report. Grand Total does not offer this export.
+See [Monthly worklog tally](../../../WORKLOG_TALLY.md) for access/indexing limits
+and planned dates versus saved worklog dates.
+
+Dependencies/data flow: the calendar requests protected read-only
+`/api/employee-capacity-utilization/tally.pdf?employee=...&month=...` in
+`report_server.py`; `worklog_tally.py` reads this report's canonical runs,
+compares them with the reporting Jira account's records and streams a PDF.
+ReportLab is a new runtime dependency. No schema changes are involved.
+
 Availability Details has a sticky toolbar containing **Previous month** (left chevron), the displayed month/year, **Next month** (right chevron), and **Manage my logged hours**. The manager is directly accessible from this modal, including when opened through the personal **My availability** option. Its button stays available while scrolling through the calendar and day details.
 
 Click either arrow repeatedly to browse adjacent months without closing the modal. The selected employee (or combined employee scope), capacity profile and report filters remain selected. The report Month field follows the chosen month, and its table, calendar dates, hours, leave and capacity totals are recalculated from the loaded data. Switching months clears the previous day selection and any unfinished day-detail composer. Keyboard focus stays on the same arrow. Closing after a month jump returns focus to the report Month field.
