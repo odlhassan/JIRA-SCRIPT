@@ -2,6 +2,8 @@
 
 Some assets are **expected by the report server but may be missing** after a fresh clone. That can make the report index look plain, the "Dashboard" link return 404, or **icons show as empty boxes** in the sidebar and reports.
 
+The personal worklog manager requires root `employee_worklog_manage.js` and `employee_worklog_manage.css`. The report also needs `employee_capacity_modal_links.js` for shareable detail/form URLs. `employee_worklog.py` serves it at `/api/employee-capacity-utilization/worklog/manage.js` for My Day; `generate_employee_capacity_utilization_report.py` also inlines it into the Availability report. Include this asset when deploying, and regenerate the capacity report after edits. See [worklog management](JIRA_WORKLOG_SIGNIN.md#delete-your-own-logged-hours).
+
 ## 1. `dashboard.html`
 
 - **Expected:** The nav and root URL expect a report at `report_html/dashboard.html` (or `dashboard.html` in the project root, which sync copies into `report_html`).

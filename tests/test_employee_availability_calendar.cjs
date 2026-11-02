@@ -15,9 +15,216 @@ const payload = {
   ],
   leaves: [ { assignee: 'Alice', period_day: '2026-10-05', planned_taken_hours: 2, unplanned_taken_hours: 1, jira_task_ids:'RLT-1, RLT-2', jira_task_links:'https://jira.example/browse/RLT-1, https://jira.example/browse/RLT-2' }, { assignee: 'Alice', period_day: '2026-10-07', planned_taken_hours: 8 } ],
 };
+test('personal history auto-loads the month, searches titles, paginates, exports and fits mobile',async({page})=>{
+  await page.route('**/worklog/history?*',route=>{
+    const more=new URL(route.request().url()).searchParams.has('cursor');
+    return route.fulfill({json:{author:'Alice',entries:more?[
+      {issue_key:'APP-2',summary:'Review release',worklog_id:'203',started:'2026-10-07T11:00:00+05:00',seconds:3600,comment:'=Review'},
+    ]:[
+      {issue_key:'APP-1',summary:'Build calendar',worklog_id:'201',started:'2026-10-05T09:00:00+05:00',seconds:1800,comment:{content:[{text:'Design notes <script>'}]}},
+      {issue_key:'APP-2',summary:'Review release',worklog_id:'202',started:'2026-10-06T09:00:00+05:00',seconds:7200,comment:'Release checks'},
+    ],next_cursor:more?null:'next'}});
+  });
+  await page.locator('#table tbody tr').first().locator('td').nth(4).click();
+  await page.getByRole('button',{name:'Manage my logged hours',exact:true}).click();
+  const manager=page.locator('.wl-manager');
+  await expect(manager.locator('.wl-entry')).toHaveCount(2);
+  await expect(manager.locator('[data-stats]')).toContainText('2h 30m');
+  await expect(manager.locator('[data-status]')).toContainText('totals cover loaded entries only');
+  await manager.getByRole('button',{name:'Load more tasks'}).click();
+  await expect(manager.locator('.wl-entry')).toHaveCount(3);
+  await manager.locator('[name="search"]').fill('release');
+  await expect(manager.locator('.wl-entry')).toHaveCount(2);
+  await manager.locator('[name="sort"]').selectOption('longest');
+  await expect(manager.locator('.wl-entry').first()).toContainText('2h');
+  const downloadPromise=page.waitForEvent('download');
+  await manager.getByRole('button',{name:'Export CSV'}).click();
+  const download=await downloadPromise;
+  const csv=fs.readFileSync(await download.path(),'utf8');
+  expect(csv).toContain("'=Review");expect(csv).not.toContain('Design notes');
+  await manager.locator('[name="search"]').fill('');
+  await manager.locator('[name="task"]').selectOption('APP-1');
+  await expect(manager.locator('.wl-entry')).toHaveCount(1);
+  await expect(manager.locator('[data-entries]')).toContainText('Design notes <script>');
+  await manager.locator('[name="task"]').selectOption('');
+  await manager.screenshot({path:'tmp/my-logged-hours-redesign-desktop.png'});
+  await page.setViewportSize({width:390,height:844});
+  expect(await manager.evaluate(el=>el.scrollWidth-el.clientWidth)).toBeLessThanOrEqual(1);
+  await manager.screenshot({path:'tmp/my-logged-hours-redesign-mobile.png'});
+  await page.keyboard.press('Escape');
+  await expect(manager).toHaveCount(0);
+  await expect(page.locator('#ecu-drawer')).toHaveClass(/open/);
+});
+test('missing personal sign-in gives a useful setup message instead of empty history',async({page})=>{
+  await page.route('**/worklog/history?*',route=>route.fulfill({status:400,json:{error:'Sign in with Jira to manage your logged hours.'}}));
+  await page.route('**/api/jira-auth/status',route=>route.fulfill({json:{configured:false}}));
+  await page.locator('#table tbody tr').first().locator('td').nth(4).click();
+  await page.getByRole('button',{name:'Manage my logged hours',exact:true}).click();
+  await expect(page.locator('.wl-empty')).toContainText('Jira history is unavailable');
+  await expect(page.locator('.wl-empty')).toContainText('needs administrator setup');
+  await expect(page.locator('.wl-manager [data-export]')).toBeDisabled();
+});
+test('each metric modal has a reloadable URL with its employee and month',async({page})=>{
+  for(const metric of ['logged','capacity','official','leaves','availability','booked','logged','utilization']){
+    const index=['logged','capacity','official','leaves','availability','booked','logged','utilization'].indexOf(metric);
+    await page.locator('#table tbody tr').first().locator('td').nth(index).click();
+    await expect(page).toHaveURL(new RegExp('modal='+metric));
+    await page.reload();
+    await expect(page.locator('#ecu-drawer')).toHaveClass(/open/);
+    await expect(page.locator('#ecu-drawer-subtitle')).toContainText('Alice');
+    await expect(page.locator('#month')).toHaveValue('2026-10');
+    await expect(page.getByRole('button',{name:'Copy link to details'})).toBeVisible();
+    await page.getByRole('button',{name:'Close details'}).click();
+  }
+});
+test('shared day and personal manager URLs restore their context without deleting',async({page})=>{
+  let deletes=0;await page.route('**/worklog/delete',route=>{deletes++;return route.fulfill({json:{deleted:true}})});
+  await page.route('**/worklog/entries?*',route=>route.fulfill({json:{author:'Alice',issue_key:'APP-1',entries:[{worklog_id:'123',started:'2026-10-05',seconds:1800}]}}));
+  await page.locator('#table tbody tr').first().locator('td').nth(4).click();
+  await page.locator('[data-work-date="2026-10-05"]').click();
+  const dayUrl=page.url();await page.reload();
+  await expect(page.locator('#availability-day-details')).toContainText('5.5h logged');
+  await page.getByRole('button',{name:'Delete my entries on APP-1 for 2026-10-05'}).click();
+  await expect(page.locator('.wl-manager .wl-entry')).toHaveCount(1);
+  expect(page.url()).toContain('panel=hours');
+  await page.goBack();
+  await expect(page.locator('.wl-manager')).toHaveCount(0);
+  await expect(page.locator('#availability-day-details')).toContainText('5.5h logged');
+  await page.goForward();
+  await expect(page.locator('.wl-manager .wl-entry')).toHaveCount(1);
+  await page.reload();
+  await expect(page.locator('.wl-manager .wl-entry')).toHaveCount(1);
+  await expect(page.locator('.wl-manager [name="date"]')).toHaveValue('2026-10-05');
+  expect(deletes).toBe(0);
+  await page.locator('.wl-manager [data-close]').click();
+  await page.goto(dayUrl);await expect(page.locator('#availability-day-details')).toContainText('5.5h logged');
+});
+test('worklog composer URL restores the form without sharing private draft text or submitting',async({page})=>{
+  let writes=0;
+  await page.route('**/worklog/identity',route=>route.fulfill({json:{author:'Alice',signed_in:true,write_enabled:true}}));
+  await page.route('**/api/jira-auth/status',route=>route.fulfill({json:{configured:true,signed_in:true}}));
+  await page.route('**/worklog/submit',route=>{writes++;return route.fulfill({json:{}})});
+  await page.locator('#table tbody tr').first().locator('td').nth(4).click();
+  await page.getByRole('button',{name:'Log work on 2026-10-05'}).click();
+  await page.locator('#worklog-comment').fill('Private draft text must stay out of links');
+  expect(page.url()).toContain('panel=log');
+  expect(page.url()).not.toContain('Private');
+  await page.reload();
+  await expect(page.locator('#worklog-comment')).toHaveValue('');
+  await expect(page.locator('#availability-day-details')).toContainText('Monday, October 5, 2026');
+  expect(writes).toBe(0);
+});
+test('modal month arrows preserve employee, update daily totals, and keep personal management accessible',async({page})=>{
+  await page.locator('#table tbody tr').first().locator('td').nth(4).click();
+  const modal=page.locator('#ecu-drawer');
+  await page.locator('[data-work-date="2026-10-05"]').click();
+  await modal.getByRole('button',{name:'Previous month',exact:true}).click();
+  await expect(page.locator('#month')).toHaveValue('2026-09');
+  await expect(page.locator('#ecu-drawer-subtitle')).toContainText('Alice · 2026-09');
+  await expect(page.locator('[data-calendar-date="2026-09-05"]')).toContainText('8h logged');
+  await expect(page.locator('.availability-day[data-calendar-date]')).toHaveCount(30);
+  await expect(page.locator('#availability-day-details')).toContainText('Explore a day');
+  await modal.getByRole('button',{name:'Next month',exact:true}).click();
+  await expect(page.locator('[data-calendar-date="2026-10-05"]')).toContainText('5.5h logged');
+  await modal.getByRole('button',{name:'Next month',exact:true}).click();
+  await expect(page.locator('#month')).toHaveValue('2026-11');
+  await modal.getByRole('button',{name:'Manage my logged hours',exact:true}).click();
+  await expect(page.getByRole('dialog',{name:'Manage my logged hours'})).toBeVisible();
+});
+test('month arrows cross years and render leap February on mobile',async({page})=>{
+  await page.locator('#month').fill('2024-01');
+  await page.locator('#table tbody tr').first().locator('td').nth(4).click();
+  await page.getByRole('button',{name:'Previous month',exact:true}).click();
+  await expect(page.locator('#month')).toHaveValue('2023-12');
+  await page.getByRole('button',{name:'Next month',exact:true}).click();
+  await expect(page.locator('#month')).toHaveValue('2024-01');
+  await page.getByRole('button',{name:'Next month',exact:true}).click();
+  await expect(page.locator('.availability-day[data-calendar-date]')).toHaveCount(29);
+  await page.setViewportSize({width:390,height:844});
+  await expect(page.getByRole('button',{name:'Previous month',exact:true})).toBeVisible();
+  await expect(page.getByRole('button',{name:'Next month',exact:true})).toBeVisible();
+  await expect(page.getByRole('button',{name:'Manage my logged hours',exact:true})).toBeVisible();
+  expect(await page.locator('.availability-toolbar').evaluate(el=>el.scrollWidth-el.clientWidth)).toBeLessThanOrEqual(1);
+});
+test('personal hours manager loads any task and deletes only after confirmation', async ({page}) => {
+  let deletes = 0;
+  await page.route('**/worklog/entries?*', route => route.fulfill({json:{issue_key:'STORY-1',author:'Alice',entries:[
+    {worklog_id:'123',started:'2026-10-05T09:00:00+05:00',seconds:1800,comment:{content:[{text:'Fix entry'}]}},
+    {worklog_id:'124',started:'2026-10-06T09:00:00+05:00',seconds:3600},
+  ]}}));
+  await page.route('**/worklog/delete', route => {
+    deletes++; expect(route.request().postDataJSON()).toEqual({issue_key:'STORY-1',worklog_id:'123',confirmed:true});
+    return route.fulfill({json:{deleted:true,issue_key:'STORY-1',worklog_id:'123'}});
+  });
+  await page.locator('#table tbody tr').first().locator('td').nth(4).click();
+  await page.getByRole('button',{name:'Manage my logged hours',exact:true}).click();
+  const dialog=page.getByRole('dialog',{name:'Manage my logged hours'});
+  await dialog.getByRole('textbox',{name:'Jira task key'}).fill('STORY-1');
+  await dialog.getByRole('button',{name:'Load my entries'}).click();
+  await expect(dialog).toContainText('2 entries on STORY-1');
+  await dialog.locator('.wl-entry').filter({hasText:'Worklog 123'}).getByRole('button',{name:'Delete entry'}).click();
+  await dialog.getByRole('button',{name:'Cancel deletion'}).click();
+  expect(deletes).toBe(0);
+  await dialog.locator('.wl-entry').filter({hasText:'Worklog 123'}).getByRole('button',{name:'Delete entry'}).click();
+  await dialog.getByRole('button',{name:'Confirm delete'}).click();
+  await expect(dialog.locator('[data-status]')).toHaveText('Deleted worklog 123 from Jira.');
+  await expect(dialog.getByRole('button',{name:'Delete entry'})).toHaveCount(1);
+  expect(deletes).toBe(1);
+  await dialog.getByRole('button',{name:'Close worklog manager'}).click();
+  await expect(dialog).toHaveCount(0);
+});
+test('day table Delete opens that task and date while retaining other dates after deletion', async ({page}) => {
+  let deletes=0;
+  await page.route('**/worklog/entries?*',route=>route.fulfill({json:{issue_key:'APP-1',author:'Alice',entries:[
+    {worklog_id:'122',started:'2026-10-06T09:00:00+05:00',seconds:3600},
+    {worklog_id:'123',started:'2026-10-05T09:00:00+05:00',seconds:1800},
+  ]}}));
+  await page.route('**/worklog/delete',route=>{
+    deletes++;expect(route.request().postDataJSON().worklog_id).toBe('123');
+    return route.fulfill({json:{deleted:true}});
+  });
+  await page.locator('#table tbody tr').first().locator('td').nth(4).click();
+  await page.locator('[data-work-date="2026-10-05"]').click();
+  await page.getByRole('button',{name:'Delete my entries on APP-1 for 2026-10-05',exact:true}).click();
+  const dialog=page.getByRole('dialog',{name:'Manage my logged hours'});
+  await expect(dialog.getByRole('textbox',{name:'Jira task key'})).toHaveValue('APP-1');
+  await expect(dialog.locator('input[name="date"]')).toHaveValue('2026-10-05');
+  await expect(dialog.getByRole('button',{name:'Delete entry'})).toHaveCount(1);
+  await expect(dialog.locator('[data-entries]')).not.toContainText('Worklog 122');
+  await dialog.getByRole('button',{name:'Delete entry'}).click();
+  await dialog.getByRole('button',{name:'Confirm delete'}).click();
+  await expect(dialog.locator('[data-status]')).toHaveText('Deleted worklog 123 from Jira.');
+  await dialog.locator('input[name="date"]').fill('');
+  await expect(dialog.locator('[data-entries]')).toContainText('Worklog 122');
+  expect(deletes).toBe(1);
+});
+test('direct My logged hours link opens the manager automatically',async({page})=>{
+  await page.route('**/my_day.html?manageWorklogs=1',route=>route.fulfill({contentType:'text/html',body:
+    '<button data-manage-worklogs="">Manage my logged hours</button><script>'+fs.readFileSync('employee_worklog_manage.js','utf8')+'</script>'}));
+  await page.goto('http://calendar.test/my_day.html?manageWorklogs=1');
+  await expect(page.getByRole('dialog',{name:'Manage my logged hours'})).toBeVisible();
+});
+test('uncertain deletion disables blind retry and keeps the entry visible', async ({page}) => {
+  let deletes=0;
+  await page.route('**/worklog/entries?*',route=>route.fulfill({json:{issue_key:'APP-1',author:'Alice',entries:[{worklog_id:'123',started:'2026-10-05',seconds:1800}]}}));
+  await page.route('**/worklog/delete',route=>{deletes++;return route.fulfill({status:502,json:{error:'Jira request timed out.'}})});
+  await page.locator('#table tbody tr').first().locator('td').nth(4).click();
+  await page.getByRole('button',{name:'Manage my logged hours',exact:true}).click();
+  const dialog=page.getByRole('dialog',{name:'Manage my logged hours'});
+  await dialog.getByRole('textbox',{name:'Jira task key'}).fill('APP-1');
+  await dialog.getByRole('button',{name:'Load my entries'}).click();
+  await expect(dialog).toContainText('1 entries on APP-1');
+  await dialog.getByRole('button',{name:'Delete entry'}).click();
+  await dialog.getByRole('button',{name:'Confirm delete'}).click();
+  await expect(dialog.locator('[data-status]')).toContainText('Check Jira and load entries again before retrying.');
+  await expect(dialog.getByRole('button',{name:'Delete entry'})).toBeDisabled();
+  await expect(dialog).toContainText('Worklog 123');
+  expect(deletes).toBe(1);
+});
 test.beforeEach(async ({page}) => {
   await page.route('http://calendar.test/**', route => {
     const url = route.request().url();
+    if (url.includes('/worklog/history?')) return route.fulfill({json:{author:'Alice',entries:[],next_cursor:null}});
     if (url.endsWith('/api/employee-capacity-utilization/data')) return route.fulfill({json:payload});
     if (url.endsWith('/report.html')) return route.fulfill({body:html, contentType:'text/html'});
     return route.fulfill({body:'', contentType:url.endsWith('.css')?'text/css':'text/javascript'});

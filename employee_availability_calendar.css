@@ -11,6 +11,14 @@ body .filter-preferences:has(.color-picker[open]){position:relative;z-index:70}
 .availability-modal .ecu-resize{display:none}
 .availability-modal .ecu-drawer-head{background:linear-gradient(110deg,#edf5ff,#f4efff,#eafbf4)}
 .availability-modal .ecu-drawer-body{background:#f8faff;padding:16px}
+.availability-toolbar{position:sticky;top:-16px;z-index:3;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:-16px -16px 12px;padding:12px 16px;background:#f8faff;border-bottom:1px solid #dce4f2}
+.availability-month-controls{display:flex;align-items:center;gap:12px}
+.availability-month-controls h3{margin:0;min-width:170px;text-align:center;font-size:20px;color:#193e68}
+.availability-month-step{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border:1px solid #b9cdea;border-radius:9px;background:#fff;color:#193e68;cursor:pointer}
+.availability-month-step:hover{background:#edf4ff}.availability-month-step:focus-visible{outline:2px solid #6642bf;outline-offset:2px}
+.availability-toolbar .availability-manage{white-space:normal}
+.ecu-copy-modal{margin-left:auto;padding:8px 12px;min-height:36px;border:1px solid #c4d5e8;border-radius:9px;background:#fff;color:#244363;font:650 12px "Segoe UI",sans-serif;cursor:pointer;white-space:nowrap}
+@media(max-width:900px){.availability-toolbar{top:-12px;margin:-12px -12px 12px;padding:12px}.availability-month-controls{gap:6px}.availability-month-controls h3{min-width:145px;font-size:18px}}
 .availability-intro{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px}
 .availability-intro h3{margin:0 0 5px;font-size:24px;color:#193e68}
 .availability-intro p{margin:0;color:#60738d;font-size:12px}
@@ -87,4 +95,6 @@ button.availability-hours.leave:hover{background:#ffcbd5;box-shadow:0 0 0 2px #d
 .availability-details h3{margin:0 0 12px;color:#334c6c;font-size:16px}
 .availability-details .ecu-detail-table{min-width:760px}
 .availability-details .ecu-detail-table thead{z-index:1}
+.availability-delete{padding:6px 12px;border:1px solid #f0b7b7;border-radius:7px;background:#fff4f4;color:#b42318;font:700 12px "Segoe UI",sans-serif;cursor:pointer;white-space:nowrap}
+.availability-delete:hover{background:#ffe4e4;border-color:#b42318}.availability-delete:focus-visible{outline:2px solid #b42318;outline-offset:2px}
 @media(max-width:900px){.ecu-drawer.availability-modal{width:96vw!important;right:2vw}.availability-modal .ecu-drawer-body{padding:12px}.availability-day{height:102px}.availability-grid,.availability-weekdays{gap:6px}.availability-intro h3{font-size:21px}}

@@ -44,6 +44,113 @@ class EmployeeWorklogTests(unittest.TestCase):
     def review(self):
         return self.client.post(PREFIX + '/review', json=self.body, headers=HEADERS)
 
+    def personal_jira(self, rows=None, owner=None):
+        rows = rows if rows is not None else [{'id': '123', 'author': self.identity, 'started': self.body['started'], 'timeSpentSeconds': 1800}]
+        def get(url, **kwargs):
+            response = Mock()
+            if url.endswith('/myself'):
+                response.json.return_value = self.identity
+            elif url.endswith('/worklog'):
+                offset = kwargs['params']['startAt']
+                response.json.return_value = {'worklogs': rows[offset:offset+1], 'total': len(rows)}
+            else:
+                response.json.return_value = {'id': '123', 'author': owner or self.identity}
+            return response
+        self.session.get.side_effect = get
+        self.session.delete.return_value.status_code = 204
+        patcher = patch('employee_worklog.oauth_session', return_value=self.session)
+        patcher.start(); self.addCleanup(patcher.stop)
+        self.client.set_cookie('epr_jira_session', 'personal')
+
+    def test_list_only_own_entries_across_pages_on_any_issue(self):
+        self.personal_jira(rows=[
+            {'id': '1', 'author': {'accountId': 'other'}, 'timeSpentSeconds': 3600},
+            {'id': '2', 'author': self.identity, 'timeSpentSeconds': 1800, 'started': self.body['started']},
+        ])
+        result = self.client.get(PREFIX + '/entries?issue_key=story-1')
+        self.assertEqual(result.status_code, 200)
+        self.assertEqual([row['worklog_id'] for row in result.json['entries']], ['2'])
+        self.assertEqual(self.session.get.call_args.kwargs['params']['startAt'], 1)
+        self.session.delete.assert_not_called()
+
+    def test_month_history_discovers_tasks_and_filters_exact_author_and_month(self):
+        self.personal_jira(rows=[
+            {'id':'1','author':self.identity,'started':'2026-10-05T09:00:00+05:00','timeSpentSeconds':1800},
+            {'id':'2','author':{'accountId':'other','displayName':'Hassan Malik'},'started':'2026-10-05','timeSpentSeconds':3600},
+            {'id':'3','author':self.identity,'started':'2026-09-30','timeSpentSeconds':3600},
+        ])
+        get = self.session.get.side_effect
+        def search(url, **kwargs):
+            if url.endswith('/search/jql'):
+                self.assertIn('currentUser()',kwargs['params']['jql'])
+                self.assertIn('2026-10-31',kwargs['params']['jql'])
+                response=Mock();response.json.return_value={'issues':[{'key':'APP-1','fields':{'summary':'Build calendar'}}], 'nextPageToken':'next'}
+                return response
+            return get(url,**kwargs)
+        self.session.get.side_effect=search
+        response=self.client.get(PREFIX+'/history?month=2026-10')
+        self.assertEqual(response.status_code,200)
+        self.assertEqual(response.json['next_cursor'],'next')
+        self.assertEqual([row['worklog_id'] for row in response.json['entries']],['1'])
+        self.assertEqual(response.json['entries'][0]['summary'],'Build calendar')
+        self.session.delete.assert_not_called()
+
+    def test_history_cursor_month_validation_and_personal_session(self):
+        self.personal_jira()
+        get=self.session.get.side_effect
+        def search(url,**kwargs):
+            if url.endswith('/search/jql'):
+                self.assertEqual(kwargs['params']['nextPageToken'],'next')
+                self.assertIn('2024-02-29',kwargs['params']['jql'])
+                response=Mock();response.json.return_value={'issues':[], 'isLast':True}
+                return response
+            return get(url,**kwargs)
+        self.session.get.side_effect=search
+        self.assertEqual(self.client.get(PREFIX+'/history?month=2024-02&cursor=next').json['entries'],[])
+        for value in ['2026-13','2026-00','2026-2','bad','0000-01']:
+            self.assertEqual(self.client.get(PREFIX+'/history?month='+value).status_code,400)
+        with patch('employee_worklog.oauth_session',return_value=None):
+            self.assertEqual(self.client.get(PREFIX+'/history?month=2026-10').status_code,400)
+
+    def test_confirmed_own_delete_uses_personal_session_and_leaves_estimate(self):
+        self.personal_jira()
+        result = self.client.post(PREFIX+'/delete', json={'issue_key':'STORY-1', 'worklog_id':'123', 'confirmed':True}, headers=HEADERS)
+        self.assertEqual(result.status_code, 200)
+        self.assertTrue(result.json['deleted'])
+        self.session.delete.assert_called_once_with('https://jira.example/rest/api/3/issue/STORY-1/worklog/123', params={'adjustEstimate':'leave'}, timeout=(10,40))
+
+    def test_delete_blocks_other_author_even_with_same_display_name(self):
+        self.personal_jira(owner={'accountId':'other', 'displayName':self.identity['displayName']})
+        result = self.client.post(PREFIX+'/delete', json={'issue_key':'APP-1','worklog_id':'123','confirmed':True}, headers=HEADERS)
+        self.assertEqual(result.status_code, 403)
+        self.session.delete.assert_not_called()
+
+    def test_delete_requires_confirmation_valid_ids_and_same_origin(self):
+        self.personal_jira()
+        body = {'issue_key':'APP-1','worklog_id':'123','confirmed':True}
+        for patch_body in [{'confirmed':False}, {'issue_key':'../APP-1'}, {'worklog_id':'../123'}]:
+            self.assertEqual(self.client.post(PREFIX+'/delete',json={**body,**patch_body},headers=HEADERS).status_code,400)
+        for headers in [{}, {**HEADERS,'Origin':'https://evil.test'}]:
+            self.assertEqual(self.client.post(PREFIX+'/delete',json=body,headers=headers).status_code,400)
+        self.session.delete.assert_not_called()
+
+    def test_delete_and_list_never_fall_back_to_shared_credentials(self):
+        self.client.set_cookie('epr_jira_session', 'expired')
+        with patch('employee_worklog.oauth_session', return_value=None):
+            self.assertEqual(self.client.get(PREFIX+'/entries?issue_key=APP-1').status_code,400)
+            self.assertEqual(self.client.post(PREFIX+'/delete',json={'issue_key':'APP-1','worklog_id':'123','confirmed':True},headers=HEADERS).status_code,400)
+        self.session.delete.assert_not_called()
+
+    def test_jira_permission_failure_and_timeout_do_not_report_deleted(self):
+        self.personal_jira()
+        denied = Mock(status_code=403)
+        for error, status in [(requests.HTTPError(response=denied),403),(requests.Timeout(),502)]:
+            self.session.delete.side_effect = error
+            result = self.client.post(PREFIX+'/delete',json={'issue_key':'APP-1','worklog_id':'123','confirmed':True},headers=HEADERS)
+            self.assertEqual(result.status_code,status)
+            self.assertNotIn('deleted',result.json)
+        self.assertEqual(self.session.delete.call_count,2)
+
     def test_review_never_writes_and_checks_author_duration_and_origin(self):
         self.assertEqual(self.review().status_code, 200)
         self.session.post.assert_not_called()

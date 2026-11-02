@@ -2,9 +2,11 @@
 
 ## Purpose
 
-My Day is the personal home page of EPR. It opens after sign-in (`/` redirects to `/my_day.html`) and is pinned at the top of the sidebar. It shows one employee's day: hours logged against the hours expected, yesterday's gaps, a timesheet streak, today's subtasks with one-click logging, this week's bars, the epics they worked on this month, and upcoming leave and holidays.
+My Day is the personal home page of EPR. It opens after sign-in (`/` redirects to `/my_day.html`) and is available in the signed-in account area at the bottom of the sidebar. It shows one employee's day: hours logged against the hours expected, yesterday's gaps, a timesheet streak, today's subtasks with one-click logging, this week's bars, the epics they worked on this month, and upcoming leave and holidays.
 
 ## Business Logic
+
+- **My Day** is a personal option in the account area alongside **My availability** and **Sign out**. Open **My availability**, then **Manage my logged hours**, to manage your own entries. **Manage my logged hours** in Quick log also opens a personal Jira worklog manager. **My hours** on each task prefills that issue key. Enter any issue key, load your own entries, choose **Delete entry**, and confirm its timestamp, duration and ID. Ownership uses Jira account ID, irrespective of task assignment or the selected employee. After deletion My Day reloads; this week's live hours reflect the removal, while older and lifetime snapshot totals await normal Jira refresh. See [worklog deletion rules and fields](../../../JIRA_WORKLOG_SIGNIN.md#delete-your-own-logged-hours).
 
 - **Who is shown.** With sign-in on, Members always see their own Atlassian display name. Admins, and servers with sign-in off, can switch employees with `?employee=<Name>` or the **Viewing** picker. With sign-in off and no employee chosen, the API returns `needs_employee` and the page asks for one.
 - **Which day.** The current server date, or `?date=YYYY-MM-DD` (for reviewing a past day or for demoing local data).
@@ -87,7 +89,7 @@ When you open EPR you land on My Day. The ring tells you how much of today's exp
 | `my_day.html` | Canonical page (HTML, CSS and inline JS); promoted to `report_html/my_day.html` by `sync_report_html()` |
 | `my_day_service.py` | `build_my_day`, `expected_hours`, `day_status`, `fetch_live_week_worklogs`, `list_people` |
 | `report_server.py` | `GET /api/my-day` route, `/` redirect, `_resolve_report_html_sources()` entry |
-| `shared-nav.js`, `shared-nav.css` | Pinned **My Day** link (`is-pinned`) above the report list |
+| `shared-nav.js`, `shared-nav.css` | **My Day** personal link in the signed-in account footer |
 | `employee_worklog.py` | Reused `/identity`, `/review`, `/submit` worklog endpoints and `jira_identity()` |
 | `tests/test_my_day_service.py` | Unit tests for status rules, streak, tasks, epics, live overlay |
 
@@ -115,6 +117,8 @@ No table is written. Quick log writes only to Jira (and the existing worklog rec
 
 ## Data Flow
 
+Deletion uses `employee_worklog_manage.js`, served by `employee_worklog.py` at `/api/employee-capacity-utilization/worklog/manage.js`. It automatically browses personal month history through `/worklog/history`, supports task/title/description search, date/task filters, sorting and CSV export, and offers optional all-date direct task lookup through `/worklog/entries`. The manager stylesheet is served at `/worklog/manage.css`. An inline deletion review confirms the action before `/worklog/delete`; Copy link shares the personal manager month/task/day context, interpreted using the recipient's identity. The server rechecks ownership through personal OAuth; `epr_auth.py` permits approved Members to use this route. An `epr-worklog-deleted` event reloads My Day. Canonical tables are unchanged.
+
 1. The browser loads `/my_day.html`; `shared-nav.js` checks `/api/auth/me`.
 2. The page calls `GET /api/my-day[?employee=&date=]`. `report_server.my_day_api` resolves the employee from `g.epr_user` (or the parameter for Admins and sign-in-off servers).
 3. If live conditions hold, `fetch_live_week_worklogs` calls Jira `search/jql` plus `issue/<key>/worklog` for this week.
@@ -133,4 +137,4 @@ Open `http://127.0.0.1:3000/my_day.html?employee=Faiza%20Nasir&date=2026-08-27`;
 
 ## Change notes
 
-- 2026-10-28: first release (My Day home page, pinned nav link, `/` redirect).
+- 2026-10-28: first release (My Day home page and `/` redirect). My Day navigation now lives in the personal account area.

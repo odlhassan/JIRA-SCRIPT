@@ -4,6 +4,8 @@ EPR reuses the existing Atlassian OAuth integration for application sign-in and 
 
 ## User experience and roles
 
+Approved Members and Admins may delete **their own** Jira worklog entries through `/api/employee-capacity-utilization/worklog/delete`. `employee_worklog.py` requires a valid personal OAuth session and rechecks the live worklog author account ID; Admin status grants no override. The manager in My Day and Availability uses this specific Member POST allowance with existing same-origin controls. Read/list operations use the same personal identity; shared server credentials cannot manage entries. See [worklog manager data flow](JIRA_WORKLOG_SIGNIN.md#delete-your-own-logged-hours).
+
 Signed-out report requests redirect to `/login`; APIs return 401 without report data. **Continue with Atlassian** uses the registered Jira site and browser-bound OAuth state check, then returns to the original local report URL. First-time users reach **Access needs approval**. Signing in alone grants no report access.
 
 An Admin approves the user in **Admin Settings → Users & access**. Members read reports and submit personal worklogs through the existing review and confirmation flow. Admins manage settings, refreshes, plans, SQL, and access. Approved Members see organization-wide report data; this core release does not add team/row-level confidentiality.
@@ -26,7 +28,7 @@ Without a `next`, sign-in returns to `/`, which redirects to **My Day** (`/my_da
 
 `/login` writes the cookie only on a top-level document load (`Sec-Fetch-Dest: document`, or the header missing). It also skips the write when the request carries a rejected `next`. Background requests, such as the browser's automatic favicon fetch, therefore cannot overwrite a deep link. `/favicon.ico` is public and returns 204, so it never reaches sign-in. This fixed production sign-ins that ended on `/favicon.ico` with `{"error":"Not found"}`. A stale asset value still in a cookie resolves to `/`.
 
-Navigation displays name, role, **My availability**, and **Sign out** in the sidebar footer (see `SHARED_NAVIGATION.md`). My availability opens that employee's calendar in the report's current month. Jira remains the author of record; another employee's calendar cannot be used to submit on their behalf.
+Navigation displays name, role, **My Day**, **My availability**, and **Sign out** in the sidebar footer (see `SHARED_NAVIGATION.md`). My availability opens that employee's calendar in the report's current month. Jira remains the author of record; another employee's calendar cannot be used to submit on their behalf.
 
 The light login experience uses a glass surface, liquid-gradient orb, drifting pastel nebulae, sparse stars, and an illustrative network of task/milestone/chart cards. Graphics are decorative, with no real project metrics or private data before login. Pointer movement creates subtle parallax and nearby star repulsion; clicks create soft ripples. The motion control and system reduced-motion preference pause the ambience. Canvas is capped at 30fps, 65 stars (30 on mobile), and pixel ratio 1.5; it stops when the tab is hidden. No external graphics packages, fonts, video, or image services are loaded. `epr-login.css` and `epr-login.js` are public exact-match assets served by `epr_auth.py`; other protected files stay behind the gate.
 

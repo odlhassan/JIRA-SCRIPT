@@ -74,7 +74,32 @@ This change adds no tables or columns. The read-only payload derives from `canon
 
 ## Data Flow
 
+The generator also inlines `employee_worklog_manage.js`. **Manage my logged hours** in Availability accepts any Jira issue key; a red **Delete** button in each day-detail row's **Actions** column prefills that subtask and selected date. The optional Date filter can be cleared to see all your entries on the task. Open the calendar through **My availability** in the signed-in account area, then choose **Manage my logged hours**. The shared report menu has no separate personal worklog link. The manager reads only the signed-in user's live entries, displays timestamp/hours/description/ID, and asks for confirmation before deleting one. The selected calendar employee does not determine ownership. Deletion requires personal Jira OAuth and Delete own worklogs permission. A successful delete replaces the affected author's in-page issue entries with the remaining live history; reopen Availability for rebuilt totals. Persisted snapshots and exports update after normal Jira refresh. See [worklog deletion fields and validation](../../../JIRA_WORKLOG_SIGNIN.md#delete-your-own-logged-hours). This adds the shared manager as a dependency of the calendar and generator; no SQLite schema changes are involved.
+
 The server builds the canonical payload on page load. The generator inlines the calendar JavaScript and CSS into the root report shell, which is copied/promoted to `report_html`. Availability joins authored worklogs to issue metadata, filters non-RLT subtasks by employee and month, groups them by day/issue/author, and joins daily leave taken. Selecting a green badge renders grouped source rows locally without another API call.
+
+## Availability modal month controls
+
+Availability Details has a sticky toolbar containing **Previous month** (left chevron), the displayed month/year, **Next month** (right chevron), and **Manage my logged hours**. The manager is directly accessible from this modal, including when opened through the personal **My availability** option. Its button stays available while scrolling through the calendar and day details.
+
+Click either arrow repeatedly to browse adjacent months without closing the modal. The selected employee (or combined employee scope), capacity profile and report filters remain selected. The report Month field follows the chosen month, and its table, calendar dates, hours, leave and capacity totals are recalculated from the loaded data. Switching months clears the previous day selection and any unfinished day-detail composer. Keyboard focus stays on the same arrow. Closing after a month jump returns focus to the report Month field.
+
+Examples: January 2026 → Previous month → December 2025; January 2024 → Next month → February 2024 (29 days). The date grid follows the new month even when it has no logged work. These controls use `employee_availability_calendar.js` and `.css`, inlined by `generate_employee_capacity_utilization_report.py`. They make no Jira writes, API or schema changes. Regression tests are in `tests/test_employee_availability_calendar.cjs`.
+
+## Shareable modal URLs
+
+Every report detail drawer and Availability modal has a **Copy link** button. Opening a metric, selecting a calendar day, changing months or opening the add-worklog composer writes the view into the URL fragment. Reloading or sharing that URL restores the metric, employee, month, logged-hour scope, capacity profile, leave/resigned/support switches and selected team names. Browser Back/Forward restores the previous view. URLs work after canonical data has loaded and remain subject to normal application sign-in/access controls.
+
+Examples relative to `/employee_capacity_utilization_report.html`:
+
+- `#modal=logged&employee=Hassan+Malik&month=2026-11` — logged-hours detail.
+- `#modal=availability&employee=Hassan+Malik&month=2026-10&day=2026-10-13&kind=work` — the selected day's task table. `kind=leave` opens leave detail.
+- `#modal=availability&employee=Hassan+Malik&month=2026-11&day=2026-11-02&panel=log` — the add-worklog form. A fresh form opens; private drafts, signed review tokens and confirmation state are never shared, and no write occurs just from opening a URL.
+- `#modal=availability&employee=Hassan+Malik&month=2026-11&panel=hours&historyMonth=2026-11` — the personal manager. Optional `issue=APP-123&date=2026-11-02` prefills a direct task/day. The recipient sees their own Jira entries; the URL never impersonates the employee named on the underlying calendar.
+
+**My logged hours** now browses the month automatically, offers loaded-row hours/entry/task/day totals, task/title/description search, task/date filters, sorting, CSV export and refresh. Larger months expose **Load more tasks** and explicitly mark totals as partial until loaded. A direct key remains optional for all-date lookup. Deletion has an inline Confirm delete/Cancel deletion review. Manager **Copy link** shares its month/task/day context. See [the complete fields and ownership rules](../../../JIRA_WORKLOG_SIGNIN.md#delete-your-own-logged-hours).
+
+Dependencies and data flow: `employee_capacity_modal_links.js` handles report fragments and restoration; `employee_worklog_manage.js`/`.css` handle personal browsing and sharing. `generate_employee_capacity_utilization_report.py` inlines these assets. `employee_worklog.py` supplies personal `/history`, `/entries`, stylesheet and deletion routes. URLs themselves make no writes and change no SQLite schema. Filters that only narrow loaded personal rows (search/task/sort) are not embedded in shared URLs; recipients can adjust them locally.
 
 ## Local verification
 

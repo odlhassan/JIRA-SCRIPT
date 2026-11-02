@@ -18,6 +18,7 @@ from jira_privacy import ACCESS_LOCK
 OWNER_ACCOUNT_ID = '641adec89796ea0a87185666'
 _lock = ACCESS_LOCK
 MEMBER_POSTS = {
+    '/api/employee-capacity-utilization/worklog/delete',
     '/api/employee-capacity-utilization/worklog/review', '/api/employee-capacity-utilization/worklog/submit',
     '/api/employee-capacity-utilization/export', '/api/planned-actual-table-view/export', '/api/capacity/calculate',
 }

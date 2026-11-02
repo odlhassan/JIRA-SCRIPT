@@ -1,5 +1,16 @@
 // Pure daily model: subtask worklogs authored by the selected employee(s),
 // independent of the summary's logged-hours scope and leave inclusion switch.
+document.addEventListener('epr-worklog-deleted',event=>{
+ const result=event.detail,task=result.issue_key;
+ if(!Array.isArray(result.entries)){const note=document.querySelector('#availability-day-details');if(note)note.textContent='Entry deleted from Jira. Refresh Jira data to update snapshot totals.';return}
+ const matches=row=>txt(row.issue_id||row.issue_key).toUpperCase()===task&&key(row.worklog_author||row.issue_assignee)===key(result.author);
+ const template=allWorklogs.find(matches)||{issue_id:task,worklog_author:result.author};
+ allWorklogs=allWorklogs.filter(row=>!matches(row));
+ allWorklogs.push(...result.entries.map(entry=>({...template,worklog_id:entry.worklog_id,worklog_date:entry.started.slice(0,10),hours_logged:entry.seconds/3600})));
+ logs=includeLeaves.checked?allWorklogs:allWorklogs.filter(row=>!isLeaveWorklog(row));data.worklogs=logs;render();
+ const note=document.querySelector('#availability-day-details');
+ if(note)note.textContent='Entry deleted from Jira. Reopen Availability to see updated daily totals. Other snapshot reports update after the next Jira refresh.';
+});
 function availabilityDays(label){
  const range=days(),keys=detailNameKeys(label),itemMap=new Map(issues.map(x=>[txt(x.issue_key).toUpperCase(),x]));
  const calendar=capacityCalendar(activeProfile(),range).map(day=>({...day,work:0,leave:0,leaveEntries:[],subtasks:new Map()}));
@@ -26,13 +37,26 @@ function availabilityDetails(label){
   const isToday=day.date===today,dayLabel=[isToday?'Today':'',day.type==='Workday'?'':day.type].filter(Boolean).join(' · ');
   return `<div class="availability-day ${day.type==='Weekend'?'weekend':''} ${isToday?'today':''}" ${isToday?'aria-current="date"':''} data-calendar-date="${day.date}"><div class="availability-date"><span>${Number(day.date.slice(-2))}</span><small>${esc(dayLabel)}</small><button type="button" class="availability-add" data-add-date="${day.date}" aria-label="Log work on ${day.date}">+</button></div>${day.work>0?`<button type="button" class="availability-hours" data-work-date="${day.date}" aria-label="${day.date}: ${availabilityHours(day.work)} logged; show subtasks">${availabilityIcon('task_alt')}${availabilityHours(day.work)} logged</button>`:`<span class="availability-hours">${availabilityIcon('schedule')}0h logged</span>`}${day.leave>0?`<button type="button" class="availability-hours leave" data-leave-date="${day.date}" aria-label="${day.date}: ${availabilityHours(day.leave)} leave; show leave entries">${availabilityIcon('beach_access')}${availabilityHours(day.leave)} leave</button>`:''}</div>`;
  }).join('');
- return {title:'Availability Details',subtitle:`${label} · ${month.value} · Daily subtask work & leave`,html:`<div class="availability-intro"><div><h3>${esc(first.toLocaleDateString(undefined,{month:'long',year:'numeric'}))}</h3><p>${esc(label)} · A little clarity for every day</p></div>${availabilityIcon('calendar_month')}</div><div class="availability-stats"><div class="availability-stat">Available capacity<strong>${availabilityHours(Math.max(0,totals.capacity-totals.leave))}</strong></div><div class="availability-stat work">Subtask hours logged<strong>${availabilityHours(totals.work)}</strong></div><div class="availability-stat leave">Leave taken<strong>${availabilityHours(totals.leave)}</strong></div></div><div class="availability-calendar-scroll"><div class="availability-weekdays">${['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(name=>`<span>${name}</span>`).join('')}</div><div class="availability-grid" role="group" aria-label="Monthly work and leave calendar">${cards}</div></div><div class="availability-legend"><span><i></i>No subtask time logged</span><span><i class="work"></i>Subtask work · click hours for details</span><span><i class="leave"></i>Leave taken · click hours for details</span></div><p class="color-help">All subtask time authored by this employee is shown, including work on subtasks assigned to someone else. Leave stays separate, even when work and leave occur on the same day.</p><section id="availability-day-details" class="availability-details" aria-live="polite"><h3>${availabilityIcon('touch_app')} Explore a day</h3><p class="color-help">Choose green hours for subtask details or red hours for leave entries.</p></section>`};
+ return {title:'Availability Details',subtitle:`${label} · ${month.value} · Daily subtask work & leave`,html:`<div class="availability-toolbar"><div class="availability-month-controls"><button type="button" class="availability-month-step" data-month-step="-1" aria-label="Previous month" title="Previous month">${availabilityIcon('chevron_left')}</button><h3 aria-live="polite">${esc(first.toLocaleDateString(undefined,{month:'long',year:'numeric'}))}</h3><button type="button" class="availability-month-step" data-month-step="1" aria-label="Next month" title="Next month">${availabilityIcon('chevron_right')}</button></div><button type="button" class="worklog-primary availability-manage" data-manage-worklogs="">Manage my logged hours</button></div><div class="availability-intro"><div><p>${esc(label)} · A little clarity for every day</p></div>${availabilityIcon('calendar_month')}</div><div class="availability-stats"><div class="availability-stat">Available capacity<strong>${availabilityHours(Math.max(0,totals.capacity-totals.leave))}</strong></div><div class="availability-stat work">Subtask hours logged<strong>${availabilityHours(totals.work)}</strong></div><div class="availability-stat leave">Leave taken<strong>${availabilityHours(totals.leave)}</strong></div></div><div class="availability-calendar-scroll"><div class="availability-weekdays">${['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(name=>`<span>${name}</span>`).join('')}</div><div class="availability-grid" role="group" aria-label="Monthly work and leave calendar">${cards}</div></div><div class="availability-legend"><span><i></i>No subtask time logged</span><span><i class="work"></i>Subtask work · click hours for details</span><span><i class="leave"></i>Leave taken · click hours for details</span></div><p class="color-help">All subtask time authored by this employee is shown, including work on subtasks assigned to someone else. Leave stays separate, even when work and leave occur on the same day.</p><section id="availability-day-details" class="availability-details" aria-live="polite"><h3>${availabilityIcon('touch_app')} Explore a day</h3><p class="color-help">Choose green hours for subtask details or red hours for leave entries.</p></section>`};
 }
 function wireAvailabilityCalendar(label){
  const body=document.querySelector('#ecu-drawer-body'),calendar=availabilityDays(label);
+ for(const button of body.querySelectorAll('[data-month-step]'))button.addEventListener('click',()=>{
+  const direction=button.dataset.monthStep,next=new Date(month.value+'-01T12:00:00');
+  next.setMonth(next.getMonth()+Number(direction));
+  if(next.getFullYear()<1||next.getFullYear()>9999)return;
+  month.value=String(next.getFullYear()).padStart(4,'0')+'-'+String(next.getMonth()+1).padStart(2,'0');
+  render();drawerPreviousFocus=month;
+  window.eprUpdateModalUrl?.({month:month.value,day:null,kind:null,panel:null,issue:null,date:null});
+  const detail=availabilityDetails(label);
+  document.querySelector('#ecu-drawer-subtitle').textContent=detail.subtitle;
+  body.innerHTML=detail.html;wireAvailabilityCalendar(label);body.scrollTop=0;
+  body.querySelector('[data-month-step="'+direction+'"]').focus();
+ });
  for(const button of body.querySelectorAll('[data-add-date]'))button.addEventListener('click',()=>openCalendarWorklog(label,button.dataset.addDate));
  for(const button of body.querySelectorAll('[data-work-date],[data-leave-date]'))button.addEventListener('click',()=>{
   const isLeave=Boolean(button.dataset.leaveDate),day=calendar.find(x=>x.date===(button.dataset.leaveDate||button.dataset.workDate)),target=body.querySelector('#availability-day-details');
+  window.eprUpdateModalUrl?.({day:day.date,kind:isLeave?'leave':'work',panel:null,issue:null,date:null});
   for(const cell of body.querySelectorAll('.availability-day'))cell.classList.toggle('selected',cell.dataset.calendarDate===day.date);
   for(const badge of body.querySelectorAll('[data-work-date],[data-leave-date]'))badge.setAttribute('aria-pressed',String(badge===button));
   if(isLeave){
@@ -41,7 +65,7 @@ function wireAvailabilityCalendar(label){
     return htmlValue((ids.length?ids:urls).map((id,index)=>detailCell(urls[index]?externalLink(urls[index],ids[index]||'Open leave'):issueLink(id))).join('<br>'));
    };
    target.innerHTML=`<h3>${availabilityIcon('beach_access')} ${esc(day.date)} · ${availabilityHours(day.leave)} leave taken</h3>`+detailTable(['Employee','Date','Leave items / Jira','Planned taken','Unplanned taken','Total taken'],day.leaveEntries.map(row=>[row.assignee,row.period_day,linkedItems(row),availabilityHours(n(row.planned_taken_hours)),availabilityHours(n(row.unplanned_taken_hours)),availabilityHours(n(row.planned_taken_hours)+n(row.unplanned_taken_hours))]));
-  }else target.innerHTML=`<h3>${availabilityIcon('assignment')} ${esc(new Date(day.date+'T12:00:00').toLocaleDateString(undefined,{weekday:'long',day:'numeric',month:'long'}))} · ${availabilityHours(day.work)} logged</h3>`+detailTable(['Subtask / Jira','Title','Worklog author','Start','Due','Original estimate','Hours logged'],[...day.subtasks.values()].map(row=>[issueLink(row.issueKey),row.title,row.author,row.start,row.due,availabilityHours(row.estimate),availabilityHours(row.hours)]));
+  }else target.innerHTML=`<h3>${availabilityIcon('assignment')} ${esc(new Date(day.date+'T12:00:00').toLocaleDateString(undefined,{weekday:'long',day:'numeric',month:'long'}))} · ${availabilityHours(day.work)} logged</h3>`+detailTable(['Subtask / Jira','Title','Worklog author','Start','Due','Original estimate','Hours logged','Actions'],[...day.subtasks.values()].map(row=>[issueLink(row.issueKey),row.title,row.author,row.start,row.due,availabilityHours(row.estimate),availabilityHours(row.hours),htmlValue(`<button type="button" class="availability-delete" data-manage-worklogs="${esc(row.issueKey)}" data-worklog-date="${day.date}" aria-label="Delete my entries on ${esc(row.issueKey)} for ${day.date}">Delete</button>`)]));
   target.scrollIntoView({behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'nearest'});
  });
 }

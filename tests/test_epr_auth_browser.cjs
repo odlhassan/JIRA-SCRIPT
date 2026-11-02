@@ -48,6 +48,9 @@ test('member identity shows personal links and hides administration; logout retu
   await fixture(page);await page.goto('http://epr.test/report.html');
   await expect(page.locator('.epr-nav-identity')).toContainText('Hassan Malik');
   await expect(page.getByRole('link',{name:'My availability'})).toHaveAttribute('href','/my-availability');
+  await expect(page.getByRole('link',{name:'My logged hours',exact:true})).toHaveCount(0);
+  await expect(page.locator('.epr-nav-account').getByRole('link',{name:'My Day',exact:true})).toHaveAttribute('href',/my_day\.html$/);
+  await expect(page.locator('.unified-nav-main').getByRole('link',{name:'My Day',exact:true})).toHaveCount(0);
   await expect(page.getByRole('button',{name:/Admin Settings/})).toHaveCount(0);
   await page.getByRole('button',{name:'Sign out',exact:true}).click();
   await expect(page).toHaveURL('http://epr.test/login');

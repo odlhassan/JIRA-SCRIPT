@@ -26,7 +26,7 @@ class EprAuthTests(unittest.TestCase):
         register_epr_auth(self.app, self.directory, {'report.html'})
         for route in ['/', '/report.html', '/settings/capacity', '/api/report-data', '/api/admin/sql-console/schema']:
             self.app.add_url_rule(route, route, lambda: jsonify(ok=True))
-        for route in ['/api/capacity', '/api/employee-capacity-utilization/export', '/api/employee-capacity-utilization/worklog/review']:
+        for route in ['/api/capacity', '/api/employee-capacity-utilization/export', '/api/employee-capacity-utilization/worklog/review', '/api/employee-capacity-utilization/worklog/delete']:
             self.app.add_url_rule(route, route+'post', lambda: jsonify(ok=True), methods=['POST'])
         self.client = self.app.test_client()
         self.headers = {'Origin':'http://localhost', 'Content-Type':'application/json'}
@@ -79,6 +79,7 @@ class EprAuthTests(unittest.TestCase):
         self.assertEqual(self.client.post('/api/capacity',json={},headers=self.headers).status_code,403)
         self.assertEqual(self.client.post('/api/employee-capacity-utilization/export',json={},headers=self.headers).status_code,200)
         self.assertEqual(self.client.post('/api/employee-capacity-utilization/worklog/review',json={},headers=self.headers).status_code,200)
+        self.assertEqual(self.client.post('/api/employee-capacity-utilization/worklog/delete',json={},headers=self.headers).status_code,200)
         self.login();self.client.get('/api/auth/me')
         self.client.put('/api/auth/users/member',json={**payload,'active':False},headers=self.headers)
         self.client.set_cookie('epr_jira_session',member_sid)

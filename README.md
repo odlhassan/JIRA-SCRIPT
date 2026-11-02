@@ -16,6 +16,8 @@ startup helpers such as `db_journal_mode.py` are present in the staged package.
 
 Local development uses:
 
+Signed-in users can delete their own individual Jira worklogs from **My availability → Manage my logged hours** in the personal account area or the red **Delete** button in **Availability → day details**, using any task key. See [personal worklog management](JIRA_WORKLOG_SIGNIN.md#delete-your-own-logged-hours) for permissions, confirmation and snapshot-refresh behavior. The personal manager browses monthly history with search, filters, totals and CSV export. Report detail modals have Copy link URLs that restore the view without submitting an action.
+
 ```powershell
 python run_server.py
 ```

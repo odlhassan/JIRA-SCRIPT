@@ -152,6 +152,7 @@ body{margin:0;background:var(--md-ground);color:var(--md-ink);font:15px/1.45 var
     <div class="md-side-col">
       <section class="md-card md-quick" aria-labelledby="md-quick-h" id="md-quick">
         <div class="md-row"><div class="md-icon-tile"><span class="material-symbols-outlined" aria-hidden="true">bolt</span></div><h2 id="md-quick-h">Quick log</h2></div>
+        <button type="button" class="md-mini" data-manage-worklogs="">Manage my logged hours</button>
         <form id="md-quick-form" novalidate>
           <label for="md-q-issue">Subtask</label>
           <select id="md-q-issue" required></select>
@@ -201,6 +202,7 @@ body{margin:0;background:var(--md-ground);color:var(--md-ink);font:15px/1.45 var
 </main>
 <div class="md-toast" id="md-toast" role="status" aria-live="polite"><span class="material-symbols-outlined" aria-hidden="true">check_circle</span><span id="md-toast-text"></span></div>
 <script src="/shared-nav.js"></script>
+<script src="/api/employee-capacity-utilization/worklog/manage.js"></script>
 <script>
 (function () {
   const WORKLOG_API = '/api/employee-capacity-utilization/worklog';
@@ -237,6 +239,7 @@ body{margin:0;background:var(--md-ground);color:var(--md-ink);font:15px/1.45 var
     return base ? `<a href="${esc(base + '/' + encodeURIComponent(key))}" target="_blank" rel="noopener noreferrer">${esc(key)}</a>` : esc(key);
   }
 
+  document.addEventListener('epr-worklog-deleted', () => load());
   async function load() {
     const query = new URLSearchParams();
     if (params.get('employee')) query.set('employee', params.get('employee'));
@@ -349,6 +352,7 @@ body{margin:0;background:var(--md-ground);color:var(--md-ink);font:15px/1.45 var
         <div class="md-row">${recent ? '' : `<div class="md-bar"><i style="width:${pct}%;background:${c.bar}"></i></div>`}<span class="md-task-hours">${hours}</span></div>
       </div>
       <div class="md-task-actions">
+        <button type="button" class="md-mini" data-manage-worklogs="${esc(task.issue_key)}">My hours</button>
         <button type="button" class="md-mini" data-log="${esc(task.issue_key)}" data-duration="30m" aria-label="Log 30 minutes on ${esc(task.issue_key)}">+30m</button>
         <button type="button" class="md-mini" data-log="${esc(task.issue_key)}" data-duration="1h" aria-label="Log 1 hour on ${esc(task.issue_key)}">+1h</button>
         <button type="button" class="md-mini icon" data-log="${esc(task.issue_key)}" aria-label="Log custom time on ${esc(task.issue_key)}">${icon('schedule')}</button>

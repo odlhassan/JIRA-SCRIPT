@@ -454,6 +454,8 @@ body.unified-nav-enabled {
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 6px;
 }
+.epr-nav-my-day{grid-column:1 / -1}
+.epr-nav-my-day[aria-current="page"]{background:rgba(255,194,61,.16);border-color:#ffc23d;color:#ffe08c}
 
 .epr-nav-action {
   display: inline-flex;

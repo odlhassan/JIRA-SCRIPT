@@ -11,7 +11,7 @@ import time
 import threading
 import uuid
 
-from flask import jsonify, request, has_request_context, current_app
+from flask import jsonify, request, has_request_context, current_app, send_file
 from jira_oauth import oauth_session, register_jira_oauth, same_origin
 from itsdangerous import URLSafeTimedSerializer, BadData
 import requests
@@ -174,6 +174,131 @@ def register_employee_worklog_routes(app, receipt_dir: Path):
             status = exc.response.status_code if exc.response is not None else None
             return jsonify(error='Jira could not complete this request' + (f' (HTTP {status})' if status else '') + '. Verify Jira before retrying any submission.', jira_status=status), 502
         return jsonify(error=str(exc)), 400
+
+    def personal_identity():
+        # Never fall back to server credentials, even for a stale OAuth cookie.
+        session = oauth_session(app.config['EPR_JIRA_OAUTH_DIRECTORY'])
+        if session is None:
+            raise ValueError('Sign in with Jira to manage your logged hours.')
+        response = session.get(jira_base(session) + '/rest/api/3/myself', timeout=(10, 25))
+        response.raise_for_status()
+        identity = response.json()
+        if not identity.get('accountId'):
+            raise ValueError('Could not verify your Jira account.')
+        return session, identity
+
+    def issue_key(value):
+        value = str(value or '').strip().upper()
+        if not re.fullmatch(r'[A-Z][A-Z0-9_]*-\d+', value):
+            raise ValueError('Enter a Jira task key, for example APP-123.')
+        return value
+
+    @app.get(prefix + '/manage.js')
+    def worklog_manage_script():
+        return send_file(Path(__file__).with_name('employee_worklog_manage.js'), mimetype='text/javascript')
+
+    @app.get(prefix + '/manage.css')
+    def worklog_manage_styles():
+        return send_file(Path(__file__).with_name('employee_worklog_manage.css'), mimetype='text/css')
+
+    def own_entries(session, identity, task):
+        entries, offset = [], 0
+        while True:
+            response = session.get(jira_base(session) + '/rest/api/3/issue/' + task + '/worklog',
+                params={'startAt': offset, 'maxResults': 100}, timeout=(10, 25))
+            response.raise_for_status()
+            page = response.json()
+            rows, total = page.get('worklogs'), page.get('total')
+            if not isinstance(rows, list) or not isinstance(total, int) or total < 0:
+                raise ValueError('Could not read Jira worklogs.')
+            for row in rows:
+                if (row.get('author') or {}).get('accountId') == identity['accountId']:
+                    entries.append(dict(worklog_id=str(row['id']), started=row.get('started', ''),
+                        seconds=row.get('timeSpentSeconds', 0), comment=row.get('comment')))
+            offset += len(rows)
+            if offset >= total:
+                break
+            if not rows:
+                raise ValueError('Could not read every Jira worklog page.')
+        return entries
+
+
+    @app.get(prefix + '/entries')
+    def worklog_entries():
+        try:
+            task = issue_key(request.args.get('issue_key'))
+            session, identity = personal_identity()
+            return jsonify(issue_key=task, author=identity.get('displayName', ''), entries=own_entries(session, identity, task))
+        except (ValueError, TypeError, requests.RequestException) as exc:
+            return failure(exc)
+
+    @app.get(prefix + '/history')
+    def worklog_history():
+        """One bounded issue-search page; every worklog page is checked by author."""
+        try:
+            period = request.args.get('month', '')
+            if not re.fullmatch(r'\d{4}-\d{2}', period):
+                raise ValueError('Choose a valid month.')
+            first = datetime.strptime(period + '-01', '%Y-%m-%d')
+            # Inclusive month bounds avoid timezone-dependent server date conversion.
+            import calendar
+            last = f'{period}-{calendar.monthrange(first.year, first.month)[1]:02d}'
+            session, identity = personal_identity()
+            params = {'jql': f'worklogAuthor = currentUser() AND worklogDate >= "{period}-01" AND worklogDate <= "{last}" ORDER BY key ASC',
+                      'fields': 'summary', 'maxResults': 10}
+            token = request.args.get('cursor', '')
+            if len(token) > 10000:
+                raise ValueError('Invalid history cursor.')
+            if token:
+                params['nextPageToken'] = token
+            response = session.get(jira_base(session) + '/rest/api/3/search/jql', params=params, timeout=(10, 25))
+            response.raise_for_status()
+            page = response.json()
+            tasks = page.get('issues')
+            if not isinstance(tasks, list):
+                raise ValueError('Could not discover your Jira tasks.')
+            entries = []
+            for task in tasks:
+                task_key = issue_key(task.get('key'))
+                summary = (task.get('fields') or {}).get('summary', '')
+                for entry in own_entries(session, identity, task_key):
+                    if str(entry['started'])[:7] == period:
+                        entries.append({**entry, 'issue_key': task_key, 'summary': summary})
+            next_token = page.get('nextPageToken') if not page.get('isLast', False) else None
+            if next_token and (not isinstance(next_token, str) or next_token == token):
+                raise ValueError('Jira returned an invalid history cursor.')
+            return jsonify(month=period, author=identity.get('displayName', ''), entries=entries,
+                           next_cursor=next_token, tasks_scanned=len(tasks))
+        except (ValueError, TypeError, requests.RequestException) as exc:
+            return failure(exc)
+
+    @app.post(prefix + '/delete')
+    @serialize_submit
+    def worklog_delete():
+        try:
+            guard()
+            body = request.get_json()
+            if not isinstance(body, dict) or body.get('confirmed') is not True:
+                raise ValueError('Confirm the worklog deletion first.')
+            task = issue_key(body.get('issue_key'))
+            identifier = str(body.get('worklog_id', ''))
+            if not re.fullmatch(r'\d+', identifier):
+                raise ValueError('Choose a valid worklog.')
+            session, identity = personal_identity()
+            url = jira_base(session) + '/rest/api/3/issue/' + task + '/worklog/' + identifier
+            response = session.get(url, timeout=(10, 25))
+            response.raise_for_status()
+            if (response.json().get('author') or {}).get('accountId') != identity['accountId']:
+                return jsonify(error='You can only delete your own logged hours.'), 403
+            response = session.delete(url, params={'adjustEstimate': 'leave'}, timeout=(10, 40))
+            response.raise_for_status()
+            if response.status_code != 204:
+                raise ValueError('Jira did not confirm deletion. Check Jira before trying again.')
+            return jsonify(deleted=True, issue_key=task, worklog_id=identifier)
+        except (ValueError, TypeError, requests.RequestException) as exc:
+            if isinstance(exc, requests.RequestException) and exc.response is not None and exc.response.status_code == 403:
+                return jsonify(error='Jira denied deletion. Your project needs Delete own worklogs permission.'), 403
+            return failure(exc)
 
     @app.after_request
     def private_jira_responses(response):

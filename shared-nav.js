@@ -384,7 +384,7 @@
       return (Array.isArray(categories) ? categories : [])
         .map((group, idx) => {
           const name = String(group.name || "").trim();
-          const items = Array.isArray(group.items) ? group.items : [];
+          const items = (Array.isArray(group.items) ? group.items : []).filter(item => prefix !== 'reports' || !['my_day', 'my_logged_hours'].includes(item.page_key));
           if (!name || !items.length) return null;
           return createGroup(categoryKey(prefix, group, idx), name, String(group.icon_name || "folder"), items, [], { nested: nested });
         })
@@ -394,10 +394,9 @@
     function renderMainNav() {
       mainNav.innerHTML = "";
       groupEls.length = 0;
-      const myDayLink = createLink(MY_DAY_ITEM);
-      myDayLink.classList.add("is-pinned");
-      mainNav.appendChild(myDayLink);
-      (reportsSection.items || []).filter((item) => item.page_key !== "my_day").forEach((item) => mainNav.appendChild(createLink(item)));
+      // Local servers without sign-in have no account footer.
+      if (!eprIdentity) mainNav.appendChild(createLink(MY_DAY_ITEM));
+      (reportsSection.items || []).filter((item) => !['my_day', 'my_logged_hours'].includes(item.page_key)).forEach((item) => mainNav.appendChild(createLink(item)));
       const reportGroups = buildCategoryGroups("reports", reportsSection.categories, false);
       if (!savedGroups && reportGroups.length && !reportGroups.some((g) => expandedGroups.has(g.key))) {
         expandedGroups.add(reportGroups[0].key);
@@ -474,6 +473,14 @@
 
       const actions = document.createElement("div");
       actions.className = "epr-nav-actions";
+      const myDay = document.createElement("a");
+      myDay.className = "epr-nav-action epr-nav-my-day";
+      myDay.href = MY_DAY_ITEM.href;
+      myDay.title = "My Day";
+      const myDayLabel = document.createElement("span");
+      myDayLabel.textContent = "My Day";
+      myDay.append(symbol("wb_sunny"), myDayLabel);
+      if (isItemActive(MY_DAY_ITEM)) myDay.setAttribute("aria-current", "page");
       const mine = document.createElement("a");
       mine.className = "epr-nav-action";
       mine.href = "/my-availability";
@@ -500,7 +507,7 @@
         logoutLabel.textContent = "Sign out failed — retry";
       });
 
-      actions.append(mine, logout);
+      actions.append(myDay, mine, logout);
       account.append(avatar, identity, actions);
       nav.appendChild(account);
     }

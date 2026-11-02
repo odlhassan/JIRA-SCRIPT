@@ -18,6 +18,7 @@ async function worklogRequest(path,body){
  const result=await response.json();if(!response.ok||result.error)throw new Error(result.error||'Jira request failed');return result;
 }
 async function openCalendarWorklog(label,date,draft={}){
+ window.eprUpdateModalUrl?.({day:date,panel:'log',kind:null,issue:null,date:null});
  const target=document.querySelector('#availability-day-details');
  target.innerHTML=`<h3>＋ Log work · ${esc(date)}</h3><p>Checking Jira account…</p>`;
  target.scrollIntoView({behavior:'smooth',block:'nearest'});

@@ -6,6 +6,35 @@ Atlassian sign-in now also gates the whole EPR application. New users need Admin
 
 Employees log time from their Availability calendar and personal Atlassian sign-in ensures Jira credits the actual user. Shared server credentials cannot impersonate another employee.
 
+Employees can also correct mistakes by deleting their own individual entries on any Jira issue, including tasks assigned to someone else and issue types outside the calendar's subtask logging scope.
+
+## Delete your own logged hours
+
+Choose **My availability** in the signed-in account area, then **Manage my logged hours** in Availability Details' sticky toolbar. My Day's Quick log card and **My hours** task buttons open the same manager. The calendar's red **Delete** row action prefills the task and date. The manager always reads the signed-in user's personal history, even when another employee's calendar is open.
+
+The responsive personal-timesheet dialog opens the displayed month automatically; no Jira key is needed to browse. Month history searches Jira with `worklogAuthor = currentUser()` and inclusive month bounds, then reads every worklog page for each discovered task and independently checks author account ID and started month. Each request scans up to ten task results, with **Load more tasks** when Jira supplies a continuation token. Until all pages are loaded the status explicitly says totals cover loaded entries only. Existing entries are deduplicated by task/worklog ID when loading more.
+
+### Fields and actions
+
+- **Month**, **Previous history month**, **Next history month**: default to the calendar month (or the current month in My Day). Changing month loads personal month history and clears the direct task/date selection.
+- **Refresh**: re-read the current month or direct task from Jira. Errors show a retry message; missing personal sign-in shows a sign-in link when OAuth is configured, or explains the required administrator setup. Empty or unavailable history disables CSV export. Nothing is written by refresh.
+- **Hours shown / Entries / Tasks / Days**: totals for the currently loaded and filtered rows. For example 30m plus 2h on two dates gives 2h 30m, two entries and two days.
+- **Search your entries**: case-insensitive local search across task key, title, work description and worklog ID. Defaults empty. Searches loaded rows only.
+- **Task**: defaults to All loaded tasks; choose a discovered key to filter locally.
+- **Date (optional)**: empty by default, or the calendar row's selected day. Matches the Jira started-date portion; clear to restore other dates.
+- **Sort by**: Newest first (default), Oldest first, or Longest first.
+- **Jira task key / Load my entries**: optional direct lookup of any valid Jira issue key, including another employee's task and any issue type. Direct lookup reads all dates, independently of the month picker. Blank key loads the month. **All tasks this month** leaves direct-lookup mode and clears task/date filtering.
+- **Export CSV**: downloads only the loaded, filtered rows, in the chosen order, with task, title, started timestamp, hours, description and worklog ID. Disabled when empty. Spreadsheet formula prefixes are escaped and cells are quoted.
+- Each entry shows task key/title, readable date/time, duration, full description and worklog ID. Empty results explain how to adjust the view and offer **Clear filters**.
+- **Delete entry** opens an inline review identifying task, date, hours and worklog ID. **Cancel deletion** sends no request. **Confirm delete** sends the existing confirmed delete request, disables conflicting actions while saving, then removes the entry and updates totals. A failed/uncertain deletion disables that row until a fresh read and is never automatically retried.
+- **Copy link** copies this modal's URL (or displays a selectable URL if clipboard access is unavailable). Recipients see their own Jira history. **Close** or Escape returns to the parent view; Escape does not also dismiss the calendar.
+
+The server validates same-origin JSON and the worklog header, requires a valid personal OAuth session (no shared-account fallback, even with the test override), and re-reads the exact Jira worklog to compare author **account IDs**, not display names. Other authors are rejected with HTTP 403, including for EPR Admins. Jira also enforces its project permissions; a Jira 403 explains that Delete own worklogs permission is needed. A successful Jira 204 confirms deletion. Remaining estimate is unchanged (`adjustEstimate=leave`). No local schema or canonical snapshot data is changed.
+
+After deletion the client re-reads the affected task's full personal history for calendar reconciliation. If that read fails, the deletion still counts as successful and the calendar explains that a refresh is needed. Older periods, lifetime task totals and other snapshot reports update after the normal Jira refresh. My Day reloads its own data. Tests mock Jira writes unless a user explicitly authorizes a separate real integration test.
+
+Data flow: My Day loads `/worklog/manage.js` and `/worklog/manage.css`; the report generator inlines the same sources. Month browse uses `GET /worklog/history?month=YYYY-MM[&cursor=...]`; direct lookup uses `GET /worklog/entries?issue_key=...`. Both require personal identity. Confirmed `/worklog/delete` performs the fresh ownership check and Jira DELETE, then emits the existing UI update event. `epr_auth.py` permits approved Members to use the specific delete route; no Member write permission was broadened.
+
 ## Business Logic
 
 - A plus button appears on each in-month day on hover or keyboard focus; touch devices always show it. Empty leading/trailing cells have no plus.
@@ -65,6 +94,8 @@ With 23h already logged by Alice on APP-123 on October 28, `1h` is allowed and `
 - `jira_oauth.py`: authorize/callback/status/logout and per-user token storage/refresh.
 - `jira_privacy.py`: periodic privacy-account reporting, cycle state, and integration data erasure.
 - `employee_worklog_form.js`: searchable form, review and final confirmation.
+- `employee_worklog_manage.js` / `.css`: responsive personal history browser, search/filter/sort/export, share links and inline confirmed deletion.
+- `employee_capacity_modal_links.js`: capacity report detail URL state, restoring filters/days/forms and browser history.
 - `employee_availability_calendar.js` / `.css`: plus buttons and modal styling.
 - `generate_employee_capacity_utilization_report.py`: inlines sources into the report shell.
 - `tests/test_employee_worklog.py`: backend/OAuth tests with mocked writes.
@@ -102,3 +133,9 @@ python -c "import sys;sys.path.insert(0,'/home/site/wwwroot/.python_packages/lib
 Kudu's separate command environment lacked the application module/runtime paths, so the diagnostic invocation could not run there; WebSSH was used successfully instead. The hourly app worker will honor the persisted reporting cycle.
 
 Focused automated verification: `.venv/Scripts/python.exe -m unittest tests.test_jira_privacy tests.test_employee_worklog tests.test_employee_capacity_utilization_report` — 17 passed. Client secrets, refresh tokens, and session cookies were not printed or committed.
+
+## Authorized disposable integration test — 2026-11-02
+
+The user explicitly requested three-minute add/delete testing on Hassan Malik's tasks. Local personal OAuth was not configured, so interactive UI writes correctly remained disabled. An isolated Flask test app injected a real Jira session authenticated as Hassan Malik into the same worklog routes; no running-server authentication configuration or OAuth files were changed. The dedicated write credential failed `/myself` with HTTP 401; the primary configured credential independently verified Hassan's account and work/delete permissions.
+
+On Hassan's existing subtask `ODL-155`, one 180-second entry was created at 11:06 +05:00, worklog ID `69292`. The service and an independent Jira read verified it. Replaying the reviewed submission returned the same ID without creating another entry. The owner-checked delete route returned HTTP 200 after Jira deletion; fresh Jira and service-list reads confirmed removal. All baseline worklog records and the remaining estimate matched before and after. No epic/story/subtask hierarchy was created. The non-secret local result is `tmp/worklog-3m-roundtrip-result.json`. This verifies real service/Jira operations; personal OAuth UI sign-in remains a separate local setup prerequisite. Nothing was deployed.
