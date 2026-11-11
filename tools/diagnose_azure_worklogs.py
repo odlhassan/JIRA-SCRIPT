@@ -32,7 +32,9 @@ try:
 except Exception as exc:
  print('Probe outcome:',type(exc).__name__,flush=True)
 '''
-payload = json.dumps({'command': 'python3 -c ' + shlex.quote(probe), 'dir': '/home/site/wwwroot'}).encode()
+encoded = base64.b64encode(probe.encode()).decode()
+command = 'python3 -c "import base64;exec(base64.b64decode(\'' + encoded + '\'))"'
+payload = json.dumps({'command': command, 'dir': '/home/site/wwwroot'}).encode()
 request = urllib.request.Request('https://epreporting.scm.azurewebsites.net/api/command', data=payload,
     headers={'Authorization': 'Basic ' + auth, 'Content-Type': 'application/json'})
 with urllib.request.urlopen(request, timeout=180) as response:
@@ -40,3 +42,8 @@ with urllib.request.urlopen(request, timeout=180) as response:
 print(result.get('Output', ''))
 # Error output may contain runtime internals; report exit status only.
 print('SCM exit code:', result.get('ExitCode'))
+if result.get('ExitCode'):
+    error = result.get('Error', '')
+    for value in (profile.get('userName'), profile.get('userPWD')):
+        error = error.replace(value, '[redacted]')
+    print(error[:800])
