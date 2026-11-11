@@ -1,5 +1,12 @@
 # Azure App Service Deployment
 
+For live calendar Jira failures, run **Diagnose Jira worklog reads** manually in
+GitHub Actions (`.github/workflows/diagnose-jira-worklogs.yml`). The read-only
+`tools/diagnose_azure_worklogs.py` uses the existing publish-profile secret to probe
+reporting credentials through SCM. It prints request stages and status codes,
+never tokens or response bodies, and creates or changes no worklogs. SCM probes
+run in the SCM environment rather than the application worker.
+
 EPR now requires Atlassian sign-in across reports and APIs whenever running in Azure. Existing OAuth settings are reused. Hassan Malik is the bootstrap Admin; approve other signed-in employees through **Admin Settings → Users & access**. Preserve `/home/data/worklog_requests/epr_access` with the existing private OAuth directory. Point health probes at public `/healthz`; protected reports redirect to login. Wildcard CORS is disabled under authentication. No schema migration is required. See [EPR authentication and local verification](EPR_AUTHENTICATION.md).
 
 Calendar worklog writes use personal Atlassian OAuth sessions. Configure `JIRA_OAUTH_CLIENT_ID`, `JIRA_OAUTH_CLIENT_SECRET`, and `JIRA_OAUTH_REDIRECT_URI=https://epreporting.azurewebsites.net/api/jira-auth/callback`; register that callback in the Atlassian app first. Session tokens and one-attempt worklog receipts live under the capacity DB parent's `worklog_requests` directory, normally `/home/data/worklog_requests`. Do not set the local test override `EPR_WORKLOG_ALLOW_SHARED_ACCOUNT` in production. See [Jira worklog sign-in setup](JIRA_WORKLOG_SIGNIN.md). No database schema migration is required.

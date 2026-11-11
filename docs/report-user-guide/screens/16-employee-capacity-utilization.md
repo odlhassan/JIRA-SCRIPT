@@ -102,7 +102,7 @@ For any named employee's calendar, Jira worklogs load automatically, refresh eve
 the modal is open and on returning to the tab. **Refresh Jira worklogs**, marked with a sync icon, reads them
 immediately; the status shows when Jira was last read or explains a failure. When
 switching months, the calendar requests the selected month's Jira worklogs and shows
-a loading bar until all pages finish. If Jira is unavailable, the status explains the
+a small circular loading indicator in the modal header until all pages finish. If Jira is unavailable, the status explains the
 failure and the available saved data remains visible. Capacity and leave remain based
 on the saved report. The combined Grand Total calendar uses saved data. Live viewing
 uses the reporting account's Jira visibility; personal Jira sign-in is required for

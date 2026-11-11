@@ -2,7 +2,6 @@
 import base64
 import json
 import os
-import shlex
 import urllib.request
 import xml.etree.ElementTree as ET
 
@@ -10,25 +9,29 @@ profiles = ET.fromstring(os.environ['AZURE_PUBLISH_PROFILE']).findall('publishPr
 profile = next((p for p in profiles if p.get('publishMethod') == 'ZipDeploy'), profiles[0])
 auth = base64.b64encode((profile.get('userName') + ':' + profile.get('userPWD')).encode()).decode()
 probe = '''
-import sys, os, urllib.parse
-sys.path[:0] = ['/home/site/wwwroot', '/home/site/wwwroot/.python_packages/lib/site-packages']
+import os, urllib.parse, urllib.request, json, base64
 for key, value in list(os.environ.items()):
  if key.startswith('APPSETTING_'): os.environ.setdefault(key[11:], value)
 try:
- import worklog_tally
- original=worklog_tally._get
- def traced(session,path,**params):
+ token=os.environ.get('JIRA_API_TOKEN','')
+ print('Reporting credential configured:',bool(token),flush=True)
+ authorization=base64.b64encode((os.environ.get('JIRA_EMAIL','hassan.malik@octopusdtl.com')+':'+token).encode()).decode()
+ def read(path,**params):
   try:
-   result=original(session,path,**params)
+   req=urllib.request.Request('https://'+os.environ.get('JIRA_SITE','octopusdtlsupport')+'.atlassian.net/rest/api/3/'+path+'?'+urllib.parse.urlencode(params),headers={'Authorization':'Basic '+authorization,'Accept':'application/json'})
+   with urllib.request.urlopen(req,timeout=35) as response: result=json.load(response)
    print('Jira read OK:',path,flush=True)
    return result
   except Exception as exc:
-   response=getattr(exc,'response',None)
-   print('Jira read FAILED:',path,'HTTP',getattr(response,'status_code',None),'exception',type(exc).__name__,flush=True)
+   print('Jira read FAILED:',path,'HTTP',getattr(exc,'code',None),'exception',type(exc).__name__,flush=True)
    raise
- worklog_tally._get=traced
- result=worklog_tally.build_worklog_tally('/home/data/assignee_hours_capacity.db','Namra Zahid','2026-10')
- print('Completed read; live seconds:',result['jira_seconds'],flush=True)
+ read('myself')
+ users=read('user/search',query='Namra Zahid',maxResults=100)
+ accounts=[x['accountId'] for x in users if x.get('displayName','').strip().lower()=='namra zahid']
+ if len(accounts)!=1: raise ValueError('ambiguous account')
+ page=read('search/jql',jql='worklogAuthor = "'+accounts[0]+'" AND worklogDate >= "2026-09-30" AND worklogDate <= "2026-11-01" ORDER BY key ASC',fields='summary,issuetype',maxResults=100)
+ for issue in page.get('issues',[]): read('issue/'+issue['key']+'/worklog',startAt=0,maxResults=100)
+ print('Completed production credential read probe',flush=True)
 except Exception as exc:
  print('Probe outcome:',type(exc).__name__,flush=True)
 '''

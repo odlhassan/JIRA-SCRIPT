@@ -8,6 +8,8 @@ import calendar
 import math
 import re
 import sqlite3
+import time
+import requests
 from xml.sax.saxutils import escape
 
 from jira_client import BASE_URL, get_session
@@ -61,9 +63,25 @@ def _snapshot(db_path, employee, month):
 
 
 def _get(session, path, **params):
-    response = session.get(BASE_URL + '/rest/api/3/' + path, params=params, timeout=(10, 30))
-    response.raise_for_status()
-    return response.json()
+    # Only idempotent reads retry; a brief Jira throttle or gateway failure must not
+    # leave an opened calendar waiting for the next 60-second polling cycle.
+    for attempt in range(3):
+        try:
+            response = session.get(BASE_URL + '/rest/api/3/' + path, params=params, timeout=(10, 30))
+            if response.status_code in (429, 502, 503, 504) and attempt < 2:
+                try:
+                    delay = float(response.headers.get('Retry-After', attempt + 1))
+                except (TypeError, ValueError):
+                    delay = attempt + 1
+                if 0 <= delay <= 5:
+                    time.sleep(delay)
+                    continue
+            response.raise_for_status()
+            return response.json()
+        except (requests.Timeout, requests.ConnectionError):
+            if attempt == 2:
+                raise
+            time.sleep(attempt + 1)
 
 
 def _account(session, employee):

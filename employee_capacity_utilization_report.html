@@ -122,11 +122,10 @@ button.availability-hours.leave:hover{background:#ffcbd5;box-shadow:0 0 0 2px #d
 .employee-search-field .material-symbols-outlined{font-size:19px;color:#5b7ea7}
 .employee-search-field input{width:100%;min-width:0;height:38px;border:0;outline:0;background:transparent;color:#183653;font:inherit;font-weight:400}
 @media(max-width:720px){.employee-search-area{align-items:stretch;flex-direction:column;gap:6px}.employee-search-field{width:100%;box-sizing:border-box}}
-.availability-live-progress{height:4px;overflow:hidden;border-radius:99px;background:#dbe8f8;margin:-4px 0 12px}
-.availability-live-progress[hidden]{display:none}
-.availability-live-progress span{display:block;width:38%;height:100%;border-radius:inherit;background:linear-gradient(90deg,#1769c2,#6c72df);animation:availability-loading 1.2s ease-in-out infinite alternate}
-@keyframes availability-loading{from{transform:translateX(-95%)}to{transform:translateX(260%)}}
-@media(prefers-reduced-motion:reduce){.availability-live-progress span{animation:none;width:100%;opacity:.7}}
+.availability-live-spinner{display:inline-block;vertical-align:middle;margin-left:10px;width:15px;height:15px;border:2px solid #c6d8ed;border-top-color:#1769c2;border-radius:50%;animation:availability-loading .8s linear infinite}
+.availability-live-spinner[hidden]{display:none}
+@keyframes availability-loading{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.availability-live-spinner{animation:none}}
 .availability-tally{border:1px solid #8caed3;border-radius:8px;background:#fff;color:#174e88;padding:8px 12px;font:700 12px "Segoe UI",sans-serif;cursor:pointer}
 .availability-tally:hover{background:#edf5ff}.availability-tally:disabled{opacity:.6;cursor:wait}
 .availability-tally:focus-visible{outline:3px solid #5068db;outline-offset:2px}
@@ -222,10 +221,11 @@ function wireAvailabilityCalendar(label){
  availabilityEvents?.abort();availabilityEvents=new AbortController();
  const generation=++availabilityGeneration, period=month.value;
  const status=document.createElement('p');status.className='availability-live-status';status.setAttribute('role','status');
- const progress=document.createElement('div');progress.className='availability-live-progress';progress.hidden=true;progress.setAttribute('role','progressbar');progress.setAttribute('aria-label','Loading Jira worklogs for '+period);
- progress.innerHTML='<span></span>';
+ document.querySelector('.availability-live-spinner')?.remove();
+ const progress=document.createElement('span');progress.className='availability-live-spinner';progress.hidden=true;progress.setAttribute('role','progressbar');progress.setAttribute('aria-label','Loading Jira worklogs for '+period);progress.title='Loading Jira worklogs for '+period;
+ document.querySelector('#ecu-drawer-title').append(progress);
  const refresh=document.createElement('button');refresh.type='button';refresh.className='availability-refresh';refresh.innerHTML=availabilityIcon('sync')+'<span>Refresh Jira worklogs</span>';
- body.querySelector('.availability-toolbar').after(status,progress);body.querySelector('.availability-actions').prepend(refresh);
+ body.querySelector('.availability-toolbar').after(status);body.querySelector('.availability-actions').prepend(refresh);
  let running=false;
  async function refreshLive(){
   if(running||!status.isConnected||document.hidden||!document.querySelector('#ecu-drawer')?.classList.contains('open')||body.querySelector('#calendar-worklog-form')||document.querySelector('.wl-manager'))return;
@@ -233,8 +233,20 @@ function wireAvailabilityCalendar(label){
   running=true;refresh.disabled=true;progress.hidden=false;body.querySelector('.availability-calendar-scroll')?.setAttribute('aria-busy','true');status.textContent='Loading Jira worklogs for '+period+'…';
   try{
    const params=new URLSearchParams({employee:label,month:period});
-   const response=await fetch('/api/employee-capacity-utilization/tally?'+params,{cache:'no-store'});
-   const result=await response.json();if(!response.ok)throw new Error(result.error||'Jira unavailable');
+   let result;
+   for(let attempt=0;attempt<2;attempt++){
+    try{
+     const response=await fetch('/api/employee-capacity-utilization/tally?'+params,{cache:'no-store'});
+     result=await response.json();
+     if(!response.ok){const error=new Error(result.error||'Jira unavailable');error.retryable=[502,503,504].includes(response.status)&&![401,403].includes(result.jira_status);throw error}
+     break;
+    }catch(error){
+     if(attempt===1||error.retryable===false)throw error;
+     status.textContent='Retrying Jira worklogs for '+period+'…';
+     await new Promise(resolve=>setTimeout(resolve,1200));
+     if(generation!==availabilityGeneration||!status.isConnected||!document.querySelector('#ecu-drawer')?.classList.contains('open'))return;
+    }
+   }
    if(!Array.isArray(result.entries)||key(result.employee)!==key(label)||result.month!==period)throw new Error('Incomplete Jira response');
    const rows=[];
    for(const item of result.entries){
@@ -253,7 +265,7 @@ function wireAvailabilityCalendar(label){
    if(selected){const chosen=body.querySelector(`[data-work-date="${selected}"]`);if(chosen)chosen.click();else{const detail=body.querySelector('#availability-day-details');if(detail)detail.textContent='Jira worklogs updated. Select a day to see its details.'}}
    status.textContent='Jira worklogs · Updated at '+new Date().toLocaleTimeString()+'. Capacity and leave use the saved report.';
   }catch(error){if(generation===availabilityGeneration)status.textContent='Jira worklogs could not be refreshed. Showing last available data. '+error.message}
-  finally{running=false;if(refresh.isConnected){refresh.disabled=false;progress.hidden=true;body.querySelector('.availability-calendar-scroll')?.removeAttribute('aria-busy')}}
+  finally{running=false;progress.hidden=true;if(refresh.isConnected){refresh.disabled=false;body.querySelector('.availability-calendar-scroll')?.removeAttribute('aria-busy')}}
  }
  refresh.addEventListener('click',refreshLive);
  availabilityTimer=setInterval(()=>{if(!status.isConnected||!document.querySelector('#ecu-drawer')?.classList.contains('open')){clearInterval(availabilityTimer);availabilityEvents?.abort();availabilityGeneration++;return}refreshLive()},60000);

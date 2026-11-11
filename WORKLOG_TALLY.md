@@ -11,6 +11,12 @@ visibility; it cannot impersonate the selected employee.
 
 ## Business Logic
 
+Live GET requests retry timeouts, connection failures and HTTP 429/502/503/504 up to
+three attempts. Retry-After values up to five seconds are honored; longer throttles
+fail without a rapid retry. The calendar retries a transient failed read once after
+1.2 seconds, keeping a small header spinner visible. Jira 401/403 failures identify
+reporting-account access problems. This retry behavior applies only to reads.
+
 - A read-only SQLite transaction captures the same issue run
   (`canonical_refresh_state.last_success_run_id`) and worklog run (the last
   persisted `canonical_worklogs` row's run) as the report's existing readers.
@@ -84,7 +90,7 @@ worklog dates determine the month; task planned start/due dates do not.
   required `employee` and `month`; success has `Cache-Control: no-store, private`.
 - `employee_availability_calendar.js` / `.css`: download/status/layout.
 - The same JSON tally read supplies the selected employee's live calendar worklogs;
-  month changes show a loading bar and failures preserve the available calendar.
+  month changes show a small circular loading indicator in the modal header and failures preserve the available calendar.
 - `generate_employee_capacity_utilization_report.py`: inlines calendar sources
   into the root report shell, promoted to `report_html` on server startup.
 - `requirements.txt`: ReportLab runtime dependency; `requirements-dev.txt` adds

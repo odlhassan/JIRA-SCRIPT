@@ -47702,8 +47702,11 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             return jsonify(error=str(exc)), 400
         except RuntimeError as exc:
             return jsonify(error=str(exc)), 409
-        except requests.RequestException:
-            return jsonify(error="Jira could not be read completely. No tally was generated. Check Jira access and try again."), 502
+        except requests.RequestException as exc:
+            jira_status = exc.response.status_code if exc.response is not None else None
+            message = (f"Jira reporting-account access was denied (HTTP {jira_status}). Ask an administrator to check the reporting credentials."
+                       if jira_status in (401, 403) else "Jira could not be read completely. No tally was generated. Please try Refresh Jira worklogs again.")
+            return jsonify(error=message, jira_status=jira_status), 502
         except sqlite3.Error:
             return jsonify(error="The EPR snapshot could not be read. No tally was generated. Try again after the refresh finishes."), 503
 

@@ -8,7 +8,7 @@ Any named employee's Availability calendar reads that employee's Jira worklogs o
 when the displayed month changes, when the tab becomes visible, and every 60 seconds
 while open. **Refresh Jira worklogs** requests an immediate read. The status shows the
 last successful read; an incomplete or failed read keeps the last available calendar.
-Changing months shows a loading bar while Jira is read. A late response from an earlier
+Changing months shows a small circular loading indicator in the modal header while Jira is read. A late response from an earlier
 month cannot overwrite the newly selected calendar.
 All issue-search and worklog pages must finish before replacing the modal's month.
 The existing reporting Jira account supplies read-only results without a personal Jira

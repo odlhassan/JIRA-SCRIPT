@@ -36,10 +36,11 @@ function wireAvailabilityCalendar(label){
  availabilityEvents?.abort();availabilityEvents=new AbortController();
  const generation=++availabilityGeneration, period=month.value;
  const status=document.createElement('p');status.className='availability-live-status';status.setAttribute('role','status');
- const progress=document.createElement('div');progress.className='availability-live-progress';progress.hidden=true;progress.setAttribute('role','progressbar');progress.setAttribute('aria-label','Loading Jira worklogs for '+period);
- progress.innerHTML='<span></span>';
+ document.querySelector('.availability-live-spinner')?.remove();
+ const progress=document.createElement('span');progress.className='availability-live-spinner';progress.hidden=true;progress.setAttribute('role','progressbar');progress.setAttribute('aria-label','Loading Jira worklogs for '+period);progress.title='Loading Jira worklogs for '+period;
+ document.querySelector('#ecu-drawer-title').append(progress);
  const refresh=document.createElement('button');refresh.type='button';refresh.className='availability-refresh';refresh.innerHTML=availabilityIcon('sync')+'<span>Refresh Jira worklogs</span>';
- body.querySelector('.availability-toolbar').after(status,progress);body.querySelector('.availability-actions').prepend(refresh);
+ body.querySelector('.availability-toolbar').after(status);body.querySelector('.availability-actions').prepend(refresh);
  let running=false;
  async function refreshLive(){
   if(running||!status.isConnected||document.hidden||!document.querySelector('#ecu-drawer')?.classList.contains('open')||body.querySelector('#calendar-worklog-form')||document.querySelector('.wl-manager'))return;
@@ -47,8 +48,20 @@ function wireAvailabilityCalendar(label){
   running=true;refresh.disabled=true;progress.hidden=false;body.querySelector('.availability-calendar-scroll')?.setAttribute('aria-busy','true');status.textContent='Loading Jira worklogs for '+period+'…';
   try{
    const params=new URLSearchParams({employee:label,month:period});
-   const response=await fetch('/api/employee-capacity-utilization/tally?'+params,{cache:'no-store'});
-   const result=await response.json();if(!response.ok)throw new Error(result.error||'Jira unavailable');
+   let result;
+   for(let attempt=0;attempt<2;attempt++){
+    try{
+     const response=await fetch('/api/employee-capacity-utilization/tally?'+params,{cache:'no-store'});
+     result=await response.json();
+     if(!response.ok){const error=new Error(result.error||'Jira unavailable');error.retryable=[502,503,504].includes(response.status)&&![401,403].includes(result.jira_status);throw error}
+     break;
+    }catch(error){
+     if(attempt===1||error.retryable===false)throw error;
+     status.textContent='Retrying Jira worklogs for '+period+'…';
+     await new Promise(resolve=>setTimeout(resolve,1200));
+     if(generation!==availabilityGeneration||!status.isConnected||!document.querySelector('#ecu-drawer')?.classList.contains('open'))return;
+    }
+   }
    if(!Array.isArray(result.entries)||key(result.employee)!==key(label)||result.month!==period)throw new Error('Incomplete Jira response');
    const rows=[];
    for(const item of result.entries){
@@ -67,7 +80,7 @@ function wireAvailabilityCalendar(label){
    if(selected){const chosen=body.querySelector(`[data-work-date="${selected}"]`);if(chosen)chosen.click();else{const detail=body.querySelector('#availability-day-details');if(detail)detail.textContent='Jira worklogs updated. Select a day to see its details.'}}
    status.textContent='Jira worklogs · Updated at '+new Date().toLocaleTimeString()+'. Capacity and leave use the saved report.';
   }catch(error){if(generation===availabilityGeneration)status.textContent='Jira worklogs could not be refreshed. Showing last available data. '+error.message}
-  finally{running=false;if(refresh.isConnected){refresh.disabled=false;progress.hidden=true;body.querySelector('.availability-calendar-scroll')?.removeAttribute('aria-busy')}}
+  finally{running=false;progress.hidden=true;if(refresh.isConnected){refresh.disabled=false;body.querySelector('.availability-calendar-scroll')?.removeAttribute('aria-busy')}}
  }
  refresh.addEventListener('click',refreshLive);
  availabilityTimer=setInterval(()=>{if(!status.isConnected||!document.querySelector('#ecu-drawer')?.classList.contains('open')){clearInterval(availabilityTimer);availabilityEvents?.abort();availabilityGeneration++;return}refreshLive()},60000);

@@ -290,6 +290,8 @@ test('switching months fetches Jira, shows progress, and ignores late responses'
   await page.getByRole('button',{name:'Previous month',exact:true}).click();
   const progress=page.getByRole('progressbar',{name:'Loading Jira worklogs for 2026-09'});
   await expect(progress).toBeVisible();
+  await expect(page.locator('#ecu-drawer-title [role="progressbar"]')).toBeVisible();
+  await expect(progress).toHaveCSS('width','15px');
   await expect(page.locator('.availability-live-status')).toContainText('Loading Jira worklogs for 2026-09');
   await expect(page.locator('.availability-calendar-scroll')).toHaveAttribute('aria-busy','true');
   await page.getByRole('button',{name:'Next month',exact:true}).click();
@@ -301,6 +303,19 @@ test('switching months fetches Jira, shows progress, and ignores late responses'
   await expect(page.locator('[data-calendar-date="2026-10-05"]')).toContainText('1h logged');
   expect(months.filter(value=>value==='2026-10').length).toBeGreaterThanOrEqual(2);
   expect(months).toContain('2026-09');
+});
+test('initial transient Jira failure retries promptly and clears the header spinner',async({page})=>{
+  let reads=0;
+  await page.route('**/employee-capacity-utilization/tally?*',route=>{
+    reads++;
+    if(reads===1)return route.fulfill({status:502,json:{error:'Temporary Jira timeout'}});
+    return route.fulfill({json:{employee:'Alice',month:'2026-10',entries:[{jira:{issue_key:'APP-1',issue_type:'Sub-task',worklog_id:'1',date:'2026-10-05',seconds:3600}}]}});
+  });
+  await page.locator('#table tbody tr').first().locator('td').nth(4).click();
+  await expect(page.locator('#ecu-drawer-title [role="progressbar"]')).toBeVisible();
+  await expect(page.locator('.availability-live-status')).toContainText('Updated at');
+  await expect(page.locator('[data-calendar-date="2026-10-05"]')).toContainText('1h logged');
+  await expect(page.getByRole('progressbar')).toHaveCount(0);expect(reads).toBe(2);
 });
 test('another employee calendar reads their own Jira hours without personal worklog authentication',async({page})=>{
   let requestedEmployee='',personalReads=0;

@@ -10,7 +10,7 @@ from unittest.mock import Mock, patch
 from pypdf import PdfReader
 import requests
 
-from worklog_tally import _live_entries, _snapshot, build_worklog_tally, month_bounds, reconcile, tally_pdf
+from worklog_tally import _get, _live_entries, _snapshot, build_worklog_tally, month_bounds, reconcile, tally_pdf
 
 
 def entry(identifier, day='2026-10-26', seconds=3600, task='APP-1', kind='Sub-task'):
@@ -23,6 +23,26 @@ def snapshot(entries):
 
 
 class WorklogTallyTests(unittest.TestCase):
+    def test_transient_reads_retry_without_changing_worklogs(self):
+        session=Mock()
+        unavailable=Mock(status_code=503,headers={})
+        success=Mock(status_code=200);success.json.return_value={'issues':[]}
+        session.get.side_effect=[requests.Timeout(),unavailable,success]
+        with patch('worklog_tally.time.sleep') as sleep:
+            self.assertEqual(_get(session,'search/jql'),{'issues':[]})
+        self.assertEqual(session.get.call_count,3)
+        self.assertEqual(sleep.call_count,2)
+        session.post.assert_not_called();session.delete.assert_not_called()
+
+    def test_denied_reads_and_long_rate_limits_are_not_retried(self):
+        for status in (403,429):
+            session=Mock();response=Mock(status_code=status,headers={'Retry-After':'60'})
+            response.raise_for_status.side_effect=requests.HTTPError(response=response)
+            session.get.return_value=response
+            with patch('worklog_tally.time.sleep') as sleep, self.assertRaises(requests.HTTPError):
+                _get(session,'myself')
+            session.get.assert_called_once();sleep.assert_not_called()
+
     def test_reconcile_ids_dates_durations_and_every_day_not_just_equal_totals(self):
         old = [entry('match'), entry('moved'), entry('stale'), entry('changed', seconds=1800)]
         live = [entry('match'), entry('moved', day='2026-11-02'), entry('new'), entry('changed', seconds=1801)]
