@@ -57,7 +57,7 @@ def duration_label(minutes):
     return ' '.join(part for part in (f'{hours}h' if hours else '', f'{remainder}m' if remainder else '') if part) or '0m'
 
 
-def daily_logged_seconds(session, issue_key, account_id, started):
+def daily_logged_seconds(session, issue_key, account_id, started, exclude_id=None):
     """Read all Jira pages; compare dates in the selected calendar's UTC offset."""
     offset, seconds, seen = 0, 0, set()
     while True:
@@ -74,6 +74,8 @@ def daily_logged_seconds(session, issue_key, account_id, started):
             if (row.get('author') or {}).get('accountId') != account_id:
                 continue
             identifier = row.get('id')
+            if exclude_id is not None and str(identifier) == str(exclude_id):
+                continue
             if identifier and identifier in seen:
                 continue
             if identifier:
@@ -214,7 +216,7 @@ def register_employee_worklog_routes(app, receipt_dir: Path):
             for row in rows:
                 if (row.get('author') or {}).get('accountId') == identity['accountId']:
                     entries.append(dict(worklog_id=str(row['id']), started=row.get('started', ''),
-                        seconds=row.get('timeSpentSeconds', 0), comment=row.get('comment')))
+                        seconds=row.get('timeSpentSeconds', 0), comment=row.get('comment'), updated=row.get('updated', '')))
             offset += len(rows)
             if offset >= total:
                 break
@@ -245,7 +247,7 @@ def register_employee_worklog_routes(app, receipt_dir: Path):
             last = f'{period}-{calendar.monthrange(first.year, first.month)[1]:02d}'
             session, identity = personal_identity()
             params = {'jql': f'worklogAuthor = currentUser() AND worklogDate >= "{period}-01" AND worklogDate <= "{last}" ORDER BY key ASC',
-                      'fields': 'summary', 'maxResults': 10}
+                      'fields': 'summary,issuetype,assignee', 'maxResults': 10}
             token = request.args.get('cursor', '')
             if len(token) > 10000:
                 raise ValueError('Invalid history cursor.')
@@ -261,14 +263,57 @@ def register_employee_worklog_routes(app, receipt_dir: Path):
             for task in tasks:
                 task_key = issue_key(task.get('key'))
                 summary = (task.get('fields') or {}).get('summary', '')
+                fields = task.get('fields') or {}
                 for entry in own_entries(session, identity, task_key):
                     if str(entry['started'])[:7] == period:
-                        entries.append({**entry, 'issue_key': task_key, 'summary': summary})
+                        entries.append({**entry, 'issue_key': task_key, 'summary': summary,
+                                        'issue_type': (fields.get('issuetype') or {}).get('name', ''),
+                                        'assignee': (fields.get('assignee') or {}).get('displayName', '')})
             next_token = page.get('nextPageToken') if not page.get('isLast', False) else None
             if next_token and (not isinstance(next_token, str) or next_token == token):
                 raise ValueError('Jira returned an invalid history cursor.')
             return jsonify(month=period, author=identity.get('displayName', ''), entries=entries,
                            next_cursor=next_token, tasks_scanned=len(tasks))
+        except (ValueError, TypeError, requests.RequestException) as exc:
+            return failure(exc)
+
+    @app.post(prefix + '/edit')
+    @serialize_submit
+    def worklog_edit():
+        try:
+            guard()
+            body = request.get_json()
+            if not isinstance(body, dict) or body.get('confirmed') is not True:
+                raise ValueError('Confirm the worklog edit first.')
+            task = issue_key(body.get('issue_key'))
+            identifier = str(body.get('worklog_id', ''))
+            if not re.fullmatch(r'\d+', identifier):
+                raise ValueError('Choose a valid worklog.')
+            session, identity = personal_identity()
+            url = jira_base(session) + '/rest/api/3/issue/' + task + '/worklog/' + identifier
+            response = session.get(url, timeout=(10, 25))
+            response.raise_for_status()
+            current = response.json()
+            if (current.get('author') or {}).get('accountId') != identity['accountId']:
+                return jsonify(error='You can only edit your own logged hours.'), 403
+            if not body.get('updated') or current.get('updated') != body['updated']:
+                return jsonify(error='This entry changed in Jira. Refresh it before editing.'), 409
+            minutes = parse_duration(body.get('duration'))
+            started = datetime.fromisoformat(str(body.get('started', '')))
+            if not started.tzinfo or started.utcoffset() is None or started.date() > datetime.now(started.tzinfo).date():
+                raise ValueError('Choose a valid past or current start time with timezone.')
+            comment = str(body.get('comment', '')).strip()
+            if not 1 <= len(comment) <= 2000:
+                raise ValueError('Enter a work description of 1–2000 characters.')
+            if daily_logged_seconds(session, task, identity['accountId'], started, identifier) + minutes * 60 > 86400:
+                raise ValueError('This would exceed 24h for this task and day.')
+            payload = {'started': started.strftime('%Y-%m-%dT%H:%M:%S.000%z'), 'timeSpentSeconds': minutes * 60,
+                       'comment': {'type': 'doc', 'version': 1, 'content': [{'type': 'paragraph', 'content': [{'type': 'text', 'text': comment}]}]}}
+            if body.get('comment_changed') is False and current.get('comment') is not None:
+                payload['comment'] = current['comment']
+            response = session.put(url, params={'adjustEstimate': 'leave', 'notifyUsers': 'false'}, json=payload, timeout=(10, 40))
+            response.raise_for_status()
+            return jsonify(updated=True, issue_key=task, worklog_id=identifier)
         except (ValueError, TypeError, requests.RequestException) as exc:
             return failure(exc)
 

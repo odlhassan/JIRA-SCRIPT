@@ -45,7 +45,7 @@
       list.innerHTML=visible.map(row=>{
         const index=entries.indexOf(row),day=new Date(row.started.slice(0,10)+'T12:00:00'),dateLabel=Number.isNaN(day.getTime())?row.started:day.toLocaleDateString(undefined,{weekday:'short',day:'numeric',month:'short',year:'numeric'});
         const confirm=pending===rowKey(row);
-        return `<article class="wl-entry"><div class="wl-entry-top"><div><span class="wl-task">${esc(row.issue_key)}</span><strong>${esc(row.summary||'Jira worklog')}</strong></div><span class="wl-duration">${esc(duration(row.seconds))}</span></div><p class="wl-description">${esc(description(row.comment)||'No work description')}</p><div class="wl-entry-meta"><span>${esc(dateLabel)}${row.started.includes('T')?' · '+esc(row.started.slice(11,16)):''}</span><small>Worklog ${esc(row.worklog_id)}</small><button type="button" class="wl-delete" data-delete="${index}" ${failed.has(rowKey(row))?'disabled':''}>Delete entry</button></div>${confirm?`<div class="wl-confirm"><strong>Delete ${esc(duration(row.seconds))} from ${esc(row.issue_key)}?</strong><p>${esc(dateLabel)} · Worklog ${esc(row.worklog_id)}. This removes the entry from Jira.</p><button type="button" class="wl-danger" data-confirm="${index}">Confirm delete</button><button type="button" data-cancel>Cancel deletion</button></div>`:''}</article>`;
+        return `<article class="wl-entry"><div class="wl-entry-top"><div><span class="wl-task">${esc(row.issue_key)}</span><strong>${esc(row.summary||'Jira worklog')}</strong></div><span class="wl-duration">${esc(duration(row.seconds))}</span></div><p class="wl-description">${esc(description(row.comment)||'No work description')}</p><div class="wl-entry-meta"><span>${esc(dateLabel)}${row.started.includes('T')?' · '+esc(row.started.slice(11,16)):''}</span><small>Worklog ${esc(row.worklog_id)}</small><button type="button" data-edit="${index}" ${failed.has(rowKey(row))||!row.updated?'disabled':''}>Edit entry</button><button type="button" class="wl-delete" data-delete="${index}" ${failed.has(rowKey(row))?'disabled':''}>Delete entry</button></div>${confirm?`<div class="wl-confirm"><strong>Delete ${esc(duration(row.seconds))} from ${esc(row.issue_key)}?</strong><p>${esc(dateLabel)} · Worklog ${esc(row.worklog_id)}. This removes the entry from Jira.</p><button type="button" class="wl-danger" data-confirm="${index}">Confirm delete</button><button type="button" data-cancel>Cancel deletion</button></div>`:''}</article>`;
       }).join('')||`<div class="wl-empty"><strong>${loadError?'Jira history is unavailable':loaded?'No entries match this view':'Loading your Jira history…'}</strong><p>${loadError?esc(loadError):loaded?'Try another month, clear filters, or open a specific task.':'Your tasks and descriptions will appear here automatically.'}</p>${loadError?(authAvailable===true?'<a href="/api/jira-auth/login">Sign in with Jira</a>':authAvailable===false?'<p>Personal Jira sign-in needs administrator setup on this server.</p>':''):loaded?'<button type="button" data-clear>Clear filters</button>':''}</div>`;
       $('[data-more]').hidden=!cursor;
       $('[data-export]').disabled=!visible.length||busy;
@@ -76,6 +76,11 @@
       if(busy)return;const button=event.target.closest('button');if(!button)return;
       if(button.hasAttribute('data-clear')){for(const name of ['search','task','date'])$('[name="'+name+'"]').value='';render();syncUrl();return}
       if(button.hasAttribute('data-cancel')){pending=null;render();return}
+      if(button.hasAttribute('data-edit')){
+        const index=Number(button.dataset.edit),row=entries[index],article=button.closest('article'),original=description(row.comment);
+        article.insertAdjacentHTML('beforeend',`<form data-edit-form="${index}" class="wl-confirm"><label>Start date and time <input name="started" type="datetime-local" required value="${esc(row.started.slice(0,16))}"></label><label>Time spent <input name="duration" required value="${esc(duration(row.seconds))}"></label><label>Work description <textarea name="comment" required maxlength="2000">${esc(original)}</textarea></label><button type="submit">Save changes to Jira</button><button type="button" data-cancel>Cancel</button></form>`);
+        button.disabled=true;return;
+      }
       if(button.hasAttribute('data-delete')){pending=rowKey(entries[Number(button.dataset.delete)]);render();$('[data-confirm]')?.focus();return}
       if(!button.hasAttribute('data-confirm'))return;
       const entry=entries[Number(button.dataset.confirm)];setBusy(true);for(const control of list.querySelectorAll('button'))control.disabled=true;status.textContent='Deleting from Jira…';
@@ -89,6 +94,16 @@
       }catch(error){failed.add(rowKey(entry));pending=null;setBusy(false);render();status.textContent=error.message+' Check Jira and load entries again before retrying.'}
       finally{setBusy(false)}
     });
+    list.addEventListener('submit',async event=>{
+      const edit=event.target.closest('[data-edit-form]');if(!edit)return;event.preventDefault();if(busy)return;
+      const row=entries[Number(edit.dataset.editForm)],original=description(row.comment),zone=(row.started.match(/([+-]\d{2}):?(\d{2})$/)||[]);
+      if(!zone.length){status.textContent='This entry has no timezone. Refresh it before editing.';return}
+      setBusy(true);for(const control of edit.elements)control.disabled=true;status.textContent='Saving changes to Jira…';
+      try{
+        await request('/edit',{issue_key:row.issue_key,worklog_id:row.worklog_id,updated:row.updated,started:edit.elements.started.value+':00'+zone[1]+':'+zone[2],duration:edit.elements.duration.value,comment:edit.elements.comment.value,comment_changed:edit.elements.comment.value!==original,confirmed:true});
+        setBusy(false);await load();status.textContent='Changes saved to Jira.';
+      }catch(error){failed.add(rowKey(row));setBusy(false);render();status.textContent=error.message+' Refresh and check Jira before trying again.'}
+    });
     $('[data-export]').addEventListener('click',()=>{
       const cell=value=>{let text=String(value??'');if(/^[=+@\-\t\r]/.test(text))text="'"+text;return '"'+text.replace(/"/g,'""')+'"'};
       const rows=[['Task','Title','Started','Hours','Description','Worklog ID'],...visible.map(row=>[row.issue_key,row.summary,row.started,row.seconds/3600,description(row.comment),row.worklog_id])];
@@ -96,7 +111,7 @@
     });
     $('[data-share]').addEventListener('click',async()=>{syncUrl();try{await navigator.clipboard.writeText(location.href);status.textContent='Link copied. Recipients will see their own Jira entries.'}catch(_error){$('[data-share-url]').hidden=false;$('[data-share-url]').value=location.href;$('[data-share-url]').select();status.textContent='Copy this link. Recipients will see their own Jira entries.'}});
     $('[data-close]').addEventListener('click',()=>dialog.close());
-    dialog.addEventListener('close',()=>{generation++;dialog.remove();if(!dialog.dataset.routeClosing)updateUrl({panel:null,issue:null,date:null,historyMonth:null});if(trigger.isConnected)trigger.focus()});
+    dialog.addEventListener('close',()=>{generation++;dialog.remove();document.dispatchEvent(new CustomEvent('epr-worklog-changed'));if(!dialog.dataset.routeClosing)updateUrl({panel:null,issue:null,date:null,historyMonth:null});if(trigger.isConnected)trigger.focus()});
     window.eprCloseWorklogManager=()=>{dialog.dataset.routeClosing='1';dialog.close();dialog.remove()};
     updateUrl({panel:'hours'},false);syncUrl();render();load();
   });

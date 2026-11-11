@@ -119,6 +119,28 @@ class EmployeeWorklogTests(unittest.TestCase):
         self.assertTrue(result.json['deleted'])
         self.session.delete.assert_called_once_with('https://jira.example/rest/api/3/issue/STORY-1/worklog/123', params={'adjustEstimate':'leave'}, timeout=(10,40))
 
+    def test_edit_checks_ownership_conflict_and_excludes_current_entry_from_limit(self):
+        self.personal_jira(rows=[{'id':'123','author':self.identity,'started':'2026-10-01T09:00:00+05:00','timeSpentSeconds':86400}])
+        original_get = self.session.get.side_effect
+        current = {'id':'123','author':self.identity,'updated':'v1','comment':{'type':'doc','content':[]}}
+        def get(url, **kwargs):
+            if url.endswith('/worklog/123'):
+                response=Mock(); response.json.return_value=current.copy(); return response
+            return original_get(url, **kwargs)
+        self.session.get.side_effect=get
+        body={'issue_key':'APP-1','worklog_id':'123','updated':'v1','duration':'24h',
+              'started':'2026-10-01T09:00:00+05:00','comment':'Work','comment_changed':False,'confirmed':True}
+        current['author']={'accountId':'other'}
+        self.assertEqual(self.client.post(PREFIX+'/edit',json=body,headers=HEADERS).status_code,403)
+        current['author']=self.identity;current['updated']='v2'
+        self.assertEqual(self.client.post(PREFIX+'/edit',json=body,headers=HEADERS).status_code,409)
+        self.session.put.assert_not_called()
+        current['updated']='v1'
+        response=self.client.post(PREFIX+'/edit',json=body,headers=HEADERS)
+        self.assertEqual(response.status_code,200)
+        self.assertEqual(self.session.put.call_args.kwargs['json']['comment'], current['comment'])
+        self.assertEqual(self.session.put.call_args.kwargs['params']['adjustEstimate'],'leave')
+
     def test_delete_blocks_other_author_even_with_same_display_name(self):
         self.personal_jira(owner={'accountId':'other', 'displayName':self.identity['displayName']})
         result = self.client.post(PREFIX+'/delete', json={'issue_key':'APP-1','worklog_id':'123','confirmed':True}, headers=HEADERS)

@@ -1,21 +1,12 @@
 // Pure daily model: subtask worklogs authored by the selected employee(s),
 // independent of the summary's logged-hours scope and leave inclusion switch.
-document.addEventListener('epr-worklog-deleted',event=>{
- const result=event.detail,task=result.issue_key;
- if(!Array.isArray(result.entries)){const note=document.querySelector('#availability-day-details');if(note)note.textContent='Entry deleted from Jira. Refresh Jira data to update snapshot totals.';return}
- const matches=row=>txt(row.issue_id||row.issue_key).toUpperCase()===task&&key(row.worklog_author||row.issue_assignee)===key(result.author);
- const template=allWorklogs.find(matches)||{issue_id:task,worklog_author:result.author};
- allWorklogs=allWorklogs.filter(row=>!matches(row));
- allWorklogs.push(...result.entries.map(entry=>({...template,worklog_id:entry.worklog_id,worklog_date:entry.started.slice(0,10),hours_logged:entry.seconds/3600})));
- logs=includeLeaves.checked?allWorklogs:allWorklogs.filter(row=>!isLeaveWorklog(row));data.worklogs=logs;render();
- const note=document.querySelector('#availability-day-details');
- if(note)note.textContent='Entry deleted from Jira. Reopen Availability to see updated daily totals. Other snapshot reports update after the next Jira refresh.';
-});
+let availabilityLive=null, availabilityTimer=null, availabilityGeneration=0, availabilityEvents=null;
 function availabilityDays(label){
  const range=days(),keys=detailNameKeys(label),itemMap=new Map(issues.map(x=>[txt(x.issue_key).toUpperCase(),x]));
  const calendar=capacityCalendar(activeProfile(),range).map(day=>({...day,work:0,leave:0,leaveEntries:[],subtasks:new Map()}));
  const byDate=new Map(calendar.map(day=>[day.date,day]));
- for(const row of allWorklogs){
+ const source=availabilityLive && availabilityLive.label===label && availabilityLive.month===month.value ? availabilityLive.rows : allWorklogs;
+ for(const row of source){
   const day=byDate.get(txt(row.worklog_date).slice(0,10)),issueKey=txt(row.issue_id||row.issue_key).toUpperCase(),item=itemMap.get(issueKey)||{};
   if(!day||!keys.has(key(row.worklog_author||row.issue_assignee))||isLeaveWorklog(row)||!/sub[ -]?task/i.test(txt(row.item_issue_type||item.issue_type)))continue;
   const hours=n(row.hours_logged);day.work+=hours;
@@ -40,7 +31,50 @@ function availabilityDetails(label){
  return {title:'Availability Details',subtitle:`${label} · ${month.value} · Daily subtask work & leave`,html:`<div class="availability-toolbar"><div class="availability-month-controls"><button type="button" class="availability-month-step" data-month-step="-1" aria-label="Previous month" title="Previous month">${availabilityIcon('chevron_left')}</button><h3 aria-live="polite">${esc(first.toLocaleDateString(undefined,{month:'long',year:'numeric'}))}</h3><button type="button" class="availability-month-step" data-month-step="1" aria-label="Next month" title="Next month">${availabilityIcon('chevron_right')}</button></div><div class="availability-actions">${label==='Grand Total'?'':'<button type="button" class="availability-tally" data-worklog-tally>Download Jira tally PDF</button>'}<button type="button" class="worklog-primary availability-manage" data-manage-worklogs="">Manage my logged hours</button></div></div><p class="availability-tally-status" role="status" aria-live="polite"></p><div class="availability-intro"><div><p>${esc(label)} · A little clarity for every day</p></div>${availabilityIcon('calendar_month')}</div><div class="availability-stats"><div class="availability-stat">Available capacity<strong>${availabilityHours(Math.max(0,totals.capacity-totals.leave))}</strong></div><div class="availability-stat work">Subtask hours logged<strong>${availabilityHours(totals.work)}</strong></div><div class="availability-stat leave">Leave taken<strong>${availabilityHours(totals.leave)}</strong></div></div><div class="availability-calendar-scroll"><div class="availability-weekdays">${['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(name=>`<span>${name}</span>`).join('')}</div><div class="availability-grid" role="group" aria-label="Monthly work and leave calendar">${cards}</div></div><div class="availability-legend"><span><i></i>No subtask time logged</span><span><i class="work"></i>Subtask work · click hours for details</span><span><i class="leave"></i>Leave taken · click hours for details</span></div><p class="color-help">All subtask time authored by this employee is shown, including work on subtasks assigned to someone else. Leave stays separate, even when work and leave occur on the same day.</p><section id="availability-day-details" class="availability-details" aria-live="polite"><h3>${availabilityIcon('touch_app')} Explore a day</h3><p class="color-help">Choose green hours for subtask details or red hours for leave entries.</p></section>`};
 }
 function wireAvailabilityCalendar(label){
- const body=document.querySelector('#ecu-drawer-body'),calendar=availabilityDays(label);
+ const body=document.querySelector('#ecu-drawer-body');let calendar=availabilityDays(label);
+ clearInterval(availabilityTimer);
+ availabilityEvents?.abort();availabilityEvents=new AbortController();
+ const generation=++availabilityGeneration, period=month.value;
+ const status=document.createElement('p');status.className='availability-live-status';status.setAttribute('role','status');
+ const refresh=document.createElement('button');refresh.type='button';refresh.textContent='Refresh Jira worklogs';
+ body.querySelector('.availability-toolbar').after(status);body.querySelector('.availability-actions').prepend(refresh);
+ let running=false;
+ async function refreshLive(){
+  if(running||!status.isConnected||document.hidden||!document.querySelector('#ecu-drawer')?.classList.contains('open')||body.querySelector('#calendar-worklog-form')||document.querySelector('.wl-manager'))return;
+  running=true;refresh.disabled=true;status.textContent='Reading Jira worklogs…';
+  try{
+   let cursor='',rows=[],author='',seen=new Set();
+   do{
+    const params=new URLSearchParams({month:period});if(cursor)params.set('cursor',cursor);
+    const response=await fetch('/api/employee-capacity-utilization/worklog/history?'+params,{cache:'no-store'});
+    const result=await response.json();if(!response.ok)throw new Error(result.error||'Jira unavailable');
+    if(!Array.isArray(result.entries)||!result.author)throw new Error('Incomplete Jira response');
+    if(key(result.author)!==key(label)){status.textContent='Showing saved report data for this employee.';return}
+    if(author && author!==result.author)throw new Error('Jira account changed');author=result.author;
+    for(const entry of result.entries){
+     if(!entry.issue_type)throw new Error('Jira issue type is unavailable');
+     rows.push({issue_id:entry.issue_key,item_issue_type:entry.issue_type,item_summary:entry.summary,item_assignee:entry.assignee,worklog_author:author,worklog_date:entry.started.slice(0,10),hours_logged:Number(entry.seconds)/3600,worklog_id:entry.worklog_id});
+    }
+    cursor=result.next_cursor||'';if(cursor && seen.has(cursor))throw new Error('Jira pagination failed');if(cursor)seen.add(cursor);
+   }while(cursor);
+   if(generation!==availabilityGeneration||!status.isConnected||period!==month.value||!document.querySelector('#ecu-drawer')?.classList.contains('open'))return;
+   const selected=body.querySelector('.availability-day.selected')?.dataset.calendarDate;
+   availabilityLive={label,month:period,rows};
+   calendar=availabilityDays(label);
+   const temp=document.createElement('div');temp.innerHTML=availabilityDetails(label).html;
+   body.querySelector('.availability-grid').innerHTML=temp.querySelector('.availability-grid').innerHTML;
+   body.querySelector('.availability-stat.work strong').textContent=temp.querySelector('.availability-stat.work strong').textContent;
+   wireDays();
+   if(selected){const chosen=body.querySelector(`[data-work-date="${selected}"]`);if(chosen)chosen.click();else{const detail=body.querySelector('#availability-day-details');if(detail)detail.textContent='Jira worklogs updated. Select a day to see its details.'}}
+   status.textContent='Jira worklogs · Updated at '+new Date().toLocaleTimeString()+'. Capacity and leave use the saved report.';
+  }catch(error){if(generation===availabilityGeneration)status.textContent='Jira worklogs could not be refreshed. Showing last available data. '+error.message}
+  finally{running=false;if(refresh.isConnected)refresh.disabled=false}
+ }
+ refresh.addEventListener('click',refreshLive);
+ availabilityTimer=setInterval(()=>{if(!status.isConnected||!document.querySelector('#ecu-drawer')?.classList.contains('open')){clearInterval(availabilityTimer);availabilityEvents?.abort();availabilityGeneration++;return}refreshLive()},60000);
+ document.addEventListener('visibilitychange',()=>{if(generation===availabilityGeneration&&!document.hidden)refreshLive()},{signal:availabilityEvents.signal});
+ document.addEventListener('epr-worklog-changed',()=>refreshLive(),{signal:availabilityEvents.signal});
+ queueMicrotask(refreshLive);
  body.querySelector('[data-worklog-tally]')?.addEventListener('click',async event=>{
   const button=event.currentTarget,period=month.value,status=body.querySelector('.availability-tally-status');
   button.disabled=true;status.textContent='Reading live Jira and the saved EPR snapshot for '+label+' · '+period+'…';
@@ -67,6 +101,7 @@ function wireAvailabilityCalendar(label){
   body.innerHTML=detail.html;wireAvailabilityCalendar(label);body.scrollTop=0;
   body.querySelector('[data-month-step="'+direction+'"]').focus();
  });
+ function wireDays(){
  for(const button of body.querySelectorAll('[data-add-date]'))button.addEventListener('click',()=>openCalendarWorklog(label,button.dataset.addDate));
  for(const button of body.querySelectorAll('[data-work-date],[data-leave-date]'))button.addEventListener('click',()=>{
   const isLeave=Boolean(button.dataset.leaveDate),day=calendar.find(x=>x.date===(button.dataset.leaveDate||button.dataset.workDate)),target=body.querySelector('#availability-day-details');
@@ -82,4 +117,6 @@ function wireAvailabilityCalendar(label){
   }else target.innerHTML=`<h3>${availabilityIcon('assignment')} ${esc(new Date(day.date+'T12:00:00').toLocaleDateString(undefined,{weekday:'long',day:'numeric',month:'long'}))} · ${availabilityHours(day.work)} logged</h3>`+detailTable(['Subtask / Jira','Title','Worklog author','Start','Due','Original estimate','Hours logged','Actions'],[...day.subtasks.values()].map(row=>[issueLink(row.issueKey),row.title,row.author,row.start,row.due,availabilityHours(row.estimate),availabilityHours(row.hours),htmlValue(`<button type="button" class="availability-delete" data-manage-worklogs="${esc(row.issueKey)}" data-worklog-date="${day.date}" aria-label="Delete my entries on ${esc(row.issueKey)} for ${day.date}">Delete</button>`)]));
   target.scrollIntoView({behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'nearest'});
  });
+ }
+ wireDays();
 }

@@ -52,8 +52,6 @@ async function openCalendarWorklog(label,date,draft={}){
      if(sending||!confirm.checked)return;sending=true;submit.disabled=true;confirm.disabled=true;target.querySelector('#worklog-back').disabled=true;saveStatus.textContent='Saving once to Jira…';
      try{
       const saved=await worklogRequest('/submit',{token:result.token,confirmed:true});
-      if(saved.worklog&&!allWorklogs.some(x=>x.worklog_id===saved.worklog_id))allWorklogs.push({...saved.worklog,worklog_id:saved.worklog_id});
-      logs=includeLeaves.checked?allWorklogs:allWorklogs.filter(x=>!isLeaveWorklog(x));data.worklogs=logs;render();
       window.openEcuDrawer(label,'availability',drawerPreviousFocus);
       const detail=document.querySelector('#availability-day-details');detail.innerHTML=`<h3>✓ Worklog ${esc(saved.worklog_id)} created</h3><p>${r.minutes} minutes logged by ${esc(r.author)} on ${detailCell(issueLink(r.issue_key))}. ${saved.verified?'Verified in Jira.':'Created; verify the entry in Jira before doing anything else.'}</p><p class="color-help">This calendar is updated. Other report sessions receive the entry after the next canonical refresh.</p>`;
      }catch(error){saveStatus.textContent=error.message+' Do not create a fresh request until you have checked the subtask’s Jira worklog.';saveStatus.className='worklog-error'}

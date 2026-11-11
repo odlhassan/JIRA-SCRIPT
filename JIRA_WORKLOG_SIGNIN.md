@@ -4,6 +4,23 @@ Atlassian sign-in now also gates the whole EPR application. New users need Admin
 
 ## Business Cases
 
+The signed-in employee's Availability calendar reads personal Jira worklogs on opening,
+when the displayed month changes, when the tab becomes visible, and every 60 seconds
+while open. **Refresh Jira worklogs** requests an immediate read. The status shows the
+last successful read; an incomplete or failed read keeps the last available calendar.
+All issue-search and worklog pages must finish before replacing the modal's month.
+Jira is authoritative for additions, edits and deletions; capacity and leave and the
+main report continue to use the canonical snapshot. Other employees' calendars use
+the snapshot. Jira search indexing and network latency can delay external changes.
+
+In **Manage my logged hours**, **Edit entry** opens start date/time, duration and
+description fields. Saving checks the personal account ID, the Jira update timestamp,
+the 24-hour per-task/day limit, and Jira permissions before updating Jira while leaving
+the remaining estimate unchanged. Changed entries must be refreshed before editing.
+The existing timezone is preserved. An unchanged description retains Jira formatting;
+editing its text replaces it with plain text. After the manager closes the calendar
+refreshes. A timed-out write must be checked in Jira before retrying.
+
 For a saved-data audit, open an employee's Availability calendar and choose
 **Download Jira tally PDF**. This read-only export compares live Jira with the
 current EPR snapshot by worklog ID, task, date and duration, includes every day
@@ -40,7 +57,7 @@ The responsive personal-timesheet dialog opens the displayed month automatically
 
 The server validates same-origin JSON and the worklog header, requires a valid personal OAuth session (no shared-account fallback, even with the test override), and re-reads the exact Jira worklog to compare author **account IDs**, not display names. Other authors are rejected with HTTP 403, including for EPR Admins. Jira also enforces its project permissions; a Jira 403 explains that Delete own worklogs permission is needed. A successful Jira 204 confirms deletion. Remaining estimate is unchanged (`adjustEstimate=leave`). No local schema or canonical snapshot data is changed.
 
-After deletion the client re-reads the affected task's full personal history for calendar reconciliation. If that read fails, the deletion still counts as successful and the calendar explains that a refresh is needed. Older periods, lifetime task totals and other snapshot reports update after the normal Jira refresh. My Day reloads its own data. Tests mock Jira writes unless a user explicitly authorizes a separate real integration test.
+After deletion the client re-reads the affected task's personal history. When the manager closes, the Availability calendar reads the full displayed month again. If the read fails, the last available calendar stays visible with an error. Older periods, lifetime task totals and other snapshot reports update after the normal Jira refresh. My Day reloads its own data. Tests mock Jira writes unless a user explicitly authorizes a separate real integration test.
 
 Data flow: My Day loads `/worklog/manage.js` and `/worklog/manage.css`; the report generator inlines the same sources. Month browse uses `GET /worklog/history?month=YYYY-MM[&cursor=...]`; direct lookup uses `GET /worklog/entries?issue_key=...`. Both require personal identity. Confirmed `/worklog/delete` performs the fresh ownership check and Jira DELETE, then emits the existing UI update event. `epr_auth.py` permits approved Members to use the specific delete route; no Member write permission was broadened.
 
@@ -55,7 +72,7 @@ Data flow: My Day loads `/worklog/manage.js` and `/worklog/manage.css`; the repo
 - Review reads all pages of the selected subtask's live Jira worklogs and totals the signed-in author's entries on the selected date in the browser's supplied timezone offset. Existing seconds plus the new duration must not exceed 86,400 seconds. Other authors and other local dates do not consume this person's subtask/day allowance. The review shows existing hours and the total after the proposed entry. An unreadable Jira history blocks submission.
 - Submit repeats author, permissions, and live daily-total checks. A process-wide submit lock serializes the report's writes in the production single-worker configuration so two independently reviewed entries cannot race past the cap. Entries created directly by other Jira clients cannot participate in that lock; the app checks the latest available Jira history immediately before its POST. An exclusive persistent receipt claims the request before the single Jira POST. Completed request retries return the stored worklog ID; uncertain requests are blocked rather than resent. Check Jira before starting a fresh request after a timeout.
 - Jira receives seconds, an ADF comment, a timestamp with timezone, and a request-ID property. `adjustEstimate=leave` preserves estimates and `notifyUsers=false` avoids notification noise.
-- The returned Jira ID is stored before a separate GET verifies author and duration. The current calendar updates in browser memory. Other sessions/reloads use the canonical snapshot until the next refresh. No canonical rows are fabricated and no schema changes are needed.
+- The returned Jira ID is stored before a separate GET verifies author and duration. The personal calendar then reads Jira again. Other snapshot reports update on their normal refresh. No canonical rows are fabricated and no schema changes are needed.
 - Public review/submit requires a personal OAuth session. `EPR_WORKLOG_ALLOW_SHARED_ACCOUNT=1` is a local-only, explicitly authorized integration-test override; leave it unset in Azure. The calendar employee must still match the connected account.
 
 ## Explanations and Front-end UI Fields

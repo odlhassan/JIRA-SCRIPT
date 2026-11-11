@@ -246,7 +246,7 @@ test('uncertain deletion disables blind retry and keeps the entry visible', asyn
 test.beforeEach(async ({page}) => {
   await page.route('http://calendar.test/**', route => {
     const url = route.request().url();
-    if (url.includes('/worklog/history?')) return route.fulfill({json:{author:'Alice',entries:[],next_cursor:null}});
+    if (url.includes('/worklog/history?')) return route.fulfill({json:{author:'Other',entries:[],next_cursor:null}});
     if (url.endsWith('/api/employee-capacity-utilization/data')) return route.fulfill({json:payload});
     if (url.endsWith('/report.html')) return route.fulfill({body:html, contentType:'text/html'});
     return route.fulfill({body:'', contentType:url.endsWith('.css')?'text/css':'text/javascript'});
@@ -254,6 +254,39 @@ test.beforeEach(async ({page}) => {
   await page.goto('http://calendar.test/report.html');
   await page.locator('#month').fill('2026-10');
   await expect(page.locator('#table tbody tr').first()).toContainText('Alice');
+});
+test('calendar reconciles complete live month including deletions and preserves last result on errors',async({page})=>{
+  let round=0;
+  await page.route('**/worklog/history?*',route=>{
+    const cursor=new URL(route.request().url()).searchParams.get('cursor');
+    if(round===2)return route.fulfill({status:502,json:{error:'Jira unavailable'}});
+    if(round===1)return route.fulfill({json:{author:'Alice',entries:[],next_cursor:null}});
+    return route.fulfill({json:{author:'Alice',entries:cursor?[]:[{issue_key:'APP-1',issue_type:'Sub-task',summary:'Build calendar',worklog_id:'1',started:'2026-10-05T09:00:00+05:00',seconds:3600}],next_cursor:cursor?null:'next'}});
+  });
+  const mainBefore=await page.locator('#table tbody tr').first().innerText();
+  await page.locator('#table tbody tr').first().locator('td').nth(4).click();
+  await expect(page.locator('.availability-live-status')).toContainText('Updated at');
+  await expect(page.locator('[data-calendar-date="2026-10-05"]')).toContainText('1h logged');
+  await page.locator('[data-work-date="2026-10-05"]').click();
+  await expect(page.locator('#availability-day-details')).toContainText('1h logged');
+  expect(await page.locator('#table tbody tr').first().innerText()).toBe(mainBefore);
+  round=1;await page.getByRole('button',{name:'Refresh Jira worklogs'}).click();
+  await expect(page.locator('[data-calendar-date="2026-10-05"]')).toContainText('0h logged');
+  round=2;await page.getByRole('button',{name:'Refresh Jira worklogs'}).click();
+  await expect(page.locator('.availability-live-status')).toContainText('could not be refreshed');
+  await expect(page.locator('[data-calendar-date="2026-10-05"]')).toContainText('0h logged');
+});
+test('personal entry edits submit the Jira version and refresh the list',async({page})=>{
+  let sent=null;
+  await page.route('**/worklog/history?*',route=>route.fulfill({json:{author:'Alice',entries:[{issue_key:'APP-1',issue_type:'Sub-task',summary:'Build',worklog_id:'10',updated:'v1',started:'2026-10-05T09:00:00.000+0500',seconds:1800,comment:'Original'}],next_cursor:null}}));
+  await page.route('**/worklog/edit',route=>{sent=route.request().postDataJSON();return route.fulfill({json:{updated:true}})});
+  await page.locator('#table tbody tr').first().locator('td').nth(4).click();
+  await page.getByRole('button',{name:'Manage my logged hours'}).click();
+  const dialog=page.locator('.wl-manager');await dialog.getByRole('button',{name:'Edit entry'}).click();
+  await dialog.locator('[name="duration"]').fill('1h');
+  await dialog.getByRole('button',{name:'Save changes to Jira'}).click();
+  await expect(dialog.locator('[data-status]')).toContainText('Changes saved');
+  expect(sent.updated).toBe('v1');expect(sent.duration).toBe('1h');expect(sent.comment_changed).toBe(false);
 });
 test('daily calendar keeps work, leave, grouping, and employee boundaries correct', async ({page}) => {
   await page.locator('#scope').selectOption('assigned');
