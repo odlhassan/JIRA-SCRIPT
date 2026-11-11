@@ -259,8 +259,8 @@ test('calendar reconciles complete live month including deletions and preserves 
   let round=0;
   await page.route('**/employee-capacity-utilization/tally?*',route=>{
     if(round===2)return route.fulfill({status:502,json:{error:'Jira unavailable'}});
-    if(round===1)return route.fulfill({json:{employee:'Alice',month:'2026-10',entries:[]}});
-    return route.fulfill({json:{employee:'Alice',month:'2026-10',entries:[{jira:{issue_key:'APP-1',issue_type:'Sub-task',summary:'Build calendar',worklog_id:'1',date:'2026-10-05',seconds:3600}}]}});
+    if(round===1)return route.fulfill({json:{employee:'Alice',month:'2026-10',leaves:[],entries:[]}});
+    return route.fulfill({json:{employee:'Alice',month:'2026-10',leaves:[],entries:[{jira:{issue_key:'APP-1',issue_type:'Sub-task',summary:'Build calendar',worklog_id:'1',date:'2026-10-05',seconds:3600}}]}});
   });
   const mainBefore=await page.locator('#table tbody tr').first().innerText();
   await page.locator('#table tbody tr').first().locator('td').nth(4).click();
@@ -278,12 +278,22 @@ test('calendar reconciles complete live month including deletions and preserves 
   await expect(page.locator('.availability-live-status')).toContainText('could not be refreshed');
   await expect(page.locator('[data-calendar-date="2026-10-05"]')).toContainText('0h logged');
 });
+test('live RLT leave replaces stale zero leave and reduces available capacity',async({page})=>{
+  await page.route('**/employee-capacity-utilization/tally?*',route=>route.fulfill({json:{employee:'Alice',month:'2026-10',entries:[],leaves:[19,20,21,22].map(day=>({assignee:'Alice',period_day:'2026-10-'+day,planned_taken_hours:8,unplanned_taken_hours:0,jira_task_ids:'RLT-'+day}))}}));
+  await page.locator('#table tbody tr').first().locator('td').nth(4).click();
+  await expect(page.locator('.availability-live-status')).toContainText('RLT leave · Updated at');
+  await expect(page.locator('.availability-stat.leave strong')).toHaveText('32h');
+  await expect(page.locator('.availability-stat:not(.work):not(.leave) strong')).toHaveText('136h');
+  for(const day of [19,20,21,22])await expect(page.locator('[data-leave-date="2026-10-'+day+'"]')).toContainText('8h');
+  await page.locator('[data-leave-date="2026-10-19"]').click();
+  await expect(page.locator('#availability-day-details')).toContainText('RLT-19');
+});
 test('switching months fetches Jira, shows progress, and ignores late responses',async({page})=>{
   let releaseSeptember;const septemberWait=new Promise(resolve=>releaseSeptember=resolve),months=[];
   await page.route('**/employee-capacity-utilization/tally?*',async route=>{
     const period=new URL(route.request().url()).searchParams.get('month');months.push(period);
     if(period==='2026-09')await septemberWait;
-    return route.fulfill({json:{employee:'Alice',month:period,entries:[{jira:{issue_key:'APP-1',issue_type:'Sub-task',summary:'Build',worklog_id:period,date:period+'-05',seconds:period==='2026-09'?7200:3600}}]}}).catch(()=>{});
+    return route.fulfill({json:{employee:'Alice',month:period,leaves:[],entries:[{jira:{issue_key:'APP-1',issue_type:'Sub-task',summary:'Build',worklog_id:period,date:period+'-05',seconds:period==='2026-09'?7200:3600}}]}}).catch(()=>{});
   });
   await page.locator('#table tbody tr').first().locator('td').nth(4).click();
   await expect(page.locator('.availability-live-status')).toContainText('Updated at');
@@ -292,7 +302,7 @@ test('switching months fetches Jira, shows progress, and ignores late responses'
   await expect(progress).toBeVisible();
   await expect(page.locator('#ecu-drawer-title [role="progressbar"]')).toBeVisible();
   await expect(progress).toHaveCSS('width','15px');
-  await expect(page.locator('.availability-live-status')).toContainText('Loading Jira worklogs for 2026-09');
+  await expect(page.locator('.availability-live-status')).toContainText('Loading Jira worklogs and RLT leave for 2026-09');
   await expect(page.locator('.availability-calendar-scroll')).toHaveAttribute('aria-busy','true');
   await page.getByRole('button',{name:'Next month',exact:true}).click();
   await expect(page.locator('.availability-live-status')).toContainText('Updated at');
@@ -309,7 +319,7 @@ test('initial transient Jira failure retries promptly and clears the header spin
   await page.route('**/employee-capacity-utilization/tally?*',route=>{
     reads++;
     if(reads===1)return route.fulfill({status:502,json:{error:'Temporary Jira timeout'}});
-    return route.fulfill({json:{employee:'Alice',month:'2026-10',entries:[{jira:{issue_key:'APP-1',issue_type:'Sub-task',worklog_id:'1',date:'2026-10-05',seconds:3600}}]}});
+    return route.fulfill({json:{employee:'Alice',month:'2026-10',leaves:[],entries:[{jira:{issue_key:'APP-1',issue_type:'Sub-task',worklog_id:'1',date:'2026-10-05',seconds:3600}}]}});
   });
   await page.locator('#table tbody tr').first().locator('td').nth(4).click();
   await expect(page.locator('#ecu-drawer-title [role="progressbar"]')).toBeVisible();
@@ -322,7 +332,7 @@ test('another employee calendar reads their own Jira hours without personal work
   await page.route('**/worklog/history?*',route=>{personalReads++;return route.fulfill({status:401,json:{error:'No personal Jira session'}})});
   await page.route('**/employee-capacity-utilization/tally?*',route=>{
     const params=new URL(route.request().url()).searchParams;requestedEmployee=params.get('employee');
-    return route.fulfill({json:{employee:'Bob',month:params.get('month'),entries:[{jira:{issue_key:'APP-1',issue_type:'Sub-task',summary:'Build',worklog_id:'44',date:'2026-10-05',seconds:10800}}]}});
+    return route.fulfill({json:{employee:'Bob',month:params.get('month'),leaves:[],entries:[{jira:{issue_key:'APP-1',issue_type:'Sub-task',summary:'Build',worklog_id:'44',date:'2026-10-05',seconds:10800}}]}});
   });
   await page.locator('#table tbody tr:not(.total)').filter({hasText:'Bob'}).locator('td').nth(4).click();
   await expect(page.locator('.availability-live-status')).toContainText('Updated at');

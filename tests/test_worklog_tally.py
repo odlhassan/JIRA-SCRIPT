@@ -166,6 +166,16 @@ class WorklogTallyTests(unittest.TestCase):
                 self.assertIn('no-store',response.headers['Cache-Control'])
                 self.assertIn('worklog-tally-Alice-2026-10.pdf',response.headers['Content-Disposition'])
                 build.assert_called_once_with(root/'assignee_hours_capacity.db','Alice','2026-10')
+            leave_rows=[{'assignee':'Alice','period_day':'2026-10-19','planned_taken_hours':8}]
+            with patch('report_server.build_worklog_tally',return_value=result), patch('report_server.build_live_rlt_leaves',return_value=leave_rows) as leave:
+                response=client.get('/api/employee-capacity-utilization/tally?employee=Alice&month=2026-10')
+                self.assertEqual(response.status_code,200)
+                self.assertEqual(response.json['leaves'],leave_rows)
+                leave.assert_called_once_with('Alice','2026-10','alice')
+            with patch('report_server.build_worklog_tally',return_value=result), patch('report_server.build_live_rlt_leaves',side_effect=RuntimeError('RLT read incomplete')):
+                response=client.get('/api/employee-capacity-utilization/tally?employee=Alice&month=2026-10')
+                self.assertEqual(response.status_code,409)
+                self.assertNotIn('leaves',response.json)
             with patch('report_server.build_worklog_tally',side_effect=requests.Timeout()):
                 response=client.get('/api/employee-capacity-utilization/tally.pdf?employee=Alice&month=2026-10')
                 self.assertEqual(response.status_code,502)

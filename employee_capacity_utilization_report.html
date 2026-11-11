@@ -199,10 +199,12 @@ function availabilityDays(label){
   if(!day.subtasks.has(groupKey))day.subtasks.set(groupKey,{issueKey,title:row.item_summary||item.summary||'',author:row.worklog_author||row.issue_assignee,start:row.item_start_date||item.start_date||'—',due:row.item_due_date||item.due_date||'—',estimate:n(row.original_estimate_hours??item.original_estimate_hours),hours:0});
   day.subtasks.get(groupKey).hours+=hours;
  }
- for(const row of leaves){const day=byDate.get(txt(row.period_day).slice(0,10));if(day&&keys.has(key(row.assignee))){day.leave+=n(row.planned_taken_hours)+n(row.unplanned_taken_hours);if(n(row.planned_taken_hours)+n(row.unplanned_taken_hours)>0)day.leaveEntries.push(row)}}
+ const leaveSource=availabilityLive && availabilityLive.label===label && availabilityLive.month===month.value ? availabilityLive.leaves : leaves;
+ for(const row of leaveSource){const day=byDate.get(txt(row.period_day).slice(0,10));if(day&&keys.has(key(row.assignee))){day.leave+=availabilityLeaveHours(row);if(availabilityLeaveHours(row)>0)day.leaveEntries.push(row)}}
  return calendar;
 }
 function availabilityHours(value){return `${Number(value.toFixed(2))}h`}
+function availabilityLeaveHours(row){return n(row.planned_taken_hours)+n(row.unplanned_taken_hours)+n(row.unknown_taken_hours)}
 function availabilityIcon(name){return `<span class="material-symbols-outlined" aria-hidden="true">${name}</span>`}
 function availabilityDetails(label){
  const current=new Date(),today=[current.getFullYear(),String(current.getMonth()+1).padStart(2,'0'),String(current.getDate()).padStart(2,'0')].join('-');
@@ -230,7 +232,8 @@ function wireAvailabilityCalendar(label){
  async function refreshLive(){
   if(running||!status.isConnected||document.hidden||!document.querySelector('#ecu-drawer')?.classList.contains('open')||body.querySelector('#calendar-worklog-form')||document.querySelector('.wl-manager'))return;
   if(label==='Grand Total'){status.textContent='Combined availability uses saved report data. Open an employee to see live Jira worklogs.';return}
-  running=true;refresh.disabled=true;progress.hidden=false;body.querySelector('.availability-calendar-scroll')?.setAttribute('aria-busy','true');status.textContent='Loading Jira worklogs for '+period+'…';
+  running=true;refresh.disabled=true;progress.hidden=false;body.querySelector('.availability-calendar-scroll')?.setAttribute('aria-busy','true');status.textContent='Loading Jira worklogs and RLT leave for '+period+'…';
+  if(!availabilityLive||availabilityLive.label!==label||availabilityLive.month!==period){body.querySelector('.availability-stat.leave strong').textContent='Checking RLT…';body.querySelector('.availability-stat:not(.work):not(.leave) strong').textContent='Checking RLT…'}
   try{
    const params=new URLSearchParams({employee:label,month:period});
    let result;
@@ -247,7 +250,7 @@ function wireAvailabilityCalendar(label){
      if(generation!==availabilityGeneration||!status.isConnected||!document.querySelector('#ecu-drawer')?.classList.contains('open'))return;
     }
    }
-   if(!Array.isArray(result.entries)||key(result.employee)!==key(label)||result.month!==period)throw new Error('Incomplete Jira response');
+   if(!Array.isArray(result.entries)||!Array.isArray(result.leaves)||key(result.employee)!==key(label)||result.month!==period)throw new Error('Incomplete Jira worklog or RLT leave response');
    const rows=[];
    for(const item of result.entries){
     const entry=item.jira;if(!entry||!String(entry.date||'').startsWith(period+'-'))continue;
@@ -256,15 +259,15 @@ function wireAvailabilityCalendar(label){
    }
    if(generation!==availabilityGeneration||!status.isConnected||period!==month.value||!document.querySelector('#ecu-drawer')?.classList.contains('open'))return;
    const selected=body.querySelector('.availability-day.selected')?.dataset.calendarDate;
-   availabilityLive={label,month:period,rows};
+   availabilityLive={label,month:period,rows,leaves:result.leaves};
    calendar=availabilityDays(label);
    const temp=document.createElement('div');temp.innerHTML=availabilityDetails(label).html;
    body.querySelector('.availability-grid').innerHTML=temp.querySelector('.availability-grid').innerHTML;
-   body.querySelector('.availability-stat.work strong').textContent=temp.querySelector('.availability-stat.work strong').textContent;
+   for(const selector of ['.availability-stat.work strong','.availability-stat.leave strong','.availability-stat:not(.work):not(.leave) strong'])body.querySelector(selector).textContent=temp.querySelector(selector).textContent;
    wireDays();
    if(selected){const chosen=body.querySelector(`[data-work-date="${selected}"]`);if(chosen)chosen.click();else{const detail=body.querySelector('#availability-day-details');if(detail)detail.textContent='Jira worklogs updated. Select a day to see its details.'}}
-   status.textContent='Jira worklogs · Updated at '+new Date().toLocaleTimeString()+'. Capacity and leave use the saved report.';
-  }catch(error){if(generation===availabilityGeneration)status.textContent='Jira worklogs could not be refreshed. Showing last available data. '+error.message}
+   status.textContent='Jira worklogs and RLT leave · Updated at '+new Date().toLocaleTimeString()+'. Capacity uses the configured report profile.';
+  }catch(error){if(generation===availabilityGeneration){status.textContent='Jira worklogs and RLT leave could not be refreshed. '+(availabilityLive?.label===label&&availabilityLive?.month===period?'Showing the last successful live read. ':'Live leave and availability are unavailable. ')+error.message;if(!availabilityLive||availabilityLive.label!==label||availabilityLive.month!==period){body.querySelector('.availability-stat.leave strong').textContent='Unavailable';body.querySelector('.availability-stat:not(.work):not(.leave) strong').textContent='Unavailable'}}}
   finally{running=false;progress.hidden=true;if(refresh.isConnected){refresh.disabled=false;body.querySelector('.availability-calendar-scroll')?.removeAttribute('aria-busy')}}
  }
  refresh.addEventListener('click',refreshLive);
@@ -310,7 +313,7 @@ function wireAvailabilityCalendar(label){
     const ids=txt(row.jira_task_ids).split(',').map(x=>x.trim()).filter(Boolean),urls=txt(row.jira_task_links).split(',').map(x=>x.trim()).filter(Boolean);
     return htmlValue((ids.length?ids:urls).map((id,index)=>detailCell(urls[index]?externalLink(urls[index],ids[index]||'Open leave'):issueLink(id))).join('<br>'));
    };
-   target.innerHTML=`<h3>${availabilityIcon('beach_access')} ${esc(day.date)} · ${availabilityHours(day.leave)} leave taken</h3>`+detailTable(['Employee','Date','Leave items / Jira','Planned taken','Unplanned taken','Total taken'],day.leaveEntries.map(row=>[row.assignee,row.period_day,linkedItems(row),availabilityHours(n(row.planned_taken_hours)),availabilityHours(n(row.unplanned_taken_hours)),availabilityHours(n(row.planned_taken_hours)+n(row.unplanned_taken_hours))]));
+   target.innerHTML=`<h3>${availabilityIcon('beach_access')} ${esc(day.date)} · ${availabilityHours(day.leave)} leave taken</h3>`+detailTable(['Employee','Date','Leave items / Jira','Planned taken','Unplanned taken','Unclassified taken','Total taken'],day.leaveEntries.map(row=>[row.assignee,row.period_day,linkedItems(row),availabilityHours(n(row.planned_taken_hours)),availabilityHours(n(row.unplanned_taken_hours)),availabilityHours(n(row.unknown_taken_hours)),availabilityHours(availabilityLeaveHours(row))]));
   }else target.innerHTML=`<h3>${availabilityIcon('assignment')} ${esc(new Date(day.date+'T12:00:00').toLocaleDateString(undefined,{weekday:'long',day:'numeric',month:'long'}))} · ${availabilityHours(day.work)} logged</h3>`+detailTable(['Subtask / Jira','Title','Worklog author','Start','Due','Original estimate','Hours logged','Actions'],[...day.subtasks.values()].map(row=>[issueLink(row.issueKey),row.title,row.author,row.start,row.due,availabilityHours(row.estimate),availabilityHours(row.hours),htmlValue(`<button type="button" class="availability-delete" data-manage-worklogs="${esc(row.issueKey)}" data-worklog-date="${day.date}" aria-label="Delete my entries on ${esc(row.issueKey)} for ${day.date}">Delete</button>`)]));
   target.scrollIntoView({behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'nearest'});
  });

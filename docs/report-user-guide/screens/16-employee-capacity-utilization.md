@@ -103,8 +103,11 @@ the modal is open and on returning to the tab. **Refresh Jira worklogs**, marked
 immediately; the status shows when Jira was last read or explains a failure. When
 switching months, the calendar requests the selected month's Jira worklogs and shows
 a small circular loading indicator in the modal header until all pages finish. If Jira is unavailable, the status explains the
-failure and the available saved data remains visible. Capacity and leave remain based
-on the saved report. The combined Grand Total calendar uses saved data. Live viewing
+failure and the last successful read remains visible. Named calendars read RLT leave
+live too and subtract it from configured capacity. Before the first successful read,
+leave and available capacity show Checking RLT or Unavailable, never an asserted zero.
+Red badges open the RLT issue links and planned/unplanned/unclassified breakdown.
+The combined Grand Total calendar uses saved data. Live viewing
 uses the reporting account's Jira visibility; personal Jira sign-in is required for
 creating, editing or deleting worklogs.
 In **Manage my logged hours**, choose **Edit entry** to change your own start, time or

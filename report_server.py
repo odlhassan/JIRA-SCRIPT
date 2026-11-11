@@ -71,6 +71,7 @@ from generate_employee_performance_report import (
 )
 from generate_employee_capacity_utilization_report import build_employee_capacity_utilization_payload
 from employee_capacity_utilization_export import build_employee_capacity_utilization_workbook
+from live_rlt_leave import build_live_rlt_leaves
 from worklog_tally import build_worklog_tally, tally_pdf
 from employee_worklog import jira_identity, register_employee_worklog_routes
 from epr_auth import register_epr_auth
@@ -47695,6 +47696,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 filename = "worklog-tally-" + re.sub(r"[^A-Za-z0-9_-]+", "-", result["employee"]).strip("-") + "-" + result["month"] + ".pdf"
                 response = send_file(tally_pdf(result), as_attachment=True, download_name=filename, mimetype="application/pdf")
             else:
+                result['leaves'] = build_live_rlt_leaves(result['employee'], result['month'], result['account_id'])
                 response = jsonify(result)
             response.headers["Cache-Control"] = "no-store, private"
             return response

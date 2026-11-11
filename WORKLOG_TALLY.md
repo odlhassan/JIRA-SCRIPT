@@ -88,6 +88,9 @@ worklog dates determine the month; task planned start/due dates do not.
 - `report_server.py`: protected GET `/api/employee-capacity-utilization/tally`
   (JSON) and `/api/employee-capacity-utilization/tally.pdf` (download), both taking
   required `employee` and `month`; success has `Cache-Control: no-store, private`.
+- JSON also returns live daily RLT leave from `live_rlt_leave.py` for the selected
+  employee, using RLT subtask assignment rather than worklog author. Both reads must
+  succeed. The PDF snapshot comparison does not include this live daily-leave overlay.
 - `employee_availability_calendar.js` / `.css`: download/status/layout.
 - The same JSON tally read supplies the selected employee's live calendar worklogs;
   month changes show a small circular loading indicator in the modal header and failures preserve the available calendar.

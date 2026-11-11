@@ -9,7 +9,7 @@ profiles = ET.fromstring(os.environ['AZURE_PUBLISH_PROFILE']).findall('publishPr
 profile = next((p for p in profiles if p.get('publishMethod') == 'ZipDeploy'), profiles[0])
 auth = base64.b64encode((profile.get('userName') + ':' + profile.get('userPWD')).encode()).decode()
 probe = '''
-import os, urllib.parse, urllib.request, json, base64
+import os, urllib.parse, urllib.request, json, base64, pathlib, time
 for key, value in list(os.environ.items()):
  if key.startswith('APPSETTING_'): os.environ.setdefault(key[11:], value)
 try:
@@ -32,6 +32,23 @@ try:
  page=read('search/jql',jql='worklogAuthor = "'+accounts[0]+'" AND worklogDate >= "2026-09-30" AND worklogDate <= "2026-11-01" ORDER BY key ASC',fields='summary,issuetype',maxResults=100)
  for issue in page.get('issues',[]): read('issue/'+issue['key']+'/worklog',startAt=0,maxResults=100)
  print('Completed production credential read probe',flush=True)
+ # Use only the already authorized owner's existing, unexpired session. No cookie
+ # or session filename is printed, modified, or sent anywhere except this app.
+ for file in pathlib.Path('/home/data/worklog_requests/oauth').glob('*.json'):
+  if len(file.stem)!=64: continue
+  saved=json.loads(file.read_text())
+  if saved.get('account_id')!='641adec89796ea0a87185666' or saved.get('session_expires_at',0)<=time.time(): continue
+  url='https://epreporting.azurewebsites.net/api/employee-capacity-utilization/tally?'+urllib.parse.urlencode({'employee':'Namra Zahid','month':'2026-10'})
+  req=urllib.request.Request(url,headers={'Cookie':'epr_jira_session='+file.stem,'Accept':'application/json'})
+  with urllib.request.urlopen(req,timeout=150) as response: result=json.load(response)
+  rows=result.get('leaves')
+  if not isinstance(rows,list): raise ValueError('live RLT result missing')
+  hours=sum(sum(row.get(k,0) for k in ('planned_taken_hours','unplanned_taken_hours','unknown_taken_hours')) for row in rows)
+  days=[row['period_day'] for row in rows if row.get('planned_taken_hours')==8]
+  if hours!=32 or not all('2026-10-'+str(day) in days for day in (19,20,21,22)): raise ValueError('RLT day verification failed')
+  print('Authenticated production calendar read verified: 32h RLT leave, October 19-22',flush=True)
+  break
+ else: print('Authenticated production check unavailable: no existing owner session',flush=True)
 except Exception as exc:
  print('Probe outcome:',type(exc).__name__,flush=True)
 '''

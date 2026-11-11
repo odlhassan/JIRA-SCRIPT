@@ -13,9 +13,11 @@ month cannot overwrite the newly selected calendar.
 All issue-search and worklog pages must finish before replacing the modal's month.
 The existing reporting Jira account supplies read-only results without a personal Jira
 worklog sign-in for the selected employee. EPR application access is still required.
-Jira is authoritative for additions, edits and deletions; capacity and leave and the
-main report continue to use the canonical snapshot. The combined Grand Total calendar
+The named calendar also reads live RLT leave, including logs entered by HR for the
+employee. Both datasets update together; live leave reduces available capacity.
+Capacity profiles and the main report continue to use saved data. The combined Grand Total calendar
 uses the snapshot. Jira search indexing and network latency can delay external changes.
+See [live RLT leave rules and verification](LIVE_RLT_LEAVE.md).
 
 In **Manage my logged hours**, **Edit entry** opens start date/time, duration and
 description fields. Saving checks the personal account ID, the Jira update timestamp,
