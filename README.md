@@ -1,5 +1,7 @@
 # JIRA-SCRIPT
 
+My availability now includes **New subtask**: choose a live Jira space → epic → user story, enter start/due dates and an original estimate (default `1d`; shortcuts `30m`, `4h`, `1d`, `1w`), then review and create it assigned to your personal Jira account. Due dates must remain in the actual current month. Live subtask search makes it loggable before a full fetch; other reports retain their saved snapshot. See [Jira subtask creation](JIRA_SUBTASK_CREATION.md).
+
 ## Production startup
 
 Azure App Service starts the Flask app through `startup.txt`, which runs `wsgi:app` with

@@ -16,6 +16,156 @@ const payload = {
   leaves: [ { assignee: 'Alice', period_day: '2026-10-05', planned_taken_hours: 2, unplanned_taken_hours: 1, jira_task_ids:'RLT-1, RLT-2', jira_task_links:'https://jira.example/browse/RLT-1, https://jira.example/browse/RLT-2' }, { assignee: 'Alice', period_day: '2026-10-07', planned_taken_hours: 8 } ],
 };
 
+async function mockSubtaskJira(page){
+  const state={reviews:0,writes:0,body:null};
+  await page.route('**/worklog/identity',route=>route.fulfill({json:{author:'Alice',signed_in:true,write_enabled:true}}));
+  await page.route('**/api/jira-auth/status',route=>route.fulfill({json:{configured:true,signed_in:true}}));
+  await page.route('**/worklog/subtask/options?*',route=>{
+    const params=new URL(route.request().url()).searchParams,kind=params.get('kind');
+    let options=kind==='projects'?[{key:'NEW',summary:'Customer delight'}]:kind==='epics'?[{key:'NEW-1',summary:'Better customer experience'}]:[{key:'NEW-2',summary:'Find my customers'}];
+    if(params.get('q')==='missing')options=[];
+    if(params.get('cursor'))options=[{key:'MORE',summary:'Another space'}];
+    return route.fulfill({json:{options,next_cursor:kind==='projects'&&!params.get('cursor')&&params.get('q')!=='missing'?'50':null,author:'Alice',today:'2026-11-11',first:'2026-11-01',last:'2026-11-30'}});
+  });
+  await page.route('**/worklog/subtask/review',route=>{
+    state.reviews++;state.body=route.request().postDataJSON();
+    return route.fulfill({json:{token:'subtask-token',review:{...state.body,author:'Alice',epic_summary:'Better customer experience',story_summary:'Find my customers'}}});
+  });
+  await page.route('**/worklog/subtask/submit',route=>{
+    state.writes++;expect(route.request().postDataJSON()).toEqual({token:'subtask-token',confirmed:true});
+    return route.fulfill({json:{issue_key:'NEW-3',summary:state.body.summary,assignee:'Alice',issue_type:'Sub-task',parent_issue_key:'NEW-2',start_date:state.body.start_date,due_date:state.body.due_date,original_estimate_hours:8,verified:true}});
+  });
+  return state;
+}
+async function chooseSubtaskHome(page){
+  const dialog=page.getByRole('dialog',{name:'Create a new subtask'});
+  await dialog.getByRole('combobox',{name:'Jira space',exact:true}).selectOption('NEW');
+  await dialog.getByRole('combobox',{name:'Epic',exact:true}).selectOption('NEW-1');
+  await dialog.getByRole('combobox',{name:'User story',exact:true}).selectOption('NEW-2');
+  await dialog.getByLabel('Subtask title').fill('Build a friendly search filter');
+  return dialog;
+}
+
+test('new subtask guides live hierarchy, defaults estimate, reviews once and can log immediately',async({page})=>{
+  const state=await mockSubtaskJira(page);
+  await page.locator('#table tbody tr').first().locator('td').nth(4).click();
+  await page.getByRole('button',{name:'New subtask',exact:true}).click();
+  const dialog=await chooseSubtaskHome(page);
+  await expect(dialog.getByLabel('Original estimate',{exact:true})).toHaveValue('1d');
+  await expect(dialog.getByLabel('Due date',{exact:true})).toHaveValue('2026-11-11');
+  await expect(dialog.getByLabel('Due date',{exact:true})).toHaveAttribute('max','2026-11-30');
+  for(const value of ['30m','4h','1w','1d']){
+    await dialog.getByRole('button',{name:value,exact:true}).click();
+    await expect(dialog.getByLabel('Original estimate',{exact:true})).toHaveValue(value);
+  }
+  await dialog.getByRole('button',{name:'Review subtask'}).click();
+  await expect(dialog.locator('.subtask-check')).toContainText('NEW-2');
+  expect(state.writes).toBe(0);
+  await dialog.getByRole('button',{name:'Edit details'}).click();
+  await expect(dialog.getByLabel('Subtask title')).toHaveValue('Build a friendly search filter');
+  await dialog.getByRole('button',{name:'Review subtask'}).click();
+  await dialog.getByRole('button',{name:'Create subtask in Jira'}).dblclick();
+  await expect(dialog.locator('.subtask-success')).toContainText('NEW-3');
+  expect(state.writes).toBe(1);expect(state.body.estimate).toBe('1d');
+  await dialog.getByRole('button',{name:'Log work on this subtask'}).click();
+  await expect(page.locator('#worklog-issue')).toHaveValue('NEW-3');
+  await expect(page.locator('#worklog-selection')).toContainText('Build a friendly search filter');
+  await expect(page.locator('#month')).toHaveValue('2026-11');
+  await expect(page.locator('.availability-stat.work strong')).toHaveText('0h');
+});
+
+test('subtask dates reject other months and reversed dates without any request; mobile fits',async({page})=>{
+  const state=await mockSubtaskJira(page);
+  await page.locator('#table tbody tr').first().locator('td').nth(4).click();
+  await page.getByRole('button',{name:'New subtask',exact:true}).click();
+  const dialog=await chooseSubtaskHome(page),due=dialog.getByLabel('Due date',{exact:true});
+  for(const value of ['2026-10-31','2026-12-01','2026-11-10']){
+    await due.fill(value);await dialog.getByRole('button',{name:'Review subtask'}).click();
+    expect(state.reviews).toBe(0);expect(await due.evaluate(el=>el.checkValidity())).toBe(false);
+  }
+  await due.fill('2026-11-30');
+  await dialog.getByRole('button',{name:'1w',exact:true}).click();
+  await dialog.screenshot({path:'tmp/subtask-creator-desktop.png'});
+  await page.setViewportSize({width:390,height:844});
+  expect(await dialog.evaluate(el=>el.scrollWidth-el.clientWidth)).toBeLessThanOrEqual(1);
+  await dialog.screenshot({path:'tmp/subtask-creator-mobile.png'});
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await expect(page.locator('#ecu-drawer')).toHaveClass(/open/);
+});
+
+test('subtask creator opens over log form, preserves draft and adds created task to its chooser',async({page})=>{
+  await mockSubtaskJira(page);
+  await page.locator('#table tbody tr').first().locator('td').nth(4).click();
+  await page.getByRole('button',{name:'Log work on 2026-10-05'}).click();
+  await page.locator('#worklog-comment').fill('Keep this work description');
+  await page.locator('#availability-day-details').getByRole('button',{name:'New subtask',exact:true}).click();
+  const dialog=await chooseSubtaskHome(page);
+  await dialog.getByRole('button',{name:'Review subtask'}).click();
+  await dialog.getByRole('button',{name:'Create subtask in Jira'}).click();
+  await expect(dialog.locator('.subtask-success')).toContainText('NEW-3');
+  await dialog.getByRole('button',{name:'Close subtask creator'}).click();
+  await expect(page.locator('#worklog-comment')).toHaveValue('Keep this work description');
+  await expect(page.locator('#worklog-issue')).toHaveValue('NEW-3');
+});
+
+test('live parent choices search and paginate; a changed parent clears descendants',async({page})=>{
+  await mockSubtaskJira(page);
+  await page.locator('#table tbody tr').first().locator('td').nth(4).click();
+  await page.getByRole('button',{name:'New subtask',exact:true}).click();
+  const dialog=await chooseSubtaskHome(page);
+  await dialog.locator('[data-more="projects"]').click();
+  await expect(dialog.locator('[name="projects"] option')).toHaveCount(3);
+  await dialog.locator('[name="projects"]').selectOption('MORE');
+  await expect(dialog.locator('[name="stories"]')).toBeDisabled();
+  await expect(dialog.locator('[name="epics"]')).toHaveValue('');
+  await dialog.getByRole('searchbox',{name:'Search jira space',exact:true}).fill('missing');
+  await expect(dialog.locator('[data-hint="projects"]')).toContainText('No matches');
+  await expect(dialog.locator('[name="projects"]')).toBeDisabled();
+});
+
+test('uncertain Jira creation is never silently retried and sign-in failures are visible',async({page})=>{
+  const state=await mockSubtaskJira(page);
+  await page.route('**/worklog/subtask/submit',route=>{state.writes++;return route.fulfill({status:502,json:{error:'Creation outcome needs verification in Jira.'}})});
+  await page.locator('#table tbody tr').first().locator('td').nth(4).click();
+  await page.getByRole('button',{name:'New subtask',exact:true}).click();
+  const dialog=await chooseSubtaskHome(page);
+  await dialog.getByRole('button',{name:'Review subtask'}).click();
+  await dialog.getByRole('button',{name:'Create subtask in Jira'}).click();
+  await expect(dialog.locator('[data-status]')).toContainText('Check the selected user story in Jira');
+  await expect(dialog.getByRole('button',{name:'Create subtask in Jira'})).toBeDisabled();
+  expect(state.writes).toBe(1);
+  await dialog.getByRole('button',{name:'Close subtask creator'}).click();
+  await page.route('**/worklog/subtask/options?*',route=>route.fulfill({status:400,json:{error:'Sign in with Jira to continue.'}}));
+  await page.getByRole('button',{name:'New subtask',exact:true}).click();
+  await expect(page.locator('.subtask-dialog [data-status]')).toContainText('Sign in with Jira');
+  await expect(page.locator('.subtask-dialog form')).toBeHidden();
+});
+
+test('live Jira search finds newly created subtasks after reload before a full fetch',async({page})=>{
+  await mockSubtaskJira(page);
+  await page.route('**/worklog/subtask/search?*',route=>route.fulfill({json:{issues:[{issue_key:'NEW-3',summary:'Fresh Jira subtask',issue_type:'Sub-task',assignee:'Alice'}],next_cursor:null}}));
+  await page.locator('#table tbody tr').first().locator('td').nth(4).click();
+  await page.getByRole('button',{name:'Log work on 2026-10-05'}).click();
+  await expect(page.locator('#worklog-live-search')).toContainText('up to date');
+  await page.locator('#worklog-issue').selectOption('NEW-3');
+  await expect(page.locator('#worklog-selection')).toContainText('Fresh Jira subtask');
+  await page.reload();
+  await expect(page.locator('#worklog-live-search')).toContainText('up to date');
+  await page.locator('#worklog-issue').selectOption('NEW-3');
+  await expect(page.locator('#worklog-selection')).toContainText('Fresh Jira subtask');
+});
+
+test('subtask creator explains missing local OAuth setup instead of offering a broken login',async({page})=>{
+  await mockSubtaskJira(page);
+  await page.route('**/api/jira-auth/status',route=>route.fulfill({json:{configured:false}}));
+  await page.route('**/worklog/subtask/options?*',route=>route.fulfill({status:400,json:{error:'Sign in with Jira to continue.'}}));
+  await page.locator('#table tbody tr').first().locator('td').nth(4).click();
+  await page.getByRole('button',{name:'New subtask',exact:true}).click();
+  await expect(page.locator('.subtask-dialog [data-status]')).toContainText('needs administrator setup');
+  await expect(page.locator('.subtask-dialog a[href="/api/jira-auth/login"]')).toHaveCount(0);
+});
+
 test('tally downloads a PDF for the displayed employee/month and reports failures honestly',async({page})=>{
   let requests=0;
   await page.route('**/api/employee-capacity-utilization/tally.pdf?*',route=>{

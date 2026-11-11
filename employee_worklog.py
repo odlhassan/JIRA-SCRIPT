@@ -196,6 +196,11 @@ def register_employee_worklog_routes(app, receipt_dir: Path):
             raise ValueError('Enter a Jira task key, for example APP-123.')
         return value
 
+    from employee_subtask import register_subtask_routes
+    register_subtask_routes(app, receipt_dir, personal_identity=personal_identity, guard=guard,
+                            signer=signer, failure=failure, issue_key=issue_key,
+                            jira_base=jira_base, serialize_submit=serialize_submit)
+
     @app.get(prefix + '/manage.js')
     def worklog_manage_script():
         return send_file(Path(__file__).with_name('employee_worklog_manage.js'), mimetype='text/javascript')

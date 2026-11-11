@@ -1,5 +1,7 @@
 # Expected files and why the app may look broken
 
+Availability subtask creation requires root `employee_subtask.py`, `employee_subtask_form.js`, `employee_subtask_form.css`, and the `tzdata` dependency in `requirements.txt`. The capacity report generator inlines the new form assets; regenerate it after edits. `employee_worklog.py` registers the protected routes. See [Jira subtask creation](JIRA_SUBTASK_CREATION.md).
+
 Monthly Jira tally export also needs root `worklog_tally.py` and the ReportLab
 dependency from `requirements.txt`. Rebuild the capacity report after changing
 the shared calendar assets. See [Monthly worklog tally](WORKLOG_TALLY.md).
