@@ -83,6 +83,8 @@ worklog dates determine the month; task planned start/due dates do not.
   (JSON) and `/api/employee-capacity-utilization/tally.pdf` (download), both taking
   required `employee` and `month`; success has `Cache-Control: no-store, private`.
 - `employee_availability_calendar.js` / `.css`: download/status/layout.
+- The same JSON tally read supplies the selected employee's live calendar worklogs;
+  month changes show a loading bar and failures preserve the available calendar.
 - `generate_employee_capacity_utilization_report.py`: inlines calendar sources
   into the root report shell, promoted to `report_html` on server startup.
 - `requirements.txt`: ReportLab runtime dependency; `requirements-dev.txt` adds

@@ -257,11 +257,10 @@ test.beforeEach(async ({page}) => {
 });
 test('calendar reconciles complete live month including deletions and preserves last result on errors',async({page})=>{
   let round=0;
-  await page.route('**/worklog/history?*',route=>{
-    const cursor=new URL(route.request().url()).searchParams.get('cursor');
+  await page.route('**/employee-capacity-utilization/tally?*',route=>{
     if(round===2)return route.fulfill({status:502,json:{error:'Jira unavailable'}});
-    if(round===1)return route.fulfill({json:{author:'Alice',entries:[],next_cursor:null}});
-    return route.fulfill({json:{author:'Alice',entries:cursor?[]:[{issue_key:'APP-1',issue_type:'Sub-task',summary:'Build calendar',worklog_id:'1',started:'2026-10-05T09:00:00+05:00',seconds:3600}],next_cursor:cursor?null:'next'}});
+    if(round===1)return route.fulfill({json:{employee:'Alice',month:'2026-10',entries:[]}});
+    return route.fulfill({json:{employee:'Alice',month:'2026-10',entries:[{jira:{issue_key:'APP-1',issue_type:'Sub-task',summary:'Build calendar',worklog_id:'1',date:'2026-10-05',seconds:3600}}]}});
   });
   const mainBefore=await page.locator('#table tbody tr').first().innerText();
   await page.locator('#table tbody tr').first().locator('td').nth(4).click();
@@ -278,6 +277,55 @@ test('calendar reconciles complete live month including deletions and preserves 
   round=2;await page.getByRole('button',{name:'Refresh Jira worklogs'}).click();
   await expect(page.locator('.availability-live-status')).toContainText('could not be refreshed');
   await expect(page.locator('[data-calendar-date="2026-10-05"]')).toContainText('0h logged');
+});
+test('switching months fetches Jira, shows progress, and ignores late responses',async({page})=>{
+  let releaseSeptember;const septemberWait=new Promise(resolve=>releaseSeptember=resolve),months=[];
+  await page.route('**/employee-capacity-utilization/tally?*',async route=>{
+    const period=new URL(route.request().url()).searchParams.get('month');months.push(period);
+    if(period==='2026-09')await septemberWait;
+    return route.fulfill({json:{employee:'Alice',month:period,entries:[{jira:{issue_key:'APP-1',issue_type:'Sub-task',summary:'Build',worklog_id:period,date:period+'-05',seconds:period==='2026-09'?7200:3600}}]}}).catch(()=>{});
+  });
+  await page.locator('#table tbody tr').first().locator('td').nth(4).click();
+  await expect(page.locator('.availability-live-status')).toContainText('Updated at');
+  await page.getByRole('button',{name:'Previous month',exact:true}).click();
+  const progress=page.getByRole('progressbar',{name:'Loading Jira worklogs for 2026-09'});
+  await expect(progress).toBeVisible();
+  await expect(page.locator('.availability-live-status')).toContainText('Loading Jira worklogs for 2026-09');
+  await expect(page.locator('.availability-calendar-scroll')).toHaveAttribute('aria-busy','true');
+  await page.getByRole('button',{name:'Next month',exact:true}).click();
+  await expect(page.locator('.availability-live-status')).toContainText('Updated at');
+  await expect(page.locator('[data-calendar-date="2026-10-05"]')).toContainText('1h logged');
+  await expect(page.getByRole('progressbar')).toHaveCount(0);
+  releaseSeptember();
+  await expect(page.locator('#month')).toHaveValue('2026-10');
+  await expect(page.locator('[data-calendar-date="2026-10-05"]')).toContainText('1h logged');
+  expect(months.filter(value=>value==='2026-10').length).toBeGreaterThanOrEqual(2);
+  expect(months).toContain('2026-09');
+});
+test('another employee calendar reads their own Jira hours without personal worklog authentication',async({page})=>{
+  let requestedEmployee='',personalReads=0;
+  await page.route('**/worklog/history?*',route=>{personalReads++;return route.fulfill({status:401,json:{error:'No personal Jira session'}})});
+  await page.route('**/employee-capacity-utilization/tally?*',route=>{
+    const params=new URL(route.request().url()).searchParams;requestedEmployee=params.get('employee');
+    return route.fulfill({json:{employee:'Bob',month:params.get('month'),entries:[{jira:{issue_key:'APP-1',issue_type:'Sub-task',summary:'Build',worklog_id:'44',date:'2026-10-05',seconds:10800}}]}});
+  });
+  await page.locator('#table tbody tr:not(.total)').filter({hasText:'Bob'}).locator('td').nth(4).click();
+  await expect(page.locator('.availability-live-status')).toContainText('Updated at');
+  await expect(page.locator('[data-calendar-date="2026-10-05"]')).toContainText('3h logged');
+  expect(requestedEmployee).toBe('Bob');expect(personalReads).toBe(0);
+});
+test('employee search filters names, totals, and the Excel request',async({page})=>{
+  let filters;
+  await page.route('**/api/employee-capacity-utilization/export',route=>{filters=route.request().postDataJSON();return route.fulfill({body:'mock workbook',contentType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'})});
+  const search=page.getByRole('searchbox',{name:'Search employees'});
+  await search.fill('  ALI  ');
+  await expect(page.locator('#table tbody tr:not(.total)')).toHaveCount(1);
+  await expect(page.locator('#table tbody tr:not(.total)')).toContainText('Alice');
+  await expect(page.locator('#status')).toContainText('1 employees');
+  const download=page.waitForEvent('download');await page.getByRole('button',{name:'Download Excel'}).click();await download;
+  expect(filters.employee_search).toBe('  ALI  ');
+  await search.fill('nobody');await expect(page.locator('#table')).toContainText('No employees match');
+  await search.fill('');await expect(page.locator('#table tbody tr:not(.total)')).toHaveCount(2);
 });
 test('personal entry edits submit the Jira version and refresh the list',async({page})=>{
   let sent=null;

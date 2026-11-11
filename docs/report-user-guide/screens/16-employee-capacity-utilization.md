@@ -98,17 +98,27 @@ ReportLab is a new runtime dependency. No schema changes are involved.
 
 Availability Details has a sticky toolbar containing **Previous month** (left chevron), the displayed month/year, **Next month** (right chevron), and **Manage my logged hours**. The manager is directly accessible from this modal, including when opened through the personal **My availability** option. Its button stays available while scrolling through the calendar and day details.
 
-For your own calendar, Jira worklogs load automatically, refresh every 60 seconds while
+For any named employee's calendar, Jira worklogs load automatically, refresh every 60 seconds while
 the modal is open and on returning to the tab. **Refresh Jira worklogs**, marked with a sync icon, reads them
-immediately; the status shows when Jira was last read or explains a failure. Capacity
-and leave remain based on the saved report. Other employees' calendars use saved data.
+immediately; the status shows when Jira was last read or explains a failure. When
+switching months, the calendar requests the selected month's Jira worklogs and shows
+a loading bar until all pages finish. If Jira is unavailable, the status explains the
+failure and the available saved data remains visible. Capacity and leave remain based
+on the saved report. The combined Grand Total calendar uses saved data. Live viewing
+uses the reporting account's Jira visibility; personal Jira sign-in is required for
+creating, editing or deleting worklogs.
 In **Manage my logged hours**, choose **Edit entry** to change your own start, time or
 description, then save to Jira. If Jira changed it meanwhile, refresh before editing.
 See [calendar worklogs and Jira sign-in](../../../JIRA_WORKLOG_SIGNIN.md).
 
+**Search employees**, above the report table, filters employee names as you type,
+ignoring case and surrounding spaces. The displayed grand total, detail views, and
+Excel workbook use the matching employees. Clear the search to restore the full list;
+the workbook's Export Info records the search text.
+
 Click either arrow repeatedly to browse adjacent months without closing the modal. The selected employee (or combined employee scope), capacity profile and report filters remain selected. The report Month field follows the chosen month, and its table, calendar dates, hours, leave and capacity totals are recalculated from the loaded data. Switching months clears the previous day selection and any unfinished day-detail composer. Keyboard focus stays on the same arrow. Closing after a month jump returns focus to the report Month field.
 
-Examples: January 2026 → Previous month → December 2025; January 2024 → Next month → February 2024 (29 days). The date grid follows the new month even when it has no logged work. These controls use `employee_availability_calendar.js` and `.css`, inlined by `generate_employee_capacity_utilization_report.py`. They make no Jira writes, API or schema changes. Regression tests are in `tests/test_employee_availability_calendar.cjs`.
+Examples: January 2026 → Previous month → December 2025; January 2024 → Next month → February 2024 (29 days). The date grid follows the new month even when it has no logged work. These controls use `employee_availability_calendar.js` and `.css`, inlined by `generate_employee_capacity_utilization_report.py`. They read the existing Jira tally API and make no Jira writes or schema changes. Regression tests are in `tests/test_employee_availability_calendar.cjs`.
 
 ## Shareable modal URLs
 

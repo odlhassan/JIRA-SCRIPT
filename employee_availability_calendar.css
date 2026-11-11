@@ -104,6 +104,17 @@ button.availability-hours.leave:hover{background:#ffcbd5;box-shadow:0 0 0 2px #d
 .availability-refresh:focus-visible{outline:3px solid #5068db;outline-offset:2px}
 .availability-refresh:disabled{opacity:.65;cursor:wait}
 .availability-live-status{margin:0 0 10px;color:#55708e;font-size:12px;line-height:1.4}
+.employee-search-area{display:flex;align-items:center;gap:12px;margin:12px 0;color:#29496b;font-size:12px;font-weight:700}
+.employee-search-field{display:flex;align-items:center;gap:8px;width:min(100%,320px);padding:0 10px;border:1px solid #bdd0e8;border-radius:9px;background:#fff;box-shadow:0 2px 7px #183d6610}
+.employee-search-field:focus-within{border-color:#5286cf;box-shadow:0 0 0 3px #dbe8ff}
+.employee-search-field .material-symbols-outlined{font-size:19px;color:#5b7ea7}
+.employee-search-field input{width:100%;min-width:0;height:38px;border:0;outline:0;background:transparent;color:#183653;font:inherit;font-weight:400}
+@media(max-width:720px){.employee-search-area{align-items:stretch;flex-direction:column;gap:6px}.employee-search-field{width:100%;box-sizing:border-box}}
+.availability-live-progress{height:4px;overflow:hidden;border-radius:99px;background:#dbe8f8;margin:-4px 0 12px}
+.availability-live-progress[hidden]{display:none}
+.availability-live-progress span{display:block;width:38%;height:100%;border-radius:inherit;background:linear-gradient(90deg,#1769c2,#6c72df);animation:availability-loading 1.2s ease-in-out infinite alternate}
+@keyframes availability-loading{from{transform:translateX(-95%)}to{transform:translateX(260%)}}
+@media(prefers-reduced-motion:reduce){.availability-live-progress span{animation:none;width:100%;opacity:.7}}
 .availability-tally{border:1px solid #8caed3;border-radius:8px;background:#fff;color:#174e88;padding:8px 12px;font:700 12px "Segoe UI",sans-serif;cursor:pointer}
 .availability-tally:hover{background:#edf5ff}.availability-tally:disabled{opacity:.6;cursor:wait}
 .availability-tally:focus-visible{outline:3px solid #5068db;outline-offset:2px}

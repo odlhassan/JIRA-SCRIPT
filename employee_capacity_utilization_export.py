@@ -115,8 +115,11 @@ def _visible_names(payload: dict, filters: dict) -> list[str]:
     teams = payload.get("teams") or []
     resource_by_key = {_key(name): row for name, row in resources.items()}
     show_resigned = bool(filters.get("display_resigned"))
+    search = _key(filters.get("employee_search"))
     visible: list[str] = []
     for name_key, display_name in display_by_key.items():
+        if search and search not in name_key:
+            continue
         memberships = [
             team for team in teams if any(_key(member) == name_key for member in team.get("assignees") or [])
         ]
@@ -335,6 +338,7 @@ def build_employee_capacity_utilization_workbook(payload: dict, filters: dict) -
     metadata.append(["Employees", len(names)])
     metadata.append(["Canonical Run", payload.get("canonical_run_id")])
     metadata.append(["Generated At", payload.get("generated_at")])
+    metadata.append(["Employee Search", _excel_safe(_text(filters.get("employee_search")))])
     metadata.column_dimensions["A"].width = 26
     metadata.column_dimensions["B"].width = 42
     metadata["A1"].font = Font(size=16, bold=True, color="173F70")

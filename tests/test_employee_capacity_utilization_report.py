@@ -176,3 +176,12 @@ class EmployeeCapacityUtilizationReportTests(unittest.TestCase):
         self.assertEqual(workbook["Summary"].cell(row, headers["Capacity (Hours)"]).value, 160)
         self.assertEqual(workbook["Summary"].cell(row, headers["Official Leaves (Days)"]).value, 1)
         self.assertEqual(workbook["Summary"].cell(row, headers["Availability (Hours)"]).value, 160)
+
+    def test_employee_search_filters_export_and_totals(self):
+        payload={"issues":[],"worklogs":[],"leaves":[],"teams":[],"support":[],
+                 "resources":{"Alice":{},"Bob":{}},"profiles":[{"from_date":"2026-08-01","to_date":"2026-08-31","standard_hours_per_day":8,"holiday_dates":[]}]}
+        data,_=build_employee_capacity_utilization_workbook(payload,{"month":"2026-08","employee_search":"  ALI  "})
+        book=load_workbook(data,read_only=False,data_only=False)
+        self.assertEqual([row[0].value for row in list(book['Summary'].rows)[1:]],['Alice','Grand Total'])
+        self.assertEqual(book['Summary']['B2'].value,book['Summary']['B3'].value)
+        self.assertEqual(book['Export Info']['B8'].value,'ALI')

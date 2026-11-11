@@ -36,27 +36,26 @@ function wireAvailabilityCalendar(label){
  availabilityEvents?.abort();availabilityEvents=new AbortController();
  const generation=++availabilityGeneration, period=month.value;
  const status=document.createElement('p');status.className='availability-live-status';status.setAttribute('role','status');
+ const progress=document.createElement('div');progress.className='availability-live-progress';progress.hidden=true;progress.setAttribute('role','progressbar');progress.setAttribute('aria-label','Loading Jira worklogs for '+period);
+ progress.innerHTML='<span></span>';
  const refresh=document.createElement('button');refresh.type='button';refresh.className='availability-refresh';refresh.innerHTML=availabilityIcon('sync')+'<span>Refresh Jira worklogs</span>';
- body.querySelector('.availability-toolbar').after(status);body.querySelector('.availability-actions').prepend(refresh);
+ body.querySelector('.availability-toolbar').after(status,progress);body.querySelector('.availability-actions').prepend(refresh);
  let running=false;
  async function refreshLive(){
   if(running||!status.isConnected||document.hidden||!document.querySelector('#ecu-drawer')?.classList.contains('open')||body.querySelector('#calendar-worklog-form')||document.querySelector('.wl-manager'))return;
-  running=true;refresh.disabled=true;status.textContent='Reading Jira worklogs…';
+  if(label==='Grand Total'){status.textContent='Combined availability uses saved report data. Open an employee to see live Jira worklogs.';return}
+  running=true;refresh.disabled=true;progress.hidden=false;body.querySelector('.availability-calendar-scroll')?.setAttribute('aria-busy','true');status.textContent='Loading Jira worklogs for '+period+'…';
   try{
-   let cursor='',rows=[],author='',seen=new Set();
-   do{
-    const params=new URLSearchParams({month:period});if(cursor)params.set('cursor',cursor);
-    const response=await fetch('/api/employee-capacity-utilization/worklog/history?'+params,{cache:'no-store'});
-    const result=await response.json();if(!response.ok)throw new Error(result.error||'Jira unavailable');
-    if(!Array.isArray(result.entries)||!result.author)throw new Error('Incomplete Jira response');
-    if(key(result.author)!==key(label)){status.textContent='Showing saved report data for this employee.';return}
-    if(author && author!==result.author)throw new Error('Jira account changed');author=result.author;
-    for(const entry of result.entries){
-     if(!entry.issue_type)throw new Error('Jira issue type is unavailable');
-     rows.push({issue_id:entry.issue_key,item_issue_type:entry.issue_type,item_summary:entry.summary,item_assignee:entry.assignee,worklog_author:author,worklog_date:entry.started.slice(0,10),hours_logged:Number(entry.seconds)/3600,worklog_id:entry.worklog_id});
-    }
-    cursor=result.next_cursor||'';if(cursor && seen.has(cursor))throw new Error('Jira pagination failed');if(cursor)seen.add(cursor);
-   }while(cursor);
+   const params=new URLSearchParams({employee:label,month:period});
+   const response=await fetch('/api/employee-capacity-utilization/tally?'+params,{cache:'no-store'});
+   const result=await response.json();if(!response.ok)throw new Error(result.error||'Jira unavailable');
+   if(!Array.isArray(result.entries)||key(result.employee)!==key(label)||result.month!==period)throw new Error('Incomplete Jira response');
+   const rows=[];
+   for(const item of result.entries){
+    const entry=item.jira;if(!entry||!String(entry.date||'').startsWith(period+'-'))continue;
+    if(!entry.issue_type)throw new Error('Jira issue type is unavailable');
+    rows.push({issue_id:entry.issue_key,item_issue_type:entry.issue_type,item_summary:entry.summary,worklog_author:label,worklog_date:entry.date,hours_logged:Number(entry.seconds)/3600,worklog_id:entry.worklog_id});
+   }
    if(generation!==availabilityGeneration||!status.isConnected||period!==month.value||!document.querySelector('#ecu-drawer')?.classList.contains('open'))return;
    const selected=body.querySelector('.availability-day.selected')?.dataset.calendarDate;
    availabilityLive={label,month:period,rows};
@@ -68,7 +67,7 @@ function wireAvailabilityCalendar(label){
    if(selected){const chosen=body.querySelector(`[data-work-date="${selected}"]`);if(chosen)chosen.click();else{const detail=body.querySelector('#availability-day-details');if(detail)detail.textContent='Jira worklogs updated. Select a day to see its details.'}}
    status.textContent='Jira worklogs · Updated at '+new Date().toLocaleTimeString()+'. Capacity and leave use the saved report.';
   }catch(error){if(generation===availabilityGeneration)status.textContent='Jira worklogs could not be refreshed. Showing last available data. '+error.message}
-  finally{running=false;if(refresh.isConnected)refresh.disabled=false}
+  finally{running=false;if(refresh.isConnected){refresh.disabled=false;progress.hidden=true;body.querySelector('.availability-calendar-scroll')?.removeAttribute('aria-busy')}}
  }
  refresh.addEventListener('click',refreshLive);
  availabilityTimer=setInterval(()=>{if(!status.isConnected||!document.querySelector('#ecu-drawer')?.classList.contains('open')){clearInterval(availabilityTimer);availabilityEvents?.abort();availabilityGeneration++;return}refreshLive()},60000);
