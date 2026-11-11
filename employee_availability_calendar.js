@@ -36,7 +36,7 @@ function wireAvailabilityCalendar(label){
  availabilityEvents?.abort();availabilityEvents=new AbortController();
  const generation=++availabilityGeneration, period=month.value;
  const status=document.createElement('p');status.className='availability-live-status';status.setAttribute('role','status');
- const refresh=document.createElement('button');refresh.type='button';refresh.textContent='Refresh Jira worklogs';
+ const refresh=document.createElement('button');refresh.type='button';refresh.className='availability-refresh';refresh.innerHTML=availabilityIcon('sync')+'<span>Refresh Jira worklogs</span>';
  body.querySelector('.availability-toolbar').after(status);body.querySelector('.availability-actions').prepend(refresh);
  let running=false;
  async function refreshLive(){

@@ -96,8 +96,22 @@ class EprAuthTests(unittest.TestCase):
         self.assertNotIn('never-in-audit',response.get_data(as_text=True))
         self.assertTrue(any(x['event']=='bootstrap_admin' for x in response.json['events']))
 
+    def test_approved_member_keeps_access_after_logout_and_new_session(self):
+        self.login('member','Member Name');self.client.get('/api/auth/me')
+        self.login();self.client.get('/api/auth/me')
+        self.client.put('/api/auth/users/member',json={'role':'member','approved':True,'active':True},headers=self.headers)
+        self.login('member','Member Name')
+        self.assertEqual(self.client.get('/report.html').status_code,200)
+        self.assertEqual(self.client.post('/api/auth/logout',json={},headers=self.headers).status_code,200)
+        self.login('member','Updated Name',sid='c'*64)
+        self.assertEqual(self.client.get('/report.html').status_code,200)
+        self.assertTrue(self.client.get('/api/auth/me').json['user']['approved'])
+        self.assertEqual(self.client.get('/access-pending').location,'/')
+
     def test_session_expiry_logout_and_safe_return(self):
         self.login(age=8*3600+1)
+        self.assertEqual(self.client.get('/api/auth/me').status_code,200)
+        self.login(age=30*86400+1)
         self.assertEqual(self.client.get('/api/auth/me').status_code,401)
         self.login();self.client.get('/api/auth/me')
         self.assertEqual(self.client.post('/api/auth/logout',json={},headers=self.headers).status_code,200)

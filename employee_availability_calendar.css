@@ -98,6 +98,12 @@ button.availability-hours.leave:hover{background:#ffcbd5;box-shadow:0 0 0 2px #d
 .availability-delete{padding:6px 12px;border:1px solid #f0b7b7;border-radius:7px;background:#fff4f4;color:#b42318;font:700 12px "Segoe UI",sans-serif;cursor:pointer;white-space:nowrap}
 .availability-delete:hover{background:#ffe4e4;border-color:#b42318}.availability-delete:focus-visible{outline:2px solid #b42318;outline-offset:2px}
 .availability-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.availability-refresh{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:36px;padding:8px 12px;border:1px solid #aec9eb;border-radius:9px;background:#eef5ff;color:#17539a;font:700 12px "Segoe UI",sans-serif;cursor:pointer;transition:background .15s,border-color .15s,box-shadow .15s}
+.availability-refresh .material-symbols-outlined{font-size:18px;line-height:1}
+.availability-refresh:hover:not(:disabled){background:#dcecff;border-color:#729fda;box-shadow:0 3px 9px #174e8818}
+.availability-refresh:focus-visible{outline:3px solid #5068db;outline-offset:2px}
+.availability-refresh:disabled{opacity:.65;cursor:wait}
+.availability-live-status{margin:0 0 10px;color:#55708e;font-size:12px;line-height:1.4}
 .availability-tally{border:1px solid #8caed3;border-radius:8px;background:#fff;color:#174e88;padding:8px 12px;font:700 12px "Segoe UI",sans-serif;cursor:pointer}
 .availability-tally:hover{background:#edf5ff}.availability-tally:disabled{opacity:.6;cursor:wait}
 .availability-tally:focus-visible{outline:3px solid #5068db;outline-offset:2px}

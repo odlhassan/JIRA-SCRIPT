@@ -70,7 +70,7 @@ def register_epr_auth(app, oauth_directory: Path, report_files):
     enabled = bool(os.getenv('WEBSITE_SITE_NAME') or all(config().values()) or os.getenv('EPR_AUTH_ENABLED') == '1')
     app.config['EPR_AUTH_ENABLED'] = enabled
     app.config['EPR_AUTH_DIRECTORY'] = directory
-    app.config.setdefault('EPR_SESSION_TTL', 8*3600)
+    app.config.setdefault('EPR_SESSION_TTL', 30*86400)
     assets = Path(__file__).parent
 
     def read_users():
@@ -105,18 +105,21 @@ def register_epr_auth(app, oauth_directory: Path, report_files):
                 return None
             identity = saved.get('epr_identity')
             if not identity:
-                session = oauth_session(oauth_directory)
-                if session is None:
-                    return None
-                response = session.get(session.epr_base_url+'/rest/api/3/myself', timeout=(10, 25))
-                response.raise_for_status()
-                profile = response.json()
-                identity = {'account_id': profile['accountId'], 'display_name': profile.get('displayName', ''),
-                            'avatar_url': (profile.get('avatarUrls') or {}).get('48x48', '')}
-                # Re-read after token refresh so rotating tokens are never overwritten with old ones.
-                saved = json.loads(path.read_text(encoding='utf-8'))
-                saved.update(epr_identity=identity, epr_signed_at=time.time(), epr_csrf=secrets.token_hex(32))
-                save_private(path, saved)
+                with _lock:
+                    saved = json.loads(path.read_text(encoding='utf-8'))
+                    identity = saved.get('epr_identity')
+                    if not identity:
+                        session = oauth_session(oauth_directory)
+                        if session is None:
+                            return None
+                        response = session.get(session.epr_base_url+'/rest/api/3/myself', timeout=(10, 25))
+                        response.raise_for_status()
+                        profile = response.json()
+                        identity = {'account_id': profile['accountId'], 'display_name': profile.get('displayName', ''),
+                                    'avatar_url': (profile.get('avatarUrls') or {}).get('48x48', '')}
+                        saved = json.loads(path.read_text(encoding='utf-8'))
+                        saved.update(epr_identity=identity, epr_signed_at=time.time(), epr_csrf=secrets.token_hex(32))
+                        save_private(path, saved)
             account = identity['account_id']
             with _lock:
                 users = read_users()
@@ -133,7 +136,7 @@ def register_epr_auth(app, oauth_directory: Path, report_files):
                     users[account]['personal_data_retrieved_at'] = time.time()
                     save_private(users_file, users)
                 user = {**identity, **users[account], 'csrf_token': saved.get('epr_csrf', ''),
-                        'expires_at': saved.get('epr_signed_at', 0)+app.config['EPR_SESSION_TTL']}
+                        'expires_at': min(saved.get('session_expires_at', 0), saved.get('epr_signed_at', 0)+app.config['EPR_SESSION_TTL'])}
             g.epr_identity = user
             return user
         except (ValueError, KeyError, OSError, requests.RequestException):

@@ -9,6 +9,7 @@ from urllib.parse import urlencode, urlsplit
 from flask import jsonify, redirect, request
 import requests
 from jira_client import BASE_URL
+from jira_privacy import ACCESS_LOCK
 
 COOKIE = 'epr_jira_session'
 CALLBACK = '/api/jira-auth/callback'
@@ -52,10 +53,15 @@ def oauth_session(directory):
 
 
 def refresh_oauth_file(path):
+    # Atlassian rotates refresh tokens; serialize readers in the single-worker app.
+    with ACCESS_LOCK:
+        return _refresh_oauth_file_locked(path)
+
+
+def _refresh_oauth_file_locked(path):
     saved = json.loads(path.read_text(encoding='utf-8'))
     if saved.get('session_expires_at', float('inf')) <= time.time():
-        from jira_privacy import erase_oauth_account
-        erase_oauth_account(path.parent, saved.get('account_id'))
+        path.unlink(missing_ok=True)
         raise ValueError('Your Jira sign-in expired. Sign in again.')
     if saved.get('expires_at', 0) <= time.time() + 60:
         cfg = config()
@@ -63,8 +69,12 @@ def refresh_oauth_file(path):
             'grant_type': 'refresh_token', 'client_id': cfg['CLIENT_ID'], 'client_secret': cfg['CLIENT_SECRET'],
             'refresh_token': saved.get('refresh_token', '')}, timeout=(10, 25))
         if response.status_code in (400, 401):
-            from jira_privacy import erase_oauth_account
-            erase_oauth_account(path.parent, saved.get('account_id'))
+            try:
+                invalid_grant = response.json().get('error') == 'invalid_grant'
+            except (ValueError, AttributeError):
+                invalid_grant = False
+            if invalid_grant:
+                path.unlink(missing_ok=True)
         response.raise_for_status()
         tokens = response.json()
         saved.update(tokens)

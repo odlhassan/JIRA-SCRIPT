@@ -1,6 +1,6 @@
 # Calendar worklogs and Jira sign-in
 
-Atlassian sign-in now also gates the whole EPR application. New users need Admin approval; Member/Admin roles, eight-hour EPR sessions, access administration, and private audit records are described in [EPR authentication](EPR_AUTHENTICATION.md). The existing OAuth app and scopes are reused. Logout preserves approvals; Atlassian privacy erasure removes access/profile records and anonymizes audit IDs. Access records are included in periodic privacy reporting.
+Atlassian sign-in now also gates the whole EPR application. New users need Admin approval; Member/Admin roles, sessions of up to 30 days, access administration, and private audit records are described in [EPR authentication](EPR_AUTHENTICATION.md). The existing OAuth app and scopes are reused. Logout preserves approvals; Atlassian privacy erasure removes access/profile records and anonymizes audit IDs. Access records are included in periodic privacy reporting.
 
 ## Business Cases
 
@@ -100,9 +100,9 @@ The **EPR Reporting** resource-level OAuth app was registered on 2026-10-28 (app
 
 Atlassian requires apps retaining account-related data to implement its reporting API before enabling sharing with a Yes personal-data declaration. The app requests `report:personal-data` alongside Jira scopes and offline access. `jira_privacy.py` starts one daemon reporter per application directory when OAuth is configured. It wakes hourly, reports app-owned OAuth-session and worklog-receipt account IDs in batches of at most 90, and resumes from a private state file after restart. Reports use the oldest retained retrieval timestamp and respect each account's `Cycle-Period` (default seven days) and HTTP 429 `Retry-After`.
 
-On `closed` or `updated`, the integration erases matching OAuth sessions and removes personal profile/comment fields from its request receipts. Worklog IDs and non-personal idempotency state remain, preventing duplicate writes. Sign-out erases the account's integration sessions and receipt profile fields; other sessions for the same account will need to sign in again. Server sessions expire after 30 days, and rejected refresh credentials trigger cleanup. This cleanup does not delete Jira worklogs or change the organization's canonical reporting database.
+On `closed` or `updated`, the integration erases matching OAuth sessions and removes personal profile/comment fields from its request receipts. For `updated`, the EPR approval and role remain and the next sign-in restores the profile; for `closed`, the access record is removed. Worklog IDs and non-personal idempotency state remain, preventing duplicate writes. Sign-out erases the account's integration sessions and receipt profile fields; other sessions for the same account will need to sign in again, but keep their approval. Server sessions expire after 30 days. An invalid refresh grant removes the affected session. This cleanup does not delete Jira worklogs or change the organization's canonical reporting database.
 
-The reporter uses an existing authorized OAuth token, refreshes it server-side when needed, and sends no credentials to logs. Persistent files remain under `/home/data/worklog_requests/oauth`. Documentation: [Atlassian user privacy guide](https://developer.atlassian.com/cloud/jira/platform/user-privacy-developer-guide/).
+The reporter uses an existing authorized OAuth token, refreshes it server-side when needed, and sends no credentials to logs. Token rotation is serialized in the single-worker server. Expiration and invalid-grant cleanup remove the affected session; privacy requests and explicit logout retain their existing account-wide cleanup. Persistent files remain under `/home/data/worklog_requests/oauth`. Documentation: [Atlassian user privacy guide](https://developer.atlassian.com/cloud/jira/platform/user-privacy-developer-guide/).
 
 ## Table Schema and Data Flow
 

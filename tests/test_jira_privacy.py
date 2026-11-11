@@ -2,8 +2,11 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+import time
+from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import Mock, patch
 from jira_privacy import report_accounts, erase_oauth_account, cycle_seconds
+from jira_oauth import refresh_oauth_file
 
 
 class JiraPrivacyTests(unittest.TestCase):
@@ -57,6 +60,55 @@ class JiraPrivacyTests(unittest.TestCase):
         self.assertEqual(cycle_seconds('3600'), 3600)
         self.assertEqual(cycle_seconds(None), 604800)
 
+    def test_expired_session_does_not_remove_another_session(self):
+        other = self.directory / ('c'*64+'.json')
+        data = json.loads(self.session.read_text())
+        other.write_text(json.dumps({**data, 'session_expires_at': time.time()+5000}), encoding='utf-8')
+        self.session.write_text(json.dumps({**data, 'session_expires_at': 1200}), encoding='utf-8')
+        with patch('jira_privacy.requests.post', return_value=Mock(status_code=204, headers={})):
+            report_accounts(self.directory, now=1300)
+        self.assertFalse(self.session.exists())
+        self.assertTrue(other.exists())
+
+    def test_rotating_token_is_refreshed_only_once_across_threads(self):
+        data=json.loads(self.session.read_text())
+        data.update(expires_at=0, refresh_token='old', session_expires_at=time.time()+3600)
+        self.session.write_text(json.dumps(data),encoding='utf-8')
+        reply=Mock(status_code=200)
+        reply.json.return_value={'access_token':'new','refresh_token':'rotated','expires_in':3600}
+        with patch('jira_oauth.requests.post',return_value=reply) as post:
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                results=list(pool.map(lambda _: refresh_oauth_file(self.session),range(4)))
+        self.assertEqual(post.call_count,1)
+        self.assertTrue(all(result['refresh_token']=='rotated' for result in results))
+
+    def test_invalid_grant_only_removes_the_failed_session(self):
+        other=self.directory/('c'*64+'.json')
+        data=json.loads(self.session.read_text())
+        data.update(expires_at=0, refresh_token='old', session_expires_at=time.time()+3600)
+        self.session.write_text(json.dumps(data),encoding='utf-8')
+        other.write_text(json.dumps(data),encoding='utf-8')
+        reply=Mock(status_code=400)
+        reply.json.return_value={'error':'invalid_grant'}
+        reply.raise_for_status.side_effect=__import__('requests').HTTPError(response=reply)
+        with patch('jira_oauth.requests.post',return_value=reply):
+            with self.assertRaises(__import__('requests').HTTPError):
+                refresh_oauth_file(self.session)
+        self.assertFalse(self.session.exists())
+        self.assertTrue(other.exists())
+
+    def test_other_refresh_errors_do_not_delete_sessions(self):
+        data=json.loads(self.session.read_text())
+        data.update(expires_at=0, refresh_token='old', session_expires_at=time.time()+3600)
+        self.session.write_text(json.dumps(data),encoding='utf-8')
+        reply=Mock(status_code=400)
+        reply.json.return_value={'error':'invalid_client'}
+        reply.raise_for_status.side_effect=__import__('requests').HTTPError(response=reply)
+        with patch('jira_oauth.requests.post',return_value=reply):
+            with self.assertRaises(__import__('requests').HTTPError):
+                refresh_oauth_file(self.session)
+        self.assertTrue(self.session.exists())
+
     def test_approval_survives_logout_but_privacy_erasure_removes_it(self):
         access = self.directory.parent / 'epr_access'
         access.mkdir()
@@ -67,4 +119,20 @@ class JiraPrivacyTests(unittest.TestCase):
         erase_oauth_account(self.directory, 'person', erase_access=True)
         self.assertEqual(json.loads((access/'users.json').read_text()), {})
         self.assertNotIn('person', (access/'audit.jsonl').read_text())
+
+    def test_updated_profile_preserves_approval_but_closed_removes_it(self):
+        access=self.directory.parent/'epr_access';access.mkdir()
+        users=access/'users.json'
+        users.write_text(json.dumps({'person':{'account_id':'person','display_name':'Old Name','role':'member','approved':True,'active':True}}))
+        response=Mock(status_code=200,headers={})
+        response.json.return_value={'accounts':[{'accountId':'person','status':'updated'}]}
+        with patch('jira_privacy.requests.post',return_value=response):
+            report_accounts(self.directory,now=1000)
+        user=json.loads(users.read_text())['person']
+        self.assertTrue(user['approved']);self.assertEqual(user['role'],'member')
+        self.assertNotIn('display_name',user)
+        self.assertFalse(self.session.exists())
+        self.assertNotIn('author',json.loads(self.receipt.read_text()).get('review',{}))
+        erase_oauth_account(self.directory,'person',erase_access=True)
+        self.assertNotIn('person',json.loads(users.read_text()))
 

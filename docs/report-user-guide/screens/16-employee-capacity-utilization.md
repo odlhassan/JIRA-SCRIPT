@@ -99,7 +99,7 @@ ReportLab is a new runtime dependency. No schema changes are involved.
 Availability Details has a sticky toolbar containing **Previous month** (left chevron), the displayed month/year, **Next month** (right chevron), and **Manage my logged hours**. The manager is directly accessible from this modal, including when opened through the personal **My availability** option. Its button stays available while scrolling through the calendar and day details.
 
 For your own calendar, Jira worklogs load automatically, refresh every 60 seconds while
-the modal is open and on returning to the tab. **Refresh Jira worklogs** reads them
+the modal is open and on returning to the tab. **Refresh Jira worklogs**, marked with a sync icon, reads them
 immediately; the status shows when Jira was last read or explains a failure. Capacity
 and leave remain based on the saved report. Other employees' calendars use saved data.
 In **Manage my logged hours**, choose **Edit entry** to change your own start, time or

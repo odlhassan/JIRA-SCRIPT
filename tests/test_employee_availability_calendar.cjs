@@ -265,6 +265,9 @@ test('calendar reconciles complete live month including deletions and preserves 
   });
   const mainBefore=await page.locator('#table tbody tr').first().innerText();
   await page.locator('#table tbody tr').first().locator('td').nth(4).click();
+  const refresh=page.getByRole('button',{name:'Refresh Jira worklogs'});
+  await expect(refresh.locator('.material-symbols-outlined')).toHaveText('sync');
+  await expect(refresh).toHaveCSS('border-radius','9px');
   await expect(page.locator('.availability-live-status')).toContainText('Updated at');
   await expect(page.locator('[data-calendar-date="2026-10-05"]')).toContainText('1h logged');
   await page.locator('[data-work-date="2026-10-05"]').click();

@@ -66,6 +66,21 @@ def _erase_access_account(directory, account_id):
             temp.replace(audit_file)
 
 
+def _clear_changed_profile(directory, account_id, now):
+    """Discard stale profile data while retaining the existing authorization decision."""
+    from jira_oauth import save_private
+    access_file = directory.parent / 'epr_access' / 'users.json'
+    with ACCESS_LOCK:
+        if not access_file.exists():
+            return
+        access = json.loads(access_file.read_text(encoding='utf-8'))
+        if account_id in access:
+            user = access[account_id]
+            access[account_id] = {key: user[key] for key in ('account_id', 'role', 'approved', 'active') if key in user}
+            access[account_id]['personal_data_retrieved_at'] = now
+            save_private(access_file, access)
+
+
 def cycle_seconds(header):
     value = str(header or '').strip()
     if value.isdigit():
@@ -93,7 +108,11 @@ def report_accounts(directory: Path, now=None):
         if not account or account == 'unknown':
             continue
         if saved.get('session_expires_at', float('inf')) <= now:
-            erase_oauth_account(directory, account)
+            with ACCESS_LOCK:
+                if path.exists():
+                    latest = json.loads(path.read_text(encoding='utf-8'))
+                    if latest.get('session_expires_at', float('inf')) <= now:
+                        path.unlink(missing_ok=True)
             continue
         accounts[account] = min(accounts.get(account, now), saved.get('personal_data_retrieved_at', now))
         if token is None:
@@ -133,10 +152,13 @@ def report_accounts(directory: Path, now=None):
             return {'reported': reported, 'rate_limited': True}
         response.raise_for_status()
         instructions = response.json().get('accounts', []) if response.status_code == 200 else []
-        erase = {item['accountId'] for item in instructions if item.get('status') in ('closed', 'updated')}
+        erase = {item['accountId']: item['status'] for item in instructions if item.get('status') in ('closed', 'updated')}
         for account in batch:
             if account in erase:
-                erase_oauth_account(directory, account, erase_access=True)
+                with ACCESS_LOCK:
+                    erase_oauth_account(directory, account, erase_access=erase[account] == 'closed')
+                    if erase[account] == 'updated':
+                        _clear_changed_profile(directory, account, now)
                 state['accounts'].pop(account, None)
             else:
                 state['accounts'][account] = {'next_report_at': now + cycle_seconds(response.headers.get('Cycle-Period'))}
