@@ -1,6 +1,6 @@
 # JIRA-SCRIPT
 
-My availability now includes **New subtask**: choose a live Jira space → epic → user story, enter start/due dates and an original estimate (default `1d`; shortcuts `30m`, `4h`, `1d`, `1w`), then review and create it assigned to your personal Jira account. Due dates must remain in the actual current month. Live subtask search makes it loggable before a full fetch; other reports retain their saved snapshot. See [Jira subtask creation](JIRA_SUBTASK_CREATION.md).
+My availability now includes **New subtask**: choose a live Jira space → epic → user story, enter start/due dates and an original estimate (default `1d`; shortcuts `30m`, `4h`, `1d`, `1w`), then review and create it assigned to your personal Jira account. Due dates must remain in the actual current month. Live subtask search makes it loggable before a full fetch; other reports retain their saved snapshot. Search lives inside each dropdown and preserves selections until a different parent is chosen. RLT has a separate leave path through existing tracker Tasks/Stories, with Planned/Unplanned Leave classification and explicit personal leave recording. See [Jira subtask creation](JIRA_SUBTASK_CREATION.md).
 
 ## Production startup
 

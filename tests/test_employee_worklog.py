@@ -7,7 +7,7 @@ from flask import Flask
 import requests
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlparse, parse_qs
-from employee_worklog import register_employee_worklog_routes, parse_duration, daily_logged_seconds
+from employee_worklog import register_employee_worklog_routes, parse_duration, daily_logged_seconds, checked_issue as real_checked_issue
 from datetime import datetime
 from jira_client import BASE_URL
 
@@ -61,6 +61,64 @@ class EmployeeWorklogTests(unittest.TestCase):
         patcher = patch('employee_worklog.oauth_session', return_value=self.session)
         patcher.start(); self.addCleanup(patcher.stop)
         self.client.set_cookie('epr_jira_session', 'personal')
+
+    def personal_leave(self):
+        self.personal_jira()
+        self.leave_fields={'summary':'Annual leave','issuetype':{'name':'Sub-task','subtask':True},
+                           'project':{'key':'RLT'},'assignee':self.identity}
+        original=self.session.get.side_effect
+        def get(url,**kwargs):
+            response=Mock()
+            if url.endswith('/issue/RLT-3') or url.endswith('/issue/APP-1'):
+                response.json.return_value={'fields':self.leave_fields}
+            elif url.endswith('/mypermissions'):
+                response.json.return_value={'permissions':{p:{'havePermission':True} for p in ('BROWSE_PROJECTS','WORK_ON_ISSUES')}}
+            else:
+                return original(url,**kwargs)
+            return response
+        self.session.get.side_effect=get
+        self.body.update(issue_key='RLT-3',entry_kind='leave',duration='8h')
+        self.session.post.return_value.json.return_value={'id':'123','author':self.identity}
+
+    def test_personal_leave_recording_has_separate_signed_kind_and_estimates_unchanged(self):
+        self.personal_leave()
+        with patch('employee_worklog.checked_issue',side_effect=real_checked_issue):
+            result=self.review()
+            self.assertEqual(result.status_code,200,result.json)
+            self.assertEqual(result.json['review']['entry_kind'],'leave')
+            self.assertEqual(result.json['review']['minutes'],480)
+            saved=self.client.post(PREFIX+'/submit',json={'token':result.json['token'],'confirmed':True},headers=HEADERS)
+            self.assertEqual(saved.status_code,200,saved.json)
+            self.assertEqual(saved.json['worklog']['project_key'],'RLT')
+            self.assertEqual(saved.json['worklog']['hours_logged'],8)
+            self.assertEqual(self.session.post.call_args.kwargs['params']['adjustEstimate'],'leave')
+            self.assertEqual(self.session.post.call_args.kwargs['json']['timeSpentSeconds'],28800)
+            self.identity['accountId']='different'
+            replay=self.client.post(PREFIX+'/submit',json={'token':result.json['token'],'confirmed':True},headers=HEADERS)
+            self.assertEqual(replay.status_code,400)
+            self.session.post.assert_called_once()
+
+    def test_leave_recording_rejects_other_assignee_and_rechecks_ownership_on_submit(self):
+        self.personal_leave()
+        with patch('employee_worklog.checked_issue',side_effect=real_checked_issue):
+            result=self.review()
+            self.assertEqual(result.status_code,200)
+            self.leave_fields['assignee']={'accountId':'other','displayName':self.identity['displayName']}
+            saved=self.client.post(PREFIX+'/submit',json={'token':result.json['token'],'confirmed':True},headers=HEADERS)
+            self.assertEqual(saved.status_code,400)
+            self.assertEqual(self.review().status_code,400)
+        self.session.post.assert_not_called()
+
+    def test_leave_never_uses_shared_credentials_and_work_mode_still_rejects_rlt(self):
+        self.personal_leave()
+        with patch('employee_worklog.oauth_session',return_value=None):
+            self.assertEqual(self.review().status_code,400)
+        with patch('employee_worklog.checked_issue',side_effect=real_checked_issue):
+            self.body['entry_kind']='work'
+            self.assertEqual(self.review().status_code,400)
+            self.body.update(entry_kind='leave',issue_key='APP-1')
+            self.assertEqual(self.review().status_code,400)
+        self.session.post.assert_not_called()
 
     def test_list_only_own_entries_across_pages_on_any_issue(self):
         self.personal_jira(rows=[

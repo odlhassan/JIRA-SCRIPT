@@ -43,6 +43,7 @@
      document.querySelector('['+selector+'="'+day+'"]')?.click();
     }
     if(metric==='availability'&&params.get('panel')==='log'&&/^\d{4}-\d{2}-\d{2}$/.test(day||''))openCalendarWorklog(params.get('employee'),day);
+    if(metric==='availability'&&params.get('panel')==='leave'&&/^\d{4}-\d{2}-\d{2}$/.test(day||'')&&/^RLT-\d+$/.test(params.get('issue')||''))openCalendarWorklog(params.get('employee'),day,{mode:'leave',issue:params.get('issue')});
    }else if(!metric){document.querySelector('#ecu-drawer-close')?.click()}
    if(params.get('panel')==='hours'){
     const trigger=document.createElement('button');trigger.hidden=true;trigger.dataset.manageWorklogs=params.get('issue')||'';trigger.dataset.worklogDate=params.get('date')||'';trigger.dataset.worklogMonth=params.get('historyMonth')||month.value;document.body.append(trigger);trigger.click();trigger.remove();

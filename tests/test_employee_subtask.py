@@ -261,6 +261,76 @@ class EmployeeSubtaskTests(unittest.TestCase):
         self.assertEqual(replay.json,{'issue_key':'NEW-3','verified':True})
         self.session.post.assert_called_once()
 
+    def rlt_jira(self):
+        from generate_rlt_leave_report import LEAVE_TYPE_FIELD
+        self.fields.append(dict(fieldId=LEAVE_TYPE_FIELD,name='Leave Type',allowedValues=[
+            {'id':'planned','value':'Planned Leave'},{'id':'unplanned','value':'Unplanned Leave'}]))
+        self.session.post.return_value.json.return_value={'key':'RLT-3'}
+        original=self.session.get.side_effect
+        def get(url,**kwargs):
+            response=Mock()
+            if url.endswith('/issue/RLT-1'):
+                response.json.return_value={'fields':{'summary':'My leave tracker','project':{'key':'RLT'},'issuetype':{'name':'Task','subtask':False}}}
+            elif url.endswith('/issue/RLT-3'):
+                response.json.return_value={'fields':dict(assignee=self.identity,parent={'key':'RLT-1'},issuetype={'name':'Sub-task'},duedate='2026-11-30',customfield_55='2026-11-11',timetracking={'originalEstimateSeconds':28800},**{LEAVE_TYPE_FIELD:{'id':'planned'}})}
+            else:
+                return original(url,**kwargs)
+            return response
+        self.session.get.side_effect=get
+
+    def test_rlt_leave_creation_uses_standalone_tracker_and_jira_leave_type(self):
+        from generate_rlt_leave_report import LEAVE_TYPE_FIELD
+        self.rlt_jira()
+        result=self.review(project_key='RLT',epic_key='',story_key='RLT-1',leave_type='planned')
+        self.assertEqual(result.status_code,200,result.json)
+        self.assertEqual(result.json['review']['flow'],'leave')
+        self.assertEqual(result.json['review']['leave_label'],'Planned Leave')
+        saved=self.submit(result.json['token'])
+        self.assertEqual(saved.status_code,200,saved.json)
+        self.assertTrue(saved.json['verified'])
+        fields=self.session.post.call_args.kwargs['json']['fields']
+        self.assertEqual(fields['parent'],{'key':'RLT-1'})
+        self.assertEqual(fields[LEAVE_TYPE_FIELD],{'id':'planned'})
+        self.assertEqual(fields['assignee'],{'accountId':'alice'})
+        self.assertEqual(saved.json['flow'],'leave')
+
+    def test_rlt_does_not_relax_work_hierarchy_or_accept_forged_leave_types(self):
+        self.rlt_jira()
+        self.assertEqual(self.review(project_key='RLT',story_key='NEW-2',leave_type='planned').status_code,400)
+        self.assertEqual(self.review(project_key='RLT',story_key='RLT-1',leave_type='forged').status_code,400)
+        self.assertEqual(self.review(project_key='NEW',epic_key='',flow='leave',leave_type='planned').status_code,400)
+        self.session.post.assert_not_called()
+
+    def test_rlt_trackers_do_not_request_epics_and_return_available_leave_types(self):
+        self.rlt_jira()
+        self.story['issuetype']={'name':'Task'}
+        result=self.client.get(API+'/options?kind=trackers&project_key=RLT&q=Leave')
+        self.assertEqual(result.status_code,200,result.json)
+        self.assertEqual(result.json['leave_types'],[{'id':'planned','label':'Planned Leave'},{'id':'unplanned','label':'Unplanned Leave'}])
+        jql=self.session.get.call_args.kwargs['params']['jql']
+        self.assertIn('project = RLT',jql)
+        self.assertNotIn('parent',jql)
+        self.assertNotIn('Epic',jql)
+        self.assertEqual(self.client.get(API+'/options?kind=trackers&project_key=NEW').status_code,400)
+
+    def test_leave_search_stays_in_personal_rlt_scope_even_with_query(self):
+        self.client.get(API+'/search?flow=leave&q=Leave')
+        jql=self.session.get.call_args.kwargs['params']['jql']
+        self.assertIn('project = RLT AND assignee = currentUser()',jql)
+        self.assertIn('summary ~',jql)
+
+    def test_empty_epics_has_specific_reason_and_never_loads_stories_implicitly(self):
+        original=self.session.get.side_effect
+        def get(url,**kwargs):
+            if url.endswith('/search/jql'):
+                response=Mock();response.json.return_value={'issues':[],'isLast':True};return response
+            return original(url,**kwargs)
+        self.session.get.side_effect=get
+        result=self.client.get(API+'/options?kind=epics&project_key=NEW')
+        self.assertIn('NEW has no visible epics',result.json['empty_reason'])
+        result=self.client.get(API+'/options?kind=epics&project_key=NEW&q=other')
+        self.assertIn('Clear its search',result.json['empty_reason'])
+
 
 if __name__ == '__main__':
     unittest.main()

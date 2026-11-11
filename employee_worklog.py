@@ -129,15 +129,22 @@ def jira_identity():
     raise ValueError('No valid Jira account is configured for work logging.')
 
 
-def checked_issue(session, issue_key):
+def checked_issue(session, issue_key, entry_kind='work', account_id=None):
     if not re.fullmatch(r'[A-Z][A-Z0-9_]*-\d+', issue_key):
         raise ValueError('Choose a valid Jira subtask.')
     response = session.get(jira_base(session) + '/rest/api/3/issue/' + issue_key,
-                           params={'fields': 'summary,issuetype,assignee,status'}, timeout=(10, 25))
+                           params={'fields': 'summary,issuetype,assignee,status,project'}, timeout=(10, 25))
     response.raise_for_status()
     issue = response.json()
     fields = issue.get('fields') or {}
-    if not (fields.get('issuetype') or {}).get('subtask') or issue_key.startswith('RLT-'):
+    if entry_kind not in ('work', 'leave'):
+        raise ValueError('Choose work or leave recording.')
+    if entry_kind == 'leave':
+        if (not issue_key.startswith('RLT-') or (fields.get('project') or {}).get('key') != 'RLT' or
+                not (fields.get('issuetype') or {}).get('subtask') or
+                (fields.get('assignee') or {}).get('accountId') != account_id):
+            raise ValueError('Record leave only on an RLT subtask assigned to your personal Jira account.')
+    elif not (fields.get('issuetype') or {}).get('subtask') or issue_key.startswith('RLT-'):
         raise ValueError('Only non-leave Jira subtasks can receive work here.')
     response = session.get(jira_base(session) + '/rest/api/3/mypermissions', params={
         'issueKey': issue_key, 'permissions': 'BROWSE_PROJECTS,WORK_ON_ISSUES'}, timeout=(10, 25))
@@ -373,7 +380,10 @@ def register_employee_worklog_routes(app, receipt_dir: Path):
         try:
             guard()
             body = request.get_json()
-            session, identity = jira_identity()
+            entry_kind = body.get('entry_kind', 'work')
+            if entry_kind not in ('work', 'leave'):
+                raise ValueError('Choose work or leave recording.')
+            session, identity = personal_identity() if entry_kind == 'leave' else jira_identity()
             if str(body.get('employee', '')).strip().casefold() != identity['displayName'].strip().casefold():
                 raise ValueError('Jira logs work as ' + identity['displayName'] + '. Open that employee’s calendar to continue.')
             minutes = parse_duration(body['duration']) if 'duration' in body else body.get('minutes')
@@ -383,18 +393,19 @@ def register_employee_worklog_routes(app, receipt_dir: Path):
             if not started.tzinfo or started.utcoffset() is None:
                 raise ValueError('A start time with a timezone is required.')
             if started.date() > datetime.now(started.tzinfo).date():
-                raise ValueError('Work cannot be logged on a future date.')
+                raise ValueError('Time cannot be recorded on a future date.')
             comment = str(body.get('comment', '')).strip()
             if not 1 <= len(comment) <= 2000:
                 raise ValueError('Enter a work description of 1–2000 characters.')
             issue_key = str(body.get('issue_key', '')).strip().upper()
-            fields = checked_issue(session, issue_key)
+            fields = (checked_issue(session, issue_key, entry_kind='leave', account_id=identity['accountId'])
+                      if entry_kind == 'leave' else checked_issue(session, issue_key))
             existing_seconds = check_daily_limit(session, issue_key, identity['accountId'], started, minutes)
             review = dict(request_id=uuid.uuid4().hex, issue_key=issue_key, summary=fields.get('summary', ''),
                           account_id=identity['accountId'], author=identity['displayName'], minutes=minutes,
                           duration_label=duration_label(minutes), logged_minutes=existing_seconds/60,
                           total_minutes=(existing_seconds/60)+minutes,
-                          started=started.strftime('%Y-%m-%dT%H:%M:%S.000%z'), comment=comment, personal_data_retrieved_at=time.time())
+                          started=started.strftime('%Y-%m-%dT%H:%M:%S.000%z'), comment=comment, entry_kind=entry_kind, personal_data_retrieved_at=time.time())
             return jsonify(review=review, token=signer().dumps(review))
         except (ValueError, TypeError, requests.RequestException) as exc:
             return failure(exc)
@@ -411,14 +422,16 @@ def register_employee_worklog_routes(app, receipt_dir: Path):
                 review = signer().loads(str(body.get('token', '')), max_age=600)
             except BadData:
                 raise ValueError('The review expired or changed. Review the entry again.')
+            entry_kind = review.get('entry_kind', 'work')
+            session, identity = personal_identity() if entry_kind == 'leave' else jira_identity()
+            if identity['accountId'] != review['account_id']:
+                raise ValueError('The connected Jira author changed. Review again.')
             receipt = receipt_dir / (review['request_id'] + '.json')
             if receipt.exists():
                 result = json.loads(receipt.read_text(encoding='utf-8'))
                 return jsonify(result), 200 if result.get('worklog_id') else 409
-            session, identity = jira_identity()
-            if identity['accountId'] != review['account_id']:
-                raise ValueError('The connected Jira author changed. Review again.')
-            fields = checked_issue(session, review['issue_key'])
+            fields = (checked_issue(session, review['issue_key'], entry_kind='leave', account_id=identity['accountId'])
+                      if entry_kind == 'leave' else checked_issue(session, review['issue_key']))
             check_daily_limit(session, review['issue_key'], identity['accountId'], datetime.fromisoformat(review['started']), review['minutes'])
             # An exclusive file is the durable claim: a timed-out/parallel request never writes twice.
             try:
@@ -455,6 +468,7 @@ def register_employee_worklog_routes(app, receipt_dir: Path):
             except (ValueError, requests.RequestException):
                 pass
             result['worklog'] = dict(issue_id=review['issue_key'], worklog_author=review['author'],
+                project_key='RLT' if entry_kind == 'leave' else review['issue_key'].rsplit('-', 1)[0],
                 worklog_date=review['started'][:10], hours_logged=review['minutes']/60,
                 item_issue_type=(fields.get('issuetype') or {}).get('name', 'Sub-task'),
                 item_summary=fields.get('summary', ''), item_assignee=(fields.get('assignee') or {}).get('displayName', ''))

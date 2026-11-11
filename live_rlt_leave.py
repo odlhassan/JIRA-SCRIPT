@@ -15,7 +15,7 @@ def build_live_rlt_leaves(employee, month, account_id, session=None):
     if not re.fullmatch(r'[A-Za-z0-9:_-]+', str(account_id)):
         raise ValueError('Invalid Jira employee account.')
     session = session or get_session()
-    fields = 'summary,issuetype,assignee,parent,status,created,updated,duedate,timeoriginalestimate,timespent,' + DEFAULT_START_DATE_FIELD + ',' + LEAVE_TYPE_FIELD
+    fields = 'summary,issuetype,assignee,parent,status,created,updated,duedate,timeoriginalestimate,timespent,customfield_10015,' + DEFAULT_START_DATE_FIELD + ',' + LEAVE_TYPE_FIELD
     issues, cursor, seen = {}, None, set()
     for _ in range(200):
         params = dict(jql=f'project = RLT AND assignee = "{account_id}" ORDER BY key ASC', fields=fields, maxResults=100)

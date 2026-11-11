@@ -56,3 +56,9 @@
 
 ## Employee Performance Scoring Note
 - Employee Performance uses weighted normalized Advanced Score factors instead of raw penalty multipliers. RLT unplanned leave hours feed the `Leave Reliability` factor as `100 × (1 − min(1, unplanned_leave_hours / employee_capacity_hours))`, then that factor contributes by its configured weight.
+
+## Availability leave creation and date compatibility
+
+`employee_subtask.py` now supports RLT → existing Task/Story leave tracker → new leave subtask, with personal assignment and Jira Planned/Unplanned Leave classification. The creation and recording UI lives in `employee_subtask_form.js` / `employee_worklog_form.js`; `employee_worklog.py` signs leave recording as a separate kind and rechecks the personal assignee account before writing time. Dates still obey current-month due-date validation and start ≤ due.
+
+Dependencies/data flow: created Jira issue + explicitly confirmed leave worklog → `live_rlt_leave.py` for immediate Availability leave → canonical full fetch → this report and its downstream consumers. `_normalize_subtasks` preserves the configured legacy start field when populated, falling back to `customfield_10015` only when missing. Direct Jira loading requests both; canonical raw issue payloads retain that field. A new estimate without a worklog does not become taken leave. No schema or export column changes.

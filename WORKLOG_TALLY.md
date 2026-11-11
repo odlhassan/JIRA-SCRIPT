@@ -154,3 +154,5 @@ node node_modules/@playwright/test/cli.js test --config tests/employee-availabil
 ## Subtasks created from Availability
 
 Availability’s **New subtask** workflow creates real issues through `employee_subtask.py`, registered by `employee_worklog.py`; it does not create worklogs or write canonical tables. The tally’s dependent files/data flow remain live Jira worklogs plus saved EPR worklogs. A new issue appears in live calendar work figures only after time is logged; its saved EPR issue/worklog rows arrive after full fetch. Original estimates never contribute to worked-hour totals. See [Jira subtask creation](JIRA_SUBTASK_CREATION.md).
+
+The separate RLT creation path can now create and record personal leave under existing tracker Tasks/Stories without an epic. Its confirmed Jira worklog is read by live RLT aggregation, not ordinary subtask worked-hours totals. The tally remains read-only and keeps its existing exclusion explanations; saved EPR rows arrive after full fetch. Dependencies/data flow include `employee_subtask.py` and `employee_worklog.py` for the upstream write, then the unchanged live Jira-versus-snapshot comparison.

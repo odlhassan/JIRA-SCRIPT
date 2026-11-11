@@ -4,6 +4,15 @@ from live_rlt_leave import build_live_rlt_leaves
 
 
 class LiveRltLeaveTests(unittest.TestCase):
+    def test_created_leave_dates_use_current_start_field_and_preserve_legacy_priority(self):
+        from generate_rlt_leave_report import _normalize_subtasks,DEFAULT_START_DATE_FIELD
+        fields={'summary':'Annual leave','issuetype':{'subtask':True},'customfield_10015':'2026-11-10',
+                'duedate':'2026-11-12','customfield_10584':{'value':'Planned Leave'}}
+        rows=_normalize_subtasks([{'key':'RLT-3','fields':fields}],{}, {},DEFAULT_START_DATE_FIELD)
+        self.assertEqual(rows[0].start_date,'2026-11-10')
+        fields[DEFAULT_START_DATE_FIELD]='2026-11-09'
+        self.assertEqual(_normalize_subtasks([{'key':'RLT-3','fields':fields}],{}, {},DEFAULT_START_DATE_FIELD)[0].start_date,'2026-11-09')
+
     def test_leave_uses_assignee_not_worklog_author_and_actual_dates(self):
         session=Mock()
         def get(url,**kwargs):

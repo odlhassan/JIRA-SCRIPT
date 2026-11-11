@@ -14,6 +14,7 @@ from itsdangerous import BadData
 import requests
 
 from jira_calendar_cache import invalidate_issue
+from generate_rlt_leave_report import LEAVE_TYPE_FIELD, DEFAULT_START_DATE_FIELD
 
 
 def month_bounds(identity):
@@ -91,7 +92,7 @@ def register_subtask_routes(app, receipt_dir, *, personal_identity, guard, signe
             return ef, sf
         return ef, None
 
-    def create_fields(session, project):
+    def project_metadata(session, project):
         types = metadata_pages(session, 'issue/createmeta/' + project + '/issuetypes')
         subtasks = [t for t in types if t.get('subtask') is True or t.get('hierarchyLevel') == -1]
         if not subtasks:
@@ -99,8 +100,14 @@ def register_subtask_routes(app, receipt_dir, *, personal_identity, guard, signe
         chosen = next((t for t in subtasks if str(t.get('name', '')).casefold() in ('sub-task', 'subtask')), subtasks[0])
         fields = metadata_pages(session, 'issue/createmeta/' + project + '/issuetypes/' + str(chosen['id']))
         by_id = {f.get('fieldId', f.get('key')): f for f in fields}
+        return chosen, by_id
+
+    def create_fields(session, project):
+        chosen, by_id = project_metadata(session, project)
         starts = [fid for fid, f in by_id.items() if str(f.get('name', '')).strip().casefold() == 'start date'
                   and (f.get('schema') or {}).get('type') == 'date']
+        if project == 'RLT' and DEFAULT_START_DATE_FIELD in by_id:
+            starts = [DEFAULT_START_DATE_FIELD]
         dues = [fid for fid, f in by_id.items() if str(f.get('name', '')).strip().casefold() == 'due date'
                 and (f.get('schema') or {}).get('type') == 'date']
         due_id = 'duedate' if 'duedate' in by_id else dues[0] if len(dues) == 1 else None
@@ -109,6 +116,8 @@ def register_subtask_routes(app, receipt_dir, *, personal_identity, guard, signe
         if missing_fields or not {'summary', 'parent'}.issubset(by_id):
             raise ValueError('This space needs ' + ', '.join(missing_fields or ['Summary and Parent']) + ' on its subtask create screen. Ask its Jira administrator.')
         supported = {'project', 'issuetype', 'summary', 'parent', 'assignee', due_id, 'timetracking', 'description', starts[0]}
+        if project == 'RLT':
+            supported.add(LEAVE_TYPE_FIELD)
         missing = [f.get('name', fid) for fid, f in by_id.items() if f.get('required') and fid not in supported and not f.get('hasDefaultValue')]
         if missing:
             raise ValueError('This space requires additional Jira fields: ' + ', '.join(missing) + '. Create it in Jira or ask its administrator to supply defaults.')
@@ -128,7 +137,9 @@ def register_subtask_routes(app, receipt_dir, *, personal_identity, guard, signe
         return start, due
 
     def validated(session, identity, body):
-        project, epic, story = project_key(body.get('project_key')), issue_key(body.get('epic_key')), issue_key(body.get('story_key'))
+        project, story = project_key(body.get('project_key')), issue_key(body.get('story_key'))
+        leave = project == 'RLT'
+        epic = '' if leave else issue_key(body.get('epic_key'))
         summary = str(body.get('summary', '')).strip()
         description = str(body.get('description', '')).strip()
         if not 1 <= len(summary) <= 255:
@@ -137,8 +148,23 @@ def register_subtask_routes(app, receipt_dir, *, personal_identity, guard, signe
             raise ValueError('Keep the description within 2000 characters.')
         start, due = validate_dates(body, identity)
         estimate = estimate_text(body.get('estimate', '1d'))
-        ef, sf = hierarchy(session, project, epic, story)
+        if leave:
+            sf = read(session, 'issue/' + story, fields='summary,issuetype,project')['fields']
+            st = sf.get('issuetype') or {}
+            if ((sf.get('project') or {}).get('key') != 'RLT' or st.get('subtask') or
+                    st.get('name', '').casefold() not in ('task', 'story', 'user story')):
+                raise ValueError('Choose an existing RLT leave tracker task or story.')
+            ef = {}
+        else:
+            ef, sf = hierarchy(session, project, epic, story)
         type_id, start_id, due_id, fields = create_fields(session, project)
+        leave_option = None
+        if leave:
+            leave_option = next((option for option in (fields.get(LEAVE_TYPE_FIELD) or {}).get('allowedValues', [])
+                                 if str(option.get('id')) == str(body.get('leave_type')) and
+                                 str(option.get('value', '')).casefold() in ('planned leave', 'unplanned leave')), None)
+            if not leave_option:
+                raise ValueError('Choose Planned Leave or Unplanned Leave from this space’s Leave Type field.')
         if description and 'description' not in fields:
             raise ValueError('Description is not enabled on this space’s subtask create screen.')
         permissions = read(session, 'mypermissions', projectKey=project, permissions='BROWSE_PROJECTS,CREATE_ISSUES,ASSIGN_ISSUES,SCHEDULE_ISSUES').get('permissions') or {}
@@ -149,7 +175,8 @@ def register_subtask_routes(app, receipt_dir, *, personal_identity, guard, signe
             raise ValueError('Jira does not allow assigning subtasks to your account in this space.')
         return dict(project_key=project, epic_key=epic, story_key=story, summary=summary, description=description,
                     start_date=start, due_date=due, estimate=estimate, type_id=type_id, start_id=start_id, due_id=due_id,
-                    epic_summary=ef.get('summary', ''), story_summary=sf.get('summary', ''))
+                    epic_summary=ef.get('summary', ''), story_summary=sf.get('summary', ''), flow='leave' if leave else 'work',
+                    leave_type=str(leave_option['id']) if leave_option else '', leave_label=leave_option['value'] if leave_option else '')
 
     @app.get(prefix + '/search')
     def subtask_search():
@@ -159,12 +186,13 @@ def register_subtask_routes(app, receipt_dir, *, personal_identity, guard, signe
             query, cursor = request.args.get('q', '').strip(), request.args.get('cursor', '')
             if len(query) > 100 or len(cursor) > 10000:
                 raise ValueError('Search text or page cursor is too long.')
-            jql = 'issuetype in subTaskIssueTypes() AND project != RLT'
-            if not query:
+            leave = request.args.get('flow') == 'leave'
+            jql = 'issuetype in subTaskIssueTypes() AND ' + ('project = RLT AND assignee = currentUser()' if leave else 'project != RLT')
+            if not query and not leave:
                 jql += ' AND assignee = currentUser()'
-            elif re.fullmatch(r'[A-Za-z][A-Za-z0-9_]*-\d+', query):
+            elif query and re.fullmatch(r'[A-Za-z][A-Za-z0-9_]*-\d+', query):
                 jql += f' AND key = "{query.upper()}"'
-            else:
+            elif query:
                 safe = re.sub(r'[^\w\s-]', ' ', query).strip()
                 if not safe:
                     raise ValueError('Search by a Jira key or words in the title.')
@@ -179,7 +207,7 @@ def register_subtask_routes(app, receipt_dir, *, personal_identity, guard, signe
             items = []
             for item in rows:
                 fields = item.get('fields') or {}
-                if not (fields.get('issuetype') or {}).get('subtask') or item['key'].startswith('RLT-'):
+                if not (fields.get('issuetype') or {}).get('subtask') or item['key'].startswith('RLT-') != leave:
                     continue
                 items.append(dict(issue_key=item['key'], summary=fields.get('summary', ''),
                                   issue_type=(fields.get('issuetype') or {}).get('name', 'Sub-task'),
@@ -201,6 +229,7 @@ def register_subtask_routes(app, receipt_dir, *, personal_identity, guard, signe
             kind, query, cursor = request.args.get('kind', 'projects'), request.args.get('q', '').strip(), request.args.get('cursor', '')
             if len(query) > 100 or len(cursor) > 10000:
                 raise ValueError('Search text or page cursor is too long.')
+            leave_types, configuration_warning = [], ''
             if kind == 'projects':
                 if cursor and (not cursor.isdigit() or len(cursor) > 9):
                     raise ValueError('Invalid space page.')
@@ -218,6 +247,14 @@ def register_subtask_routes(app, receipt_dir, *, personal_identity, guard, signe
                     epic = issue_key(request.args.get('epic_key'))
                     hierarchy(session, project, epic)
                     jql = f'project = "{project}" AND parent = "{epic}" AND issuetype in standardIssueTypes()'
+                elif kind == 'trackers' and project == 'RLT':
+                    jql = 'project = RLT AND issuetype in standardIssueTypes()'
+                    _, fields = project_metadata(session, project)
+                    leave_types = [dict(id=str(option['id']), label=option['value']) for option in
+                                   (fields.get(LEAVE_TYPE_FIELD) or {}).get('allowedValues', [])
+                                   if str(option.get('value', '')).casefold() in ('planned leave', 'unplanned leave')]
+                    if 'timetracking' not in fields:
+                        configuration_warning = 'RLT setup needed: ask a Jira administrator to add Time tracking to the subtask create screen so the original estimate can be saved.'
                 else:
                     raise ValueError('Choose spaces, epics or user stories.')
                 if query:
@@ -240,8 +277,20 @@ def register_subtask_routes(app, receipt_dir, *, personal_identity, guard, signe
                 if next_cursor and next_cursor == cursor:
                     raise ValueError('Jira returned an invalid page cursor.')
                 options = [dict(key=p['key'], summary=p['fields'].get('summary', '')) for p in rows
-                           if kind != 'stories' or p['fields'].get('issuetype', {}).get('name', '').casefold() in ('story', 'user story')]
-            return jsonify(options=options, next_cursor=next_cursor, author=identity.get('displayName', ''), today=today, first=first, last=last)
+                           if kind not in ('stories', 'trackers') or p['fields'].get('issuetype', {}).get('name', '').casefold() in
+                           (('task', 'story', 'user story') if kind == 'trackers' else ('story', 'user story'))]
+            empty_reason = ''
+            if not options and not next_cursor:
+                if query:
+                    empty_reason = 'No matches in this dropdown. Clear its search to see all choices.'
+                elif kind == 'epics':
+                    empty_reason = project + ' has no visible epics. Choose another space or add an epic and user story in Jira.'
+                elif kind == 'stories':
+                    empty_reason = 'This epic has no visible user stories. Choose another epic.'
+                elif kind == 'trackers':
+                    empty_reason = 'No leave tracker tasks or stories are visible in RLT.'
+            return jsonify(options=options, next_cursor=next_cursor, author=identity.get('displayName', ''), today=today, first=first, last=last,
+                           empty_reason=empty_reason, leave_types=leave_types, configuration_warning=configuration_warning)
         except (ValueError, TypeError, KeyError, requests.RequestException) as exc:
             return failure(exc)
 
@@ -289,6 +338,8 @@ def register_subtask_routes(app, receipt_dir, *, personal_identity, guard, signe
             fields[details['due_id']] = details['due_date']
             if details['description']:
                 fields['description'] = {'type': 'doc', 'version': 1, 'content': [{'type': 'paragraph', 'content': [{'type': 'text', 'text': details['description']}]}]}
+            if details['flow'] == 'leave':
+                fields[LEAVE_TYPE_FIELD] = {'id': details['leave_type']}
             pending = dict(error='The creation outcome needs verification in Jira. This request will not be resent.', request_id=review['request_id'])
             try:
                 fd = os.open(receipt, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
@@ -305,17 +356,20 @@ def register_subtask_routes(app, receipt_dir, *, personal_identity, guard, signe
             result = dict(issue_key=new_key, summary=details['summary'], assignee=review['author'],
                           issue_type='Sub-task', parent_issue_key=details['story_key'], start_date=details['start_date'],
                           due_date=details['due_date'], estimate=details['estimate'], verified=False,
+                          flow=details['flow'], leave_type=details['leave_type'],
                           review=dict(account_id=identity['accountId'], personal_data_retrieved_at=time.time()))
             # Persist the returned key before optional verification; never resend an ambiguous POST.
             receipt.write_text(json.dumps(result), encoding='utf-8')
             invalidate_issue(new_key)
             invalidate_issue(details['story_key'])
             try:
-                saved = read(session, 'issue/' + new_key, fields='summary,assignee,parent,issuetype,timetracking,' + details['due_id'] + ',' + details['start_id'])['fields']
+                saved = read(session, 'issue/' + new_key, fields='summary,assignee,parent,issuetype,timetracking,' + details['due_id'] + ',' + details['start_id'] +
+                             (',' + LEAVE_TYPE_FIELD if details['flow'] == 'leave' else ''))['fields']
                 result['verified'] = ((saved.get('assignee') or {}).get('accountId') == identity['accountId'] and
                                       (saved.get('parent') or {}).get('key') == details['story_key'] and
                                       saved.get(details['due_id']) == details['due_date'] and saved.get(details['start_id']) == details['start_date'] and
-                                      (saved.get('timetracking') or {}).get('originalEstimateSeconds', 0) > 0)
+                                      (saved.get('timetracking') or {}).get('originalEstimateSeconds', 0) > 0 and
+                                      (details['flow'] != 'leave' or (saved.get(LEAVE_TYPE_FIELD) or {}).get('id') == details['leave_type']))
                 result['issue_type'] = (saved.get('issuetype') or {}).get('name', 'Sub-task')
                 result['original_estimate_hours'] = (saved.get('timetracking') or {}).get('originalEstimateSeconds', 0) / 3600
             except (ValueError, TypeError, KeyError, requests.RequestException):

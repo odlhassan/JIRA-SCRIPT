@@ -1310,12 +1310,18 @@ def _write_md(output_path: Path, project_key: str, project_name: str, from_date:
         "- Clubbed leave means one subtask represents more than one day (for example logged/estimated hours > 8 or multi-day date span).",
         "",
         "## Data-Quality Notes",
+        "- The configured legacy RLT start field has priority; missing values fall back to Jira Start date (`customfield_10015`).",
         "- Month/week forecasts use Jira date fields only.",
         "- Subtasks without Jira dates are not bucketed into week/month and are reported as data-quality issues.",
         "- Hours are primary; days are derived by date-aware hours/day (Ramadan dates use Ramadan hours/day; other dates use standard hours/day).",
         "",
         "## Employee Performance Scoring Note",
         "- Employee Performance uses weighted normalized Advanced Score factors instead of raw penalty multipliers. RLT unplanned leave hours feed the `Leave Reliability` factor as `100 × (1 − min(1, unplanned_leave_hours / employee_capacity_hours))`, then that factor contributes by its configured weight.",
+        "",
+        "## Availability Leave Creation and Recording",
+        "- My availability → New subtask → RLT selects an existing tracker Task/Story directly, with Planned/Unplanned Leave classification; no epic is required for this separate leave path.",
+        "- Creation/estimates alone do not count as leave taken. Record leave requires personal Jira sign-in, the user's own assigned RLT subtask, review and confirmation. Live Availability updates after Jira read; this report updates after full fetch.",
+        "- Source and dependencies: `employee_subtask.py`, `employee_worklog.py`, `employee_subtask_form.js`, `employee_worklog_form.js`, and `live_rlt_leave.py`; full fields/data flow are documented in `JIRA_SUBTASK_CREATION.md`.",
     ])
     output_path.write_text(text, encoding="utf-8")
 
@@ -1928,7 +1934,7 @@ def _normalize_subtasks(issues: list[dict], task_assignee_by_key: dict[str, str]
         assignee = _to_text((fields.get("assignee") or {}).get("displayName")) or "Unassigned"
         parent_key = _to_text((fields.get("parent") or {}).get("key"))
         parent_assignee = task_assignee_by_key.get(parent_key, "Unassigned")
-        start_date = _to_text(fields.get(start_date_field_id))
+        start_date = _to_text(fields.get(start_date_field_id)) or _to_text(fields.get('customfield_10015'))
         due_date = _to_text(fields.get("duedate"))
         start_date, due_date = normalize_subtask_dates(start_date, due_date, summary)
         estimate_h = _seconds_to_hours(fields.get("timeoriginalestimate"))
@@ -2259,6 +2265,7 @@ def run_report(
         "timespent",
         LEAVE_TYPE_FIELD,
         start_date_field_id,
+        "customfield_10015",
     ]
     if detail_fetch_keys:
         detailed = _fetch_issues_by_keys(session, detail_fetch_keys, detail_fields)

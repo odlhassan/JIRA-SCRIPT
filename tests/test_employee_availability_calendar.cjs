@@ -37,11 +37,15 @@ async function mockSubtaskJira(page){
   });
   return state;
 }
+async function choosePicker(dialog,name,key){
+  await dialog.getByRole('combobox',{name,exact:true}).click();
+  await dialog.getByRole('option',{name:new RegExp('^'+key+'(?: |$)')}).click();
+}
 async function chooseSubtaskHome(page){
   const dialog=page.getByRole('dialog',{name:'Create a new subtask'});
-  await dialog.getByRole('combobox',{name:'Jira space',exact:true}).selectOption('NEW');
-  await dialog.getByRole('combobox',{name:'Epic',exact:true}).selectOption('NEW-1');
-  await dialog.getByRole('combobox',{name:'User story',exact:true}).selectOption('NEW-2');
+  await choosePicker(dialog,'Jira space','NEW');
+  await choosePicker(dialog,'Epic','NEW-1');
+  await choosePicker(dialog,'User story','NEW-2');
   await dialog.getByLabel('Subtask title').fill('Build a friendly search filter');
   return dialog;
 }
@@ -109,19 +113,25 @@ test('subtask creator opens over log form, preserves draft and adds created task
   await expect(page.locator('#worklog-issue')).toHaveValue('NEW-3');
 });
 
-test('live parent choices search and paginate; a changed parent clears descendants',async({page})=>{
+test('live parent dropdown search preserves selections and changing a parent clears descendants',async({page})=>{
   await mockSubtaskJira(page);
   await page.locator('#table tbody tr').first().locator('td').nth(4).click();
   await page.getByRole('button',{name:'New subtask',exact:true}).click();
   const dialog=await chooseSubtaskHome(page);
+  await dialog.getByRole('combobox',{name:'Jira space',exact:true}).click();
   await dialog.locator('[data-more="projects"]').click();
-  await expect(dialog.locator('[name="projects"] option')).toHaveCount(3);
-  await dialog.locator('[name="projects"]').selectOption('MORE');
-  await expect(dialog.locator('[name="stories"]')).toBeDisabled();
-  await expect(dialog.locator('[name="epics"]')).toHaveValue('');
+  await expect(dialog.locator('[data-options="projects"] [role="option"]')).toHaveCount(2);
   await dialog.getByRole('searchbox',{name:'Search jira space',exact:true}).fill('missing');
-  await expect(dialog.locator('[data-hint="projects"]')).toContainText('No matches');
-  await expect(dialog.locator('[name="projects"]')).toBeDisabled();
+  await expect(dialog.locator('[data-menu-status="projects"]')).toContainText('No matches');
+  await expect(dialog.locator('[name="projects"]')).toHaveValue('NEW');
+  await expect(dialog.locator('[name="epics"]')).toHaveValue('NEW-1');
+  await expect(dialog.locator('[name="stories"]')).toHaveValue('NEW-2');
+  await dialog.getByRole('searchbox',{name:'Search jira space',exact:true}).fill('');
+  await dialog.locator('[data-more="projects"]').click();
+  await dialog.getByRole('option',{name:/^MORE /}).click();
+  await expect(dialog.getByRole('combobox',{name:'User story',exact:true})).toBeDisabled();
+  await expect(dialog.locator('[name="epics"]')).toHaveValue('');
+  await expect(dialog.locator('[name="stories"]')).toHaveValue('');
 });
 
 test('uncertain Jira creation is never silently retried and sign-in failures are visible',async({page})=>{
@@ -164,6 +174,132 @@ test('subtask creator explains missing local OAuth setup instead of offering a b
   await page.getByRole('button',{name:'New subtask',exact:true}).click();
   await expect(page.locator('.subtask-dialog [data-status]')).toContainText('needs administrator setup');
   await expect(page.locator('.subtask-dialog a[href="/api/jira-auth/login"]')).toHaveCount(0);
+});
+
+test('picker searches live inside its dropdown and Escape returns to the chosen parent',async({page})=>{
+  await mockSubtaskJira(page);
+  await page.locator('#table tbody tr').first().locator('td').nth(4).click();
+  await page.getByRole('button',{name:'New subtask',exact:true}).click();
+  const dialog=await chooseSubtaskHome(page),space=dialog.getByRole('combobox',{name:'Jira space',exact:true}),search=dialog.getByRole('searchbox',{name:'Search jira space',exact:true});
+  await expect(search).toBeHidden();
+  await space.click();await expect(search).toBeFocused();
+  await expect(dialog.locator('#subtask-projects-menu')).toContainText('Customer delight');
+  await search.fill('NEW');
+  await expect(dialog.locator('[name="epics"]')).toHaveValue('NEW-1');
+  await expect(dialog.locator('[name="stories"]')).toHaveValue('NEW-2');
+  await expect(dialog.locator('[data-options="projects"] [role="option"]')).toHaveCount(1);
+  await search.press('ArrowDown');
+  await expect(dialog.getByRole('option',{name:/^NEW /})).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(search).toBeHidden();await expect(space).toBeFocused();
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole('combobox',{name:'Epic',exact:true}).click();
+  await expect(dialog.getByRole('searchbox',{name:'Search epic',exact:true})).toHaveValue('');
+  await dialog.screenshot({path:'tmp/subtask-search-dropdown-desktop.png'});
+  await page.setViewportSize({width:390,height:844});
+  const menu=dialog.locator('#subtask-epics-menu');
+  await expect.poll(()=>menu.evaluate(el=>el.getBoundingClientRect().right)).toBeLessThanOrEqual(390);
+  await expect.poll(()=>menu.evaluate(el=>el.getBoundingClientRect().left)).toBeGreaterThanOrEqual(0);
+});
+
+test('a space without epics explains the missing hierarchy and never requests user stories',async({page})=>{
+  await mockSubtaskJira(page);let storyReads=0;
+  await page.route('**/worklog/subtask/options?*',route=>{
+    const kind=new URL(route.request().url()).searchParams.get('kind');if(kind==='stories')storyReads++;
+    return route.fulfill({json:{options:kind==='projects'?[{key:'EMPTY',summary:'Space without epics'}]:[],next_cursor:null,author:'Alice',today:'2026-11-11',first:'2026-11-01',last:'2026-11-30'}});
+  });
+  await page.locator('#table tbody tr').first().locator('td').nth(4).click();
+  await page.getByRole('button',{name:'New subtask',exact:true}).click();
+  const dialog=page.locator('.subtask-dialog');await choosePicker(dialog,'Jira space','EMPTY');
+  await expect(dialog.locator('[data-hint="epics"]')).toContainText('EMPTY has no visible epics');
+  await expect(dialog.getByRole('combobox',{name:'User story',exact:true})).toBeDisabled();
+  await expect(dialog.locator('[data-hint="stories"]')).toBeEmpty();expect(storyReads).toBe(0);
+});
+
+test('Enter in dropdown search selects its result without submitting the main form',async({page})=>{
+  const state=await mockSubtaskJira(page);
+  await page.locator('#table tbody tr').first().locator('td').nth(4).click();
+  await page.getByRole('button',{name:'New subtask',exact:true}).click();
+  const dialog=await chooseSubtaskHome(page);
+  await dialog.getByRole('combobox',{name:'Jira space',exact:true}).click();
+  await dialog.getByRole('searchbox',{name:'Search jira space',exact:true}).press('Enter');
+  await expect(dialog.getByRole('searchbox',{name:'Search jira space',exact:true})).toBeHidden();
+  await expect(dialog.locator('[name="stories"]')).toHaveValue('NEW-2');
+  expect(state.reviews).toBe(0);expect(state.writes).toBe(0);
+});
+
+test('late hierarchy results cannot overwrite a different selected space',async({page})=>{
+  await mockSubtaskJira(page);let releaseOld;
+  const waitForOld=new Promise(resolve=>releaseOld=resolve);
+  await page.route('**/worklog/subtask/options?*',async route=>{
+    const params=new URL(route.request().url()).searchParams,kind=params.get('kind'),project=params.get('project_key');
+    if(kind==='epics'&&project==='NEW')await waitForOld;
+    return route.fulfill({json:{options:kind==='projects'?[{key:'NEW',summary:'First space'},{key:'MORE',summary:'Second space'}]:kind==='epics'?[{key:project+'-1',summary:'Epic'}]:[{key:project+'-2',summary:'Story'}],next_cursor:null,author:'Alice',today:'2026-11-11',first:'2026-11-01',last:'2026-11-30'}});
+  });
+  await page.locator('#table tbody tr').first().locator('td').nth(4).click();
+  await page.getByRole('button',{name:'New subtask',exact:true}).click();
+  const dialog=page.locator('.subtask-dialog');await choosePicker(dialog,'Jira space','NEW');
+  await choosePicker(dialog,'Jira space','MORE');await choosePicker(dialog,'Epic','MORE-1');
+  await choosePicker(dialog,'User story','MORE-2');releaseOld();
+  await expect(dialog.locator('[name="epics"]')).toHaveValue('MORE-1');
+  await expect(dialog.locator('[name="stories"]')).toHaveValue('MORE-2');
+  await dialog.getByRole('combobox',{name:'Epic',exact:true}).click();
+  await expect(dialog.getByRole('option',{name:/^MORE-1 /})).toBeVisible();
+  await expect(dialog.getByRole('option',{name:/^NEW-1 /})).toHaveCount(0);
+});
+
+test('RLT uses standalone leave trackers and records leave separately from work',async({page})=>{
+  await mockSubtaskJira(page);const reads=[];let draft,leaveSaved=false;
+  await page.route('**/worklog/subtask/options?*',route=>{
+    const params=new URL(route.request().url()).searchParams,kind=params.get('kind');reads.push(Object.fromEntries(params));
+    return route.fulfill({json:{options:kind==='projects'?[{key:'RLT',summary:'RnD Leave Tracker'}]:[{key:'RLT-1',summary:'Alice leave tracker'}],next_cursor:null,author:'Alice',today:'2026-11-11',first:'2026-11-01',last:'2026-11-30',leave_types:[{id:'planned',label:'Planned Leave'},{id:'unplanned',label:'Unplanned Leave'}]}});
+  });
+  await page.route('**/worklog/subtask/review',route=>{draft=route.request().postDataJSON();return route.fulfill({json:{token:'leave-create-token',review:{...draft,flow:'leave',author:'Alice',leave_label:'Planned Leave',story_summary:'Alice leave tracker'}}})});
+  await page.route('**/worklog/subtask/submit',route=>route.fulfill({json:{issue_key:'RLT-3',summary:draft.summary,assignee:'Alice',issue_type:'Sub-task',parent_issue_key:'RLT-1',flow:'leave',verified:true}}));
+  await page.route('**/worklog/subtask/search?*',route=>route.fulfill({json:{issues:[],next_cursor:null}}));
+  await page.route('**/worklog/review',route=>{const body=route.request().postDataJSON();expect(body.entry_kind).toBe('leave');expect(body.issue_key).toBe('RLT-3');return route.fulfill({json:{token:'leave-log-token',review:{...body,author:'Alice',minutes:480,summary:'Annual leave',duration_label:'8h'}}})});
+  await page.route('**/worklog/submit',route=>{leaveSaved=true;return route.fulfill({json:{worklog_id:'leave-log',verified:true}})});
+  await page.route('**/employee-capacity-utilization/tally?*',route=>route.fulfill({json:{employee:'Alice',month:'2026-11',entries:[],leaves:leaveSaved?[{assignee:'Alice',period_day:'2026-11-11',planned_taken_hours:8,jira_task_ids:'RLT-3'}]:[]}}));
+  await page.locator('#month').fill('2026-11');
+  await page.locator('#table tbody tr').first().locator('td').nth(4).click();
+  await page.getByRole('button',{name:'New subtask',exact:true}).click();
+  const dialog=page.locator('.subtask-dialog');await dialog.getByRole('combobox',{name:'Jira space',exact:true}).click();
+  await dialog.getByRole('searchbox',{name:'Search jira space',exact:true}).fill('RLT');
+  await dialog.getByRole('option',{name:/^RLT /}).click();
+  await expect(dialog.getByRole('combobox',{name:'Epic',exact:true})).toHaveCount(0);
+  await choosePicker(dialog,'Leave tracker','RLT-1');
+  expect(reads.some(read=>read.kind==='epics')).toBe(false);
+  expect(reads.find(read=>read.kind==='trackers').q).toBe('');
+  await dialog.getByLabel('Leave type',{exact:true}).selectOption('planned');
+  await dialog.getByLabel('Leave subtask title').fill('Annual leave');
+  await dialog.getByRole('button',{name:'Review subtask'}).click();
+  await expect(dialog.locator('.subtask-check')).toContainText('Planned Leave');
+  expect(draft.epic_key).toBe('');expect(draft.story_key).toBe('RLT-1');
+  await dialog.getByRole('button',{name:'Create subtask in Jira'}).click();
+  await dialog.getByRole('button',{name:'Record leave on this subtask'}).click();
+  await expect(page.locator('#availability-day-details')).toContainText('Record leave');
+  await expect(page.locator('#worklog-issue')).toHaveValue('RLT-3');
+  await expect(page.locator('#worklog-duration')).toHaveValue('8h');
+  await page.locator('#worklog-comment').fill('Annual leave taken');
+  await page.getByRole('button',{name:'Review leave',exact:true}).click();
+  await expect(page.locator('.worklog-day-total')).toContainText('stays separate from work hours');
+  await page.locator('#worklog-confirm').check();
+  await page.getByRole('button',{name:'Confirm & record leave 8h'}).click();
+  await expect(page.locator('.availability-stat.leave strong')).toHaveText('8h');
+  await expect(page.locator('.availability-stat.work strong')).toHaveText('0h');
+  await expect(page.locator('[data-leave-date="2026-11-11"]')).toContainText('8h');
+});
+
+test('leave recording links restore their RLT issue from live search without submitting',async({page})=>{
+  await mockSubtaskJira(page);let writes=0;
+  await page.route('**/worklog/subtask/search?*',route=>{expect(new URL(route.request().url()).searchParams.get('flow')).toBe('leave');return route.fulfill({json:{issues:[{issue_key:'RLT-1',issue_type:'Sub-task',summary:'Another leave',assignee:'Alice'},{issue_key:'RLT-3',issue_type:'Sub-task',summary:'Annual leave',assignee:'Alice'}],next_cursor:null}})});
+  await page.route('**/worklog/submit',route=>{writes++;return route.fulfill({json:{}})});
+  await page.goto('http://calendar.test/report.html#modal=availability&employee=Alice&month=2026-11&panel=leave&day=2026-11-11&issue=RLT-3');
+  await expect(page.locator('#worklog-issue')).toHaveValue('RLT-3');
+  await expect(page.locator('#availability-day-details')).toContainText('Record leave');
+  await expect(page.locator('#worklog-selection')).toContainText('Annual leave');
+  await page.reload();await expect(page.locator('#worklog-issue')).toHaveValue('RLT-3');
+  expect(writes).toBe(0);
 });
 
 test('tally downloads a PDF for the displayed employee/month and reports failures honestly',async({page})=>{

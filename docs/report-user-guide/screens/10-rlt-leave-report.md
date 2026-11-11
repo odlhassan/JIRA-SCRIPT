@@ -46,3 +46,9 @@ Reads (from `assignee_hours_capacity.db`, scoped to `canonical_refresh_state.las
 | `canonical_refresh_state` | `last_success_run_id` | Selects the active snapshot when no run id is supplied. |
 
 The generator does not write to SQLite.
+
+## Create leave from My availability
+
+**New subtask → RLT** opens the separate leave path: choose an existing RLT Task/Story tracker, Planned/Unplanned Leave, title, dates and estimate, then review and create. An epic is not required for this leave-only path. **Record leave on this subtask** records leave time only after a second explicit review/confirmation; it requires the personal Jira account to be the subtask assignee. Creation alone is planned effort, not leave taken.
+
+Dependent files/data flow: `employee_subtask.py`, `employee_subtask_form.js`, `employee_worklog.py` and `employee_worklog_form.js` create/record in Jira; `live_rlt_leave.py` updates Availability immediately after a complete live read. This saved-data report reflects the issue/worklog after full fetch. Shared normalization reads the existing RLT start field first and falls back to `customfield_10015` when missing; due date, classification and redistribution retain existing rules. Jira must expose Time tracking on the create screen to save the required estimate. No schema changes. See [complete creation/recording guide](../../../JIRA_SUBTASK_CREATION.md).
