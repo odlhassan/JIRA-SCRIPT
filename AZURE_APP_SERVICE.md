@@ -1,5 +1,10 @@
 # Azure App Service Deployment
 
+The deploy staging step copies the canonical root Employee Capacity & Utilization
+shell into `staging/report_html` and verifies byte equality. Its inlined JS/CSS must
+ship together with the server; a read-only package mount must not leave the older
+served HTML copy behind. Verify the deployed modal's freshness status after deployment.
+
 For live calendar Jira failures, run **Diagnose Jira worklog reads** manually in
 GitHub Actions (`.github/workflows/diagnose-jira-worklogs.yml`). The read-only
 `tools/diagnose_azure_worklogs.py` uses the existing publish-profile secret to probe

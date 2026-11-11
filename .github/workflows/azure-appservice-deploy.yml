@@ -87,6 +87,12 @@ jobs:
             --exclude='server.verify.stderr.log' \
             ./ staging/
 
+          # This report inlines its JS/CSS. Package the canonical root shell in
+          # the served directory too; Azure's read-only mount can block promotion.
+          mkdir -p staging/report_html
+          cp staging/employee_capacity_utilization_report.html staging/report_html/employee_capacity_utilization_report.html
+          cmp staging/employee_capacity_utilization_report.html staging/report_html/employee_capacity_utilization_report.html
+
       - name: Vendor Python packages for zip deploy
         run: |
           set -e
