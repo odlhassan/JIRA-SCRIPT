@@ -17,6 +17,27 @@ from jira_privacy import ACCESS_LOCK
 
 OWNER_ACCOUNT_ID = '641adec89796ea0a87185666'
 _lock = ACCESS_LOCK
+
+
+def normalize_game_shortcut(value):
+    if not isinstance(value, str) or len(value) > 32:
+        raise ValueError('Use a shortcut such as Ctrl+G or Ctrl+Shift+G.')
+    parts = [part.strip().upper() for part in value.split('+')]
+    if len(parts) < 2 or not re.fullmatch('[A-Z0-9]', parts[-1]) or len(parts) != len(set(parts)):
+        raise ValueError('Use Ctrl or Alt, optional Shift, and one letter or digit.')
+    modifiers = set(parts[:-1])
+    if not modifiers <= {'CTRL', 'ALT', 'SHIFT'} or not modifiers.intersection({'CTRL', 'ALT'}):
+        raise ValueError('Use Ctrl or Alt, optional Shift, and one letter or digit.')
+    return '+'.join([label for key, label in [('CTRL', 'Ctrl'), ('ALT', 'Alt'), ('SHIFT', 'Shift')] if key in modifiers] + [parts[-1]])
+
+
+def read_game_shortcut(path):
+    try:
+        return normalize_game_shortcut(json.loads(path.read_text(encoding='utf-8'))['shortcut'])
+    except (OSError, ValueError, KeyError, TypeError):
+        return 'Ctrl+G'
+
+
 MEMBER_POSTS = {
     '/api/employee-capacity-utilization/worklog/delete', '/api/employee-capacity-utilization/worklog/edit',
     '/api/employee-capacity-utilization/worklog/review', '/api/employee-capacity-utilization/worklog/submit',
@@ -60,7 +81,7 @@ def member_allowed(path, method, report_files):
     if path.startswith('/api/') or path.startswith('/project-images/'):
         return True
     return path == '/' or path.lstrip('/') in report_files or path in (
-        '/shared-nav.js', '/shared-nav.css', '/shared-date-filter.js', '/product-release-readiness-design.js',
+        '/shared-nav.js', '/shared-nav.css', '/shared-date-filter.js', '/app-shortcuts.js', '/product-release-readiness-design.js',
         '/material-symbols.css') or path.endswith(('.woff', '.woff2'))
 
 
@@ -70,6 +91,7 @@ def register_epr_auth(app, oauth_directory: Path, report_files):
     enabled = bool(os.getenv('WEBSITE_SITE_NAME') or all(config().values()) or os.getenv('EPR_AUTH_ENABLED') == '1')
     app.config['EPR_AUTH_ENABLED'] = enabled
     app.config['EPR_AUTH_DIRECTORY'] = directory
+    app.extensions['epr_game_shortcut'] = lambda: read_game_shortcut(directory / 'game_shortcut.json')
     app.config.setdefault('EPR_SESSION_TTL', 30*86400)
     assets = Path(__file__).parent
 
@@ -136,6 +158,7 @@ def register_epr_auth(app, oauth_directory: Path, report_files):
                     users[account]['personal_data_retrieved_at'] = time.time()
                     save_private(users_file, users)
                 user = {**identity, **users[account], 'csrf_token': saved.get('epr_csrf', ''),
+                        'is_superadmin': account == OWNER_ACCOUNT_ID and users[account]['role'] == 'admin' and users[account]['approved'] and users[account]['active'],
                         'expires_at': min(saved.get('session_expires_at', 0), saved.get('epr_signed_at', 0)+app.config['EPR_SESSION_TTL'])}
             g.epr_identity = user
             return user
@@ -249,6 +272,14 @@ def register_epr_auth(app, oauth_directory: Path, report_files):
     def epr_users_page():
         return send_file(assets / 'epr_users.html')
 
+    @app.get('/epr-superadmin-preferences.js')
+    def superadmin_preferences_asset():
+        return send_file(assets / 'epr-superadmin-preferences.js')
+
+    @app.get('/app-shortcuts.js')
+    def app_shortcuts_asset():
+        return send_file(assets / 'app-shortcuts.js')
+
     def admin_api(function):
         @wraps(function)
         def wrapped(*args, **kwargs):
@@ -257,6 +288,33 @@ def register_epr_auth(app, oauth_directory: Path, report_files):
                 return jsonify(error='Administrator access required.'), 403
             return function(*args, **kwargs)
         return wrapped
+
+    @app.get('/api/game-shortcut')
+    def game_shortcut():
+        # Readable by approved app users; nothing is added to normal menus or help.
+        return jsonify(shortcut=read_game_shortcut(directory / 'game_shortcut.json'))
+
+    @app.route('/api/auth/game-shortcut', methods=['GET', 'PUT'])
+    @admin_api
+    def manage_game_shortcut():
+        if not current_user().get('is_superadmin'):
+            return jsonify(error='Superadmin access required.'), 403
+        path = directory / 'game_shortcut.json'
+        if request.method == 'GET':
+            return jsonify(shortcut=read_game_shortcut(path))
+        body = request.get_json(silent=True)
+        try:
+            value = normalize_game_shortcut(body.get('shortcut') if isinstance(body, dict) else None)
+        except ValueError as exc:
+            return jsonify(error=str(exc)), 400
+        valid_origin = bool(request.headers.get('Origin')) and same_origin()
+        valid_csrf = secrets.compare_digest(request.headers.get('X-EPR-CSRF', ''), current_user().get('csrf_token') or secrets.token_hex(32))
+        if not valid_origin and not valid_csrf:
+            return jsonify(error='Save settings from EPR.'), 403
+        with _lock:
+            save_private(path, {'shortcut': value})
+            audit('application_preference_changed', current_user()['account_id'])
+        return jsonify(shortcut=value)
 
     @app.get('/api/auth/users')
     @admin_api

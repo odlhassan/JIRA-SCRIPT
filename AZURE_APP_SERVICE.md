@@ -1,5 +1,14 @@
 # Azure App Service Deployment
 
+The deployment workflow now uses a persistent maintenance marker to block new app
+requests, drain existing responses and tracked report jobs, then reopen only after
+the new packaged revision initializes. The waiting page hosts an anonymous Chorr
+Police game; it shares the existing instance and uses no new hosting service.
+The first rollout requires a manual workflow dispatch with `bootstrap_maintenance`
+enabled because the old release has no gate. Later pushes must pass the drain
+handshake. Failure/cancellation keeps the app paused. See
+[maintenance operations, recovery and limits](MAINTENANCE_GAME.md).
+
 The deploy staging step copies the canonical root Employee Capacity & Utilization
 shell into `staging/report_html` and verifies byte equality. Its inlined JS/CSS must
 ship together with the server; a read-only package mount must not leave the older
@@ -70,7 +79,7 @@ Inside `startup.txt`, the script prepends `.python_packages/lib/site-packages` t
 
 ```sh
 export PYTHONPATH="$(pwd)/.python_packages/lib/site-packages:${PYTHONPATH:-}"
-exec python -m gunicorn --bind=0.0.0.0:${PORT:-8000} --timeout 600 --workers 1 --access-logfile '-' --error-logfile '-' --capture-output wsgi:app
+exec python -m gunicorn --bind=0.0.0.0:${PORT:-8000} --timeout 600 --workers 1 --threads 8 --access-logfile '-' --error-logfile '-' --capture-output wsgi:app
 ```
 
 Use one worker for production because the app initializes and writes SQLite-backed
@@ -267,6 +276,15 @@ No Azure-only UI fields are added. Relevant production screens are `/settings/ca
 
 ## Dependent & Impacted Files
 
+`maintenance_service.py`, `azure_deploy_maintenance.py`, `maintenance/`,
+`app-shortcuts.js`, `wsgi.py` and `startup.txt` implement the public shell, private
+shortcut, drain and readiness path. The workflow owns the persistent
+`/home/data/deployment-maintenance.json` marker and packages DEPLOYMENT_REVISION.
+Keep one instance/one worker; the room and drain counter are process-local.
+The deployment asset check also requires `maintenance/motion.js`, which the shell
+loads before game.js. It handles display-frame prediction/interpolation without
+adding server processes or raising the regular network heartbeat frequency.
+
 `generate_assignee_hours_report.py`, canonical refresh generators, report HTML outputs, and SQLite-backed settings modules depend on the Azure DB path being persistent and writable. `requirements.txt` is also a production dependency because the workflow vendors it into `.python_packages` for ZIP startup.
 
 ## Table Schema
@@ -275,8 +293,11 @@ Azure does not define new tables directly. It hosts SQLite tables from `assignee
 
 ## Data Flow
 
-1. GitHub Actions deploys tracked code to Azure.
-2. Azure starts `wsgi:app` through `startup.txt`.
+1. GitHub Actions packages tracked code and its revision, enables maintenance and
+   waits for active responses/report jobs before deploying to Azure.
+2. Azure starts the outer maintenance gate in `wsgi:app` through `startup.txt`,
+   then initializes the reporting app behind it. Matching ready revision plus
+   deployment ownership allows the workflow to reopen the app.
 3. Azure runs executable `startup.txt`; the script prepends `.python_packages/lib/site-packages` to `PYTHONPATH` and starts Gunicorn.
 4. `report_server.py` resolves, normalizes, and validates `JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH` and `JIRA_SYNC_DB_PATH`.
 5. Runtime settings and canonical refresh data are read/written in `/home/data/assignee_hours_capacity.db`.

@@ -1,4 +1,11 @@
 ﻿(function () {
+  if (window.location.protocol !== 'file:' && !document.getElementById('epr-app-shortcuts')) {
+    const script = document.createElement('script');
+    script.id = 'epr-app-shortcuts';
+    script.src = '/app-shortcuts.js';
+    document.head.appendChild(script);
+  }
+
   function ensureMaterialSymbolsLoaded() {
     if (document.getElementById("unified-nav-material-symbols")) return;
     const link = document.createElement("link");

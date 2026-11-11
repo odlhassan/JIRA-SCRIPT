@@ -12,6 +12,8 @@ async function fixture(page,role='member',approved=true){
     if(path==='/api/auth/logout')return route.fulfill({json:{ok:true}});
     if(path.startsWith('/api/'))return route.fulfill({json:{}});
     const files={'/login':'epr_login.html','/epr-login.css':'epr-login.css','/epr-login.js':'epr-login.js','/access-pending':'epr_pending.html','/settings/users':'epr_users.html','/shared-nav.js':'shared-nav.js','/shared-nav.css':'shared-nav.css'};
+    files['/app-shortcuts.js']='app-shortcuts.js';
+    files['/epr-superadmin-preferences.js']='epr-superadmin-preferences.js';
     const file=files[path];
     return route.fulfill({body:file?fs.readFileSync(file,'utf8'):'<!doctype html><title>Report</title><link rel="stylesheet" href="/shared-nav.css"><script src="/shared-nav.js"></script>',contentType:path.endsWith('.js')?'text/javascript':path.endsWith('.css')?'text/css':'text/html'});
   });

@@ -34,6 +34,43 @@ The light login experience uses a glass surface, liquid-gradient orb, drifting p
 
 ## Server policy
 
+Deployment maintenance sits outside this authentication layer. While paused, only
+the maintenance shell/assets, game/status APIs and liveness route reach their
+database-free handlers; report/auth mutations receive 503. When reopened, existing
+authentication and authorization apply normally. The game remains intentionally
+anonymous during healthy operation, reachable through a privately shared shortcut.
+There is no game link/hint in ordinary navigation.
+
+The bootstrap owner (`OWNER_ACCOUNT_ID`) has an `is_superadmin` capability only while
+approved, active and Admin. Only this account can manage `/api/auth/game-shortcut`
+and see the preference panel in Users & access. Other Admins and Members receive
+403 from that endpoint. `/api/game-shortcut` is readable by approved app users;
+normal same-origin/CSRF checks protect saves. The preference is an atomically written
+private JSON file, with no new role or SQLite schema. See
+[maintenance and private playground](MAINTENANCE_GAME.md).
+
+### Dependent & Impacted Files — private shortcut
+
+`epr_users.html` loads `epr-superadmin-preferences.js`, which creates its panel only
+after verified identity reports the owner capability. `epr_auth.py` serves
+`app-shortcuts.js`; shared navigation and Seating Planner load that common listener.
+`maintenance_service.py` handles the anonymous room outside the reporting auth gate.
+The game serves the same listener at `/maintenance/app-shortcuts.js`. Its public
+status exposes only the validated, non-secret key via the auth module's read-only
+shortcut callback, so anonymous visitors can use the configured return shortcut.
+Preference writes and application access remain under the existing owner/auth checks.
+
+### Data Flow — private shortcut
+
+Owner identity → owner-only preference endpoint → private
+`epr_access/game_shortcut.json` → approved-user shortcut endpoint → hidden key listener
+→ anonymous playground. Returning to reports repeats ordinary access checks.
+The management API checks role/approval/active status and owner account independently
+of panel visibility; browser visibility does not grant permission.
+On return, the listener checks live availability and restores the local path,
+query and anchor. Report authentication still runs normally. The client caches
+only the last known shortcut in sessionStorage, alongside its anonymous nickname.
+
 `epr_auth.py` protects direct URLs and APIs, independently of menu visibility. Members have report GET/HEAD access except administrative routes. Mutations default to denied, with explicit exceptions for personal worklog review/submit, the two report exports, and capacity calculation. Settings pages and access/audit APIs require Admin, including **Usage Analytics** (`/settings/usage-analytics` and `/api/admin/usage-analytics`, via the `/admin/` rule). `GET /api/my-day` is a normal Member API; a Member always gets their own day and the `employee` parameter is honored only for Admins. New mutations need an intentional policy update. Some existing report controls may remain visible; unauthorized requests receive 403.
 
 The existing opaque HttpOnly, SameSite=Lax cookie is Secure on HTTPS. EPR sessions last up to 30 days and never outlive the Jira session's existing 30-day absolute expiry. Existing sessions less than 30 days old can continue without another eight-hour login. Role/approval are read from private storage on each request. Jira access tokens refresh server-side; refreshes are serialized within the production single worker so concurrent requests do not race rotating credentials. Expiry or an invalid grant removes the affected session rather than other signed-in sessions. Sign-out, disabled access, revoked grants, privacy erasure, browser cookie removal, and the 30-day expiry can still require a fresh sign-in. Atlassian requires the consent prompt when a new authorization flow is started. Mutations require a same-origin Origin header or the server-issued `X-EPR-CSRF` token as well as authentication. Authenticated responses are private/no-store with nosniff and same-origin framing; wildcard CORS is disabled.

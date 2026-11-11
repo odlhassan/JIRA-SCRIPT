@@ -4,6 +4,19 @@
 
 ## Business Logic
 
+- **Private shortcut and availability handoff.** `shared-nav.js` loads
+  `/app-shortcuts.js` once, without adding a menu item or hint. This listens for
+  the owner's saved combination (default Ctrl+G) outside typing controls and opens
+  the same anonymous playground while the app is healthy. The asset also polls
+  `/api/maintenance/status` every 10 seconds and moves open app pages to maintenance
+  with their return destination. Hidden tabs skip polls. Preferences refresh every
+  minute and on visibility; only the bootstrap owner can configure them. Seating
+  Planner loads the small asset independently because it has no sidebar.
+  The playground loads that same listener through its public maintenance asset
+  route. Pressing the combination again returns to the original app URL after a
+  fresh availability check, and ends game polling. Public status supplies the
+  configured key for anonymous players; cached preferences bridge restarts.
+
 - **One column.** Every section is in a single scrolling column 264px wide. Admin Settings no longer opens a second 290px panel. It is a group in the same column, so the sidebar width and the page's left padding never change when a group opens.
 - **Groups (nested menus).** Report categories from `/api/page-categories` (`navigation.reports.categories`) appear as collapsible groups. Admin Settings is a group, and the admin categories (`navigation.admin_settings.categories`) are nested groups inside it. A group header shows an icon, the label, the total page count (including nested groups) and a chevron. Groups without pages are skipped.
 - **Which groups start open.**
@@ -61,6 +74,10 @@ The sidebar reads like a file tree. Top-level reports come first, then categorie
 
 ## Dependent & Impacted Files
 
+- `app-shortcuts.js`, `maintenance_service.py` and `maintenance/` provide the
+  undisclosed key listener, availability API and playground. Owner preferences
+  come from `epr_auth.py`; see `MAINTENANCE_GAME.md` and `EPR_AUTHENTICATION.md`.
+
 - Every report and settings HTML page that loads `/shared-nav.js` and `/shared-nav.css`. These include the root report sources, the generator templates and the inline settings pages in `report_server.py`.
 - The Page Categories API and settings screen (`/api/page-categories`, `/settings/page-categories`) supply the categories and titles.
 - `my_day.html` (`docs/report-user-guide/screens/17-my-day.md`) and `usage_analytics.html` (`docs/capacity-user-guide/screens/09-usage-analytics.md`) are the targets of the pinned My Day link and the Usage Analytics admin item.
@@ -74,6 +91,11 @@ The sidebar reads no SQLite tables directly. It reads the Page Categories tables
 ## Data Flow
 
 1. The page loads `shared-nav.js`.
+   It loads app-shortcuts.js independently of menu rendering. Approved users read
+   `/api/game-shortcut`; key activation opens `/maintenance?return=<local page>`.
+   Maintenance status can redirect open pages without bypassing normal auth on return.
+   The same key in the playground checks current status, dispatches game cleanup
+   and restores that destination. A failed/paused status leaves the game open.
 2. `resolveNavSections()` builds the static sections, then fetches `/api/page-categories` and applies the catalog titles and the category layout.
 3. `/api/auth/me` returns the identity. Anonymous users go to `/login?next=<page>` and pending users to `/access-pending`. Members lose the admin section.
 4. The Usage Analytics admin item is ensured and the pinned My Day item is prepared.

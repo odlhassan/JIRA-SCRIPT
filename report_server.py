@@ -76,6 +76,7 @@ from jira_calendar_cache import calendar_read
 from worklog_tally import build_worklog_tally, tally_pdf
 from employee_worklog import jira_identity, register_employee_worklog_routes
 from epr_auth import register_epr_auth
+from maintenance_service import start_background_job
 from my_day_service import build_my_day, fetch_live_week_worklogs, list_people
 from usage_analytics import USAGE_DB_FILE, register_usage_analytics
 from generate_missed_entries_html import (
@@ -39049,11 +39050,12 @@ def _seating_planner_html() -> str:
   // ── Boot ───────────────────────────────────────────────────────────────────
   load();
   </script>
+  <script src="/app-shortcuts.js"></script>
 </body>
 </html>"""
 
 
-def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
+def create_report_server_app(base_dir: Path, folder_raw: str, *, maintenance: bool = True) -> Flask:
     app = Flask(__name__)
     report_dir = resolve_report_html_dir(base_dir, folder_raw)
     report_dir.mkdir(parents=True, exist_ok=True)
@@ -41910,7 +41912,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 (report_id_text, run_id, now),
             )
             conn.commit()
-        threading.Thread(target=_run_nested_view_async_refresh, args=(run_id,), daemon=True).start()
+        start_background_job(_run_nested_view_async_refresh, args=(run_id,))
         run_row = _report_refresh_get_run(capacity_paths["db_path"], run_id)
         return {"ok": True, "report": report_id_text, "run_id": run_id, "status": "running", "run": _report_refresh_serialize_run(run_row)}, 202
 
@@ -42412,7 +42414,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 except Exception:
                     pass
 
-        threading.Thread(target=_runner, daemon=True).start()
+        start_background_job(_runner)
         run_row = _me_get_run(capacity_paths["db_path"], run_id)
         return {
             "ok": True,
@@ -42812,7 +42814,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 except Exception:
                     pass
 
-        threading.Thread(target=_runner, daemon=True).start()
+        start_background_job(_runner)
         run_row = _canonical_get_run(capacity_paths["db_path"], run_id)
         return {
             "ok": True,
@@ -42868,7 +42870,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 except Exception:
                     pass
 
-        threading.Thread(target=_runner, daemon=True).start()
+        start_background_job(_runner)
         return {
             "ok": True, "phase": "compute", "run_id": compute_run_id,
             "compute_run_id": compute_run_id, "fetch_run_id": source_fetch_run_id,
@@ -42982,7 +42984,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 except Exception:
                     pass
 
-        threading.Thread(target=_runner, daemon=True).start()
+        start_background_job(_runner)
         run_row = _canonical_get_run(capacity_paths["db_path"], run_id)
         return {
             "ok": True,
@@ -43457,7 +43459,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 except Exception:
                     pass
 
-        threading.Thread(target=_runner, daemon=True).start()
+        start_background_job(_runner)
         run_row = _canonical_get_run(capacity_paths["db_path"], run_id)
         return {
             "ok": True,
@@ -43833,8 +43835,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                     prepare_offline_state[job_id]["error"] = str(exc)
                     prepare_offline_state[job_id]["message"] = str(exc)
 
-        thread = threading.Thread(target=run_job, daemon=True)
-        thread.start()
+        start_background_job(run_job)
         return jsonify({"ok": True, "job_id": job_id, "folder_name": folder_name})
 
     @app.route("/api/prepare-offline-html/reports", methods=["GET"])
@@ -43924,7 +43925,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 except Exception:
                     pass
 
-        threading.Thread(target=_runner, daemon=True).start()
+        start_background_job(_runner)
         run_row = _epf_get_run(capacity_paths["db_path"], run_id)
         return {
             "ok": True,
@@ -45933,7 +45934,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                         break
                 current_job = next_job
 
-        threading.Thread(target=_runner_for_scope, args=(job,), daemon=True).start()
+        start_background_job(_runner_for_scope, args=(job,))
 
     @app.route("/api/planned-actual-table-view/summary", methods=["GET"])
     def planned_actual_table_view_summary():
@@ -47039,12 +47040,10 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
                 conn.close()
 
             _dashboard_refresh_runtime_state["active_run_id"] = run_id
-            thread = threading.Thread(
-                target=_run_dashboard_refresh_worker,
+            start_background_job(
+                _run_dashboard_refresh_worker,
                 args=(run_id, mode, completed_steps, base_dir, folder_raw),
-                daemon=True,
             )
-            thread.start()
             return jsonify({"ok": True, "run_id": run_id}), 202
         except Exception as exc:
             return jsonify({"ok": False, "error": str(exc)}), 500
@@ -50374,6 +50373,9 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
             "warning": f"Assignment saved locally only. Jira: {jira_error}",
         }), 207
 
+    if maintenance:
+        from maintenance_service import MaintenanceGateway
+        app.wsgi_app = MaintenanceGateway(app.wsgi_app, base=base_dir, shortcut_reader=app.extensions.get('epr_game_shortcut'))
     return app
 
 

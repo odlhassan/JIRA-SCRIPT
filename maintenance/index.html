@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>A little intermission · EPR</title>
+  <link rel="stylesheet" href="/maintenance/game.css">
+  <script defer src="/maintenance/motion.js"></script>
+  <script defer src="/maintenance/game.js"></script>
+  <script defer src="/maintenance/app-shortcuts.js"></script>
+</head>
+<body data-epr-playground>
+  <div class="availability" role="status"><span class="pulse"></span><span id="deployment">Checking app availability…</span><a id="return" href="/" hidden>Return to app ↗</a></div>
+  <main>
+    <header><a class="brand" href="/maintenance"><span class="brand-mark">e</span> EPR <small>THE INTERMISSION</small></a><span class="live"><i></i><span id="online">0 online</span></span></header>
+    <section class="intro"><div><p class="eyebrow">A LITTLE BREAK. A LITTLE CHASE.</p><h1>Chorr <em>vs.</em> Police<span class="title-dot">.</span></h1><p class="subtitle">We’re getting things ready. In the meantime, the neighbourhood is yours.</p></div><div class="stamp">NO SIGN-IN<br><strong>JUST PLAY</strong><br>WITH EVERYONE HERE</div></section>
+    <section class="playground" aria-label="Multiplayer playground">
+      <div class="field-wrap">
+        <div class="field-bar"><span><span class="field-dot"></span> THE NEIGHBOURHOOD</span><span id="round">ROUND 01</span></div>
+        <canvas id="field" width="1000" height="600" aria-label="Game map. Move with arrow keys, WASD, or the direction buttons." tabindex="0"></canvas>
+        <div id="welcome" class="welcome"><div><span class="mini-badge">A QUICK GAME OF CHASE</span><h2>Got a minute?<br>Make a jailbreak.</h2><p>First in is police. Get close to catch runners.<br>Runners: touch the jail to free your friends.</p><form id="join-form"><label for="name">Your nickname</label><div class="join-row"><input id="name" maxlength="18" autocomplete="off" placeholder="e.g. Sneaky samosa" required><button type="submit" id="join">Enter playground ↗</button></div></form><small>Anonymous · Up to 40 players · No download</small></div></div>
+        <div class="map-key"><span><b class="key-police"></b>Police</span><span><b class="key-runner"></b>Runner</span><span>▥ Jail & rescue point</span></div>
+        <div class="touch-controls" aria-label="Direction controls" hidden><button data-dy="-1" aria-label="Move up">↑</button><div><button data-dx="-1" aria-label="Move left">←</button><button data-dy="1" aria-label="Move down">↓</button><button data-dx="1" aria-label="Move right">→</button></div></div>
+      </div>
+      <aside>
+        <div class="aside-heading"><h2>The line-up</h2><span id="count">0</span></div>
+        <p id="role" class="role">Your next great escape starts here.</p>
+        <div id="players" class="players"><p class="empty">Quiet streets, for now.<br>Be the first to enter.</p></div>
+        <div id="requests" aria-label="Police team requests"></div>
+        <button id="team" class="secondary" hidden>Ask to join police</button>
+        <button id="leave" class="text-button" hidden>Leave playground</button>
+        <div class="rules"><p class="eyebrow">THE STREET RULES</p><p><b>01</b> First to arrive wears the badge.</p><p><b>02</b> Get caught? You go to jail.</p><p><b>03</b> Touch the jail to free your crew.</p><p><b>04</b> Police approve team requests.<br><span>Two badges maximum.</span></p></div>
+      </aside>
+    </section>
+    <div class="below-field"><p id="game-message" role="status">First to join becomes police. Everyone else: run!</p><span class="keyboard">MOVE <kbd>W A S D</kbd> / <kbd>↑ ← ↓ →</kbd></span></div>
+    <p id="error" class="error" role="alert"></p>
+    <footer><span>A small game for the moments in between.</span><span>Built light. Played together.</span></footer>
+  </main>
+  <noscript>This playground needs JavaScript. The app is temporarily unavailable during deployment; please try again shortly.</noscript>
+</body>
+</html>

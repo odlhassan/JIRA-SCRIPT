@@ -1,4 +1,6 @@
 .env
+/.deployment-maintenance.json
+/DEPLOYMENT_REVISION
 # Never commit Azure publish profiles or built deploy zips (contain secrets / huge)
 *.PublishSettings
 azure-staging-deploy.zip

@@ -27,6 +27,10 @@ name: Azure App Service deploy
 on:
   workflow_dispatch:
     inputs:
+      bootstrap_maintenance:
+        description: 'First maintenance rollout only: the old release has no gate yet'
+        type: boolean
+        default: false
       clean_inactive_packages:
         description: 'Delete inactive deployment ZIPs to free storage; keep the active package and all databases'
         type: boolean
@@ -92,6 +96,7 @@ jobs:
           mkdir -p staging/report_html
           cp staging/employee_capacity_utilization_report.html staging/report_html/employee_capacity_utilization_report.html
           cmp staging/employee_capacity_utilization_report.html staging/report_html/employee_capacity_utilization_report.html
+          printf '%s' "$GITHUB_SHA" > staging/DEPLOYMENT_REVISION
 
       - name: Vendor Python packages for zip deploy
         run: |
@@ -115,6 +120,14 @@ jobs:
               "report_server.py",
               "canonical_storage.py",
               "db_journal_mode.py",
+              "maintenance_service.py",
+              "app-shortcuts.js",
+              "epr-superadmin-preferences.js",
+              "maintenance/index.html",
+              "maintenance/game.js",
+              "maintenance/motion.js",
+              "maintenance/game.css",
+              "DEPLOYMENT_REVISION",
               "requirements.txt",
               ".python_packages/lib/site-packages/gunicorn",
               ".python_packages/lib/site-packages/PIL",
@@ -145,6 +158,24 @@ jobs:
           AZURE_PUBLISH_PROFILE: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
         run: python azure_deploy_storage.py
 
+      - name: Enable deployment maintenance
+        id: maintenance_gate
+        env:
+          AZURE_PUBLISH_PROFILE: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+        run: python azure_deploy_maintenance.py enable
+
+      - name: Drain app requests and report jobs
+        env:
+          AZURE_PUBLISH_PROFILE: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+          BOOTSTRAP_MAINTENANCE: ${{ github.event_name == 'workflow_dispatch' && inputs.bootstrap_maintenance }}
+        run: |
+          if [ "$BOOTSTRAP_MAINTENANCE" = "true" ]; then
+            python azure_deploy_maintenance.py drain --bootstrap
+          else
+            python azure_deploy_maintenance.py drain
+          fi
+          python azure_deploy_maintenance.py deploying
+
       - name: Deploy to Azure Web App
         id: azure_deploy
         uses: Azure/webapps-deploy@v3
@@ -152,6 +183,17 @@ jobs:
           app-name: ${{ env.AZURE_WEBAPP_NAME }}
           publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
           package: deploy.zip
+
+      - name: Verify new revision and reopen app
+        env:
+          AZURE_PUBLISH_PROFILE: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+        run: python azure_deploy_maintenance.py reopen
+
+      - name: Keep app paused after deployment failure
+        if: (failure() || cancelled()) && steps.maintenance_gate.outcome == 'success'
+        env:
+          AZURE_PUBLISH_PROFILE: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+        run: python azure_deploy_maintenance.py failed
 
       - name: Diagnose Azure deployment failure
         if: failure() && steps.azure_deploy.outcome == 'failure'

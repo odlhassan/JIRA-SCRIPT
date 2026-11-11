@@ -25,3 +25,17 @@ The **PDF** action builds a print-only vector copy of the seating tables and fit
 ## Zoom Behavior
 
 The canvas uses browser layout zoom where available so text and seat labels remain sharp while zooming out. A transform fallback remains for browsers without layout zoom support.
+
+## Dependent & Impacted Files
+
+The page is rendered by `_seating_planner_html()` in `report_server.py`. It loads
+the common `app-shortcuts.js` availability integration directly because this screen
+does not load the shared sidebar. Operational behavior is described in
+`MAINTENANCE_GAME.md`; no new visible planner controls or data fields are added.
+
+## Data Flow
+
+While the page is open, the common availability listener reads the deployment
+status. A paused app moves the visitor to the intermission with this page as the
+return destination. After deployment, the page reloads under normal access checks.
+Existing seating-plan database reads, saves and exports retain their normal flow.
