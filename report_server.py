@@ -72,6 +72,7 @@ from generate_employee_performance_report import (
 from generate_employee_capacity_utilization_report import build_employee_capacity_utilization_payload
 from employee_capacity_utilization_export import build_employee_capacity_utilization_workbook
 from live_rlt_leave import build_live_rlt_leaves
+from jira_calendar_cache import calendar_read
 from worklog_tally import build_worklog_tally, tally_pdf
 from employee_worklog import jira_identity, register_employee_worklog_routes
 from epr_auth import register_epr_auth
@@ -47691,12 +47692,16 @@ def create_report_server_app(base_dir: Path, folder_raw: str) -> Flask:
     @app.get("/api/employee-capacity-utilization/tally.pdf")
     def employee_worklog_tally_api():
         try:
-            result = build_worklog_tally(capacity_paths["db_path"], request.args.get("employee"), request.args.get("month"))
             if request.path.endswith(".pdf"):
+                result = build_worklog_tally(capacity_paths["db_path"], request.args.get("employee"), request.args.get("month"))
                 filename = "worklog-tally-" + re.sub(r"[^A-Za-z0-9_-]+", "-", result["employee"]).strip("-") + "-" + result["month"] + ".pdf"
                 response = send_file(tally_pdf(result), as_attachment=True, download_name=filename, mimetype="application/pdf")
             else:
-                result['leaves'] = build_live_rlt_leaves(result['employee'], result['month'], result['account_id'])
+                def build_calendar(reader):
+                    result = build_worklog_tally(capacity_paths['db_path'], request.args.get('employee'), request.args.get('month'), session=reader)
+                    result['leaves'] = build_live_rlt_leaves(result['employee'], result['month'], result['account_id'], session=reader)
+                    return result
+                result = calendar_read(capacity_paths['db_path'], request.args.get('employee'), request.args.get('month'), build_calendar, force=request.args.get('check') == '1')
                 response = jsonify(result)
             response.headers["Cache-Control"] = "no-store, private"
             return response

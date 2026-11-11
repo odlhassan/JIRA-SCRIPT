@@ -1,5 +1,9 @@
 # Monthly Jira / EPR worklog tally
 
+The calendar JSON route uses the [shared incremental read cache](JIRA_CALENDAR_CACHE.md).
+PDF exports retain fresh direct reads. Calendar freshness metadata distinguishes an
+unchanged check from a new result and includes Jira request counts for verification.
+
 ## Business Cases
 
 Employees and administrators check whether saved Jira worklogs reached EPR

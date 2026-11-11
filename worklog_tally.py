@@ -97,6 +97,12 @@ def _account(session, employee):
             break
     else:
         raise RuntimeError('Employee lookup was incomplete; no tally was generated.')
+    # Jira's directory also returns portal-only customer profiles with the same
+    # display name. Prefer a unique Atlassian product account; never choose
+    # between two product accounts with identical names.
+    product_accounts = {identifier: user for identifier, user in matches.items() if user.get('accountType') == 'atlassian'}
+    if product_accounts:
+        matches = product_accounts
     if len(matches) != 1:
         raise ValueError('Jira must identify exactly one account with this employee name. Ask an administrator to check the name.')
     return next(iter(matches.values()))

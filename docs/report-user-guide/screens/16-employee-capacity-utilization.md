@@ -98,6 +98,12 @@ ReportLab is a new runtime dependency. No schema changes are involved.
 
 Availability Details has a sticky toolbar containing **Previous month** (left chevron), the displayed month/year, **Next month** (right chevron), and **Manage my logged hours**. The manager is directly accessible from this modal, including when opened through the personal **My availability** option. Its button stays available while scrolling through the calendar and day details.
 
+Calendar reads reuse unchanged Jira worklog pages through a shared server cache.
+**Checked at · No changes** means the current result is unchanged; **Updated at**
+means a new result was loaded. Reopening a recently checked month can reuse that result
+immediately. External changes have Jira's change-feed delay; successful EPR writes
+invalidate the affected task immediately. See [cache behavior](../../../JIRA_CALENDAR_CACHE.md).
+
 For any named employee's calendar, Jira worklogs load automatically, refresh every 60 seconds while
 the modal is open and on returning to the tab. **Refresh Jira worklogs**, marked with a sync icon, reads them
 immediately; the status shows when Jira was last read or explains a failure. When

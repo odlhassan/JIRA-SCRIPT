@@ -1,5 +1,9 @@
 # Live RLT leave in Availability Details
 
+Calendar reads now share the [incremental Jira cache](JIRA_CALENDAR_CACHE.md).
+RLT membership and metadata are rechecked, while unchanged worklog pages are reused;
+classification and date changes still recompute the live daily values.
+
 ## Business cases and explanation
 
 An employee's calendar must distinguish leave from missing worklogs. Namra Zahid's

@@ -4,6 +4,11 @@ Atlassian sign-in now also gates the whole EPR application. New users need Admin
 
 ## Business Cases
 
+The named calendar uses a [shared incremental read cache](JIRA_CALENDAR_CACHE.md).
+Successful worklog create/edit/delete invalidates its affected issue immediately.
+Ordinary checks reuse unchanged pages; write ownership and confirmation checks still
+read Jira directly and never use the reporting cache to authorize a mutation.
+
 Any named employee's Availability calendar reads that employee's Jira worklogs on opening,
 when the displayed month changes, when the tab becomes visible, and every 60 seconds
 while open. **Refresh Jira worklogs** requests an immediate read. The status shows the

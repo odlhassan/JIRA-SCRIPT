@@ -16,6 +16,7 @@ from jira_oauth import oauth_session, register_jira_oauth, same_origin
 from itsdangerous import URLSafeTimedSerializer, BadData
 import requests
 from jira_client import BASE_URL, get_session, get_write_session
+from jira_calendar_cache import invalidate_issue
 
 _submit_lock = threading.Lock()
 
@@ -313,6 +314,7 @@ def register_employee_worklog_routes(app, receipt_dir: Path):
                 payload['comment'] = current['comment']
             response = session.put(url, params={'adjustEstimate': 'leave', 'notifyUsers': 'false'}, json=payload, timeout=(10, 40))
             response.raise_for_status()
+            invalidate_issue(task)
             return jsonify(updated=True, issue_key=task, worklog_id=identifier)
         except (ValueError, TypeError, requests.RequestException) as exc:
             return failure(exc)
@@ -339,6 +341,7 @@ def register_employee_worklog_routes(app, receipt_dir: Path):
             response.raise_for_status()
             if response.status_code != 204:
                 raise ValueError('Jira did not confirm deletion. Check Jira before trying again.')
+            invalidate_issue(task)
             return jsonify(deleted=True, issue_key=task, worklog_id=identifier)
         except (ValueError, TypeError, requests.RequestException) as exc:
             if isinstance(exc, requests.RequestException) and exc.response is not None and exc.response.status_code == 403:
@@ -430,6 +433,7 @@ def register_employee_worklog_routes(app, receipt_dir: Path):
                     'properties': [{'key': 'epr.request', 'value': {'request_id': review['request_id']}}],
                 })
             response.raise_for_status()
+            invalidate_issue(review['issue_key'])
             worklog = response.json()
             if not worklog.get('id'):
                 raise ValueError(pending['error'])

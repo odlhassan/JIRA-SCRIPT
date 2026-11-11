@@ -5,12 +5,12 @@ from pathlib import Path
 import sqlite3
 import tempfile
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, patch, ANY
 
 from pypdf import PdfReader
 import requests
 
-from worklog_tally import _get, _live_entries, _snapshot, build_worklog_tally, month_bounds, reconcile, tally_pdf
+from worklog_tally import _get, _account, _live_entries, _snapshot, build_worklog_tally, month_bounds, reconcile, tally_pdf
 
 
 def entry(identifier, day='2026-10-26', seconds=3600, task='APP-1', kind='Sub-task'):
@@ -23,6 +23,10 @@ def snapshot(entries):
 
 
 class WorklogTallyTests(unittest.TestCase):
+    def test_product_account_distinguished_from_same_name_portal_customer(self):
+        session=Mock();session.get.return_value.status_code=200
+        session.get.return_value.json.return_value=[{'accountId':'owner','displayName':'Hassan Malik','accountType':'atlassian'}, {'accountId':'portal','displayName':'hassan malik','accountType':'customer'}]
+        self.assertEqual(_account(session,'Hassan Malik')['accountId'],'owner')
     def test_transient_reads_retry_without_changing_worklogs(self):
         session=Mock()
         unavailable=Mock(status_code=503,headers={})
@@ -167,12 +171,15 @@ class WorklogTallyTests(unittest.TestCase):
                 self.assertIn('worklog-tally-Alice-2026-10.pdf',response.headers['Content-Disposition'])
                 build.assert_called_once_with(root/'assignee_hours_capacity.db','Alice','2026-10')
             leave_rows=[{'assignee':'Alice','period_day':'2026-10-19','planned_taken_hours':8}]
-            with patch('report_server.build_worklog_tally',return_value=result), patch('report_server.build_live_rlt_leaves',return_value=leave_rows) as leave:
+            from jira_calendar_cache import STORES
+            STORES.clear()
+            with patch('jira_calendar_cache.get_session',return_value=Mock(headers={})), patch('report_server.build_worklog_tally',return_value=result), patch('report_server.build_live_rlt_leaves',return_value=leave_rows) as leave:
                 response=client.get('/api/employee-capacity-utilization/tally?employee=Alice&month=2026-10')
                 self.assertEqual(response.status_code,200)
                 self.assertEqual(response.json['leaves'],leave_rows)
-                leave.assert_called_once_with('Alice','2026-10','alice')
-            with patch('report_server.build_worklog_tally',return_value=result), patch('report_server.build_live_rlt_leaves',side_effect=RuntimeError('RLT read incomplete')):
+                leave.assert_called_once_with('Alice','2026-10','alice',session=ANY)
+            STORES.clear()
+            with patch('jira_calendar_cache.get_session',return_value=Mock(headers={})), patch('report_server.build_worklog_tally',return_value=result), patch('report_server.build_live_rlt_leaves',side_effect=RuntimeError('RLT read incomplete')):
                 response=client.get('/api/employee-capacity-utilization/tally?employee=Alice&month=2026-10')
                 self.assertEqual(response.status_code,409)
                 self.assertNotIn('leaves',response.json)

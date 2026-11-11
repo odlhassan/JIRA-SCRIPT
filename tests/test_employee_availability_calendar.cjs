@@ -278,6 +278,19 @@ test('calendar reconciles complete live month including deletions and preserves 
   await expect(page.locator('.availability-live-status')).toContainText('could not be refreshed');
   await expect(page.locator('[data-calendar-date="2026-10-05"]')).toContainText('0h logged');
 });
+test('unchanged checks preserve selected day details and show checked status',async({page})=>{
+  let reads=0;
+  await page.route('**/employee-capacity-utilization/tally?*',route=>{
+    reads++;
+    return route.fulfill({json:{employee:'Alice',month:'2026-10',leaves:[],entries:[{jira:{issue_key:'APP-1',issue_type:'Sub-task',worklog_id:'1',date:'2026-10-05',seconds:3600}}],sync:{mode:reads===1?'updated':'unchanged',checked_at:'2026-11-11T06:00:00Z'}}});
+  });
+  await page.locator('#table tbody tr').first().locator('td').nth(4).click();
+  await expect(page.locator('.availability-live-status')).toContainText('Updated at');
+  await page.locator('[data-work-date="2026-10-05"]').click();
+  await page.getByRole('button',{name:'Refresh Jira worklogs',exact:true}).click();
+  await expect(page.locator('.availability-live-status')).toContainText('No changes');
+  await expect(page.locator('#availability-day-details')).toContainText('1h logged');
+});
 test('live RLT leave replaces stale zero leave and reduces available capacity',async({page})=>{
   await page.route('**/employee-capacity-utilization/tally?*',route=>route.fulfill({json:{employee:'Alice',month:'2026-10',entries:[],leaves:[19,20,21,22].map(day=>({assignee:'Alice',period_day:'2026-10-'+day,planned_taken_hours:8,unplanned_taken_hours:0,jira_task_ids:'RLT-'+day}))}}));
   await page.locator('#table tbody tr').first().locator('td').nth(4).click();

@@ -229,13 +229,14 @@ function wireAvailabilityCalendar(label){
  const refresh=document.createElement('button');refresh.type='button';refresh.className='availability-refresh';refresh.innerHTML=availabilityIcon('sync')+'<span>Refresh Jira worklogs</span>';
  body.querySelector('.availability-toolbar').after(status);body.querySelector('.availability-actions').prepend(refresh);
  let running=false;
- async function refreshLive(){
+ async function refreshLive(force=false){
   if(running||!status.isConnected||document.hidden||!document.querySelector('#ecu-drawer')?.classList.contains('open')||body.querySelector('#calendar-worklog-form')||document.querySelector('.wl-manager'))return;
   if(label==='Grand Total'){status.textContent='Combined availability uses saved report data. Open an employee to see live Jira worklogs.';return}
   running=true;refresh.disabled=true;progress.hidden=false;body.querySelector('.availability-calendar-scroll')?.setAttribute('aria-busy','true');status.textContent='Loading Jira worklogs and RLT leave for '+period+'…';
   if(!availabilityLive||availabilityLive.label!==label||availabilityLive.month!==period){body.querySelector('.availability-stat.leave strong').textContent='Checking RLT…';body.querySelector('.availability-stat:not(.work):not(.leave) strong').textContent='Checking RLT…'}
   try{
    const params=new URLSearchParams({employee:label,month:period});
+   if(force===true)params.set('check','1');
    let result;
    for(let attempt=0;attempt<2;attempt++){
     try{
@@ -258,6 +259,10 @@ function wireAvailabilityCalendar(label){
     rows.push({issue_id:entry.issue_key,item_issue_type:entry.issue_type,item_summary:entry.summary,worklog_author:label,worklog_date:entry.date,hours_logged:Number(entry.seconds)/3600,worklog_id:entry.worklog_id});
    }
    if(generation!==availabilityGeneration||!status.isConnected||period!==month.value||!document.querySelector('#ecu-drawer')?.classList.contains('open'))return;
+   const checked=result.sync?.checked_at?new Date(result.sync.checked_at).toLocaleTimeString():new Date().toLocaleTimeString();
+   if(availabilityLive?.label===label&&availabilityLive?.month===period&&['cached','unchanged'].includes(result.sync?.mode)){
+    status.textContent='Jira worklogs and RLT leave · Checked at '+checked+' · No changes.';return;
+   }
    const selected=body.querySelector('.availability-day.selected')?.dataset.calendarDate;
    availabilityLive={label,month:period,rows,leaves:result.leaves};
    calendar=availabilityDays(label);
@@ -266,11 +271,11 @@ function wireAvailabilityCalendar(label){
    for(const selector of ['.availability-stat.work strong','.availability-stat.leave strong','.availability-stat:not(.work):not(.leave) strong'])body.querySelector(selector).textContent=temp.querySelector(selector).textContent;
    wireDays();
    if(selected){const chosen=body.querySelector(`[data-work-date="${selected}"]`);if(chosen)chosen.click();else{const detail=body.querySelector('#availability-day-details');if(detail)detail.textContent='Jira worklogs updated. Select a day to see its details.'}}
-   status.textContent='Jira worklogs and RLT leave · Updated at '+new Date().toLocaleTimeString()+'. Capacity uses the configured report profile.';
+   status.textContent='Jira worklogs and RLT leave · '+(result.sync?.mode==='cached'?'Checked at ':'Updated at ')+checked+'. Capacity uses the configured report profile.';
   }catch(error){if(generation===availabilityGeneration){status.textContent='Jira worklogs and RLT leave could not be refreshed. '+(availabilityLive?.label===label&&availabilityLive?.month===period?'Showing the last successful live read. ':'Live leave and availability are unavailable. ')+error.message;if(!availabilityLive||availabilityLive.label!==label||availabilityLive.month!==period){body.querySelector('.availability-stat.leave strong').textContent='Unavailable';body.querySelector('.availability-stat:not(.work):not(.leave) strong').textContent='Unavailable'}}}
   finally{running=false;progress.hidden=true;if(refresh.isConnected){refresh.disabled=false;body.querySelector('.availability-calendar-scroll')?.removeAttribute('aria-busy')}}
  }
- refresh.addEventListener('click',refreshLive);
+ refresh.addEventListener('click',()=>refreshLive(true));
  availabilityTimer=setInterval(()=>{if(!status.isConnected||!document.querySelector('#ecu-drawer')?.classList.contains('open')){clearInterval(availabilityTimer);availabilityEvents?.abort();availabilityGeneration++;return}refreshLive()},60000);
  document.addEventListener('visibilitychange',()=>{if(generation===availabilityGeneration&&!document.hidden)refreshLive()},{signal:availabilityEvents.signal});
  document.addEventListener('epr-worklog-changed',()=>refreshLive(),{signal:availabilityEvents.signal});
