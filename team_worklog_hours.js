@@ -3,7 +3,8 @@ let matrixExportRows=[];
 function render(){
  if(!month.value)return;
  updateScopeExplanation();updateFilterSummary();
- const range=days(), calendar=capacityCalendar(activeProfile(),range);
+ const range=days(), calendar=capacityCalendar(activeProfile(),range), todayDate=new Date();
+ const today=`${todayDate.getFullYear()}-${String(todayDate.getMonth()+1).padStart(2,'0')}-${String(todayDate.getDate()).padStart(2,'0')}`;
  const names=new Set([...Object.keys(resources),...issues.map(x=>x.assignee),...allWorklogs.map(x=>x.worklog_author||x.issue_assignee),...leaves.map(x=>x.assignee)].map(key));
  const rows=[];
  for(const nk of names){
@@ -21,9 +22,22 @@ function render(){
  rows.sort((a,b)=>a.label.localeCompare(b.label));
  const fmt=value=>value.toFixed(2);
  matrixExportRows=[['Employee',...calendar.flatMap(d=>[d.date+' logged hours',d.date+' RLT leave hours']),'Total logged hours'],...rows.map(row=>[row.label,...row.dayValues.flatMap(v=>[v.work,v.leave]),row.total])];
- const header=calendar.map(d=>`<th title="${esc(d.type)}">${esc(d.date.slice(8))}<small>${esc(d.type)}</small></th>`).join('');
- const htmlRows=rows.map(row=>`<tr><td class="employee">${esc(row.label)}${supportToggle.checked&&support.has(key(row.label))?'<span class="support">Support</span>':''}</td>${row.dayValues.map((v,i)=>`<td class="matrix-day ${v.work?'has-hours':'no-hours'}" title="${esc(calendar[i].date)}: ${fmt(v.work)} logged hours; ${fmt(v.leave)} RLT leave hours"><span>${fmt(v.work)}h</span>${v.leave?`<small>Leave ${fmt(v.leave)}h</small>`:''}</td>`).join('')}<td class="num">${fmt(row.total)}h</td></tr>`).join('');
+ const header=calendar.map(d=>`<th class="${d.type==='Weekend'?'weekend':''} ${d.date===today?'today':''}" title="${esc(d.type)}${d.date===today?' · Today':''}">${esc(d.date.slice(8))}<small>${d.date===today?'Today · ':''}${esc(d.type)}</small></th>`).join('');
+ const htmlRows=rows.map(row=>`<tr><td class="employee">${esc(row.label)}${supportToggle.checked&&support.has(key(row.label))?'<span class="support">Support</span>':''}</td>${row.dayValues.map((v,i)=>`<td data-date="${esc(calendar[i].date)}" class="matrix-day ${v.work?'has-hours':'no-hours'} ${calendar[i].type==='Weekend'?'weekend':''} ${calendar[i].date===today?'today':''}" title="${esc(calendar[i].date)}: ${fmt(v.work)} logged hours; ${fmt(v.leave)} RLT leave hours"><span>${fmt(v.work)}h</span>${v.leave?`<small>Leave ${fmt(v.leave)}h</small>`:''}</td>`).join('')}<td class="num">${fmt(row.total)}h</td></tr>`).join('');
  table.innerHTML=rows.length?`<table class="matrix"><thead><tr><th>Employee</th>${header}<th>Total</th></tr></thead><tbody>${htmlRows}</tbody></table>`:'<div class="empty">No employees match the selected filters.</div>';
+ // Every cell opens the same employee availability drawer as the capacity report.
+ table.querySelectorAll('tbody tr').forEach((row,index)=>{
+  const label=rows[index].label;
+  row.querySelectorAll('td').forEach(cell=>{
+   cell.tabIndex=0;cell.setAttribute('role','button');
+   const date=cell.dataset.date;
+   cell.setAttribute('aria-label',date?`Open log work for ${label} on ${date}`:`Open availability for ${label}`);
+   cell.title=(cell.title?cell.title+' · ':'')+(date?'Click to log work for '+label+' on '+date:'Click to open availability for '+label);
+   const open=()=>{window.openEcuDrawer(label,'availability',cell);if(date)openCalendarWorklog(label,date)};
+   cell.addEventListener('click',open);
+   cell.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();open()}});
+  });
+ });
  statusEl.textContent=`${rows.length} employees · ${loggedHoursScope().label.toLowerCase()} · filters apply automatically`;
  statusEl.className='status';snapshot.textContent=data.generated_at?`Canonical snapshot ${data.canonical_run_id||''} · ${new Date(data.generated_at).toLocaleString()}`:'';
 }

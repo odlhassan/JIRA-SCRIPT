@@ -188,3 +188,5 @@ Dependent files/data flow: `employee_subtask_form.js` / `.css` provide top-layer
 ### Related team worklog matrix
 
 [Team Worklog Hours](19-team-worklog-hours.md) reuses this report’s canonical data endpoint and workforce filters to show employee-by-date logged and RLT leave hours.
+
+Use the **Team Worklog Hours** button in the report header to open the employee-by-date matrix. The matrix also opens this same availability drawer from an employee’s row, including its live refresh and shareable link.

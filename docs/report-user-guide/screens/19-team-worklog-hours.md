@@ -26,3 +26,11 @@ No new tables or schema changes. The shared canonical payload reads existing Jir
 
 ## Data Flow
 The browser requests `/api/employee-capacity-utilization/data`; the server builds the existing canonical payload. The matrix groups filtered worklogs by author and date, combines matching daily leave totals, and renders all dates. Excel posts the displayed matrix to `/api/team-worklog-hours/export`, which creates a workbook and escapes spreadsheet formula-like text.
+
+Weekend column headers and cells are shaded grey regardless of whether hours were logged; work and leave values remain visible. Open this report from the Team Worklog Hours button on Employee Capacity & Utilization.
+
+When the selected month contains the viewer’s current local date, its header is labeled Today and the column is outlined in blue. Weekend cells keep their grey fill. Other months have no Today highlight.
+
+Hover over any cell in an employee row for the availability hint, then click it (or focus it and press Enter or Space) to open the same availability drawer as Employee Capacity & Utilization. The drawer supports month navigation, a shareable link, live Jira worklog and RLT leave refresh, and the existing subtask and personal-worklog actions. Jira permissions and sign-in continue to govern those actions.
+
+Selecting a date cell opens the availability drawer with **Log work** already active for that employee and date; the shareable link restores that selection. Selecting the employee name or monthly total opens the general availability drawer. Logging still requires the existing Jira sign-in and identity permissions, and no work is submitted automatically.
