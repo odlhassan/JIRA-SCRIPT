@@ -105,3 +105,39 @@ test('filter changes immediately update the shareable URL and restore on reload'
  const shared=page.url();await page.goto(shared);await expect(page.locator('#month')).toHaveValue('2026-10');await expect(page.locator('#profile')).toHaveValue('0');await expect(page.locator('#scope')).toHaveValue('assigned');await expect(page.locator('#include-leaves-logged')).toBeChecked();await expect(page.locator('#resigned')).toBeChecked();await expect(page.locator('#support')).not.toBeChecked();await expect(page.locator('#teams input[value="Process Team"]')).toBeChecked();await expect(page.locator('#employee-search')).toHaveValue('Alice');
  await page.locator('#profile').selectOption('');params=new URLSearchParams(new URL(page.url()).hash.slice(1));expect(params.has('profile')).toBe(false);
 });
+
+test('three rolling worklog requests finish before leaves and preserve other rows',async({page})=>{
+ await page.clock.setFixedTime(new Date('2026-10-05T10:00:00+05:00'));
+ const names=['Alice','Bob','Carol','Dave','Eve'],pending=new Map(),requested=[],leaveStarted=[];let inFlight=0,peak=0,settled=0;
+ await page.route('**/*',route=>{const u=new URL(route.request().url()),path=u.pathname;
+  if(path==='/api/employee-capacity-utilization/data')return route.fulfill({json:{...payload,resources:Object.fromEntries(names.map(name=>[name,{}]))}});
+  if(path==='/team_worklog_hours_report.html')return route.fulfill({contentType:'text/html',body:html});
+  if(path==='/api/team-worklog-hours/live'){const name=u.searchParams.get('employee'),kind=u.searchParams.get('kind');
+   if(kind==='worklogs'){inFlight++;peak=Math.max(peak,inFlight);requested.push(name);pending.set(name,route);return;}
+   leaveStarted.push(name);expect(settled).toBe(5);return route.fulfill({json:{employee:name,month:'2026-10',kind,values:[],checked_at:'2026-10-05T10:00:00Z'}});
+  }return route.fulfill({status:404,body:''});
+ });
+ await page.goto('http://example.test/team_worklog_hours_report.html');await expect.poll(()=>requested.length).toBe(3);expect(leaveStarted).toHaveLength(0);
+ await page.evaluate(()=>{window.originalBob=[...document.querySelectorAll('#table tbody tr')].find(row=>row.firstElementChild.firstChild.textContent==='Bob')});
+ async function finish(name,fail=false){inFlight--;settled++;const route=pending.get(name);await route.fulfill(fail?{status:502,json:{error:'Unavailable'}}:{json:{employee:name,month:'2026-10',kind:'worklogs',values:[],checked_at:'2026-10-05T10:00:00Z'}});}
+ await finish('Alice');await expect.poll(()=>requested.length).toBe(4);expect(leaveStarted).toHaveLength(0);
+ expect(await page.evaluate(()=>window.originalBob.isConnected)).toBe(true);
+ await finish('Dave',true);await expect.poll(()=>requested.length).toBe(5);expect(leaveStarted).toHaveLength(0);
+ await finish('Bob');await finish('Carol');expect(leaveStarted).toHaveLength(0);await finish('Eve');
+ await expect.poll(()=>leaveStarted.length).toBe(5);expect(peak).toBe(3);
+ await expect(page.locator('.matrix-progress')).toContainText('Hours: 5/5 checked');await expect(page.locator('.matrix-progress')).toContainText('Leaves: 5/5 checked');await expect(page.locator('.matrix-progress')).toContainText('1 failed');await expect(page.locator('#status')).toContainText('5 employees');
+});
+
+test('busy live reads retry and recover without replacing snapshot values on the throttle',async({page})=>{
+ let attempts=0;
+ await page.route('**/*',route=>{const u=new URL(route.request().url());
+  if(u.pathname==='/api/employee-capacity-utilization/data')return route.fulfill({json:{...payload,resources:{Alice:{}}}});
+  if(u.pathname==='/team_worklog_hours_report.html')return route.fulfill({contentType:'text/html',body:html});
+  if(u.pathname==='/api/team-worklog-hours/live'){const kind=u.searchParams.get('kind');
+   if(kind==='worklogs'&&++attempts===1)return route.fulfill({status:429,headers:{'Retry-After':'0'},json:{error:'Busy'}});
+   return route.fulfill({json:{employee:'Alice',month:u.searchParams.get('month'),kind,values:[],checked_at:'2026-10-05T10:00:00Z'}});
+  }return route.fulfill({status:404,body:''});
+ });
+ await page.goto('http://example.test/team_worklog_hours_report.html');
+ await expect(page.locator('.matrix-live-status')).toContainText('Work: live');await expect(page.locator('.matrix-live-status')).toContainText('Leave: live');expect(attempts).toBe(2);await expect(page.locator('.matrix-progress')).not.toContainText('failed');
+});

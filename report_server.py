@@ -47680,7 +47680,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str, *, maintenance: bo
     @app.get("/api/team-worklog-hours/live")
     def team_worklog_hours_live_api():
         if not LIVE_READ_SLOTS.acquire(blocking=False):
-            return jsonify(error="Live updates are busy. Retry shortly."), 429
+            return jsonify(error="Live updates are busy. Retry shortly."), 429, {"Retry-After": "2"}
         try:
             result = read_team_worklog_live(capacity_paths['db_path'], request.args.get('employee'), request.args.get('month'), request.args.get('kind'))
             response = jsonify(result)

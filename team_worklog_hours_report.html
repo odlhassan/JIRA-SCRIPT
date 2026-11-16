@@ -786,12 +786,24 @@ function overlap(a,b,r){return txt(a)&&txt(b)&&txt(a)<=r.to&&txt(b)>=r.from}
 function teamAllows(nk){const memberships=teams.filter(t=>(t.assignees||[]).some(name=>key(name)===nk));return !memberships.length||memberships.some(t=>team.querySelector(`input[value="${CSS.escape(t.team_name)}"]`)?.checked)}
 /* The matrix shares the capacity report's filters and canonical data. */
 let matrixExportRows=[];
-let liveMonth='',liveStates=new Map(),liveQueue=[],liveRunning=false,liveEpoch=0,liveAbort=null,liveVisible=new Set();
+const LIVE_CONCURRENCY=3;
+let liveMonth='',liveStates=new Map(),liveQueue=[],liveEpoch=0,liveActive=new Set(),liveVisible=new Set(),matrixElements=new Map(),matrixExportIndexes=new Map();
 const liveRefreshButton=document.createElement('button');
 liveRefreshButton.type='button';liveRefreshButton.className='matrix-refresh';liveRefreshButton.textContent='Refresh live hours and leave';
-document.querySelector('.meta').append(liveRefreshButton);
+const liveProgress=document.createElement('span');liveProgress.className='matrix-progress';liveProgress.setAttribute('role','status');
+document.querySelector('.meta').append(liveProgress,liveRefreshButton);
+function cancelLiveQueue(){
+ liveEpoch++;for(const controller of liveActive)controller.abort();liveActive=new Set();liveQueue=[];
+}
 function resetLiveUpdates(){
- liveEpoch++;liveAbort?.abort();liveAbort=null;liveQueue=[];liveRunning=false;liveStates=new Map();liveMonth=month.value;
+ cancelLiveQueue();liveStates=new Map();liveMonth=month.value;
+}
+function updateLiveProgress(){
+ const states=[...liveVisible].map(name=>liveState(name));
+ const finished=kind=>states.filter(state=>['live','error'].includes(state[kind].status)).length;
+ const failed=kind=>states.filter(state=>state[kind].status==='error').length;
+ const work=finished('worklogs'),leave=finished('leave'),errors=failed('worklogs')+failed('leave');
+ liveProgress.textContent=`Hours: ${work}/${states.length} checked · Leaves: ${work<states.length?'waiting':leave+'/'+states.length+' checked'}${errors?' · '+errors+' failed':''}`;
 }
 function liveState(name){
  if(!liveStates.has(name))liveStates.set(name,{worklogs:{status:'new'},leave:{status:'new'}});
@@ -807,30 +819,49 @@ function queueLiveUpdates(rows){
    state[kind].status='queued';liveQueue.push({name:row.label,nk,kind,epoch:liveEpoch});
   }
  }
- if(!liveRunning&&liveQueue.length){liveRunning=true;setTimeout(runLiveQueue,0)}
+ updateLiveProgress();setTimeout(pumpLiveQueue,0);
 }
-async function runLiveQueue(){
- const epoch=liveEpoch;
- while(epoch===liveEpoch&&liveQueue.length){
-  const task=liveQueue.shift(),state=liveStates.get(task.nk)?.[task.kind];
-  if(!state)continue;
-  if(!liveVisible.has(task.nk)){state.status='new';continue}
-  state.status='loading';render();
-  const controller=new AbortController();liveAbort=controller;
-  try{
-   const params=new URLSearchParams({employee:task.name,month:liveMonth,kind:task.kind});
-   const response=await fetch('/api/team-worklog-hours/live?'+params,{cache:'no-store',signal:controller.signal});
-   const result=await response.json();
-   if(!response.ok)throw new Error(result.error||'Update failed');
-   if(!Array.isArray(result.values)||key(result.employee)!==task.nk||result.month!==liveMonth||result.kind!==task.kind||!result.checked_at)throw new Error('Incomplete Jira response');
-   if(task.kind==='worklogs'&&result.values.some(x=>!x.issue_key||!x.issue_type||typeof x.assigned_to_author!=='boolean'||!Number.isFinite(x.seconds)||x.seconds<0||!/^\d{4}-\d{2}-\d{2}$/.test(x.date)))throw new Error('Incomplete Jira worklog data');
-   if(epoch!==liveEpoch)return;
-   state.values=result.values;state.checkedAt=result.checked_at;state.status='live';state.error='';
-  }catch(error){if(epoch!==liveEpoch)return;state.status='error';state.error=error.message||'Update failed'}
-  finally{if(epoch===liveEpoch)liveAbort=null}
-  if(epoch===liveEpoch)render();
+function pumpLiveQueue(){
+ liveQueue=liveQueue.filter(task=>{
+  if(liveVisible.has(task.nk))return true;
+  liveStates.get(task.nk)[task.kind].status='new';return false;
+ });
+ while(liveActive.size<LIVE_CONCURRENCY){
+  const workPending=[...liveVisible].some(name=>['new','queued','loading'].includes(liveState(name).worklogs.status));
+  const index=liveQueue.findIndex(task=>task.kind==='worklogs'||!workPending);
+  if(index<0)break;
+  const task=liveQueue.splice(index,1)[0],controller=new AbortController();liveActive.add(controller);
+  runLiveTask(task,controller);
  }
- if(epoch===liveEpoch){liveRunning=false;render()}
+ updateLiveProgress();
+}
+async function runLiveTask(task,controller){
+ const epoch=task.epoch,state=liveStates.get(task.nk)[task.kind];
+ state.status='loading';render(task.nk);
+ try{
+  const params=new URLSearchParams({employee:task.name,month:liveMonth,kind:task.kind});
+  let response;
+  for(let attempt=0;attempt<3;attempt++){
+   response=await fetch('/api/team-worklog-hours/live?'+params,{cache:'no-store',signal:controller.signal});
+   if(response.status!==429||attempt===2)break;
+   const seconds=Number(response.headers.get('Retry-After')||2);
+   if(!Number.isFinite(seconds)||seconds<0||seconds>30)break;
+   await new Promise((resolve,reject)=>{
+    const cancel=()=>{clearTimeout(timer);reject(new Error('Update cancelled'))};
+    const timer=setTimeout(()=>{controller.signal.removeEventListener('abort',cancel);resolve()},seconds*1000+Math.random()*250);
+    controller.signal.addEventListener('abort',cancel,{once:true});if(controller.signal.aborted)cancel();
+   });
+  }
+  const result=await response.json();
+  if(!response.ok)throw new Error(result.error||'Update failed');
+  if(!Array.isArray(result.values)||key(result.employee)!==task.nk||result.month!==liveMonth||result.kind!==task.kind||!result.checked_at)throw new Error('Incomplete Jira response');
+  if(task.kind==='worklogs'&&result.values.some(x=>!x.issue_key||!x.issue_type||typeof x.assigned_to_author!=='boolean'||!Number.isFinite(x.seconds)||x.seconds<0||!/^\d{4}-\d{2}-\d{2}$/.test(x.date)))throw new Error('Incomplete Jira worklog data');
+  if(epoch!==liveEpoch)return;
+  state.values=result.values;state.checkedAt=result.checked_at;state.status='live';state.error='';
+ }catch(error){if(epoch!==liveEpoch)return;state.status='error';state.error=error.message||'Update failed'}
+ finally{
+  if(epoch===liveEpoch){liveActive.delete(controller);render(task.nk);pumpLiveQueue()}
+ }
 }
 function liveStatus(state){
  const parts=['worklogs','leave'].map(kind=>{const item=state[kind],label=kind==='worklogs'?'Work':'Leave';
@@ -840,20 +871,23 @@ function liveStatus(state){
  });return parts.join(' | ');
 }
 liveRefreshButton.addEventListener('click',()=>{
- liveEpoch++;liveAbort?.abort();liveAbort=null;liveQueue=[];liveRunning=false;
+ cancelLiveQueue();
  for(const state of liveStates.values())for(const kind of ['worklogs','leave'])state[kind].status='new';
  render();
 });
 setInterval(()=>{if(!document.hidden&&liveStates.size)liveRefreshButton.click()},300000);
-function render(){
+function render(updatedName){
+ const partial=typeof updatedName==='string';
+ if(partial&&!liveVisible.has(updatedName))return;
  if(!month.value)return;
  if(liveMonth!==month.value)resetLiveUpdates();
- updateScopeExplanation();updateFilterSummary();
+ if(!partial){updateScopeExplanation();updateFilterSummary()}
  const range=days(), calendar=capacityCalendar(activeProfile(),range), todayDate=new Date();
  const today=`${todayDate.getFullYear()}-${String(todayDate.getMonth()+1).padStart(2,'0')}-${String(todayDate.getDate()).padStart(2,'0')}`;
  const names=new Set([...Object.keys(resources),...issues.map(x=>x.assignee),...allWorklogs.map(x=>x.worklog_author||x.issue_assignee),...leaves.map(x=>x.assignee)].map(key));
  const rows=[];
  for(const nk of names){
+  if(partial&&nk!==updatedName)continue;
   if(!nk||!teamAllows(nk)||!nk.includes(key(employeeSearch.value)))continue;
   const resourceKey=Object.keys(resources).find(x=>key(x)===nk);
   if(!resigned.checked&&resources[resourceKey]?.resigned)continue;
@@ -870,12 +904,23 @@ function render(){
  }
  rows.sort((a,b)=>a.label.localeCompare(b.label));
  const fmt=value=>value.toFixed(2);
- matrixExportRows=[['Employee',...calendar.flatMap(d=>[d.date+' logged hours',d.date+' RLT leave hours']),'Total logged hours','Live update status'],...rows.map(row=>[row.label,...row.dayValues.flatMap(v=>[v.work,v.leave]),row.total,liveStatus(row.live)])];
+ const exported=row=>[row.label,...row.dayValues.flatMap(v=>[v.work,v.leave]),row.total,liveStatus(row.live)];
+ if(partial){if(rows[0])matrixExportRows[matrixExportIndexes.get(updatedName)]=exported(rows[0])}
+ else{matrixExportRows=[['Employee',...calendar.flatMap(d=>[d.date+' logged hours',d.date+' RLT leave hours']),'Total logged hours','Live update status'],...rows.map(exported)];matrixExportIndexes=new Map(rows.map((row,i)=>[key(row.label),i+1]))}
  const header=calendar.map(d=>`<th class="${d.type==='Weekend'?'weekend':''} ${d.date===today?'today':''}" title="${esc(d.type)}${d.date===today?' · Today':''}">${esc(d.date.slice(8))}<small>${d.date===today?'Today · ':''}${esc(d.type)}</small></th>`).join('');
  const htmlRows=rows.map(row=>`<tr><td class="employee">${esc(row.label)}<small class="matrix-live-status" aria-label="Live update status">${esc(liveStatus(row.live))}</small>${supportToggle.checked&&support.has(key(row.label))?'<span class="support">Support</span>':''}</td>${row.dayValues.map((v,i)=>`<td data-date="${esc(calendar[i].date)}" class="matrix-day ${v.work?'has-hours':'no-hours'} ${calendar[i].type==='Weekend'?'weekend':''} ${calendar[i].date===today?'today':''}" title="${esc(calendar[i].date)}: ${fmt(v.work)} logged hours; ${fmt(v.leave)} RLT leave hours"><span>${fmt(v.work)}h</span>${v.leave?`<small>Leave ${fmt(v.leave)}h</small>`:''}</td>`).join('')}<td class="num">${fmt(row.total)}h</td></tr>`).join('');
+ let changedRows;
+ if(partial){
+  const previous=matrixElements.get(updatedName);if(!previous||!rows.length)return;
+  const template=document.createElement('template');template.innerHTML=htmlRows;
+  const next=template.content.firstElementChild;previous.replaceWith(next);matrixElements.set(updatedName,next);changedRows=[next];
+ }else{
  table.innerHTML=rows.length?`<table class="matrix"><thead><tr><th>Employee</th>${header}<th>Total</th></tr></thead><tbody>${htmlRows}</tbody></table>`:'<div class="empty">No employees match the selected filters.</div>';
+  changedRows=[...table.querySelectorAll('tbody tr')];matrixElements=new Map(changedRows.map((row,i)=>[key(rows[i].label),row]));
+ }
+
  // Every cell opens the same employee availability drawer as the capacity report.
- table.querySelectorAll('tbody tr').forEach((row,index)=>{
+ changedRows.forEach((row,index)=>{
   const label=rows[index].label;
   row.querySelectorAll('td').forEach(cell=>{
    cell.tabIndex=0;cell.setAttribute('role','button');
@@ -887,8 +932,8 @@ function render(){
    cell.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();open()}});
   });
  });
- queueLiveUpdates(rows);
- statusEl.textContent=`${rows.length} employees · ${loggedHoursScope().label.toLowerCase()} · filters apply automatically`;
+ if(!partial)queueLiveUpdates(rows);else updateLiveProgress();
+ statusEl.textContent=`${liveVisible.size} employees · ${loggedHoursScope().label.toLowerCase()} · filters apply automatically`;
  statusEl.className='status';snapshot.textContent=data.generated_at?`Canonical snapshot ${data.canonical_run_id||''} · ${new Date(data.generated_at).toLocaleString()}`:'';
 }
 async function downloadMatrix(){

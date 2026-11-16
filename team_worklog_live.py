@@ -8,7 +8,7 @@ from live_rlt_leave import build_live_rlt_leaves
 from worklog_tally import _account, _live_entries, _snapshot, month_bounds
 
 # The production server has one worker: bound Jira pressure across all viewers.
-LIVE_READ_SLOTS = threading.BoundedSemaphore(2)
+LIVE_READ_SLOTS = threading.BoundedSemaphore(3)
 
 
 def read_team_worklog_live(db_path, employee, month, kind, session=None):

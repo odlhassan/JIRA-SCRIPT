@@ -192,3 +192,5 @@ Dependent files/data flow: `employee_subtask_form.js` / `.css` provide top-layer
 Use the **Team Worklog Hours** button in the report header to open the employee-by-date matrix. The matrix also opens this same availability drawer from an employee’s row, including its live refresh and shareable link.
 
 The related Team Worklog Hours matrix now refreshes worklogs and RLT leave per employee in the background; see its guide for status and failure behavior. This does not change the capacity report snapshot.
+
+The related Team Worklog Hours matrix refresh uses three concurrent employee reads, prioritizes hours before leave, and updates rows individually; the shared availability drawer remains available during the refresh.
