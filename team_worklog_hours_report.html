@@ -182,7 +182,7 @@ button.availability-hours.leave:hover{background:#ffcbd5;box-shadow:0 0 0 2px #d
 .availability-create-subtask{display:inline-flex;gap:7px;align-items:center;border:1px solid #bca8e5;border-radius:9px;background:#efe7ff;color:#5e3b9c;padding:9px 12px;min-height:36px;font:750 12px 'Segoe UI',sans-serif;cursor:pointer}.availability-create-subtask:hover{background:#e1d2fb}.availability-create-subtask:focus-visible{outline:3px solid #8061c9;outline-offset:2px}.worklog-selection-create{margin:10px 0 0}
 @media(max-width:520px){.subtask-head{padding:19px 16px}.subtask-head h2{font-size:21px}.subtask-content{padding:16px 12px}.subtask-section{padding:13px}.subtask-dates{grid-template-columns:1fr}.subtask-footer{flex-direction:column;align-items:stretch}.subtask-check{padding:14px}.subtask-check dl{grid-template-columns:1fr;gap:6px}.subtask-check dd{margin-bottom:8px}.subtask-dialog{border-radius:17px}}
 @media(max-width:640px){#availability-subtask-form,.subtask-home{grid-template-columns:minmax(0,1fr)}}
-.matrix{width:max-content;min-width:100%}.matrix th,.matrix td{min-width:86px;text-align:center;padding:10px 8px}.matrix th:first-child,.matrix td:first-child{position:sticky;left:0;z-index:3;min-width:190px;text-align:left;background:#fff}.matrix th:first-child{background:#153d6c;z-index:7}.matrix th small,.matrix-day small{display:block;font-size:10px;margin-top:4px}.matrix-day.has-hours{background:#eaf8ef}.matrix-day.no-hours{background:#fff2f2;color:#a12a2a}.matrix-day small{color:#88560a;font-weight:700}.matrix th.weekend{background:#667586}.matrix td.matrix-day.weekend{background:#e8ebef;color:#475569}.matrix td.weekend small{color:#745515}.matrix tbody td{cursor:pointer}.matrix tbody td:hover{outline:2px solid #2684ff;outline-offset:-2px}.matrix tbody td:focus-visible{outline:3px solid #2684ff;outline-offset:-3px}.matrix th.today{background:#1769c2;box-shadow:inset 3px 0 #60a5fa,inset -3px 0 #60a5fa}.matrix td.matrix-day.today{box-shadow:inset 3px 0 #2684ff,inset -3px 0 #2684ff}</style></head><body><main class="wrap"><header class="head"><h1>Team Worklog Hours</h1><p>Daily logged hours and RLT leave for each employee. Zero indicates no counted worklogs.</p></header><section id="report-filters" class="filters" aria-label="Report filters"><div class="filter-topline"><div><span class="filter-kicker">Report controls</span><h2>Refine the report</h2><p>Choose the reporting period, workforce scope, and how logged hours are counted.</p></div><div class="filter-topline-actions"><span class="filter-state"><span class="material-symbols-outlined" aria-hidden="true">auto_awesome</span>Updates instantly</span><button id="filter-toggle" class="filter-toggle" type="button" aria-expanded="true" aria-controls="filter-content"><span id="filter-toggle-label">Hide controls</span><span id="filter-toggle-icon" class="material-symbols-outlined" aria-hidden="true">keyboard_arrow_up</span></button></div></div><div id="filter-content" class="filter-content"><div class="filter-main"><label class="field"><span>Month</span><input id="month" type="month"></label><label class="field"><span>Capacity profile</span><select id="profile"></select></label><div class="field teams"><span>Teams</span><details class="team-picker"><summary id="team-summary">All teams except Process Team</summary><div id="teams" class="team-options"></div></details></div><label class="field scope-field"><span>Count logged hours from</span><select id="scope" aria-describedby="scope-help"><option value="any">All work logged by employee</option><option value="assigned">Work logged on their assigned subtasks</option></select><small id="scope-help"></small></label></div><div class="filter-preferences"><span class="filter-preferences-title">Display &amp; inclusion</span><div class="field" hidden><span>Color formatting</span><details class="color-picker"><summary id="color-summary">Utilization column · 50 / 80 / 100%</summary><div class="color-menu"><h3>Utilization color rules</h3><p class="color-help">Rules apply immediately. Values above the green maximum remain unfilled.</p><label class="color-rule red"><i class="color-dot"></i><span>Red: 0 to</span><input id="util-a" type="number" min="0" max="500" step="1" value="50"><b>%</b></label><label class="color-rule orange"><i class="color-dot"></i><span>Orange: A to</span><input id="util-b" type="number" min="0" max="500" step="1" value="80"><b>%</b></label><label class="color-rule green"><i class="color-dot"></i><span>Green: B to</span><input id="util-c" type="number" min="0" max="500" step="1" value="100"><b>%</b></label><fieldset class="color-scope"><legend>Apply color to</legend><label class="scope-choice"><input type="radio" name="color-scope" value="column" checked><span>Utilization only</span></label><label class="scope-choice"><input type="radio" name="color-scope" value="row"><span>Entire row</span></label></fieldset><p id="color-error" class="color-error"></p><button id="color-reset" class="color-reset" type="button">Reset to defaults</button></div></details></div><label class="switch"><input id="resigned" type="checkbox"><span class="track"></span><span>Display resigned</span></label><label class="switch"><input id="support" type="checkbox" checked><span class="track"></span><span>Indicate support</span></label></div></div><div id="filter-summary" class="filter-summary" aria-live="polite"><span class="filter-summary-label">Active filters</span><span id="summary-month" class="filter-summary-chip"></span><span id="summary-profile" class="filter-summary-chip"></span><span id="summary-teams" class="filter-summary-chip"></span><span id="summary-scope" class="filter-summary-chip primary"></span><span id="summary-preferences" class="filter-summary-chip"></span></div></section><div id="scope-note" class="scope-note" role="status"></div><div class="meta"><span id="status" class="status">Loading canonical data…</span><span id="snapshot"></span></div><section class="table-wrap"><div id="table"><div class="empty"><span class="loading">Loading employees</span></div></div></section></main><script>
+.matrix{width:max-content;min-width:100%}.matrix th,.matrix td{min-width:86px;text-align:center;padding:10px 8px}.matrix th:first-child,.matrix td:first-child{position:sticky;left:0;z-index:3;min-width:190px;text-align:left;background:#fff}.matrix th:first-child{background:#153d6c;z-index:7}.matrix th small,.matrix-day small{display:block;font-size:10px;margin-top:4px}.matrix-day.has-hours{background:#eaf8ef}.matrix-day.no-hours{background:#fff2f2;color:#a12a2a}.matrix-day small{color:#88560a;font-weight:700}.matrix th.weekend{background:#667586}.matrix td.matrix-day.weekend{background:#e8ebef;color:#475569}.matrix td.weekend small{color:#745515}.matrix-live-status{display:block;min-width:180px;margin-top:5px;color:#526780;font-size:10px;font-weight:500;white-space:normal}.matrix-refresh{padding:7px 10px;border:1px solid #a9caec;border-radius:8px;background:#fff;color:#165b9f;cursor:pointer;font-weight:700}.matrix tbody td{cursor:pointer}.matrix tbody td:hover{outline:2px solid #2684ff;outline-offset:-2px}.matrix tbody td:focus-visible{outline:3px solid #2684ff;outline-offset:-3px}.matrix th.today{background:#1769c2;box-shadow:inset 3px 0 #60a5fa,inset -3px 0 #60a5fa}.matrix td.matrix-day.today{box-shadow:inset 3px 0 #2684ff,inset -3px 0 #2684ff}</style></head><body><main class="wrap"><header class="head"><h1>Team Worklog Hours</h1><p>Daily logged hours and RLT leave for each employee. Zero indicates no counted worklogs.</p></header><section id="report-filters" class="filters" aria-label="Report filters"><div class="filter-topline"><div><span class="filter-kicker">Report controls</span><h2>Refine the report</h2><p>Choose the reporting period, workforce scope, and how logged hours are counted.</p></div><div class="filter-topline-actions"><span class="filter-state"><span class="material-symbols-outlined" aria-hidden="true">auto_awesome</span>Updates instantly</span><button id="filter-toggle" class="filter-toggle" type="button" aria-expanded="true" aria-controls="filter-content"><span id="filter-toggle-label">Hide controls</span><span id="filter-toggle-icon" class="material-symbols-outlined" aria-hidden="true">keyboard_arrow_up</span></button></div></div><div id="filter-content" class="filter-content"><div class="filter-main"><label class="field"><span>Month</span><input id="month" type="month"></label><label class="field"><span>Capacity profile</span><select id="profile"></select></label><div class="field teams"><span>Teams</span><details class="team-picker"><summary id="team-summary">All teams except Process Team</summary><div id="teams" class="team-options"></div></details></div><label class="field scope-field"><span>Count logged hours from</span><select id="scope" aria-describedby="scope-help"><option value="any">All work logged by employee</option><option value="assigned">Work logged on their assigned subtasks</option></select><small id="scope-help"></small></label></div><div class="filter-preferences"><span class="filter-preferences-title">Display &amp; inclusion</span><div class="field" hidden><span>Color formatting</span><details class="color-picker"><summary id="color-summary">Utilization column · 50 / 80 / 100%</summary><div class="color-menu"><h3>Utilization color rules</h3><p class="color-help">Rules apply immediately. Values above the green maximum remain unfilled.</p><label class="color-rule red"><i class="color-dot"></i><span>Red: 0 to</span><input id="util-a" type="number" min="0" max="500" step="1" value="50"><b>%</b></label><label class="color-rule orange"><i class="color-dot"></i><span>Orange: A to</span><input id="util-b" type="number" min="0" max="500" step="1" value="80"><b>%</b></label><label class="color-rule green"><i class="color-dot"></i><span>Green: B to</span><input id="util-c" type="number" min="0" max="500" step="1" value="100"><b>%</b></label><fieldset class="color-scope"><legend>Apply color to</legend><label class="scope-choice"><input type="radio" name="color-scope" value="column" checked><span>Utilization only</span></label><label class="scope-choice"><input type="radio" name="color-scope" value="row"><span>Entire row</span></label></fieldset><p id="color-error" class="color-error"></p><button id="color-reset" class="color-reset" type="button">Reset to defaults</button></div></details></div><label class="switch"><input id="resigned" type="checkbox"><span class="track"></span><span>Display resigned</span></label><label class="switch"><input id="support" type="checkbox" checked><span class="track"></span><span>Indicate support</span></label></div></div><div id="filter-summary" class="filter-summary" aria-live="polite"><span class="filter-summary-label">Active filters</span><span id="summary-month" class="filter-summary-chip"></span><span id="summary-profile" class="filter-summary-chip"></span><span id="summary-teams" class="filter-summary-chip"></span><span id="summary-scope" class="filter-summary-chip primary"></span><span id="summary-preferences" class="filter-summary-chip"></span></div></section><div id="scope-note" class="scope-note" role="status"></div><div class="meta"><span id="status" class="status">Loading canonical data…</span><span id="snapshot"></span></div><section class="table-wrap"><div id="table"><div class="empty"><span class="loading">Loading employees</span></div></div></section></main><script>
 let data={},issues=[],logs=[],leaves=[],teams=[],profiles=[],support=new Set(),resources={};
 const n=x=>Number(x||0),txt=x=>String(x||""),key=x=>txt(x).trim().toLowerCase(),esc=x=>txt(x).replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';');
 const month=document.querySelector('#month'),profile=document.querySelector('#profile'),team=document.querySelector('#teams'),teamSummary=document.querySelector('#team-summary'),scope=document.querySelector('#scope'),scopeHelp=document.querySelector('#scope-help'),scopeNote=document.querySelector('#scope-note'),resigned=document.querySelector('#resigned'),supportToggle=document.querySelector('#support'),table=document.querySelector('#table'),statusEl=document.querySelector('#status'),snapshot=document.querySelector('#snapshot'),filterPanel=document.querySelector('#report-filters'),filterToggle=document.querySelector('#filter-toggle'),filterToggleLabel=document.querySelector('#filter-toggle-label'),filterToggleIcon=document.querySelector('#filter-toggle-icon'),summaryMonth=document.querySelector('#summary-month'),summaryProfile=document.querySelector('#summary-profile'),summaryTeams=document.querySelector('#summary-teams'),summaryScope=document.querySelector('#summary-scope'),summaryPreferences=document.querySelector('#summary-preferences'),FILTER_COLLAPSED_KEY='employeeCapacityUtilization.filtersCollapsed.v1';
@@ -786,8 +786,68 @@ function overlap(a,b,r){return txt(a)&&txt(b)&&txt(a)<=r.to&&txt(b)>=r.from}
 function teamAllows(nk){const memberships=teams.filter(t=>(t.assignees||[]).some(name=>key(name)===nk));return !memberships.length||memberships.some(t=>team.querySelector(`input[value="${CSS.escape(t.team_name)}"]`)?.checked)}
 /* The matrix shares the capacity report's filters and canonical data. */
 let matrixExportRows=[];
+let liveMonth='',liveStates=new Map(),liveQueue=[],liveRunning=false,liveEpoch=0,liveAbort=null,liveVisible=new Set();
+const liveRefreshButton=document.createElement('button');
+liveRefreshButton.type='button';liveRefreshButton.className='matrix-refresh';liveRefreshButton.textContent='Refresh live hours and leave';
+document.querySelector('.meta').append(liveRefreshButton);
+function resetLiveUpdates(){
+ liveEpoch++;liveAbort?.abort();liveAbort=null;liveQueue=[];liveRunning=false;liveStates=new Map();liveMonth=month.value;
+}
+function liveState(name){
+ if(!liveStates.has(name))liveStates.set(name,{worklogs:{status:'new'},leave:{status:'new'}});
+ return liveStates.get(name);
+}
+function queueLiveUpdates(rows){
+ liveVisible=new Set(rows.map(row=>key(row.label)));
+ for(const row of rows){
+  const nk=key(row.label),state=liveState(nk);
+  for(const kind of ['worklogs','leave']){
+   if(state[kind].status!=='new')continue;
+   if(nk==='unassigned'||nk==='grand total'){state[kind].status='error';state[kind].error='No Jira employee account';continue}
+   state[kind].status='queued';liveQueue.push({name:row.label,nk,kind,epoch:liveEpoch});
+  }
+ }
+ if(!liveRunning&&liveQueue.length){liveRunning=true;setTimeout(runLiveQueue,0)}
+}
+async function runLiveQueue(){
+ const epoch=liveEpoch;
+ while(epoch===liveEpoch&&liveQueue.length){
+  const task=liveQueue.shift(),state=liveStates.get(task.nk)?.[task.kind];
+  if(!state)continue;
+  if(!liveVisible.has(task.nk)){state.status='new';continue}
+  state.status='loading';render();
+  const controller=new AbortController();liveAbort=controller;
+  try{
+   const params=new URLSearchParams({employee:task.name,month:liveMonth,kind:task.kind});
+   const response=await fetch('/api/team-worklog-hours/live?'+params,{cache:'no-store',signal:controller.signal});
+   const result=await response.json();
+   if(!response.ok)throw new Error(result.error||'Update failed');
+   if(!Array.isArray(result.values)||key(result.employee)!==task.nk||result.month!==liveMonth||result.kind!==task.kind||!result.checked_at)throw new Error('Incomplete Jira response');
+   if(task.kind==='worklogs'&&result.values.some(x=>!x.issue_key||!x.issue_type||typeof x.assigned_to_author!=='boolean'||!Number.isFinite(x.seconds)||x.seconds<0||!/^\d{4}-\d{2}-\d{2}$/.test(x.date)))throw new Error('Incomplete Jira worklog data');
+   if(epoch!==liveEpoch)return;
+   state.values=result.values;state.checkedAt=result.checked_at;state.status='live';state.error='';
+  }catch(error){if(epoch!==liveEpoch)return;state.status='error';state.error=error.message||'Update failed'}
+  finally{if(epoch===liveEpoch)liveAbort=null}
+  if(epoch===liveEpoch)render();
+ }
+ if(epoch===liveEpoch){liveRunning=false;render()}
+}
+function liveStatus(state){
+ const parts=['worklogs','leave'].map(kind=>{const item=state[kind],label=kind==='worklogs'?'Work':'Leave';
+  if(item.status==='error')return `${label}: update failed · ${item.values?'last live '+new Date(item.checkedAt).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}):'snapshot'}`;
+  if(item.status==='live')return `${label}: live ${new Date(item.checkedAt).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}`;
+  return `${label}: updating${item.values?' · previous live '+new Date(item.checkedAt).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}):' · snapshot'}`;
+ });return parts.join(' | ');
+}
+liveRefreshButton.addEventListener('click',()=>{
+ liveEpoch++;liveAbort?.abort();liveAbort=null;liveQueue=[];liveRunning=false;
+ for(const state of liveStates.values())for(const kind of ['worklogs','leave'])state[kind].status='new';
+ render();
+});
+setInterval(()=>{if(!document.hidden&&liveStates.size)liveRefreshButton.click()},300000);
 function render(){
  if(!month.value)return;
+ if(liveMonth!==month.value)resetLiveUpdates();
  updateScopeExplanation();updateFilterSummary();
  const range=days(), calendar=capacityCalendar(activeProfile(),range), todayDate=new Date();
  const today=`${todayDate.getFullYear()}-${String(todayDate.getMonth()+1).padStart(2,'0')}-${String(todayDate.getDate()).padStart(2,'0')}`;
@@ -798,18 +858,21 @@ function render(){
   const resourceKey=Object.keys(resources).find(x=>key(x)===nk);
   if(!resigned.checked&&resources[resourceKey]?.resigned)continue;
   const label=resourceKey||issues.find(x=>key(x.assignee)===nk)?.assignee||allWorklogs.find(x=>key(x.worklog_author||x.issue_assignee)===nk)?.worklog_author||allWorklogs.find(x=>key(x.issue_assignee)===nk)?.issue_assignee||leaves.find(x=>key(x.assignee)===nk)?.assignee||'';
+  const live=liveState(nk);
+  const sourceLogs=live.worklogs.values?live.worklogs.values.map(x=>({issue_id:x.issue_key,worklog_author:label,worklog_date:x.date,hours_logged:x.seconds/3600,item_issue_type:x.issue_type,item_assignee:x.assigned_to_author?label:'',project_key:x.issue_key.split('-')[0]})).filter(x=>includeLeaves.checked||!isLeaveWorklog(x)):logs;
+  const sourceLeaves=live.leave.values||leaves;
   const dayValues=calendar.map(day=>{
-   const work=logs.filter(x=>key(x.worklog_author||x.issue_assignee)===nk&&txt(x.worklog_date)===day.date&&(scope.value==='any'||(key(x.item_assignee)===nk&&/sub-?task/i.test(txt(x.item_issue_type))))) .reduce((sum,x)=>sum+n(x.hours_logged),0);
-   const leave=leaves.filter(x=>key(x.assignee)===nk&&txt(x.period_day)===day.date).reduce((sum,x)=>sum+n(x.planned_taken_hours)+n(x.unplanned_taken_hours),0);
+   const work=sourceLogs.filter(x=>key(x.worklog_author||x.issue_assignee)===nk&&txt(x.worklog_date)===day.date&&(scope.value==='any'||(key(x.item_assignee)===nk&&/sub-?task/i.test(txt(x.item_issue_type))))) .reduce((sum,x)=>sum+n(x.hours_logged),0);
+   const leave=sourceLeaves.filter(x=>key(x.assignee)===nk&&txt(x.period_day)===day.date).reduce((sum,x)=>sum+n(x.planned_taken_hours)+n(x.unplanned_taken_hours),0);
    return {work,leave};
   });
-  rows.push({label,dayValues,total:dayValues.reduce((s,v)=>s+v.work,0)});
+  rows.push({label,live,dayValues,total:dayValues.reduce((s,v)=>s+v.work,0)});
  }
  rows.sort((a,b)=>a.label.localeCompare(b.label));
  const fmt=value=>value.toFixed(2);
- matrixExportRows=[['Employee',...calendar.flatMap(d=>[d.date+' logged hours',d.date+' RLT leave hours']),'Total logged hours'],...rows.map(row=>[row.label,...row.dayValues.flatMap(v=>[v.work,v.leave]),row.total])];
+ matrixExportRows=[['Employee',...calendar.flatMap(d=>[d.date+' logged hours',d.date+' RLT leave hours']),'Total logged hours','Live update status'],...rows.map(row=>[row.label,...row.dayValues.flatMap(v=>[v.work,v.leave]),row.total,liveStatus(row.live)])];
  const header=calendar.map(d=>`<th class="${d.type==='Weekend'?'weekend':''} ${d.date===today?'today':''}" title="${esc(d.type)}${d.date===today?' · Today':''}">${esc(d.date.slice(8))}<small>${d.date===today?'Today · ':''}${esc(d.type)}</small></th>`).join('');
- const htmlRows=rows.map(row=>`<tr><td class="employee">${esc(row.label)}${supportToggle.checked&&support.has(key(row.label))?'<span class="support">Support</span>':''}</td>${row.dayValues.map((v,i)=>`<td data-date="${esc(calendar[i].date)}" class="matrix-day ${v.work?'has-hours':'no-hours'} ${calendar[i].type==='Weekend'?'weekend':''} ${calendar[i].date===today?'today':''}" title="${esc(calendar[i].date)}: ${fmt(v.work)} logged hours; ${fmt(v.leave)} RLT leave hours"><span>${fmt(v.work)}h</span>${v.leave?`<small>Leave ${fmt(v.leave)}h</small>`:''}</td>`).join('')}<td class="num">${fmt(row.total)}h</td></tr>`).join('');
+ const htmlRows=rows.map(row=>`<tr><td class="employee">${esc(row.label)}<small class="matrix-live-status" aria-label="Live update status">${esc(liveStatus(row.live))}</small>${supportToggle.checked&&support.has(key(row.label))?'<span class="support">Support</span>':''}</td>${row.dayValues.map((v,i)=>`<td data-date="${esc(calendar[i].date)}" class="matrix-day ${v.work?'has-hours':'no-hours'} ${calendar[i].type==='Weekend'?'weekend':''} ${calendar[i].date===today?'today':''}" title="${esc(calendar[i].date)}: ${fmt(v.work)} logged hours; ${fmt(v.leave)} RLT leave hours"><span>${fmt(v.work)}h</span>${v.leave?`<small>Leave ${fmt(v.leave)}h</small>`:''}</td>`).join('')}<td class="num">${fmt(row.total)}h</td></tr>`).join('');
  table.innerHTML=rows.length?`<table class="matrix"><thead><tr><th>Employee</th>${header}<th>Total</th></tr></thead><tbody>${htmlRows}</tbody></table>`:'<div class="empty">No employees match the selected filters.</div>';
  // Every cell opens the same employee availability drawer as the capacity report.
  table.querySelectorAll('tbody tr').forEach((row,index)=>{
@@ -824,6 +887,7 @@ function render(){
    cell.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();open()}});
   });
  });
+ queueLiveUpdates(rows);
  statusEl.textContent=`${rows.length} employees · ${loggedHoursScope().label.toLowerCase()} · filters apply automatically`;
  statusEl.className='status';snapshot.textContent=data.generated_at?`Canonical snapshot ${data.canonical_run_id||''} · ${new Date(data.generated_at).toLocaleString()}`:'';
 }

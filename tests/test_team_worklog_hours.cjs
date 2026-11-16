@@ -71,3 +71,25 @@ test('matrix cells open and restore the full availability drawer',async({page})=
  await page.goto(shared);await expect(dialog).toHaveClass(/open/);await expect(dialog).toContainText('Alice · 2026-10');await expect(dialog.locator('.worklog-date-chip')).toContainText('2026-10-05');
  await page.getByRole('button',{name:'Close details'}).click();const other=page.locator('#table tbody tr').filter({hasText:'Alice'}).locator('td').nth(6);await other.focus();await page.keyboard.press('Space');await expect(dialog.locator('.worklog-date-chip')).toContainText('2026-10-06');
 });
+
+test('live worklogs and leave update separately and failures preserve visible values',async({page})=>{
+ await page.clock.setFixedTime(new Date('2026-10-05T10:00:00+05:00'));
+ let workRequests=0;let releaseLeave;const leaveWait=new Promise(resolve=>{releaseLeave=resolve});
+ await page.route('**/*',async route=>{const u=new URL(route.request().url());
+  if(u.pathname==='/api/employee-capacity-utilization/data')return route.fulfill({json:payload});
+  if(u.pathname==='/team_worklog_hours_report.html')return route.fulfill({contentType:'text/html',body:html});
+  if(u.pathname==='/api/team-worklog-hours/live'){
+   const employee=u.searchParams.get('employee'),month=u.searchParams.get('month'),kind=u.searchParams.get('kind');
+   if(employee!=='Alice')return route.fulfill({status:502,json:{error:'Unavailable'}});
+   if(kind==='worklogs'){workRequests++;if(workRequests>1)return route.fulfill({status:502,json:{error:'Unavailable'}});
+    return route.fulfill({json:{employee,month,kind,checked_at:'2026-10-05T10:00:00Z',values:[{issue_key:'APP-1',issue_type:'Sub-task',assigned_to_author:true,date:month+'-05',seconds:25200}]}});}
+   await leaveWait;return route.fulfill({json:{employee,month,kind,checked_at:'2026-10-05T10:00:00Z',values:[{assignee:'Alice',period_day:month+'-05',planned_taken_hours:4,unplanned_taken_hours:0}]}});
+  }
+  return route.fulfill({status:404,body:''});
+ });
+ await page.goto('http://example.test/team_worklog_hours_report.html');await expect(page.locator('#table tbody tr')).toHaveCount(2);await page.locator('#month').fill('2026-10');
+ const alice=page.locator('#table tbody tr').filter({hasText:'Alice'}),day=alice.locator('td').nth(5);
+ await expect(day).toContainText('7.00h');await expect(day).toContainText('Leave 2.00h');await expect(alice).toContainText('Leave: updating');
+ releaseLeave();await expect(day).toContainText('Leave 4.00h');await expect(alice).toContainText('Work: live');await expect(alice).toContainText('Leave: live');
+ await page.getByRole('button',{name:'Refresh live hours and leave'}).click();await expect(alice).toContainText('Work: update failed · last live');await expect(day).toContainText('7.00h');
+});

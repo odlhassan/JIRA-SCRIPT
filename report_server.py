@@ -74,6 +74,7 @@ from employee_capacity_utilization_export import build_employee_capacity_utiliza
 from live_rlt_leave import build_live_rlt_leaves
 from jira_calendar_cache import calendar_read
 from worklog_tally import build_worklog_tally, tally_pdf
+from team_worklog_live import LIVE_READ_SLOTS, read_team_worklog_live
 from employee_worklog import jira_identity, register_employee_worklog_routes
 from epr_auth import register_epr_auth
 from maintenance_service import start_background_job
@@ -47675,6 +47676,22 @@ def create_report_server_app(base_dir: Path, folder_raw: str, *, maintenance: bo
             return jsonify({"error": str(exc)}), 409
         except Exception as exc:
             return jsonify({"error": f"Failed to load employee capacity and utilization: {exc}"}), 500
+
+    @app.get("/api/team-worklog-hours/live")
+    def team_worklog_hours_live_api():
+        if not LIVE_READ_SLOTS.acquire(blocking=False):
+            return jsonify(error="Live updates are busy. Retry shortly."), 429
+        try:
+            result = read_team_worklog_live(capacity_paths['db_path'], request.args.get('employee'), request.args.get('month'), request.args.get('kind'))
+            response = jsonify(result)
+            response.headers['Cache-Control'] = 'no-store, private'
+            return response
+        except ValueError as exc:
+            return jsonify(error=str(exc)), 400
+        except (RuntimeError, sqlite3.Error, requests.RequestException):
+            return jsonify(error='Jira data could not be refreshed. Saved values remain visible.'), 502
+        finally:
+            LIVE_READ_SLOTS.release()
 
     @app.route("/api/team-worklog-hours/export", methods=["POST"])
     def team_worklog_hours_export_api():

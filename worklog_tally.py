@@ -108,14 +108,14 @@ def _account(session, employee):
     return next(iter(matches.values()))
 
 
-def _live_entries(session, account_id, first, last, snapshot):
+def _live_entries(session, account_id, first, last, snapshot, *, include_assignee=False):
     jql = (f'worklogAuthor = "{account_id}" AND worklogDate >= "{first-timedelta(days=1)}" '
            f'AND worklogDate <= "{last+timedelta(days=1)}" ORDER BY key ASC')
     # Read snapshot tasks too: a log may have moved to another date/month in Jira.
     tasks = {r['issue_key']: None for r in snapshot}
     token, seen_tokens = None, set()
     for _ in range(200):
-        params = dict(jql=jql, fields='summary,issuetype', maxResults=100)
+        params = dict(jql=jql, fields='summary,issuetype,assignee' if include_assignee else 'summary,issuetype', maxResults=100)
         if token:
             params['nextPageToken'] = token
         page = _get(session, 'search/jql', **params)
@@ -137,7 +137,9 @@ def _live_entries(session, account_id, first, last, snapshot):
     rows, baseline_ids = {}, {r['worklog_id'] for r in snapshot}
     for task_key, fields in sorted(tasks.items()):
         if fields is None:
-            fields = _get(session, 'issue/' + task_key, fields='summary,issuetype').get('fields') or {}
+            fields = _get(session, 'issue/' + task_key, fields='summary,issuetype,assignee' if include_assignee else 'summary,issuetype').get('fields') or {}
+        if include_assignee and 'assignee' not in fields:
+            raise RuntimeError('Jira issue assignee metadata is unavailable.')
         offset, seen_pages = 0, set()
         for _ in range(1000):
             page = _get(session, 'issue/' + task_key + '/worklog', startAt=offset, maxResults=100)
@@ -161,7 +163,8 @@ def _live_entries(session, account_id, first, last, snapshot):
                 if first <= parsed.date() <= last or identifier in baseline_ids:
                     rows[identifier] = dict(worklog_id=identifier, issue_key=task_key, date=started[:10],
                         seconds=seconds, summary=fields.get('summary', ''),
-                        issue_type=(fields.get('issuetype') or {}).get('name', ''))
+                        issue_type=(fields.get('issuetype') or {}).get('name', ''),
+                        **({'assigned_to_author': (fields.get('assignee') or {}).get('accountId') == account_id} if include_assignee else {}))
             offset += len(logs)
             if offset >= total:
                 break

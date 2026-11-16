@@ -55,3 +55,5 @@ See [storage maintenance details](CANONICAL_COLOSSAL_FETCH_IMPLEMENTATION_PLAN.m
 ### Team Worklog Hours
 
 The Team Worklog Hours report shows daily employee worklogs and RLT leave using the Employee Capacity & Utilization filters. See [the report guide](docs/report-user-guide/screens/19-team-worklog-hours.md).
+
+Team Worklog Hours progressively refreshes Jira worklogs and RLT leave per employee; the report shows live, updating, or failed status while retaining saved values.

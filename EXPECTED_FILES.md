@@ -50,3 +50,5 @@ Verification: `tests/test_canonical_storage.py`. See
 [canonical refresh operations](CANONICAL_COLOSSAL_FETCH_IMPLEMENTATION_PLAN.md#full-refresh-snapshot-replacement-and-disk-reclamation).
 
 Team Worklog Hours requires `generate_team_worklog_hours_report.py` and `team_worklog_hours.js`; the generated `team_worklog_hours_report.html` is served through the shared report server.
+
+Team Worklog Hours live updates also require `team_worklog_live.py`, `worklog_tally.py`, and `live_rlt_leave.py`.
