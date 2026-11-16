@@ -30,6 +30,8 @@ The filter bar is divided into two purposeful rows. **Refine the report** contai
 
 There is no Apply or Refresh button. Every filter change redraws the table immediately. If canonical data cannot be loaded, the report shows an explicit error rather than a misleading table of zero hours.
 
+Click a column heading to sort the displayed employee rows; click it again to reverse the order. Numeric columns sort by their underlying values, and Grand Total remains at the bottom. The active direction is shown in the heading. Sorting changes the on-screen order; the Excel export uses its own employee-name order.
+
 ## Detail drawer
 
 Every employee and metric value, including Grand Total values, is clickable and keyboard accessible. Activating a value opens a right-side drawer containing the source records for the active month and filters. Clicking Employee Name opens that employee's hour logs. The drawer title area also shows the active Logged Hours scope. In Logged Hours, the Type column uses a blue Google person icon for Stories, a purple bolt for Epics, a green plus for Subtasks, and a red bug for Bug Subtasks. A red Google warning icon marks every other work-item type, explaining that it is excluded by the assigned-subtask scope. The drawer also lists the Jira work-item link, title, Epic link, Epic name, worklog author, assigned resource, worklog date, and hours. Booked Manhours lists the original-estimate source subtasks. Leave, calendar capacity, availability, and utilization cells each use a metric-specific table.

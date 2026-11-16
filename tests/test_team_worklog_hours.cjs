@@ -162,3 +162,15 @@ for(const report of ['employee_capacity_utilization_report.html','team_worklog_h
  await expect(page.locator('#table tbody')).toContainText('Alice');await expect(page.locator('#table tbody')).not.toContainText('UNASSIGNED');
  if(report.startsWith('employee_')){const rows=page.locator('#table tbody tr');await expect(rows).toHaveCount(2);expect(await rows.nth(0).locator('td').nth(1).innerText()).toBe(await rows.nth(1).locator('td').nth(1).innerText())}
 });
+
+test('capacity columns sort numerically and keep grand total last',async({page})=>{
+ const body=fs.readFileSync('employee_capacity_utilization_report.html','utf8');
+ const snapshot={...payload,resources:{Alice:{},Bob:{},Carol:{}},issues:[],leaves:[],teams:[],worklogs:[{worklog_author:'Alice',worklog_date:'2026-10-05',hours_logged:2},{worklog_author:'Bob',worklog_date:'2026-10-05',hours_logged:12},{worklog_author:'Carol',worklog_date:'2026-10-05',hours_logged:5}]};
+ await page.route('**/*',route=>{const path=new URL(route.request().url()).pathname;if(path==='/api/employee-capacity-utilization/data')return route.fulfill({json:snapshot});if(path==='/employee_capacity_utilization_report.html')return route.fulfill({contentType:'text/html',body});return route.fulfill({status:404,body:''})});
+ await page.goto('http://example.test/employee_capacity_utilization_report.html');await page.locator('#month').fill('2026-10');
+ const labels=()=>page.locator('#table tbody tr td:first-child').allTextContents();
+ await page.getByRole('button',{name:'Logged hours (all work)'}).click();expect(await labels()).toEqual(['Bob','Carol','Alice','Grand Total']);
+ await page.getByRole('button',{name:'Logged hours (all work)'}).click();expect(await labels()).toEqual(['Alice','Carol','Bob','Grand Total']);
+ await expect(page.locator('th').filter({has:page.getByRole('button',{name:'Logged hours (all work)'})})).toHaveAttribute('aria-sort','ascending');
+ await page.getByRole('button',{name:'Employee Name'}).click();expect(await labels()).toEqual(['Alice','Bob','Carol','Grand Total']);
+});
