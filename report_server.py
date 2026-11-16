@@ -5520,10 +5520,15 @@ def _canonical_bridge_artifact_base_dir(base_dir: Path) -> Path:
 
 def _canonical_bridge_output_paths(base_dir: Path) -> dict[str, Path]:
     artifact_base_dir = _canonical_bridge_artifact_base_dir(base_dir)
+    def writable_export_path(path: Path) -> Path:
+        # Absolute legacy export paths may target the read-only package.
+        if not _is_writable_directory(path.parent):
+            return artifact_base_dir / path.name
+        return path
     return {
         "artifact_base_dir": artifact_base_dir,
-        "work_items": _resolve_work_items_xlsx_path(artifact_base_dir),
-        "worklogs": _resolve_worklog_xlsx_path(artifact_base_dir),
+        "work_items": writable_export_path(_resolve_work_items_xlsx_path(artifact_base_dir)),
+        "worklogs": writable_export_path(_resolve_worklog_xlsx_path(artifact_base_dir)),
         "rollup": artifact_base_dir / "3_jira_subtask_worklog_rollup.xlsx",
         "nested_view": artifact_base_dir / "nested view.xlsx",
         "exports_db": artifact_base_dir / DEFAULT_EXPORTS_DB,

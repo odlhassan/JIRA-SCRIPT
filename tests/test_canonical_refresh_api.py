@@ -823,6 +823,16 @@ class CanonicalRefreshApiTests(unittest.TestCase):
                 self.assertEqual(script_cwds, [app_root, app_root, app_root])
                 self.assertEqual(sync_base_dirs, [app_root])
 
+    def test_compatibility_artifacts_keep_writable_configured_paths(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            custom = root / "custom"
+            with patch.dict("os.environ", {"JIRA_EXPORT_XLSX_PATH": str(custom / "items.xlsx"),
+                                          "JIRA_WORKLOG_XLSX_PATH": str(custom / "logs.xlsx")}, clear=False):
+                paths = report_server._canonical_bridge_output_paths(root)
+            self.assertEqual(paths["work_items"], custom / "items.xlsx")
+            self.assertEqual(paths["worklogs"], custom / "logs.xlsx")
+
     def test_compatibility_artifacts_fall_back_when_app_root_is_not_writable(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             root = Path(td)
@@ -869,7 +879,11 @@ class CanonicalRefreshApiTests(unittest.TestCase):
                 conn.commit()
 
             with (
-                patch.dict("os.environ", {"HOME": str(home)}, clear=False),
+                patch.dict("os.environ", {
+                    "HOME": str(home),
+                    "JIRA_EXPORT_XLSX_PATH": str(app_root / "1_jira_work_items_export.xlsx"),
+                    "JIRA_WORKLOG_XLSX_PATH": str(app_root / "2_jira_subtask_worklogs.xlsx"),
+                }, clear=False),
                 patch.object(report_server, "_is_writable_directory", return_value=False),
             ):
                 stats = report_server._canonical_rebuild_compatibility_artifacts(db_path, run_id, app_root)
