@@ -108,3 +108,23 @@ function render(){
 async function downloadMatrix(){
  try{const response=await fetch('/api/team-worklog-hours/export',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows:matrixExportRows})});if(!response.ok)throw new Error('Could not export matrix');const url=URL.createObjectURL(await response.blob()),a=document.createElement('a');a.href=url;a.download=`team_worklog_hours_${month.value}.xlsx`;a.click();URL.revokeObjectURL(url)}catch(error){alert(error.message)}
 }
+// Keep report filters shareable without adding a browser-history entry per keystroke.
+queueMicrotask(()=>{
+ const restore=window.eprRestoreModalRoute;
+ window.eprRestoreModalRoute=()=>{
+  const params=new URLSearchParams(location.hash.slice(1));
+  employeeSearch.value=params.get('employee_search')||'';
+  if(!params.has('profile'))profile.value='';
+  return restore?.();
+ };
+ function syncFilters(){
+  window.eprUpdateModalUrl?.({month:month.value,profile:profile.value,scope:scope.value,
+   leaves:includeLeaves.checked?'1':'0',resigned:resigned.checked?'1':'0',support:supportToggle.checked?'1':'0',
+   teams:JSON.stringify([...team.querySelectorAll('input[type=checkbox]:checked')].map(input=>input.value)),
+   employee_search:employeeSearch.value},true);
+ }
+ for(const input of [month,profile,scope,includeLeaves,resigned,supportToggle])input.addEventListener('change',syncFilters);
+ team.addEventListener('change',syncFilters);
+ team.addEventListener('click',event=>{if(event.target?.dataset?.teamAction)syncFilters()});
+ employeeSearch.addEventListener('input',syncFilters);
+});

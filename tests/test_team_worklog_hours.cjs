@@ -93,3 +93,15 @@ test('live worklogs and leave update separately and failures preserve visible va
  releaseLeave();await expect(day).toContainText('Leave 4.00h');await expect(alice).toContainText('Work: live');await expect(alice).toContainText('Leave: live');
  await page.getByRole('button',{name:'Refresh live hours and leave'}).click();await expect(alice).toContainText('Work: update failed · last live');await expect(day).toContainText('7.00h');
 });
+
+test('filter changes immediately update the shareable URL and restore on reload',async({page})=>{
+ const filtered={...payload,teams:[{team_name:'Product',assignees:['Alice']},{team_name:'Process Team',assignees:['Bob']}],profiles:[{from_date:'2026-01-01',to_date:'2026-12-31',standard_hours_per_day:8}]};
+ await page.route('**/*',route=>{const path=new URL(route.request().url()).pathname;if(path==='/api/employee-capacity-utilization/data')return route.fulfill({json:filtered});if(path==='/team_worklog_hours_report.html')return route.fulfill({contentType:'text/html',body:html});return route.fulfill({status:404,body:''})});
+ await page.goto('http://example.test/team_worklog_hours_report.html');await expect(page.locator('#table tbody tr')).toHaveCount(1);await expect(page.locator('.color-picker')).toBeHidden();
+ await page.locator('#month').fill('2026-10');await page.locator('#profile').selectOption('0');await page.locator('#scope').selectOption('assigned');
+ await page.locator('#include-leaves-logged').check();await page.locator('#resigned').check();await page.locator('#support').uncheck();
+ await page.locator('.team-picker summary').click();await page.locator('#teams input[value="Process Team"]').check();await page.locator('#employee-search').fill('Alice');
+ let params=new URLSearchParams(new URL(page.url()).hash.slice(1));expect(params.get('month')).toBe('2026-10');expect(params.get('profile')).toBe('0');expect(params.get('scope')).toBe('assigned');expect(params.get('leaves')).toBe('1');expect(params.get('resigned')).toBe('1');expect(params.get('support')).toBe('0');expect(JSON.parse(params.get('teams'))).toEqual(['Product','Process Team']);expect(params.get('employee_search')).toBe('Alice');
+ const shared=page.url();await page.goto(shared);await expect(page.locator('#month')).toHaveValue('2026-10');await expect(page.locator('#profile')).toHaveValue('0');await expect(page.locator('#scope')).toHaveValue('assigned');await expect(page.locator('#include-leaves-logged')).toBeChecked();await expect(page.locator('#resigned')).toBeChecked();await expect(page.locator('#support')).not.toBeChecked();await expect(page.locator('#teams input[value="Process Team"]')).toBeChecked();await expect(page.locator('#employee-search')).toHaveValue('Alice');
+ await page.locator('#profile').selectOption('');params=new URLSearchParams(new URL(page.url()).hash.slice(1));expect(params.has('profile')).toBe(false);
+});
