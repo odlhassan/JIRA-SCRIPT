@@ -102,7 +102,7 @@ function render(updatedName){
  const rows=[];
  for(const nk of names){
   if(partial&&nk!==updatedName)continue;
-  if(!nk||!teamAllows(nk)||!nk.includes(key(employeeSearch.value)))continue;
+  if(!nk||nk==='unassigned'||!teamAllows(nk)||!nk.includes(key(employeeSearch.value)))continue;
   const resourceKey=Object.keys(resources).find(x=>key(x)===nk);
   if(!resigned.checked&&resources[resourceKey]?.resigned)continue;
   const label=resourceKey||issues.find(x=>key(x.assignee)===nk)?.assignee||allWorklogs.find(x=>key(x.worklog_author||x.issue_assignee)===nk)?.worklog_author||allWorklogs.find(x=>key(x.issue_assignee)===nk)?.issue_assignee||leaves.find(x=>key(x.assignee)===nk)?.assignee||'';

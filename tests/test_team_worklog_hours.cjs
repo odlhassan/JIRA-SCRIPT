@@ -97,7 +97,7 @@ test('live worklogs and leave update separately and failures preserve visible va
 test('filter changes immediately update the shareable URL and restore on reload',async({page})=>{
  const filtered={...payload,teams:[{team_name:'Product',assignees:['Alice']},{team_name:'Process Team',assignees:['Bob']}],profiles:[{from_date:'2026-01-01',to_date:'2026-12-31',standard_hours_per_day:8}]};
  await page.route('**/*',route=>{const path=new URL(route.request().url()).pathname;if(path==='/api/employee-capacity-utilization/data')return route.fulfill({json:filtered});if(path==='/team_worklog_hours_report.html')return route.fulfill({contentType:'text/html',body:html});return route.fulfill({status:404,body:''})});
- await page.goto('http://example.test/team_worklog_hours_report.html');await expect(page.locator('#table tbody tr')).toHaveCount(1);await expect(page.locator('.color-picker')).toBeHidden();
+ await page.goto('http://example.test/team_worklog_hours_report.html');await expect(page.locator('#table tbody tr')).toHaveCount(2);await expect(page.locator('.color-picker')).toBeHidden();
  await page.locator('#month').fill('2026-10');await page.locator('#profile').selectOption('0');await page.locator('#scope').selectOption('assigned');
  await page.locator('#include-leaves-logged').check();await page.locator('#resigned').check();await page.locator('#support').uncheck();
  await page.locator('.team-picker summary').click();await page.locator('#teams input[value="Process Team"]').check();await page.locator('#employee-search').fill('Alice');
@@ -140,4 +140,25 @@ test('busy live reads retry and recover without replacing snapshot values on the
  });
  await page.goto('http://example.test/team_worklog_hours_report.html');
  await expect(page.locator('.matrix-live-status')).toContainText('Work: live');await expect(page.locator('.matrix-live-status')).toContainText('Leave: live');expect(attempts).toBe(2);await expect(page.locator('.matrix-progress')).not.toContainText('failed');
+});
+
+for(const report of ['employee_capacity_utilization_report.html','team_worklog_hours_report.html']) test(`${report} shows roster-only employees and defaults to all teams`,async({page})=>{
+ const body=fs.readFileSync(report,'utf8');
+ const roster={...payload,issues:[],worklogs:[],leaves:[],resources:{'Usama Tariq':{resigned:false},'Former Member':{resigned:true}},teams:[{team_name:'DE Team',assignees:['Usama Tariq','Former Member']},{team_name:'Process Team',assignees:[]}]};
+ await page.route('**/*',route=>{const path=new URL(route.request().url()).pathname;if(path==='/api/employee-capacity-utilization/data')return route.fulfill({json:roster});if(path==='/'+report)return route.fulfill({contentType:'text/html',body});return route.fulfill({status:404,body:''})});
+ await page.goto('http://example.test/'+report);await page.locator('.team-picker summary').click();
+ const process=page.locator('#teams input[value="Process Team"]');await expect(process).toBeChecked();
+ await process.uncheck();await page.locator('[data-team-action="default"]').click();await expect(process).toBeChecked();
+ await page.locator('#employee-search').fill('usama');await expect(page.locator('#table tbody tr').filter({hasText:'Usama Tariq'})).toHaveCount(1);
+ await page.locator('#employee-search').fill('Former');await expect(page.locator('#table tbody tr').filter({hasText:'Former Member'})).toHaveCount(0);
+ await page.locator('#resigned').check();await expect(page.locator('#table tbody tr').filter({hasText:'Former Member'})).toHaveCount(1);
+});
+
+for(const report of ['employee_capacity_utilization_report.html','team_worklog_hours_report.html']) test(`${report} excludes the unassigned placeholder`,async({page})=>{
+ const body=fs.readFileSync(report,'utf8');
+ const snapshot={...payload,resources:{Alice:{},'  UNASSIGNED  ':{}},issues:[{assignee:'Unassigned',issue_type:'Sub-task',original_estimate_hours:12,start_date:'2026-10-01',due_date:'2026-10-31'}],worklogs:[],leaves:[]};
+ await page.route('**/*',route=>{const path=new URL(route.request().url()).pathname;if(path==='/api/employee-capacity-utilization/data')return route.fulfill({json:snapshot});if(path==='/'+report)return route.fulfill({contentType:'text/html',body});return route.fulfill({status:404,body:''})});
+ await page.goto('http://example.test/'+report);await expect(page.locator('#status')).toContainText('1 employees');
+ await expect(page.locator('#table tbody')).toContainText('Alice');await expect(page.locator('#table tbody')).not.toContainText('UNASSIGNED');
+ if(report.startsWith('employee_')){const rows=page.locator('#table tbody tr');await expect(rows).toHaveCount(2);expect(await rows.nth(0).locator('td').nth(1).innerText()).toBe(await rows.nth(1).locator('td').nth(1).innerText())}
 });

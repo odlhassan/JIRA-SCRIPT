@@ -6,10 +6,12 @@ This standalone report presents employee capacity, profile holidays, personal le
 
 ## Data and calculations
 
+Configured team members are included in the employee roster even when they have no Jira assignment, worklog, or leave in the current snapshot. Their resignation status and team filters still apply; their reported hours are zero when there is no matching activity. The shared roster also feeds Team Worklog Hours and the Excel export.
+
 - It loads live from `/api/employee-capacity-utilization/data` whenever the page opens. The endpoint reads the server's canonical database, using the active successful `canonical_issues` snapshot and newest persisted `canonical_worklogs` run. The deployed HTML does not rely on build-time database contents.
 - Capacity comes from the selected capacity profile. Weekday official leaves in that profile are excluded from capacity before Availability is calculated; Availability is then capacity less planned and unplanned leave. Weekend official-leave dates remain visible in the Official Leaves count but do not reduce hours because they are already non-working days.
 - Booked Manhours is the original estimate of assigned subtasks overlapping the selected month. Logged Hours has two clearly labelled scopes: **All work logged by employee** counts every in-month Jira worklog authored by that employee; **Work logged on their assigned subtasks** counts only time on subtasks currently assigned to the same employee. The narrower scope excludes stories, tasks, bugs, and work items assigned to somebody else. RLT-board leave worklogs are excluded by default because leave hours are already reported in Leaves Taken; the user can explicitly include them when needed.
-- The final Grand Total row sums the displayed employees. Official Leaves shows the selected profile's holiday-day count per employee and the corresponding resource-day total in the Grand Total row.
+- The Jira “Unassigned” placeholder is not an employee and is excluded from the table, employee counts, totals, and Excel export. Unassigned work items remain in the underlying data but their estimates are not counted in employee booked hours. The final Grand Total row sums the displayed employees. Official Leaves shows the selected profile's holiday-day count per employee and the corresponding resource-day total in the Grand Total row.
 
 ## Filters
 
@@ -19,7 +21,7 @@ The filter bar is divided into two purposeful rows. **Refine the report** contai
 | --- | --- | --- |
 | Month | Current month | Limits worklogs, leave, and booked-subtask date overlap. |
 | Capacity profile | Auto | Selects the capacity calendar. |
-| Teams | All except Process Team | Includes unassigned employees and employees in selected configured teams; Process-Team-only resources are hidden by default. Changes apply immediately. |
+| Teams | All teams, including Process Team | Includes employees without a configured team and employees in selected configured teams. Reset default selects every team. Changes apply immediately. |
 | Count logged hours from | All work logged by employee | **All work logged by employee** counts any selected-month worklog by the employee, regardless of work-item type or assignee. **Work logged on their assigned subtasks** counts only subtask worklogs where the worklog author and current assignee are the same person. The table header, status line, detail drawer, and Excel export retain the selected scope. |
 | Include leaves in logged hours | Off | Includes RLT-project and `RLT-*` worklogs in Logged Hours, utilization, color formatting, drawers, Grand Total, and Excel. Off prevents leave hours from being counted twice. |
 | Color formatting | Utilization only; A=50%, B=80%, C=100% | Colors utilization from 0–A red, above A–B orange, and above B–C green. Values above C remain unfilled. The user can apply the color to the Utilization cell only or the entire employee row. Rules apply immediately and persist in browser storage. |
@@ -171,7 +173,7 @@ Run `.venv/Scripts/python.exe generate_employee_capacity_utilization_report.py`,
 
 ## Create a new Jira subtask
 
-Choose **New subtask** in Availability Details’ toolbar or the Log work panel. The colorful guided modal asks for Jira space → epic → user story, title, optional description, start date, due date and original estimate. The estimate starts at `1d`; `30m`, `4h`, `1d`, `1w` shortcuts remain editable. **Review subtask** checks Jira; **Create subtask in Jira** creates it assigned to the signed-in personal account. Due dates are limited to the actual current month in that account’s Jira timezone, even while browsing another month. Start cannot exceed due. Parent changes clear child choices. Search and Load more read personal Jira visibility across spaces; unsupported permissions/create fields show actionable errors.
+Choose **New subtask** in Availability Details’ toolbar or the Log work panel. The colorful guided modal asks for Jira space → epic → user story, title, optional description, start date, due date and original estimate. The estimate starts at `1d`; `30m`, `4h`, `1d`, `1w` shortcuts remain editable. **Review subtask** checks Jira; **Create subtask in Jira** creates it assigned to the signed-in personal account. Start and due dates must be in the same month and year, with start on or before due. Past and future months are allowed. Parent changes clear child choices. Search and Load more read personal Jira visibility across spaces; unsupported permissions/create fields show actionable errors.
 
 Creation does not change Availability, leave or logged hours: planned effort is not time worked. **Log work on this subtask** opens your current-month calendar with the new issue selected; closing instead preserves an unfinished worklog draft. After actual time is logged, the calendar’s existing live Jira refresh updates work figures. Booked Manhours, summary/export rows and other canonical reports reflect the new issue after full fetch.
 
@@ -181,7 +183,7 @@ Dependent & impacted files: `employee_subtask.py` registers through `employee_wo
 
 Space, Epic and User story now each have a dropdown with its own search and Load more controls inside the menu. Searching or paging does not clear the chosen hierarchy. Only selecting a different parent resets descendants. Arrow keys navigate options; Escape closes the dropdown before the creation form. Empty messages distinguish unmatched search text, a space with no visible epics and an epic without stories; the user-story picker stays disabled until an epic is selected. Late responses cannot overwrite a different parent.
 
-RLT uses its own leave flow, **RLT → Leave tracker → Leave subtask**, because its current tracker Tasks/Stories have no epics. Choose Planned/Unplanned Leave, dates and estimate; review/create keeps personal assignment and current-month due-date validation. **Record leave on this subtask** then opens a distinct leave recorder (profile standard hours by default), with review and confirmation. It only accepts RLT subtasks assigned to the personal account. Leave time updates red leave badges and reduces available capacity, while ordinary work hours stay separate. Missing Jira Time tracking create fields produce an explicit setup message.
+RLT uses its own leave flow, **RLT → Leave tracker → Leave subtask**, because its current tracker Tasks/Stories have no epics. Choose Planned/Unplanned Leave, dates and estimate; review/create keeps personal assignment and same-month date-range validation. **Record leave on this subtask** then opens a distinct leave recorder (profile standard hours by default), with review and confirmation. It only accepts RLT subtasks assigned to the personal account. Leave time updates red leave badges and reduces available capacity, while ordinary work hours stay separate. Missing Jira Time tracking create fields produce an explicit setup message.
 
 Dependent files/data flow: `employee_subtask_form.js` / `.css` provide top-layer dropdowns and the leave form; `employee_subtask.py` provides scoped options and validates both paths. `employee_worklog.py` binds leave recording in signed review tokens, and `employee_capacity_modal_links.js` restores leave form links. `live_rlt_leave.py` and `generate_rlt_leave_report.py` share the legacy-first/current-start-date fallback. These are inlined into the rebuilt capacity HTML where applicable. Canonical summary/export data still waits for full fetch; no table schema changes.
 
@@ -189,7 +191,9 @@ Dependent files/data flow: `employee_subtask_form.js` / `.css` provide top-layer
 
 [Team Worklog Hours](19-team-worklog-hours.md) reuses this report’s canonical data endpoint and workforce filters to show employee-by-date logged and RLT leave hours.
 
-Use the **Team Worklog Hours** button in the report header to open the employee-by-date matrix. The matrix also opens this same availability drawer from an employee’s row, including its live refresh and shareable link.
+Use the **Team Worklog Hours** button in the report header to open the employee-by-date matrix.
+
+The Team Worklog Hours matrix also opens this same availability drawer from an employee’s row, including its live refresh and shareable link.
 
 The related Team Worklog Hours matrix now refreshes worklogs and RLT leave per employee in the background; see its guide for status and failure behavior. This does not change the capacity report snapshot.
 

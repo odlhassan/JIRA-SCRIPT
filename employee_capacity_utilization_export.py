@@ -108,7 +108,7 @@ def _visible_names(payload: dict, filters: dict) -> list[str]:
     for name in list(resources) + [row.get("assignee") for row in issues] + [
         row.get("worklog_author") or row.get("issue_assignee") for row in worklogs
     ] + [row.get("assignee") for row in leaves]:
-        if _key(name):
+        if _key(name) and _key(name) != "unassigned":
             display_by_key.setdefault(_key(name), _text(name))
 
     selected_teams = {_key(value) for value in filters.get("selected_teams") or []}

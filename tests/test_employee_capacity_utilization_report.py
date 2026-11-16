@@ -7,7 +7,7 @@ from unittest.mock import patch
 from openpyxl import load_workbook
 
 from employee_capacity_utilization_export import build_employee_capacity_utilization_workbook
-from generate_employee_capacity_utilization_report import _epic_for_issue, _html
+from generate_employee_capacity_utilization_report import _epic_for_issue, _html, build_employee_capacity_utilization_payload
 from report_server import REPORT_IDS_WITHOUT_REFRESH_WIDGET, _base_page_catalog, create_report_server_app
 
 
@@ -45,13 +45,12 @@ class EmployeeCapacityUtilizationReportTests(unittest.TestCase):
         self.assertIn("include_leaves:includeLeaves.checked", html)
         self.assertIn("T12:00:00", html)
         self.assertIn("previous UTC date", html)
-        self.assertIn("process team", html)
         self.assertIn("Grand Total", html)
         self.assertIn("Canonical Jira worklogs", html)
         self.assertIn("/api/employee-capacity-utilization/data", html)
         self.assertIn("filters apply automatically", html)
         self.assertNotIn(">Refresh<", html)
-        self.assertIn("All except Process Team", html)
+        self.assertIn("All teams", html)
         self.assertIn("#teams .team-option input[type=checkbox]", html)
         self.assertIn("width:17px!important", html)
         self.assertIn("position:sticky", html)
@@ -74,6 +73,24 @@ class EmployeeCapacityUtilizationReportTests(unittest.TestCase):
         self.assertIn("/api/employee-capacity-utilization/export", html)
         self.assertIn("metric==='employee'?'logged':metric", html)
         self.assertIn("'Epic name'", html)
+
+    def test_team_members_without_activity_are_in_shared_roster_with_status(self):
+        teams = [{"team_name": "DE Team", "assignees": ["Usama Tariq", "Former Member"]}]
+        status = {"Usama Tariq": {"resigned": False}, "Former Member": {"resigned": True}}
+        with patch("generate_employee_capacity_utilization_report._resolve_canonical_run_id", return_value="run"), \
+             patch("generate_employee_capacity_utilization_report._load_work_items_from_canonical_db", return_value={}), \
+             patch("generate_employee_capacity_utilization_report._load_worklogs_from_canonical_db", return_value=[]), \
+             patch("generate_employee_capacity_utilization_report.build_rlt_leave_snapshot", return_value={}), \
+             patch("generate_employee_capacity_utilization_report._list_performance_teams", return_value=teams), \
+             patch("generate_employee_capacity_utilization_report._list_capacity_profiles", return_value=[]), \
+             patch("generate_employee_capacity_utilization_report._load_support_team_members", return_value=[]), \
+             patch("generate_employee_capacity_utilization_report._load_performance_resource_resignation_map", return_value=status) as load_status:
+            payload = build_employee_capacity_utilization_payload(Path("unused.db"))
+        load_status.assert_called_once_with(Path("unused.db"), ["Former Member", "Usama Tariq"])
+        self.assertEqual(payload["resources"], status)
+        data, _ = build_employee_capacity_utilization_workbook(payload, {"month": "2026-11", "selected_teams": ["DE Team"]})
+        workbook = load_workbook(data, data_only=True)
+        self.assertEqual([row[0].value for row in list(workbook["Summary"].rows)[1:]], ["Usama Tariq", "Grand Total"])
 
     def test_epic_is_resolved_through_parent_hierarchy(self):
         items = {
@@ -154,6 +171,18 @@ class EmployeeCapacityUtilizationReportTests(unittest.TestCase):
         self.assertEqual(workbook_with_leaves["Summary"].cell(2, included_summary_headers["Logged Hours"]).value, 18)
         self.assertEqual(workbook_with_leaves["Worklogs"].max_row, 4)
         self.assertEqual(workbook_with_leaves["Export Info"]["B4"].value, "Yes")
+
+    def test_unassigned_placeholder_does_not_inflate_export_totals(self):
+        payload = {"issues": [{"assignee": "Unassigned", "issue_type": "Sub-task", "start_date": "2026-11-01", "due_date": "2026-11-30", "original_estimate_hours": 12}],
+                   "worklogs": [], "leaves": [], "teams": [], "support": [],
+                   "resources": {"Alice": {}, "  UNASSIGNED  ": {}},
+                   "profiles": [{"from_date": "2026-11-01", "to_date": "2026-11-30", "standard_hours_per_day": 8}]}
+        data, _ = build_employee_capacity_utilization_workbook(payload, {"month": "2026-11"})
+        book = load_workbook(data, data_only=True)
+        rows = list(book["Summary"].values)
+        self.assertEqual([row[0] for row in rows[1:]], ["Alice", "Grand Total"])
+        self.assertEqual(rows[1][1], rows[2][1])
+        self.assertEqual(rows[2][5], 0)
 
     def test_official_weekday_leave_reduces_availability(self):
         payload = {
