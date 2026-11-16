@@ -295,6 +295,7 @@ REPORT_FILENAME_TO_ID: dict[str, str] = {
     "leaves_planned_calendar.html": "leaves_planned_calendar",
     "employee_performance_report.html": "employee_performance",
     "employee_capacity_utilization_report.html": "employee_capacity_utilization",
+    "team_worklog_hours_report.html": "team_worklog_hours",
     "planned_vs_dispensed_report.html": "planned_vs_dispensed",
     "approved_vs_planned_hours_report.html": "planned_vs_dispensed",
     "planned_actual_table_view.html": "planned_actual_table_view",
@@ -394,7 +395,7 @@ REPORT_REFRESH_DEFAULT_RETENTION_RUNS = 10
 REFRESH_WIDGET_MARKER = "codex-refresh-widget-v2"
 REFRESH_WIDGET_START = "<!-- codex-refresh-widget-start -->"
 REFRESH_WIDGET_END = "<!-- codex-refresh-widget-end -->"
-REPORT_IDS_WITHOUT_REFRESH_WIDGET = {"original_estimates_hierarchy", "ipp_meeting_dashboard", "team_capacity_planner", "employee_capacity_utilization"}
+REPORT_IDS_WITHOUT_REFRESH_WIDGET = {"original_estimates_hierarchy", "ipp_meeting_dashboard", "team_capacity_planner", "employee_capacity_utilization", "team_worklog_hours"}
 INFO_DRAWER_MARKER = "codex-info-drawer-v1"
 INFO_DRAWER_START = "<!-- codex-info-drawer-start -->"
 INFO_DRAWER_END = "<!-- codex-info-drawer-end -->"
@@ -438,6 +439,7 @@ STATIC_REPORT_NAV_ITEMS: list[dict[str, object]] = [
     {"page_key": "assignee_hours_report", "title": "Assignee Hours Report", "href": "/assignee_hours_report.html", "icon": "schedule", "file": "assignee_hours_report.html", "default_nav_order": 40, "page_type": "report"},
     {"page_key": "employee_performance_report", "title": "Employee Performance", "href": "/employee_performance_report.html", "icon": "monitoring", "file": "employee_performance_report.html", "default_nav_order": 50, "page_type": "report"},
     {"page_key": "employee_capacity_utilization", "title": "Employee Capacity & Utilization", "href": "/employee_capacity_utilization_report.html", "icon": "query_stats", "file": "employee_capacity_utilization_report.html", "default_nav_order": 55, "page_type": "report"},
+    {"page_key": "team_worklog_hours", "title": "Team Worklog Hours", "href": "/team_worklog_hours_report.html", "icon": "calendar_month", "file": "team_worklog_hours_report.html", "default_nav_order": 56, "page_type": "report"},
     {"page_key": "rlt_leave_report", "title": "RLT Leave Report", "href": "/rlt_leave_report.html", "icon": "beach_access", "file": "rlt_leave_report.html", "default_nav_order": 60, "page_type": "report"},
     {"page_key": "leaves_planned_calendar", "title": "Leaves Planned Calendar", "href": "/leaves_planned_calendar.html", "icon": "calendar_month", "file": "leaves_planned_calendar.html", "default_nav_order": 70, "page_type": "report"},
     {"page_key": "rnd_data_story", "title": "RnD Data Story", "href": "/rnd_data_story.html", "icon": "auto_stories", "file": "rnd_data_story.html", "default_nav_order": 80, "page_type": "report"},
@@ -23662,6 +23664,7 @@ def _resolve_report_html_sources(base_dir: Path) -> dict[str, Path]:
             "JIRA_EMPLOYEE_PERFORMANCE_HTML_PATH", "employee_performance_report.html", base_dir
         ),
         "employee_capacity_utilization_report.html": base_dir / "employee_capacity_utilization_report.html",
+        "team_worklog_hours_report.html": base_dir / "team_worklog_hours_report.html",
         "planned_vs_dispensed_report.html": _resolve_output_html_path(
             "JIRA_PLANNED_VS_DISPENSED_HTML_PATH", "planned_vs_dispensed_report.html", base_dir
         ),
@@ -47672,6 +47675,26 @@ def create_report_server_app(base_dir: Path, folder_raw: str, *, maintenance: bo
             return jsonify({"error": str(exc)}), 409
         except Exception as exc:
             return jsonify({"error": f"Failed to load employee capacity and utilization: {exc}"}), 500
+
+    @app.route("/api/team-worklog-hours/export", methods=["POST"])
+    def team_worklog_hours_export_api():
+        from io import BytesIO
+        from openpyxl import Workbook
+        from flask import send_file
+        body = request.get_json(silent=True) or {}
+        rows = body.get("rows")
+        if not isinstance(rows, list) or len(rows) > 10000 or any(not isinstance(row, list) or len(row) > 70 or any(not isinstance(value, (str, int, float, type(None))) for value in row) for row in rows):
+            return jsonify({"error": "Invalid matrix"}), 400
+        book = Workbook()
+        sheet = book.active
+        sheet.title = "Team worklog hours"
+        for row in rows:
+            sheet.append([("'" + value if value.startswith(("=", "+", "-", "@")) else value) if isinstance(value, str) else value for value in row])
+        sheet.freeze_panes = "B2"
+        out = BytesIO()
+        book.save(out)
+        out.seek(0)
+        return send_file(out, as_attachment=True, download_name="team_worklog_hours.xlsx", mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
     @app.route("/api/employee-capacity-utilization/export", methods=["POST"])
     def employee_capacity_utilization_export_api():

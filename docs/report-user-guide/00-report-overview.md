@@ -60,3 +60,5 @@ The result shows reclaimed space or a maintenance warning if compaction cannot f
 Dependent implementation: `report_server.py`, `canonical_storage.py`, and canonical
 report readers. See [canonical refresh maintenance](../../CANONICAL_COLOSSAL_FETCH_IMPLEMENTATION_PLAN.md#full-refresh-snapshot-replacement-and-disk-reclamation)
 for data flow, preserved tables, temporary disk-space requirements, and testing.
+
+Team Worklog Hours provides an employee-by-date matrix of counted Jira worklogs and RLT leave. See [Team Worklog Hours](screens/19-team-worklog-hours.md).

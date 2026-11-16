@@ -184,3 +184,7 @@ Space, Epic and User story now each have a dropdown with its own search and Load
 RLT uses its own leave flow, **RLT → Leave tracker → Leave subtask**, because its current tracker Tasks/Stories have no epics. Choose Planned/Unplanned Leave, dates and estimate; review/create keeps personal assignment and current-month due-date validation. **Record leave on this subtask** then opens a distinct leave recorder (profile standard hours by default), with review and confirmation. It only accepts RLT subtasks assigned to the personal account. Leave time updates red leave badges and reduces available capacity, while ordinary work hours stay separate. Missing Jira Time tracking create fields produce an explicit setup message.
 
 Dependent files/data flow: `employee_subtask_form.js` / `.css` provide top-layer dropdowns and the leave form; `employee_subtask.py` provides scoped options and validates both paths. `employee_worklog.py` binds leave recording in signed review tokens, and `employee_capacity_modal_links.js` restores leave form links. `live_rlt_leave.py` and `generate_rlt_leave_report.py` share the legacy-first/current-start-date fallback. These are inlined into the rebuilt capacity HTML where applicable. Canonical summary/export data still waits for full fetch; no table schema changes.
+
+### Related team worklog matrix
+
+[Team Worklog Hours](19-team-worklog-hours.md) reuses this report’s canonical data endpoint and workforce filters to show employee-by-date logged and RLT leave hours.

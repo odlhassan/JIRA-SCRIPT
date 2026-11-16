@@ -48,3 +48,5 @@ ZIPs before deployment. It is exercised by `tests/test_azure_deploy_storage.py`.
 Refresh snapshot replacement and VACUUM without deleting user-maintained tables.
 Verification: `tests/test_canonical_storage.py`. See
 [canonical refresh operations](CANONICAL_COLOSSAL_FETCH_IMPLEMENTATION_PLAN.md#full-refresh-snapshot-replacement-and-disk-reclamation).
+
+Team Worklog Hours requires `generate_team_worklog_hours_report.py` and `team_worklog_hours.js`; the generated `team_worklog_hours_report.html` is served through the shared report server.

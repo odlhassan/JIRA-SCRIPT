@@ -51,3 +51,7 @@ database is compacted, preserving settings and manual plans. The result shows re
 space or a pending-maintenance warning if disk headroom/locks prevent compaction.
 Uncheck to retain snapshots. Smart Refresh and standalone Fetch keep their existing behavior.
 See [storage maintenance details](CANONICAL_COLOSSAL_FETCH_IMPLEMENTATION_PLAN.md#full-refresh-snapshot-replacement-and-disk-reclamation).
+
+### Team Worklog Hours
+
+The Team Worklog Hours report shows daily employee worklogs and RLT leave using the Employee Capacity & Utilization filters. See [the report guide](docs/report-user-guide/screens/19-team-worklog-hours.md).

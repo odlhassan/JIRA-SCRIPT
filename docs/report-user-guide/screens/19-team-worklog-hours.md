@@ -1,0 +1,28 @@
+# Team Worklog Hours
+
+## Business Cases
+See each employee’s daily worklog coverage and RLT leave in a selected month, including dates without counted work.
+
+## Business Logic
+Each employee/date cell sums canonical Jira worklogs by author and date. A zero means no hours counted under the selected scope, not necessarily that the employee was expected to work. RLT leave taken is shown separately, using planned plus unplanned taken hours from the canonical daily leave snapshot. Leave worklogs are excluded by default; including them adds them to logged hours while still showing the separate leave indicator, so do not add the two values together. Dates without worklogs, including weekends and holidays, remain visible. The selected capacity profile identifies holiday/workday headings. Employee membership, resignations, support markings, and assigned-subtask scope follow Employee Capacity & Utilization.
+
+## Examples
+Alice logs 3 hours on an assigned subtask and 2 hours on a story on October 5, with 1 hour of RLT leave taken. All-work scope shows 5.00h and Leave 1.00h; assigned-subtask scope shows 3.00h and the same leave indicator. A date without matching logs shows 0.00h.
+
+## Explanations
+Select a month and team to compare people across days. Scroll horizontally for later dates. Green indicates positive counted hours and pale red indicates zero; a leave label appears where leave was taken. Total is the sum of logged hours across the month.
+
+## Front-end UI Fields
+Month defaults to the current month; capacity profile defaults to auto; Teams defaults to all except Process Team. Count logged hours from chooses all employee work or only work on their currently assigned subtasks. Include leaves in logged hours defaults off; Display resigned defaults off; Indicate support defaults on. Search employees narrows names. Show/Hide controls collapses filters. Download Excel exports the visible filtered matrix with separate numeric logged and RLT leave columns for every date. The utilization coloring control from the source report is hidden because utilization percentages are not displayed here.
+
+## Script Files
+`generate_team_worklog_hours_report.py` derives the shell from `generate_employee_capacity_utilization_report.py`; `team_worklog_hours.js` renders the matrix; `team_worklog_hours_report.html` is the generated shell. `report_server.py` registers the page, shared canonical data route and Excel endpoint. `shared-nav.js` exposes navigation. `run_html_only.py` rebuilds the shell.
+
+## Dependent & Impacted Files
+Shares the canonical payload, employee filters, profile selection and leave rules documented in [Employee Capacity & Utilization](16-employee-capacity-utilization.md). The report does not modify Jira or SQLite data.
+
+## Table Schema
+No new tables or schema changes. The shared canonical payload reads existing Jira exports and capacity configuration; see the [source report documentation](16-employee-capacity-utilization.md) for its data dependencies.
+
+## Data Flow
+The browser requests `/api/employee-capacity-utilization/data`; the server builds the existing canonical payload. The matrix groups filtered worklogs by author and date, combines matching daily leave totals, and renders all dates. Excel posts the displayed matrix to `/api/team-worklog-hours/export`, which creates a workbook and escapes spreadsheet formula-like text.
