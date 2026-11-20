@@ -40,7 +40,7 @@ This plan is informed by:
   - updated in year, or
   - worklog in year
 - Parent/child hierarchy completion is mandatory.
-- Worklogs are stored only from the selected start month through December 31 of the selected year. January remains the backward-compatible default.
+- Worklogs are stored only from the selected start month through December 31 of the selected year. New runs default to the current calendar month. For example, opening Colossal Refresh in November 2026 starts with a November 1 through December 31 scope.
 - Work proceeds phase-by-phase.
 - After each completed phase, pause and request permission before starting the next phase.
 
@@ -334,7 +334,7 @@ The Colossal Refresh settings page exposes the selected year and start month, re
 | Field | Type | Default | Applies To | Side Effect |
 | --- | --- | --- | --- | --- |
 | Scope Year | Number input | Current year | Smart and Full Refresh / Fetch Only | Sets the year whose December 31 date closes the canonical Jira window. Valid range: 2000-2100. |
-| Start Month | Select (January-December) | January | Smart and Full Refresh / Fetch Only | Sets the first day included in issue discovery and worklog storage. The scope runs from day 1 of this month through December 31. Resume restores both year and month; Smart Refresh only reuses a successful baseline with the same year, month, and managed-project set. |
+| Start Month | Select (January-December) | Current month in the browser | Smart and Full Refresh / Fetch Only | Sets the first day included in issue discovery and worklog storage. The scope runs from day 1 of this month through December 31. Resume restores both year and month; Smart Refresh only reuses a successful baseline with the same year, month, and managed-project set. |
 | Replace previous fetched Jira data and reclaim disk space | Checkbox | Checked | Complete Full Refresh only | After successful report generation and snapshot promotion, deletes all other canonical snapshots (including other date windows) and attempts SQLite VACUUM. Uncheck to retain history. Smart Refresh and standalone Fetch ignore this option. Settings and manual plans remain. |
 | Full database backup | Not shown | Disabled | All refresh modes | Multi-gigabyte full-DB copies exhausted production disk, so the UI no longer presents this option. The backend accepts but ignores the legacy `create_db_backup` request flag. |
 
@@ -358,7 +358,7 @@ Primary tables in `assignee_hours_capacity.db` include `canonical_refresh_runs` 
 ## Data Flow
 
 1. User starts Colossal Refresh from `/settings/canonical-refresh`.
-2. The UI sends `year` and `start_month` to `POST /api/canonical-refresh` or `POST /api/canonical-fetch`; the server rejects months outside 1-12 and defaults omitted months to January for existing clients.
+2. The UI sends `year` and `start_month` to `POST /api/canonical-refresh` or `POST /api/canonical-fetch`; the server rejects months outside 1-12 and uses the server's current year and month for fields omitted by API callers.
 3. If the user checked `Create DB backup before Full Refresh` and started a full refresh, `report_server.py` creates a timestamped backup under `backups/canonical_refresh`.
 4. `report_server.py` writes run state and canonical rows into the configured capacity DB. The start month is retained in existing run metadata, so no SQLite schema migration is required.
 5. The successful run updates `canonical_refresh_state.last_success_run_id`.

@@ -60,6 +60,7 @@ Employee Performance has one exception: its per-assignee refresh remains a separ
 - Update Colossal Refresh settings with:
   - primary Smart Refresh and Full Refresh buttons;
   - advanced Fetch-only, Compute-latest, and recompute actions;
+  - current year and month as the default scope for new Fetch runs, with the selected scope ending December 31;
   - latest global Fetch, current global Compute/report version, reconciliation due status, and pending-compute visibility.
 - Update Employee Performance UI only to show the scoped two-phase status; retain its existing assignee refresh workflow.
 

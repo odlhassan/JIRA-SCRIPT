@@ -44,7 +44,8 @@ PRODUCT_RELEASE_READINESS_DESIGN.md for field behavior and implementation notes.
 
 ## Reduce Colossal Refresh storage
 
-On `/settings/canonical-refresh`, choose a smaller year/start-month scope and run
+On `/settings/canonical-refresh`, new refreshes default to the current month through
+December 31. To replace older snapshots, choose the scope you need and run
 **Full Refresh** with **Replace previous fetched Jira data and reclaim disk space**
 checked. After reports succeed, older canonical Jira snapshots are removed and the
 database is compacted, preserving settings and manual plans. The result shows reclaimed

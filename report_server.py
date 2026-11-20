@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from calendar import month_name
 from collections import defaultdict
 from dataclasses import asdict
 from datetime import date, datetime, timedelta, timezone
@@ -11376,7 +11377,11 @@ def _projects_settings_html() -> str:
 
 
 def _canonical_refresh_settings_html() -> str:
-    current_year = datetime.now().year
+    today = date.today()
+    month_options = "\n".join(
+        f'<option value="{month}"{" selected" if month == today.month else ""}>{month_name[month]}</option>'
+        for month in range(1, 13)
+    )
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -12081,23 +12086,12 @@ def _canonical_refresh_settings_html() -> str:
           <div class="scope-fields">
             <div>
               <label for="scope-year">Scope Year</label>
-              <input id="scope-year" type="number" min="2000" max="2100" value="{current_year}">
+              <input id="scope-year" type="number" min="2000" max="2100" value="{today.year}">
             </div>
             <div>
               <label for="scope-start-month">Start Month</label>
               <select id="scope-start-month">
-                <option value="1">January</option>
-                <option value="2">February</option>
-                <option value="3">March</option>
-                <option value="4">April</option>
-                <option value="5">May</option>
-                <option value="6">June</option>
-                <option value="7">July</option>
-                <option value="8">August</option>
-                <option value="9">September</option>
-                <option value="10">October</option>
-                <option value="11">November</option>
-                <option value="12">December</option>
+                {month_options}
               </select>
             </div>
           </div>
@@ -13192,6 +13186,9 @@ def _canonical_refresh_settings_html() -> str:
     }});
 
     (async function init() {{
+      const today = new Date();
+      scopeYearEl.value = String(today.getFullYear());
+      scopeStartMonthEl.value = String(today.getMonth() + 1);
       setBusy(false);
       try {{
         await loadManagedProjects();
@@ -43505,7 +43502,8 @@ def create_report_server_app(base_dir: Path, folder_raw: str, *, maintenance: bo
     def canonical_refresh_start():
         payload = request.get_json(silent=True) or {}
         year_raw = _to_text(payload.get("year"))
-        month_raw = payload.get("start_month", 1)
+        today = date.today()
+        month_raw = payload.get("start_month", today.month)
         refresh_mode = _canonical_normalize_mode(payload.get("mode"))
         create_db_backup = _parse_truthy_flag(payload.get("create_db_backup"))
         if year_raw:
@@ -43514,7 +43512,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str, *, maintenance: bo
             except ValueError:
                 return jsonify({"ok": False, "error": "Invalid year. Expected integer YYYY."}), 400
         else:
-            scope_year = datetime.now().year
+            scope_year = today.year
         if scope_year < 2000 or scope_year > 2100:
             return jsonify({"ok": False, "error": "Invalid year. Expected range 2000-2100."}), 400
         try:
@@ -43537,9 +43535,10 @@ def create_report_server_app(base_dir: Path, folder_raw: str, *, maintenance: bo
     @app.route("/api/canonical-fetch", methods=["POST"])
     def canonical_fetch_start():
         payload = request.get_json(silent=True) or {}
-        month_raw = payload.get("start_month", 1)
+        today = date.today()
+        month_raw = payload.get("start_month", today.month)
         try:
-            scope_year = int(payload.get("year") or datetime.now().year)
+            scope_year = int(payload.get("year") or today.year)
         except (TypeError, ValueError):
             return jsonify({"ok": False, "error": "Invalid year. Expected integer YYYY."}), 400
         if scope_year < 2000 or scope_year > 2100:

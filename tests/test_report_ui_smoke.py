@@ -524,7 +524,7 @@ class ReportUiSmokeTests(unittest.TestCase):
             self.assertIn("<strong>Report Build</strong>", html)
             self.assertIn("formatStageCountValue", html)
             self.assertIn('id="scope-start-month"', html)
-            self.assertIn('<option value="6">June</option>', html)
+            self.assertRegex(html, r'<option value="6"(?: selected)?>June</option>')
             self.assertIn('start_month: startMonthValue', html)
             self.assertIn('Scope: ${monthName(scopeMonth)}-December ${item.scope_year}', html)
             self.assertIn("Reports still show the previous published version", html)

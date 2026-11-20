@@ -4,6 +4,7 @@ import sqlite3
 import tempfile
 import time
 import unittest
+from datetime import date
 from unittest.mock import patch
 from pathlib import Path
 
@@ -64,6 +65,39 @@ def _seed_running_canonical_run(db_path: Path, run_id: str = "orphaned-run") -> 
 
 
 class CanonicalRefreshApiTests(unittest.TestCase):
+    def test_new_refresh_scope_defaults_to_current_month(self):
+        today = date(2026, 11, 20)
+        for endpoint in ("/api/canonical-refresh", "/api/canonical-fetch"):
+            with (
+                self.subTest(endpoint=endpoint),
+                patch.dict("os.environ", {"JIRA_PROJECT_KEYS": ""}),
+                tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td,
+            ):
+                root = Path(td)
+                html_dir = root / "report_html"
+                html_dir.mkdir()
+                (html_dir / "dashboard.html").write_text("<html></html>", encoding="utf-8")
+                app = create_report_server_app(base_dir=root, folder_raw="report_html")
+                _seed_managed_projects(root / "assignee_hours_capacity.db")
+                client = app.test_client()
+                with (
+                    patch.object(report_server, "date", wraps=date) as app_date,
+                    patch.object(report_server.threading.Thread, "start"),
+                ):
+                    app_date.today.return_value = today
+                    html = client.get("/settings/canonical-refresh").get_data(as_text=True)
+                    self.assertIn('id="scope-year" type="number" min="2000" max="2100" value="2026"', html)
+                    self.assertIn('<option value="11" selected>November</option>', html)
+                    self.assertIn('<option value="1">January</option>', html)
+                    response = client.post(endpoint, json={})
+
+                self.assertEqual(response.status_code, 202)
+                run = response.get_json()["run"]
+                self.assertEqual(run["scope_year"], 2026)
+                self.assertEqual(run["scope_start_month"], 11)
+                self.assertEqual(run["stats"]["summary"]["scope_start_date"], "2026-11-01")
+                self.assertEqual(run["stats"]["summary"]["scope_end_date"], "2026-12-31")
+
     def test_start_month_bounds_and_api_scope_are_preserved(self):
         self.assertEqual(
             report_server._canonical_year_bounds(2026, 6),
@@ -309,7 +343,7 @@ class CanonicalRefreshApiTests(unittest.TestCase):
                 patch.object(report_server, "_run_script", return_value=(0, "ok", "")),
                 patch.object(report_server, "sync_report_html", return_value=0),
             ):
-                resp = client.post("/api/canonical-refresh", json={"year": 2026})
+                resp = client.post("/api/canonical-refresh", json={"year": 2026, "start_month": 1})
                 self.assertEqual(resp.status_code, 202)
                 run_id = str((resp.get_json() or {}).get("run_id") or "")
                 self.assertTrue(run_id)
