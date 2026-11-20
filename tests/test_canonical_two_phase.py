@@ -217,7 +217,9 @@ class CanonicalTwoPhaseTests(unittest.TestCase):
 
     def test_compute_promotes_only_after_successful_compute(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
-            db_path = Path(td) / "capacity.db"
+            app_root = Path(td) / "package"
+            app_root.mkdir()
+            db_path = Path(td) / "persistent" / "capacity.db"
             report_server._init_canonical_refresh_db(db_path)
             fetch_run_id = "fetch-1"
             now = report_server._canonical_now_utc()
@@ -244,12 +246,20 @@ class CanonicalTwoPhaseTests(unittest.TestCase):
                 patch.object(report_server, "_canonical_rebuild_derived_data", return_value={"issues": 1}),
                 patch.object(report_server, "_sync_epics_management_from_canonical", return_value={"updated": 0}),
                 patch.object(report_server, "_canonical_rebuild_compatibility_artifacts", return_value={"ok": True}),
-                patch.object(report_server, "_run_script", return_value=(0, "", "")),
+                patch.object(report_server, "_run_script", return_value=(0, "", "")) as run_script,
                 patch.object(report_server, "sync_report_html", return_value=0),
             ):
                 result, status = report_server._run_canonical_compute(
-                    db_path, Path(td), compute_run_id, fetch_run_id, "test"
+                    db_path, app_root, compute_run_id, fetch_run_id, "test"
                 )
+            for call, script in zip(run_script.call_args_list[:2], (
+                "generate_rlt_leave_report.py",
+                "generate_employee_performance_report.py",
+            ), strict=True):
+                self.assertEqual(call.args, (script, app_root))
+                env = call.kwargs["env_overrides"]
+                self.assertEqual(env["JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH"], str(db_path))
+                self.assertEqual(env["JIRA_CANONICAL_RUN_ID"], fetch_run_id)
             self.assertEqual(status, 200)
             self.assertTrue(result["ok"])
             with sqlite3.connect(db_path) as conn:

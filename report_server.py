@@ -6909,12 +6909,7 @@ def _run_canonical_phase1_refresh(
         _update("generating_reports", 97, current_item="Generate dependent reports")
         report_gen_stats: dict[str, object] = {}
         try:
-            report_env = {
-                "JIRA_CANONICAL_RUN_ID": run_id,
-                "JIRA_LEAVE_REPORT_SOURCE": "canonical_db",
-                "JIRA_EMP_PERF_INPUT_SOURCE": "canonical_db",
-                "JIRA_EMP_PERF_CANONICAL_RUN_ID": run_id,
-            }
+            report_env = _canonical_report_script_env(db_path, run_id)
             report_base_dir = artifact_base_dir
             for script_name in ("generate_rlt_leave_report.py", "generate_employee_performance_report.py", "support_center_sync.py"):
                 if _canonical_is_cancel_requested(db_path, run_id):
@@ -7004,6 +6999,16 @@ def _run_canonical_phase1_refresh(
             "status": "failed",
             "error": f"Canonical refresh failed: {exc}",
         }, 500
+
+
+def _canonical_report_script_env(db_path: Path, run_id: str) -> dict[str, str]:
+    return {
+        "JIRA_ASSIGNEE_HOURS_CAPACITY_DB_PATH": str(db_path.absolute()),
+        "JIRA_CANONICAL_RUN_ID": run_id,
+        "JIRA_LEAVE_REPORT_SOURCE": "canonical_db",
+        "JIRA_EMP_PERF_INPUT_SOURCE": "canonical_db",
+        "JIRA_EMP_PERF_CANONICAL_RUN_ID": run_id,
+    }
 
 
 def _run_canonical_compute(
@@ -7159,12 +7164,7 @@ def _run_canonical_compute(
         if _cancel_requested():
             return _finish("canceled", error="Compute canceled during compatibility rebuild.")
         _update("generating_reports", 80, {"compatibility_artifacts": bridge_stats})
-        report_env = {
-            "JIRA_CANONICAL_RUN_ID": fetch_run_id,
-            "JIRA_LEAVE_REPORT_SOURCE": "canonical_db",
-            "JIRA_EMP_PERF_INPUT_SOURCE": "canonical_db",
-            "JIRA_EMP_PERF_CANONICAL_RUN_ID": fetch_run_id,
-        }
+        report_env = _canonical_report_script_env(db_path, fetch_run_id)
         report_stats: dict[str, object] = {}
         for script_name in ("generate_rlt_leave_report.py", "generate_employee_performance_report.py", "support_center_sync.py"):
             if _cancel_requested():
@@ -40992,12 +40992,7 @@ def create_report_server_app(base_dir: Path, folder_raw: str, *, maintenance: bo
         }
 
     def _canonical_group2_script_env(canonical_run_id: str) -> dict[str, str]:
-        return {
-            "JIRA_CANONICAL_RUN_ID": canonical_run_id,
-            "JIRA_LEAVE_REPORT_SOURCE": "canonical_db",
-            "JIRA_EMP_PERF_INPUT_SOURCE": "canonical_db",
-            "JIRA_EMP_PERF_CANONICAL_RUN_ID": canonical_run_id,
-        }
+        return _canonical_report_script_env(capacity_paths["db_path"], canonical_run_id)
 
     def _run_employee_performance_canonical_refresh(
         assignee_name: str = "",

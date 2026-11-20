@@ -1,5 +1,7 @@
 # RLT Leave Intelligence Report
 
+When Colossal Compute or a canonical report refresh launches this generator, it passes the saved Fetch run ID and the server's resolved capacity database path. Leave rows are read and written in that database, while report files use the writable artifact directory.
+
 ## Project and Window
 - Project Key: `RLT`
 - Project Name: `RnD Leave Tracker`
